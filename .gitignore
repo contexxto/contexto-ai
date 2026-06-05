@@ -1,0 +1,41 @@
+# Secrets — NUNCA al repositorio
+.env
+.env.*
+!.env.example
+
+# Docker volumes locales
+postgres_data/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Archivos temporales de datos
+*.shp
+*.dbf
+*.shx
+*.prj
+data/raw/

@@ -2,6 +2,8 @@
 Contexto AI — ReAct Agent Graph (LangGraph)
 Topology: user message → llm_node (reason + tool calls) → tool_node → llm_node → response
 """
+import os
+
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage
 from langgraph.graph import END, START, StateGraph
@@ -10,6 +12,10 @@ from langgraph.prebuilt import ToolNode, tools_condition
 from app.agent.state import AgentState
 from app.agent.tools import AGENT_TOOLS
 from app.config import settings
+
+# langchain-anthropic reads ANTHROPIC_API_KEY from environment automatically.
+# Setting it explicitly here guarantees it regardless of shell load order.
+os.environ.setdefault("ANTHROPIC_API_KEY", settings.anthropic_api_key)
 
 SYSTEM_PROMPT = SystemMessage(content="""
 Eres "Contexto AI", un asistente experto en inteligencia inmobiliaria y análisis de infraestructura urbana.
@@ -49,7 +55,6 @@ COMPORTAMIENTO OPERATIVO:
 def _build_graph() -> StateGraph:
     llm = ChatAnthropic(
         model=settings.llm_model,
-        api_key=settings.anthropic_api_key,
         temperature=0.2,
         max_tokens=2048,
     ).bind_tools(AGENT_TOOLS)

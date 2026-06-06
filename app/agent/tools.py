@@ -45,6 +45,7 @@ async def tool_search_nearby_assets(
         SELECT
             a.id::text,
             a.direccion_estandarizada,
+            a.tipo_activo,
             a.piso_altura,
             a.walk_score,
             a.score_ruido_predictivo,

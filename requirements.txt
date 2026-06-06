@@ -18,4 +18,5 @@ python-dotenv==1.0.1
 langgraph==0.2.60
 langchain-core==0.3.28
 langchain-anthropic==0.3.15
+langchain-core==0.3.63
 anthropic==0.55.0

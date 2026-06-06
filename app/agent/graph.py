@@ -3,7 +3,10 @@ Contexto AI — ReAct Agent Graph (LangGraph)
 Topology: user message → llm_node (reason + tool calls) → tool_node → llm_node → response
 """
 import os
+import ssl
 
+import anthropic
+import httpx
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage
 from langgraph.graph import END, START, StateGraph
@@ -13,9 +16,23 @@ from app.agent.state import AgentState
 from app.agent.tools import AGENT_TOOLS
 from app.config import settings
 
-# langchain-anthropic reads ANTHROPIC_API_KEY from environment automatically.
-# Setting it explicitly here guarantees it regardless of shell load order.
-os.environ.setdefault("ANTHROPIC_API_KEY", settings.anthropic_api_key)
+# Garantiza que la key esté disponible para cualquier llamada directa al SDK
+os.environ["ANTHROPIC_API_KEY"] = settings.anthropic_api_key
+
+# En redes corporativas con SSL inspection, el proxy intercepta TLS con su propio cert.
+# Python no lo reconoce → CERTIFICATE_VERIFY_FAILED.
+# ssl_verify=false desactiva la verificación SOLO en dev local (nunca en producción).
+_ssl_verify = settings.ssl_verify.lower() != "false"
+
+if not _ssl_verify:
+    # Patch global del contexto SSL de Python — afecta a httpx, requests y urllib3
+    ssl._create_default_https_context = ssl._create_unverified_context  # noqa: SLF001
+
+# Cliente Anthropic con control de SSL explícito
+_anthropic_async_client = anthropic.AsyncAnthropic(
+    api_key=settings.anthropic_api_key,
+    http_client=httpx.AsyncClient(verify=_ssl_verify),
+)
 
 SYSTEM_PROMPT = SystemMessage(content="""
 Eres "Contexto AI", un asistente experto en inteligencia inmobiliaria y análisis de infraestructura urbana.
@@ -58,6 +75,8 @@ def _build_graph() -> StateGraph:
         temperature=0.2,
         max_tokens=2048,
     ).bind_tools(AGENT_TOOLS)
+    # Reemplaza el cliente async interno con el nuestro (SSL configurado)
+    llm._async_client = _anthropic_async_client
 
     async def llm_node(state: AgentState) -> dict:
         messages = [SYSTEM_PROMPT] + state["messages"]

@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     postgres_host: str = "localhost"
     postgres_port: int = 5432
 
+    anthropic_api_key: str = ""
+    llm_model: str = "claude-opus-4-8"
+
     @property
     def database_url(self) -> str:
         return (

@@ -7,19 +7,25 @@ services:
     region: oregon
     healthCheckPath: /health
     envVars:
-      - key: POSTGRES_HOST
-        sync: false        # lo pondrás manualmente desde Supabase
-      - key: POSTGRES_PORT
-        value: "5432"
-      - key: POSTGRES_DB
-        sync: false
-      - key: POSTGRES_USER
-        sync: false
-      - key: POSTGRES_PASSWORD
+      # DATABASE_URL_OVERRIDE tiene precedencia sobre los parámetros individuales.
+      # Usar Session Pooler de Supabase para IPv4 (puerto 5432, host aws-0-us-west-2).
+      # Formato: postgresql+asyncpg://postgres.PROJECTID:[PASSWORD]@aws-0-us-west-2.pooler.supabase.com:5432/postgres
+      - key: DATABASE_URL_OVERRIDE
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: LLM_MODEL
         value: claude-sonnet-4-5-20250929
       - key: SSL_VERIFY
-        value: "true"      # en Render no hay SSL corporativo
+        value: "true"
+      # Fallback si no se usa DATABASE_URL_OVERRIDE
+      - key: POSTGRES_HOST
+        value: "db.jzxeigzxgbglfsiiqpxv.supabase.co"
+      - key: POSTGRES_PORT
+        value: "5432"
+      - key: POSTGRES_DB
+        value: "postgres"
+      - key: POSTGRES_USER
+        value: "postgres"
+      - key: POSTGRES_PASSWORD
+        sync: false

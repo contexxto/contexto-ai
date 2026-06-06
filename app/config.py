@@ -24,12 +24,16 @@ class Settings(BaseSettings):
 
     anthropic_api_key: str = ""
     llm_model: str = "claude-sonnet-4-5-20250929"
-    # En redes corporativas con SSL inspection, setear a "false" para omitir verificación.
-    # En producción debe ser siempre "true".
     ssl_verify: str = "true"
+
+    # En producción (Render + Supabase) se puede pasar la DATABASE_URL completa
+    # para evitar problemas de IPv6. Si está presente, tiene precedencia.
+    database_url_override: str = ""
 
     @property
     def database_url(self) -> str:
+        if self.database_url_override:
+            return self.database_url_override
         return (
             f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"

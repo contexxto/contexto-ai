@@ -39,3 +39,7 @@ logs/
 *.shx
 *.prj
 data/raw/
+
+# Frontend build
+frontend/dist/
+frontend/node_modules/

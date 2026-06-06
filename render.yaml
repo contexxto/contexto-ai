@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: contexto-ai-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter          # $7/mes — no duerme (free tier sí duerme)
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: POSTGRES_HOST
+        sync: false        # lo pondrás manualmente desde Supabase
+      - key: POSTGRES_PORT
+        value: "5432"
+      - key: POSTGRES_DB
+        sync: false
+      - key: POSTGRES_USER
+        sync: false
+      - key: POSTGRES_PASSWORD
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: LLM_MODEL
+        value: claude-sonnet-4-5-20250929
+      - key: SSL_VERIFY
+        value: "true"      # en Render no hay SSL corporativo

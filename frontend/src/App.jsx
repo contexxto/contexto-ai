@@ -3,6 +3,10 @@ import axios from 'axios'
 import {
   Send, MapPin, RefreshCw, Trash2, Copy, CheckCheck, ChevronDown
 } from 'lucide-react'
+
+// En desarrollo usa el proxy de Vite (/api → localhost:8000).
+// En producción (Vercel) usa la variable de entorno VITE_API_URL.
+const API_BASE = import.meta.env.VITE_API_URL ?? ''
 import './App.css'
 
 // ── Helpers ────────────────────────────────────────────────
@@ -162,7 +166,7 @@ export default function App() {
 
   // Restore history from API on mount / session change
   useEffect(() => {
-    axios.get(`/api/v1/chat/${sessionId}/history`)
+    axios.get(`${API_BASE}/api/v1/chat/${sessionId}/history`)
       .then(({ data }) => {
         if (!data.messages?.length) return
         const restored = data.messages.map((m, i) => ({
@@ -214,7 +218,7 @@ export default function App() {
     const toolCallsObserved = []
 
     try {
-      const { data } = await axios.post('/api/v1/chat/', {
+      const { data } = await axios.post(`${API_BASE}/api/v1/chat/`, {
         message: userText,
         session_id: sessionId,
       })

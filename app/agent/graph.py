@@ -25,14 +25,29 @@ os.environ["ANTHROPIC_API_KEY"] = settings.anthropic_api_key
 _ssl_verify = settings.ssl_verify.lower() != "false"
 
 if not _ssl_verify:
-    # Patch global del contexto SSL de Python — afecta a httpx, requests y urllib3
+    # Patch 1: contexto SSL de Python (afecta urllib3, requests)
     ssl._create_default_https_context = ssl._create_unverified_context  # noqa: SLF001
 
-# Cliente Anthropic con control de SSL explícito
-_anthropic_async_client = anthropic.AsyncAnthropic(
-    api_key=settings.anthropic_api_key,
-    http_client=httpx.AsyncClient(verify=_ssl_verify),
-)
+    # Patch 2: monkey-patch httpx.AsyncClient para que CUALQUIER cliente creado
+    # después (incluyendo el interno de langchain_anthropic) use verify=False.
+    # Necesario porque langchain_anthropic instancia su propio httpx.AsyncClient
+    # en ChatAnthropic.__init__, DESPUÉS de nuestro import.
+    _orig_async_init = httpx.AsyncClient.__init__
+
+    def _patched_async_init(self, *args, **kwargs):  # type: ignore[override]
+        kwargs["verify"] = False
+        _orig_async_init(self, *args, **kwargs)
+
+    httpx.AsyncClient.__init__ = _patched_async_init  # type: ignore[method-assign]
+
+    # Mismo patch para el cliente síncrono (usado en algunos paths de langchain)
+    _orig_sync_init = httpx.Client.__init__
+
+    def _patched_sync_init(self, *args, **kwargs):  # type: ignore[override]
+        kwargs["verify"] = False
+        _orig_sync_init(self, *args, **kwargs)
+
+    httpx.Client.__init__ = _patched_sync_init  # type: ignore[method-assign]
 
 SYSTEM_PROMPT = SystemMessage(content="""
 Eres "Contexto AI", un asistente experto en inteligencia inmobiliaria y análisis de infraestructura urbana.
@@ -70,13 +85,26 @@ COMPORTAMIENTO OPERATIVO:
 
 
 def _build_graph() -> StateGraph:
-    llm = ChatAnthropic(
+    # 1. Crear el cliente Anthropic con SSL explícito
+    _anthropic_client = anthropic.AsyncAnthropic(
+        api_key=settings.anthropic_api_key,
+        http_client=httpx.AsyncClient(verify=_ssl_verify),
+    )
+
+    # 2. Instanciar ChatAnthropic base
+    base_llm = ChatAnthropic(
         model=settings.llm_model,
         temperature=0.2,
         max_tokens=2048,
-    ).bind_tools(AGENT_TOOLS)
-    # Reemplaza el cliente async interno con el nuestro (SSL configurado)
-    llm._async_client = _anthropic_async_client
+    )
+
+    # 3. Inyectar el cliente SSL en el cached_property ANTES de bind_tools.
+    #    bind_tools() devuelve un RunnableBinding (wrapper), no el ChatAnthropic base.
+    #    Si hacemos base_llm.bind_tools() primero, el setter va al wrapper y no al objeto real.
+    base_llm.__dict__["_async_client"] = _anthropic_client
+
+    # 4. Ahora sí wrappear con tools
+    llm = base_llm.bind_tools(AGENT_TOOLS)
 
     async def llm_node(state: AgentState) -> dict:
         messages = [SYSTEM_PROMPT] + state["messages"]

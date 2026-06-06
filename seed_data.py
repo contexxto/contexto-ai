@@ -199,7 +199,7 @@ def _point(lon: float, lat: float) -> WKTElement:
 
 
 async def seed(session: AsyncSession) -> None:
-    print("\n🌱 Iniciando seed — Catastro La Carolina, Quito")
+    print("\n[SEED] Iniciando seed - Catastro La Carolina, Quito")
     print("=" * 55)
 
     # --- activos_inmutables ---
@@ -219,7 +219,7 @@ async def seed(session: AsyncSession) -> None:
             porcentaje_cobertura_vegetal=a["cobertura_vegetal"],
         )
         session.add(asset)
-        print(f"  ✓ Activo: {a['alias'][:45]}")
+        print(f"  [OK] Activo: {a['alias'][:45]}")
 
     await session.flush()
 
@@ -248,7 +248,7 @@ async def seed(session: AsyncSession) -> None:
             descripcion_mejoras=f["descripcion"],
         )
         session.add(ficha)
-        print(f"  ✓ Ficha técnica: {f['alias']} ({f['año_construccion']}, {f['tipo_tuberia']})")
+        print(f"  [OK] Ficha tecnica: {f['alias']} ({f['año_construccion']}, {f['tipo_tuberia']})")
 
     # --- transacciones_temporales ---
     transacciones = [
@@ -286,7 +286,7 @@ async def seed(session: AsyncSession) -> None:
             estado_anuncio=t["estado"],
         )
         session.add(tx)
-        print(f"  ✓ Transacción: {t['tipo']} ${t['precio']:,.0f} — {t['activo_key'][:35]}")
+        print(f"  [OK] Transaccion: {t['tipo']} ${t['precio']:,.0f} — {t['activo_key'][:35]}")
 
     # --- historial_eventos_urbanos ---
     for e in EVENTOS_URBANOS:
@@ -301,7 +301,7 @@ async def seed(session: AsyncSession) -> None:
             impacto_plusvalia_estimado=e["impacto_plusvalia"],
         )
         session.add(evento)
-        print(f"  ✓ Evento urbano: {e['tipo'][:50]}")
+        print(f"  [OK] Evento urbano: {e['tipo'][:50]}")
 
     await session.commit()
     print("\n✅ Seed completado exitosamente.")
@@ -315,7 +315,7 @@ async def seed(session: AsyncSession) -> None:
         text("SELECT COUNT(*) FROM activos_inmutables")
     )
     count = result.scalar()
-    print(f"📊 Verificación PostGIS: {count} activos en tabla activos_inmutables")
+    print(f"[DB] Verificacion PostGIS: {count} activos en tabla activos_inmutables")
 
 
 async def main() -> None:

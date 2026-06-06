@@ -3,13 +3,14 @@ Precision tools for the Contexto AI agent.
 Both tools connect directly to the async engine to remain framework-agnostic
 (no FastAPI dependency injection — tools are called inside LangGraph execution).
 """
+import asyncio
 import json
 from typing import Any
-from uuid import UUID
 
+from geopy.geocoders import Nominatim
+from geopy.exc import GeocoderTimedOut, GeocoderUnavailable
 from langchain_core.tools import tool
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import AsyncSessionLocal
 
@@ -37,7 +38,8 @@ async def tool_search_nearby_assets(
     Args:
         latitude: WGS84 latitude of the search center.
         longitude: WGS84 longitude of the search center.
-        radius_meters: Search radius in meters (default 800m — a 10-min walk).
+        radius_meters: Search radius in meters (default 1500m when coming from geocoded address,
+                       800m when the user provides exact coordinates).
     """
     query = """
         SELECT
@@ -118,4 +120,65 @@ async def tool_fetch_asset_lifecycle_specs(activo_id: str) -> str:
     return json.dumps({"specs": rows[0]}, default=str)
 
 
-AGENT_TOOLS = [tool_search_nearby_assets, tool_fetch_asset_lifecycle_specs]
+@tool
+async def tool_geocode_address(address: str) -> str:
+    """
+    Convert a human-readable address or neighborhood name into geographic coordinates
+    (latitude and longitude) using OpenStreetMap Nominatim.
+
+    Use this tool FIRST whenever the user provides an address, street name, or
+    neighborhood (e.g. "Av. Colon y 10 de Agosto", "Cumbaya", "Centro Historico")
+    instead of explicit coordinates. Once you have the coordinates, use
+    tool_search_nearby_assets to find properties near that location.
+
+    Args:
+        address: Free-text address, intersection, or place name in Quito, Ecuador.
+    """
+    # Append Quito context to improve geocoding accuracy
+    query = f"{address.strip()}, Quito, Ecuador"
+
+    def _geocode_sync(q: str):
+        geolocator = Nominatim(user_agent="contexto_ai_v2", timeout=8)
+        return geolocator.geocode(q, language="es")
+
+    # Build progressive fallback queries (most specific → least specific)
+    fallback_queries = [
+        query,                                              # "Av. X y Z, Quito, Ecuador"
+        f"{address.strip()}, Ecuador",                     # sin "Quito"
+        f"{address.split(' y ')[0].strip()}, Quito, Ecuador",  # solo primera calle/barrio
+        f"{address.strip().split(',')[0]}, Quito, Ecuador",    # antes de la primera coma
+    ]
+
+    try:
+        location = None
+        for q in dict.fromkeys(fallback_queries):  # deduplicate preserving order
+            location = await asyncio.get_event_loop().run_in_executor(None, _geocode_sync, q)
+            if location:
+                break
+
+        if location is None:
+            return json.dumps({
+                "found": False,
+                "message": (
+                    f"No se encontraron coordenadas para '{address}'. "
+                    "Intenta con una dirección más específica o incluye el barrio/sector."
+                ),
+            })
+
+        return json.dumps({
+            "found": True,
+            "address_input": address,
+            "address_resolved": location.address,
+            "latitude": round(location.latitude, 6),
+            "longitude": round(location.longitude, 6),
+            "tip": "Use tool_search_nearby_assets with radius_meters=2000 for geocoded addresses (Nominatim may offset slightly).",
+        })
+
+    except (GeocoderTimedOut, GeocoderUnavailable):
+        return json.dumps({
+            "found": False,
+            "message": "Servicio de geocoding temporalmente no disponible. Pide al usuario las coordenadas.",
+        })
+
+
+AGENT_TOOLS = [tool_geocode_address, tool_search_nearby_assets, tool_fetch_asset_lifecycle_specs]

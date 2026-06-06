@@ -10,6 +10,7 @@ import httpx
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 
@@ -131,7 +132,29 @@ def _build_graph() -> StateGraph:
     return graph
 
 
-# MemorySaver persiste el estado en memoria por thread_id (session_id del usuario).
-# Para producción, reemplazar por AsyncSqliteSaver o AsyncPostgresSaver.
-_checkpointer = MemorySaver()
+# Checkpointer: Postgres en producción (Supabase), RAM en dev/fallback.
+# AsyncPostgresSaver persiste sesiones entre reinicios del servidor.
+def _build_checkpointer():
+    conn_str = settings.database_url_override or (
+        f"postgresql://{settings.postgres_user}:{settings.postgres_password}"
+        f"@{settings.postgres_host}:{settings.postgres_port}/{settings.postgres_db}"
+    )
+    # Reemplazar esquema asyncpg por psycopg para el checkpointer
+    conn_str = conn_str.replace("postgresql+asyncpg://", "postgresql://")
+    try:
+        return AsyncPostgresSaver.from_conn_string(conn_str)
+    except Exception:
+        # Fallback a RAM si Postgres no está disponible (tests locales)
+        return MemorySaver()
+
+
+_checkpointer = _build_checkpointer()
+
+
+async def setup_checkpointer():
+    """Crea las tablas del checkpointer en Supabase si no existen."""
+    if isinstance(_checkpointer, AsyncPostgresSaver):
+        await _checkpointer.setup()
+
+
 compiled_graph = _build_graph().compile(checkpointer=_checkpointer)

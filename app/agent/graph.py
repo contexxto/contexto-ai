@@ -9,6 +9,7 @@ import anthropic
 import httpx
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 
@@ -124,4 +125,7 @@ def _build_graph() -> StateGraph:
     return graph
 
 
-compiled_graph = _build_graph().compile()
+# MemorySaver persiste el estado en memoria por thread_id (session_id del usuario).
+# Para producción, reemplazar por AsyncSqliteSaver o AsyncPostgresSaver.
+_checkpointer = MemorySaver()
+compiled_graph = _build_graph().compile(checkpointer=_checkpointer)

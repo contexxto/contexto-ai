@@ -91,17 +91,17 @@ async def _stream_agent(message: str, session_id: str) -> AsyncIterator[str]:
     dependencies=[Depends(verify_api_key)],
 )
 @limiter.limit("15/minute")
-async def chat(http_request: Request, request: ChatRequest, stream: bool = False):
+async def chat(request: Request, payload: ChatRequest, stream: bool = False):
     if stream:
         return StreamingResponse(
-            _stream_agent(request.message, request.session_id),
+            _stream_agent(payload.message, payload.session_id),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
-    config = _langgraph_config(request.session_id)
+    config = _langgraph_config(payload.session_id)
     input_state: AgentState = {
-        "messages": [HumanMessage(content=request.message)],
+        "messages": [HumanMessage(content=payload.message)],
         "spatial_context": {},
         "sql_results": [],
     }
@@ -120,7 +120,7 @@ async def chat(http_request: Request, request: ChatRequest, stream: bool = False
 
     return ChatResponse(
         reply=reply,
-        session_id=request.session_id,
+        session_id=payload.session_id,
         tool_calls_made=tool_calls,
     )
 

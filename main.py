@@ -2,11 +2,13 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from app.agent.graph import setup_checkpointer, shutdown_checkpointer
 from app.config import settings
+from app.database import AsyncSessionLocal
 from app.limiter import limiter
 from app.routers import assets, chat
 
@@ -46,4 +48,18 @@ app.include_router(chat.router)
 
 @app.get("/health", tags=["System"])
 async def health_check():
-    return {"status": "healthy", "service": "Contexto AI V2"}
+    """Verifica que la API responde Y que la base de datos es alcanzable."""
+    db_ok = False
+    try:
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("SELECT 1"))
+        db_ok = True
+    except Exception:
+        db_ok = False
+
+    status = "healthy" if db_ok else "degraded"
+    return {
+        "status": status,
+        "service": "Contexto AI V2",
+        "database": "up" if db_ok else "down",
+    }

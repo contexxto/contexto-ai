@@ -30,6 +30,12 @@ class Settings(BaseSettings):
     # para evitar problemas de IPv6. Si está presente, tiene precedencia.
     database_url_override: str = ""
 
+    # Seguridad — Fase 3
+    # ALLOWED_ORIGINS: lista separada por comas de orígenes permitidos
+    # API_KEY: clave que el frontend debe enviar en header X-API-Key
+    allowed_origins: str = "http://localhost:3000,http://localhost:5173"
+    api_key: str = ""  # si está vacío, el check se desactiva (dev local)
+
     @property
     def database_url(self) -> str:
         if self.database_url_override:

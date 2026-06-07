@@ -7,6 +7,9 @@ import {
 // En desarrollo usa el proxy de Vite (/api → localhost:8000).
 // En producción (Vercel) usa la variable de entorno VITE_API_URL.
 const API_BASE = import.meta.env.VITE_API_URL ?? ''
+// Header de autenticación — vacío en dev local (backend lo ignora si API_KEY no está configurada)
+const API_KEY = import.meta.env.VITE_API_KEY ?? ''
+const authHeaders = API_KEY ? { 'X-API-Key': API_KEY } : {}
 import './App.css'
 
 // ── Helpers ────────────────────────────────────────────────
@@ -166,7 +169,7 @@ export default function App() {
 
   // Restore history from API on mount / session change
   useEffect(() => {
-    axios.get(`${API_BASE}/api/v1/chat/${sessionId}/history`)
+    axios.get(`${API_BASE}/api/v1/chat/${sessionId}/history`, { headers: authHeaders })
       .then(({ data }) => {
         if (!data.messages?.length) return
         const restored = data.messages.map((m, i) => ({
@@ -221,7 +224,7 @@ export default function App() {
       const { data } = await axios.post(`${API_BASE}/api/v1/chat/`, {
         message: userText,
         session_id: sessionId,
-      })
+      }, { headers: authHeaders })
 
       // Capture tool calls from response (non-streaming path shows count only)
       const aiMsg = {

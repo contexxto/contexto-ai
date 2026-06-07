@@ -2,15 +2,33 @@ import json
 import uuid
 from typing import AsyncIterator
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException, Request, Security, status
 from fastapi.responses import StreamingResponse
+from fastapi.security.api_key import APIKeyHeader
 from langchain_core.messages import AIMessage, HumanMessage
 from pydantic import BaseModel, Field
 
 from app.agent import graph as agent_graph
 from app.agent.state import AgentState
+from app.config import settings
+from main import limiter
 
 router = APIRouter(prefix="/api/v1/chat", tags=["Chat — Agente Conversacional"])
+
+# ── Seguridad ────────────────────────────────────────────────
+_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+def verify_api_key(api_key: str | None = Security(_api_key_header)) -> None:
+    """Valida el header X-API-Key. Si API_KEY no está configurada, permite todo (dev)."""
+    configured = settings.api_key
+    if not configured:
+        return  # dev local: sin restricción
+    if api_key != configured:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="API key inválida o ausente.",
+        )
 
 
 class ChatRequest(BaseModel):
@@ -70,8 +88,10 @@ async def _stream_agent(message: str, session_id: str) -> AsyncIterator[str]:
         "Reutiliza el mismo `session_id` para mantener el hilo conversacional. "
         "Añade `?stream=true` para respuesta en tiempo real (SSE)."
     ),
+    dependencies=[Depends(verify_api_key)],
 )
-async def chat(request: ChatRequest, stream: bool = False):
+@limiter.limit("15/minute")
+async def chat(http_request: Request, request: ChatRequest, stream: bool = False):
     if stream:
         return StreamingResponse(
             _stream_agent(request.message, request.session_id),

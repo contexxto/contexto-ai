@@ -13,6 +13,8 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
+from psycopg.rows import dict_row
+from psycopg_pool import AsyncConnectionPool
 
 from app.agent.state import AgentState
 from app.agent.tools import AGENT_TOOLS
@@ -144,29 +146,66 @@ def _build_graph() -> StateGraph:
     return graph
 
 
-# Checkpointer: Postgres en producción (Supabase), RAM en dev/fallback.
-# AsyncPostgresSaver persiste sesiones entre reinicios del servidor.
-def _build_checkpointer():
+# ── Checkpointer: persistencia de sesiones ───────────────────────────────
+#
+# IMPORTANTE: AsyncPostgresSaver.from_conn_string() está decorado con
+# @asynccontextmanager → devuelve un context manager, NO un saver. El patrón
+# correcto para un servidor de larga vida es crear un AsyncConnectionPool que
+# viva durante todo el lifespan de la app e instanciar AsyncPostgresSaver(pool).
+#
+# El grafo se compila al importar el módulo con MemorySaver (para que la app
+# arranque siempre). Durante el lifespan, setup_checkpointer() abre el pool,
+# crea las tablas (.setup()) y RE-COMPILA el grafo con el checkpointer Postgres.
+_graph_builder = _build_graph()
+_pool: AsyncConnectionPool | None = None
+
+# Compilación por defecto: memoria volátil. Se reemplaza en setup_checkpointer().
+compiled_graph = _graph_builder.compile(checkpointer=MemorySaver())
+
+
+def _checkpointer_conn_str() -> str:
     conn_str = settings.database_url_override or (
         f"postgresql://{settings.postgres_user}:{settings.postgres_password}"
         f"@{settings.postgres_host}:{settings.postgres_port}/{settings.postgres_db}"
     )
-    # Reemplazar esquema asyncpg por psycopg para el checkpointer
-    conn_str = conn_str.replace("postgresql+asyncpg://", "postgresql://")
+    # psycopg (no asyncpg) para el checkpointer
+    return conn_str.replace("postgresql+asyncpg://", "postgresql://")
+
+
+async def setup_checkpointer() -> None:
+    """
+    Abre el pool de conexiones, crea las tablas de checkpoints en Supabase si no
+    existen, y re-compila el grafo global con el AsyncPostgresSaver.
+    Si Postgres no está disponible, conserva el MemorySaver (degradación segura).
+    """
+    global compiled_graph, _pool
+
+    conn_str = _checkpointer_conn_str()
     try:
-        return AsyncPostgresSaver.from_conn_string(conn_str)
-    except Exception:
-        # Fallback a RAM si Postgres no está disponible (tests locales)
-        return MemorySaver()
+        _pool = AsyncConnectionPool(
+            conninfo=conn_str,
+            max_size=10,
+            open=False,
+            kwargs={
+                "autocommit": True,        # requerido por AsyncPostgresSaver
+                "prepare_threshold": 0,    # evita prepared statements (pooler Supabase)
+                "row_factory": dict_row,   # el saver espera filas tipo dict
+            },
+        )
+        await _pool.open(wait=True, timeout=10)
+
+        checkpointer = AsyncPostgresSaver(_pool)
+        await checkpointer.setup()  # CREATE TABLE checkpoints/checkpoint_writes/...
+
+        compiled_graph = _graph_builder.compile(checkpointer=checkpointer)
+        print("  Checkpointer Postgres (Supabase) ACTIVO — sesiones persistentes")
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [WARN] Postgres checkpointer no disponible ({exc}); usando MemorySaver")
 
 
-_checkpointer = _build_checkpointer()
-
-
-async def setup_checkpointer():
-    """Crea las tablas del checkpointer en Supabase si no existen."""
-    if isinstance(_checkpointer, AsyncPostgresSaver):
-        await _checkpointer.setup()
-
-
-compiled_graph = _build_graph().compile(checkpointer=_checkpointer)
+async def shutdown_checkpointer() -> None:
+    """Cierra el pool de conexiones al apagar la app."""
+    global _pool
+    if _pool is not None:
+        await _pool.close()
+        _pool = None

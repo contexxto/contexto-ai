@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.agent.graph import setup_checkpointer
+from app.agent.graph import setup_checkpointer, shutdown_checkpointer
 from app.routers import assets, chat
 
 
@@ -11,9 +11,9 @@ from app.routers import assets, chat
 async def lifespan(app: FastAPI):
     print("Contexto AI API iniciando...")
     await setup_checkpointer()
-    print("  Checkpointer de sesiones activo (Supabase)")
     yield
     print("Contexto AI API apagando...")
+    await shutdown_checkpointer()
 
 
 app = FastAPI(

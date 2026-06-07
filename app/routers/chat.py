@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage
 from pydantic import BaseModel, Field
 
-from app.agent.graph import compiled_graph
+from app.agent import graph as agent_graph
 from app.agent.state import AgentState
 
 router = APIRouter(prefix="/api/v1/chat", tags=["Chat — Agente Conversacional"])
@@ -45,7 +45,7 @@ async def _stream_agent(message: str, session_id: str) -> AsyncIterator[str]:
         "sql_results": [],
     }
 
-    async for event in compiled_graph.astream_events(input_state, config=config, version="v2"):
+    async for event in agent_graph.compiled_graph.astream_events(input_state, config=config, version="v2"):
         kind = event.get("event")
 
         if kind == "on_chat_model_stream":
@@ -86,7 +86,7 @@ async def chat(request: ChatRequest, stream: bool = False):
         "sql_results": [],
     }
 
-    final_state = await compiled_graph.ainvoke(input_state, config=config)
+    final_state = await agent_graph.compiled_graph.ainvoke(input_state, config=config)
     messages = final_state["messages"]
 
     # La última respuesta del LLM sin tool_calls pendientes
@@ -112,7 +112,7 @@ async def chat(request: ChatRequest, stream: bool = False):
 )
 async def get_session_history(session_id: str):
     config = _langgraph_config(session_id)
-    state = await compiled_graph.aget_state(config)
+    state = await agent_graph.compiled_graph.aget_state(config)
 
     if not state or not state.values:
         return {"session_id": session_id, "messages": [], "turns": 0}

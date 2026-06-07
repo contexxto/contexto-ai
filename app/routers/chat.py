@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from app.agent import graph as agent_graph
 from app.agent.state import AgentState
 from app.config import settings
-from main import limiter
+from app.limiter import limiter
 
 router = APIRouter(prefix="/api/v1/chat", tags=["Chat — Agente Conversacional"])
 

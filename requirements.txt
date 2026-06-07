@@ -20,6 +20,6 @@ langchain-core==0.3.63
 langchain-anthropic==0.3.15
 anthropic==0.55.0
 geopy==2.4.1
-langgraph-checkpoint-postgres==3.1.0
-psycopg[binary]==3.3.4
-psycopg-pool==3.3.1
+langgraph-checkpoint-postgres==2.0.13
+psycopg[binary]==3.2.3
+psycopg-pool==3.2.3

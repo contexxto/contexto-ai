@@ -12,6 +12,15 @@ class ActivoCreateRequest(BaseModel):
     walk_score: int | None = Field(default=None, ge=0, le=100)
     score_ruido_predictivo: str | None = Field(default=None)
     porcentaje_cobertura_vegetal: float | None = Field(default=None, ge=0, le=100)
+    tipo_activo: str = Field(default="Departamento")
+
+    @field_validator("tipo_activo")
+    @classmethod
+    def validate_tipo_activo(cls, v: str) -> str:
+        valid = {"Departamento", "Casa", "Local Comercial", "Oficina", "Quinta"}
+        if v not in valid:
+            raise ValueError(f"tipo_activo debe ser uno de: {', '.join(sorted(valid))}")
+        return v
 
     @field_validator("score_ruido_predictivo")
     @classmethod
@@ -38,6 +47,7 @@ class ActivoResponse(BaseModel):
     walk_score: int | None
     score_ruido_predictivo: str | None
     porcentaje_cobertura_vegetal: float | None
+    tipo_activo: str
     created_at: datetime
 
     model_config = {"from_attributes": True}

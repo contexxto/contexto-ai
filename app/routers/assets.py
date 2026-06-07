@@ -35,6 +35,7 @@ async def create_asset(
         walk_score=payload.walk_score,
         score_ruido_predictivo=payload.score_ruido_predictivo,
         porcentaje_cobertura_vegetal=payload.porcentaje_cobertura_vegetal,
+        tipo_activo=payload.tipo_activo,
     )
 
     db.add(asset)
@@ -48,5 +49,6 @@ async def create_asset(
         walk_score=asset.walk_score,
         score_ruido_predictivo=asset.score_ruido_predictivo,
         porcentaje_cobertura_vegetal=float(asset.porcentaje_cobertura_vegetal) if asset.porcentaje_cobertura_vegetal else None,
+        tipo_activo=asset.tipo_activo,
         created_at=asset.created_at,
     )

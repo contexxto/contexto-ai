@@ -22,6 +22,7 @@ class ActivoInmutable(Base):
     volumen_trafico_historico: Mapped[int] = mapped_column(Integer, default=0)
     densidad_poblacional_pico: Mapped[int] = mapped_column(Integer, default=0)
     porcentaje_cobertura_vegetal: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+    tipo_activo: Mapped[str] = mapped_column(String(20), default="Departamento", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     transacciones: Mapped[list["TransaccionTemporal"]] = relationship(back_populates="activo")
@@ -30,6 +31,10 @@ class ActivoInmutable(Base):
     __table_args__ = (
         CheckConstraint("walk_score BETWEEN 0 AND 100", name="ck_walk_score_range"),
         CheckConstraint("score_ruido_predictivo IN ('BAJO', 'MEDIO', 'ALTO')", name="ck_score_ruido"),
+        CheckConstraint(
+            "tipo_activo IN ('Departamento', 'Casa', 'Local Comercial', 'Oficina', 'Quinta')",
+            name="ck_tipo_activo",
+        ),
     )
 
 

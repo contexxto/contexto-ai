@@ -94,6 +94,9 @@ async def _justificar(brief_desc: str, modo: str, resultados: list[dict]) -> dic
     """Una sola llamada a Claude: por qué cada inmueble encaja con el brief."""
     if not resultados:
         return {}
+    def _num(v):
+        return float(v) if v is not None else None
+
     compactos = [
         {
             "activo_id": r["activo_id"],
@@ -101,7 +104,7 @@ async def _justificar(brief_desc: str, modo: str, resultados: list[dict]) -> dic
             "tipo": r["tipo_activo"],
             "walk_score": r.get("walk_score"),
             "ruido": r.get("score_ruido_predictivo"),
-            "cobertura_vegetal": r.get("porcentaje_cobertura_vegetal"),
+            "cobertura_vegetal": _num(r.get("porcentaje_cobertura_vegetal")),
             "ficha": r.get("ficha_vision_raw"),
         }
         for r in resultados
@@ -129,7 +132,7 @@ async def _justificar(brief_desc: str, modo: str, resultados: list[dict]) -> dic
     }
     contexto = (
         f"Brief del usuario ({modo}): {brief_desc}\n\n"
-        f"Inmuebles candidatos (JSON):\n{json.dumps(compactos, ensure_ascii=False)}"
+        f"Inmuebles candidatos (JSON):\n{json.dumps(compactos, ensure_ascii=False, default=str)}"
     )
     try:
         resp = await _client().messages.create(

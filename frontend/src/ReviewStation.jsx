@@ -264,7 +264,7 @@ export default function ReviewStation() {
                 </div>
               )}
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div style={{ display: sinRaw ? 'none' : 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 {FIELDS.map(fld => {
                   const val = form[fld.k] ?? ''
                   const dudoso = val === '' || val === 'Indeterminado'

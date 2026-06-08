@@ -7,10 +7,12 @@ from fastapi.responses import StreamingResponse
 from fastapi.security.api_key import APIKeyHeader
 from langchain_core.messages import AIMessage, HumanMessage
 from pydantic import BaseModel, Field
+from sqlalchemy import text
 
 from app.agent import graph as agent_graph
 from app.agent.state import AgentState
 from app.config import settings
+from app.database import AsyncSessionLocal
 from app.limiter import limiter
 
 router = APIRouter(prefix="/api/v1/chat", tags=["Chat — Agente Conversacional"])
@@ -123,6 +125,54 @@ async def chat(request: Request, payload: ChatRequest, stream: bool = False):
         session_id=payload.session_id,
         tool_calls_made=tool_calls,
     )
+
+
+@router.get(
+    "/sessions",
+    summary="Listar sesiones de chat (recientes primero)",
+    description=(
+        "Lista los hilos de conversación guardados en el checkpointer, con un "
+        "título (primer mensaje del usuario) y el número de turnos. Permite volver "
+        "a cualquier sesión anterior desde el frontend."
+    ),
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("30/minute")
+async def list_sessions(request: Request, limit: int = 20):
+    limit = max(1, min(limit, 50))
+    # thread_id = session_id; checkpoint_id (uuid6) es ~ordenable por tiempo.
+    try:
+        async with AsyncSessionLocal() as db:
+            rows = (
+                await db.execute(
+                    text(
+                        "SELECT thread_id, MAX(checkpoint_id) AS ultimo "
+                        "FROM checkpoints GROUP BY thread_id ORDER BY ultimo DESC LIMIT :n"
+                    ),
+                    {"n": limit},
+                )
+            ).mappings().all()
+    except Exception:
+        # La tabla puede no existir si el checkpointer no está activo (dev sin Postgres).
+        return {"sessions": []}
+
+    sesiones = []
+    for r in rows:
+        sid = r["thread_id"]
+        titulo, turnos = sid, 0
+        try:
+            state = await agent_graph.compiled_graph.aget_state(_langgraph_config(sid))
+            msgs = (state.values or {}).get("messages", []) if state else []
+            user_msgs = [m for m in msgs if isinstance(m, HumanMessage)]
+            turnos = len(user_msgs)
+            if user_msgs:
+                c = user_msgs[0].content
+                titulo = (c if isinstance(c, str) else str(c)).strip()[:70] or sid
+        except Exception:
+            pass
+        sesiones.append({"session_id": sid, "titulo": titulo, "turnos": turnos})
+
+    return {"sessions": sesiones}
 
 
 @router.get(

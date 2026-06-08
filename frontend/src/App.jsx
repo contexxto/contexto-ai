@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import axios from 'axios'
 import {
-  Send, MapPin, RefreshCw, Trash2, Copy, CheckCheck, ChevronDown
+  Send, MapPin, RefreshCw, Trash2, Copy, CheckCheck, ChevronDown, Clock
 } from 'lucide-react'
 
 // En desarrollo usa el proxy de Vite (/api → localhost:8000).
@@ -164,6 +164,8 @@ export default function App() {
   const [copied, setCopied]       = useState(null)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const [view, setView] = useState('chat')  // 'chat' | 'review'
+  const [sessions, setSessions] = useState([])
+  const [showSessions, setShowSessions] = useState(false)
 
   const bottomRef  = useRef(null)
   const inputRef   = useRef(null)
@@ -249,13 +251,37 @@ export default function App() {
   }, [input, loading, sessionId])
 
   const resetSession = useCallback(() => {
+    // Confirmación: la sesión actual no se pierde (queda en el backend),
+    // pero evitamos cambiar de hilo por accidente.
+    if (messages.length > 0 &&
+        !window.confirm('¿Iniciar una nueva conversación? La actual quedará guardada y podrás volver a ella desde "Sesiones".')) {
+      return
+    }
     const newId = 'session-' + crypto.randomUUID()
     localStorage.setItem(SESSION_KEY, newId)
     setSessionId(newId)
     setMessages([])
     setError(null)
     setTimeout(() => inputRef.current?.focus(), 100)
+  }, [messages.length])
+
+  const loadSessions = useCallback(async () => {
+    try {
+      const { data } = await axios.get(`${API_BASE}/api/v1/chat/sessions?limit=30`, { headers: authHeaders })
+      setSessions(data.sessions || [])
+    } catch {
+      setSessions([])
+    }
   }, [])
+
+  const switchSession = useCallback((id) => {
+    if (id === sessionId) { setShowSessions(false); return }
+    localStorage.setItem(SESSION_KEY, id)
+    setMessages([])
+    setError(null)
+    setSessionId(id)            // dispara el efecto que recarga el historial
+    setShowSessions(false)
+  }, [sessionId])
 
   const isEmpty = messages.length === 0 && !loading
 
@@ -307,6 +333,48 @@ export default function App() {
             background:'#0d2d0d', color:'var(--success)',
             border:'1px solid #1a4a1a',
           }}>● API conectada</span>
+          <div style={{ position:'relative' }}>
+            <button
+              onClick={() => { const n = !showSessions; setShowSessions(n); if (n) loadSessions() }}
+              title="Sesiones anteriores"
+              style={{
+                background:'none', border:'1px solid var(--border)', borderRadius:8,
+                cursor:'pointer', color:'var(--text-muted)', padding:'6px 10px',
+                display:'flex', alignItems:'center', gap:5, fontSize:'.8rem',
+              }}
+            >
+              <Clock size={13}/> Sesiones
+            </button>
+            {showSessions && (
+              <div style={{
+                position:'absolute', right:0, top:'calc(100% + 6px)', zIndex:20,
+                width:320, maxHeight:380, overflowY:'auto',
+                background:'#161b22', border:'1px solid var(--border)', borderRadius:10,
+                boxShadow:'0 8px 24px rgba(0,0,0,.4)',
+              }}>
+                {sessions.length === 0 && (
+                  <div style={{ padding:14, color:'var(--text-muted)', fontSize:'.82rem' }}>
+                    Sin sesiones guardadas todavía.
+                  </div>
+                )}
+                {sessions.map(s => (
+                  <div key={s.session_id} onClick={() => switchSession(s.session_id)}
+                    style={{
+                      padding:'10px 12px', cursor:'pointer', borderBottom:'1px solid var(--border)',
+                      background: s.session_id === sessionId ? '#1f2630' : 'transparent',
+                    }}>
+                    <div style={{ fontSize:'.83rem', color:'var(--text)', lineHeight:1.3,
+                                  whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+                      {s.titulo || s.session_id}
+                    </div>
+                    <div style={{ fontSize:'.7rem', color:'var(--text-muted)', marginTop:2 }}>
+                      {s.turnos} turno(s){s.session_id === sessionId ? ' · actual' : ''}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <button
             onClick={() => setView('review')}
             title="Estación de Revisión"

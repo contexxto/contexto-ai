@@ -10,7 +10,7 @@ from app.agent.graph import setup_checkpointer, shutdown_checkpointer
 from app.config import settings
 from app.database import AsyncSessionLocal
 from app.limiter import limiter
-from app.routers import assets, chat, ingest, review, vision
+from app.routers import assets, chat, ingest, match, review, vision
 
 
 @asynccontextmanager
@@ -47,6 +47,7 @@ app.include_router(chat.router)
 app.include_router(vision.router)
 app.include_router(ingest.router)
 app.include_router(review.router)
+app.include_router(match.router)
 
 
 @app.get("/health", tags=["System"])

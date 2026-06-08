@@ -165,6 +165,7 @@ export default function App() {
   const [copied, setCopied]       = useState(null)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const [view, setView] = useState('chat')  // 'chat' | 'review'
+  const [dragOver, setDragOver] = useState(false)
 
   const bottomRef  = useRef(null)
   const inputRef   = useRef(null)
@@ -249,6 +250,49 @@ export default function App() {
     }
   }, [input, loading, sessionId])
 
+  // ── Brief Intake C0: arrastra una foto → match por similitud visual ──
+  const matchByImage = useCallback(async (dataUrl) => {
+    if (loading) return
+    setError(null)
+    setMessages(prev => [...prev, {
+      id: crypto.randomUUID(), role: 'user',
+      content: '🔎 Buscando inmuebles parecidos a la foto que subí…',
+      time: new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }), toolCalls: [],
+    }])
+    setLoading(true)
+    try {
+      const { data } = await axios.post(`${API_BASE}/api/v1/match`,
+        { image_base64: dataUrl, top_k: 5 }, { headers: authHeaders })
+      const lines = (data.resultados || []).map((r, i) =>
+        `**${i + 1}. ${r.direccion}** · ${r.tipo_activo} · similitud ${(r.similitud * 100).toFixed(0)}%\n${r.por_que_encaja || ''}`
+      )
+      const content = lines.length
+        ? `**Inmuebles más parecidos a tu foto:**\n\n${lines.join('\n\n')}`
+        : 'No encontré inmuebles parecidos aún. A medida que crezca el catastro, los resultados mejorarán.'
+      setMessages(prev => [...prev, {
+        id: crypto.randomUUID(), role: 'ai', content,
+        time: new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }), toolCalls: [],
+      }])
+    } catch (err) {
+      setError(err.response?.data?.detail ?? 'Error al buscar coincidencias por imagen.')
+    } finally {
+      setLoading(false)
+    }
+  }, [loading])
+
+  const handleDrop = useCallback((e) => {
+    e.preventDefault(); setDragOver(false)
+    const file = e.dataTransfer?.files?.[0]
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      setError('Por ahora solo fotos (C0). El soporte de Word/Excel/PPT llega en una próxima fase.')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => matchByImage(reader.result)
+    reader.readAsDataURL(file)
+  }, [matchByImage])
+
   const resetSession = useCallback(() => {
     // Sin confirmación: la conversación actual no se pierde — queda guardada y
     // visible en la barra lateral, a un clic. "Nuevo chat" crea uno al instante.
@@ -293,8 +337,27 @@ export default function App() {
         onNew={resetSession}
         reloadKey={`${sessionId}:${messages.length}`}
       />
-      <div style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column', height:'100dvh',
-                    maxWidth:820, margin:'0 auto', padding:'0 16px' }}>
+      <div
+        onDragOver={e => { e.preventDefault(); if (!dragOver) setDragOver(true) }}
+        onDragLeave={e => { if (e.currentTarget === e.target) setDragOver(false) }}
+        onDrop={handleDrop}
+        style={{ flex:1, minWidth:0, position:'relative', display:'flex', flexDirection:'column',
+                 height:'100dvh', maxWidth:820, margin:'0 auto', padding:'0 16px' }}>
+
+      {dragOver && (
+        <div style={{
+          position:'absolute', inset:0, zIndex:50, display:'flex', flexDirection:'column',
+          alignItems:'center', justifyContent:'center', gap:10,
+          background:'rgba(13,17,23,.92)', border:'2px dashed #58a6ff', borderRadius:14,
+          color:'#58a6ff', fontSize:'1.05rem', fontWeight:600, pointerEvents:'none',
+        }}>
+          <MapPin size={36} />
+          Suelta tu foto para encontrar inmuebles parecidos
+          <span style={{ fontSize:'.8rem', color:'#8b949e', fontWeight:400 }}>
+            Shazam inmobiliario · similitud visual
+          </span>
+        </div>
+      )}
 
       {/* ── Header ── */}
       <header style={{

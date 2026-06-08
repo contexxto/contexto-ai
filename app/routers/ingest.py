@@ -389,6 +389,14 @@ async def similar(
             )
         q_literal = row["emb"]
 
+    # WHERE condicional: NUNCA pasamos un parámetro NULL ambiguo a asyncpg
+    # (un :self_id NULL usado en CAST/IS NULL impide inferir su tipo → error).
+    params: dict = {"q": q_literal, "kind": kind, "k": payload.top_k}
+    self_filter = ""
+    if self_id is not None:
+        self_filter = "AND e.activo_id <> CAST(:self_id AS uuid) "
+        params["self_id"] = self_id
+
     rows = (
         await db.execute(
             text(
@@ -397,12 +405,11 @@ async def similar(
                 "       1 - (e.embedding <=> CAST(:q AS vector)) AS similitud "
                 "FROM activo_embeddings e "
                 "JOIN activos_inmutables a ON a.id = e.activo_id "
-                "WHERE e.kind = :kind "
-                "  AND (:self_id IS NULL OR e.activo_id <> CAST(:self_id AS uuid)) "
+                "WHERE e.kind = :kind " + self_filter +
                 "ORDER BY e.embedding <=> CAST(:q AS vector) "
                 "LIMIT :k"
             ),
-            {"q": q_literal, "kind": kind, "self_id": self_id, "k": payload.top_k},
+            params,
         )
     ).mappings().all()
 

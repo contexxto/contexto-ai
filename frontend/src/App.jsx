@@ -250,19 +250,15 @@ export default function App() {
   }, [input, loading, sessionId])
 
   const resetSession = useCallback(() => {
-    // Confirmación: la sesión actual no se pierde (queda en el backend),
-    // pero evitamos cambiar de hilo por accidente.
-    if (messages.length > 0 &&
-        !window.confirm('¿Iniciar una nueva conversación? La actual quedará guardada y podrás volver a ella desde "Sesiones".')) {
-      return
-    }
+    // Sin confirmación: la conversación actual no se pierde — queda guardada y
+    // visible en la barra lateral, a un clic. "Nuevo chat" crea uno al instante.
     const newId = 'session-' + crypto.randomUUID()
     localStorage.setItem(SESSION_KEY, newId)
     setSessionId(newId)
     setMessages([])
     setError(null)
     setTimeout(() => inputRef.current?.focus(), 100)
-  }, [messages.length])
+  }, [])
 
   const switchSession = useCallback((id) => {
     if (id === sessionId) return
@@ -339,17 +335,6 @@ export default function App() {
             }}
           >
             🛡️ Revisión
-          </button>
-          <button
-            onClick={resetSession}
-            title="Nueva sesión"
-            style={{
-              background:'none', border:'1px solid var(--border)', borderRadius:8,
-              cursor:'pointer', color:'var(--text-muted)', padding:'6px 10px',
-              display:'flex', alignItems:'center', gap:5, fontSize:'.8rem',
-            }}
-          >
-            <RefreshCw size={13}/> Nueva sesión
           </button>
         </div>
       </header>

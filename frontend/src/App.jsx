@@ -42,19 +42,6 @@ function renderMarkdown(text) {
 }
 
 // ── Sub-components ──────────────────────────────────────────
-function ToolBadge({ name }) {
-  const label = name === 'tool_search_nearby_assets' ? '📍 Búsqueda espacial'
-              : name === 'tool_fetch_asset_lifecycle_specs' ? '🔧 Ficha técnica'
-              : `⚙ ${name}`
-  return (
-    <span style={{
-      display:'inline-block', fontSize:'.72rem', padding:'2px 8px',
-      borderRadius:20, background:'#0d1117', color:'#8b949e',
-      border:'1px solid #30363d', marginBottom:4,
-    }}>{label}</span>
-  )
-}
-
 function Message({ msg, onCopy, copied }) {
   const isUser = msg.role === 'user'
   return (
@@ -72,15 +59,16 @@ function Message({ msg, onCopy, copied }) {
       )}
       <div style={{ maxWidth:'78%' }}>
         {msg.toolCalls?.length > 0 && (
-          <div style={{ marginBottom:6, display:'flex', flexWrap:'wrap', gap:4 }}>
-            {msg.toolCalls.map((t, i) => <ToolBadge key={i} name={t} />)}
+          <div style={{ marginBottom:6, fontSize:'.72rem', color:'var(--text-muted)',
+                        display:'flex', alignItems:'center', gap:5 }}>
+            🔧 Analizado con {msg.toolCalls.length} herramienta{msg.toolCalls.length > 1 ? 's' : ''} del catastro
           </div>
         )}
         <div style={{
-          padding: isUser ? '10px 14px' : '14px 16px',
-          borderRadius: isUser ? '18px 18px 4px 18px' : '4px 18px 18px 18px',
-          background: isUser ? 'var(--user-bg)' : 'var(--ai-bg)',
-          border: isUser ? 'none' : '1px solid var(--border)',
+          padding: isUser ? '10px 14px' : '2px 30px 2px 2px',
+          borderRadius: isUser ? '18px 18px 4px 18px' : 0,
+          background: isUser ? 'var(--user-bg)' : 'transparent',
+          border: 'none',
           fontSize:'.92rem', lineHeight:1.65,
           position:'relative',
         }}>
@@ -97,7 +85,7 @@ function Message({ msg, onCopy, copied }) {
               onClick={() => onCopy(msg.content)}
               title="Copiar respuesta"
               style={{
-                position:'absolute', top:8, right:8,
+                position:'absolute', top:0, right:0,
                 background:'none', border:'none', cursor:'pointer',
                 color: copied === msg.id ? 'var(--success)' : 'var(--text-muted)',
                 padding:4, borderRadius:4,

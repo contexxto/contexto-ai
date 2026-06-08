@@ -10,6 +10,7 @@ Principios (validados con Gemini):
   - confianza_global < 0.6 → estado_revision='pendiente_revision' (cola de revisión).
   - Generar embeddings NO bloquea la ingesta: si Voyage falla, el activo igual se crea.
 """
+import hashlib
 import json
 import uuid
 from urllib.parse import urlparse
@@ -17,7 +18,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from geoalchemy2.elements import WKTElement
 from pydantic import BaseModel, Field, HttpUrl, model_validator
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.tools import tool_geocode_address
@@ -72,6 +73,7 @@ class IngestResult(BaseModel):
     requiere_revision: bool | None = None
     embeddings: dict[str, bool] = Field(default_factory=dict)
     ficha: FichaVision | None = None
+    cache_hit: bool = False  # True si la imagen ya existía (cero llamadas a IA)
     ok: bool = True
     warnings: list[str] = Field(default_factory=list)
     error: str | None = None
@@ -204,6 +206,33 @@ async def _ingest_one(db: AsyncSession, item: IngestRequest) -> IngestResult:
         result.error = f"Imagen: {exc}"
         return result
 
+    # 2b) CACHÉ POR HASH: si esta imagen ya fue procesada, reusamos el activo
+    #     existente → CERO llamadas a Sonnet/Voyage (protección de presupuesto).
+    img_hash = hashlib.sha256(jpeg_b64.encode("ascii")).hexdigest()
+    existing = (
+        await db.execute(
+            select(ActivoInmutable).where(ActivoInmutable.image_sha256 == img_hash).limit(1)
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        estado = (
+            await db.execute(
+                select(FichaTecnicaMantenimiento.estado_revision).where(
+                    FichaTecnicaMantenimiento.activo_id == existing.id
+                )
+            )
+        ).scalar_one_or_none()
+        result.cache_hit = True
+        result.activo_id = existing.id
+        result.tipo_activo = existing.tipo_activo
+        result.estado_revision = estado
+        result.requiere_revision = estado == "pendiente_revision"
+        result.warnings.append(
+            "Imagen ya procesada previamente (cache hit). Se reutiliza el activo "
+            "existente sin llamar a la IA."
+        )
+        return result
+
     # 3) Visión → ficha observable
     try:
         ficha = await extract_ficha_from_b64(jpeg_b64)
@@ -243,6 +272,8 @@ async def _ingest_one(db: AsyncSession, item: IngestRequest) -> IngestResult:
         piso_altura=item.piso_altura,
         porcentaje_cobertura_vegetal=ficha.cobertura_vegetal_visible_pct,
         tipo_activo=tipo,
+        image_sha256=img_hash,   # clave de caché para futuras re-subidas
+        imagen_url=url,          # foto canónica (Supabase Storage)
     )
     db.add(activo)
 
@@ -261,6 +292,7 @@ async def _ingest_one(db: AsyncSession, item: IngestRequest) -> IngestResult:
         fuente="vision_ia",
         confianza_extraccion=ficha.confianza_global,
         estado_revision=estado,
+        ficha_vision_raw=ficha.model_dump(),  # extracción IA completa para revisión/ground-truth
     )
     db.add(ficha_db)
     await db.flush()  # asegura que el activo existe antes de insertar embeddings (FK)

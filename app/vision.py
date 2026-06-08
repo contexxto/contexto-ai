@@ -44,6 +44,9 @@ Indet = "Indeterminado"
 
 class FichaVision(BaseModel):
     """Esquema plano (sin anidación) para máxima compatibilidad con tool_use."""
+    # Filtro de ruido explícito: ¿la foto muestra realmente el EXTERIOR de un inmueble?
+    # (interiores, personas, mascotas, capturas de pantalla → False/None → revisión).
+    es_inmueble_exterior: bool | None = None
     tipo_activo: Literal[
         "Casa", "Departamento", "Local Comercial", "Oficina", "Quinta", "Indeterminado"
     ] = Indet
@@ -80,6 +83,9 @@ _SYSTEM_PROMPT = (
     "— nunca adivines. Asigna confianza_global baja (< 0.5) si la foto esta borrosa, "
     "parcial, nocturna, o no muestra claramente el inmueble. Contexto local: en Quito "
     "predominan hormigon armado (moderno) y mamposteria (antiguo, Centro Historico). "
+    "es_inmueble_exterior: true SOLO si la foto muestra la fachada/exterior de un "
+    "inmueble. Si es un interior, una persona, una mascota, un objeto o una captura, "
+    "devuelve false y confianza_global baja. "
     "presencia_medidores: cuantos medidores de luz/agua se ven (indicio de unidades). "
     "estado_ventaneria: estado aparente de ventanas y marcos (clave por la radiacion UV "
     "y humedad de Quito). Llama SIEMPRE a la herramienta registrar_ficha_visual."

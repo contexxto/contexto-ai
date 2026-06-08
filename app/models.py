@@ -3,7 +3,7 @@ from datetime import datetime
 
 from geoalchemy2 import Geometry
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, Numeric, String, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -23,6 +23,9 @@ class ActivoInmutable(Base):
     densidad_poblacional_pico: Mapped[int] = mapped_column(Integer, default=0)
     porcentaje_cobertura_vegetal: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
     tipo_activo: Mapped[str] = mapped_column(String(20), default="Departamento", nullable=False)
+    # Caché por hash de imagen (Migration 005): dedup → cero llamadas a IA en re-subidas.
+    image_sha256: Mapped[str | None] = mapped_column(Text, nullable=True)
+    imagen_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     transacciones: Mapped[list["TransaccionTemporal"]] = relationship(back_populates="activo")
@@ -84,6 +87,8 @@ class FichaTecnicaMantenimiento(Base):
     fuente: Mapped[str] = mapped_column(String(20), default="manual", nullable=False)
     confianza_extraccion: Mapped[float | None] = mapped_column(Numeric(3, 2), nullable=True)
     estado_revision: Mapped[str] = mapped_column(String(25), default="publicado", nullable=False)
+    # Extracción visual COMPLETA (Migration 005): permite revisión/corrección y ground-truth.
+    ficha_vision_raw: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
     activo: Mapped["ActivoInmutable"] = relationship(back_populates="ficha_tecnica")
@@ -91,7 +96,20 @@ class FichaTecnicaMantenimiento(Base):
     __table_args__ = (
         CheckConstraint("fuente IN ('manual', 'vision_ia')", name="ck_ficha_fuente"),
         CheckConstraint(
-            "estado_revision IN ('publicado', 'pendiente_revision')",
+            "estado_revision IN ('publicado', 'pendiente_revision', 'rechazado')",
             name="ck_ficha_estado_revision",
         ),
     )
+
+
+class CorreccionFicha(Base):
+    """Bitácora de correcciones humanas sobre la extracción de la IA (ground-truth)."""
+    __tablename__ = "correcciones_ficha"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    activo_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("activos_inmutables.id", ondelete="CASCADE"))
+    campo: Mapped[str] = mapped_column(Text, nullable=False)
+    valor_ia: Mapped[str | None] = mapped_column(Text, nullable=True)
+    valor_humano: Mapped[str | None] = mapped_column(Text, nullable=True)
+    revisor: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

@@ -127,20 +127,23 @@ async def chat(request: Request, payload: ChatRequest, stream: bool = False):
     )
 
 
+class SessionPatch(BaseModel):
+    titulo: str | None = None
+    pinned: bool | None = None
+
+
 @router.get(
     "/sessions",
-    summary="Listar sesiones de chat (recientes primero)",
+    summary="Listar conversaciones (fijadas primero, luego recientes)",
     description=(
-        "Lista los hilos de conversación guardados en el checkpointer, con un "
-        "título (primer mensaje del usuario) y el número de turnos. Permite volver "
-        "a cualquier sesión anterior desde el frontend."
+        "Lista los hilos del checkpointer combinados con sus metadatos "
+        "(título personalizado, pin). Excluye las archivadas."
     ),
     dependencies=[Depends(verify_api_key)],
 )
-@limiter.limit("30/minute")
-async def list_sessions(request: Request, limit: int = 20):
-    limit = max(1, min(limit, 50))
-    # thread_id = session_id; checkpoint_id (uuid6) es ~ordenable por tiempo.
+@limiter.limit("60/minute")
+async def list_sessions(request: Request, limit: int = 30):
+    limit = max(1, min(limit, 100))
     try:
         async with AsyncSessionLocal() as db:
             rows = (
@@ -152,27 +155,96 @@ async def list_sessions(request: Request, limit: int = 20):
                     {"n": limit},
                 )
             ).mappings().all()
+            meta_rows = (
+                await db.execute(
+                    text("SELECT session_id, titulo, pinned, archived FROM chat_sessions")
+                )
+            ).mappings().all()
     except Exception:
-        # La tabla puede no existir si el checkpointer no está activo (dev sin Postgres).
         return {"sessions": []}
+
+    meta = {m["session_id"]: m for m in meta_rows}
 
     sesiones = []
     for r in rows:
         sid = r["thread_id"]
-        titulo, turnos = sid, 0
+        m = meta.get(sid)
+        if m and m["archived"]:
+            continue  # archivada → oculta
+        titulo_auto, turnos = None, 0
         try:
             state = await agent_graph.compiled_graph.aget_state(_langgraph_config(sid))
             msgs = (state.values or {}).get("messages", []) if state else []
-            user_msgs = [m for m in msgs if isinstance(m, HumanMessage)]
+            user_msgs = [mm for mm in msgs if isinstance(mm, HumanMessage)]
             turnos = len(user_msgs)
             if user_msgs:
                 c = user_msgs[0].content
-                titulo = (c if isinstance(c, str) else str(c)).strip()[:70] or sid
+                titulo_auto = (c if isinstance(c, str) else str(c)).strip()[:80]
         except Exception:
             pass
-        sesiones.append({"session_id": sid, "titulo": titulo, "turnos": turnos})
+        titulo = (m["titulo"] if m and m["titulo"] else None) or titulo_auto or "Conversación sin título"
+        sesiones.append({
+            "session_id": sid,
+            "titulo": titulo,
+            "pinned": bool(m["pinned"]) if m else False,
+            "turnos": turnos,
+        })
 
+    # Fijadas primero; el resto conserva el orden por recencia ya obtenido.
+    sesiones.sort(key=lambda s: not s["pinned"])
     return {"sessions": sesiones}
+
+
+@router.patch(
+    "/sessions/{session_id}",
+    summary="Renombrar o fijar una conversación",
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("60/minute")
+async def update_session(request: Request, session_id: str, payload: SessionPatch):
+    if payload.titulo is None and payload.pinned is None:
+        raise HTTPException(status_code=400, detail="Nada que actualizar (titulo o pinned).")
+
+    # Asegura la fila de metadatos, luego aplica los cambios provistos.
+    async with AsyncSessionLocal() as db:
+        await db.execute(
+            text(
+                "INSERT INTO chat_sessions (session_id) VALUES (:sid) "
+                "ON CONFLICT (session_id) DO NOTHING"
+            ),
+            {"sid": session_id},
+        )
+        if payload.titulo is not None:
+            await db.execute(
+                text("UPDATE chat_sessions SET titulo = :t, updated_at = now() WHERE session_id = :sid"),
+                {"t": payload.titulo.strip()[:120], "sid": session_id},
+            )
+        if payload.pinned is not None:
+            await db.execute(
+                text("UPDATE chat_sessions SET pinned = :p, updated_at = now() WHERE session_id = :sid"),
+                {"p": payload.pinned, "sid": session_id},
+            )
+        await db.commit()
+    return {"session_id": session_id, "ok": True}
+
+
+@router.delete(
+    "/sessions/{session_id}",
+    summary="Eliminar (archivar) una conversación",
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("60/minute")
+async def delete_session(request: Request, session_id: str):
+    async with AsyncSessionLocal() as db:
+        await db.execute(
+            text(
+                "INSERT INTO chat_sessions (session_id, archived) VALUES (:sid, true) "
+                "ON CONFLICT (session_id) DO UPDATE SET archived = true, updated_at = now()"
+            ),
+            {"sid": session_id},
+        )
+        await db.commit()
+    return {"session_id": session_id, "archived": True}
 
 
 @router.get(

@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     voyage_api_key: str = ""
     voyage_model: str = "voyage-multimodal-3"
 
+    # Anti-SSRF para /assets/ingest: lista de hosts permitidos separada por comas.
+    # Vacío = se permite cualquier host (modo pruebas). En producción real, fijar
+    # al bucket de Supabase Storage. Ej: "images.unsplash.com,xxxx.supabase.co"
+    ingest_allowed_image_hosts: str = ""
+
     @property
     def database_url(self) -> str:
         if self.database_url_override:

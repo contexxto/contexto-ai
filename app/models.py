@@ -80,6 +80,18 @@ class FichaTecnicaMantenimiento(Base):
     ultimo_cambio_cableado_electrico: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     monto_invertido_mejoras: Mapped[float] = mapped_column(Numeric(12, 2), default=0.00)
     descripcion_mejoras: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Gobernanza de extracción visual (Migration 004 / Fase B):
+    fuente: Mapped[str] = mapped_column(String(20), default="manual", nullable=False)
+    confianza_extraccion: Mapped[float | None] = mapped_column(Numeric(3, 2), nullable=True)
+    estado_revision: Mapped[str] = mapped_column(String(25), default="publicado", nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
     activo: Mapped["ActivoInmutable"] = relationship(back_populates="ficha_tecnica")
+
+    __table_args__ = (
+        CheckConstraint("fuente IN ('manual', 'vision_ia')", name="ck_ficha_fuente"),
+        CheckConstraint(
+            "estado_revision IN ('publicado', 'pendiente_revision')",
+            name="ck_ficha_estado_revision",
+        ),
+    )

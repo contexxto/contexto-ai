@@ -94,8 +94,12 @@ def _client() -> anthropic.AsyncAnthropic:
     )
 
 
-async def _fetch_image_as_block(url: str) -> dict:
-    """Descarga la imagen, la normaliza a JPEG <= _MAX_DIM y devuelve un bloque base64."""
+async def fetch_image_jpeg_b64(url: str) -> str:
+    """
+    Descarga la imagen y la normaliza a JPEG <= _MAX_DIM, devolviendo el base64.
+    Se expone como función pública para reutilizar la MISMA imagen tanto en la
+    extracción de ficha (visión) como en el embedding (Voyage), sin doble descarga.
+    """
     verify = settings.ssl_verify.lower() != "false"
     # Muchos CDNs (Wikimedia, etc.) bloquean clientes sin User-Agent de navegador.
     headers = {
@@ -124,24 +128,48 @@ async def _fetch_image_as_block(url: str) -> dict:
             img.thumbnail((_MAX_DIM, _MAX_DIM))
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=85)
-        data = base64.standard_b64encode(buf.getvalue()).decode("ascii")
+        return base64.standard_b64encode(buf.getvalue()).decode("ascii")
     except Exception as exc:  # noqa: BLE001
         raise ImageFetchError(f"Imagen corrupta o no decodificable: {exc}") from exc
 
+
+def _image_block_from_b64(jpeg_b64: str) -> dict:
     return {
         "type": "image",
-        "source": {"type": "base64", "media_type": "image/jpeg", "data": data},
+        "source": {"type": "base64", "media_type": "image/jpeg", "data": jpeg_b64},
     }
 
 
-async def extract_ficha_from_image(image_url: str) -> FichaVision:
+async def _fetch_image_as_block(url: str) -> dict:
+    """Compat: descarga + normaliza + envuelve en bloque de imagen para Claude."""
+    return _image_block_from_b64(await fetch_image_jpeg_b64(url))
+
+
+def ficha_to_text(ficha: "FichaVision", direccion: str) -> str:
     """
-    Extrae la ficha observable de una foto. Lanza:
-      - ImageFetchError si la imagen no se puede obtener/decodificar.
-      - ExtractionInvalidError si Claude no devuelve una estructura válida.
-    El llamador decide qué hacer con confianza_global baja (cola de revisión).
+    Serializa la ficha observable a una frase descriptiva en español, lista para
+    embeber con Voyage (kind='ficha_texto'). Permite buscar 'perfiles técnicos
+    parecidos' aunque las fotos sean distintas.
     """
-    image_block = await _fetch_image_as_block(image_url)
+    return (
+        f"Inmueble en {direccion}. "
+        f"Tipo: {ficha.tipo_activo}. "
+        f"Estructura aparente: {ficha.tipo_estructura_aparente}. "
+        f"Pisos estimados: {ficha.pisos_estimados}. "
+        f"Fachada: pintura {ficha.fachada_estado_pintura}, "
+        f"riesgo {ficha.fachada_nivel_riesgo}, "
+        f"humedad={ficha.fachada_humedad_visible}, grietas={ficha.fachada_grietas_visibles}. "
+        f"Calidad de acabados: {ficha.calidad_acabados_aparente}. "
+        f"Ventaneria: {ficha.estado_ventaneria}. "
+        f"Medidores: {ficha.presencia_medidores}. "
+        f"Cobertura vegetal: {ficha.cobertura_vegetal_visible_pct}%. "
+        f"Observaciones: {ficha.observaciones}"
+    )
+
+
+async def extract_ficha_from_b64(jpeg_b64: str) -> FichaVision:
+    """Igual que extract_ficha_from_image pero sobre una imagen ya descargada."""
+    image_block = _image_block_from_b64(jpeg_b64)
 
     resp = await _client().messages.create(
         model=settings.llm_model,
@@ -169,3 +197,14 @@ async def extract_ficha_from_image(image_url: str) -> FichaVision:
         return FichaVision.model_validate(tool_input)
     except ValidationError as exc:
         raise ExtractionInvalidError(f"Estructura inválida: {exc}") from exc
+
+
+async def extract_ficha_from_image(image_url: str) -> FichaVision:
+    """
+    Extrae la ficha observable de una foto a partir de su URL. Lanza:
+      - ImageFetchError si la imagen no se puede obtener/decodificar.
+      - ExtractionInvalidError si Claude no devuelve una estructura válida.
+    El llamador decide qué hacer con confianza_global baja (cola de revisión).
+    """
+    jpeg_b64 = await fetch_image_jpeg_b64(image_url)
+    return await extract_ficha_from_b64(jpeg_b64)

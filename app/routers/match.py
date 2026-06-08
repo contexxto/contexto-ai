@@ -188,6 +188,15 @@ async def _similares(db: AsyncSession, kind: str, q_literal: str, top_k: int) ->
 )
 @limiter.limit("20/minute")
 async def match(request: Request, payload: MatchRequest, db: AsyncSession = Depends(get_db)) -> MatchResponse:
+    try:
+        return await _match_impl(payload, db)
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001 — TEMPORAL: surface real error para diagnostico
+        raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}")
+
+
+async def _match_impl(payload: MatchRequest, db: AsyncSession) -> MatchResponse:
     # 1) Construir el vector de consulta + el 'kind' y la descripción del brief.
     if payload.input_text:
         modo = "texto"

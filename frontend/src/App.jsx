@@ -11,6 +11,7 @@ const API_BASE = import.meta.env.VITE_API_URL ?? ''
 const API_KEY = import.meta.env.VITE_API_KEY ?? ''
 const authHeaders = API_KEY ? { 'X-API-Key': API_KEY } : {}
 import './App.css'
+import ReviewStation from './ReviewStation'
 
 // ── Helpers ────────────────────────────────────────────────
 const SESSION_KEY = 'contexto_ai_session_id'
@@ -162,6 +163,7 @@ export default function App() {
   const [error, setError]         = useState(null)
   const [copied, setCopied]       = useState(null)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
+  const [view, setView] = useState('chat')  // 'chat' | 'review'
 
   const bottomRef  = useRef(null)
   const inputRef   = useRef(null)
@@ -257,6 +259,21 @@ export default function App() {
 
   const isEmpty = messages.length === 0 && !loading
 
+  // Vista de Estación de Revisión (pantalla completa)
+  if (view === 'review') {
+    return (
+      <div style={{ height:'100dvh', display:'flex', flexDirection:'column' }}>
+        <div style={{ padding:'8px 16px', borderBottom:'1px solid var(--border)' }}>
+          <button onClick={() => setView('chat')} style={{
+            background:'none', border:'1px solid var(--border)', borderRadius:8,
+            cursor:'pointer', color:'var(--text-muted)', padding:'6px 12px', fontSize:'.85rem',
+          }}>← Volver al chat</button>
+        </div>
+        <div style={{ flex:1, minHeight:0 }}><ReviewStation /></div>
+      </div>
+    )
+  }
+
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100dvh', maxWidth:820,
                   margin:'0 auto', padding:'0 16px' }}>
@@ -290,6 +307,17 @@ export default function App() {
             background:'#0d2d0d', color:'var(--success)',
             border:'1px solid #1a4a1a',
           }}>● API conectada</span>
+          <button
+            onClick={() => setView('review')}
+            title="Estación de Revisión"
+            style={{
+              background:'none', border:'1px solid var(--border)', borderRadius:8,
+              cursor:'pointer', color:'var(--text-muted)', padding:'6px 10px',
+              display:'flex', alignItems:'center', gap:5, fontSize:'.8rem',
+            }}
+          >
+            🛡️ Revisión
+          </button>
           <button
             onClick={resetSession}
             title="Nueva sesión"

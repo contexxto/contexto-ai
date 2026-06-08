@@ -26,6 +26,6 @@ body { background: var(--bg); color: var(--text); height: 100dvh; overflow: hidd
 .ai-content ul, .ai-content ol { margin: .35rem 0 .35rem 1.2rem; }
 .ai-content li { margin: .2rem 0; line-height: 1.6; }
 .ai-content strong { color: #fff; }
-.ai-content hr { border: none; border-top: 1px solid var(--border); margin: .7rem 0; }
+.ai-content hr { border: none; border-top: 1px solid rgba(255,255,255,.05); margin: 1.3rem 0; }
 .ai-content code { background: #0d1117; padding: 1px 5px; border-radius: 4px;
                    font-size: .84em; color: #79c0ff; font-family: monospace; }

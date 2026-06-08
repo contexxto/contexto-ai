@@ -330,7 +330,9 @@ export default function App() {
         onDragLeave={e => { if (e.currentTarget === e.target) setDragOver(false) }}
         onDrop={handleDrop}
         style={{ flex:1, minWidth:0, position:'relative', display:'flex', flexDirection:'column',
-                 height:'100dvh', maxWidth:820, margin:'0 auto', padding:'0 16px' }}>
+                 height:'100dvh', overflow:'hidden', padding:'0 16px' }}>
+      <div style={{ width:'100%', maxWidth:740, margin:'0 auto', display:'flex',
+                    flexDirection:'column', height:'100%', minHeight:0 }}>
 
       {dragOver && (
         <div style={{
@@ -539,6 +541,7 @@ export default function App() {
         }
         @keyframes spin { to { transform: rotate(360deg); } }
       `}</style>
+      </div>
       </div>
     </div>
   )

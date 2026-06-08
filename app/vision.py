@@ -97,8 +97,17 @@ def _client() -> anthropic.AsyncAnthropic:
 async def _fetch_image_as_block(url: str) -> dict:
     """Descarga la imagen, la normaliza a JPEG <= _MAX_DIM y devuelve un bloque base64."""
     verify = settings.ssl_verify.lower() != "false"
+    # Muchos CDNs (Wikimedia, etc.) bloquean clientes sin User-Agent de navegador.
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (compatible; ContextoAI/2.0; +https://contexto-ai.onrender.com)"
+        ),
+        "Accept": "image/*",
+    }
     try:
-        async with httpx.AsyncClient(verify=verify, timeout=_FETCH_TIMEOUT, follow_redirects=True) as c:
+        async with httpx.AsyncClient(
+            verify=verify, timeout=_FETCH_TIMEOUT, follow_redirects=True, headers=headers
+        ) as c:
             resp = await c.get(url)
             resp.raise_for_status()
     except Exception as exc:  # noqa: BLE001

@@ -43,7 +43,7 @@ data/raw/
 # Ingesta masiva (escalado): fotos locales, manifest real y payloads generados
 fotos_quito/
 scripts/fotos_manifest.csv
-scripts/batch_payloads.json
+scripts/payload_ingesta.json
 
 # Frontend build
 frontend/dist/

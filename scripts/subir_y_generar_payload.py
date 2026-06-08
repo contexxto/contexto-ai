@@ -26,14 +26,14 @@ USO
   # 3) Corre:
   #    python scripts/subir_y_generar_payload.py --manifest scripts/fotos_manifest.csv
   #
-  # 4) Revisa scripts/batch_payloads.json y úsalo en /ingest/batch (tanda por tanda).
+  # 4) Revisa scripts/payload_ingesta.json y úsalo en /ingest/batch (tanda por tanda).
 
   Flags útiles:
     --dry-run     Solo valida y genera URLs/payloads SIN subir nada.
     --fotos-dir   Carpeta de imágenes locales (default: ./fotos_quito)
     --bucket      Bucket destino (default: activos-fotos)
     --chunk       Tamaño de cada lote para /ingest/batch (default: 10, máx 10)
-    --out         Archivo JSON de salida (default: scripts/batch_payloads.json)
+    --out         Archivo JSON de salida (default: scripts/payload_ingesta.json)
 """
 import argparse
 import csv
@@ -44,6 +44,13 @@ from pathlib import Path
 
 import httpx
 from dotenv import dotenv_values
+
+# La consola de Windows (cp1252) no puede imprimir emojis → forzamos UTF-8.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
+    except Exception:  # noqa: BLE001
+        pass
 
 ROOT = Path(__file__).resolve().parent.parent
 ENV = dotenv_values(ROOT / ".env")
@@ -82,7 +89,7 @@ def main() -> None:
     ap.add_argument("--manifest", default="scripts/fotos_manifest.csv")
     ap.add_argument("--fotos-dir", default="fotos_quito")
     ap.add_argument("--bucket", default="activos-fotos")
-    ap.add_argument("--out", default="scripts/batch_payloads.json")
+    ap.add_argument("--out", default="scripts/payload_ingesta.json")
     ap.add_argument("--chunk", type=int, default=10)
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
@@ -171,7 +178,7 @@ def main() -> None:
     print(f"Activos listos a ingestar : {len(items)}")
     print(f"Lotes (de a {chunk})           : {len(payloads)}")
     print(f"Payloads escritos en      : {out_path}")
-    print("\nSiguiente paso: usa cada objeto de batch_payloads.json en POST /api/v1/assets/ingest/batch")
+    print(f"\nSiguiente paso: usa cada objeto de {out_path.name} en POST /api/v1/assets/ingest/batch")
 
 
 if __name__ == "__main__":

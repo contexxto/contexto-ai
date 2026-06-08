@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     allowed_origins: str = "http://localhost:3000,http://localhost:5173"
     api_key: str = ""  # si está vacío, el check se desactiva (dev local)
 
+    # Embeddings — Voyage AI (Fase B3). Vacío hasta configurar la key.
+    voyage_api_key: str = ""
+    voyage_model: str = "voyage-multimodal-3"
+
     @property
     def database_url(self) -> str:
         if self.database_url_override:

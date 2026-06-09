@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" fill="none">
+  <defs>
+    <radialGradient id="g" cx="0.35" cy="0.35" r="0.65">
+      <stop offset="0%" stop-color="#5EEAD4"></stop>
+      <stop offset="40%" stop-color="#2DBDB6"></stop>
+      <stop offset="70%" stop-color="#E0685A" stop-opacity="0.5"></stop>
+      <stop offset="100%" stop-color="#0E0D13" stop-opacity="0.9"></stop>
+    </radialGradient>
+    <radialGradient id="amb" cx="0.55" cy="0.45" r="0.45">
+      <stop offset="0%" stop-color="#1A7A76" stop-opacity="0.2"></stop>
+      <stop offset="100%" stop-color="transparent"></stop>
+    </radialGradient>
+    <filter id="b"><feGaussianBlur in="SourceGraphic" stdDeviation="4"></feGaussianBlur></filter>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M 32 0 L 0 0 0 32" fill="none" stroke="rgba(45,189,182,0.015)" stroke-width="1"></path>
+    </pattern>
+  </defs>
+  <rect width="1200" height="630" fill="#0A0C14"></rect>
+  <rect width="1200" height="630" fill="url(#amb)"></rect>
+  <rect width="1200" height="630" fill="url(#grid)"></rect>
+  
+  <circle cx="880" cy="315" r="175" fill="rgba(45,189,182,0.06)"></circle>
+  <circle cx="880" cy="315" r="130" fill="url(#g)"></circle>
+  <ellipse cx="845" cy="285" rx="55" ry="65" fill="rgba(94,234,212,0.12)" filter="url(#b)"></ellipse>
+  <path d="M812 350 Q880 310, 948 340" stroke="rgba(224,104,90,0.35)" stroke-width="5" fill="none" filter="url(#b)"></path>
+  
+  <text x="80" y="260" font-family="&#39;Plus Jakarta Sans&#39;, system-ui, sans-serif" font-weight="800" font-size="42" fill="#F0ECE6" letter-spacing="-0.5">Tu próximo hogar,</text>
+  <text x="80" y="310" font-family="&#39;Plus Jakarta Sans&#39;, system-ui, sans-serif" font-weight="800" font-size="42" fill="#F0ECE6" letter-spacing="-0.5">con todo el contexto.</text>
+  <text x="80" y="350" font-family="&#39;IBM Plex Mono&#39;, monospace" font-size="13" fill="#2DBDB6" letter-spacing="2">INTELIGENCIA INMOBILIARIA GEOESPACIAL</text>
+  
+  <circle cx="100" cy="560" r="14" fill="url(#g)"></circle>
+  <text x="122" y="565" font-family="&#39;Plus Jakarta Sans&#39;, system-ui, sans-serif" font-weight="700" font-size="16" fill="#F0ECE6">Contexto <tspan fill="#2DBDB6">AI</tspan></text>
+</svg>

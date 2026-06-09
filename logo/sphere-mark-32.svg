@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+  <defs>
+    <radialGradient id="g" cx="0.35" cy="0.35" r="0.65">
+      <stop offset="0%" stop-color="#5EEAD4"></stop>
+      <stop offset="40%" stop-color="#2DBDB6"></stop>
+      <stop offset="70%" stop-color="#E0685A" stop-opacity="0.5"></stop>
+      <stop offset="100%" stop-color="#0E0D13" stop-opacity="0.9"></stop>
+    </radialGradient>
+    <radialGradient id="gw" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#2DBDB6" stop-opacity="0.2"></stop>
+      <stop offset="100%" stop-color="#2DBDB6" stop-opacity="0"></stop>
+    </radialGradient>
+    <filter id="b"><feGaussianBlur in="SourceGraphic" stdDeviation="1.5"></feGaussianBlur></filter>
+  </defs>
+  <circle cx="16" cy="16" r="14.88" fill="url(#gw)"></circle>
+  <circle cx="16" cy="16" r="11.2" fill="url(#g)"></circle>
+  
+  <circle cx="16" cy="16" r="11.2" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="0.5"></circle>
+</svg>

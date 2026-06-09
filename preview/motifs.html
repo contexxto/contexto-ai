@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<title>Motifs · Lenguaje Visual</title>
+<link rel="stylesheet" href="_base.css">
+<style>
+  .motif-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .motif-box {
+    height: 160px;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: flex-end;
+    padding: 14px;
+  }
+  .motif-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    position: relative;
+    z-index: 2;
+    background: rgba(26,28,32,0.7);
+    padding: 3px 8px;
+    border-radius: var(--radius-sm);
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <p class="eyebrow">MOTIVOS GRÁFICOS · LENGUAJE VISUAL</p>
+  <div class="motif-grid">
+    <!-- Grid Cartográfico -->
+    <div class="motif-box" style="background:var(--bg);">
+      <div style="position:absolute; inset:0;
+        background-image:
+          linear-gradient(rgba(65,96,140,0.07) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(65,96,140,0.07) 1px, transparent 1px);
+        background-size: 24px 24px;">
+      </div>
+      <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:8px; height:8px; background:var(--primary); border-radius:50%; box-shadow:0 0 12px rgba(65,96,140,0.5);"></div>
+      <span class="motif-label">Grid cartográfico</span>
+    </div>
+
+    <!-- Pin + Radio -->
+    <div class="motif-box" style="background:var(--bg);">
+      <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);">
+        <div style="width:120px; height:120px; border:1px solid rgba(65,96,140,0.15); border-radius:50%; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);"></div>
+        <div style="width:80px; height:80px; border:1px solid rgba(65,96,140,0.25); border-radius:50%; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);"></div>
+        <div style="width:40px; height:40px; border:1px solid rgba(65,96,140,0.4); border-radius:50%; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);"></div>
+        <div style="width:8px; height:8px; background:var(--primary); border-radius:50%; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); box-shadow:0 0 8px rgba(65,96,140,0.6);"></div>
+      </div>
+      <span class="motif-label">Pin + Radio</span>
+    </div>
+
+    <!-- Capas de datos -->
+    <div class="motif-box" style="background:var(--bg);">
+      <div style="position:absolute; inset:20px 30px; display:flex; flex-direction:column; gap:4px; justify-content:center;">
+        <div style="height:20px; background:rgba(111,176,131,0.12); border-radius:3px; width:85%;"></div>
+        <div style="height:20px; background:rgba(210,153,34,0.10); border-radius:3px; width:70%;"></div>
+        <div style="height:20px; background:rgba(65,96,140,0.15); border-radius:3px; width:92%;"></div>
+        <div style="height:20px; background:rgba(143,176,212,0.10); border-radius:3px; width:60%;"></div>
+      </div>
+      <span class="motif-label">Capas de datos</span>
+    </div>
+
+    <!-- Coordenadas flotantes -->
+    <div class="motif-box" style="background:var(--bg);">
+      <div style="position:absolute; inset:0; display:flex; flex-direction:column; justify-content:center; padding:20px; gap:6px; font-family:var(--font-mono); font-size:11px; color:rgba(143,176,212,0.25); letter-spacing:0.5px;">
+        <span>-0.1892° S, -78.4783° W</span>
+        <span>alt: 2,812m · piso: 8</span>
+        <span>walk_score: 82 · veg: 34%</span>
+        <span>ruido: 58 dB(A) · ΔT: +2.1°</span>
+      </div>
+      <span class="motif-label">Coordenadas flotantes</span>
+    </div>
+  </div>
+</div>
+</body></html>

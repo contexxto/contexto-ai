@@ -1,0 +1,643 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Contexto AI · Aura — Deep Dive</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; }
+html { scroll-behavior: smooth; }
+
+/* ======== AURA TOKENS ======== */
+:root {
+  --teal:        #2DBDB6;
+  --teal-bright: #5EEAD4;
+  --teal-deep:   #1A7A76;
+  --coral:       #E0685A;
+  --coral-soft:  #F09888;
+  --coral-deep:  #B84A3E;
+  --bg:          #0E0D13;
+  --surface-1:   #16151E;
+  --surface-2:   #1E1D28;
+  --surface-3:   #262533;
+  --border:      #2E2D3A;
+  --text:        #F0ECE6;
+  --text-mid:    #A8A3B3;
+  --text-dim:    #6B6778;
+  --font-display:'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-mono:   'IBM Plex Mono', ui-monospace, monospace;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-display);
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.6;
+}
+
+/* ---- Shared ---- */
+.section { padding: 80px 56px; position: relative; overflow: hidden; }
+@media (max-width: 768px) { .section { padding: 56px 24px; } }
+.section + .section { border-top: 1px solid var(--border); }
+.sec-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 3px; text-transform: uppercase; color: var(--teal); margin-bottom: 12px; }
+.sec-title { font-weight: 800; font-size: clamp(28px, 4vw, 40px); letter-spacing: -0.8px; line-height: 1.1; margin-bottom: 8px; }
+.sec-desc { font-size: 16px; color: var(--text-mid); max-width: 560px; margin-bottom: 40px; }
+
+/* ======== HERO ======== */
+.hero {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 80px 32px;
+  position: relative;
+  overflow: hidden;
+}
+.hero-bg {
+  position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(ellipse 50% 40% at 45% 40%, rgba(45,189,182,0.10) 0%, transparent 70%),
+    radial-gradient(ellipse 40% 35% at 60% 55%, rgba(224,104,90,0.07) 0%, transparent 70%);
+}
+
+/* Animated sphere */
+.sphere-wrap { position: relative; width: 200px; height: 200px; margin-bottom: 48px; }
+.sphere {
+  width: 200px; height: 200px; border-radius: 50%;
+  background:
+    radial-gradient(ellipse 70% 80% at 35% 30%, rgba(94,234,212,0.5), transparent 60%),
+    radial-gradient(ellipse 50% 60% at 65% 60%, rgba(224,104,90,0.45), transparent 55%),
+    radial-gradient(ellipse 40% 50% at 55% 45%, rgba(240,152,136,0.3), transparent 50%),
+    radial-gradient(ellipse 80% 80% at 50% 50%, #1A7A76, #0E0D13);
+  box-shadow:
+    0 0 80px rgba(45,189,182,0.15),
+    0 0 120px rgba(224,104,90,0.08),
+    inset 0 -20px 40px rgba(0,0,0,0.5);
+  animation: sphere-rotate 20s ease-in-out infinite;
+  position: relative;
+}
+.sphere::after {
+  content: '';
+  position: absolute;
+  top: 12%; left: 18%;
+  width: 35%; height: 25%;
+  background: radial-gradient(ellipse, rgba(255,255,255,0.12), transparent 70%);
+  border-radius: 50%;
+  transform: rotate(-20deg);
+}
+.sphere-ring {
+  position: absolute;
+  inset: -16px;
+  border: 1px solid rgba(45,189,182,0.08);
+  border-radius: 50%;
+  animation: sphere-rotate 30s linear infinite reverse;
+}
+.sphere-ring::before {
+  content: '';
+  position: absolute;
+  top: 8px; right: 20px;
+  width: 6px; height: 6px;
+  background: var(--coral);
+  border-radius: 50%;
+  box-shadow: 0 0 8px rgba(224,104,90,0.5);
+}
+
+@keyframes sphere-rotate {
+  0%, 100% { transform: rotate(0deg) scale(1); }
+  25% { transform: rotate(3deg) scale(1.01); }
+  50% { transform: rotate(-2deg) scale(0.99); }
+  75% { transform: rotate(1deg) scale(1.005); }
+}
+
+.hero-wordmark {
+  font-weight: 800;
+  font-size: clamp(32px, 4.5vw, 56px);
+  letter-spacing: -1.5px;
+  margin-bottom: 16px;
+  white-space: nowrap;
+}
+.hero-tagline {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--coral);
+  margin-bottom: 20px;
+}
+.hero-sub {
+  font-size: 17px;
+  color: var(--text-mid);
+  max-width: 480px;
+  line-height: 1.7;
+}
+
+/* ======== PALETTE ======== */
+.pal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 12px; margin-bottom: 32px; }
+.pal-card {
+  display: flex; flex-direction: column; gap: 6px;
+}
+.pal-swatch {
+  height: 72px;
+  border-radius: 12px;
+  position: relative;
+  border: 1px solid rgba(255,255,255,0.04);
+}
+.pal-name { font-size: 12px; font-weight: 600; }
+.pal-hex { font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); }
+.pal-role { font-family: var(--font-mono); font-size: 9px; color: var(--text-dim); letter-spacing: 0.5px; }
+
+/* Gradient bar */
+.grad-bar {
+  height: 48px;
+  border-radius: 12px;
+  margin-top: 8px;
+}
+
+/* ======== TYPE ======== */
+.type-grid { display: flex; flex-direction: column; gap: 28px; }
+.type-row { display: flex; flex-direction: column; gap: 4px; }
+.type-label { font-family: var(--font-mono); font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim); }
+
+/* ======== COMPONENTS ======== */
+.comp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 24px; }
+@media (max-width: 768px) { .comp-grid { grid-template-columns: 1fr; } }
+.comp-card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
+.comp-body { padding: 24px; }
+.comp-footer { padding: 12px 20px; border-top: 1px solid var(--border); font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); letter-spacing: 1px; text-transform: uppercase; }
+
+/* ---- Agent Avatar ---- */
+.agent-avatar {
+  width: 40px; height: 40px; border-radius: 50%;
+  background:
+    radial-gradient(ellipse 70% 80% at 35% 30%, rgba(94,234,212,0.5), transparent 60%),
+    radial-gradient(ellipse 50% 60% at 65% 60%, rgba(224,104,90,0.45), transparent 55%),
+    radial-gradient(ellipse 80% 80% at 50% 50%, #1A7A76, #0E0D13);
+  flex-shrink: 0;
+  box-shadow: 0 0 12px rgba(45,189,182,0.2);
+}
+
+/* ---- Chat ---- */
+.chat-wrap { display: flex; flex-direction: column; gap: 12px; }
+.chat-bubble { padding: 12px 16px; border-radius: 14px; font-size: 14px; line-height: 1.55; max-width: 90%; }
+.chat-ai { background: rgba(45,189,182,0.08); color: #D0EBE7; align-self: flex-start; border-bottom-left-radius: 4px; }
+.chat-human { background: var(--coral); color: #fff; font-weight: 500; align-self: flex-end; border-bottom-right-radius: 4px; }
+.chat-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.chat-name { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--teal); }
+
+/* ---- Tags ---- */
+.tag { font-family: var(--font-mono); font-size: 10px; font-weight: 500; padding: 4px 10px; border-radius: 6px; display: inline-flex; align-items: center; gap: 5px; }
+.tag-dot { width: 5px; height: 5px; border-radius: 50%; }
+
+/* ---- Property Card ---- */
+.prop-img-area {
+  height: 120px;
+  background: linear-gradient(135deg, #162A2A, #261A1A);
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  padding: 14px;
+}
+.prop-img-area::before {
+  content: '';
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(rgba(45,189,182,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(45,189,182,0.03) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+.prop-glow {
+  position: absolute; top: 45%; left: 40%;
+  width: 60px; height: 60px;
+  background: radial-gradient(circle, rgba(45,189,182,0.25) 0%, transparent 70%);
+  border-radius: 50%;
+}
+.prop-dot {
+  position: absolute; top: calc(45% + 23px); left: calc(40% + 23px);
+  width: 8px; height: 8px;
+  background: var(--teal);
+  border-radius: 50%;
+  box-shadow: 0 0 8px rgba(45,189,182,0.5);
+}
+
+/* ---- Metric Bar ---- */
+.metric-row { display: flex; flex-direction: column; gap: 4px; }
+.metric-top { display: flex; justify-content: space-between; font-size: 12px; }
+.metric-label { color: var(--text-mid); }
+.metric-val { font-family: var(--font-mono); font-size: 12px; }
+.metric-track { height: 4px; background: rgba(255,255,255,0.04); border-radius: 2px; }
+.metric-fill { height: 100%; border-radius: 2px; }
+
+/* ---- Buttons ---- */
+.btn { font-family: var(--font-display); font-weight: 600; font-size: 14px; padding: 10px 22px; border-radius: 10px; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; line-height: 1; }
+.btn-teal { background: var(--teal); color: #0E0D13; }
+.btn-coral { background: var(--coral); color: #fff; }
+.btn-ghost { background: transparent; color: var(--teal); border: 1px solid var(--border); }
+.btn-surface { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+
+/* ---- Motif boxes ---- */
+.motif-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
+.motif-box {
+  height: 140px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+  padding: 14px;
+  background: var(--bg);
+}
+.motif-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-mid);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  position: relative;
+  z-index: 2;
+  background: rgba(14,13,19,0.8);
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+
+/* ---- Logo Variants ---- */
+.logo-row { display: flex; gap: 32px; align-items: center; flex-wrap: wrap; }
+
+/* ---- Animations ---- */
+@keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@keyframes pulse-glow { 0%, 100% { box-shadow: 0 0 12px rgba(45,189,182,0.2); } 50% { box-shadow: 0 0 24px rgba(45,189,182,0.35); } }
+</style>
+</head>
+<body>
+
+<!-- ======== HERO ======== -->
+<section class="hero">
+  <div class="hero-bg"></div>
+  <div class="sphere-wrap" style="position:relative; z-index:1;">
+    <div class="sphere"></div>
+    <div class="sphere-ring"></div>
+  </div>
+  <h1 class="hero-wordmark" style="position:relative; z-index:1;">Contexto <span style="color:var(--teal);">AI</span></h1>
+  <p class="hero-tagline">Cada lugar tiene un aura</p>
+  <p class="hero-sub" style="position:relative; z-index:1;">Tu agente inteligente que absorbe capas de contexto — ruido, seguridad, vida, historia — y te las traduce para que encuentres el hogar perfecto para tu familia.</p>
+</section>
+
+<!-- ======== PALETTE ======== -->
+<section class="section">
+  <p class="sec-label">01 · Paleta</p>
+  <h2 class="sec-title">Teal orgánico + Coral vivo</h2>
+  <p class="sec-desc">Extraída de la esfera: teal profundo como inteligencia calmada, coral como la energía humana del hogar. Sobre superficies oscuras con tinte violáceo.</p>
+
+  <p style="font-family:var(--font-mono); font-size:9px; color:var(--teal); letter-spacing:2px; text-transform:uppercase; margin-bottom:10px;">★ Marca</p>
+  <div class="pal-grid">
+    <div class="pal-card"><div class="pal-swatch" style="background:#2DBDB6;"></div><span class="pal-name">Teal</span><span class="pal-hex">#2DBDB6</span><span class="pal-role">Primario · CTAs · Agente</span></div>
+    <div class="pal-card"><div class="pal-swatch" style="background:#5EEAD4;"></div><span class="pal-name">Mint</span><span class="pal-hex">#5EEAD4</span><span class="pal-role">Highlights · Data</span></div>
+    <div class="pal-card"><div class="pal-swatch" style="background:#1A7A76;"></div><span class="pal-name">Teal Deep</span><span class="pal-hex">#1A7A76</span><span class="pal-role">Hero · Overlays</span></div>
+    <div class="pal-card"><div class="pal-swatch" style="background:#E0685A;"></div><span class="pal-name">Coral</span><span class="pal-hex">#E0685A</span><span class="pal-role">Acción · Acento cálido</span></div>
+    <div class="pal-card"><div class="pal-swatch" style="background:#F09888;"></div><span class="pal-name">Coral Soft</span><span class="pal-hex">#F09888</span><span class="pal-role">Hover · Glow</span></div>
+    <div class="pal-card"><div class="pal-swatch" style="background:#B84A3E;"></div><span class="pal-name">Coral Deep</span><span class="pal-hex">#B84A3E</span><span class="pal-role">Danger · Alertas</span></div>
+  </div>
+
+  <p style="font-family:var(--font-mono); font-size:9px; color:var(--text-dim); letter-spacing:2px; text-transform:uppercase; margin:24px 0 10px;">Superficies</p>
+  <div class="pal-grid">
+    <div class="pal-card"><div class="pal-swatch" style="background:#0E0D13;"></div><span class="pal-name">Background</span><span class="pal-hex">#0E0D13</span></div>
+    <div class="pal-card"><div class="pal-swatch" style="background:#16151E;"></div><span class="pal-name">Surface 1</span><span class="pal-hex">#16151E</span></div>
+    <div class="pal-card"><div class="pal-swatch" style="background:#1E1D28;"></div><span class="pal-name">Surface 2</span><span class="pal-hex">#1E1D28</span></div>
+    <div class="pal-card"><div class="pal-swatch" style="background:#2E2D3A;"></div><span class="pal-name">Border</span><span class="pal-hex">#2E2D3A</span></div>
+    <div class="pal-card"><div class="pal-swatch" style="background:#F0ECE6;"></div><span class="pal-name">Text</span><span class="pal-hex">#F0ECE6</span></div>
+    <div class="pal-card"><div class="pal-swatch" style="background:#A8A3B3;"></div><span class="pal-name">Muted</span><span class="pal-hex">#A8A3B3</span></div>
+    <div class="pal-card"><div class="pal-swatch" style="background:#6B6778;"></div><span class="pal-name">Dim</span><span class="pal-hex">#6B6778</span></div>
+  </div>
+
+  <p style="font-family:var(--font-mono); font-size:9px; color:var(--text-dim); letter-spacing:2px; text-transform:uppercase; margin:24px 0 10px;">Semánticos</p>
+  <div class="pal-grid" style="margin-bottom:24px;">
+    <div class="pal-card"><div class="pal-swatch" style="background:#5EEAD4;"></div><span class="pal-name">Success</span><span class="pal-hex">#5EEAD4</span><span class="pal-role">Verificado · OK</span></div>
+    <div class="pal-card"><div class="pal-swatch" style="background:#E5C06A;"></div><span class="pal-name">Warning</span><span class="pal-hex">#E5C06A</span><span class="pal-role">Revisión · Dudoso</span></div>
+    <div class="pal-card"><div class="pal-swatch" style="background:#E0685A;"></div><span class="pal-name">Danger</span><span class="pal-hex">#E0685A</span><span class="pal-role">Error · Rechazo</span></div>
+    <div class="pal-card"><div class="pal-swatch" style="background:#A8A3B3;"></div><span class="pal-name">Neutral</span><span class="pal-hex">#A8A3B3</span><span class="pal-role">Indeterminado</span></div>
+  </div>
+
+  <p style="font-family:var(--font-mono); font-size:9px; color:var(--text-dim); letter-spacing:2px; text-transform:uppercase; margin-bottom:10px;">Gradientes</p>
+  <div class="grad-bar" style="background:linear-gradient(135deg, #2DBDB6, #E0685A); margin-bottom:8px;"></div>
+  <span style="font-family:var(--font-mono); font-size:10px; color:var(--text-dim);">Brand: teal → coral (logo, hero, agente)</span>
+  <div class="grad-bar" style="background:linear-gradient(180deg, #0E0D13, #1A7A76); margin-bottom:8px;"></div>
+  <span style="font-family:var(--font-mono); font-size:10px; color:var(--text-dim);">Hero: bg → teal deep (fondos hero)</span>
+</section>
+
+<!-- ======== TYPOGRAPHY ======== -->
+<section class="section">
+  <p class="sec-label">02 · Tipografía</p>
+  <h2 class="sec-title">Plus Jakarta Sans + IBM Plex Mono</h2>
+  <p class="sec-desc">Jakarta: geométrica pero cálida, con personalidad sin ser ruidosa. Plex Mono: técnica y legible para datos y coordenadas.</p>
+
+  <div class="type-grid">
+    <div class="type-row">
+      <span class="type-label">Display 800 · 56px</span>
+      <span style="font-weight:800; font-size:56px; line-height:1; letter-spacing:-1.5px;">Encuentra tu aura<span style="color:var(--coral);">.</span></span>
+    </div>
+    <div class="type-row">
+      <span class="type-label">Heading 700 · 36px</span>
+      <span style="font-weight:700; font-size:36px; line-height:1.1; letter-spacing:-0.5px;">Inteligencia que te acompaña</span>
+    </div>
+    <div class="type-row">
+      <span class="type-label">Subhead 600 · 20px</span>
+      <span style="font-weight:600; font-size:20px; line-height:1.3; color:var(--text-mid);">Cada lugar emite señales invisibles. Tu agente las lee por ti.</span>
+    </div>
+    <div class="type-row">
+      <span class="type-label">Body 400 · 16px</span>
+      <span style="font-weight:400; font-size:16px; color:var(--text-mid); max-width:520px;">Los portales te muestran fotos bonitas. Contexto AI te dice si vas a escuchar al vecino a las 11pm, si tu hijo puede caminar al colegio, si el edificio tiene historial de plagas.</span>
+    </div>
+    <div class="type-row">
+      <span class="type-label">Mono · Datos</span>
+      <span style="font-family:var(--font-mono); font-size:15px; color:var(--teal); letter-spacing:0.3px;">-0.1892° S, -78.4783° W · 2,812m · walk: 82</span>
+    </div>
+    <div class="type-row">
+      <span class="type-label">Mono · Small</span>
+      <span style="font-family:var(--font-mono); font-size:11px; color:var(--text-dim); letter-spacing:0.5px;">ruido: 58 dB(A) · cobertura_vegetal: 34% · patrullas: 3/500m</span>
+    </div>
+  </div>
+</section>
+
+<!-- ======== LOGO ======== -->
+<section class="section">
+  <p class="sec-label">03 · Logo</p>
+  <h2 class="sec-title">La esfera viva</h2>
+  <p class="sec-desc">No un pin de mapa — una presencia orgánica que absorbe contexto. La esfera representa las capas de inteligencia que rodean cada coordenada.</p>
+
+  <div class="logo-row">
+    <!-- Logomark: Sphere -->
+    <div style="display:flex; flex-direction:column; align-items:center; gap:10px;">
+      <svg width="72" height="72" viewBox="0 0 72 72" fill="none">
+        <defs>
+          <radialGradient id="lg1" cx="0.35" cy="0.35" r="0.65"><stop offset="0%" stop-color="#5EEAD4"/><stop offset="40%" stop-color="#2DBDB6"/><stop offset="70%" stop-color="#E0685A" stop-opacity="0.5"/><stop offset="100%" stop-color="#0E0D13" stop-opacity="0.9"/></radialGradient>
+          <radialGradient id="lg-glow" cx="0.5" cy="0.5" r="0.5"><stop offset="0%" stop-color="#2DBDB6" stop-opacity="0.2"/><stop offset="100%" stop-color="#2DBDB6" stop-opacity="0"/></radialGradient>
+          <filter id="lg-blur"><feGaussianBlur in="SourceGraphic" stdDeviation="2"/></filter>
+        </defs>
+        <circle cx="36" cy="36" r="34" fill="url(#lg-glow)"/>
+        <circle cx="36" cy="36" r="24" fill="url(#lg1)"/>
+        <ellipse cx="30" cy="28" rx="11" ry="13" fill="rgba(94,234,212,0.12)" filter="url(#lg-blur)"/>
+        <path d="M22 42 Q36 30, 50 38" stroke="rgba(224,104,90,0.35)" stroke-width="3" fill="none" filter="url(#lg-blur)"/>
+        <circle cx="36" cy="36" r="24" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="0.5"/>
+      </svg>
+      <span style="font-family:var(--font-mono); font-size:9px; color:var(--text-dim); letter-spacing:1px;">LOGOMARK</span>
+    </div>
+
+    <!-- Lockup Horizontal -->
+    <div style="display:flex; flex-direction:column; align-items:center; gap:10px;">
+      <div style="display:flex; align-items:center; gap:14px;">
+        <svg width="40" height="40" viewBox="0 0 72 72" fill="none">
+          <defs><radialGradient id="lg2" cx="0.35" cy="0.35" r="0.65"><stop offset="0%" stop-color="#5EEAD4"/><stop offset="40%" stop-color="#2DBDB6"/><stop offset="70%" stop-color="#E0685A" stop-opacity="0.5"/><stop offset="100%" stop-color="#0E0D13" stop-opacity="0.9"/></radialGradient></defs>
+          <circle cx="36" cy="36" r="24" fill="url(#lg2)"/>
+          <ellipse cx="30" cy="28" rx="11" ry="13" fill="rgba(94,234,212,0.12)" filter="url(#lg-blur)"/>
+          <path d="M22 42 Q36 30, 50 38" stroke="rgba(224,104,90,0.35)" stroke-width="3" fill="none" filter="url(#lg-blur)"/>
+        </svg>
+        <span style="font-weight:800; font-size:24px; letter-spacing:-0.5px;">Contexto <span style="color:var(--teal);">AI</span></span>
+    </div>
+
+    <!-- Favicon (sphere small) -->
+    <div style="display:flex; flex-direction:column; align-items:center; gap:10px;">
+      <svg width="32" height="32" viewBox="0 0 72 72" fill="none">
+        <defs><radialGradient id="lg-fav" cx="0.35" cy="0.35" r="0.65"><stop offset="0%" stop-color="#5EEAD4"/><stop offset="40%" stop-color="#2DBDB6"/><stop offset="70%" stop-color="#E0685A" stop-opacity="0.5"/><stop offset="100%" stop-color="#0E0D13" stop-opacity="0.9"/></radialGradient></defs>
+        <rect width="72" height="72" rx="16" fill="#16151E"/>
+        <circle cx="36" cy="36" r="20" fill="url(#lg-fav)"/>
+      </svg>
+      <span style="font-family:var(--font-mono); font-size:9px; color:var(--text-dim); letter-spacing:1px;">FAVICON</span>
+    </div>
+  </div>
+</section>
+
+<!-- ======== COMPONENTS ======== -->
+<section class="section">
+  <p class="sec-label">04 · Componentes</p>
+  <h2 class="sec-title">UI que se siente viva</h2>
+  <p class="sec-desc">Chat con el agente, tarjetas de inmueble, métricas del barrio, tags semánticos, botones — todo con el lenguaje visual Aura.</p>
+
+  <div class="comp-grid">
+    <!-- Agent Chat -->
+    <div class="comp-card">
+      <div class="comp-body">
+        <div class="chat-wrap">
+          <div class="chat-header">
+            <div class="agent-avatar"></div>
+            <div>
+              <span class="chat-name">Contexto AI</span>
+              <span style="font-family:var(--font-mono); font-size:9px; color:var(--text-dim); display:block; margin-top:1px;">Analizando La Carolina...</span>
+            </div>
+          </div>
+          <div class="chat-bubble chat-ai">Encontré 3 opciones que encajan con lo que buscas. La mejor: piso 8, 85 m², walk score 82, ruido bajo. Ideal para tu familia.</div>
+          <div class="chat-bubble chat-human">¿Y de noche? ¿Es seguro?</div>
+          <div class="chat-bubble chat-ai">Incidencia baja. 3 patrullas activas en 500m. Iluminación: 94%. Te preparo el informe completo.</div>
+          <div style="display:flex; gap:6px; margin-top:4px;">
+            <span class="tag" style="background:rgba(94,234,212,0.08); color:var(--teal-bright);"><span class="tag-dot" style="background:var(--teal-bright);"></span>seguro</span>
+            <span class="tag" style="background:rgba(94,234,212,0.08); color:var(--teal-bright);"><span class="tag-dot" style="background:var(--teal-bright);"></span>walk: 82</span>
+            <span class="tag" style="background:rgba(229,192,106,0.08); color:#E5C06A;"><span class="tag-dot" style="background:#E5C06A;"></span>tráfico: med</span>
+          </div>
+        </div>
+      </div>
+      <div class="comp-footer">Agent Chat · B2C</div>
+    </div>
+
+    <!-- Property Card -->
+    <div class="comp-card">
+      <div class="prop-img-area">
+        <div class="prop-glow"></div>
+        <div class="prop-dot"></div>
+        <span style="font-family:var(--font-mono); font-size:10px; color:rgba(94,234,212,0.5); position:relative; z-index:1;">-0.1892° S, -78.4783° W</span>
+      </div>
+      <div class="comp-body" style="display:flex; flex-direction:column; gap:8px;">
+        <span style="font-weight:700; font-size:18px;">Depto La Carolina</span>
+        <span style="font-size:13px; color:var(--text-mid);">Piso 8 · 85 m² · 2 hab · Vista norte</span>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <span class="tag" style="background:rgba(94,234,212,0.08); color:var(--teal-bright);">ruido: bajo</span>
+          <span class="tag" style="background:rgba(45,189,182,0.08); color:var(--teal);">walk: 82</span>
+          <span class="tag" style="background:rgba(229,192,106,0.08); color:#E5C06A;">tráfico: med</span>
+        </div>
+        <p style="font-size:13px; color:var(--text-dim); margin-top:4px; padding-top:10px; border-top:1px solid var(--border);">Parque La Carolina a 3 min. Alta caminabilidad. Buena cobertura de transporte público.</p>
+      </div>
+      <div class="comp-footer">Property Card · B2C</div>
+    </div>
+
+    <!-- Buttons & Tags -->
+    <div class="comp-card">
+      <div class="comp-body" style="display:flex; flex-direction:column; gap:16px;">
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="btn btn-teal">Ver informe</button>
+          <button class="btn btn-coral">Agendar visita</button>
+          <button class="btn btn-ghost">Guardar</button>
+          <button class="btn btn-surface">Compartir</button>
+        </div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <span class="tag" style="background:rgba(94,234,212,0.1); color:var(--teal-bright);"><span class="tag-dot" style="background:var(--teal-bright);"></span>publicado</span>
+          <span class="tag" style="background:rgba(229,192,106,0.1); color:#E5C06A;"><span class="tag-dot" style="background:#E5C06A;"></span>en-revisión</span>
+          <span class="tag" style="background:rgba(224,104,90,0.1); color:var(--coral);"><span class="tag-dot" style="background:var(--coral);"></span>rechazado</span>
+          <span class="tag" style="background:rgba(168,163,179,0.1); color:var(--text-mid);"><span class="tag-dot" style="background:var(--text-mid);"></span>indeterminado</span>
+        </div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <span class="tag" style="background:rgba(94,234,212,0.08); color:var(--teal-bright);">ruido: bajo</span>
+          <span class="tag" style="background:rgba(229,192,106,0.08); color:#E5C06A;">tráfico: medio</span>
+          <span class="tag" style="background:rgba(224,104,90,0.08); color:var(--coral);">riesgo: alto</span>
+        </div>
+      </div>
+      <div class="comp-footer">Buttons + Tags</div>
+    </div>
+
+    <!-- Location Metrics -->
+    <div class="comp-card">
+      <div class="comp-body" style="display:flex; flex-direction:column; gap:14px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-weight:700; font-size:16px;">Métricas del sector</span>
+          <span style="font-family:var(--font-mono); font-size:9px; padding:4px 10px; border-radius:999px; background:rgba(45,189,182,0.08); color:var(--teal);">● live</span>
+        </div>
+        <div class="metric-row">
+          <div class="metric-top"><span class="metric-label">Walk Score</span><span class="metric-val" style="color:var(--teal-bright);">82</span></div>
+          <div class="metric-track"><div class="metric-fill" style="width:82%; background:linear-gradient(90deg,var(--teal),var(--teal-bright));"></div></div>
+        </div>
+        <div class="metric-row">
+          <div class="metric-top"><span class="metric-label">Seguridad</span><span class="metric-val" style="color:var(--teal);">alta</span></div>
+          <div class="metric-track"><div class="metric-fill" style="width:88%; background:var(--teal);"></div></div>
+        </div>
+        <div class="metric-row">
+          <div class="metric-top"><span class="metric-label">Ruido ambiente</span><span class="metric-val" style="color:var(--text-dim);">58 dB</span></div>
+          <div class="metric-track"><div class="metric-fill" style="width:38%; background:var(--teal-deep);"></div></div>
+        </div>
+        <div class="metric-row">
+          <div class="metric-top"><span class="metric-label">Cobertura vegetal</span><span class="metric-val" style="color:#E5C06A;">34%</span></div>
+          <div class="metric-track"><div class="metric-fill" style="width:34%; background:linear-gradient(90deg,var(--teal-deep),#E5C06A);"></div></div>
+        </div>
+        <div style="font-family:var(--font-mono); font-size:10px; color:var(--text-dim); padding-top:10px; border-top:1px solid var(--border);">-0.1892° S, -78.4783° W · alt: 2,812m</div>
+      </div>
+      <div class="comp-footer">Location Metrics · Dashboard</div>
+    </div>
+
+    <!-- Form Input -->
+    <div class="comp-card">
+      <div class="comp-body" style="display:flex; flex-direction:column; gap:14px;">
+        <div style="display:flex; flex-direction:column; gap:5px;">
+          <span style="font-size:12px; font-weight:500; color:var(--text-mid);">Coordenada</span>
+          <input type="text" value="-0.1892, -78.4783" readonly style="font-family:var(--font-mono); font-size:13px; padding:10px 14px; background:var(--surface-2); border:1px solid var(--border); border-radius:10px; color:var(--teal-bright); outline:none;">
+        </div>
+        <div style="display:flex; flex-direction:column; gap:5px;">
+          <span style="font-size:12px; font-weight:500; color:var(--text-mid);">¿Qué buscas?</span>
+          <input type="text" placeholder="Depto 2 hab, cerca de parques, bajo ruido..." readonly style="font-family:var(--font-display); font-size:13px; padding:10px 14px; background:var(--surface-2); border:1px solid rgba(45,189,182,0.25); border-radius:10px; color:var(--text); outline:none;">
+        </div>
+        <div style="display:flex; flex-direction:column; gap:5px;">
+          <span style="font-size:12px; font-weight:500; color:var(--text-mid);">Presupuesto</span>
+          <div style="display:flex; gap:8px;">
+            <input type="text" value="$800" readonly style="font-family:var(--font-mono); font-size:13px; padding:10px 14px; background:var(--surface-2); border:1px solid var(--border); border-radius:10px; color:var(--text); outline:none; width:50%;">
+            <input type="text" value="$1,200" readonly style="font-family:var(--font-mono); font-size:13px; padding:10px 14px; background:var(--surface-2); border:1px solid var(--border); border-radius:10px; color:var(--text); outline:none; width:50%;">
+          </div>
+        </div>
+      </div>
+      <div class="comp-footer">Form Inputs</div>
+    </div>
+
+    <!-- Agent Avatar States -->
+    <div class="comp-card">
+      <div class="comp-body" style="display:flex; flex-direction:column; gap:16px; align-items:center;">
+        <div style="display:flex; gap:24px; align-items:center;">
+          <!-- Sizes -->
+          <div style="display:flex; flex-direction:column; align-items:center; gap:6px;">
+            <div style="width:56px; height:56px; border-radius:50%; background: radial-gradient(ellipse 70% 80% at 35% 30%, rgba(94,234,212,0.5), transparent 60%), radial-gradient(ellipse 50% 60% at 65% 60%, rgba(224,104,90,0.45), transparent 55%), radial-gradient(ellipse 80% 80% at 50% 50%, #1A7A76, #0E0D13); box-shadow:0 0 20px rgba(45,189,182,0.25); animation: pulse-glow 3s ease-in-out infinite;"></div>
+            <span style="font-family:var(--font-mono); font-size:9px; color:var(--text-dim);">56px</span>
+          </div>
+          <div style="display:flex; flex-direction:column; align-items:center; gap:6px;">
+            <div class="agent-avatar"></div>
+            <span style="font-family:var(--font-mono); font-size:9px; color:var(--text-dim);">40px</span>
+          </div>
+          <div style="display:flex; flex-direction:column; align-items:center; gap:6px;">
+            <div style="width:28px; height:28px; border-radius:50%; background: radial-gradient(ellipse 70% 80% at 35% 30%, rgba(94,234,212,0.5), transparent 60%), radial-gradient(ellipse 50% 60% at 65% 60%, rgba(224,104,90,0.45), transparent 55%), radial-gradient(ellipse 80% 80% at 50% 50%, #1A7A76, #0E0D13); box-shadow:0 0 8px rgba(45,189,182,0.15);"></div>
+            <span style="font-family:var(--font-mono); font-size:9px; color:var(--text-dim);">28px</span>
+          </div>
+        </div>
+        <p style="font-size:12px; color:var(--text-dim); text-align:center;">El avatar del agente usa la misma esfera del logo — la marca ES el agente.</p>
+      </div>
+      <div class="comp-footer">Agent Avatar · Sizes</div>
+    </div>
+  </div>
+</section>
+
+<!-- ======== MOTIFS ======== -->
+<section class="section">
+  <p class="sec-label">05 · Motivos gráficos</p>
+  <h2 class="sec-title">Lenguaje visual</h2>
+  <p class="sec-desc">Del grid cartográfico frío a texturas orgánicas y glows vivos. La inteligencia se siente, no solo se lee.</p>
+
+  <div class="motif-grid">
+    <!-- Teal Grid -->
+    <div class="motif-box">
+      <div style="position:absolute; inset:0; background-image: linear-gradient(rgba(45,189,182,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(45,189,182,0.04) 1px, transparent 1px); background-size:24px 24px;"></div>
+      <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:8px; height:8px; background:var(--teal); border-radius:50%; box-shadow:0 0 16px rgba(45,189,182,0.4);"></div>
+      <span class="motif-label">Grid sutil</span>
+    </div>
+    <!-- Aura Glow -->
+    <div class="motif-box">
+      <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:120px; height:120px; background:radial-gradient(circle, rgba(45,189,182,0.12) 0%, rgba(224,104,90,0.06) 40%, transparent 70%); border-radius:50%;"></div>
+      <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:8px; height:8px; background:var(--teal); border-radius:50%;"></div>
+      <span class="motif-label">Aura glow</span>
+    </div>
+    <!-- Coral Slash -->
+    <div class="motif-box">
+      <div style="position:absolute; top:20%; left:40%; width:60%; height:3px; background:linear-gradient(90deg, transparent, rgba(224,104,90,0.3), transparent); transform:rotate(-30deg);"></div>
+      <div style="position:absolute; top:35%; left:35%; width:50%; height:2px; background:linear-gradient(90deg, transparent, rgba(240,152,136,0.2), transparent); transform:rotate(-30deg);"></div>
+      <span class="motif-label">Coral slash</span>
+    </div>
+    <!-- Floating Coords -->
+    <div class="motif-box">
+      <div style="position:absolute; inset:0; display:flex; flex-direction:column; justify-content:center; padding:16px; gap:5px; font-family:var(--font-mono); font-size:10px; color:rgba(45,189,182,0.12); letter-spacing:0.3px;">
+        <span>-0.1892° S, -78.4783° W</span>
+        <span>alt: 2,812m · piso: 8</span>
+        <span>walk: 82 · veg: 34%</span>
+        <span>ruido: 58 dB(A)</span>
+      </div>
+      <span class="motif-label">Data watermark</span>
+    </div>
+  </div>
+</section>
+
+<!-- ======== COPY / VOICE ======== -->
+<section class="section">
+  <p class="sec-label">06 · Voz y copy</p>
+  <h2 class="sec-title">Mensajes clave</h2>
+  <p class="sec-desc">Del frío "catastro vivo" a un tono cálido que acompaña. Honesto, directo, pero con alma.</p>
+
+  <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:16px;">
+    <div style="background:var(--surface-1); border:1px solid var(--border); border-radius:14px; padding:24px;">
+      <span style="font-size:20px; font-weight:700; line-height:1.3;">Cada lugar tiene un aura.<br><span style="color:var(--teal);">Conócela antes de decidir.</span></span>
+      <p style="font-family:var(--font-mono); font-size:9px; color:var(--text-dim); margin-top:10px; letter-spacing:1px;">TAGLINE PRINCIPAL</p>
+    </div>
+    <div style="background:var(--surface-1); border:1px solid var(--border); border-radius:14px; padding:24px;">
+      <span style="font-size:20px; font-weight:700; line-height:1.3;">Tu próximo hogar,<br><span style="color:var(--coral);">con todo el contexto.</span></span>
+      <p style="font-family:var(--font-mono); font-size:9px; color:var(--text-dim); margin-top:10px; letter-spacing:1px;">ALTERNATIVA B2C</p>
+    </div>
+    <div style="background:var(--surface-1); border:1px solid var(--border); border-radius:14px; padding:24px;">
+      <span style="font-size:20px; font-weight:700; line-height:1.3;">Lo que el anuncio no dice,<br><span style="color:var(--teal);">tu agente sí.</span></span>
+      <p style="font-family:var(--font-mono); font-size:9px; color:var(--text-dim); margin-top:10px; letter-spacing:1px;">DIFERENCIACIÓN</p>
+    </div>
+    <div style="background:var(--surface-1); border:1px solid var(--border); border-radius:14px; padding:24px;">
+      <span style="font-size:20px; font-weight:700; line-height:1.3;">No buscamos apartamentos.<br><span style="color:var(--coral);">Encontramos hogares.</span></span>
+      <p style="font-family:var(--font-mono); font-size:9px; color:var(--text-dim); margin-top:10px; letter-spacing:1px;">EMOCIONAL</p>
+    </div>
+  </div>
+</section>
+
+<!-- ======== FOOTER ======== -->
+<footer style="padding:60px 48px; text-align:center; border-top:1px solid var(--border);">
+  <div style="display:flex; align-items:center; justify-content:center; gap:12px; margin-bottom:16px;">
+    <svg width="32" height="32" viewBox="0 0 72 72" fill="none">
+      <defs><radialGradient id="lgf" cx="0.35" cy="0.35" r="0.65"><stop offset="0%" stop-color="#5EEAD4"/><stop offset="40%" stop-color="#2DBDB6"/><stop offset="70%" stop-color="#E0685A" stop-opacity="0.5"/><stop offset="100%" stop-color="#0E0D13" stop-opacity="0.9"/></radialGradient></defs>
+      <circle cx="36" cy="36" r="24" fill="url(#lgf)"/>
+    </svg>
+    <span style="font-weight:800; font-size:18px;">Contexto <span style="color:var(--teal);">AI</span></span>
+  </div>
+  <p style="font-family:var(--font-mono); font-size:10px; color:var(--text-dim); letter-spacing:2px; text-transform:uppercase;">Aura Direction · Brand Deep Dive · 2026</p>
+  <p style="font-size:13px; color:var(--text-dim); margin-top:8px;">Quito, Ecuador · PropTech · Inteligencia Geoespacial</p>
+</footer>
+
+</body>
+</html>

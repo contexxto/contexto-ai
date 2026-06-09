@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400" fill="none">
+  <defs>
+    <radialGradient id="g" cx="0.35" cy="0.35" r="0.65">
+      <stop offset="0%" stop-color="#5EEAD4"></stop>
+      <stop offset="40%" stop-color="#2DBDB6"></stop>
+      <stop offset="70%" stop-color="#E0685A" stop-opacity="0.5"></stop>
+      <stop offset="100%" stop-color="#0E0D13" stop-opacity="0.9"></stop>
+    </radialGradient>
+    <radialGradient id="bg" cx="0.45" cy="0.4" r="0.6">
+      <stop offset="0%" stop-color="#111520"></stop>
+      <stop offset="100%" stop-color="#0E0D13"></stop>
+    </radialGradient>
+    <radialGradient id="ambient" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#2DBDB6" stop-opacity="0.08"></stop>
+      <stop offset="100%" stop-color="transparent"></stop>
+    </radialGradient>
+    <filter id="b"><feGaussianBlur in="SourceGraphic" stdDeviation="8"></feGaussianBlur></filter>
+  </defs>
+  <rect width="400" height="400" fill="url(#bg)"></rect>
+  <rect width="400" height="400" fill="url(#ambient)"></rect>
+  <circle cx="200" cy="200" r="143.00000000000003" fill="url(#ambient)"></circle>
+  <circle cx="200" cy="200" r="110.00000000000001" fill="url(#g)"></circle>
+  <ellipse cx="170" cy="160" rx="44.00000000000001" ry="55.00000000000001" fill="rgba(94,234,212,0.12)" filter="url(#b)"></ellipse>
+  <path d="M139.5 233 Q200 183.5, 260.5 216.5" stroke="rgba(224,104,90,0.35)" stroke-width="3.2" fill="none" filter="url(#b)"></path>
+</svg>

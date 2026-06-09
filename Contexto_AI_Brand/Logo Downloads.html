@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Contexto AI · Logo Files</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; }
+:root { --bg:#0E0D13; --s1:#16151E; --s2:#1E1D28; --bdr:#2E2D3A; --text:#F0ECE6; --mid:#A8A3B3; --dim:#6B6778; --teal:#2DBDB6; --mono:'IBM Plex Mono',monospace; --font:'Plus Jakarta Sans',system-ui,sans-serif; }
+body { margin:0; background:var(--bg); color:var(--text); font-family:var(--font); -webkit-font-smoothing:antialiased; }
+.page { max-width:1100px; margin:0 auto; padding:48px; }
+@media (max-width:768px) { .page { padding:24px; } }
+h1 { font-weight:800; font-size:32px; letter-spacing:-0.8px; margin-bottom:6px; }
+.sub { font-size:15px; color:var(--mid); margin-bottom:40px; }
+.sec-label { font-family:var(--mono); font-size:10px; letter-spacing:3px; text-transform:uppercase; color:var(--teal); margin-bottom:10px; }
+.grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:20px; margin-bottom:48px; }
+.card { background:var(--s1); border:1px solid var(--bdr); border-radius:14px; overflow:hidden; }
+.card-preview { display:flex; align-items:center; justify-content:center; padding:24px; background:var(--s2); min-height:180px; position:relative; }
+.card-preview img, .card-preview svg { max-width:100%; max-height:200px; }
+.card-info { padding:12px 16px; display:flex; justify-content:space-between; align-items:center; }
+.card-name { font-weight:600; font-size:13px; }
+.card-size { font-family:var(--mono); font-size:10px; color:var(--dim); }
+.wide { grid-column: 1 / -1; }
+.wide .card-preview { min-height:auto; }
+.dl-btn { font-family:var(--mono); font-size:10px; padding:5px 12px; border-radius:6px; background:rgba(45,189,182,0.1); color:var(--teal); border:1px solid rgba(45,189,182,0.15); cursor:pointer; text-decoration:none; }
+.dl-btn:hover { background:rgba(45,189,182,0.2); }
+canvas { display:none; }
+</style>
+</head>
+<body>
+<div class="page">
+  <p class="sec-label">Logo Files</p>
+  <h1>Archivos de logo listos</h1>
+  <p class="sub">Haz clic en "PNG" para descargar cada pieza en formato listo para redes. Los SVG son escalables para impresión.</p>
+
+  <p class="sec-label" style="margin-top:32px;">Esfera (Logomark)</p>
+  <div class="grid" id="marks"></div>
+
+  <p class="sec-label">Perfiles de redes</p>
+  <div class="grid" id="profiles"></div>
+
+  <p class="sec-label">App Icon</p>
+  <div class="grid" id="appicon"></div>
+
+  <p class="sec-label">Covers</p>
+  <div class="grid" id="covers"></div>
+
+  <p class="sec-label">OG Image (Social Share)</p>
+  <div class="grid" id="og"></div>
+</div>
+
+<script>
+const TEAL = '#2DBDB6';
+const TEAL_BRIGHT = '#5EEAD4';
+const CORAL = '#E0685A';
+const BG = '#0E0D13';
+
+function sphereOnCanvas(ctx, cx, cy, r, detail = true) {
+  // Glow
+  const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 1.3);
+  glow.addColorStop(0, 'rgba(45,189,182,0.2)');
+  glow.addColorStop(1, 'rgba(45,189,182,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(cx, cy, r * 1.3, 0, Math.PI * 2); ctx.fill();
+
+  // Main sphere
+  const g = ctx.createRadialGradient(cx - r * 0.15, cy - r * 0.15, 0, cx, cy, r);
+  g.addColorStop(0, TEAL_BRIGHT);
+  g.addColorStop(0.4, TEAL);
+  g.addColorStop(0.7, 'rgba(224,104,90,0.5)');
+  g.addColorStop(1, 'rgba(14,13,19,0.9)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+
+  if (detail) {
+    // Teal highlight
+    ctx.save();
+    ctx.globalAlpha = 0.12;
+    ctx.filter = `blur(${r * 0.08}px)`;
+    const hg = ctx.createRadialGradient(cx - r * 0.2, cy - r * 0.2, 0, cx - r * 0.2, cy - r * 0.2, r * 0.5);
+    hg.addColorStop(0, TEAL_BRIGHT);
+    hg.addColorStop(1, 'transparent');
+    ctx.fillStyle = hg;
+    ctx.beginPath(); ctx.ellipse(cx - r * 0.17, cy - r * 0.23, r * 0.43, r * 0.52, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+
+    // Coral band
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    ctx.filter = `blur(${r * 0.08}px)`;
+    ctx.strokeStyle = CORAL;
+    ctx.lineWidth = r * 0.08;
+    ctx.beginPath();
+    ctx.moveTo(cx - r * 0.57, cy + r * 0.29);
+    ctx.quadraticCurveTo(cx, cy - r * 0.19, cx + r * 0.57, cy + r * 0.14);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Subtle border
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = 0.5;
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+}
+
+function downloadCanvas(canvas, filename) {
+  const link = document.createElement('a');
+  link.download = filename;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+
+function createCard(container, name, size, renderFn, filename, wide = false) {
+  const card = document.createElement('div');
+  card.className = 'card' + (wide ? ' wide' : '');
+
+  const preview = document.createElement('div');
+  preview.className = 'card-preview';
+
+  const canvas = document.createElement('canvas');
+  const [w, h] = size;
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  renderFn(ctx, w, h);
+
+  const img = document.createElement('img');
+  img.src = canvas.toDataURL('image/png');
+  img.style.maxWidth = '100%';
+  img.style.maxHeight = wide ? '160px' : '200px';
+  img.style.borderRadius = '6px';
+  preview.appendChild(img);
+
+  const info = document.createElement('div');
+  info.className = 'card-info';
+  info.innerHTML = `<div><span class="card-name">${name}</span><br><span class="card-size">${w}×${h}</span></div>`;
+
+  const btn = document.createElement('a');
+  btn.className = 'dl-btn';
+  btn.textContent = 'PNG ↓';
+  btn.href = canvas.toDataURL('image/png');
+  btn.download = filename;
+  info.appendChild(btn);
+
+  card.appendChild(preview);
+  card.appendChild(info);
+  container.appendChild(card);
+}
+
+// Sphere marks
+const marksEl = document.getElementById('marks');
+[512, 256, 128, 64].forEach(s => {
+  createCard(marksEl, `Esfera ${s}px`, [s, s], (ctx, w, h) => {
+    sphereOnCanvas(ctx, w/2, h/2, w * 0.35, s >= 64);
+  }, `contexto-sphere-${s}.png`);
+});
+
+// Profiles
+const profilesEl = document.getElementById('profiles');
+[800, 400].forEach(s => {
+  createCard(profilesEl, `Perfil ${s}px`, [s, s], (ctx, w, h) => {
+    // Dark bg
+    const bg = ctx.createRadialGradient(w*0.45, h*0.4, 0, w/2, h/2, w*0.6);
+    bg.addColorStop(0, '#111520');
+    bg.addColorStop(1, BG);
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, w, h);
+    // Ambient
+    const amb = ctx.createRadialGradient(w/2, h/2, 0, w/2, h/2, w*0.5);
+    amb.addColorStop(0, 'rgba(45,189,182,0.08)');
+    amb.addColorStop(1, 'transparent');
+    ctx.fillStyle = amb;
+    ctx.fillRect(0, 0, w, h);
+    sphereOnCanvas(ctx, w/2, h/2, w * 0.28, true);
+  }, `contexto-profile-${s}.png`);
+});
+
+// App icon
+const appiconEl = document.getElementById('appicon');
+createCard(appiconEl, 'App Icon', [1024, 1024], (ctx, w, h) => {
+  // Rounded rect bg
+  const rr = 224;
+  ctx.beginPath();
+  ctx.moveTo(rr, 0); ctx.lineTo(w - rr, 0); ctx.quadraticCurveTo(w, 0, w, rr);
+  ctx.lineTo(w, h - rr); ctx.quadraticCurveTo(w, h, w - rr, h);
+  ctx.lineTo(rr, h); ctx.quadraticCurveTo(0, h, 0, h - rr);
+  ctx.lineTo(0, rr); ctx.quadraticCurveTo(0, 0, rr, 0);
+  ctx.closePath();
+  const bg = ctx.createRadialGradient(w*0.45, h*0.4, 0, w/2, h/2, w*0.6);
+  bg.addColorStop(0, '#12172A');
+  bg.addColorStop(1, BG);
+  ctx.fillStyle = bg;
+  ctx.fill();
+  // Ambient
+  ctx.save(); ctx.clip();
+  const amb = ctx.createRadialGradient(w/2, h/2, 0, w/2, h/2, w*0.5);
+  amb.addColorStop(0, 'rgba(45,189,182,0.1)');
+  amb.addColorStop(1, 'transparent');
+  ctx.fillStyle = amb;
+  ctx.fillRect(0, 0, w, h);
+  sphereOnCanvas(ctx, w/2, h/2, 280, true);
+  ctx.restore();
+}, 'contexto-app-icon-1024.png');
+
+// LinkedIn Cover
+const coversEl = document.getElementById('covers');
+createCard(coversEl, 'LinkedIn Cover', [1584, 396], (ctx, w, h) => {
+  // Bg gradient
+  const bg = ctx.createLinearGradient(0, 0, w, h);
+  bg.addColorStop(0, '#0A0C14'); bg.addColorStop(0.5, '#0E1118'); bg.addColorStop(1, '#0C0E14');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
+  // Ambient
+  const amb = ctx.createRadialGradient(w*0.72, h*0.5, 0, w*0.72, h*0.5, h);
+  amb.addColorStop(0, 'rgba(26,122,118,0.25)'); amb.addColorStop(1, 'transparent');
+  ctx.fillStyle = amb; ctx.fillRect(0, 0, w, h);
+  // Grid
+  ctx.strokeStyle = 'rgba(45,189,182,0.02)'; ctx.lineWidth = 1;
+  for (let x = 0; x < w; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+  for (let y = 0; y < h; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+  // Sphere
+  sphereOnCanvas(ctx, 1180, 198, 120, true);
+  // Text
+  ctx.font = "800 48px 'Plus Jakarta Sans', system-ui, sans-serif";
+  ctx.fillStyle = '#F0ECE6'; ctx.fillText('Contexto', 95, 182);
+  ctx.fillStyle = TEAL; ctx.fillText('AI', 365, 182);
+  ctx.font = "400 14px 'IBM Plex Mono', monospace";
+  ctx.fillStyle = TEAL; ctx.letterSpacing = '3px';
+  ctx.fillText('CADA LUGAR TIENE UN AURA', 95, 218);
+}, 'contexto-linkedin-cover.png', true);
+
+// Twitter Header
+createCard(coversEl, 'Twitter/X Header', [1500, 500], (ctx, w, h) => {
+  ctx.fillStyle = '#0C0E18'; ctx.fillRect(0, 0, w, h);
+  const amb = ctx.createRadialGradient(w/2, h*0.6, 0, w/2, h/2, h);
+  amb.addColorStop(0, 'rgba(26,122,118,0.2)'); amb.addColorStop(1, 'transparent');
+  ctx.fillStyle = amb; ctx.fillRect(0, 0, w, h);
+  sphereOnCanvas(ctx, w/2, h/2, 130, true);
+}, 'contexto-twitter-header.png', true);
+
+// OG Image
+const ogEl = document.getElementById('og');
+createCard(ogEl, 'OG Image', [1200, 630], (ctx, w, h) => {
+  ctx.fillStyle = '#0A0C14'; ctx.fillRect(0, 0, w, h);
+  const amb = ctx.createRadialGradient(w*0.55, h*0.45, 0, w*0.55, h*0.45, 400);
+  amb.addColorStop(0, 'rgba(26,122,118,0.2)'); amb.addColorStop(1, 'transparent');
+  ctx.fillStyle = amb; ctx.fillRect(0, 0, w, h);
+  // Grid
+  ctx.strokeStyle = 'rgba(45,189,182,0.015)'; ctx.lineWidth = 1;
+  for (let x = 0; x < w; x += 32) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+  for (let y = 0; y < h; y += 32) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+  // Sphere
+  sphereOnCanvas(ctx, 880, 315, 130, true);
+  // Text
+  ctx.font = "800 42px 'Plus Jakarta Sans', system-ui, sans-serif";
+  ctx.fillStyle = '#F0ECE6';
+  ctx.fillText('Tu próximo hogar,', 80, 260);
+  ctx.fillText('con todo el contexto.', 80, 310);
+  ctx.font = "400 13px 'IBM Plex Mono', monospace";
+  ctx.fillStyle = TEAL;
+  ctx.fillText('INTELIGENCIA INMOBILIARIA GEOESPACIAL', 80, 350);
+  // Small lockup
+  sphereOnCanvas(ctx, 96, 560, 12, false);
+  ctx.font = "700 16px 'Plus Jakarta Sans', system-ui, sans-serif";
+  ctx.fillStyle = '#F0ECE6'; ctx.fillText('Contexto', 118, 565);
+  ctx.fillStyle = TEAL; ctx.fillText('AI', 218, 565);
+}, 'contexto-og-image.png', true);
+
+</script>
+</body>
+</html>

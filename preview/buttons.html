@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<title>Buttons</title>
+<link rel="stylesheet" href="_base.css">
+<style>
+  .btn {
+    font-family: var(--font-body);
+    font-weight: 500;
+    font-size: 14px;
+    padding: 10px 20px;
+    border-radius: var(--radius-md);
+    border: none;
+    cursor: pointer;
+    transition: all var(--dur) var(--ease);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    line-height: 1;
+  }
+  .btn-primary {
+    background: var(--primary);
+    color: #fff;
+  }
+  .btn-primary:hover { background: var(--primary-soft); }
+  .btn-secondary {
+    background: var(--surface-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-secondary:hover { border-color: var(--text-muted); }
+  .btn-ghost {
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid transparent;
+  }
+  .btn-ghost:hover { background: var(--surface-2); }
+  .btn-danger {
+    background: transparent;
+    color: var(--danger);
+    border: 1px solid var(--danger);
+  }
+  .btn-danger:hover { background: rgba(248,81,73,0.1); }
+  .btn-sm { font-size:12px; padding:6px 14px; }
+  .btn-lg { font-size:16px; padding:14px 28px; }
+  .btn:disabled { opacity:0.4; cursor:not-allowed; }
+  .btn-row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+</style>
+</head>
+<body>
+<div class="card">
+  <p class="eyebrow">BOTONES</p>
+  <div class="btn-row">
+    <button class="btn btn-primary">Primario</button>
+    <button class="btn btn-secondary">Secundario</button>
+    <button class="btn btn-ghost">Ghost</button>
+    <button class="btn btn-danger">Danger</button>
+  </div>
+  <div class="btn-row">
+    <button class="btn btn-primary btn-sm">Small</button>
+    <button class="btn btn-primary">Default</button>
+    <button class="btn btn-primary btn-lg">Large</button>
+    <button class="btn btn-primary" disabled>Disabled</button>
+  </div>
+  <div class="btn-row">
+    <button class="btn btn-primary" style="border-radius:var(--radius-full);">Pill Button</button>
+    <button class="btn btn-secondary" style="border-radius:var(--radius-full);">Pill Secondary</button>
+  </div>
+</div>
+</body></html>

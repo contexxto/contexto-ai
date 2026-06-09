@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1584" height="396" viewBox="0 0 1584 396" fill="none">
+  <defs>
+    <radialGradient id="g" cx="0.35" cy="0.35" r="0.65">
+      <stop offset="0%" stop-color="#5EEAD4"></stop>
+      <stop offset="40%" stop-color="#2DBDB6"></stop>
+      <stop offset="70%" stop-color="#E0685A" stop-opacity="0.5"></stop>
+      <stop offset="100%" stop-color="#0E0D13" stop-opacity="0.9"></stop>
+    </radialGradient>
+    <radialGradient id="amb1" cx="0.72" cy="0.5" r="0.45">
+      <stop offset="0%" stop-color="#1A7A76" stop-opacity="0.25"></stop>
+      <stop offset="100%" stop-color="transparent"></stop>
+    </radialGradient>
+    <radialGradient id="amb2" cx="0.2" cy="0.6" r="0.35">
+      <stop offset="0%" stop-color="#E0685A" stop-opacity="0.06"></stop>
+      <stop offset="100%" stop-color="transparent"></stop>
+    </radialGradient>
+    <filter id="b"><feGaussianBlur in="SourceGraphic" stdDeviation="4"></feGaussianBlur></filter>
+    <linearGradient id="bgG" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0A0C14"></stop>
+      <stop offset="50%" stop-color="#0E1118"></stop>
+      <stop offset="100%" stop-color="#0C0E14"></stop>
+    </linearGradient>
+  </defs>
+  <rect width="1584" height="396" fill="url(#bgG)"></rect>
+  <rect width="1584" height="396" fill="url(#amb1)"></rect>
+  <rect width="1584" height="396" fill="url(#amb2)"></rect>
+  
+  <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+    <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(45,189,182,0.02)" stroke-width="1"></path>
+  </pattern>
+  <rect width="1584" height="396" fill="url(#grid)"></rect>
+  
+  <circle cx="1180" cy="198" r="160" fill="rgba(45,189,182,0.06)"></circle>
+  <circle cx="1180" cy="198" r="120" fill="url(#g)"></circle>
+  <ellipse cx="1145" cy="170" rx="50" ry="60" fill="rgba(94,234,212,0.12)" filter="url(#b)"></ellipse>
+  <path d="M1110 230 Q1180 190, 1250 218" stroke="rgba(224,104,90,0.35)" stroke-width="5" fill="none" filter="url(#b)"></path>
+  
+  <text x="95" y="175" font-family="&#39;Plus Jakarta Sans&#39;, system-ui, sans-serif" font-weight="800" font-size="48" fill="#F0ECE6" letter-spacing="-1">Contexto</text>
+  <text x="365" y="175" font-family="&#39;Plus Jakarta Sans&#39;, system-ui, sans-serif" font-weight="800" font-size="48" fill="#2DBDB6" letter-spacing="-1">AI</text>
+  <text x="95" y="215" font-family="&#39;IBM Plex Mono&#39;, monospace" font-size="14" fill="#2DBDB6" letter-spacing="3" text-transform="uppercase">CADA LUGAR TIENE UN AURA</text>
+</svg>

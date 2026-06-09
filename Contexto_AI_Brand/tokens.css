@@ -1,0 +1,68 @@
+/* ==========================================================================
+   CONTEXTO AI · DESIGN TOKENS · Aura Direction
+   ========================================================================== */
+
+:root {
+  /* ---- Brand: Teal ---- */
+  --teal:        #2DBDB6;
+  --teal-bright: #5EEAD4;
+  --teal-deep:   #1A7A76;
+
+  /* ---- Brand: Coral ---- */
+  --coral:       #E0685A;
+  --coral-soft:  #F09888;
+  --coral-deep:  #B84A3E;
+
+  /* ---- Surfaces ---- */
+  --bg:          #0E0D13;
+  --surface-1:   #16151E;
+  --surface-2:   #1E1D28;
+  --surface-3:   #262533;
+  --border:      #2E2D3A;
+
+  /* ---- Text ---- */
+  --text:        #F0ECE6;
+  --text-mid:    #A8A3B3;
+  --text-dim:    #6B6778;
+
+  /* ---- Semantic ---- */
+  --success:     #5EEAD4;
+  --warning:     #E5C06A;
+  --danger:      #E0685A;
+
+  /* ---- Gradients ---- */
+  --grad-brand:  linear-gradient(135deg, #2DBDB6, #E0685A);
+  --grad-hero:   linear-gradient(180deg, #0E0D13, #1A7A76);
+
+  /* ---- Typography ---- */
+  --font-display: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-mono:    'IBM Plex Mono', ui-monospace, monospace;
+
+  /* ---- Radii ---- */
+  --radius-sm:   8px;
+  --radius-md:   12px;
+  --radius-lg:   16px;
+  --radius-pill: 999px;
+
+  /* ---- Spacing ---- */
+  --space-xs:    4px;
+  --space-sm:    8px;
+  --space-md:    16px;
+  --space-lg:    24px;
+  --space-xl:    32px;
+  --space-2xl:   48px;
+  --space-3xl:   64px;
+
+  /* ---- Shadows ---- */
+  --shadow-sm:   0 1px 3px rgba(0,0,0,0.3);
+  --shadow-md:   0 4px 12px rgba(0,0,0,0.4);
+  --shadow-lg:   0 8px 32px rgba(0,0,0,0.5);
+  --shadow-glow-teal:  0 0 24px rgba(45,189,182,0.2);
+  --shadow-glow-coral: 0 0 24px rgba(224,104,90,0.15);
+
+  /* ---- Timing ---- */
+  --ease:        cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast:    150ms;
+  --dur:         250ms;
+  --dur-slow:    400ms;
+}

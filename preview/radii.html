@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<title>Border Radius</title>
+<link rel="stylesheet" href="_base.css">
+<style>
+  .radius-demo { display:flex; gap:20px; flex-wrap:wrap; }
+  .radius-item { display:flex; flex-direction:column; align-items:center; gap:8px; }
+  .radius-box { width:72px; height:72px; background:var(--surface-2); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; }
+  .radius-name { font-family:var(--font-mono); font-size:10px; color:var(--text-muted); }
+  .radius-val { font-family:var(--font-mono); font-size:11px; color:var(--accent); }
+</style>
+</head>
+<body>
+<div class="card">
+  <p class="eyebrow">BORDER RADIUS</p>
+  <div class="radius-demo">
+    <div class="radius-item">
+      <div class="radius-box" style="border-radius:4px;"><span class="radius-val">4px</span></div>
+      <span class="radius-name">--radius-sm</span>
+    </div>
+    <div class="radius-item">
+      <div class="radius-box" style="border-radius:8px;"><span class="radius-val">8px</span></div>
+      <span class="radius-name">--radius-md</span>
+    </div>
+    <div class="radius-item">
+      <div class="radius-box" style="border-radius:12px;"><span class="radius-val">12px</span></div>
+      <span class="radius-name">--radius-lg</span>
+    </div>
+    <div class="radius-item">
+      <div class="radius-box" style="border-radius:16px;"><span class="radius-val">16px</span></div>
+      <span class="radius-name">--radius-xl</span>
+    </div>
+    <div class="radius-item">
+      <div class="radius-box" style="border-radius:9999px;"><span class="radius-val">pill</span></div>
+      <span class="radius-name">--radius-full</span>
+    </div>
+  </div>
+</div>
+</body></html>

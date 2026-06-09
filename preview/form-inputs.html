@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<title>Form Inputs</title>
+<link rel="stylesheet" href="_base.css">
+<style>
+  .input-field {
+    font-family: var(--font-body);
+    font-size: 14px;
+    padding: 10px 14px;
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    color: var(--text);
+    outline: none;
+    transition: border-color var(--dur) var(--ease);
+    width: 100%;
+  }
+  .input-field:focus { border-color: var(--primary-soft); }
+  .input-field::placeholder { color: var(--text-dim); }
+  .input-group { display:flex; flex-direction:column; gap:6px; flex:1; min-width:180px; }
+  .input-label { font-family:var(--font-body); font-size:12px; font-weight:500; color:var(--text-muted); }
+  .input-hint { font-family:var(--font-mono); font-size:10px; color:var(--text-dim); }
+  select.input-field { cursor:pointer; }
+</style>
+</head>
+<body>
+<div class="card" style="gap:14px;">
+  <p class="eyebrow">FORM INPUTS</p>
+  <div class="row wrap">
+    <div class="input-group">
+      <label class="input-label">Coordenada</label>
+      <input class="input-field" type="text" placeholder="-0.1892, -78.4783">
+      <span class="input-hint">lat, lon</span>
+    </div>
+    <div class="input-group">
+      <label class="input-label">Radio de búsqueda</label>
+      <input class="input-field" type="text" placeholder="500m">
+    </div>
+  </div>
+  <div class="row wrap">
+    <div class="input-group">
+      <label class="input-label">Tipo de inmueble</label>
+      <select class="input-field">
+        <option>Departamento</option>
+        <option>Casa</option>
+        <option>Oficina</option>
+        <option>Local comercial</option>
+      </select>
+    </div>
+    <div class="input-group">
+      <label class="input-label">Estado</label>
+      <select class="input-field">
+        <option>Publicado</option>
+        <option>En revisión</option>
+        <option>Todos</option>
+      </select>
+    </div>
+  </div>
+  <div class="input-group" style="max-width:380px;">
+    <label class="input-label">Búsqueda</label>
+    <input class="input-field" type="text" placeholder="Buscar por dirección, sector o ID..." style="border-color:var(--primary-soft);">
+    <span class="input-hint" style="color:var(--accent);">Focus state</span>
+  </div>
+</div>
+</body></html>

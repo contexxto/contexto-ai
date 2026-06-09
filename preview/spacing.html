@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<title>Spacing · 8px Grid</title>
+<link rel="stylesheet" href="_base.css">
+<style>
+  .sp-row { display:flex; align-items:center; gap:12px; }
+  .sp-bar { height:20px; border-radius:3px; background:var(--primary); opacity:0.7; }
+  .sp-label { font-family:var(--font-mono); font-size:11px; color:var(--text-muted); min-width:70px; }
+  .sp-val { font-family:var(--font-mono); font-size:11px; color:var(--text-dim); }
+</style>
+</head>
+<body>
+<div class="card" style="gap:10px;">
+  <p class="eyebrow">SPACING · GRID 8px</p>
+  <div style="display:flex; flex-direction:column; gap:6px;">
+    <div class="sp-row"><span class="sp-label">--sp-1</span><div class="sp-bar" style="width:4px;"></div><span class="sp-val">4px</span></div>
+    <div class="sp-row"><span class="sp-label">--sp-2</span><div class="sp-bar" style="width:8px;"></div><span class="sp-val">8px</span></div>
+    <div class="sp-row"><span class="sp-label">--sp-3</span><div class="sp-bar" style="width:12px;"></div><span class="sp-val">12px</span></div>
+    <div class="sp-row"><span class="sp-label">--sp-4</span><div class="sp-bar" style="width:16px;"></div><span class="sp-val">16px</span></div>
+    <div class="sp-row"><span class="sp-label">--sp-6</span><div class="sp-bar" style="width:24px;"></div><span class="sp-val">24px</span></div>
+    <div class="sp-row"><span class="sp-label">--sp-8</span><div class="sp-bar" style="width:32px;"></div><span class="sp-val">32px</span></div>
+    <div class="sp-row"><span class="sp-label">--sp-12</span><div class="sp-bar" style="width:48px;"></div><span class="sp-val">48px</span></div>
+    <div class="sp-row"><span class="sp-label">--sp-16</span><div class="sp-bar" style="width:64px;"></div><span class="sp-val">64px</span></div>
+    <div class="sp-row"><span class="sp-label">--sp-24</span><div class="sp-bar" style="width:96px;"></div><span class="sp-val">96px</span></div>
+  </div>
+</div>
+</body></html>

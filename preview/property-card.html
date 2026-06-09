@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<title>Property Card</title>
+<link rel="stylesheet" href="_base.css">
+<style>
+  .prop-card {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    max-width: 340px;
+  }
+  .prop-img {
+    height: 140px;
+    background: var(--primary-deep);
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    padding: 12px;
+  }
+  .prop-img::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, transparent 40%, rgba(0,0,0,0.6));
+  }
+  .prop-coord {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--accent);
+    position: relative;
+    z-index: 1;
+    letter-spacing: 0.3px;
+  }
+  .prop-status {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    padding: 3px 8px;
+    border-radius: var(--radius-sm);
+    z-index: 1;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .prop-body { padding: 16px; display:flex; flex-direction:column; gap:10px; }
+  .prop-title { font-family:var(--font-display); font-weight:600; font-size:17px; color:var(--text); margin:0; line-height:1.3; }
+  .prop-meta { font-family:var(--font-body); font-size:13px; color:var(--text-muted); margin:0; }
+  .prop-metrics { display:flex; gap:6px; flex-wrap:wrap; }
+  .prop-chip {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+    color: var(--text-muted);
+    letter-spacing: 0.3px;
+  }
+  .prop-footer {
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .prop-price { font-family:var(--font-display); font-weight:700; font-size:20px; color:var(--text); }
+  .prop-price-label { font-family:var(--font-mono); font-size:10px; color:var(--text-dim); }
+  .prop-grid-icon {
+    position: absolute; top:0; left:0; width:100%; height:100%;
+    background-image:
+      linear-gradient(rgba(65,96,140,0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(65,96,140,0.08) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+  .cards-row { display:flex; gap:20px; flex-wrap:wrap; }
+</style>
+</head>
+<body>
+<div class="card">
+  <p class="eyebrow">TARJETA DE INMUEBLE</p>
+  <div class="cards-row">
+    <div class="prop-card">
+      <div class="prop-img">
+        <div class="prop-grid-icon"></div>
+        <span class="prop-status" style="background:rgba(111,176,131,0.15); color:#6FB083;">publicado</span>
+        <span class="prop-coord">-0.1892° S, -78.4783° W</span>
+      </div>
+      <div class="prop-body">
+        <h3 class="prop-title">Departamento en La Carolina</h3>
+        <p class="prop-meta">Av. Amazonas · Piso 8 · 85 m² · 2 hab</p>
+        <div class="prop-metrics">
+          <span class="prop-chip" style="color:#6FB083;">ruido: bajo</span>
+          <span class="prop-chip">walk: 82</span>
+          <span class="prop-chip">veg: 34%</span>
+          <span class="prop-chip" style="color:#D29922;">tráfico: medio</span>
+        </div>
+      </div>
+      <div class="prop-footer">
+        <div>
+          <div class="prop-price">$142,000</div>
+          <div class="prop-price-label">PRECIO REFERENCIAL</div>
+        </div>
+        <span class="prop-chip" style="color:var(--accent);">ver ficha →</span>
+      </div>
+    </div>
+
+    <div class="prop-card">
+      <div class="prop-img" style="background:var(--surface-2);">
+        <div class="prop-grid-icon"></div>
+        <span class="prop-status" style="background:rgba(210,153,34,0.15); color:#D29922;">en-revisión</span>
+        <span class="prop-coord">-0.2105° S, -78.4936° W</span>
+      </div>
+      <div class="prop-body">
+        <h3 class="prop-title">Casa en Cumbayá</h3>
+        <p class="prop-meta">Vía Interoceánica · 2 pisos · 180 m² · 3 hab</p>
+        <div class="prop-metrics">
+          <span class="prop-chip" style="color:#969CA6;">ruido: indeterminado</span>
+          <span class="prop-chip">walk: 61</span>
+          <span class="prop-chip">veg: 52%</span>
+        </div>
+      </div>
+      <div class="prop-footer">
+        <div>
+          <div class="prop-price">$285,000</div>
+          <div class="prop-price-label">PRECIO REFERENCIAL</div>
+        </div>
+        <span class="prop-chip" style="color:var(--accent);">ver ficha →</span>
+      </div>
+    </div>
+  </div>
+</div>
+</body></html>

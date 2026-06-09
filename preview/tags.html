@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<title>Tags · Badges · Status</title>
+<link rel="stylesheet" href="_base.css">
+<style>
+  .tag {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    padding: 4px 10px;
+    border-radius: var(--radius-sm);
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    line-height: 1;
+    letter-spacing: 0.3px;
+  }
+  .tag-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .tag-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .section-label { font-family:var(--font-mono); font-size:10px; color:var(--text-dim); letter-spacing:1px; text-transform:uppercase; margin-top:4px; }
+  .badge {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    padding: 3px 8px;
+    border-radius: var(--radius-full);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+<div class="card" style="gap:12px;">
+  <p class="eyebrow">TAGS SEMÁNTICOS · BADGES DE ESTADO</p>
+
+  <span class="section-label">Estado de publicación</span>
+  <div class="tag-row">
+    <span class="tag" style="background:rgba(111,176,131,0.12); color:#6FB083;"><span class="tag-dot" style="background:#6FB083;"></span>publicado</span>
+    <span class="tag" style="background:rgba(210,153,34,0.12); color:#D29922;"><span class="tag-dot" style="background:#D29922;"></span>en-revisión</span>
+    <span class="tag" style="background:rgba(248,81,73,0.12); color:#F85149;"><span class="tag-dot" style="background:#F85149;"></span>rechazado</span>
+    <span class="tag" style="background:rgba(150,156,166,0.12); color:#969CA6;"><span class="tag-dot" style="background:#969CA6;"></span>indeterminado</span>
+  </div>
+
+  <span class="section-label">Nivel de métrica</span>
+  <div class="tag-row">
+    <span class="tag" style="background:rgba(111,176,131,0.12); color:#6FB083;">bajo</span>
+    <span class="tag" style="background:rgba(210,153,34,0.12); color:#D29922;">medio</span>
+    <span class="tag" style="background:rgba(248,81,73,0.12); color:#F85149;">alto</span>
+  </div>
+
+  <span class="section-label">Badges</span>
+  <div class="tag-row">
+    <span class="badge" style="background:rgba(65,96,140,0.15); color:#8FB0D4;">coordenada</span>
+    <span class="badge" style="background:rgba(94,128,172,0.15); color:#5E80AC;">api</span>
+    <span class="badge" style="background:rgba(111,176,131,0.15); color:#6FB083;">✓ verificado</span>
+  </div>
+</div>
+</body></html>

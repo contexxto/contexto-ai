@@ -48,3 +48,7 @@ scripts/payload_ingesta.json
 # Frontend build
 frontend/dist/
 frontend/node_modules/
+
+# Node modules de cualquier sub-proyecto (p.ej. logo/deck-tmp)
+node_modules/
+logo/deck-tmp/node_modules/

@@ -269,6 +269,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (deepLinkId) loadFromDeepLink(deepLinkId)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

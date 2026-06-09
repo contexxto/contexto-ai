@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
 import axios from 'axios'
 import {
-  Send, MapPin, RefreshCw, Trash2, Copy, CheckCheck, ChevronDown
+  Send, MapPin, RefreshCw, Trash2, Copy, CheckCheck, ChevronDown, Menu
 } from 'lucide-react'
 
 // En desarrollo usa el proxy de Vite (/api → localhost:8000).
@@ -207,6 +207,8 @@ export default function App() {
   const [dragOver, setDragOver] = useState(false)
   const [geo, setGeo] = useState(null)          // {lat, lon} | null — ubicación del usuario
   const [geoLoading, setGeoLoading] = useState(false)
+  const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 768px)').matches)
+  const [sidebarOpen, setSidebarOpen] = useState(false)   // cajón móvil
 
   const bottomRef  = useRef(null)
   const inputRef   = useRef(null)
@@ -214,6 +216,14 @@ export default function App() {
   // Salta la restauración SOLO en la primera carga si vino por QR
   // (loadFromDeepLink maneja esa sesión). Los cambios de conversación restauran normal.
   const skipFirstRestore = useRef(!!deepLinkId)
+
+  // Responsive: detecta móvil/tablet para mostrar la barra lateral como cajón
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 768px)')
+    const h = (e) => setIsMobile(e.matches)
+    mq.addEventListener('change', h)
+    return () => mq.removeEventListener('change', h)
+  }, [])
 
   // Restore history from API on mount / session change
   useEffect(() => {
@@ -462,12 +472,29 @@ export default function App() {
 
   return (
     <div style={{ display:'flex', height:'100dvh' }}>
-      <Sidebar
-        sessionId={sessionId}
-        onSelect={switchSession}
-        onNew={resetSession}
-        reloadKey={`${sessionId}:${messages.length}`}
-      />
+      {/* Desktop: barra lateral fija. Móvil: cajón con backdrop. */}
+      {!isMobile && (
+        <Sidebar
+          sessionId={sessionId}
+          onSelect={switchSession}
+          onNew={resetSession}
+          reloadKey={`${sessionId}:${messages.length}`}
+        />
+      )}
+      {isMobile && sidebarOpen && (
+        <>
+          <div onClick={() => setSidebarOpen(false)}
+            style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.55)', zIndex:40 }} />
+          <div style={{ position:'fixed', top:0, left:0, bottom:0, zIndex:50 }}>
+            <Sidebar
+              sessionId={sessionId}
+              onSelect={(id) => { switchSession(id); setSidebarOpen(false) }}
+              onNew={() => { resetSession(); setSidebarOpen(false) }}
+              reloadKey={`${sessionId}:${messages.length}`}
+            />
+          </div>
+        </>
+      )}
       <div
         onDragOver={e => { e.preventDefault(); if (!dragOver) setDragOver(true) }}
         onDragLeave={e => { if (e.currentTarget === e.target) setDragOver(false) }}
@@ -475,7 +502,7 @@ export default function App() {
         style={{ flex:1, minWidth:0, position:'relative',
                  height:'100dvh', overflow:'hidden' }}>
       <div style={{ width:'100%', maxWidth:1280, margin:'0 auto', display:'flex', flexDirection:'column',
-                    height:'100dvh', minHeight:0, padding:'0 32px' }}>
+                    height:'100dvh', minHeight:0, padding:isMobile ? '0 14px' : '0 32px' }}>
 
       {dragOver && (
         <div style={{
@@ -498,24 +525,35 @@ export default function App() {
         padding:'16px 0 12px',
         flexShrink:0,
       }}>
-        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-          <img src={sphereLogo} alt="Contexto AI" width={36} height={36}
+        <div style={{ display:'flex', alignItems:'center', gap:10, minWidth:0 }}>
+          {isMobile && (
+            <button onClick={() => setSidebarOpen(true)} title="Conversaciones"
+              style={{ background:'none', border:'none', cursor:'pointer',
+                       color:'var(--text)', padding:4, display:'flex', flexShrink:0 }}>
+              <Menu size={22} />
+            </button>
+          )}
+          <img src={sphereLogo} alt="Contexto AI" width={isMobile ? 30 : 36} height={isMobile ? 30 : 36}
                style={{ display:'block', flexShrink:0 }} />
-          <div>
-            <div style={{ fontWeight:800, fontSize:'1rem', letterSpacing:'-.3px' }}>
+          <div style={{ minWidth:0 }}>
+            <div style={{ fontWeight:800, fontSize:isMobile ? '.95rem' : '1rem', letterSpacing:'-.3px' }}>
               Contexto <span style={{ color:'var(--teal)' }}>AI</span>
             </div>
-            <div style={{ fontSize:'.72rem', color:'var(--text-muted)' }}>
-              Cada lugar tiene un aura · Quito
-            </div>
+            {!isMobile && (
+              <div style={{ fontSize:'.72rem', color:'var(--text-muted)' }}>
+                Cada lugar tiene un aura · Quito
+              </div>
+            )}
           </div>
         </div>
-        <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-          <span style={{
-            fontSize:'.7rem', padding:'3px 9px', borderRadius:20,
-            background:'rgba(45,189,182,.12)', color:'var(--teal-bright)',
-            border:'1px solid rgba(45,189,182,.3)',
-          }}>● API conectada</span>
+        <div style={{ display:'flex', gap:8, alignItems:'center', flexShrink:0 }}>
+          {!isMobile && (
+            <span style={{
+              fontSize:'.7rem', padding:'3px 9px', borderRadius:20,
+              background:'rgba(45,189,182,.12)', color:'var(--teal-bright)',
+              border:'1px solid rgba(45,189,182,.3)',
+            }}>● API conectada</span>
+          )}
           <button
             onClick={() => setView('map')}
             title="Mapa Vivo"
@@ -525,7 +563,7 @@ export default function App() {
               display:'flex', alignItems:'center', gap:5, fontSize:'.8rem',
             }}
           >
-            🗺️ Mapa
+            🗺️{!isMobile && ' Mapa'}
           </button>
           <button
             onClick={() => setView('review')}
@@ -536,7 +574,7 @@ export default function App() {
               display:'flex', alignItems:'center', gap:5, fontSize:'.8rem',
             }}
           >
-            🛡️ Revisión
+            🛡️{!isMobile && ' Revisión'}
           </button>
         </div>
       </header>

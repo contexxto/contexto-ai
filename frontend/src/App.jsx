@@ -528,7 +528,7 @@ export default function App() {
           fontSize:'.7rem', color:'var(--text-muted)', padding:'0 4px',
         }}>
           <span>Enter para enviar · Shift+Enter nueva línea</span>
-          <span style={{ fontFamily:'monospace', opacity:.6 }}>
+          <span style={{ fontFamily:'var(--font-mono)', opacity:.6 }}>
             {sessionId.slice(0, 22)}...
           </span>
         </div>

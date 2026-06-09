@@ -1,31 +1,113 @@
+/* ==========================================================================
+   CONTEXTO AI · DESIGN TOKENS (aplicado del Design System v2026.1)
+   ========================================================================== */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg:        #1a1c20;
-  --surface:   #23262b;
+  /* ---- Tipografía ---- */
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  --font-body:    'Space Grotesk', system-ui, sans-serif;
+  --font-mono:    'JetBrains Mono', ui-monospace, monospace;
+
+  /* ---- Azul de marca ---- */
+  --primary:      #41608C;
+  --primary-soft: #5E80AC;
+  --primary-deep: #2D4463;
+  --accent:       #8FB0D4;
+
+  /* ---- Superficies (dark) ---- */
+  --bg:        #1A1C20;
+  --surface:   #23262B;   /* alias de --surface-1 (compat app) */
+  --surface-1: #23262B;
+  --surface-2: #2A2E35;
   --border:    #343841;
-  --accent:    #8fb0d4;
-  --user-bg:   #41608c;
-  --ai-bg:     #23262b;
-  --text:      #dde2e8;
-  --text-muted:#969ca6;
-  --success:   #6fb083;
-  --radius:    12px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  /* ---- Texto ---- */
+  --text:       #DDE2E8;
+  --text-muted: #969CA6;
+  --text-dim:   #6B7280;
+
+  /* ---- Semánticos ---- */
+  --success: #6FB083;
+  --warning: #D29922;
+  --danger:  #F85149;
+  --info:    #8FB0D4;
+
+  /* ---- Aliases usados por la app ---- */
+  --user-bg: #41608C;   /* = --primary */
+  --ai-bg:   #23262B;   /* = --surface-1 */
+
+  /* ---- Gradientes ---- */
+  --gradient-brand: linear-gradient(135deg, #41608C, #5E80AC);
+  --gradient-hero:  linear-gradient(180deg, #1A1C20 0%, #2D4463 100%);
+
+  /* ---- Radios ---- */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+  --radius: 12px;   /* compat app */
+
+  /* ---- Sombras ---- */
+  --shadow-sm:   0 1px 2px rgba(0,0,0,0.25);
+  --shadow-md:   0 4px 12px rgba(0,0,0,0.3);
+  --shadow-lg:   0 8px 32px rgba(0,0,0,0.35);
+  --shadow-glow: 0 0 24px rgba(65,96,140,0.2);
+
+  /* ---- Motion ---- */
+  --ease:     cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 120ms;
+  --dur:      200ms;
+  --dur-slow: 400ms;
+
+  font-family: var(--font-body);
 }
 
-body { background: var(--bg); color: var(--text); height: 100dvh; overflow: hidden; }
+/* ---- Light theme (marketing / B2C) ---- */
+[data-theme="light"] {
+  --bg:        #F8F9FB;
+  --surface:   #FFFFFF;
+  --surface-1: #FFFFFF;
+  --surface-2: #F0F2F5;
+  --ai-bg:     #FFFFFF;
+  --border:    #E2E5EA;
+  --text:      #1A1C20;
+  --text-muted:#5A6170;
+  --text-dim:  #8A919E;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  height: 100dvh;
+  overflow: hidden;
+  font-family: var(--font-body);
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
 
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
-.ai-content h2, .ai-content h3 { margin: .9rem 0 .35rem; color: var(--accent); font-size: 1rem; }
+/* ---- Render de respuestas del agente ---- */
+.ai-content h2, .ai-content h3 {
+  font-family: var(--font-display); font-weight: 600;
+  margin: .9rem 0 .35rem; color: var(--accent); font-size: 1rem;
+  letter-spacing: -0.3px;
+}
 .ai-content h2 { font-size: 1.05rem; }
 .ai-content p  { margin: .35rem 0; line-height: 1.65; }
 .ai-content ul, .ai-content ol { margin: .35rem 0 .35rem 1.2rem; }
 .ai-content li { margin: .2rem 0; line-height: 1.6; }
-.ai-content strong { color: #fff; }
+.ai-content strong { color: #fff; font-weight: 600; }
 .ai-content hr { border: none; height: 0; margin: 1.4rem 0; }
-.ai-content code { background: #14161a; padding: 1px 5px; border-radius: 4px;
-                   font-size: .84em; color: #9fc0e0; font-family: monospace; }
+.ai-content code {
+  background: #14161a; padding: 1px 5px; border-radius: 4px;
+  font-size: .84em; color: #9fc0e0; font-family: var(--font-mono);
+}

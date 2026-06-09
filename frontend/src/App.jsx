@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
 import axios from 'axios'
 import {
-  Send, MapPin, RefreshCw, Trash2, Copy, CheckCheck, ChevronDown, Menu
+  Send, MapPin, RefreshCw, Trash2, Copy, CheckCheck, ChevronDown, Menu, Mic
 } from 'lucide-react'
 
 // En desarrollo usa el proxy de Vite (/api → localhost:8000).
@@ -209,6 +209,8 @@ export default function App() {
   const [geoLoading, setGeoLoading] = useState(false)
   const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 768px)').matches)
   const [sidebarOpen, setSidebarOpen] = useState(false)   // cajón móvil
+  const [listening, setListening] = useState(false)       // dictado por voz
+  const recognitionRef = useRef(null)
 
   const bottomRef  = useRef(null)
   const inputRef   = useRef(null)
@@ -351,6 +353,27 @@ export default function App() {
       setTimeout(() => inputRef.current?.focus(), 100)
     }
   }, [input, loading, sessionId, geo])
+
+  // Dictado por voz (Web Speech API) — "hablarle al agente"
+  const startVoice = useCallback(() => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SR) { setError('El dictado por voz no está disponible en este navegador. Prueba en Chrome.'); return }
+    if (listening) { recognitionRef.current?.stop(); return }
+    const rec = new SR()
+    rec.lang = 'es-419'      // español de Latinoamérica
+    rec.interimResults = true
+    rec.continuous = false
+    rec.onresult = (e) => {
+      let txt = ''
+      for (let i = 0; i < e.results.length; i++) txt += e.results[i][0].transcript
+      setInput(txt)
+    }
+    rec.onerror = () => setListening(false)
+    rec.onend = () => { setListening(false); setTimeout(() => inputRef.current?.focus(), 50) }
+    recognitionRef.current = rec
+    setListening(true)
+    rec.start()
+  }, [listening])
 
   // Ubicación del usuario para el agente ("estoy aquí, ¿qué hay cerca?")
   const toggleGeo = useCallback(() => {
@@ -673,12 +696,13 @@ export default function App() {
           </div>
         )}
         <div style={{
-          display:'flex', gap:10, background:'var(--surface)',
-          border:'1px solid var(--border)', borderRadius:14, padding:'8px 8px 8px 8px',
-          transition:'border-color .15s',
+          display:'flex', gap:8, alignItems:'flex-end', background:'var(--surface)',
+          border:'1px solid var(--border)', borderRadius:22, padding:'8px',
+          transition:'border-color .18s, box-shadow .18s',
+          boxShadow: listening ? '0 0 0 1px var(--teal), 0 0 24px rgba(45,189,182,.25)' : 'none',
         }}
-          onFocusCapture={e => e.currentTarget.style.borderColor='var(--teal)'}
-          onBlurCapture={e => e.currentTarget.style.borderColor='var(--border)'}
+          onFocusCapture={e => { e.currentTarget.style.borderColor='var(--teal)'; e.currentTarget.style.boxShadow='0 0 0 1px var(--teal), 0 0 22px rgba(45,189,182,.18)' }}
+          onBlurCapture={e => { e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.boxShadow=listening ? '0 0 0 1px var(--teal), 0 0 24px rgba(45,189,182,.25)' : 'none' }}
         >
           <button
             onClick={toggleGeo}
@@ -718,6 +742,20 @@ export default function App() {
             }}
           />
           <button
+            onClick={startVoice}
+            title={listening ? 'Escuchando… toca para detener' : 'Hablar (dictado por voz)'}
+            style={{
+              background: listening ? 'var(--teal)' : 'none',
+              border: `1px solid ${listening ? 'var(--teal)' : 'var(--border)'}`,
+              borderRadius:10, width:38, height:38, flexShrink:0, cursor:'pointer',
+              display:'flex', alignItems:'center', justifyContent:'center',
+              color: listening ? '#0E0D13' : 'var(--text-muted)',
+              animation: listening ? 'pulseGlow 1.2s ease-in-out infinite' : 'none',
+            }}
+          >
+            <Mic size={16}/>
+          </button>
+          <button
             onClick={() => sendMessage()}
             disabled={!input.trim() || loading}
             style={{
@@ -737,7 +775,7 @@ export default function App() {
           display:'flex', justifyContent:'space-between', marginTop:8,
           fontSize:'.7rem', color:'var(--text-muted)', padding:'0 4px',
         }}>
-          <span>Enter para enviar · Shift+Enter nueva línea</span>
+          <span>{listening ? '🎤 Escuchando… habla ahora' : 'Enter para enviar · Shift+Enter nueva línea'}</span>
           <span style={{ fontFamily:'var(--font-mono)', opacity:.6 }}>
             {sessionId.slice(0, 22)}...
           </span>
@@ -750,6 +788,10 @@ export default function App() {
           50%       { opacity: 1;  transform: scale(1.1); }
         }
         @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes pulseGlow {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(45,189,182,.5); }
+          50%       { box-shadow: 0 0 0 6px rgba(45,189,182,0); }
+        }
       `}</style>
       </div>
       </div>

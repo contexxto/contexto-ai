@@ -74,7 +74,15 @@
 }
 
 body {
-  background: var(--bg);
+  /* Motivos Aura: aura-glow (teal/coral difuso) + grid cartográfico muy sutil */
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(circle at 78% 12%, rgba(45,189,182,0.07), transparent 42%),
+    radial-gradient(circle at 22% 88%, rgba(224,104,90,0.05), transparent 42%),
+    linear-gradient(rgba(45,189,182,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(45,189,182,0.025) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 52px 52px, 52px 52px;
+  background-attachment: fixed;
   color: var(--text);
   height: 100dvh;
   overflow: hidden;

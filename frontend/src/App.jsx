@@ -331,8 +331,8 @@ export default function App() {
         onDrop={handleDrop}
         style={{ flex:1, minWidth:0, position:'relative',
                  height:'100dvh', overflow:'hidden' }}>
-      <div style={{ maxWidth:640, margin:'0 auto', display:'flex', flexDirection:'column',
-                    height:'100dvh', minHeight:0, padding:'0 16px' }}>
+      <div style={{ width:'100%', maxWidth:1280, margin:'0 auto', display:'flex', flexDirection:'column',
+                    height:'100dvh', minHeight:0, padding:'0 32px' }}>
 
       {dragOver && (
         <div style={{

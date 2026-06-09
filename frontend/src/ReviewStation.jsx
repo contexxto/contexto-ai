@@ -65,8 +65,8 @@ function fromUI(field, ui) {
 
 // ── Paleta (igual que el resto de la app) ──
 const C = {
-  bg: '#1a1c20', panel: '#23262b', border: '#343841', text: '#c9d1d9',
-  dim: '#8b949e', accent: '#8fb0d4', amber: '#d29922', green: '#3fb950', red: '#f85149',
+  bg: '#0E0D13', panel: '#16151E', border: '#2E2D3A', text: '#F0ECE6',
+  dim: '#A8A3B3', accent: '#2DBDB6', amber: '#E5C06A', green: '#5EEAD4', red: '#E0685A',
 }
 
 function confColor(c) {
@@ -205,7 +205,7 @@ export default function ReviewStation() {
             <div key={it.activo_id} onClick={() => selectItem(it)}
               style={{
                 padding: '10px 14px', cursor: 'pointer', borderBottom: `1px solid ${C.border}`,
-                background: it.activo_id === selId ? '#1f2630' : 'transparent',
+                background: it.activo_id === selId ? '#1E1D28' : 'transparent',
                 borderLeft: `3px solid ${it.activo_id === selId ? C.accent : 'transparent'}`,
               }}>
               <div style={{ fontSize: '.85rem', marginBottom: 4, lineHeight: 1.3 }}>{it.direccion}</div>
@@ -258,7 +258,7 @@ export default function ReviewStation() {
 
               {sinRaw && (
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: 10, marginBottom: 14,
-                  background: '#2d2410', border: `1px solid ${C.amber}`, borderRadius: 6, fontSize: '.82rem' }}>
+                  background: '#2A2410', border: `1px solid ${C.amber}`, borderRadius: 6, fontSize: '.82rem' }}>
                   <AlertTriangle size={16} color={C.amber} />
                   Activo previo sin extracción guardada. Puedes aprobar/rechazar, pero no hay campos que corregir.
                 </div>
@@ -316,8 +316,8 @@ export default function ReviewStation() {
 // ── estilos inline reutilizables ──
 function inp(dudoso) {
   return {
-    width: '100%', padding: '7px 9px', background: '#1a1c20', color: '#c9d1d9',
-    border: `1px solid ${dudoso ? '#d29922' : '#343841'}`, borderRadius: 6, fontSize: '.85rem',
+    width: '100%', padding: '7px 9px', background: '#16151E', color: '#F0ECE6',
+    border: `1px solid ${dudoso ? '#E5C06A' : '#2E2D3A'}`, borderRadius: 6, fontSize: '.85rem',
   }
 }
 function btn(bg, fg, disabled = false) {

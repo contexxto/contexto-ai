@@ -7,7 +7,7 @@ const API_KEY = import.meta.env.VITE_API_KEY ?? ''
 const authHeaders = API_KEY ? { 'X-API-Key': API_KEY } : {}
 
 const C = {
-  bg: '#16181b', border: '#343841', text: '#c9d1d9', dim: '#8b949e', accent: '#8fb0d4', active: '#1f2630',
+  bg: '#0B0A10', border: '#2E2D3A', text: '#F0ECE6', dim: '#A8A3B3', accent: '#2DBDB6', active: '#1E1D28',
 }
 
 export default function Sidebar({ sessionId, onSelect, onNew, reloadKey }) {
@@ -78,7 +78,7 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey }) {
           padding: '8px 10px', borderRadius: 8, cursor: 'pointer', marginBottom: 2,
           background: active ? C.active : 'transparent',
         }}
-        onMouseEnter={e => { if (!active) e.currentTarget.style.background = '#23262b' }}
+        onMouseEnter={e => { if (!active) e.currentTarget.style.background = '#1E1D28' }}
         onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent' }}>
         <MessageSquare size={14} color={C.dim} style={{ flexShrink: 0 }} />
         {editing ? (
@@ -87,7 +87,7 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey }) {
             onBlur={() => commitRename(s.session_id)}
             onKeyDown={e => { if (e.key === 'Enter') commitRename(s.session_id); if (e.key === 'Escape') setEditingId(null) }}
             onClick={e => e.stopPropagation()}
-            style={{ flex: 1, background: '#14161a', color: C.text, border: `1px solid ${C.accent}`, borderRadius: 5, padding: '3px 6px', fontSize: '.84rem' }} />
+            style={{ flex: 1, background: '#16151E', color: C.text, border: `1px solid ${C.accent}`, borderRadius: 5, padding: '3px 6px', fontSize: '.84rem' }} />
         ) : (
           <span style={{ flex: 1, fontSize: '.84rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: C.text }}>
             {s.pinned && <Pin size={11} color={C.accent} style={{ marginRight: 4, verticalAlign: 'middle' }} />}
@@ -105,7 +105,7 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey }) {
           <div onClick={e => e.stopPropagation()}
             style={{
               position: 'absolute', right: 6, top: '100%', zIndex: 30, width: 160,
-              background: '#23262b', border: `1px solid ${C.border}`, borderRadius: 8,
+              background: '#1E1D28', border: `1px solid ${C.border}`, borderRadius: 8,
               boxShadow: '0 8px 24px rgba(0,0,0,.5)', overflow: 'hidden',
             }}>
             <MenuItem icon={<Pencil size={14} />} label="Renombrar"
@@ -157,9 +157,9 @@ function MenuItem({ icon, label, onClick, danger }) {
       style={{
         display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 12px',
         background: 'none', border: 'none', cursor: 'pointer', fontSize: '.82rem',
-        color: danger ? '#f85149' : '#c9d1d9', textAlign: 'left',
+        color: danger ? '#E0685A' : '#F0ECE6', textAlign: 'left',
       }}
-      onMouseEnter={e => e.currentTarget.style.background = '#21262d'}
+      onMouseEnter={e => e.currentTarget.style.background = '#262533'}
       onMouseLeave={e => e.currentTarget.style.background = 'none'}>
       {icon} {label}
     </button>
@@ -168,5 +168,5 @@ function MenuItem({ icon, label, onClick, danger }) {
 
 const sectionLabel = {
   fontSize: '.68rem', textTransform: 'uppercase', letterSpacing: '.5px',
-  color: '#6e7681', padding: '4px 6px', marginBottom: 2,
+  color: '#6B6778', padding: '4px 6px', marginBottom: 2,
 }

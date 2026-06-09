@@ -13,6 +13,7 @@ const authHeaders = API_KEY ? { 'X-API-Key': API_KEY } : {}
 import './App.css'
 import ReviewStation from './ReviewStation'
 import Sidebar from './Sidebar'
+import sphereLogo from './assets/sphere.svg'
 
 // ── Helpers ────────────────────────────────────────────────
 const SESSION_KEY = 'contexto_ai_session_id'
@@ -50,12 +51,8 @@ function Message({ msg, onCopy, copied }) {
       marginBottom:16, gap:10,
     }}>
       {!isUser && (
-        <div style={{
-          width:32, height:32, borderRadius:'50%', flexShrink:0,
-          background:'linear-gradient(135deg,#41608c,#8fb0d4)',
-          display:'flex', alignItems:'center', justifyContent:'center',
-          fontSize:14, fontWeight:700,
-        }}>C</div>
+        <img src={sphereLogo} alt="Contexto AI" width={32} height={32}
+             style={{ flexShrink:0, display:'block' }} />
       )}
       <div style={{ maxWidth:'78%' }}>
         {msg.toolCalls?.length > 0 && (
@@ -114,12 +111,8 @@ function Message({ msg, onCopy, copied }) {
 function Thinking() {
   return (
     <div style={{ display:'flex', gap:10, marginBottom:16 }}>
-      <div style={{
-        width:32, height:32, borderRadius:'50%', flexShrink:0,
-        background:'linear-gradient(135deg,#41608c,#8fb0d4)',
-        display:'flex', alignItems:'center', justifyContent:'center',
-        fontSize:14, fontWeight:700,
-      }}>C</div>
+      <img src={sphereLogo} alt="Contexto AI" width={32} height={32}
+           style={{ flexShrink:0, display:'block' }} />
       <div style={{
         padding:'14px 16px', borderRadius:'4px 18px 18px 18px',
         background:'var(--ai-bg)', border:'1px solid var(--border)',
@@ -338,8 +331,8 @@ export default function App() {
         <div style={{
           position:'absolute', inset:0, zIndex:50, display:'flex', flexDirection:'column',
           alignItems:'center', justifyContent:'center', gap:10,
-          background:'rgba(13,17,23,.92)', border:'2px dashed #8fb0d4', borderRadius:14,
-          color:'#8fb0d4', fontSize:'1.05rem', fontWeight:600, pointerEvents:'none',
+          background:'rgba(14,13,19,.92)', border:'2px dashed var(--teal)', borderRadius:14,
+          color:'var(--teal)', fontSize:'1.05rem', fontWeight:600, pointerEvents:'none',
         }}>
           <MapPin size={36} />
           Suelta tu foto para encontrar inmuebles parecidos
@@ -356,27 +349,22 @@ export default function App() {
         flexShrink:0,
       }}>
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-          <div style={{
-            width:36, height:36, borderRadius:10,
-            background:'linear-gradient(135deg,#41608c,#5e80ac)',
-            display:'flex', alignItems:'center', justifyContent:'center',
-          }}>
-            <MapPin size={18} color="#fff" />
-          </div>
+          <img src={sphereLogo} alt="Contexto AI" width={36} height={36}
+               style={{ display:'block', flexShrink:0 }} />
           <div>
-            <div style={{ fontWeight:700, fontSize:'1rem', letterSpacing:'-.3px' }}>
-              Contexto AI
+            <div style={{ fontWeight:800, fontSize:'1rem', letterSpacing:'-.3px' }}>
+              Contexto <span style={{ color:'var(--teal)' }}>AI</span>
             </div>
             <div style={{ fontSize:'.72rem', color:'var(--text-muted)' }}>
-              Catastro Vivo · La Carolina, Quito
+              Cada lugar tiene un aura · Quito
             </div>
           </div>
         </div>
         <div style={{ display:'flex', gap:8, alignItems:'center' }}>
           <span style={{
             fontSize:'.7rem', padding:'3px 9px', borderRadius:20,
-            background:'#0d2d0d', color:'var(--success)',
-            border:'1px solid #1a4a1a',
+            background:'rgba(45,189,182,.12)', color:'var(--teal-bright)',
+            border:'1px solid rgba(45,189,182,.3)',
           }}>● API conectada</span>
           <button
             onClick={() => setView('review')}
@@ -400,15 +388,9 @@ export default function App() {
       >
         {isEmpty && (
           <div style={{ textAlign:'center', paddingTop:60 }}>
-            <div style={{
-              width:64, height:64, borderRadius:16, margin:'0 auto 20px',
-              background:'linear-gradient(135deg,#41608c22,#5e80ac22)',
-              border:'1px solid #41608c44',
-              display:'flex', alignItems:'center', justifyContent:'center',
-            }}>
-              <MapPin size={28} color='#8fb0d4'/>
-            </div>
-            <h2 style={{ fontWeight:600, fontSize:'1.25rem', marginBottom:8 }}>
+            <img src={sphereLogo} alt="Contexto AI" width={72} height={72}
+                 style={{ display:'block', margin:'0 auto 20px' }} />
+            <h2 style={{ fontFamily:'var(--font-display)', fontWeight:800, fontSize:'1.35rem', marginBottom:8 }}>
               Bienvenido a Contexto AI
             </h2>
             <p style={{ color:'var(--text-muted)', fontSize:'.9rem', marginBottom:32 }}>
@@ -426,7 +408,7 @@ export default function App() {
                     color:'var(--text)', fontSize:'.85rem', maxWidth:520,
                     textAlign:'left', transition:'border-color .15s',
                   }}
-                  onMouseEnter={e => e.target.style.borderColor='#8fb0d4'}
+                  onMouseEnter={e => e.target.style.borderColor='var(--teal)'}
                   onMouseLeave={e => e.target.style.borderColor='var(--border)'}
                 >
                   {p}
@@ -483,7 +465,7 @@ export default function App() {
           border:'1px solid var(--border)', borderRadius:14, padding:'8px 8px 8px 16px',
           transition:'border-color .15s',
         }}
-          onFocusCapture={e => e.currentTarget.style.borderColor='#8fb0d4'}
+          onFocusCapture={e => e.currentTarget.style.borderColor='var(--teal)'}
           onBlurCapture={e => e.currentTarget.style.borderColor='var(--border)'}
         >
           <textarea
@@ -511,7 +493,7 @@ export default function App() {
             onClick={() => sendMessage()}
             disabled={!input.trim() || loading}
             style={{
-              background: !input.trim() || loading ? 'var(--border)' : '#41608c',
+              background: !input.trim() || loading ? 'var(--border)' : 'var(--teal)',
               border:'none', borderRadius:10, width:38, height:38, cursor:'pointer',
               display:'flex', alignItems:'center', justifyContent:'center',
               flexShrink:0, transition:'background .15s',

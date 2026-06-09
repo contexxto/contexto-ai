@@ -54,45 +54,62 @@ export default function MapView() {
   const [error, setError] = useState(null)
   const [nearMsg, setNearMsg] = useState(null)
   const [locating, setLocating] = useState(false)
+  const [radiusM, setRadiusM] = useState(500)
+  const lastPos = useRef(null)  // {lat, lon} de la última ubicación
+
+  const RADII = [[250, '250 m'], [500, '500 m'], [1000, '1 km'], [2000, '2 km']]
+  const fmt = (m) => m >= 1000 ? (m / 1000) + ' km' : m + ' m'
+
+  // Dibuja el círculo + marcador, encuadra y consulta el catastro en ese radio.
+  async function runRadius(lat, lon, radius) {
+    const map = mapRef.current
+    if (!map) return
+    const circle = circlePolygon(lon, lat, radius)
+    if (map.getSource('radio')) map.getSource('radio').setData(circle)
+    else {
+      map.addSource('radio', { type: 'geojson', data: circle })
+      map.addLayer({ id: 'radio-fill', type: 'fill', source: 'radio',
+        paint: { 'fill-color': '#2DBDB6', 'fill-opacity': 0.08 } })
+      map.addLayer({ id: 'radio-line', type: 'line', source: 'radio',
+        paint: { 'line-color': '#2DBDB6', 'line-width': 1.5, 'line-dasharray': [2, 2] } })
+    }
+    const userPt = { type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] } }
+    if (map.getSource('yo')) map.getSource('yo').setData(userPt)
+    else {
+      map.addSource('yo', { type: 'geojson', data: userPt })
+      map.addLayer({ id: 'yo-dot', type: 'circle', source: 'yo',
+        paint: { 'circle-radius': 6, 'circle-color': '#F0ECE6', 'circle-stroke-width': 3, 'circle-stroke-color': '#2DBDB6' } })
+    }
+    // Encuadrar al círculo (para que el radio elegido se vea completo)
+    const c = circle.geometry.coordinates[0]
+    const b = c.reduce((acc, p) => acc.extend(p), new maplibregl.LngLatBounds(c[0], c[0]))
+    map.fitBounds(b, { padding: 60, duration: 700 })
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/assets/near?lat=${lat}&lon=${lon}&radius_m=${radius}`, { headers: authHeaders })
+      const data = await res.json()
+      const n = data.total ?? 0
+      setNearMsg(n > 0
+        ? `📍 ${n} inmueble(s) en ${fmt(radius)} a la redonda de tu ubicación.`
+        : `📍 Aún no tengo datos del catastro en ${fmt(radius)} a la redonda. Estamos ampliando la cobertura.`)
+    } catch { setNearMsg('No se pudo consultar el sector.') }
+    finally { setLocating(false) }
+  }
 
   function nearMe() {
-    const map = mapRef.current
-    if (!map || !navigator.geolocation) { setNearMsg('Tu navegador no permite geolocalización.'); return }
+    if (!navigator.geolocation) { setNearMsg('Tu navegador no permite geolocalización.'); return }
     setLocating(true); setNearMsg(null)
-    navigator.geolocation.getCurrentPosition(async (pos) => {
+    navigator.geolocation.getCurrentPosition((pos) => {
       const { latitude: lat, longitude: lon } = pos.coords
-      const RADIUS = 500
-      // dibujar/actualizar el círculo de 500m + marcador de usuario
-      const circle = circlePolygon(lon, lat, RADIUS)
-      if (map.getSource('radio')) map.getSource('radio').setData(circle)
-      else {
-        map.addSource('radio', { type: 'geojson', data: circle })
-        map.addLayer({ id: 'radio-fill', type: 'fill', source: 'radio',
-          paint: { 'fill-color': '#2DBDB6', 'fill-opacity': 0.08 } })
-        map.addLayer({ id: 'radio-line', type: 'line', source: 'radio',
-          paint: { 'line-color': '#2DBDB6', 'line-width': 1.5, 'line-dasharray': [2, 2] } })
-      }
-      const userPt = { type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] } }
-      if (map.getSource('yo')) map.getSource('yo').setData(userPt)
-      else {
-        map.addSource('yo', { type: 'geojson', data: userPt })
-        map.addLayer({ id: 'yo-dot', type: 'circle', source: 'yo',
-          paint: { 'circle-radius': 6, 'circle-color': '#F0ECE6', 'circle-stroke-width': 3, 'circle-stroke-color': '#2DBDB6' } })
-      }
-      map.flyTo({ center: [lon, lat], zoom: 15.5, duration: 800 })
-      try {
-        const res = await fetch(`${API_BASE}/api/v1/assets/near?lat=${lat}&lon=${lon}&radius_m=${RADIUS}`, { headers: authHeaders })
-        const data = await res.json()
-        const n = data.total ?? 0
-        setNearMsg(n > 0
-          ? `📍 ${n} inmueble(s) en 500 m a la redonda de tu ubicación.`
-          : '📍 Aún no tengo datos del catastro en este sector. Estamos ampliando la cobertura.')
-      } catch {
-        setNearMsg('No se pudo consultar el sector.')
-      } finally { setLocating(false) }
+      lastPos.current = { lat, lon }
+      runRadius(lat, lon, radiusM)
     }, () => {
       setLocating(false); setNearMsg('No pudimos obtener tu ubicación (permiso denegado).')
     }, { enableHighAccuracy: true, timeout: 10000 })
+  }
+
+  function changeRadius(r) {
+    setRadiusM(r)
+    if (lastPos.current) runRadius(lastPos.current.lat, lastPos.current.lon, r)
   }
 
   useEffect(() => {
@@ -167,9 +184,28 @@ export default function MapView() {
         📍 {locating ? 'Ubicando…' : '¿Puedo vivir aquí? · Cerca de mí'}
       </button>
 
+      {/* Selector de radio (lo elige el usuario) */}
+      <div style={{
+        position: 'absolute', top: 56, left: 16, zIndex: 6,
+        display: 'flex', alignItems: 'center', gap: 6,
+        background: 'rgba(22,21,30,.92)', border: '1px solid #2E2D3A', borderRadius: 999,
+        padding: '4px 6px', fontFamily: "'Plus Jakarta Sans',sans-serif",
+      }}>
+        <span style={{ color: '#A8A3B3', fontSize: 11, padding: '0 4px' }}>Radio:</span>
+        {RADII.map(([m, label]) => (
+          <button key={m} onClick={() => changeRadius(m)}
+            style={{
+              border: 'none', cursor: 'pointer', borderRadius: 999, padding: '4px 10px',
+              fontSize: 12, fontWeight: 600,
+              background: radiusM === m ? '#2DBDB6' : 'transparent',
+              color: radiusM === m ? '#0E0D13' : '#A8A3B3',
+            }}>{label}</button>
+        ))}
+      </div>
+
       {nearMsg && (
         <div style={{
-          position: 'absolute', top: 64, left: 16, zIndex: 6, maxWidth: 340,
+          position: 'absolute', top: 104, left: 16, zIndex: 6, maxWidth: 340,
           background: 'rgba(22,21,30,.95)', border: '1px solid #2E2D3A', borderRadius: 10,
           padding: '10px 14px', color: '#F0ECE6', fontSize: 13,
           fontFamily: "'Plus Jakarta Sans',sans-serif",

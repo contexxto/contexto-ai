@@ -583,8 +583,8 @@ export default function App() {
             onClick={() => setView('map')}
             title="Mapa Vivo"
             style={{
-              background:'none', border:'1px solid var(--border)', borderRadius:8,
-              cursor:'pointer', color:'var(--text-muted)', padding:'6px 10px',
+              background:'rgba(45,189,182,.08)', border:'1px solid rgba(45,189,182,.25)', borderRadius:999,
+              cursor:'pointer', color:'var(--teal)', padding:'6px 12px',
               display:'flex', alignItems:'center', gap:5, fontSize:'.8rem',
             }}
           >
@@ -594,8 +594,8 @@ export default function App() {
             onClick={() => setView('review')}
             title="Estación de Revisión"
             style={{
-              background:'none', border:'1px solid var(--border)', borderRadius:8,
-              cursor:'pointer', color:'var(--text-muted)', padding:'6px 10px',
+              background:'rgba(45,189,182,.08)', border:'1px solid rgba(45,189,182,.25)', borderRadius:999,
+              cursor:'pointer', color:'var(--teal)', padding:'6px 12px',
               display:'flex', alignItems:'center', gap:5, fontSize:'.8rem',
             }}
           >
@@ -698,24 +698,26 @@ export default function App() {
         )}
         <div style={{
           display:'flex', gap:8, alignItems:'flex-end',
-          background:'rgba(35,38,43,.6)', backdropFilter:'blur(14px)', WebkitBackdropFilter:'blur(14px)',
-          border:'1px solid var(--border)', borderRadius:22, padding:'8px',
+          background:'rgba(20,44,43,.5)', backdropFilter:'blur(16px)', WebkitBackdropFilter:'blur(16px)',
+          border:'1px solid rgba(45,189,182,.30)', borderRadius:26, padding:'8px',
           transition:'border-color .18s, box-shadow .18s',
-          boxShadow: listening ? '0 0 0 1px var(--teal), 0 0 24px rgba(45,189,182,.25)' : 'none',
+          boxShadow: listening
+            ? '0 0 0 1px var(--teal), 0 0 34px rgba(45,189,182,.35)'
+            : '0 0 26px rgba(45,189,182,.14)',
         }}
-          onFocusCapture={e => { e.currentTarget.style.borderColor='var(--teal)'; e.currentTarget.style.boxShadow='0 0 0 1px var(--teal), 0 0 22px rgba(45,189,182,.18)' }}
-          onBlurCapture={e => { e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.boxShadow=listening ? '0 0 0 1px var(--teal), 0 0 24px rgba(45,189,182,.25)' : 'none' }}
+          onFocusCapture={e => { e.currentTarget.style.borderColor='var(--teal)'; e.currentTarget.style.boxShadow='0 0 0 1px var(--teal), 0 0 30px rgba(45,189,182,.28)' }}
+          onBlurCapture={e => { e.currentTarget.style.borderColor='rgba(45,189,182,.30)'; e.currentTarget.style.boxShadow=listening ? '0 0 0 1px var(--teal), 0 0 34px rgba(45,189,182,.35)' : '0 0 26px rgba(45,189,182,.14)' }}
         >
           <button
             onClick={toggleGeo}
             disabled={geoLoading}
             title={geo ? 'Ubicación activa — tocar para quitar' : 'Compartir mi ubicación'}
             style={{
-              background: geo ? 'rgba(45,189,182,.15)' : 'none',
-              border: `1px solid ${geo ? 'var(--teal)' : 'var(--border)'}`,
-              borderRadius:10, width:38, height:38, flexShrink:0, cursor:'pointer',
+              background: geo ? 'var(--teal)' : 'rgba(45,189,182,.12)',
+              border: `1px solid ${geo ? 'var(--teal)' : 'rgba(45,189,182,.3)'}`,
+              borderRadius:999, width:38, height:38, flexShrink:0, cursor:'pointer',
               display:'flex', alignItems:'center', justifyContent:'center',
-              color: geo ? 'var(--teal)' : 'var(--text-muted)',
+              color: geo ? '#0E0D13' : 'var(--teal)', transition:'all .15s',
             }}
           >
             {geoLoading
@@ -747,11 +749,11 @@ export default function App() {
             onClick={startVoice}
             title={listening ? 'Escuchando… toca para detener' : 'Hablar (dictado por voz)'}
             style={{
-              background: listening ? 'var(--teal)' : 'none',
-              border: `1px solid ${listening ? 'var(--teal)' : 'var(--border)'}`,
-              borderRadius:10, width:38, height:38, flexShrink:0, cursor:'pointer',
+              background: listening ? 'var(--teal)' : 'rgba(45,189,182,.12)',
+              border: `1px solid ${listening ? 'var(--teal)' : 'rgba(45,189,182,.3)'}`,
+              borderRadius:999, width:38, height:38, flexShrink:0, cursor:'pointer',
               display:'flex', alignItems:'center', justifyContent:'center',
-              color: listening ? '#0E0D13' : 'var(--text-muted)',
+              color: listening ? '#0E0D13' : 'var(--teal)', transition:'all .15s',
               animation: listening ? 'pulseGlow 1.2s ease-in-out infinite' : 'none',
             }}
           >
@@ -761,10 +763,11 @@ export default function App() {
             onClick={() => sendMessage()}
             disabled={!input.trim() || loading}
             style={{
-              background: !input.trim() || loading ? 'var(--border)' : 'var(--teal)',
-              border:'none', borderRadius:10, width:38, height:38, cursor:'pointer',
-              display:'flex', alignItems:'center', justifyContent:'center',
-              flexShrink:0, transition:'background .15s',
+              background: !input.trim() || loading ? 'rgba(255,255,255,.06)' : 'var(--teal)',
+              border:'none', borderRadius:999, width:38, height:38, cursor:'pointer',
+              display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0,
+              transition:'background .15s',
+              boxShadow: !input.trim() || loading ? 'none' : '0 0 16px rgba(45,189,182,.4)',
             }}
           >
             {loading

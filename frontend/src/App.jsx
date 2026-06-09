@@ -329,9 +329,9 @@ export default function App() {
         onDragOver={e => { e.preventDefault(); if (!dragOver) setDragOver(true) }}
         onDragLeave={e => { if (e.currentTarget === e.target) setDragOver(false) }}
         onDrop={handleDrop}
-        style={{ flex:1, minWidth:0, position:'relative', display:'flex', justifyContent:'center',
+        style={{ flex:1, minWidth:0, position:'relative',
                  height:'100dvh', overflow:'hidden' }}>
-      <div style={{ width:'100%', maxWidth:720, display:'flex', flexDirection:'column',
+      <div style={{ maxWidth:720, margin:'0 auto', display:'flex', flexDirection:'column',
                     height:'100dvh', minHeight:0, padding:'0 16px' }}>
 
       {dragOver && (

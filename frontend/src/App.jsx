@@ -203,8 +203,10 @@ export default function App() {
   const [error, setError]         = useState(null)
   const [copied, setCopied]       = useState(null)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
-  const [view, setView] = useState('chat')  // 'chat' | 'review'
+  const [view, setView] = useState('chat')  // 'chat' | 'review' | 'map'
   const [dragOver, setDragOver] = useState(false)
+  const [geo, setGeo] = useState(null)          // {lat, lon} | null — ubicación del usuario
+  const [geoLoading, setGeoLoading] = useState(false)
 
   const bottomRef  = useRef(null)
   const inputRef   = useRef(null)
@@ -308,11 +310,15 @@ export default function App() {
     setMessages(prev => [...prev, userMsg])
     setLoading(true)
 
-    const toolCallsObserved = []
+    // Si la ubicación está activa, se la pasamos al agente como contexto
+    // (sin ensuciar la burbuja visible). El agente usa tool_search_nearby_assets.
+    const apiMessage = geo
+      ? `${userText}\n\n[Contexto del sistema: el usuario está físicamente en estas coordenadas → lat=${geo.lat}, lon=${geo.lon}. Si su pregunta es sobre cercanía ("cerca de mí", "aquí", "este sector", "a X metros/km"), usa tool_search_nearby_assets con estas coordenadas y el radio que indique (por defecto 1000 m). Si no menciona distancia, usa 1000 m.]`
+      : userText
 
     try {
       const { data } = await axios.post(`${API_BASE}/api/v1/chat/`, {
-        message: userText,
+        message: apiMessage,
         session_id: sessionId,
       }, { headers: authHeaders })
 
@@ -334,7 +340,23 @@ export default function App() {
       setLoading(false)
       setTimeout(() => inputRef.current?.focus(), 100)
     }
-  }, [input, loading, sessionId])
+  }, [input, loading, sessionId, geo])
+
+  // Ubicación del usuario para el agente ("estoy aquí, ¿qué hay cerca?")
+  const toggleGeo = useCallback(() => {
+    if (geo) { setGeo(null); return }       // ya activa → la quitamos
+    if (!navigator.geolocation) { setError('Tu navegador no permite geolocalización.'); return }
+    setGeoLoading(true)
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setGeo({ lat: +pos.coords.latitude.toFixed(6), lon: +pos.coords.longitude.toFixed(6) })
+        setGeoLoading(false)
+        setTimeout(() => inputRef.current?.focus(), 100)
+      },
+      () => { setGeoLoading(false); setError('No pudimos obtener tu ubicación (permiso denegado).') },
+      { enableHighAccuracy: true, timeout: 10000 },
+    )
+  }, [geo])
 
   // ── Brief Intake C0: arrastra una foto → match por similitud visual ──
   const matchByImage = useCallback(async (dataUrl) => {
@@ -601,14 +623,41 @@ export default function App() {
       <div style={{
         padding:'14px 0 18px', flexShrink:0,
       }}>
+        {geo && (
+          <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:8,
+                        fontSize:'.78rem', color:'var(--teal)' }}>
+            <MapPin size={13}/> Ubicación activa — pregúntame qué hay cerca de ti (puedes indicar la distancia).
+            <button onClick={() => setGeo(null)}
+              style={{ marginLeft:'auto', background:'none', border:'none',
+                       color:'var(--text-muted)', cursor:'pointer', fontSize:'.78rem' }}>
+              quitar ✕
+            </button>
+          </div>
+        )}
         <div style={{
           display:'flex', gap:10, background:'var(--surface)',
-          border:'1px solid var(--border)', borderRadius:14, padding:'8px 8px 8px 16px',
+          border:'1px solid var(--border)', borderRadius:14, padding:'8px 8px 8px 8px',
           transition:'border-color .15s',
         }}
           onFocusCapture={e => e.currentTarget.style.borderColor='var(--teal)'}
           onBlurCapture={e => e.currentTarget.style.borderColor='var(--border)'}
         >
+          <button
+            onClick={toggleGeo}
+            disabled={geoLoading}
+            title={geo ? 'Ubicación activa — tocar para quitar' : 'Compartir mi ubicación'}
+            style={{
+              background: geo ? 'rgba(45,189,182,.15)' : 'none',
+              border: `1px solid ${geo ? 'var(--teal)' : 'var(--border)'}`,
+              borderRadius:10, width:38, height:38, flexShrink:0, cursor:'pointer',
+              display:'flex', alignItems:'center', justifyContent:'center',
+              color: geo ? 'var(--teal)' : 'var(--text-muted)',
+            }}
+          >
+            {geoLoading
+              ? <RefreshCw size={16} style={{ animation:'spin 1s linear infinite' }}/>
+              : <MapPin size={16}/>}
+          </button>
           <textarea
             ref={inputRef}
             value={input}

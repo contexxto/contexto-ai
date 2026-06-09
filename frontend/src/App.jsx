@@ -498,10 +498,12 @@ export default function App() {
       {showScrollBtn && (
         <button
           onClick={() => bottomRef.current?.scrollIntoView({ behavior:'smooth' })}
+          title="Bajar al final"
           style={{
             position:'fixed', bottom:90, right:24, width:36, height:36,
-            borderRadius:'50%', background:'var(--surface)', border:'1px solid var(--border)',
-            cursor:'pointer', color:'var(--text-muted)', display:'flex',
+            borderRadius:'50%', background:'var(--surface-2)', border:'none',
+            boxShadow:'var(--shadow-md)',
+            cursor:'pointer', color:'var(--teal)', display:'flex',
             alignItems:'center', justifyContent:'center', zIndex:10,
           }}
         >

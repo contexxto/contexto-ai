@@ -45,6 +45,10 @@ fotos_quito/
 scripts/fotos_manifest.csv
 scripts/payload_ingesta.json
 
+# QRs/letreros generados (artefactos de salida) y activos reales locales
+scripts/qrs_out/
+scripts/activos.csv
+
 # Frontend build
 frontend/dist/
 frontend/node_modules/

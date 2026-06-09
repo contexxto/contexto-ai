@@ -194,7 +194,9 @@ const QUICK_PROMPTS = [
 ]
 
 export default function App() {
-  const [sessionId, setSessionId] = useState(getOrCreateSession)
+  // Deep link de QR: /a/{uuid} → sesión determinística qr-{id}
+  const deepLinkId = (window.location.pathname.match(/^\/a\/([0-9a-fA-F-]{36})$/) || [])[1] || null
+  const [sessionId, setSessionId] = useState(() => deepLinkId ? 'qr-' + deepLinkId : getOrCreateSession())
   const [messages, setMessages]   = useState([])
   const [input, setInput]         = useState('')
   const [loading, setLoading]     = useState(false)
@@ -207,14 +209,13 @@ export default function App() {
   const bottomRef  = useRef(null)
   const inputRef   = useRef(null)
   const scrollRef  = useRef(null)
-  // Detección de enlace profundo de QR: /a/{uuid}
-  const deepLinkRef = useRef(
-    (window.location.pathname.match(/^\/a\/([0-9a-fA-F-]{36})$/) || [])[1] || null
-  )
+  // Salta la restauración SOLO en la primera carga si vino por QR
+  // (loadFromDeepLink maneja esa sesión). Los cambios de conversación restauran normal.
+  const skipFirstRestore = useRef(!!deepLinkId)
 
   // Restore history from API on mount / session change
   useEffect(() => {
-    if (deepLinkRef.current) return  // si vino por QR, no restauramos historial
+    if (skipFirstRestore.current) { skipFirstRestore.current = false; return }
     axios.get(`${API_BASE}/api/v1/chat/${sessionId}/history`, { headers: authHeaders })
       .then(({ data }) => {
         if (!data.messages?.length) return
@@ -268,7 +269,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (deepLinkRef.current) loadFromDeepLink(deepLinkRef.current)
+    if (deepLinkId) loadFromDeepLink(deepLinkId)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

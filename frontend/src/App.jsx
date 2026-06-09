@@ -611,17 +611,26 @@ export default function App() {
         style={{ flex:1, overflowY:'auto', padding:'20px 0', position:'relative' }}
       >
         {isEmpty && (
-          <div style={{ textAlign:'center', paddingTop:60 }}>
-            <img src={sphereLogo} alt="Contexto AI" width={84} height={84}
-                 style={{ display:'block', margin:'0 auto 22px',
-                          filter:'drop-shadow(0 0 22px rgba(45,189,182,.5))',
-                          animation:'floaty 4s ease-in-out infinite' }} />
-            <h2 style={{ fontFamily:'var(--font-display)', fontWeight:800, fontSize:'1.35rem', marginBottom:8 }}>
-              Bienvenido a Contexto AI
-            </h2>
-            <p style={{ color:'var(--text-muted)', fontSize:'.9rem', marginBottom:32 }}>
-              Analiza habitabilidad, mantenimiento técnico e infraestructura<br/>
-              de propiedades en tiempo real con datos PostGIS verificados.
+          <div style={{ textAlign:'center', paddingTop:isMobile ? 28 : 48 }}>
+            <img src={sphereLogo} alt="Contexto AI" width={isMobile ? 100 : 128} height={isMobile ? 100 : 128}
+                 style={{ display:'block', margin:'0 auto 24px',
+                          filter:'drop-shadow(0 0 34px rgba(45,189,182,.55))',
+                          animation:'floaty 4.5s ease-in-out infinite' }} />
+            <h1 style={{ fontFamily:'var(--font-display)', fontWeight:800,
+                         fontSize:isMobile ? '2rem' : '2.6rem', letterSpacing:'-1px', marginBottom:14, lineHeight:1.05 }}>
+              Contexto <span style={{
+                background:'linear-gradient(135deg, #5EEAD4, #2DBDB6 55%, #E0685A)',
+                WebkitBackgroundClip:'text', backgroundClip:'text', WebkitTextFillColor:'transparent',
+              }}>AI</span>
+            </h1>
+            <div style={{ fontFamily:'var(--font-mono)', fontSize:'.72rem', letterSpacing:'3px',
+                          color:'var(--teal)', textTransform:'uppercase', marginBottom:18 }}>
+              Cada lugar tiene un aura
+            </div>
+            <p style={{ color:'var(--text-mid)', fontSize:isMobile ? '.92rem' : '1rem', lineHeight:1.7,
+                        maxWidth:560, margin:'0 auto 34px' }}>
+              Tu agente inteligente que absorbe capas de contexto — ruido, seguridad, vida,
+              historia — y te las traduce para que encuentres el lugar perfecto.
             </p>
             <div style={{ display:'flex', flexDirection:'column', gap:8, alignItems:'center' }}>
               {QUICK_PROMPTS.map((p, i) => (

@@ -15,6 +15,7 @@ C0 es semántico puro. Los filtros duros (precio/zona) son C1 (ver diseño).
 import base64
 import binascii
 import json
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field, model_validator
@@ -28,6 +29,7 @@ from app.limiter import limiter
 from app.routers.chat import verify_api_key
 from app.vision import ImageFetchError, _client, fetch_image_jpeg_b64
 
+logger = logging.getLogger("contexto.match")
 router = APIRouter(prefix="/api/v1/match", tags=["Match — Brief Intake (C0)"])
 
 
@@ -195,8 +197,13 @@ async def match(request: Request, payload: MatchRequest, db: AsyncSession = Depe
         return await _match_impl(payload, db)
     except HTTPException:
         raise
-    except Exception as exc:  # noqa: BLE001 — TEMPORAL: surface real error para diagnostico
-        raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}")
+    except Exception:
+        # Se registra el detalle en el log del servidor; al cliente solo un mensaje genérico.
+        logger.exception("Error inesperado en /match")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno al procesar el brief.",
+        )
 
 
 async def _match_impl(payload: MatchRequest, db: AsyncSession) -> MatchResponse:

@@ -21,7 +21,7 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey }) {
     try {
       const { data } = await axios.get(`${API_BASE}/api/v1/chat/sessions?limit=50`, { headers: authHeaders })
       setSessions(data.sessions || [])
-    } catch { setSessions([]) }
+    } catch (e) { console.error('No se pudo cargar la lista de conversaciones:', e); setSessions([]) }
   }, [])
 
   // Recarga al montar y cuando cambia reloadKey (sesión activa / nuevos mensajes)
@@ -43,7 +43,7 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey }) {
     try {
       await axios.patch(`${API_BASE}/api/v1/chat/sessions/${id}`, { titulo }, { headers: authHeaders })
       await load()
-    } catch { /* noop */ }
+    } catch (e) { console.error('No se pudo renombrar la conversación:', e); alert('No se pudo renombrar la conversación.') }
   }
 
   async function togglePin(s) {
@@ -51,7 +51,7 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey }) {
     try {
       await axios.patch(`${API_BASE}/api/v1/chat/sessions/${s.session_id}`, { pinned: !s.pinned }, { headers: authHeaders })
       await load()
-    } catch { /* noop */ }
+    } catch (e) { console.error('No se pudo fijar/desfijar:', e); alert('No se pudo fijar/desfijar la conversación.') }
   }
 
   async function remove(s) {
@@ -61,7 +61,7 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey }) {
       await axios.delete(`${API_BASE}/api/v1/chat/sessions/${s.session_id}`, { headers: authHeaders })
       await load()
       if (s.session_id === sessionId) onNew()
-    } catch { /* noop */ }
+    } catch (e) { console.error('No se pudo eliminar la conversación:', e); alert('No se pudo eliminar la conversación.') }
   }
 
   const pinned = sessions.filter(s => s.pinned)

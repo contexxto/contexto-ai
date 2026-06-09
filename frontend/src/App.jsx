@@ -120,8 +120,10 @@ function Message({ msg, onCopy, copied }) {
         <div style={{
           padding: isUser ? '10px 14px' : '2px 30px 2px 2px',
           borderRadius: isUser ? '18px 18px 4px 18px' : 0,
-          background: isUser ? 'var(--user-bg)' : 'transparent',
+          background: isUser ? 'linear-gradient(135deg, #1A7A76, #2DBDB6)' : 'transparent',
           border: 'none',
+          boxShadow: isUser ? '0 4px 18px rgba(45,189,182,.22)' : 'none',
+          color: isUser ? '#fff' : 'inherit',
           fontSize:'.92rem', lineHeight:1.65,
           position:'relative',
         }}>
@@ -168,7 +170,7 @@ function Thinking() {
   return (
     <div style={{ display:'flex', gap:10, marginBottom:16 }}>
       <img src={sphereLogo} alt="Contexto AI" width={32} height={32}
-           style={{ flexShrink:0, display:'block' }} />
+           style={{ flexShrink:0, display:'block', filter:'drop-shadow(0 0 8px rgba(45,189,182,.45))' }} />
       <div style={{
         padding:'14px 16px', borderRadius:'4px 18px 18px 18px',
         background:'var(--ai-bg)', border:'1px solid var(--border)',
@@ -610,8 +612,10 @@ export default function App() {
       >
         {isEmpty && (
           <div style={{ textAlign:'center', paddingTop:60 }}>
-            <img src={sphereLogo} alt="Contexto AI" width={72} height={72}
-                 style={{ display:'block', margin:'0 auto 20px' }} />
+            <img src={sphereLogo} alt="Contexto AI" width={84} height={84}
+                 style={{ display:'block', margin:'0 auto 22px',
+                          filter:'drop-shadow(0 0 22px rgba(45,189,182,.5))',
+                          animation:'floaty 4s ease-in-out infinite' }} />
             <h2 style={{ fontFamily:'var(--font-display)', fontWeight:800, fontSize:'1.35rem', marginBottom:8 }}>
               Bienvenido a Contexto AI
             </h2>
@@ -623,15 +627,12 @@ export default function App() {
               {QUICK_PROMPTS.map((p, i) => (
                 <button
                   key={i}
+                  className="qp"
                   onClick={() => sendMessage(p)}
                   style={{
-                    background:'var(--surface)', border:'1px solid var(--border)',
-                    borderRadius:10, padding:'10px 18px', cursor:'pointer',
-                    color:'var(--text)', fontSize:'.85rem', maxWidth:520,
-                    textAlign:'left', transition:'border-color .15s',
+                    borderRadius:14, padding:'11px 18px', cursor:'pointer',
+                    color:'var(--text)', fontSize:'.85rem', maxWidth:520, textAlign:'left',
                   }}
-                  onMouseEnter={e => e.target.style.borderColor='var(--teal)'}
-                  onMouseLeave={e => e.target.style.borderColor='var(--border)'}
                 >
                   {p}
                 </button>
@@ -696,7 +697,8 @@ export default function App() {
           </div>
         )}
         <div style={{
-          display:'flex', gap:8, alignItems:'flex-end', background:'var(--surface)',
+          display:'flex', gap:8, alignItems:'flex-end',
+          background:'rgba(35,38,43,.6)', backdropFilter:'blur(14px)', WebkitBackdropFilter:'blur(14px)',
           border:'1px solid var(--border)', borderRadius:22, padding:'8px',
           transition:'border-color .18s, box-shadow .18s',
           boxShadow: listening ? '0 0 0 1px var(--teal), 0 0 24px rgba(45,189,182,.25)' : 'none',
@@ -791,6 +793,13 @@ export default function App() {
         @keyframes pulseGlow {
           0%, 100% { box-shadow: 0 0 0 0 rgba(45,189,182,.5); }
           50%       { box-shadow: 0 0 0 6px rgba(45,189,182,0); }
+        }
+        @keyframes floaty {
+          0%, 100% { transform: translateY(0); }
+          50%       { transform: translateY(-7px); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          [style*="floaty"] { animation: none !important; }
         }
       `}</style>
       </div>

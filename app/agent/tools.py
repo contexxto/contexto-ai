@@ -103,9 +103,11 @@ async def tool_fetch_asset_lifecycle_specs(activo_id: str) -> str:
             f.descripcion_mejoras,
             f.updated_at,
             a.direccion_estandarizada,
+            a.tipo_activo,
             a.walk_score,
             a.score_ruido_predictivo,
-            a.volumen_trafico_historico
+            a.volumen_trafico_historico,
+            a.porcentaje_cobertura_vegetal
         FROM ficha_tecnica_mantenimiento f
         JOIN activos_inmutables a ON a.id = f.activo_id
         WHERE f.activo_id = :activo_id

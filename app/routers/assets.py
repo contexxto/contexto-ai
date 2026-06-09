@@ -1,10 +1,14 @@
+import io
 import uuid
 
+import segno
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import Response
 from geoalchemy2.elements import WKTElement
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.models import ActivoInmutable
 from app.schemas import ActivoCreateRequest, ActivoResponse
@@ -135,6 +139,32 @@ async def assets_near(
         "total": len(features),
         "features": features,
     }
+
+
+@router.get(
+    "/{activo_id}/qr.svg",
+    summary="QR del letrero inteligente (enlace permanente al inmueble)",
+    description=(
+        "Genera el código QR (SVG) que codifica el enlace profundo al inmueble "
+        "({app}/a/{id}). Al escanearlo, el usuario abre el agente con ese activo "
+        "cargado. Pensado para imprimir en letreros de arriendo/venta."
+    ),
+)
+async def asset_qr(activo_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> Response:
+    exists = (
+        await db.execute(
+            text("SELECT 1 FROM activos_inmutables WHERE id = :id"),
+            {"id": str(activo_id)},
+        )
+    ).first()
+    if not exists:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Activo no encontrado.")
+
+    url = f"{settings.public_app_url.rstrip('/')}/a/{activo_id}"
+    qr = segno.make(url, error="h")  # alta corrección → tolera desgaste del letrero
+    buff = io.BytesIO()
+    qr.save(buff, kind="svg", scale=8, border=2, dark="#0E0D13", light="#ffffff")
+    return Response(content=buff.getvalue(), media_type="image/svg+xml")
 
 
 @router.post(

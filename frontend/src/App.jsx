@@ -207,9 +207,14 @@ export default function App() {
   const bottomRef  = useRef(null)
   const inputRef   = useRef(null)
   const scrollRef  = useRef(null)
+  // Detección de enlace profundo de QR: /a/{uuid}
+  const deepLinkRef = useRef(
+    (window.location.pathname.match(/^\/a\/([0-9a-fA-F-]{36})$/) || [])[1] || null
+  )
 
   // Restore history from API on mount / session change
   useEffect(() => {
+    if (deepLinkRef.current) return  // si vino por QR, no restauramos historial
     axios.get(`${API_BASE}/api/v1/chat/${sessionId}/history`, { headers: authHeaders })
       .then(({ data }) => {
         if (!data.messages?.length) return
@@ -224,6 +229,33 @@ export default function App() {
       })
       .catch(() => {}) // silent — no history yet
   }, [sessionId])
+
+  // Deep link de QR (letrero inteligente): /a/{id} → el agente entrega el informe
+  const loadFromDeepLink = useCallback(async (id) => {
+    const newId = 'session-' + crypto.randomUUID()
+    localStorage.setItem(SESSION_KEY, newId)
+    setSessionId(newId)
+    const t = new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })
+    setMessages([{ id: crypto.randomUUID(), role:'user',
+      content:'📍 Escaneé el QR de este inmueble. ¿Qué sabes de él?', time:t, toolCalls:[] }])
+    setLoading(true)
+    try {
+      const { data } = await axios.post(`${API_BASE}/api/v1/chat/`, {
+        message: `El usuario escaneó el QR de un inmueble. Entrégale el informe completo en lenguaje natural, usando el identificador del activo ${id}. Incluye: dirección, tipo de activo, walk score, nivel de ruido, tráfico, cobertura vegetal y el estado de mantenimiento (tuberías, año de construcción, estructura, acabados, impermeabilización de techo, cableado eléctrico, cisterna, fachada e inversión en mejoras). Si no existen datos para ese identificador, dilo con honestidad.`,
+        session_id: newId,
+      }, { headers: authHeaders })
+      setMessages(prev => [...prev, { id: crypto.randomUUID(), role:'ai', content: data.reply,
+        time: new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }),
+        toolCalls: data.tool_calls_made > 0 ? Array(data.tool_calls_made).fill('t') : [] }])
+    } catch {
+      setError('No se pudo cargar el informe del inmueble escaneado.')
+    } finally { setLoading(false) }
+  }, [])
+
+  useEffect(() => {
+    if (deepLinkRef.current) loadFromDeepLink(deepLinkRef.current)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Auto-scroll
   useEffect(() => {

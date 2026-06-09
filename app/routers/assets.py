@@ -65,6 +65,78 @@ async def assets_geojson(db: AsyncSession = Depends(get_db)) -> dict:
     return {"type": "FeatureCollection", "features": features}
 
 
+@router.get(
+    "/near",
+    summary="¿Puedo vivir aquí? — activos cerca de un punto (radio)",
+    description=(
+        "Devuelve, como GeoJSON, los activos dentro de un radio (metros) de un punto "
+        "(lat/lon) — pensado para la geolocalización del usuario. Ordenados por "
+        "distancia. Filtro opcional por operación (arriendo/venta). Si no hay activos "
+        "en el radio, devuelve una FeatureCollection vacía (cobertura honesta)."
+    ),
+)
+async def assets_near(
+    lat: float,
+    lon: float,
+    radius_m: int = 500,
+    operacion: str | None = None,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    radius_m = max(50, min(radius_m, 5000))
+
+    op_clause = ""
+    params = {"lat": lat, "lon": lon, "radius": radius_m}
+    if operacion:
+        op_clause = (
+            " AND EXISTS (SELECT 1 FROM transacciones_temporales t "
+            "WHERE t.activo_id = a.id AND t.tipo_operacion ILIKE :op)"
+        )
+        params["op"] = operacion.strip()
+
+    rows = (
+        await db.execute(
+            text(
+                "SELECT a.id::text AS id, a.direccion_estandarizada AS direccion, "
+                "       a.tipo_activo, a.piso_altura, a.walk_score, "
+                "       a.score_ruido_predictivo AS ruido, "
+                "       a.porcentaje_cobertura_vegetal AS vegetacion, "
+                "       a.volumen_trafico_historico AS trafico, a.imagen_url, "
+                "       ST_X(a.geom) AS lon, ST_Y(a.geom) AS lat, "
+                "       f.estado_revision, "
+                "       ROUND(ST_Distance(a.geom::geography, "
+                "         ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography)::numeric, 0) AS distancia_m "
+                "FROM activos_inmutables a "
+                "LEFT JOIN ficha_tecnica_mantenimiento f ON f.activo_id = a.id "
+                "WHERE a.geom IS NOT NULL AND ST_DWithin(a.geom::geography, "
+                "      ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, :radius)"
+                + op_clause +
+                " ORDER BY distancia_m ASC"
+            ),
+            params,
+        )
+    ).mappings().all()
+
+    features = [{
+        "type": "Feature",
+        "geometry": {"type": "Point", "coordinates": [float(r["lon"]), float(r["lat"])]},
+        "properties": {
+            "id": r["id"], "direccion": r["direccion"], "tipo_activo": r["tipo_activo"],
+            "piso_altura": r["piso_altura"], "walk_score": r["walk_score"], "ruido": r["ruido"],
+            "vegetacion": float(r["vegetacion"]) if r["vegetacion"] is not None else None,
+            "trafico": r["trafico"], "imagen_url": r["imagen_url"],
+            "estado_revision": r["estado_revision"],
+            "distancia_m": int(r["distancia_m"]) if r["distancia_m"] is not None else None,
+        },
+    } for r in rows]
+
+    return {
+        "type": "FeatureCollection",
+        "centro": {"lat": lat, "lon": lon, "radius_m": radius_m},
+        "total": len(features),
+        "features": features,
+    }
+
+
 @router.post(
     "/",
     response_model=ActivoResponse,

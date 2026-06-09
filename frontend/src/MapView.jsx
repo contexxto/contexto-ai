@@ -35,11 +35,65 @@ function popupHTML(p) {
   </div>`
 }
 
+// Genera un polígono GeoJSON que aproxima un círculo (radio en metros).
+function circlePolygon(lon, lat, radiusM, points = 64) {
+  const coords = []
+  const latR = radiusM / 111320
+  const lonR = radiusM / (111320 * Math.cos(lat * Math.PI / 180))
+  for (let i = 0; i <= points; i++) {
+    const a = (i / points) * 2 * Math.PI
+    coords.push([lon + lonR * Math.cos(a), lat + latR * Math.sin(a)])
+  }
+  return { type: 'Feature', geometry: { type: 'Polygon', coordinates: [coords] } }
+}
+
 export default function MapView() {
   const ref = useRef(null)
   const mapRef = useRef(null)
   const [count, setCount] = useState(null)
   const [error, setError] = useState(null)
+  const [nearMsg, setNearMsg] = useState(null)
+  const [locating, setLocating] = useState(false)
+
+  function nearMe() {
+    const map = mapRef.current
+    if (!map || !navigator.geolocation) { setNearMsg('Tu navegador no permite geolocalización.'); return }
+    setLocating(true); setNearMsg(null)
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      const { latitude: lat, longitude: lon } = pos.coords
+      const RADIUS = 500
+      // dibujar/actualizar el círculo de 500m + marcador de usuario
+      const circle = circlePolygon(lon, lat, RADIUS)
+      if (map.getSource('radio')) map.getSource('radio').setData(circle)
+      else {
+        map.addSource('radio', { type: 'geojson', data: circle })
+        map.addLayer({ id: 'radio-fill', type: 'fill', source: 'radio',
+          paint: { 'fill-color': '#2DBDB6', 'fill-opacity': 0.08 } })
+        map.addLayer({ id: 'radio-line', type: 'line', source: 'radio',
+          paint: { 'line-color': '#2DBDB6', 'line-width': 1.5, 'line-dasharray': [2, 2] } })
+      }
+      const userPt = { type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] } }
+      if (map.getSource('yo')) map.getSource('yo').setData(userPt)
+      else {
+        map.addSource('yo', { type: 'geojson', data: userPt })
+        map.addLayer({ id: 'yo-dot', type: 'circle', source: 'yo',
+          paint: { 'circle-radius': 6, 'circle-color': '#F0ECE6', 'circle-stroke-width': 3, 'circle-stroke-color': '#2DBDB6' } })
+      }
+      map.flyTo({ center: [lon, lat], zoom: 15.5, duration: 800 })
+      try {
+        const res = await fetch(`${API_BASE}/api/v1/assets/near?lat=${lat}&lon=${lon}&radius_m=${RADIUS}`, { headers: authHeaders })
+        const data = await res.json()
+        const n = data.total ?? 0
+        setNearMsg(n > 0
+          ? `📍 ${n} inmueble(s) en 500 m a la redonda de tu ubicación.`
+          : '📍 Aún no tengo datos del catastro en este sector. Estamos ampliando la cobertura.')
+      } catch {
+        setNearMsg('No se pudo consultar el sector.')
+      } finally { setLocating(false) }
+    }, () => {
+      setLocating(false); setNearMsg('No pudimos obtener tu ubicación (permiso denegado).')
+    }, { enableHighAccuracy: true, timeout: 10000 })
+  }
 
   useEffect(() => {
     if (mapRef.current) return
@@ -100,6 +154,27 @@ export default function MapView() {
   return (
     <div style={{ position: 'relative', height: '100%', width: '100%' }}>
       <div ref={ref} style={{ position: 'absolute', inset: 0 }} />
+
+      {/* Botón "Cerca de mí" */}
+      <button onClick={nearMe} disabled={locating}
+        style={{
+          position: 'absolute', top: 16, left: 16, zIndex: 6,
+          display: 'flex', alignItems: 'center', gap: 7, padding: '9px 14px',
+          background: '#2DBDB6', color: '#0E0D13', border: 'none', borderRadius: 999,
+          cursor: locating ? 'default' : 'pointer', fontWeight: 700, fontSize: 13,
+          fontFamily: "'Plus Jakarta Sans',sans-serif", boxShadow: '0 4px 12px rgba(0,0,0,.4)',
+        }}>
+        📍 {locating ? 'Ubicando…' : '¿Puedo vivir aquí? · Cerca de mí'}
+      </button>
+
+      {nearMsg && (
+        <div style={{
+          position: 'absolute', top: 64, left: 16, zIndex: 6, maxWidth: 340,
+          background: 'rgba(22,21,30,.95)', border: '1px solid #2E2D3A', borderRadius: 10,
+          padding: '10px 14px', color: '#F0ECE6', fontSize: 13,
+          fontFamily: "'Plus Jakarta Sans',sans-serif",
+        }}>{nearMsg}</div>
+      )}
       {/* Leyenda */}
       <div style={{
         position: 'absolute', bottom: 24, left: 16, zIndex: 5,

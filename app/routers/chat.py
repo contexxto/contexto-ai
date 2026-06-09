@@ -1,4 +1,5 @@
 import json
+import secrets
 import uuid
 from typing import AsyncIterator
 
@@ -26,7 +27,8 @@ def verify_api_key(api_key: str | None = Security(_api_key_header)) -> None:
     configured = settings.api_key
     if not configured:
         return  # dev local: sin restricción
-    if api_key != configured:
+    # Comparación en tiempo constante → no filtra la llave por timing.
+    if not api_key or not secrets.compare_digest(api_key, configured):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="API key inválida o ausente.",

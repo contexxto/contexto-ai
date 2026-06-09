@@ -330,9 +330,9 @@ export default function App() {
         onDragLeave={e => { if (e.currentTarget === e.target) setDragOver(false) }}
         onDrop={handleDrop}
         style={{ flex:1, minWidth:0, position:'relative',
-                 height:'100dvh', overflow:'hidden', outline:'3px solid lime' }}>
-      <div style={{ maxWidth:720, margin:'0 auto', display:'flex', flexDirection:'column',
-                    height:'100dvh', minHeight:0, padding:'0 16px', outline:'3px solid red' }}>
+                 height:'100dvh', overflow:'hidden' }}>
+      <div style={{ maxWidth:640, margin:'0 auto', display:'flex', flexDirection:'column',
+                    height:'100dvh', minHeight:0, padding:'0 16px' }}>
 
       {dragOver && (
         <div style={{

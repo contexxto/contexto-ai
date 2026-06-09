@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
 import axios from 'axios'
 import {
   Send, MapPin, RefreshCw, Trash2, Copy, CheckCheck, ChevronDown
@@ -14,6 +14,9 @@ import './App.css'
 import ReviewStation from './ReviewStation'
 import Sidebar from './Sidebar'
 import sphereLogo from './assets/sphere.svg'
+
+// Carga diferida: MapLibre (pesado) solo se descarga al abrir el Mapa.
+const MapView = lazy(() => import('./MapView'))
 
 // ── Helpers ────────────────────────────────────────────────
 const SESSION_KEY = 'contexto_ai_session_id'
@@ -363,6 +366,29 @@ export default function App() {
     )
   }
 
+  // Vista de Mapa Vivo (pantalla completa)
+  if (view === 'map') {
+    return (
+      <div style={{ height:'100dvh', display:'flex', flexDirection:'column' }}>
+        <div style={{ padding:'8px 16px' }}>
+          <button onClick={() => setView('chat')} style={{
+            background:'none', border:'1px solid var(--border)', borderRadius:8,
+            cursor:'pointer', color:'var(--text-muted)', padding:'6px 12px', fontSize:'.85rem',
+          }}>← Volver al chat</button>
+        </div>
+        <div style={{ flex:1, minHeight:0 }}>
+          <Suspense fallback={
+            <div style={{ height:'100%', display:'grid', placeItems:'center', color:'var(--text-muted)' }}>
+              Cargando mapa…
+            </div>
+          }>
+            <MapView />
+          </Suspense>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div style={{ display:'flex', height:'100dvh' }}>
       <Sidebar
@@ -419,6 +445,17 @@ export default function App() {
             background:'rgba(45,189,182,.12)', color:'var(--teal-bright)',
             border:'1px solid rgba(45,189,182,.3)',
           }}>● API conectada</span>
+          <button
+            onClick={() => setView('map')}
+            title="Mapa Vivo"
+            style={{
+              background:'none', border:'1px solid var(--border)', borderRadius:8,
+              cursor:'pointer', color:'var(--text-muted)', padding:'6px 10px',
+              display:'flex', alignItems:'center', gap:5, fontSize:'.8rem',
+            }}
+          >
+            🗺️ Mapa
+          </button>
           <button
             onClick={() => setView('review')}
             title="Estación de Revisión"

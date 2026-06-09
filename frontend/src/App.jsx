@@ -52,7 +52,7 @@ function Message({ msg, onCopy, copied }) {
       {!isUser && (
         <div style={{
           width:32, height:32, borderRadius:'50%', flexShrink:0,
-          background:'linear-gradient(135deg,#1f6feb,#58a6ff)',
+          background:'linear-gradient(135deg,#41608c,#8fb0d4)',
           display:'flex', alignItems:'center', justifyContent:'center',
           fontSize:14, fontWeight:700,
         }}>C</div>
@@ -116,7 +116,7 @@ function Thinking() {
     <div style={{ display:'flex', gap:10, marginBottom:16 }}>
       <div style={{
         width:32, height:32, borderRadius:'50%', flexShrink:0,
-        background:'linear-gradient(135deg,#1f6feb,#58a6ff)',
+        background:'linear-gradient(135deg,#41608c,#8fb0d4)',
         display:'flex', alignItems:'center', justifyContent:'center',
         fontSize:14, fontWeight:700,
       }}>C</div>
@@ -338,8 +338,8 @@ export default function App() {
         <div style={{
           position:'absolute', inset:0, zIndex:50, display:'flex', flexDirection:'column',
           alignItems:'center', justifyContent:'center', gap:10,
-          background:'rgba(13,17,23,.92)', border:'2px dashed #58a6ff', borderRadius:14,
-          color:'#58a6ff', fontSize:'1.05rem', fontWeight:600, pointerEvents:'none',
+          background:'rgba(13,17,23,.92)', border:'2px dashed #8fb0d4', borderRadius:14,
+          color:'#8fb0d4', fontSize:'1.05rem', fontWeight:600, pointerEvents:'none',
         }}>
           <MapPin size={36} />
           Suelta tu foto para encontrar inmuebles parecidos
@@ -358,7 +358,7 @@ export default function App() {
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
           <div style={{
             width:36, height:36, borderRadius:10,
-            background:'linear-gradient(135deg,#1f6feb,#388bfd)',
+            background:'linear-gradient(135deg,#41608c,#5e80ac)',
             display:'flex', alignItems:'center', justifyContent:'center',
           }}>
             <MapPin size={18} color="#fff" />
@@ -402,11 +402,11 @@ export default function App() {
           <div style={{ textAlign:'center', paddingTop:60 }}>
             <div style={{
               width:64, height:64, borderRadius:16, margin:'0 auto 20px',
-              background:'linear-gradient(135deg,#1f6feb22,#388bfd22)',
-              border:'1px solid #1f6feb44',
+              background:'linear-gradient(135deg,#41608c22,#5e80ac22)',
+              border:'1px solid #41608c44',
               display:'flex', alignItems:'center', justifyContent:'center',
             }}>
-              <MapPin size={28} color='#58a6ff'/>
+              <MapPin size={28} color='#8fb0d4'/>
             </div>
             <h2 style={{ fontWeight:600, fontSize:'1.25rem', marginBottom:8 }}>
               Bienvenido a Contexto AI
@@ -426,7 +426,7 @@ export default function App() {
                     color:'var(--text)', fontSize:'.85rem', maxWidth:520,
                     textAlign:'left', transition:'border-color .15s',
                   }}
-                  onMouseEnter={e => e.target.style.borderColor='#58a6ff'}
+                  onMouseEnter={e => e.target.style.borderColor='#8fb0d4'}
                   onMouseLeave={e => e.target.style.borderColor='var(--border)'}
                 >
                   {p}
@@ -483,7 +483,7 @@ export default function App() {
           border:'1px solid var(--border)', borderRadius:14, padding:'8px 8px 8px 16px',
           transition:'border-color .15s',
         }}
-          onFocusCapture={e => e.currentTarget.style.borderColor='#58a6ff'}
+          onFocusCapture={e => e.currentTarget.style.borderColor='#8fb0d4'}
           onBlurCapture={e => e.currentTarget.style.borderColor='var(--border)'}
         >
           <textarea
@@ -511,7 +511,7 @@ export default function App() {
             onClick={() => sendMessage()}
             disabled={!input.trim() || loading}
             style={{
-              background: !input.trim() || loading ? 'var(--border)' : '#1f6feb',
+              background: !input.trim() || loading ? 'var(--border)' : '#41608c',
               border:'none', borderRadius:10, width:38, height:38, cursor:'pointer',
               display:'flex', alignItems:'center', justifyContent:'center',
               flexShrink:0, transition:'background .15s',

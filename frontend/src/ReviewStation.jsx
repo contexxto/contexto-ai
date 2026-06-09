@@ -65,8 +65,8 @@ function fromUI(field, ui) {
 
 // ── Paleta (igual que el resto de la app) ──
 const C = {
-  bg: '#0d1117', panel: '#161b22', border: '#30363d', text: '#c9d1d9',
-  dim: '#8b949e', accent: '#58a6ff', amber: '#d29922', green: '#3fb950', red: '#f85149',
+  bg: '#1a1c20', panel: '#23262b', border: '#343841', text: '#c9d1d9',
+  dim: '#8b949e', accent: '#8fb0d4', amber: '#d29922', green: '#3fb950', red: '#f85149',
 }
 
 function confColor(c) {
@@ -316,8 +316,8 @@ export default function ReviewStation() {
 // ── estilos inline reutilizables ──
 function inp(dudoso) {
   return {
-    width: '100%', padding: '7px 9px', background: '#0d1117', color: '#c9d1d9',
-    border: `1px solid ${dudoso ? '#d29922' : '#30363d'}`, borderRadius: 6, fontSize: '.85rem',
+    width: '100%', padding: '7px 9px', background: '#1a1c20', color: '#c9d1d9',
+    border: `1px solid ${dudoso ? '#d29922' : '#343841'}`, borderRadius: 6, fontSize: '.85rem',
   }
 }
 function btn(bg, fg, disabled = false) {

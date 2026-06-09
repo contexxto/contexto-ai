@@ -7,7 +7,7 @@ const API_KEY = import.meta.env.VITE_API_KEY ?? ''
 const authHeaders = API_KEY ? { 'X-API-Key': API_KEY } : {}
 
 const C = {
-  bg: '#0b0f14', border: '#30363d', text: '#c9d1d9', dim: '#8b949e', accent: '#58a6ff', active: '#1f2630',
+  bg: '#16181b', border: '#343841', text: '#c9d1d9', dim: '#8b949e', accent: '#8fb0d4', active: '#1f2630',
 }
 
 export default function Sidebar({ sessionId, onSelect, onNew, reloadKey }) {
@@ -78,7 +78,7 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey }) {
           padding: '8px 10px', borderRadius: 8, cursor: 'pointer', marginBottom: 2,
           background: active ? C.active : 'transparent',
         }}
-        onMouseEnter={e => { if (!active) e.currentTarget.style.background = '#161b22' }}
+        onMouseEnter={e => { if (!active) e.currentTarget.style.background = '#23262b' }}
         onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent' }}>
         <MessageSquare size={14} color={C.dim} style={{ flexShrink: 0 }} />
         {editing ? (
@@ -87,7 +87,7 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey }) {
             onBlur={() => commitRename(s.session_id)}
             onKeyDown={e => { if (e.key === 'Enter') commitRename(s.session_id); if (e.key === 'Escape') setEditingId(null) }}
             onClick={e => e.stopPropagation()}
-            style={{ flex: 1, background: '#0d1117', color: C.text, border: `1px solid ${C.accent}`, borderRadius: 5, padding: '3px 6px', fontSize: '.84rem' }} />
+            style={{ flex: 1, background: '#14161a', color: C.text, border: `1px solid ${C.accent}`, borderRadius: 5, padding: '3px 6px', fontSize: '.84rem' }} />
         ) : (
           <span style={{ flex: 1, fontSize: '.84rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: C.text }}>
             {s.pinned && <Pin size={11} color={C.accent} style={{ marginRight: 4, verticalAlign: 'middle' }} />}
@@ -105,7 +105,7 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey }) {
           <div onClick={e => e.stopPropagation()}
             style={{
               position: 'absolute', right: 6, top: '100%', zIndex: 30, width: 160,
-              background: '#161b22', border: `1px solid ${C.border}`, borderRadius: 8,
+              background: '#23262b', border: `1px solid ${C.border}`, borderRadius: 8,
               boxShadow: '0 8px 24px rgba(0,0,0,.5)', overflow: 'hidden',
             }}>
             <MenuItem icon={<Pencil size={14} />} label="Renombrar"

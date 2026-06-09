@@ -230,11 +230,23 @@ export default function App() {
       .catch(() => {}) // silent — no history yet
   }, [sessionId])
 
-  // Deep link de QR (letrero inteligente): /a/{id} → el agente entrega el informe
+  // Deep link de QR (letrero inteligente): /a/{id} → el agente entrega el informe.
+  // Sesión determinística por inmueble: re-escanear reutiliza la conversación.
   const loadFromDeepLink = useCallback(async (id) => {
-    const newId = 'session-' + crypto.randomUUID()
-    localStorage.setItem(SESSION_KEY, newId)
-    setSessionId(newId)
+    const sid = 'qr-' + id
+    localStorage.setItem(SESSION_KEY, sid)
+    setSessionId(sid)
+    // Si ya fue escaneado antes, restauramos (rápido, sin volver a llamar al agente).
+    try {
+      const { data } = await axios.get(`${API_BASE}/api/v1/chat/${sid}/history`, { headers: authHeaders })
+      if (data.messages?.length) {
+        setMessages(data.messages.map((m, i) => ({
+          id: `r-${i}`, role: m.role === 'user' ? 'user' : 'ai', content: m.content, time: '', toolCalls: [],
+        })))
+        return
+      }
+    } catch { /* sin historial: seguimos al brief */ }
+
     const t = new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })
     setMessages([{ id: crypto.randomUUID(), role:'user',
       content:'📍 Escaneé el QR de este inmueble. ¿Qué sabes de él?', time:t, toolCalls:[] }])
@@ -242,11 +254,14 @@ export default function App() {
     try {
       const { data } = await axios.post(`${API_BASE}/api/v1/chat/`, {
         message: `El usuario escaneó el QR de un inmueble. Entrégale el informe completo en lenguaje natural, usando el identificador del activo ${id}. Incluye: dirección, tipo de activo, walk score, nivel de ruido, tráfico, cobertura vegetal y el estado de mantenimiento (tuberías, año de construcción, estructura, acabados, impermeabilización de techo, cableado eléctrico, cisterna, fachada e inversión en mejoras). Si no existen datos para ese identificador, dilo con honestidad.`,
-        session_id: newId,
+        session_id: sid,
       }, { headers: authHeaders })
       setMessages(prev => [...prev, { id: crypto.randomUUID(), role:'ai', content: data.reply,
         time: new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }),
         toolCalls: data.tool_calls_made > 0 ? Array(data.tool_calls_made).fill('t') : [] }])
+      // Título limpio en la barra lateral (en vez del mensaje técnico).
+      axios.patch(`${API_BASE}/api/v1/chat/sessions/${sid}`,
+        { titulo: '📍 Inmueble escaneado (QR)' }, { headers: authHeaders }).catch(() => {})
     } catch {
       setError('No se pudo cargar el informe del inmueble escaneado.')
     } finally { setLoading(false) }

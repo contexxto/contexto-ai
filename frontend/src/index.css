@@ -92,6 +92,10 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Chrome dibuja un anillo de foco en contenedores con scroll al navegar con flechas.
+   Lo quitamos SOLO en divs (no interactivos); botones/inputs conservan su foco. */
+div:focus, div:focus-visible { outline: none; }
+
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }

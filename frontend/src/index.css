@@ -95,7 +95,20 @@ body {
   letter-spacing: -0.3px;
 }
 .ai-content h2 { font-size: 1.05rem; }
+.ai-content h4 {
+  font-family: var(--font-display); font-weight: 600;
+  margin: .7rem 0 .3rem; color: var(--text); font-size: .92rem;
+}
 .ai-content p  { margin: .35rem 0; line-height: 1.65; }
+.ai-content em { color: var(--text-mid); font-style: italic; }
+.ai-content table {
+  border-collapse: collapse; width: 100%; margin: .7rem 0; font-size: .84rem;
+}
+.ai-content th, .ai-content td {
+  border: 1px solid var(--border); padding: 6px 10px; text-align: left; vertical-align: top;
+}
+.ai-content th { background: var(--surface-2); color: var(--text); font-weight: 600; }
+.ai-content td { color: var(--text-mid); }
 .ai-content ul, .ai-content ol { margin: .35rem 0 .35rem 1.2rem; }
 .ai-content li { margin: .2rem 0; line-height: 1.6; }
 .ai-content strong { color: #fff; font-weight: 600; }

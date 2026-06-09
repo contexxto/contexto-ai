@@ -27,19 +27,72 @@ function getOrCreateSession() {
   return id
 }
 
-/** Minimal markdown → HTML (headers, bold, lists, hr, code) */
+/** Markdown → HTML: headers h1-h4, tablas, listas (ol/ul), bold, italic, code, hr.
+ *  Parser línea por línea (robusto ante líneas en blanco del agente). */
 function renderMarkdown(text) {
-  return text
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/^#{3}\s+(.+)$/gm, '<h3>$1</h3>')
-    .replace(/^#{2}\s+(.+)$/gm, '<h2>$1</h2>')
-    .replace(/^---$/gm, '<hr/>')
+  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const inline = s => esc(s)
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/^[\*\-]\s+(.+)$/gm, '<li>$1</li>')
-    .replace(/(<li>.*<\/li>(\n|$))+/g, m => `<ul>${m}</ul>`)
-    .replace(/\n{2,}/g, '</p><p>')
-    .replace(/^(?!<[hup]|<li|<hr)(.+)$/gm, '<p>$1</p>')
+    .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
+  const cells = r => r.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').map(c => c.trim())
+
+  const lines = (text || '').split('\n')
+  const out = []
+  let list = null  // 'ul' | 'ol'
+  const closeList = () => { if (list) { out.push(`</${list}>`); list = null } }
+
+  let i = 0
+  while (i < lines.length) {
+    const t = lines[i].trim()
+    let m
+
+    // ── Tabla: fila |...| seguida (saltando blancos) de un separador |---| ──
+    if (t.startsWith('|')) {
+      let j = i + 1
+      while (j < lines.length && lines[j].trim() === '') j++
+      if (j < lines.length && /^\|?[\s:|-]+\|?$/.test(lines[j].trim()) && lines[j].includes('-')) {
+        closeList()
+        const header = t
+        i = j + 1
+        const rows = []
+        while (i < lines.length) {
+          const tt = lines[i].trim()
+          if (tt === '') { i++; continue }
+          if (tt.startsWith('|')) { rows.push(tt); i++; continue }
+          break
+        }
+        let html = '<table><thead><tr>' +
+          cells(header).map(c => `<th>${inline(c)}</th>`).join('') + '</tr></thead><tbody>'
+        for (const r of rows) html += '<tr>' + cells(r).map(c => `<td>${inline(c)}</td>`).join('') + '</tr>'
+        out.push(html + '</tbody></table>')
+        continue
+      }
+    }
+
+    if ((m = t.match(/^####\s+(.+)$/))) { closeList(); out.push(`<h4>${inline(m[1])}</h4>`); i++; continue }
+    if ((m = t.match(/^###\s+(.+)$/)))  { closeList(); out.push(`<h3>${inline(m[1])}</h3>`); i++; continue }
+    if ((m = t.match(/^##\s+(.+)$/)))   { closeList(); out.push(`<h2>${inline(m[1])}</h2>`); i++; continue }
+    if ((m = t.match(/^#\s+(.+)$/)))    { closeList(); out.push(`<h2>${inline(m[1])}</h2>`); i++; continue }
+    if (/^(---+|___+|\*\*\*+)$/.test(t)) { closeList(); out.push('<hr/>'); i++; continue }
+
+    if ((m = t.match(/^\d+[.)]\s+(.+)$/))) {
+      if (list !== 'ol') { closeList(); out.push('<ol>'); list = 'ol' }
+      out.push(`<li>${inline(m[1])}</li>`); i++; continue
+    }
+    if ((m = t.match(/^[*\-]\s+(.+)$/))) {
+      if (list !== 'ul') { closeList(); out.push('<ul>'); list = 'ul' }
+      out.push(`<li>${inline(m[1])}</li>`); i++; continue
+    }
+
+    if (t === '') { closeList(); i++; continue }
+
+    closeList()
+    out.push(`<p>${inline(t)}</p>`)
+    i++
+  }
+  closeList()
+  return out.join('\n')
 }
 
 // ── Sub-components ──────────────────────────────────────────

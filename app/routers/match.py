@@ -24,7 +24,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
-from app.embeddings import EmbeddingError, embed_image_b64, embed_text, to_pgvector_literal
+from app.embeddings import (
+    EmbeddingError,
+    embed_image_b64,
+    embed_text_cached,
+    to_pgvector_literal,
+)
 from app.limiter import limiter
 from app.routers.chat import verify_api_key
 from app.vision import ImageFetchError, _client, fetch_image_jpeg_b64
@@ -212,7 +217,7 @@ async def _match_impl(payload: MatchRequest, db: AsyncSession) -> MatchResponse:
         modo = "texto"
         consulta = await _refine_brief(payload.input_text)
         try:
-            qvec = await embed_text(consulta, input_type="query")
+            qvec = await embed_text_cached(db, consulta, input_type="query")
         except EmbeddingError as exc:
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
         kind = "ficha_texto"

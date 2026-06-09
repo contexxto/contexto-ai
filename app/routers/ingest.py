@@ -28,6 +28,7 @@ from app.embeddings import (
     EmbeddingError,
     embed_image_b64,
     embed_text,
+    embed_text_cached,
     to_pgvector_literal,
 )
 from app.limiter import limiter
@@ -385,7 +386,7 @@ async def similar(
     if payload.texto:
         kind = "ficha_texto"
         try:
-            qvec = await embed_text(payload.texto, input_type="query")
+            qvec = await embed_text_cached(db, payload.texto, input_type="query")
         except EmbeddingError as exc:
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
         q_literal = to_pgvector_literal(qvec)

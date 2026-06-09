@@ -13,11 +13,17 @@ Regla de desacople (validada con Gemini): generar embeddings NUNCA debe bloquear
 la ingesta de un activo. Si Voyage falla, el activo igual se crea; el embedding
 queda pendiente. Por eso estas funciones lanzan EmbeddingError y el llamador decide.
 """
+import hashlib
+import logging
 from typing import Literal
 
 import httpx
+from sqlalchemy import text as _sql
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 _VOYAGE_URL = "https://api.voyageai.com/v1/multimodalembeddings"
 _EMBED_DIM = 1024
@@ -95,3 +101,77 @@ async def embed_image_b64(jpeg_b64: str, input_type: InputType = "document") -> 
 def to_pgvector_literal(vec: list[float]) -> str:
     """Convierte un vector Python al literal textual que pgvector castea con ::vector."""
     return "[" + ",".join(repr(float(x)) for x in vec) + "]"
+
+
+def _parse_pgvector(literal: str) -> list[float]:
+    """Parsea el literal textual de pgvector ('[0.1,0.2,...]') a list[float]."""
+    s = (literal or "").strip()
+    if not s.startswith("[") or not s.endswith("]"):
+        raise EmbeddingError(f"Literal pgvector inválido: {literal[:40]!r}")
+    inner = s[1:-1].strip()
+    return [float(x) for x in inner.split(",")] if inner else []
+
+
+def _content_key(text: str, input_type: str) -> str:
+    """Hash estable de (modelo|input_type|texto) → clave de caché."""
+    raw = f"{settings.voyage_model}\x1f{input_type}\x1f{text}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+async def embed_text_cached(
+    db: AsyncSession, text: str, input_type: InputType = "document"
+) -> list[float]:
+    """
+    Igual que embed_text, pero con caché durable en la tabla embedding_cache.
+
+    - Si el texto ya fue embebido (mismo modelo+input_type), devuelve el vector
+      cacheado SIN llamar a Voyage (clave para el límite de 3 RPM del plan free).
+    - Degrada con elegancia: si la tabla no existe (migración 007 no aplicada) o
+      cualquier op de caché falla, se aísla con SAVEPOINT y se llama a Voyage normal.
+    - La escritura persiste cuando la request hace commit (get_db).
+    """
+    text = (text or "").strip()
+    if not text:
+        raise EmbeddingError("Texto vacío: nada que embeber.")
+
+    key = _content_key(text, input_type)
+
+    # 1) Intentar caché (aislado en SAVEPOINT para no envenenar la transacción).
+    try:
+        async with db.begin_nested():
+            row = (
+                await db.execute(
+                    _sql(
+                        "SELECT embedding::text AS e FROM embedding_cache "
+                        "WHERE content_sha256 = :k AND input_type = :t AND model = :m"
+                    ),
+                    {"k": key, "t": input_type, "m": settings.voyage_model},
+                )
+            ).first()
+        if row and row.e:
+            return _parse_pgvector(row.e)
+    except Exception as exc:  # noqa: BLE001 — tabla ausente u otro problema → sin caché
+        logger.debug("Caché de embeddings no disponible para lectura: %s", exc)
+
+    # 2) Generar con Voyage.
+    vec = await embed_text(text, input_type)
+
+    # 3) Guardar (best-effort, aislado en SAVEPOINT).
+    try:
+        async with db.begin_nested():
+            await db.execute(
+                _sql(
+                    "INSERT INTO embedding_cache (content_sha256, input_type, model, embedding) "
+                    "VALUES (:k, :t, :m, (:e)::vector) ON CONFLICT DO NOTHING"
+                ),
+                {
+                    "k": key,
+                    "t": input_type,
+                    "m": settings.voyage_model,
+                    "e": to_pgvector_literal(vec),
+                },
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("No se pudo escribir en la caché de embeddings: %s", exc)
+
+    return vec

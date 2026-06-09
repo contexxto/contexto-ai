@@ -306,7 +306,7 @@ export default function App() {
   if (view === 'review') {
     return (
       <div style={{ height:'100dvh', display:'flex', flexDirection:'column' }}>
-        <div style={{ padding:'8px 16px', borderBottom:'1px solid var(--border)' }}>
+        <div style={{ padding:'8px 16px' }}>
           <button onClick={() => setView('chat')} style={{
             background:'none', border:'1px solid var(--border)', borderRadius:8,
             cursor:'pointer', color:'var(--text-muted)', padding:'6px 12px', fontSize:'.85rem',
@@ -352,7 +352,7 @@ export default function App() {
       {/* ── Header ── */}
       <header style={{
         display:'flex', alignItems:'center', justifyContent:'space-between',
-        padding:'16px 0 12px', borderBottom:'1px solid var(--border)',
+        padding:'16px 0 12px',
         flexShrink:0,
       }}>
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
@@ -476,7 +476,7 @@ export default function App() {
 
       {/* ── Input ── */}
       <div style={{
-        borderTop:'1px solid var(--border)', padding:'14px 0 18px', flexShrink:0,
+        padding:'14px 0 18px', flexShrink:0,
       }}>
         <div style={{
           display:'flex', gap:10, background:'var(--surface)',

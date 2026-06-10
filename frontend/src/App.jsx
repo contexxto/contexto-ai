@@ -862,17 +862,20 @@ export default function App() {
           <button
             onClick={() => sendMessage()}
             disabled={!input.trim() || loading}
+            title="Enviar"
             style={{
-              background: !input.trim() || loading ? 'rgba(255,255,255,.06)' : 'var(--teal)',
-              border:'none', borderRadius:999, width:38, height:38, cursor:'pointer',
-              display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0,
-              transition:'background .15s',
-              boxShadow: !input.trim() || loading ? 'none' : '0 0 16px rgba(45,189,182,.4)',
+              background: input.trim() && !loading ? 'var(--teal)' : 'rgba(45,189,182,.12)',
+              border:'1px solid rgba(45,189,182,.3)', borderRadius:999, width:38, height:38,
+              cursor: input.trim() && !loading ? 'pointer' : 'default', flexShrink:0,
+              display:'flex', alignItems:'center', justifyContent:'center',
+              color: input.trim() && !loading ? '#0E0D13' : 'var(--teal)',
+              transition:'background .15s, box-shadow .15s',
+              boxShadow: input.trim() && !loading ? '0 0 16px rgba(45,189,182,.4)' : 'none',
             }}
           >
             {loading
-              ? <RefreshCw size={16} color="#fff" style={{ animation:'spin 1s linear infinite' }}/>
-              : <Send size={16} color="#fff"/>
+              ? <RefreshCw size={16} style={{ animation:'spin 1s linear infinite' }}/>
+              : <Send size={16}/>
             }
           </button>
         </div>

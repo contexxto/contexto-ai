@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import axios from 'axios'
-import { Plus, Pin, PinOff, Pencil, Trash2, MoreHorizontal, MessageSquare, LogIn, LogOut } from 'lucide-react'
+import { Plus, Pin, PinOff, Pencil, Trash2, MoreHorizontal, MessageSquare, LogIn, LogOut, Home, Map, Shield } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 
 const C = {
   bg: '#0B0A10', border: '#2E2D3A', text: '#F0ECE6', dim: '#A8A3B3', accent: '#2DBDB6', active: '#1E1D28',
 }
 
-export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, onLogin, onLogout }) {
+export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, onLogin, onLogout, onPublish, onMap, onReview }) {
   const [sessions, setSessions] = useState([])
   const [menuId, setMenuId] = useState(null)
   const [editingId, setEditingId] = useState(null)
@@ -130,6 +130,15 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, o
         <Plus size={16} /> Nuevo chat
       </button>
 
+      {/* Acciones (estilo Claude: arriba a la izquierda) */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 10 }}>
+        <NavItem icon={<Home size={16} />} label="Publicar mi inmueble" onClick={onPublish} />
+        <NavItem icon={<Map size={16} />} label="Mapa" onClick={onMap} />
+        {(user?.rol === 'corredor' || user?.rol === 'inmobiliaria') && (
+          <NavItem icon={<Shield size={16} />} label="Revisión" onClick={onReview} />
+        )}
+      </div>
+
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {sessions.length === 0 && (
           <div style={{ color: C.dim, fontSize: '.8rem', padding: '8px 4px' }}>Sin conversaciones aún.</div>
@@ -182,6 +191,21 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, o
         )}
       </div>
     </div>
+  )
+}
+
+function NavItem({ icon, label, onClick }) {
+  return (
+    <button onClick={onClick}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 10px',
+        borderRadius: 8, cursor: 'pointer', background: 'none', border: 'none',
+        color: '#A8A3B3', fontSize: '.85rem', textAlign: 'left', transition: 'all .12s',
+      }}
+      onMouseEnter={e => { e.currentTarget.style.background = '#1E1D28'; e.currentTarget.style.color = '#F0ECE6' }}
+      onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = '#A8A3B3' }}>
+      {icon} {label}
+    </button>
   )
 }
 

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
 import axios from 'axios'
 import {
-  Send, MapPin, RefreshCw, Trash2, Copy, CheckCheck, ChevronDown, Menu, Mic, Map, Shield
+  Send, MapPin, RefreshCw, Trash2, Copy, CheckCheck, ChevronDown, Menu, Mic
 } from 'lucide-react'
 import { supabase, authEnabled } from './supabaseClient'
 import Auth from './Auth'
@@ -605,6 +605,9 @@ export default function App() {
           user={authEnabled && session ? { email: session.user?.email, rol } : null}
           onLogin={() => setAuthOpen(true)}
           onLogout={logout}
+          onPublish={() => (authEnabled && session) ? setPublishOpen(true) : setAuthOpen(true)}
+          onMap={() => setView('map')}
+          onReview={() => setView('review')}
         />
       )}
       {isMobile && sidebarOpen && (
@@ -620,6 +623,9 @@ export default function App() {
               user={authEnabled && session ? { email: session.user?.email, rol } : null}
               onLogin={() => { setAuthOpen(true); setSidebarOpen(false) }}
               onLogout={logout}
+              onPublish={() => { (authEnabled && session) ? setPublishOpen(true) : setAuthOpen(true); setSidebarOpen(false) }}
+              onMap={() => { setView('map'); setSidebarOpen(false) }}
+              onReview={() => { setView('review'); setSidebarOpen(false) }}
             />
           </div>
         </>
@@ -675,32 +681,6 @@ export default function App() {
             )}
           </div>
         </div>
-        <div style={{ display:'flex', gap:8, alignItems:'center', flexShrink:0 }}>
-          <button
-            onClick={() => setView('map')}
-            title="Mapa Vivo"
-            style={{
-              background:'rgba(45,189,182,.12)', border:'1px solid rgba(45,189,182,.3)',
-              borderRadius:999, width:38, height:38, flexShrink:0, cursor:'pointer',
-              display:'flex', alignItems:'center', justifyContent:'center', color:'var(--teal)',
-            }}
-          >
-            <Map size={17}/>
-          </button>
-          {(rol === 'corredor' || rol === 'inmobiliaria') && (
-            <button
-              onClick={() => setView('review')}
-              title="Estación de Revisión"
-              style={{
-                background:'rgba(45,189,182,.12)', border:'1px solid rgba(45,189,182,.3)',
-                borderRadius:999, width:38, height:38, flexShrink:0, cursor:'pointer',
-                display:'flex', alignItems:'center', justifyContent:'center', color:'var(--teal)',
-              }}
-            >
-              <Shield size={17}/>
-            </button>
-          )}
-        </div>
       </header>
 
       {authOpen && (
@@ -736,17 +716,6 @@ export default function App() {
               Tu agente inteligente que absorbe capas de contexto — ruido, seguridad, vida,
               historia — y te las traduce para que encuentres el lugar perfecto.
             </p>
-            <button
-              onClick={() => (authEnabled && session) ? setPublishOpen(true) : setAuthOpen(true)}
-              style={{
-                display:'inline-flex', alignItems:'center', gap:8, margin:'0 auto 22px',
-                padding:'11px 22px', borderRadius:999, cursor:'pointer', fontWeight:700, fontSize:'.9rem',
-                background:'rgba(45,189,182,.12)', border:'1px solid var(--teal)', color:'var(--teal-bright)',
-                boxShadow:'0 0 22px rgba(45,189,182,.2)',
-              }}
-            >
-              🏠 Publicar mi inmueble (sin intermediarios)
-            </button>
             <div style={{ display:'flex', flexDirection:'column', gap:8, alignItems:'center' }}>
               {QUICK_PROMPTS.map((p, i) => (
                 <button

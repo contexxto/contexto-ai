@@ -52,7 +52,7 @@ def _formatear(items: list[dict]) -> str:
     return " · ".join(partes)
 
 
-def extraer_entorno_osm(pois: list[dict], lat: float, lon: float, max_items: int = 6) -> dict | None:
+def extraer_entorno_osm(pois: list[dict], lat: float, lon: float, max_items: int = 8) -> dict | None:
     """De los POIs ya descargados, el más cercano CON NOMBRE por categoría. PURA."""
     items: list[dict] = []
     for cat in _CATEGORIAS:
@@ -107,7 +107,7 @@ async def _google_nearest(client, cat: dict, lat: float, lon: float, key: str) -
             "nombre": mejor[1], "distancia_m": int(mejor[0])}
 
 
-async def _entorno_google(lat: float, lon: float, key: str, max_items: int = 6) -> dict | None:
+async def _entorno_google(lat: float, lon: float, key: str, max_items: int = 8) -> dict | None:
     """
     Enriquecimiento EN VIVO con la Places API (New) — compatible con la Clave de
     Demo de Maps. Una llamada POR categoría (el más cercano), así garantizamos

@@ -48,6 +48,8 @@ scripts/payload_ingesta.json
 # QRs/letreros generados (artefactos de salida) y activos reales locales
 scripts/qrs_out/
 scripts/activos.csv
+scripts/activos_hidratados.csv
+scripts/payload_activos.json
 
 # Frontend build
 frontend/dist/

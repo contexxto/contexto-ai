@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
 import axios from 'axios'
 import {
-  Send, MapPin, RefreshCw, Trash2, Copy, CheckCheck, ChevronDown, Menu, Mic,
-  LogIn, LogOut, User
+  Send, MapPin, RefreshCw, Trash2, Copy, CheckCheck, ChevronDown, Menu, Mic
 } from 'lucide-react'
 import { supabase, authEnabled } from './supabaseClient'
 import Auth from './Auth'
@@ -214,6 +213,7 @@ export default function App() {
   const recognitionRef = useRef(null)
   const [session, setSession] = useState(null)            // sesión de Supabase | null
   const [authOpen, setAuthOpen] = useState(false)         // modal de login/registro
+  const [rol, setRol] = useState(null)                    // rol del usuario (cliente/corredor/inmobiliaria)
 
   // Sesión: cargar la actual y escuchar cambios (login/logout). Mantiene el token
   // que apiHeaders() adjunta a cada llamada al backend.
@@ -230,22 +230,28 @@ export default function App() {
         localStorage.removeItem('pendingProfile')
       } catch { /* reintentará en el próximo inicio de sesión */ }
     }
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session)
-      setAccessToken(data.session?.access_token)
-      applyPendingProfile(data.session?.access_token)
-    })
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
+    const loadRol = async (token) => {
+      if (!token) { setRol(null); return }
+      try {
+        const { data } = await axios.get(`${API_BASE}/api/v1/auth/me`,
+          { headers: { Authorization: `Bearer ${token}` } })
+        setRol(data?.rol ?? null)
+      } catch { setRol(null) }
+    }
+    const onSession = async (s) => {
       setSession(s)
       setAccessToken(s?.access_token)
-      applyPendingProfile(s?.access_token)
-    })
+      await applyPendingProfile(s?.access_token)
+      await loadRol(s?.access_token)
+    }
+    supabase.auth.getSession().then(({ data }) => onSession(data.session))
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => onSession(s))
     return () => sub?.subscription?.unsubscribe?.()
   }, [])
 
   const logout = useCallback(async () => {
     if (authEnabled) await supabase.auth.signOut()
-    setSession(null); setAccessToken(null)
+    setSession(null); setAccessToken(null); setRol(null)
   }, [])
 
   const bottomRef  = useRef(null)
@@ -594,6 +600,9 @@ export default function App() {
           onSelect={switchSession}
           onNew={resetSession}
           reloadKey={`${sessionId}:${messages.length}:${session?.user?.id ?? 'guest'}`}
+          user={authEnabled && session ? { email: session.user?.email, rol } : null}
+          onLogin={() => setAuthOpen(true)}
+          onLogout={logout}
         />
       )}
       {isMobile && sidebarOpen && (
@@ -606,6 +615,9 @@ export default function App() {
               onSelect={(id) => { switchSession(id); setSidebarOpen(false) }}
               onNew={() => { resetSession(); setSidebarOpen(false) }}
               reloadKey={`${sessionId}:${messages.length}:${session?.user?.id ?? 'guest'}`}
+              user={authEnabled && session ? { email: session.user?.email, rol } : null}
+              onLogin={() => { setAuthOpen(true); setSidebarOpen(false) }}
+              onLogout={logout}
             />
           </div>
         </>
@@ -662,61 +674,30 @@ export default function App() {
           </div>
         </div>
         <div style={{ display:'flex', gap:8, alignItems:'center', flexShrink:0 }}>
-          {!isMobile && (
-            <span style={{
-              fontSize:'.7rem', padding:'3px 9px', borderRadius:20,
-              background:'rgba(45,189,182,.12)', color:'var(--teal-bright)',
-              border:'1px solid rgba(45,189,182,.3)',
-            }}>● API conectada</span>
-          )}
           <button
             onClick={() => setView('map')}
             title="Mapa Vivo"
             style={{
-              background:'rgba(45,189,182,.08)', border:'1px solid rgba(45,189,182,.25)', borderRadius:999,
-              cursor:'pointer', color:'var(--teal)', padding:'6px 12px',
+              background:'transparent', border:'1px solid rgba(45,189,182,.18)', borderRadius:999,
+              cursor:'pointer', color:'var(--text-muted)', padding:'6px 12px',
               display:'flex', alignItems:'center', gap:5, fontSize:'.8rem',
             }}
           >
             🗺️{!isMobile && ' Mapa'}
           </button>
-          <button
-            onClick={() => setView('review')}
-            title="Estación de Revisión"
-            style={{
-              background:'rgba(45,189,182,.08)', border:'1px solid rgba(45,189,182,.25)', borderRadius:999,
-              cursor:'pointer', color:'var(--teal)', padding:'6px 12px',
-              display:'flex', alignItems:'center', gap:5, fontSize:'.8rem',
-            }}
-          >
-            🛡️{!isMobile && ' Revisión'}
-          </button>
-
-          {authEnabled && (session ? (
-            <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-              {!isMobile && (
-                <span title={session.user?.email}
-                  style={{ display:'flex', alignItems:'center', gap:5, fontSize:'.78rem',
-                           color:'var(--teal-bright)', maxWidth:160, overflow:'hidden',
-                           textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                  <User size={14}/> {session.user?.email}
-                </span>
-              )}
-              <button onClick={logout} title="Cerrar sesión"
-                style={{ background:'rgba(224,104,90,.10)', border:'1px solid rgba(224,104,90,.3)',
-                         borderRadius:999, cursor:'pointer', color:'var(--coral)', padding:'6px 12px',
-                         display:'flex', alignItems:'center', gap:5, fontSize:'.8rem' }}>
-                <LogOut size={14}/>{!isMobile && ' Salir'}
-              </button>
-            </div>
-          ) : (
-            <button onClick={() => setAuthOpen(true)} title="Entrar"
-              style={{ background:'var(--teal)', border:'1px solid var(--teal)',
-                       borderRadius:999, cursor:'pointer', color:'#0E0D13', padding:'6px 14px',
-                       display:'flex', alignItems:'center', gap:5, fontSize:'.8rem', fontWeight:700 }}>
-              <LogIn size={14}/>{!isMobile ? ' Entrar' : ''}
+          {(rol === 'corredor' || rol === 'inmobiliaria') && (
+            <button
+              onClick={() => setView('review')}
+              title="Estación de Revisión"
+              style={{
+                background:'transparent', border:'1px solid rgba(45,189,182,.18)', borderRadius:999,
+                cursor:'pointer', color:'var(--text-muted)', padding:'6px 12px',
+                display:'flex', alignItems:'center', gap:5, fontSize:'.8rem',
+              }}
+            >
+              🛡️{!isMobile && ' Revisión'}
             </button>
-          ))}
+          )}
         </div>
       </header>
 
@@ -816,15 +797,13 @@ export default function App() {
       }}>
         <div style={{
           display:'flex', gap:8, alignItems:'flex-end',
-          background:'rgba(20,44,43,.5)', backdropFilter:'blur(16px)', WebkitBackdropFilter:'blur(16px)',
-          border:'1px solid rgba(45,189,182,.30)', borderRadius:26, padding:'8px',
+          background:'rgba(255,255,255,.03)', backdropFilter:'blur(16px)', WebkitBackdropFilter:'blur(16px)',
+          border:'1px solid rgba(255,255,255,.10)', borderRadius:26, padding:'8px',
           transition:'border-color .18s, box-shadow .18s',
-          boxShadow: listening
-            ? '0 0 0 1px var(--teal), 0 0 34px rgba(45,189,182,.35)'
-            : '0 0 26px rgba(45,189,182,.14)',
+          boxShadow: listening ? '0 0 0 1px var(--teal), 0 0 22px rgba(45,189,182,.22)' : 'none',
         }}
-          onFocusCapture={e => { e.currentTarget.style.borderColor='var(--teal)'; e.currentTarget.style.boxShadow='0 0 0 1px var(--teal), 0 0 30px rgba(45,189,182,.28)' }}
-          onBlurCapture={e => { e.currentTarget.style.borderColor='rgba(45,189,182,.30)'; e.currentTarget.style.boxShadow=listening ? '0 0 0 1px var(--teal), 0 0 34px rgba(45,189,182,.35)' : '0 0 26px rgba(45,189,182,.14)' }}
+          onFocusCapture={e => { e.currentTarget.style.borderColor='var(--teal)'; e.currentTarget.style.boxShadow='0 0 0 1px rgba(45,189,182,.5)' }}
+          onBlurCapture={e => { e.currentTarget.style.borderColor='rgba(255,255,255,.10)'; e.currentTarget.style.boxShadow=listening ? '0 0 0 1px var(--teal), 0 0 22px rgba(45,189,182,.22)' : 'none' }}
         >
           <button
             onClick={toggleGeo}

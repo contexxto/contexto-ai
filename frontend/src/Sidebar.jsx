@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import axios from 'axios'
-import { Plus, Pin, PinOff, Pencil, Trash2, MoreHorizontal, MessageSquare } from 'lucide-react'
+import { Plus, Pin, PinOff, Pencil, Trash2, MoreHorizontal, MessageSquare, LogIn, LogOut } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 
 const C = {
   bg: '#0B0A10', border: '#2E2D3A', text: '#F0ECE6', dim: '#A8A3B3', accent: '#2DBDB6', active: '#1E1D28',
 }
 
-export default function Sidebar({ sessionId, onSelect, onNew, reloadKey }) {
+export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, onLogin, onLogout }) {
   const [sessions, setSessions] = useState([])
   const [menuId, setMenuId] = useState(null)
   const [editingId, setEditingId] = useState(null)
@@ -143,6 +143,43 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey }) {
         )}
         {recientes.length > 0 && <div style={sectionLabel}>Recientes</div>}
         {recientes.map(Row)}
+      </div>
+
+      {/* Cuenta (al fondo, estilo Claude) */}
+      <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 10, marginTop: 6 }}>
+        {user ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+            <div style={{
+              width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
+              background: 'linear-gradient(135deg,#2DBDB6,#E0685A)', color: '#0B0A10',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontWeight: 800, fontSize: '.85rem',
+            }}>
+              {(user.email || '?').trim()[0]?.toUpperCase()}
+            </div>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: '.78rem', color: C.text, overflow: 'hidden',
+                            textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email}</div>
+              {user.rol && (
+                <div style={{ fontSize: '.68rem', color: C.dim, textTransform: 'capitalize' }}>{user.rol}</div>
+              )}
+            </div>
+            <button onClick={onLogout} title="Cerrar sesión"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.dim, display: 'flex', padding: 4 }}>
+              <LogOut size={16} />
+            </button>
+          </div>
+        ) : (
+          <button onClick={onLogin}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, width: '100%',
+              padding: '9px 12px', borderRadius: 8, cursor: 'pointer',
+              background: 'transparent', border: `1px solid ${C.accent}`, color: C.accent,
+              fontSize: '.85rem', fontWeight: 600,
+            }}>
+            <LogIn size={15} /> Entrar
+          </button>
+        )}
       </div>
     </div>
   )

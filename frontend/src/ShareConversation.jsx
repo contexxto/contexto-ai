@@ -24,7 +24,12 @@ export default function ShareConversation({ sessionId, onClose }) {
         { headers: apiHeaders() })
       const url = `${window.location.origin}/s/${data.token}`
       setLink(url)
-      if (navigator.share) { try { await navigator.share({ title: 'Contexto AI', url }) } catch { /* cancelado */ } }
+      // Solo en móvil/táctil usamos la hoja nativa (WhatsApp, etc.).
+      // En escritorio mostramos el enlace copiable inline (no la bandeja del SO).
+      const esTactil = window.matchMedia?.('(pointer: coarse)').matches
+      if (esTactil && navigator.share) {
+        try { await navigator.share({ title: 'Contexto AI', url }) } catch { /* cancelado */ }
+      }
     } catch (e) {
       setError(e?.response?.data?.detail || 'No se pudo crear el enlace. ¿Iniciaste sesión?')
     } finally { setLoading(false) }

@@ -62,11 +62,17 @@ async def _get_jwks(force: bool = False) -> list[dict]:
 
 
 def _key_for(token: str, keys: list[dict]):
-    kid = jwt.get_unverified_header(token).get("kid")
+    try:
+        kid = jwt.get_unverified_header(token).get("kid")
+    except Exception:  # token malformado → sin llave (el llamador devuelve 401)
+        return None
     jwk = next((k for k in keys if k.get("kid") == kid), None)
     if jwk is None:
         return None
-    return jwt.algorithms.ECAlgorithm.from_jwk(json.dumps(jwk))
+    try:
+        return jwt.algorithms.ECAlgorithm.from_jwk(json.dumps(jwk))
+    except Exception:
+        return None
 
 
 async def _decode(token: str) -> dict:

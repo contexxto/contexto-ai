@@ -22,6 +22,12 @@ def test_jwks_url_se_deriva_de_supabase_url(monkeypatch):
     assert auth._jwks_url() == "https://demo.supabase.co/auth/v1/.well-known/jwks.json"
 
 
+def test_key_for_token_malformado_devuelve_none():
+    # token basura (no es JWT) → no debe lanzar, solo None (→ 401 aguas arriba)
+    assert auth._key_for("no.es.valido", []) is None
+    assert auth._key_for("basura", [{"kid": "x"}]) is None
+
+
 def test_key_for_sin_coincidencia_devuelve_none():
     # token con header kid=abc; keys vacías → None (no crashea)
     import base64

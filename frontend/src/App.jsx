@@ -109,16 +109,29 @@ function _plainText(md) {
 }
 
 function ActBtn({ title, onClick, active, children }) {
+  const [hover, setHover] = useState(false)
   return (
-    <button onClick={onClick} title={title}
-      style={{
-        background: 'none', border: 'none', cursor: 'pointer', padding: 5, borderRadius: 6,
-        color: active ? 'var(--teal)' : 'var(--text-muted)', display: 'flex',
-      }}
-      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,.05)' }}
-      onMouseLeave={e => { e.currentTarget.style.background = 'none' }}>
-      {children}
-    </button>
+    <div style={{ position: 'relative', display: 'flex' }}
+      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
+      <button onClick={onClick} aria-label={title}
+        style={{
+          background: hover ? 'rgba(255,255,255,.06)' : 'none', border: 'none', cursor: 'pointer',
+          padding: 5, borderRadius: 6, color: active ? 'var(--teal)' : 'var(--text-muted)', display: 'flex',
+          transition: 'background .12s',
+        }}>
+        {children}
+      </button>
+      {hover && (
+        <span style={{
+          position: 'absolute', bottom: 'calc(100% + 6px)', left: '50%', transform: 'translateX(-50%)',
+          background: '#1E1D28', border: '1px solid rgba(255,255,255,.12)', color: 'var(--text)',
+          fontSize: '.7rem', padding: '4px 9px', borderRadius: 7, whiteSpace: 'nowrap',
+          pointerEvents: 'none', zIndex: 30, boxShadow: '0 4px 14px rgba(0,0,0,.45)',
+        }}>
+          {title}
+        </span>
+      )}
+    </div>
   )
 }
 

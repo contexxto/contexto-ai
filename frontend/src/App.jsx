@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
 import axios from 'axios'
 import {
-  Send, MapPin, RefreshCw, Trash2, Copy, CheckCheck, ChevronDown, Menu, Mic
+  Send, MapPin, RefreshCw, Trash2, Copy, CheckCheck, ChevronDown, Menu, Mic, PanelLeft
 } from 'lucide-react'
 import { supabase, authEnabled } from './supabaseClient'
 import Auth from './Auth'
@@ -210,6 +210,7 @@ export default function App() {
   const [geoLoading, setGeoLoading] = useState(false)
   const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 768px)').matches)
   const [sidebarOpen, setSidebarOpen] = useState(false)   // cajón móvil
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)  // colapsar sidebar (escritorio)
   const [listening, setListening] = useState(false)       // dictado por voz
   const recognitionRef = useRef(null)
   const [session, setSession] = useState(null)            // sesión de Supabase | null
@@ -595,8 +596,8 @@ export default function App() {
 
   return (
     <div style={{ display:'flex', height:'100dvh' }}>
-      {/* Desktop: barra lateral fija. Móvil: cajón con backdrop. */}
-      {!isMobile && (
+      {/* Desktop: barra lateral fija (colapsable). Móvil: cajón con backdrop. */}
+      {!isMobile && !sidebarCollapsed && (
         <Sidebar
           sessionId={sessionId}
           onSelect={switchSession}
@@ -661,11 +662,18 @@ export default function App() {
         flexShrink:0,
       }}>
         <div style={{ display:'flex', alignItems:'center', gap:10, minWidth:0 }}>
-          {isMobile && (
+          {isMobile ? (
             <button onClick={() => setSidebarOpen(true)} title="Conversaciones"
               style={{ background:'none', border:'none', cursor:'pointer',
                        color:'var(--text)', padding:4, display:'flex', flexShrink:0 }}>
               <Menu size={22} />
+            </button>
+          ) : (
+            <button onClick={() => setSidebarCollapsed(c => !c)}
+              title={sidebarCollapsed ? 'Mostrar barra lateral' : 'Ocultar barra lateral'}
+              style={{ background:'none', border:'none', cursor:'pointer',
+                       color:'var(--text-muted)', padding:4, display:'flex', flexShrink:0 }}>
+              <PanelLeft size={20} />
             </button>
           )}
           <img src={sphereLogo} alt="Contexto AI" width={isMobile ? 30 : 36} height={isMobile ? 30 : 36}

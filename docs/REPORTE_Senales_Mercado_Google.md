@@ -3,7 +3,8 @@
 **Fecha:** 2026-06-09
 **Para:** Carlos (orquesta) + Gemini (validación)
 **De:** Claude (ejecución técnica)
-**Material analizado:** 8 publicaciones de Google Maps Platform / Google Search (AI Mode, Earth AI, Roads Management Insights, importación SHP→Earth, Realtor.com / TopHap / FlyAround)
+**Material analizado:** 9 publicaciones de Google Maps Platform / Google Search (AI Mode, Earth AI, Roads Management Insights, importación SHP→Earth, Realtor.com / TopHap / FlyAround, Maps Demo Key)
+**Actualizado:** 2026-06-09 — añadida la Señal #9 (Maps Demo Key).
 
 ---
 
@@ -30,6 +31,7 @@ Las 8 señales, juntas, dibujan **una sola tendencia en tres capas**:
 | **6** | SHP → Earth: "única fuente de verdad" para urbanistas | El lenguaje "fuente única de verdad" es el de nuestro Catastro | **Diferenciador:** la suya es una **capa muerta para mirar y presentar**; la nuestra es una **capa viva que un agente consulta y razona**. Misma promesa, producto distinto. |
 | **7** | Earth AI portfolio: "automatizar gestión de activos" + "mantenimiento proactivo" + "monitorizar cambios ambientales" | Google nombra **literalmente nuestro SaaS Moat** | **Refuerzo del roadmap.** La bitácora de mantenimiento preventivo (Q4 2026) no es idea local: es la categoría que el líder mundial proyecta. Subir su prioridad estratégica en el pitch. |
 | **8** | Realtor.com FlyAround + **TopHap** · "la mitad compraría sin ver" · "ver todo su entorno" | Competidor directo + demanda probada del entorno | **Posicionamiento:** FlyAround es **visión 3D pasiva**; Contexto es **inteligencia activa que responde**. TopHap es nuestra referencia competitiva #1 para el Q&A de inversionistas. |
+| **9** | **Maps Demo Key** ampliada: sandbox GRATIS (sin billing) de Geocoding, Autocomplete, Nearby/Text Search, Place Details, Routes, Weather, Grounding Lite — solo con cuenta Google | Google baja a **$0** el costo de *prototipar* con sus datos geoespaciales | **Laboratorio, no fuente.** Úsalo para (a) mejorar el geocoding/autocompletado del intake del corredor y (b) **calibrar** nuestra heurística de scores contra densidad de POIs reales. **NO** para hidratar/persistir scores desde Google (choca con sus ToS y diluye el moat). Refuerza la decisión de arrancar heurístico. |
 
 ---
 
@@ -96,3 +98,13 @@ Google opera en **horizontal, global y enterprise**. Tres huecos estructurales q
 6. **SHP → Earth:** subir shapefiles como capas nativas de nube; unifica zonificación + restricciones ambientales + límites de propiedad en una "única fuente de verdad".
 7. **Earth AI portfolio:** Imágenes Indagadas (aéreas, satelitales, modelos 3D, Street View), Gestión de Carreteras, Dinámica de Poblaciones; casos: inteligencia accionable, automatizar gestión de activos, monitorizar cambios ambientales, mantenimiento proactivo.
 8. **Realtor.com FlyAround + TopHap:** ~50% compraría sin ver en persona; vista aérea 360° de terreno/relieve/contexto del barrio; "ver no solo la vivienda sino todo su entorno".
+9. **Maps Demo Key (ampliada):** acceso gratuito en sandbox (sin riesgo financiero, solo con cuenta Google) a Autocomplete, Geocoding, Nearby Search, Text Search, Routes, Place Details, Places UI Kit, Weather y Maps Grounding Lite. Pensado para "vibecoders" y validación de casos de uso. Casos mostrados: AI Local Discovery, Weather-Aware Planning, Neighborhood Discovery, Travel Concierge.
+
+---
+
+### 🧭 Nota estratégica — Señal #9 (para la mesa con Gemini)
+
+> **Google nos regala un laboratorio gratis para afinar NUESTRA capa, no para reemplazarla.**
+> - ✅ **Sí (táctico, esta semana):** geocoding + autocompletado en el intake del corredor; **mini-experimento de calibración** de nuestro `walk_score` heurístico vs. densidad de POIs reales (Nearby Search). Es research que mejora *nuestro* dato.
+> - ⚠️ **No:** hidratar/persistir scores tomados de Google como nuestros — choca con los Términos de Google Maps (prohíben construir una base persistente que compita) **y** con la tesis "el fin no es conectarnos, sino construir el nuestro".
+> - **Efecto:** refuerza la decisión Carlos+Gemini de **arrancar con heurística por zona**; Google solo baja a $0 el costo de *validar* mejoras, no de tercerizar el moat.

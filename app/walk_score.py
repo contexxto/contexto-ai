@@ -121,10 +121,10 @@ def compute_walk_score(pois: list[dict], lat: float, lon: float) -> dict:
     }
 
 
-async def _fetch_pois(lat: float, lon: float) -> list[dict] | None:
+async def _fetch_pois(lat: float, lon: float, timeout: float = _TIMEOUT) -> list[dict] | None:
     """Consulta Overpass por POIs alrededor del punto. None si todo mirror falla."""
     query = (
-        "[out:json][timeout:8];("
+        "[out:json][timeout:25];("
         f"node(around:{_RADIUS_M},{lat},{lon})[shop];"
         f"node(around:{_RADIUS_M},{lat},{lon})[amenity];"
         f"node(around:{_RADIUS_M},{lat},{lon})[leisure=park];"
@@ -137,7 +137,7 @@ async def _fetch_pois(lat: float, lon: float) -> list[dict] | None:
     verify = settings.ssl_verify.lower() != "false"
     for url in _OVERPASS_MIRRORS:
         try:
-            async with httpx.AsyncClient(verify=verify, timeout=_TIMEOUT) as c:
+            async with httpx.AsyncClient(verify=verify, timeout=timeout) as c:
                 resp = await c.post(url, data={"data": query},
                                     headers={"User-Agent": "contexto_ai_v2"})
                 resp.raise_for_status()
@@ -153,12 +153,12 @@ async def _fetch_pois(lat: float, lon: float) -> list[dict] | None:
     return None
 
 
-async def walk_score_para(lat: float, lon: float) -> dict | None:
+async def walk_score_para(lat: float, lon: float, timeout: float = _TIMEOUT) -> dict | None:
     """
     Walk Score real para una coordenada. Devuelve dict con score + desglose,
     o None si Overpass no está disponible (el llamador cae al heurístico).
     """
-    pois = await _fetch_pois(lat, lon)
+    pois = await _fetch_pois(lat, lon, timeout)
     if pois is None:
         return None
     return compute_walk_score(pois, lat, lon)

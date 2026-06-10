@@ -3,7 +3,7 @@ import io
 import uuid
 
 import segno
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.responses import Response
 from geoalchemy2.elements import WKTElement
 from geopy.geocoders import Nominatim
@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import CurrentUser, get_current_user
 from app.config import settings
-from app.database import get_db
+from app.database import AsyncSessionLocal, get_db
 from app.models import ActivoInmutable
 from app.schemas import ActivoCreateRequest, ActivoResponse
 from app.scores_heuristicos import scores_para
@@ -245,6 +245,27 @@ async def _geocode(direccion: str) -> tuple[float, float] | None:
     return None
 
 
+async def _recompute_walk_score(asset_id: str, lat: float, lon: float) -> None:
+    """
+    Recalcula el Walk Score REAL (OSM) en segundo plano y actualiza el activo.
+    Presupuesto generoso (20s) porque ya NO bloquea la respuesta al usuario:
+    Render puede tardar más que en local en alcanzar Overpass. Idempotente y
+    silencioso ante fallos (si Overpass no responde, se queda el heurístico).
+    """
+    try:
+        ws = await walk_score_para(lat, lon, timeout=20.0)
+        if ws is None:
+            return
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                text("UPDATE activos_inmutables SET walk_score = :w WHERE id = :id"),
+                {"w": ws["walk_score"], "id": asset_id},
+            )
+            await session.commit()
+    except Exception:  # noqa: BLE001 — best-effort; nunca debe tumbar nada
+        pass
+
+
 @router.post(
     "/publish",
     status_code=status.HTTP_201_CREATED,
@@ -258,6 +279,7 @@ async def _geocode(direccion: str) -> tuple[float, float] | None:
 )
 async def publish_asset(
     payload: PublishRequest,
+    background: BackgroundTasks,
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
@@ -276,11 +298,12 @@ async def publish_asset(
     sc = scores_para(payload.direccion, payload.tipo_activo)
     sc["walk_score_fuente"] = "heuristico"
 
-    # 2b) Walk Score REAL desde OpenStreetMap (foso de datos). Si Overpass
-    #     responde, reemplaza la capa base; si no, conservamos el heurístico.
-    #     Límite estricto: el publish JAMÁS debe colgarse por una API externa.
+    # 2b) Walk Score REAL desde OpenStreetMap (foso de datos). Intento inline
+    #     CORTO (5s): si Overpass responde rápido, el usuario ve el score real
+    #     de una vez. Si no, no bloqueamos: se queda el heurístico y un job en
+    #     segundo plano lo recalcula con presupuesto mayor (ver más abajo).
     try:
-        ws = await asyncio.wait_for(walk_score_para(lat, lon), timeout=14)
+        ws = await asyncio.wait_for(walk_score_para(lat, lon, timeout=5.0), timeout=6)
     except Exception:  # noqa: BLE001 — timeout o red: caemos al heurístico
         ws = None
     if ws is not None:
@@ -319,6 +342,11 @@ async def publish_asset(
         {"tid": str(uuid.uuid4()), "aid": str(aid), "op": op_norm, "precio": payload.precio},
     )
     await db.commit()
+
+    # 4) Si el intento inline no consiguió el Walk Score real, recalcularlo en
+    #    segundo plano (sin hacer esperar al usuario, que ya tiene su QR).
+    if sc.get("walk_score_fuente") != "osm":
+        background.add_task(_recompute_walk_score, str(aid), lat, lon)
 
     return {
         "id": str(aid),

@@ -409,7 +409,12 @@ export default function App() {
   const handleCopy = useCallback(async (id, md) => {
     const text = md ?? id            // compat: si llega un solo argumento, es el texto
     const cid = md != null ? id : (text || '').slice(0, 20)
-    const html = `<div>${renderMarkdown(text)}</div>`
+    // Inyecta bordes en línea para que las tablas conserven sus recuadros en Word/Docs.
+    const body = renderMarkdown(text)
+      .replaceAll('<table>', '<table cellspacing="0" style="border-collapse:collapse;border:1px solid #999;font-family:Calibri,Arial,sans-serif;">')
+      .replaceAll('<th>', '<th style="border:1px solid #999;padding:6px 10px;background:#eef2f2;text-align:left;">')
+      .replaceAll('<td>', '<td style="border:1px solid #999;padding:6px 10px;vertical-align:top;">')
+    const html = `<div style="font-family:Calibri,Arial,sans-serif;">${body}</div>`
     try {
       if (navigator.clipboard?.write && window.ClipboardItem) {
         // Copia formato (Word/Docs conservan títulos, negritas y tablas) + texto plano.

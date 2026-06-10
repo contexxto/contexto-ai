@@ -53,6 +53,7 @@ async def tool_search_nearby_assets(
             a.densidad_poblacional_pico,
             a.porcentaje_cobertura_vegetal,
             a.conectividad,
+            a.servicios_cercanos,
             ROUND(
                 ST_Distance(
                     a.geom::geography,
@@ -105,6 +106,7 @@ async def tool_fetch_asset_lifecycle_specs(activo_id: str) -> str:
             a.volumen_trafico_historico,
             a.porcentaje_cobertura_vegetal,
             a.conectividad,
+            a.servicios_cercanos,
             f.tipo_tuberia,
             f.año_construccion,
             f.tipo_estructura,

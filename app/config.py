@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     voyage_api_key: str = ""
     voyage_model: str = "voyage-multimodal-3"
 
+    # Google Maps Places — enriquecimiento del entorno (en vivo). Si está vacío,
+    # caemos automáticamente a OpenStreetMap (base persistible del catastro).
+    google_maps_api_key: str = ""
+
     # URL pública del frontend (para los QR de los letreros inteligentes).
     public_app_url: str = "https://contexto-ai-six.vercel.app"
 

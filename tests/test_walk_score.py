@@ -136,3 +136,40 @@ def test_conectividad_limita_a_max_hubs():
     out = extraer_conectividad(pois, LAT, LON, max_hubs=3)
     assert len(out["hubs"]) == 3
     assert [h["nombre"] for h in out["hubs"]] == ["A", "B", "C"]
+
+
+# ── Entorno destacado (servicios cercanos, fuente OSM) ──────────────────────
+
+def test_entorno_osm_sin_servicios_es_none():
+    from app.entorno import extraer_entorno_osm
+    pois = [_poi(50, 0, highway="bus_stop"), _poi(60, 0, building="yes")]
+    assert extraer_entorno_osm(pois, LAT, LON) is None
+
+
+def test_entorno_osm_detecta_imanes_de_vida_con_nombre_y_orden():
+    from app.entorno import extraer_entorno_osm
+    pois = [
+        _poi(600, 0, shop="mall", name="Quicentro Sur"),
+        _poi(300, 0, amenity="school", name="Unidad Educativa Quitumbe"),
+        _poi(450, 0, amenity="police", name="UPC Quitumbe"),
+        _poi(500, 0, amenity="place_of_worship", name="Iglesia de Quitumbe"),
+        _poi(80, 0, amenity="school"),       # sin nombre → se ignora
+    ]
+    out = extraer_entorno_osm(pois, LAT, LON)
+    assert out["fuente"] == "osm"
+    # Ordenado por distancia: colegio (300) primero.
+    assert out["items"][0]["nombre"] == "Unidad Educativa Quitumbe"
+    assert "🏫 Unidad Educativa Quitumbe" in out["texto"]
+    assert "🛍️ Quicentro Sur" in out["texto"]
+    assert "🛡️ UPC Quitumbe" in out["texto"]
+
+
+def test_entorno_osm_toma_el_mas_cercano_por_categoria():
+    from app.entorno import extraer_entorno_osm
+    pois = [
+        _poi(800, 0, shop="mall", name="Mall Lejano"),
+        _poi(200, 0, shop="mall", name="Mall Cercano"),
+    ]
+    out = extraer_entorno_osm(pois, LAT, LON)
+    nombres = [i["nombre"] for i in out["items"]]
+    assert "Mall Cercano" in nombres and "Mall Lejano" not in nombres

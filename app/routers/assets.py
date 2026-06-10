@@ -16,8 +16,14 @@ from app.config import settings
 from app.database import AsyncSessionLocal, get_db
 from app.models import ActivoInmutable
 from app.schemas import ActivoCreateRequest, ActivoResponse
+from app.entorno import entorno_destacado
 from app.scores_heuristicos import scores_para
-from app.walk_score import walk_score_para
+from app.walk_score import (
+    _fetch_pois,
+    compute_walk_score,
+    extraer_conectividad,
+    walk_score_para,
+)
 
 router = APIRouter(prefix="/api/v1/assets", tags=["Assets — Catastro Inmutable"])
 
@@ -40,7 +46,7 @@ async def assets_geojson(db: AsyncSession = Depends(get_db)) -> dict:
                 "       a.score_ruido_predictivo AS ruido, "
                 "       a.porcentaje_cobertura_vegetal AS vegetacion, "
                 "       a.volumen_trafico_historico AS trafico, "
-                "       a.conectividad, "
+                "       a.conectividad, a.servicios_cercanos, "
                 "       a.imagen_url, "
                 "       ST_X(a.geom) AS lon, ST_Y(a.geom) AS lat, "
                 "       f.estado_revision, f.confianza_extraccion "
@@ -68,6 +74,7 @@ async def assets_geojson(db: AsyncSession = Depends(get_db)) -> dict:
                 "vegetacion": float(r["vegetacion"]) if r["vegetacion"] is not None else None,
                 "trafico": r["trafico"],
                 "conectividad": r["conectividad"],
+                "servicios_cercanos": r["servicios_cercanos"],
                 "imagen_url": r["imagen_url"],
                 "estado_revision": r["estado_revision"],
                 "confianza": float(r["confianza_extraccion"]) if r["confianza_extraccion"] is not None else None,
@@ -112,7 +119,8 @@ async def assets_near(
                 "       a.tipo_activo, a.piso_altura, a.walk_score, "
                 "       a.score_ruido_predictivo AS ruido, "
                 "       a.porcentaje_cobertura_vegetal AS vegetacion, "
-                "       a.volumen_trafico_historico AS trafico, a.conectividad, a.imagen_url, "
+                "       a.volumen_trafico_historico AS trafico, a.conectividad, "
+                "       a.servicios_cercanos, a.imagen_url, "
                 "       ST_X(a.geom) AS lon, ST_Y(a.geom) AS lat, "
                 "       f.estado_revision, "
                 "       ROUND(ST_Distance(a.geom::geography, "
@@ -135,7 +143,8 @@ async def assets_near(
             "id": r["id"], "direccion": r["direccion"], "tipo_activo": r["tipo_activo"],
             "piso_altura": r["piso_altura"], "walk_score": r["walk_score"], "ruido": r["ruido"],
             "vegetacion": float(r["vegetacion"]) if r["vegetacion"] is not None else None,
-            "trafico": r["trafico"], "conectividad": r["conectividad"], "imagen_url": r["imagen_url"],
+            "trafico": r["trafico"], "conectividad": r["conectividad"],
+            "servicios_cercanos": r["servicios_cercanos"], "imagen_url": r["imagen_url"],
             "estado_revision": r["estado_revision"],
             "distancia_m": int(r["distancia_m"]) if r["distancia_m"] is not None else None,
         },
@@ -255,14 +264,18 @@ async def _recompute_walk_score(asset_id: str, lat: float, lon: float) -> None:
     silencioso ante fallos (si Overpass no responde, se queda el heurístico).
     """
     try:
-        ws = await walk_score_para(lat, lon, timeout=20.0)
-        if ws is None:
+        # Un solo fetch de POIs → walk score + conectividad + entorno destacado.
+        pois = await _fetch_pois(lat, lon, timeout=20.0)
+        if pois is None:
             return
-        conect = (ws.get("conectividad") or {}).get("texto")
+        ws = compute_walk_score(pois, lat, lon)
+        conect = (extraer_conectividad(pois, lat, lon) or {}).get("texto")
+        ent = (await entorno_destacado(lat, lon, pois) or {}).get("texto")
         async with AsyncSessionLocal() as session:
             await session.execute(
-                text("UPDATE activos_inmutables SET walk_score = :w, conectividad = :c WHERE id = :id"),
-                {"w": ws["walk_score"], "c": conect, "id": asset_id},
+                text("UPDATE activos_inmutables SET walk_score = :w, conectividad = :c, "
+                     "servicios_cercanos = :s WHERE id = :id"),
+                {"w": ws["walk_score"], "c": conect, "s": ent, "id": asset_id},
             )
             await session.commit()
     except Exception:  # noqa: BLE001 — best-effort; nunca debe tumbar nada

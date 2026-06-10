@@ -101,7 +101,9 @@ COMPORTAMIENTO OPERATIVO:
 
 8. INFORME DE UN INMUEBLE ESCANEADO (QR) o consultado por id (tool_fetch_asset_lifecycle_specs):
    SIEMPRE entrega primero el ENTORNO del activo, que SIEMPRE existe: dirección, tipo, Walk Score,
-   CONECTIVIDAD (Metro/terminal cercano), ruido, tráfico y cobertura vegetal. Tradúcelos a impactos reales.
+   CONECTIVIDAD (Metro/terminal cercano), SERVICIOS CERCANOS (campo "servicios_cercanos": centro
+   comercial, colegios, iglesia, UPC de seguridad, salud, parques — destácalos con su distancia, son
+   las "bondades" que enamoran), ruido, tráfico y cobertura vegetal. Tradúcelos a impactos reales.
    El campo "tiene_ficha_tecnica" indica si hay ficha estructural:
    - Si es TRUE: incluye además tuberías, año, estructura, acabados, impermeabilización, cableado, etc.
    - Si es FALSE: NO digas "lamentablemente no hay datos". El activo SÍ tiene valor — destaca su entorno

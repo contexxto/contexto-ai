@@ -362,10 +362,11 @@ async def publish_asset(
     )
     await db.commit()
 
-    # 4) Si el intento inline no consiguió el Walk Score real, recalcularlo en
-    #    segundo plano (sin hacer esperar al usuario, que ya tiene su QR).
-    if sc.get("walk_score_fuente") != "osm":
-        background.add_task(_recompute_walk_score, str(aid), lat, lon)
+    # 4) Recalcular SIEMPRE en segundo plano (sin hacer esperar al usuario, que
+    #    ya tiene su QR): asegura Walk Score real + conectividad + servicios
+    #    cercanos (entorno Google/OSM), aunque el intento inline ya haya
+    #    resuelto el walk score. El inline no computa el entorno.
+    background.add_task(_recompute_walk_score, str(aid), lat, lon)
 
     return {
         "id": str(aid),

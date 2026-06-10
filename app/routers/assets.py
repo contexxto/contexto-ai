@@ -1,3 +1,4 @@
+import asyncio
 import io
 import uuid
 
@@ -5,13 +6,17 @@ import segno
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import Response
 from geoalchemy2.elements import WKTElement
+from geopy.geocoders import Nominatim
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import CurrentUser, get_current_user
 from app.config import settings
 from app.database import get_db
 from app.models import ActivoInmutable
 from app.schemas import ActivoCreateRequest, ActivoResponse
+from app.scores_heuristicos import scores_para
 
 router = APIRouter(prefix="/api/v1/assets", tags=["Assets — Catastro Inmutable"])
 
@@ -208,3 +213,99 @@ async def create_asset(
         tipo_activo=asset.tipo_activo,
         created_at=asset.created_at,
     )
+
+
+# ── Publicar mi inmueble (propietario particular o corredor) ────────────────
+class PublishRequest(BaseModel):
+    direccion: str = Field(..., min_length=5, max_length=255)
+    tipo_activo: str = Field(default="Departamento")
+    operacion: str = Field(..., description="arriendo | venta")
+    precio: float | None = Field(default=None, ge=0)
+    piso_altura: int = Field(default=1, ge=1, le=200)
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+
+
+async def _geocode(direccion: str) -> tuple[float, float] | None:
+    """Geocodifica una dirección de Quito vía Nominatim (best-effort)."""
+    def _sync(q: str):
+        return Nominatim(user_agent="contexto_ai_v2", timeout=8).geocode(q, language="es")
+    for q in dict.fromkeys([
+        f"{direccion.strip()}, Quito, Ecuador",
+        f"{direccion.strip()}, Ecuador",
+        f"{direccion.split(' y ')[0].strip()}, Quito, Ecuador",
+    ]):
+        try:
+            loc = await asyncio.get_event_loop().run_in_executor(None, _sync, q)
+        except Exception:  # noqa: BLE001
+            loc = None
+        if loc:
+            return round(loc.latitude, 6), round(loc.longitude, 6)
+    return None
+
+
+@router.post(
+    "/publish",
+    status_code=status.HTTP_201_CREATED,
+    summary="Publicar mi inmueble (cualquier usuario autenticado)",
+    description=(
+        "Permite a un propietario particular o corredor publicar su inmueble sin "
+        "intermediarios. Asigna scores heurísticos por zona, geocodifica si no se "
+        "envían coordenadas, liga el activo a su dueño y registra la operación/precio. "
+        "Devuelve el id y el enlace del QR para el letrero."
+    ),
+)
+async def publish_asset(
+    payload: PublishRequest,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    # 1) Coordenadas: usar las provistas o geocodificar la dirección.
+    lat, lon = payload.latitude, payload.longitude
+    if lat is None or lon is None:
+        geo = await _geocode(payload.direccion)
+        if not geo:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="No pudimos ubicar la dirección. Revísala o comparte tu ubicación (lat/lon).",
+            )
+        lat, lon = geo
+
+    # 2) Scores heurísticos por zona (capa base, refinable con visión).
+    sc = scores_para(payload.direccion, payload.tipo_activo)
+
+    aid = uuid.uuid4()
+    asset = ActivoInmutable(
+        id=aid,
+        geom=WKTElement(f"POINT({lon} {lat})", srid=4326),
+        direccion_estandarizada=payload.direccion.strip(),
+        piso_altura=payload.piso_altura,
+        walk_score=sc["walk_score"],
+        score_ruido_predictivo=sc["score_ruido_predictivo"],
+        porcentaje_cobertura_vegetal=sc["porcentaje_cobertura_vegetal"],
+        tipo_activo=payload.tipo_activo,
+    )
+    db.add(asset)
+    await db.flush()
+
+    # 3) Ligar al dueño y registrar la operación/precio (transitorio).
+    await db.execute(
+        text("UPDATE activos_inmutables SET owner_user_id = :u, owner_agency_id = :a WHERE id = :id"),
+        {"u": user.user_id, "a": user.agency_id, "id": str(aid)},
+    )
+    await db.execute(
+        text(
+            "INSERT INTO transacciones_temporales (id, activo_id, tipo_operacion, precio, estado_anuncio) "
+            "VALUES (:tid, :aid, :op, :precio, 'activo')"
+        ),
+        {"tid": str(uuid.uuid4()), "aid": str(aid),
+         "op": (payload.operacion or "").strip().lower()[:20], "precio": payload.precio},
+    )
+    await db.commit()
+
+    return {
+        "id": str(aid),
+        "direccion": payload.direccion.strip(),
+        "scores": sc,
+        "deep_link": f"{settings.public_app_url.rstrip('/')}/a/{aid}",
+    }

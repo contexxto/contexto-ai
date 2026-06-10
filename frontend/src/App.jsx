@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { supabase, authEnabled } from './supabaseClient'
 import Auth from './Auth'
+import PublishAsset from './PublishAsset'
 
 // Headers (backend key + Bearer del usuario) centralizados en api.js
 import { API_BASE, apiHeaders, setAccessToken } from './api'
@@ -214,6 +215,7 @@ export default function App() {
   const [session, setSession] = useState(null)            // sesión de Supabase | null
   const [authOpen, setAuthOpen] = useState(false)         // modal de login/registro
   const [rol, setRol] = useState(null)                    // rol del usuario (cliente/corredor/inmobiliaria)
+  const [publishOpen, setPublishOpen] = useState(false)   // modal "Publicar mi inmueble"
 
   // Sesión: cargar la actual y escuchar cambios (login/logout). Mantiene el token
   // que apiHeaders() adjunta a cada llamada al backend.
@@ -704,6 +706,7 @@ export default function App() {
       {authOpen && (
         <Auth onClose={() => setAuthOpen(false)} onAuthed={(s) => { setSession(s); setAccessToken(s?.access_token) }} />
       )}
+      {publishOpen && <PublishAsset onClose={() => setPublishOpen(false)} />}
 
       {/* ── Messages ── */}
       <div
@@ -733,6 +736,17 @@ export default function App() {
               Tu agente inteligente que absorbe capas de contexto — ruido, seguridad, vida,
               historia — y te las traduce para que encuentres el lugar perfecto.
             </p>
+            <button
+              onClick={() => (authEnabled && session) ? setPublishOpen(true) : setAuthOpen(true)}
+              style={{
+                display:'inline-flex', alignItems:'center', gap:8, margin:'0 auto 22px',
+                padding:'11px 22px', borderRadius:999, cursor:'pointer', fontWeight:700, fontSize:'.9rem',
+                background:'rgba(45,189,182,.12)', border:'1px solid var(--teal)', color:'var(--teal-bright)',
+                boxShadow:'0 0 22px rgba(45,189,182,.2)',
+              }}
+            >
+              🏠 Publicar mi inmueble (sin intermediarios)
+            </button>
             <div style={{ display:'flex', flexDirection:'column', gap:8, alignItems:'center' }}>
               {QUICK_PROMPTS.map((p, i) => (
                 <button

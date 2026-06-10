@@ -73,37 +73,54 @@ def extraer_entorno_osm(pois: list[dict], lat: float, lon: float, max_items: int
 
 
 async def _entorno_google(lat: float, lon: float, key: str, max_items: int = 6) -> dict | None:
-    """Enriquecimiento EN VIVO con Google Places Nearby (una llamada por categoría)."""
-    base = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+    """
+    Enriquecimiento EN VIVO con la Places API (New) — compatible con la Clave de
+    Demo de Maps (gratis, sandbox). Una sola llamada: searchNearby con todos los
+    tipos, ordenado por distancia; luego el más cercano por categoría.
+    """
+    url = "https://places.googleapis.com/v1/places:searchNearby"
     verify = settings.ssl_verify.lower() != "false"
-    items: list[dict] = []
+    body = {
+        "includedTypes": [c["google"] for c in _CATEGORIAS],
+        "maxResultCount": 20,
+        "rankPreference": "DISTANCE",
+        "languageCode": "es",
+        "locationRestriction": {
+            "circle": {"center": {"latitude": lat, "longitude": lon}, "radius": float(_RADIO_M)}
+        },
+    }
+    headers = {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": key,
+        "X-Goog-FieldMask": "places.displayName,places.location,places.types",
+    }
     try:
         async with httpx.AsyncClient(verify=verify, timeout=_TIMEOUT) as c:
-            for cat in _CATEGORIAS:
-                params = {"location": f"{lat},{lon}", "radius": _RADIO_M,
-                          "type": cat["google"], "language": "es", "key": key}
-                resp = await c.get(base, params=params)
-                resp.raise_for_status()
-                results = resp.json().get("results", [])
-                if not results:
-                    continue
-                # El más cercano por distancia real.
-                mejor = None
-                for r in results:
-                    loc = r.get("geometry", {}).get("location", {})
-                    if "lat" not in loc:
-                        continue
-                    d = _haversine_m(lat, lon, loc["lat"], loc["lng"])
-                    nombre = r.get("name")
-                    if mejor is None or d < mejor[0]:
-                        mejor = (d, nombre)
-                if mejor:
-                    items.append({"key": cat["key"], "emoji": cat["emoji"], "label": cat["label"],
-                                  "nombre": mejor[1], "distancia_m": int(mejor[0])})
+            resp = await c.post(url, json=body, headers=headers)
+            resp.raise_for_status()
+            places = resp.json().get("places", [])
     except Exception:  # noqa: BLE001 — si Google falla, el llamador cae a OSM
         return None
-    if not items:
+
+    # Más cercano por categoría (un lugar puede traer varios "types").
+    mejor: dict[str, tuple] = {}
+    for pl in places:
+        loc = pl.get("location", {})
+        if "latitude" not in loc:
+            continue
+        tipos = pl.get("types", [])
+        nombre = (pl.get("displayName") or {}).get("text")
+        d = _haversine_m(lat, lon, loc["latitude"], loc["longitude"])
+        for cat in _CATEGORIAS:
+            if cat["google"] in tipos:
+                if cat["key"] not in mejor or d < mejor[cat["key"]][0]:
+                    mejor[cat["key"]] = (d, nombre, cat)
+                break
+    if not mejor:
         return None
+
+    items = [{"key": cat["key"], "emoji": cat["emoji"], "label": cat["label"],
+              "nombre": nombre, "distancia_m": int(d)} for (d, nombre, cat) in mejor.values()]
     items.sort(key=lambda i: i["distancia_m"])
     items = items[:max_items]
     return {"fuente": "google", "items": items, "texto": _formatear(items)}

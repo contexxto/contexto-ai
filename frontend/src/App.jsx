@@ -254,6 +254,7 @@ export default function App() {
   // Deep link de QR: /a/{uuid} → sesión determinística qr-{id}
   const deepLinkId = (window.location.pathname.match(/^\/a\/([0-9a-fA-F-]{36})$/) || [])[1] || null
   const shareToken = (window.location.pathname.match(/^\/s\/([A-Za-z0-9_-]+)$/) || [])[1] || null
+  const initialQ = new URLSearchParams(window.location.search).get('q')   // pregunta que llega desde un link compartido
   // Al abrir: chat nuevo y limpio (estilo Claude). Las conversaciones previas
   // quedan accesibles en el sidebar. Excepción: deep-link por QR (carga ese activo).
   const [sessionId, setSessionId] = useState(() => deepLinkId ? 'qr-' + deepLinkId : 'session-' + crypto.randomUUID())
@@ -279,6 +280,7 @@ export default function App() {
   const [shareOpen, setShareOpen] = useState(false)       // modal "Compartir conversación"
   const [shared, setShared] = useState(null)              // datos de una conversación compartida (visor)
   const [sharedErr, setSharedErr] = useState(false)
+  const [shareInput, setShareInput] = useState('')        // input "sigue preguntándole al agente" en el visor
 
   // Visor público de conversación compartida (/s/{token}) — solo lectura, sin login.
   useEffect(() => {
@@ -487,6 +489,17 @@ export default function App() {
     }
   }, [input, loading, sessionId, geo])
 
+  // Enganche viral: si llega ?q= (desde un link compartido), auto-envía esa pregunta
+  // en una sesión nueva → el visitante queda chateando en vivo con el agente.
+  const qFired = useRef(false)
+  useEffect(() => {
+    if (qFired.current || !initialQ || deepLinkId || shareToken) return
+    qFired.current = true
+    window.history.replaceState({}, '', '/')   // limpia el ?q= de la URL
+    setTimeout(() => sendMessage(initialQ), 150)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Dictado por voz (Web Speech API) — "hablarle al agente"
   const startVoice = useCallback(() => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition
@@ -686,6 +699,33 @@ export default function App() {
             </div>
           ))}
         </div>
+
+        {/* Superficie de conversión: el visitante sigue la conversación con el agente */}
+        {shared && (
+          <div style={{ position:'sticky', bottom:0, paddingBottom:16, paddingTop:10, background:'#0E0D13' }}>
+            <div style={{ fontSize:'.82rem', color:'var(--teal-bright)', marginBottom:8, textAlign:'center' }}>
+              💬 Sigue tú la conversación con el agente
+            </div>
+            <form
+              onSubmit={(e) => { e.preventDefault(); const t = shareInput.trim(); if (t) window.location.assign('/?q=' + encodeURIComponent(t)) }}
+              style={{ display:'flex', gap:8, alignItems:'center', background:'rgba(20,44,43,.5)',
+                       border:'1px solid rgba(45,189,182,.35)', borderRadius:26, padding:8,
+                       boxShadow:'0 0 28px rgba(45,189,182,.2)' }}>
+              <input value={shareInput} onChange={e => setShareInput(e.target.value)}
+                placeholder="Pregúntale al agente sobre este inmueble o tu zona…"
+                style={{ flex:1, background:'none', border:'none', outline:'none', color:'var(--text)',
+                         fontSize:'.92rem', padding:'4px 10px' }} />
+              <button type="submit" title="Preguntar"
+                style={{ background:'var(--teal)', border:'none', borderRadius:999, width:38, height:38,
+                         display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color:'#0E0D13' }}>
+                <Send size={16}/>
+              </button>
+            </form>
+            <div style={{ fontSize:'.72rem', color:'var(--text-muted)', textAlign:'center', marginTop:8 }}>
+              Gratis · sin registro · <a href="/" style={{ color:'var(--teal)', textDecoration:'none' }}>Conoce Contexto AI</a>
+            </div>
+          </div>
+        )}
       </div>
     )
   }

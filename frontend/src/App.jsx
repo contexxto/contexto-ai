@@ -136,8 +136,9 @@ function ActBtn({ title, onClick, active, children }) {
   )
 }
 
-function Message({ msg, onCopy, copied, onScrollTop, onShare }) {
+function Message({ msg, onCopy, copied, onScrollTop, onShare, isLast }) {
   const isUser = msg.role === 'user'
+  const sustancioso = !isUser && ((msg.toolCalls?.length > 0) || (msg.content?.length > 450))
   const [speaking, setSpeaking] = useState(false)
   const [feedback, setFeedback] = useState(null)  // 'up' | 'down' | null
 
@@ -188,21 +189,56 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare }) {
           )}
         </div>
         {!isUser && (
-          <div style={{ display:'flex', alignItems:'center', gap:2, marginTop:4, flexWrap:'wrap' }}>
-            <ActBtn title="Copiar" onClick={() => onCopy(msg.id, msg.content)} active={copied === msg.id}>
-              {copied === msg.id ? <CheckCheck size={15}/> : <Copy size={15}/>}
-            </ActBtn>
-            <ActBtn title="Compartir" onClick={onShare}><Share2 size={15}/></ActBtn>
-            <ActBtn title={speaking ? 'Detener audio' : 'Escuchar'} onClick={toggleSpeak} active={speaking}>
-              <Volume2 size={15}/>
-            </ActBtn>
-            <ActBtn title="Me gusta" onClick={() => setFeedback(f => f === 'up' ? null : 'up')} active={feedback === 'up'}>
-              <ThumbsUp size={15}/>
-            </ActBtn>
-            <ActBtn title="No me gusta" onClick={() => setFeedback(f => f === 'down' ? null : 'down')} active={feedback === 'down'}>
-              <ThumbsDown size={15}/>
-            </ActBtn>
-            <ActBtn title="Ir al inicio de la conversación" onClick={onScrollTop}><ArrowUpToLine size={15}/></ActBtn>
+          <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:6, flexWrap:'wrap' }}>
+            {/* Compartir destacado: pill teal con etiqueta — palanca de crecimiento */}
+            <button onClick={onShare} title="Compartir esta conversación"
+              style={{
+                display:'flex', alignItems:'center', gap:6, padding:'6px 13px', borderRadius:999,
+                background:'rgba(45,189,182,.13)', border:'1px solid rgba(45,189,182,.42)',
+                color:'var(--teal-bright, #5EEAD4)', cursor:'pointer', fontSize:'.8rem', fontWeight:700,
+                transition:'all .14s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(45,189,182,.22)' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(45,189,182,.13)' }}>
+              <Share2 size={14}/> Compartir
+            </button>
+            {/* Acciones discretas */}
+            <div style={{ display:'flex', alignItems:'center', gap:2 }}>
+              <ActBtn title="Copiar" onClick={() => onCopy(msg.id, msg.content)} active={copied === msg.id}>
+                {copied === msg.id ? <CheckCheck size={15}/> : <Copy size={15}/>}
+              </ActBtn>
+              <ActBtn title={speaking ? 'Detener audio' : 'Escuchar'} onClick={toggleSpeak} active={speaking}>
+                <Volume2 size={15}/>
+              </ActBtn>
+              <ActBtn title="Me gusta" onClick={() => setFeedback(f => f === 'up' ? null : 'up')} active={feedback === 'up'}>
+                <ThumbsUp size={15}/>
+              </ActBtn>
+              <ActBtn title="No me gusta" onClick={() => setFeedback(f => f === 'down' ? null : 'down')} active={feedback === 'down'}>
+                <ThumbsDown size={15}/>
+              </ActBtn>
+              <ActBtn title="Ir al inicio de la conversación" onClick={onScrollTop}><ArrowUpToLine size={15}/></ActBtn>
+            </div>
+          </div>
+        )}
+
+        {/* Nudge contextual: tras análisis sustanciosos, solo en la última respuesta */}
+        {sustancioso && isLast && (
+          <div style={{
+            marginTop:12, padding:'11px 13px', borderRadius:14,
+            background:'rgba(45,189,182,.06)', border:'1px solid rgba(45,189,182,.2)',
+            display:'flex', alignItems:'center', gap:12, flexWrap:'wrap',
+          }}>
+            <span style={{ flex:1, minWidth:190, fontSize:'.8rem', lineHeight:1.45, color:'var(--text-mid, #C9C6D6)' }}>
+              💬 ¿Le sirve a alguien que decide contigo? Compártelo con tu <strong style={{ color:'var(--teal-bright, #5EEAD4)' }}>pareja, corredor o cliente</strong>.
+            </span>
+            <button onClick={onShare}
+              style={{
+                display:'flex', alignItems:'center', gap:6, padding:'7px 14px', borderRadius:999,
+                background:'linear-gradient(90deg, #1A7A76, #2DBDB6)', border:'none',
+                color:'#0E0D13', cursor:'pointer', fontSize:'.8rem', fontWeight:800, whiteSpace:'nowrap',
+              }}>
+              <Share2 size={14}/> Compartir
+            </button>
           </div>
         )}
         <div style={{ fontSize:'.72rem', color:'var(--text-muted)', marginTop:4,
@@ -917,8 +953,9 @@ export default function App() {
           </div>
         )}
 
-        {messages.map(msg => (
+        {messages.map((msg, i) => (
           <Message key={msg.id} msg={msg} onCopy={handleCopy} copied={copied}
+            isLast={i === messages.length - 1}
             onScrollTop={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
             onShare={() => setShareOpen(true)} />
         ))}

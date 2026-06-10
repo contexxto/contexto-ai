@@ -79,19 +79,32 @@ async def tool_search_nearby_assets(
 @tool
 async def tool_fetch_asset_lifecycle_specs(activo_id: str) -> str:
     """
-    Retrieve the complete structural specifications and maintenance lifecycle log
-    for a specific property asset.
+    Retrieve the full profile of a specific property asset by its UUID.
 
-    Returns pipe types, construction year, structure material, finish quality,
-    and full preventive maintenance history (cistern, roof, facade, electrical).
-    Use this when the user asks about a specific property's condition, investment
-    value, or structural health.
+    ALWAYS returns the asset's permanent environment data — walk score, noise,
+    traffic, vegetation, and CONNECTIVITY (nearby Metro / bus terminals, a
+    plusvalía signal) — even when no maintenance log exists yet. The structural
+    maintenance fields (pipes, year, structure, waterproofing, electrical, etc.)
+    are present only if the owner has registered the technical sheet.
+
+    Use this whenever the user scans a QR or asks about a specific property by id.
+    If `tiene_ficha_tecnica` is false, still present all the environment data
+    (especially walk score and connectivity) as valuable context, and note that
+    the structural sheet is pending.
 
     Args:
         activo_id: UUID of the immutable asset.
     """
     query = """
         SELECT
+            a.direccion_estandarizada,
+            a.tipo_activo,
+            a.piso_altura,
+            a.walk_score,
+            a.score_ruido_predictivo,
+            a.volumen_trafico_historico,
+            a.porcentaje_cobertura_vegetal,
+            a.conectividad,
             f.tipo_tuberia,
             f.año_construccion,
             f.tipo_estructura,
@@ -103,23 +116,17 @@ async def tool_fetch_asset_lifecycle_specs(activo_id: str) -> str:
             f.monto_invertido_mejoras,
             f.descripcion_mejoras,
             f.updated_at,
-            a.direccion_estandarizada,
-            a.tipo_activo,
-            a.walk_score,
-            a.score_ruido_predictivo,
-            a.volumen_trafico_historico,
-            a.porcentaje_cobertura_vegetal,
-            a.conectividad
-        FROM ficha_tecnica_mantenimiento f
-        JOIN activos_inmutables a ON a.id = f.activo_id
-        WHERE f.activo_id = :activo_id
+            (f.activo_id IS NOT NULL) AS tiene_ficha_tecnica
+        FROM activos_inmutables a
+        LEFT JOIN ficha_tecnica_mantenimiento f ON f.activo_id = a.id
+        WHERE a.id = :activo_id
     """
     rows = await _fetch_rows(query, {"activo_id": activo_id})
 
     if not rows:
         return json.dumps({
             "specs": None,
-            "message": f"No maintenance log found for asset {activo_id}. The owner has not registered structural data yet."
+            "message": f"No asset found with id {activo_id}. This QR/id is not registered in the catastro."
         })
 
     return json.dumps({"specs": rows[0]}, default=str)

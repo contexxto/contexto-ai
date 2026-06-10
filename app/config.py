@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     # URL pública del frontend (para los QR de los letreros inteligentes).
     public_app_url: str = "https://contexto-ai-six.vercel.app"
 
+    # Supabase Auth — URL del proyecto (pública). El backend deriva el endpoint
+    # JWKS para validar los JWT (ECC P-256/ES256). Vacío = auth desactivada.
+    supabase_url: str = ""
+
     # Anti-SSRF para /assets/ingest: lista de hosts permitidos separada por comas.
     # Vacío = se permite cualquier host (modo pruebas). En producción real, fijar
     # al bucket de Supabase Storage. Ej: "images.unsplash.com,xxxx.supabase.co"

@@ -17,6 +17,9 @@ slowapi==0.1.9
 pillow==11.0.0
 segno==1.6.1
 
+# Auth — validación de JWT de Supabase vía JWKS (ECC P-256 / ES256)
+pyjwt[crypto]==2.10.1
+
 # Agent — LangGraph + LLM
 langgraph==0.2.60
 langchain-core==0.3.63

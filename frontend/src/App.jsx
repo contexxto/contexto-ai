@@ -747,8 +747,8 @@ export default function App() {
         {geo && (
           <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:8,
                         fontSize:'.78rem', color:'var(--teal)' }}>
-            <MapPin size={13}/> Ubicación activa — pregúntame qué hay cerca de ti (puedes indicar la distancia).
-            <button onClick={() => setGeo(null)}
+            <MapPin size={13}/> Ubicación activa
+            <button onClick={stopGeo}
               style={{ marginLeft:'auto', background:'none', border:'none',
                        color:'var(--text-muted)', cursor:'pointer', fontSize:'.78rem' }}>
               quitar ✕

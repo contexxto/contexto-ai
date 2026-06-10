@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
 import axios from 'axios'
 import {
-  Send, MapPin, RefreshCw, Trash2, Copy, CheckCheck, ChevronDown, Menu, Mic, PanelLeft
+  Send, MapPin, RefreshCw, Trash2, Copy, CheckCheck, ChevronDown, Menu, Mic, PanelLeft,
+  Share2, Volume2, ThumbsUp, ThumbsDown, ArrowUpToLine
 } from 'lucide-react'
 import { supabase, authEnabled } from './supabaseClient'
 import Auth from './Auth'
@@ -98,8 +99,50 @@ function renderMarkdown(text) {
 }
 
 // ── Sub-components ──────────────────────────────────────────
-function Message({ msg, onCopy, copied }) {
+function _plainText(md) {
+  return (md || '')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/[#*_`>|-]/g, ' ')
+    .replace(/\[(.*?)\]\(.*?\)/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function ActBtn({ title, onClick, active, children }) {
+  return (
+    <button onClick={onClick} title={title}
+      style={{
+        background: 'none', border: 'none', cursor: 'pointer', padding: 5, borderRadius: 6,
+        color: active ? 'var(--teal)' : 'var(--text-muted)', display: 'flex',
+      }}
+      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,.05)' }}
+      onMouseLeave={e => { e.currentTarget.style.background = 'none' }}>
+      {children}
+    </button>
+  )
+}
+
+function Message({ msg, onCopy, copied, onScrollTop }) {
   const isUser = msg.role === 'user'
+  const [speaking, setSpeaking] = useState(false)
+  const [feedback, setFeedback] = useState(null)  // 'up' | 'down' | null
+
+  const share = async () => {
+    const text = _plainText(msg.content)
+    if (navigator.share) { try { await navigator.share({ text }) } catch { /* cancelado */ } }
+    else onCopy(msg.content)
+  }
+  const toggleSpeak = () => {
+    const synth = window.speechSynthesis
+    if (!synth) return
+    if (speaking) { synth.cancel(); setSpeaking(false); return }
+    const u = new SpeechSynthesisUtterance(_plainText(msg.content))
+    u.lang = 'es-419'
+    u.onend = () => setSpeaking(false)
+    u.onerror = () => setSpeaking(false)
+    setSpeaking(true); synth.speak(u)
+  }
+
   return (
     <div style={{
       display:'flex', justifyContent: isUser ? 'flex-end' : 'flex-start',
@@ -134,21 +177,25 @@ function Message({ msg, onCopy, copied }) {
               dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }}
             />
           )}
-          {!isUser && (
-            <button
-              onClick={() => onCopy(msg.content)}
-              title="Copiar respuesta"
-              style={{
-                position:'absolute', top:0, right:0,
-                background:'none', border:'none', cursor:'pointer',
-                color: copied === msg.id ? 'var(--success)' : 'var(--text-muted)',
-                padding:4, borderRadius:4,
-              }}
-            >
-              {copied === msg.id ? <CheckCheck size={13}/> : <Copy size={13}/>}
-            </button>
-          )}
         </div>
+        {!isUser && (
+          <div style={{ display:'flex', alignItems:'center', gap:2, marginTop:4, flexWrap:'wrap' }}>
+            <ActBtn title="Copiar" onClick={() => onCopy(msg.content)} active={copied === msg.id}>
+              {copied === msg.id ? <CheckCheck size={15}/> : <Copy size={15}/>}
+            </ActBtn>
+            <ActBtn title="Compartir" onClick={share}><Share2 size={15}/></ActBtn>
+            <ActBtn title={speaking ? 'Detener audio' : 'Escuchar'} onClick={toggleSpeak} active={speaking}>
+              <Volume2 size={15}/>
+            </ActBtn>
+            <ActBtn title="Me gusta" onClick={() => setFeedback(f => f === 'up' ? null : 'up')} active={feedback === 'up'}>
+              <ThumbsUp size={15}/>
+            </ActBtn>
+            <ActBtn title="No me gusta" onClick={() => setFeedback(f => f === 'down' ? null : 'down')} active={feedback === 'down'}>
+              <ThumbsDown size={15}/>
+            </ActBtn>
+            <ActBtn title="Ir al inicio de la conversación" onClick={onScrollTop}><ArrowUpToLine size={15}/></ActBtn>
+          </div>
+        )}
         <div style={{ fontSize:'.72rem', color:'var(--text-muted)', marginTop:4,
                       textAlign: isUser ? 'right' : 'left' }}>
           {msg.time}
@@ -197,7 +244,9 @@ const QUICK_PROMPTS = [
 export default function App() {
   // Deep link de QR: /a/{uuid} → sesión determinística qr-{id}
   const deepLinkId = (window.location.pathname.match(/^\/a\/([0-9a-fA-F-]{36})$/) || [])[1] || null
-  const [sessionId, setSessionId] = useState(() => deepLinkId ? 'qr-' + deepLinkId : getOrCreateSession())
+  // Al abrir: chat nuevo y limpio (estilo Claude). Las conversaciones previas
+  // quedan accesibles en el sidebar. Excepción: deep-link por QR (carga ese activo).
+  const [sessionId, setSessionId] = useState(() => deepLinkId ? 'qr-' + deepLinkId : 'session-' + crypto.randomUUID())
   const [messages, setMessages]   = useState([])
   const [input, setInput]         = useState('')
   const [loading, setLoading]     = useState(false)
@@ -743,7 +792,8 @@ export default function App() {
         )}
 
         {messages.map(msg => (
-          <Message key={msg.id} msg={msg} onCopy={() => handleCopy(msg.content)} copied={copied} />
+          <Message key={msg.id} msg={msg} onCopy={() => handleCopy(msg.content)} copied={copied}
+            onScrollTop={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })} />
         ))}
 
         {loading && <Thinking />}

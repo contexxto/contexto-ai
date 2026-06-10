@@ -303,6 +303,10 @@ async def publish_asset(
     await db.flush()
 
     # 3) Ligar al dueño y registrar la operación/precio (transitorio).
+    #    Los CHECK de la tabla exigen MAYÚSCULAS (ARRIENDO/VENTA, ACTIVO).
+    op_norm = (payload.operacion or "").strip().upper()
+    if op_norm not in ("ARRIENDO", "VENTA", "MONITOREO_PASIVO"):
+        op_norm = "ARRIENDO"
     await db.execute(
         text("UPDATE activos_inmutables SET owner_user_id = :u, owner_agency_id = :a WHERE id = :id"),
         {"u": user.user_id, "a": user.agency_id, "id": str(aid)},
@@ -310,10 +314,9 @@ async def publish_asset(
     await db.execute(
         text(
             "INSERT INTO transacciones_temporales (id, activo_id, tipo_operacion, precio, estado_anuncio) "
-            "VALUES (:tid, :aid, :op, :precio, 'activo')"
+            "VALUES (:tid, :aid, :op, :precio, 'ACTIVO')"
         ),
-        {"tid": str(uuid.uuid4()), "aid": str(aid),
-         "op": (payload.operacion or "").strip().lower()[:20], "precio": payload.precio},
+        {"tid": str(uuid.uuid4()), "aid": str(aid), "op": op_norm, "precio": payload.precio},
     )
     await db.commit()
 

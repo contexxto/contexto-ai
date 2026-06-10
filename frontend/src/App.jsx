@@ -811,13 +811,14 @@ export default function App() {
           <button
             onClick={toggleGeo}
             disabled={geoLoading}
-            title={geo ? 'Ubicación activa — tocar para quitar' : 'Compartir mi ubicación'}
+            title={geo ? 'Ubicación activa' : 'Compartir mi ubicación'}
             style={{
-              background: geo ? 'var(--teal)' : 'rgba(45,189,182,.12)',
-              border: `1px solid ${geo ? 'var(--teal)' : 'rgba(45,189,182,.3)'}`,
+              background: 'rgba(45,189,182,.12)',
+              border: '1px solid rgba(45,189,182,.3)',
               borderRadius:999, width:38, height:38, flexShrink:0, cursor:'pointer',
               display:'flex', alignItems:'center', justifyContent:'center',
-              color: geo ? '#0E0D13' : 'var(--teal)', transition:'all .15s',
+              color: 'var(--teal)', transition:'all .15s',
+              boxShadow: geo ? '0 0 12px rgba(45,189,182,.4)' : 'none',
             }}
           >
             {geoLoading

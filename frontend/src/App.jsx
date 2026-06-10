@@ -143,7 +143,7 @@ function Message({ msg, onCopy, copied, onScrollTop }) {
   const share = async () => {
     const text = _plainText(msg.content)
     if (navigator.share) { try { await navigator.share({ text }) } catch { /* cancelado */ } }
-    else onCopy(msg.content)
+    else onCopy(msg.id, msg.content)
   }
   const toggleSpeak = () => {
     const synth = window.speechSynthesis
@@ -193,7 +193,7 @@ function Message({ msg, onCopy, copied, onScrollTop }) {
         </div>
         {!isUser && (
           <div style={{ display:'flex', alignItems:'center', gap:2, marginTop:4, flexWrap:'wrap' }}>
-            <ActBtn title="Copiar" onClick={() => onCopy(msg.content)} active={copied === msg.id}>
+            <ActBtn title="Copiar" onClick={() => onCopy(msg.id, msg.content)} active={copied === msg.id}>
               {copied === msg.id ? <CheckCheck size={15}/> : <Copy size={15}/>}
             </ActBtn>
             <ActBtn title="Compartir" onClick={share}><Share2 size={15}/></ActBtn>
@@ -406,12 +406,25 @@ export default function App() {
     setShowScrollBtn(el.scrollHeight - el.scrollTop - el.clientHeight > 200)
   }, [])
 
-  const handleCopy = useCallback((text) => {
-    navigator.clipboard.writeText(text).then(() => {
-      const id = text.slice(0, 20)
-      setCopied(id)
-      setTimeout(() => setCopied(null), 2000)
-    })
+  const handleCopy = useCallback(async (id, md) => {
+    const text = md ?? id            // compat: si llega un solo argumento, es el texto
+    const cid = md != null ? id : (text || '').slice(0, 20)
+    const html = `<div>${renderMarkdown(text)}</div>`
+    try {
+      if (navigator.clipboard?.write && window.ClipboardItem) {
+        // Copia formato (Word/Docs conservan títulos, negritas y tablas) + texto plano.
+        await navigator.clipboard.write([new window.ClipboardItem({
+          'text/html': new Blob([html], { type: 'text/html' }),
+          'text/plain': new Blob([text], { type: 'text/plain' }),
+        })])
+      } else {
+        await navigator.clipboard.writeText(text)
+      }
+    } catch {
+      try { await navigator.clipboard.writeText(text) } catch { /* ignore */ }
+    }
+    setCopied(cid)
+    setTimeout(() => setCopied(null), 2000)
   }, [])
 
   const sendMessage = useCallback(async (text) => {
@@ -805,7 +818,7 @@ export default function App() {
         )}
 
         {messages.map(msg => (
-          <Message key={msg.id} msg={msg} onCopy={() => handleCopy(msg.content)} copied={copied}
+          <Message key={msg.id} msg={msg} onCopy={handleCopy} copied={copied}
             onScrollTop={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })} />
         ))}
 

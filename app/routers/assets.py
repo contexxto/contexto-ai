@@ -278,7 +278,11 @@ async def publish_asset(
 
     # 2b) Walk Score REAL desde OpenStreetMap (foso de datos). Si Overpass
     #     responde, reemplaza la capa base; si no, conservamos el heurístico.
-    ws = await walk_score_para(lat, lon)
+    #     Límite estricto: el publish JAMÁS debe colgarse por una API externa.
+    try:
+        ws = await asyncio.wait_for(walk_score_para(lat, lon), timeout=14)
+    except Exception:  # noqa: BLE001 — timeout o red: caemos al heurístico
+        ws = None
     if ws is not None:
         sc["walk_score"] = ws["walk_score"]
         sc["walk_score_fuente"] = ws["fuente"]

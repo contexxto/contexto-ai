@@ -29,7 +29,7 @@ _OVERPASS_MIRRORS = (
     "https://overpass.kumi.systems/api/interpreter",
 )
 _RADIUS_M = 1600          # ~1 milla: cobertura de caminabilidad
-_TIMEOUT = 25.0
+_TIMEOUT = 6.0            # corto: el publish no debe colgarse en una API externa
 
 # Categorías de caminabilidad → peso relativo + tags OSM que las representan.
 # Las categorías "densas" (donde más-es-mejor) suman varios POIs cercanos.
@@ -124,7 +124,7 @@ def compute_walk_score(pois: list[dict], lat: float, lon: float) -> dict:
 async def _fetch_pois(lat: float, lon: float) -> list[dict] | None:
     """Consulta Overpass por POIs alrededor del punto. None si todo mirror falla."""
     query = (
-        "[out:json][timeout:25];("
+        "[out:json][timeout:8];("
         f"node(around:{_RADIUS_M},{lat},{lon})[shop];"
         f"node(around:{_RADIUS_M},{lat},{lon})[amenity];"
         f"node(around:{_RADIUS_M},{lat},{lon})[leisure=park];"

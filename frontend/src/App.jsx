@@ -422,7 +422,8 @@ export default function App() {
     }
     watchIdRef.current = null
     setGeo(null)
-    try { localStorage.removeItem('geoConsent') } catch { /* ignore */ }
+    // El usuario apagó la ubicación a propósito → recordar para NO reactivar al reabrir.
+    try { localStorage.removeItem('geoConsent'); localStorage.setItem('geoOptOut', '1') } catch { /* ignore */ }
   }, [])
 
   const startGeo = useCallback((silent = false) => {
@@ -430,6 +431,7 @@ export default function App() {
       if (!silent) setError('Tu navegador no permite geolocalización.')
       return
     }
+    try { localStorage.removeItem('geoOptOut') } catch { /* ignore */ }
     if (watchIdRef.current != null) return   // ya activa
     if (!silent) setGeoLoading(true)
     let first = true
@@ -461,8 +463,12 @@ export default function App() {
   // Al abrir la app: si el navegador YA tiene el permiso concedido (o lo activó antes),
   // reactivamos la ubicación automáticamente — sin volver a molestar con el permiso.
   useEffect(() => {
-    let consented = false
-    try { consented = localStorage.getItem('geoConsent') === '1' } catch { /* ignore */ }
+    let optOut = false, consented = false
+    try {
+      optOut = localStorage.getItem('geoOptOut') === '1'
+      consented = localStorage.getItem('geoConsent') === '1'
+    } catch { /* ignore */ }
+    if (optOut) return   // el usuario la apagó a propósito → no reactivar en segundo plano
     if (navigator.permissions?.query) {
       navigator.permissions.query({ name: 'geolocation' })
         .then((status) => { if (status.state === 'granted') startGeo(true) })
@@ -808,17 +814,6 @@ export default function App() {
       <div style={{
         padding:'14px 0 18px', flexShrink:0,
       }}>
-        {geo && (
-          <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:8,
-                        fontSize:'.78rem', color:'var(--teal)' }}>
-            <MapPin size={13}/> Ubicación activa
-            <button onClick={stopGeo}
-              style={{ marginLeft:'auto', background:'none', border:'none',
-                       color:'var(--text-muted)', cursor:'pointer', fontSize:'.78rem' }}>
-              quitar ✕
-            </button>
-          </div>
-        )}
         <div style={{
           display:'flex', gap:8, alignItems:'flex-end',
           background:'rgba(20,44,43,.5)', backdropFilter:'blur(16px)', WebkitBackdropFilter:'blur(16px)',

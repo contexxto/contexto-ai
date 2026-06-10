@@ -40,6 +40,7 @@ async def assets_geojson(db: AsyncSession = Depends(get_db)) -> dict:
                 "       a.score_ruido_predictivo AS ruido, "
                 "       a.porcentaje_cobertura_vegetal AS vegetacion, "
                 "       a.volumen_trafico_historico AS trafico, "
+                "       a.conectividad, "
                 "       a.imagen_url, "
                 "       ST_X(a.geom) AS lon, ST_Y(a.geom) AS lat, "
                 "       f.estado_revision, f.confianza_extraccion "
@@ -66,6 +67,7 @@ async def assets_geojson(db: AsyncSession = Depends(get_db)) -> dict:
                 "ruido": r["ruido"],
                 "vegetacion": float(r["vegetacion"]) if r["vegetacion"] is not None else None,
                 "trafico": r["trafico"],
+                "conectividad": r["conectividad"],
                 "imagen_url": r["imagen_url"],
                 "estado_revision": r["estado_revision"],
                 "confianza": float(r["confianza_extraccion"]) if r["confianza_extraccion"] is not None else None,
@@ -110,7 +112,7 @@ async def assets_near(
                 "       a.tipo_activo, a.piso_altura, a.walk_score, "
                 "       a.score_ruido_predictivo AS ruido, "
                 "       a.porcentaje_cobertura_vegetal AS vegetacion, "
-                "       a.volumen_trafico_historico AS trafico, a.imagen_url, "
+                "       a.volumen_trafico_historico AS trafico, a.conectividad, a.imagen_url, "
                 "       ST_X(a.geom) AS lon, ST_Y(a.geom) AS lat, "
                 "       f.estado_revision, "
                 "       ROUND(ST_Distance(a.geom::geography, "
@@ -133,7 +135,7 @@ async def assets_near(
             "id": r["id"], "direccion": r["direccion"], "tipo_activo": r["tipo_activo"],
             "piso_altura": r["piso_altura"], "walk_score": r["walk_score"], "ruido": r["ruido"],
             "vegetacion": float(r["vegetacion"]) if r["vegetacion"] is not None else None,
-            "trafico": r["trafico"], "imagen_url": r["imagen_url"],
+            "trafico": r["trafico"], "conectividad": r["conectividad"], "imagen_url": r["imagen_url"],
             "estado_revision": r["estado_revision"],
             "distancia_m": int(r["distancia_m"]) if r["distancia_m"] is not None else None,
         },
@@ -256,10 +258,11 @@ async def _recompute_walk_score(asset_id: str, lat: float, lon: float) -> None:
         ws = await walk_score_para(lat, lon, timeout=20.0)
         if ws is None:
             return
+        conect = (ws.get("conectividad") or {}).get("texto")
         async with AsyncSessionLocal() as session:
             await session.execute(
-                text("UPDATE activos_inmutables SET walk_score = :w WHERE id = :id"),
-                {"w": ws["walk_score"], "id": asset_id},
+                text("UPDATE activos_inmutables SET walk_score = :w, conectividad = :c WHERE id = :id"),
+                {"w": ws["walk_score"], "c": conect, "id": asset_id},
             )
             await session.commit()
     except Exception:  # noqa: BLE001 — best-effort; nunca debe tumbar nada
@@ -302,6 +305,7 @@ async def publish_asset(
     #     CORTO (5s): si Overpass responde rápido, el usuario ve el score real
     #     de una vez. Si no, no bloqueamos: se queda el heurístico y un job en
     #     segundo plano lo recalcula con presupuesto mayor (ver más abajo).
+    conectividad_txt: str | None = None
     try:
         ws = await asyncio.wait_for(walk_score_para(lat, lon, timeout=5.0), timeout=6)
     except Exception:  # noqa: BLE001 — timeout o red: caemos al heurístico
@@ -310,6 +314,7 @@ async def publish_asset(
         sc["walk_score"] = ws["walk_score"]
         sc["walk_score_fuente"] = ws["fuente"]
         sc["walk_score_desglose"] = ws["desglose"]
+        conectividad_txt = (ws.get("conectividad") or {}).get("texto")
 
     aid = uuid.uuid4()
     asset = ActivoInmutable(
@@ -331,8 +336,9 @@ async def publish_asset(
     if op_norm not in ("ARRIENDO", "VENTA", "MONITOREO_PASIVO"):
         op_norm = "ARRIENDO"
     await db.execute(
-        text("UPDATE activos_inmutables SET owner_user_id = :u, owner_agency_id = :a WHERE id = :id"),
-        {"u": user.user_id, "a": user.agency_id, "id": str(aid)},
+        text("UPDATE activos_inmutables SET owner_user_id = :u, owner_agency_id = :a, "
+             "conectividad = :c WHERE id = :id"),
+        {"u": user.user_id, "a": user.agency_id, "c": conectividad_txt, "id": str(aid)},
     )
     await db.execute(
         text(
@@ -352,5 +358,6 @@ async def publish_asset(
         "id": str(aid),
         "direccion": payload.direccion.strip(),
         "scores": sc,
+        "conectividad": conectividad_txt,
         "deep_link": f"{settings.public_app_url.rstrip('/')}/a/{aid}",
     }

@@ -52,6 +52,7 @@ async def tool_search_nearby_assets(
             a.volumen_trafico_historico,
             a.densidad_poblacional_pico,
             a.porcentaje_cobertura_vegetal,
+            a.conectividad,
             ROUND(
                 ST_Distance(
                     a.geom::geography,
@@ -107,7 +108,8 @@ async def tool_fetch_asset_lifecycle_specs(activo_id: str) -> str:
             a.walk_score,
             a.score_ruido_predictivo,
             a.volumen_trafico_historico,
-            a.porcentaje_cobertura_vegetal
+            a.porcentaje_cobertura_vegetal,
+            a.conectividad
         FROM ficha_tecnica_mantenimiento f
         JOIN activos_inmutables a ON a.id = f.activo_id
         WHERE f.activo_id = :activo_id

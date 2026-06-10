@@ -96,6 +96,16 @@ export default function PublishAsset({ onClose }) {
             <div style={{ marginTop: 10, fontSize: '.78rem', color: C.tealHi }}>
               Capa base: ruido {result.scores?.score_ruido_predictivo} · walk {result.scores?.walk_score} · vegetación {result.scores?.porcentaje_cobertura_vegetal}%
             </div>
+            {result.conectividad && (
+              <div style={{ marginTop: 10, padding: '9px 12px', borderRadius: 12,
+                            background: 'rgba(45,189,182,.08)', border: `1px solid ${C.line}`,
+                            fontSize: '.78rem', color: C.text, textAlign: 'left' }}>
+                <div style={{ color: C.muted, fontSize: '.68rem', letterSpacing: '.4px', marginBottom: 3 }}>
+                  CONECTIVIDAD (señal de plusvalía)
+                </div>
+                {result.conectividad}
+              </div>
+            )}
             <button onClick={onClose}
               style={{ marginTop: 18, padding: '11px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
                        fontWeight: 800, background: `linear-gradient(90deg, ${C.teal}, ${C.tealHi})`, color: '#0E0D13' }}>

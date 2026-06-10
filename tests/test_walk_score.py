@@ -2,7 +2,7 @@
 Tests offline del Walk Score real (app/walk_score.py).
 No tocan red: prueban la lógica pura de scoring con POIs sintéticos.
 """
-from app.walk_score import _decay, _haversine_m, compute_walk_score
+from app.walk_score import _decay, _haversine_m, compute_walk_score, extraer_conectividad
 
 # Punto de referencia (La Carolina, Quito aprox.)
 LAT, LON = -0.1807, -78.4836
@@ -83,3 +83,56 @@ def test_tags_no_reconocidos_no_aportan():
     pois = [_poi(50, 0, building="yes"), _poi(60, 0, highway="residential")]
     out = compute_walk_score(pois, LAT, LON)
     assert out["walk_score"] == 0
+
+
+# ── Conectividad (hubs de transporte masivo) ────────────────────────────────
+
+def test_conectividad_sin_hubs_es_none():
+    pois = [_poi(50, 0, shop="supermarket"), _poi(60, 0, amenity="restaurant")]
+    assert extraer_conectividad(pois, LAT, LON) is None
+
+
+def test_conectividad_detecta_metro_y_terminal_ordenados():
+    pois = [
+        _poi(450, 0, amenity="bus_station", name="Terminal Terrestre Quitumbe"),
+        _poi(280, 0, railway="station", station="subway", name="Quitumbe"),
+        _poi(50, 0, shop="supermarket"),  # ruido: no es hub
+    ]
+    out = extraer_conectividad(pois, LAT, LON)
+    assert out is not None
+    # El Metro (más cercano) va primero.
+    assert out["hubs"][0]["clase"] == "metro"
+    assert out["hubs"][0]["nombre"] == "Quitumbe"
+    assert out["hubs"][1]["clase"] == "terminal"
+    assert "🚇 Quitumbe" in out["texto"]
+    assert "Terminal Terrestre Quitumbe" in out["texto"]
+
+
+def test_conectividad_hub_sin_nombre_usa_etiqueta():
+    pois = [_poi(300, 0, amenity="bus_station")]
+    out = extraer_conectividad(pois, LAT, LON)
+    assert out["hubs"][0]["nombre"] is None
+    assert "Terminal terrestre a ~" in out["texto"]
+
+
+def test_conectividad_filtra_parqueaderos_de_buses():
+    # OSM tagea parqueaderos/depósitos como amenity=bus_station: deben filtrarse.
+    pois = [
+        _poi(100, 0, amenity="bus_station", name="Estacionamiento para autobuses y camiones"),
+        _poi(200, 0, amenity="bus_station", name="Terminal Quitumbe"),
+    ]
+    out = extraer_conectividad(pois, LAT, LON)
+    assert len(out["hubs"]) == 1
+    assert out["hubs"][0]["nombre"] == "Terminal Quitumbe"
+
+
+def test_conectividad_limita_a_max_hubs():
+    pois = [
+        _poi(100, 0, railway="station", name="A"),
+        _poi(200, 0, railway="station", name="B"),
+        _poi(300, 0, railway="station", name="C"),
+        _poi(400, 0, railway="station", name="D"),
+    ]
+    out = extraer_conectividad(pois, LAT, LON, max_hubs=3)
+    assert len(out["hubs"]) == 3
+    assert [h["nombre"] for h in out["hubs"]] == ["A", "B", "C"]

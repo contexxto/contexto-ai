@@ -121,6 +121,66 @@ def compute_walk_score(pois: list[dict], lat: float, lon: float) -> dict:
     }
 
 
+# ── Conectividad: hubs de transporte masivo (señal de PLUSVALÍA) ────────────
+# Estar a pasos del Metro o de una Terminal no es solo caminabilidad: es un
+# catalizador de valorización. Lo extraemos de los MISMOS POIs del Walk Score.
+_HUB_LABEL = {
+    "metro":    ("🚇", "Metro"),
+    "terminal": ("🚉", "Terminal terrestre"),
+    "estacion": ("🚏", "Estación de transporte"),
+}
+
+
+def _clasificar_hub(tags: dict) -> str | None:
+    """Devuelve la clase de hub masivo, o None si el POI no lo es."""
+    if tags.get("station") == "subway" or tags.get("subway") == "yes":
+        return "metro"
+    if tags.get("amenity") == "bus_station":
+        # Filtrar parqueaderos/depósitos de buses que OSM también tagea así.
+        nombre = (tags.get("name") or "").lower()
+        if any(x in nombre for x in ("estacionamiento", "parqueadero", "garaje", "depósito", "deposito", "patio")):
+            return None
+        return "terminal"
+    if tags.get("railway") == "station" or tags.get("public_transport") == "station":
+        return "estacion"
+    return None
+
+
+def extraer_conectividad(pois: list[dict], lat: float, lon: float, max_hubs: int = 3) -> dict | None:
+    """
+    Identifica los hubs de transporte masivo cercanos (Metro, Terminal, estación)
+    con su distancia. Función PURA. Devuelve {"hubs": [...], "texto": "..."} o None.
+    """
+    candidatos: list[tuple[float, str, str | None]] = []
+    for p in pois:
+        tags = p.get("tags") or {}
+        clase = _clasificar_hub(tags)
+        if not clase:
+            continue
+        d = _haversine_m(lat, lon, p["lat"], p["lon"])
+        candidatos.append((d, clase, tags.get("name")))
+    if not candidatos:
+        return None
+
+    candidatos.sort(key=lambda x: x[0])
+    vistos: set = set()
+    hubs: list[dict] = []
+    for d, clase, nombre in candidatos:
+        key = (clase, nombre or round(d / 50))  # agrupa nodos del mismo hub
+        if key in vistos:
+            continue
+        vistos.add(key)
+        hubs.append({"clase": clase, "nombre": nombre, "distancia_m": int(d)})
+        if len(hubs) >= max_hubs:
+            break
+
+    partes = []
+    for h in hubs:
+        emoji, label = _HUB_LABEL[h["clase"]]
+        partes.append(f"{emoji} {h['nombre'] or label} a ~{h['distancia_m']} m")
+    return {"hubs": hubs, "texto": " · ".join(partes)}
+
+
 async def _fetch_pois(lat: float, lon: float, timeout: float = _TIMEOUT) -> list[dict] | None:
     """Consulta Overpass por POIs alrededor del punto. None si todo mirror falla."""
     query = (
@@ -161,4 +221,6 @@ async def walk_score_para(lat: float, lon: float, timeout: float = _TIMEOUT) -> 
     pois = await _fetch_pois(lat, lon, timeout)
     if pois is None:
         return None
-    return compute_walk_score(pois, lat, lon)
+    out = compute_walk_score(pois, lat, lon)
+    out["conectividad"] = extraer_conectividad(pois, lat, lon)
+    return out

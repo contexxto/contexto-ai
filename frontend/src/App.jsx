@@ -1,15 +1,27 @@
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
 import axios from 'axios'
 import {
-  Send, MapPin, RefreshCw, Trash2, Copy, CheckCheck, ChevronDown, Menu, Mic
+  Send, MapPin, RefreshCw, Trash2, Copy, CheckCheck, ChevronDown, Menu, Mic,
+  LogIn, LogOut, User
 } from 'lucide-react'
+import { supabase, authEnabled } from './supabaseClient'
+import Auth from './Auth'
 
 // En desarrollo usa el proxy de Vite (/api → localhost:8000).
 // En producción (Vercel) usa la variable de entorno VITE_API_URL.
 const API_BASE = import.meta.env.VITE_API_URL ?? ''
 // Header de autenticación — vacío en dev local (backend lo ignora si API_KEY no está configurada)
 const API_KEY = import.meta.env.VITE_API_KEY ?? ''
-const authHeaders = API_KEY ? { 'X-API-Key': API_KEY } : {}
+// Token de sesión de Supabase — se actualiza al iniciar/cerrar sesión.
+let accessToken = null
+export function setAccessToken(t) { accessToken = t || null }
+// Headers de cada llamada: la llave del backend + (si hay sesión) el Bearer del usuario.
+function apiHeaders() {
+  return {
+    ...(API_KEY ? { 'X-API-Key': API_KEY } : {}),
+    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+  }
+}
 import './App.css'
 import ReviewStation from './ReviewStation'
 import Sidebar from './Sidebar'
@@ -213,6 +225,28 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)   // cajón móvil
   const [listening, setListening] = useState(false)       // dictado por voz
   const recognitionRef = useRef(null)
+  const [session, setSession] = useState(null)            // sesión de Supabase | null
+  const [authOpen, setAuthOpen] = useState(false)         // modal de login/registro
+
+  // Sesión: cargar la actual y escuchar cambios (login/logout). Mantiene el token
+  // que apiHeaders() adjunta a cada llamada al backend.
+  useEffect(() => {
+    if (!authEnabled) return
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session)
+      setAccessToken(data.session?.access_token)
+    })
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
+      setSession(s)
+      setAccessToken(s?.access_token)
+    })
+    return () => sub?.subscription?.unsubscribe?.()
+  }, [])
+
+  const logout = useCallback(async () => {
+    if (authEnabled) await supabase.auth.signOut()
+    setSession(null); setAccessToken(null)
+  }, [])
 
   const bottomRef  = useRef(null)
   const inputRef   = useRef(null)
@@ -232,7 +266,7 @@ export default function App() {
   // Restore history from API on mount / session change
   useEffect(() => {
     if (skipFirstRestore.current) { skipFirstRestore.current = false; return }
-    axios.get(`${API_BASE}/api/v1/chat/${sessionId}/history`, { headers: authHeaders })
+    axios.get(`${API_BASE}/api/v1/chat/${sessionId}/history`, { headers: apiHeaders() })
       .then(({ data }) => {
         if (!data.messages?.length) return
         const restored = data.messages.map((m, i) => ({
@@ -255,7 +289,7 @@ export default function App() {
     setSessionId(sid)
     // Si ya fue escaneado antes, restauramos (rápido, sin volver a llamar al agente).
     try {
-      const { data } = await axios.get(`${API_BASE}/api/v1/chat/${sid}/history`, { headers: authHeaders })
+      const { data } = await axios.get(`${API_BASE}/api/v1/chat/${sid}/history`, { headers: apiHeaders() })
       if (data.messages?.length) {
         setMessages(data.messages.map((m, i) => ({
           id: `r-${i}`, role: m.role === 'user' ? 'user' : 'ai', content: m.content, time: '', toolCalls: [],
@@ -272,13 +306,13 @@ export default function App() {
       const { data } = await axios.post(`${API_BASE}/api/v1/chat/`, {
         message: `El usuario escaneó el QR de un inmueble. Entrégale el informe completo en lenguaje natural, usando el identificador del activo ${id}. Incluye: dirección, tipo de activo, walk score, nivel de ruido, tráfico, cobertura vegetal y el estado de mantenimiento (tuberías, año de construcción, estructura, acabados, impermeabilización de techo, cableado eléctrico, cisterna, fachada e inversión en mejoras). Si no existen datos para ese identificador, dilo con honestidad.`,
         session_id: sid,
-      }, { headers: authHeaders })
+      }, { headers: apiHeaders() })
       setMessages(prev => [...prev, { id: crypto.randomUUID(), role:'ai', content: data.reply,
         time: new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }),
         toolCalls: data.tool_calls_made > 0 ? Array(data.tool_calls_made).fill('t') : [] }])
       // Título limpio en la barra lateral (en vez del mensaje técnico).
       axios.patch(`${API_BASE}/api/v1/chat/sessions/${sid}`,
-        { titulo: '📍 Inmueble escaneado (QR)' }, { headers: authHeaders }).catch(() => {})
+        { titulo: '📍 Inmueble escaneado (QR)' }, { headers: apiHeaders() }).catch(() => {})
     } catch {
       setError('No se pudo cargar el informe del inmueble escaneado.')
     } finally { setLoading(false) }
@@ -334,7 +368,7 @@ export default function App() {
       const { data } = await axios.post(`${API_BASE}/api/v1/chat/`, {
         message: apiMessage,
         session_id: sessionId,
-      }, { headers: authHeaders })
+      }, { headers: apiHeaders() })
 
       // Capture tool calls from response (non-streaming path shows count only)
       const aiMsg = {
@@ -455,7 +489,7 @@ export default function App() {
     setLoading(true)
     try {
       const { data } = await axios.post(`${API_BASE}/api/v1/match`,
-        { image_base64: dataUrl, top_k: 5 }, { headers: authHeaders })
+        { image_base64: dataUrl, top_k: 5 }, { headers: apiHeaders() })
       const lines = (data.resultados || []).map((r, i) =>
         `**${i + 1}. ${r.direccion}** · ${r.tipo_activo} · similitud ${(r.similitud * 100).toFixed(0)}%\n${r.por_que_encaja || ''}`
       )
@@ -651,8 +685,38 @@ export default function App() {
           >
             🛡️{!isMobile && ' Revisión'}
           </button>
+
+          {authEnabled && (session ? (
+            <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+              {!isMobile && (
+                <span title={session.user?.email}
+                  style={{ display:'flex', alignItems:'center', gap:5, fontSize:'.78rem',
+                           color:'var(--teal-bright)', maxWidth:160, overflow:'hidden',
+                           textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                  <User size={14}/> {session.user?.email}
+                </span>
+              )}
+              <button onClick={logout} title="Cerrar sesión"
+                style={{ background:'rgba(224,104,90,.10)', border:'1px solid rgba(224,104,90,.3)',
+                         borderRadius:999, cursor:'pointer', color:'var(--coral)', padding:'6px 12px',
+                         display:'flex', alignItems:'center', gap:5, fontSize:'.8rem' }}>
+                <LogOut size={14}/>{!isMobile && ' Salir'}
+              </button>
+            </div>
+          ) : (
+            <button onClick={() => setAuthOpen(true)} title="Entrar"
+              style={{ background:'var(--teal)', border:'1px solid var(--teal)',
+                       borderRadius:999, cursor:'pointer', color:'#0E0D13', padding:'6px 14px',
+                       display:'flex', alignItems:'center', gap:5, fontSize:'.8rem', fontWeight:700 }}>
+              <LogIn size={14}/>{!isMobile ? ' Entrar' : ''}
+            </button>
+          ))}
         </div>
       </header>
+
+      {authOpen && (
+        <Auth onClose={() => setAuthOpen(false)} onAuthed={(s) => { setSession(s); setAccessToken(s?.access_token) }} />
+      )}
 
       {/* ── Messages ── */}
       <div

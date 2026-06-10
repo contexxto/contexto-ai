@@ -1,10 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import axios from 'axios'
 import { Plus, Pin, PinOff, Pencil, Trash2, MoreHorizontal, MessageSquare } from 'lucide-react'
-
-const API_BASE = import.meta.env.VITE_API_URL ?? ''
-const API_KEY = import.meta.env.VITE_API_KEY ?? ''
-const authHeaders = API_KEY ? { 'X-API-Key': API_KEY } : {}
+import { API_BASE, apiHeaders } from './api'
 
 const C = {
   bg: '#0B0A10', border: '#2E2D3A', text: '#F0ECE6', dim: '#A8A3B3', accent: '#2DBDB6', active: '#1E1D28',
@@ -19,7 +16,7 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey }) {
 
   const load = useCallback(async () => {
     try {
-      const { data } = await axios.get(`${API_BASE}/api/v1/chat/sessions?limit=50`, { headers: authHeaders })
+      const { data } = await axios.get(`${API_BASE}/api/v1/chat/sessions?limit=50`, { headers: apiHeaders() })
       setSessions(data.sessions || [])
     } catch (e) { console.error('No se pudo cargar la lista de conversaciones:', e); setSessions([]) }
   }, [])
@@ -41,7 +38,7 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey }) {
     setEditingId(null)
     if (!titulo) return
     try {
-      await axios.patch(`${API_BASE}/api/v1/chat/sessions/${id}`, { titulo }, { headers: authHeaders })
+      await axios.patch(`${API_BASE}/api/v1/chat/sessions/${id}`, { titulo }, { headers: apiHeaders() })
       await load()
     } catch (e) { console.error('No se pudo renombrar la conversación:', e); alert('No se pudo renombrar la conversación.') }
   }
@@ -49,7 +46,7 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey }) {
   async function togglePin(s) {
     setMenuId(null)
     try {
-      await axios.patch(`${API_BASE}/api/v1/chat/sessions/${s.session_id}`, { pinned: !s.pinned }, { headers: authHeaders })
+      await axios.patch(`${API_BASE}/api/v1/chat/sessions/${s.session_id}`, { pinned: !s.pinned }, { headers: apiHeaders() })
       await load()
     } catch (e) { console.error('No se pudo fijar/desfijar:', e); alert('No se pudo fijar/desfijar la conversación.') }
   }
@@ -58,7 +55,7 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey }) {
     setMenuId(null)
     if (!window.confirm(`¿Eliminar "${s.titulo}"? Se ocultará de la lista.`)) return
     try {
-      await axios.delete(`${API_BASE}/api/v1/chat/sessions/${s.session_id}`, { headers: authHeaders })
+      await axios.delete(`${API_BASE}/api/v1/chat/sessions/${s.session_id}`, { headers: apiHeaders() })
       await load()
       if (s.session_id === sessionId) onNew()
     } catch (e) { console.error('No se pudo eliminar la conversación:', e); alert('No se pudo eliminar la conversación.') }

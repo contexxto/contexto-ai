@@ -12,6 +12,7 @@ from sqlalchemy import text
 
 from app.agent import graph as agent_graph
 from app.agent.state import AgentState
+from app.auth import CurrentUser, get_current_user, get_optional_user
 from app.config import settings
 from app.database import AsyncSessionLocal
 from app.limiter import limiter
@@ -33,6 +34,25 @@ def verify_api_key(api_key: str | None = Security(_api_key_header)) -> None:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="API key inválida o ausente.",
         )
+
+
+async def _tag_session_owner(session_id: str, user: CurrentUser | None) -> None:
+    """Liga la conversación al usuario autenticado (privacidad). Best-effort."""
+    if not user:
+        return
+    try:
+        async with AsyncSessionLocal() as db:
+            await db.execute(
+                text(
+                    "INSERT INTO chat_sessions (session_id, user_id) VALUES (:sid, :uid) "
+                    "ON CONFLICT (session_id) DO UPDATE "
+                    "SET user_id = COALESCE(chat_sessions.user_id, :uid)"
+                ),
+                {"sid": session_id, "uid": user.user_id},
+            )
+            await db.commit()
+    except Exception:  # noqa: BLE001 — etiquetar no debe romper el chat
+        pass
 
 
 class ChatRequest(BaseModel):
@@ -95,7 +115,14 @@ async def _stream_agent(message: str, session_id: str) -> AsyncIterator[str]:
     dependencies=[Depends(verify_api_key)],
 )
 @limiter.limit("15/minute")
-async def chat(request: Request, payload: ChatRequest, stream: bool = False):
+async def chat(
+    request: Request,
+    payload: ChatRequest,
+    stream: bool = False,
+    user: CurrentUser | None = Depends(get_optional_user),
+):
+    # Si el usuario está autenticado, la conversación queda ligada a él (privacidad).
+    await _tag_session_owner(payload.session_id, user)
     if stream:
         return StreamingResponse(
             _stream_agent(payload.message, payload.session_id),
@@ -144,35 +171,38 @@ class SessionPatch(BaseModel):
     dependencies=[Depends(verify_api_key)],
 )
 @limiter.limit("60/minute")
-async def list_sessions(request: Request, limit: int = 30):
+async def list_sessions(
+    request: Request,
+    limit: int = 30,
+    user: CurrentUser | None = Depends(get_optional_user),
+):
+    # Privacidad: solo las conversaciones del usuario autenticado. El invitado no
+    # tiene lista persistente (evita ver hilos de otros).
+    if not user:
+        return {"sessions": []}
     limit = max(1, min(limit, 100))
     try:
         async with AsyncSessionLocal() as db:
             rows = (
                 await db.execute(
                     text(
-                        "SELECT thread_id, MAX(checkpoint_id) AS ultimo "
-                        "FROM checkpoints GROUP BY thread_id ORDER BY ultimo DESC LIMIT :n"
+                        "SELECT cs.session_id, cs.titulo, cs.pinned, "
+                        "  (SELECT MAX(c.checkpoint_id) FROM checkpoints c "
+                        "   WHERE c.thread_id = cs.session_id) AS ultimo "
+                        "FROM chat_sessions cs "
+                        "WHERE cs.user_id = :uid AND COALESCE(cs.archived, false) = false "
+                        "ORDER BY cs.pinned DESC, ultimo DESC NULLS LAST "
+                        "LIMIT :n"
                     ),
-                    {"n": limit},
-                )
-            ).mappings().all()
-            meta_rows = (
-                await db.execute(
-                    text("SELECT session_id, titulo, pinned, archived FROM chat_sessions")
+                    {"uid": user.user_id, "n": limit},
                 )
             ).mappings().all()
     except Exception:
         return {"sessions": []}
 
-    meta = {m["session_id"]: m for m in meta_rows}
-
     sesiones = []
     for r in rows:
-        sid = r["thread_id"]
-        m = meta.get(sid)
-        if m and m["archived"]:
-            continue  # archivada → oculta
+        sid = r["session_id"]
         titulo_auto, turnos = None, 0
         try:
             state = await agent_graph.compiled_graph.aget_state(_langgraph_config(sid))
@@ -184,15 +214,14 @@ async def list_sessions(request: Request, limit: int = 30):
                 titulo_auto = (c if isinstance(c, str) else str(c)).strip()[:80]
         except Exception:
             pass
-        titulo = (m["titulo"] if m and m["titulo"] else None) or titulo_auto or "Conversación sin título"
+        titulo = (r["titulo"] or None) or titulo_auto or "Conversación sin título"
         sesiones.append({
             "session_id": sid,
             "titulo": titulo,
-            "pinned": bool(m["pinned"]) if m else False,
+            "pinned": bool(r["pinned"]),
             "turnos": turnos,
         })
 
-    # Fijadas primero; el resto conserva el orden por recencia ya obtenido.
     sesiones.sort(key=lambda s: not s["pinned"])
     return {"sessions": sesiones}
 
@@ -203,28 +232,35 @@ async def list_sessions(request: Request, limit: int = 30):
     dependencies=[Depends(verify_api_key)],
 )
 @limiter.limit("60/minute")
-async def update_session(request: Request, session_id: str, payload: SessionPatch):
+async def update_session(
+    request: Request, session_id: str, payload: SessionPatch,
+    user: CurrentUser = Depends(get_current_user),
+):
     if payload.titulo is None and payload.pinned is None:
         raise HTTPException(status_code=400, detail="Nada que actualizar (titulo o pinned).")
 
-    # Asegura la fila de metadatos, luego aplica los cambios provistos.
+    uid = user.user_id
+    # Asegura la fila (ligada al usuario), luego aplica los cambios SOLO si es suya.
     async with AsyncSessionLocal() as db:
         await db.execute(
             text(
-                "INSERT INTO chat_sessions (session_id) VALUES (:sid) "
-                "ON CONFLICT (session_id) DO NOTHING"
+                "INSERT INTO chat_sessions (session_id, user_id) VALUES (:sid, :uid) "
+                "ON CONFLICT (session_id) DO UPDATE "
+                "SET user_id = COALESCE(chat_sessions.user_id, :uid)"
             ),
-            {"sid": session_id},
+            {"sid": session_id, "uid": uid},
         )
         if payload.titulo is not None:
             await db.execute(
-                text("UPDATE chat_sessions SET titulo = :t, updated_at = now() WHERE session_id = :sid"),
-                {"t": payload.titulo.strip()[:120], "sid": session_id},
+                text("UPDATE chat_sessions SET titulo = :t, updated_at = now() "
+                     "WHERE session_id = :sid AND user_id = :uid"),
+                {"t": payload.titulo.strip()[:120], "sid": session_id, "uid": uid},
             )
         if payload.pinned is not None:
             await db.execute(
-                text("UPDATE chat_sessions SET pinned = :p, updated_at = now() WHERE session_id = :sid"),
-                {"p": payload.pinned, "sid": session_id},
+                text("UPDATE chat_sessions SET pinned = :p, updated_at = now() "
+                     "WHERE session_id = :sid AND user_id = :uid"),
+                {"p": payload.pinned, "sid": session_id, "uid": uid},
             )
         await db.commit()
     return {"session_id": session_id, "ok": True}
@@ -236,14 +272,20 @@ async def update_session(request: Request, session_id: str, payload: SessionPatc
     dependencies=[Depends(verify_api_key)],
 )
 @limiter.limit("60/minute")
-async def delete_session(request: Request, session_id: str):
+async def delete_session(
+    request: Request, session_id: str,
+    user: CurrentUser = Depends(get_current_user),
+):
+    # Solo archiva si la conversación es del usuario (o aún no tiene dueño).
     async with AsyncSessionLocal() as db:
         await db.execute(
             text(
-                "INSERT INTO chat_sessions (session_id, archived) VALUES (:sid, true) "
-                "ON CONFLICT (session_id) DO UPDATE SET archived = true, updated_at = now()"
+                "INSERT INTO chat_sessions (session_id, archived, user_id) "
+                "VALUES (:sid, true, :uid) "
+                "ON CONFLICT (session_id) DO UPDATE SET archived = true, updated_at = now() "
+                "WHERE chat_sessions.user_id = :uid OR chat_sessions.user_id IS NULL"
             ),
-            {"sid": session_id},
+            {"sid": session_id, "uid": user.user_id},
         )
         await db.commit()
     return {"session_id": session_id, "archived": True}

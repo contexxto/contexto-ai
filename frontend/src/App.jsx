@@ -7,21 +7,8 @@ import {
 import { supabase, authEnabled } from './supabaseClient'
 import Auth from './Auth'
 
-// En desarrollo usa el proxy de Vite (/api → localhost:8000).
-// En producción (Vercel) usa la variable de entorno VITE_API_URL.
-const API_BASE = import.meta.env.VITE_API_URL ?? ''
-// Header de autenticación — vacío en dev local (backend lo ignora si API_KEY no está configurada)
-const API_KEY = import.meta.env.VITE_API_KEY ?? ''
-// Token de sesión de Supabase — se actualiza al iniciar/cerrar sesión.
-let accessToken = null
-export function setAccessToken(t) { accessToken = t || null }
-// Headers de cada llamada: la llave del backend + (si hay sesión) el Bearer del usuario.
-function apiHeaders() {
-  return {
-    ...(API_KEY ? { 'X-API-Key': API_KEY } : {}),
-    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-  }
-}
+// Headers (backend key + Bearer del usuario) centralizados en api.js
+import { API_BASE, apiHeaders, setAccessToken } from './api'
 import './App.css'
 import ReviewStation from './ReviewStation'
 import Sidebar from './Sidebar'
@@ -600,7 +587,7 @@ export default function App() {
           sessionId={sessionId}
           onSelect={switchSession}
           onNew={resetSession}
-          reloadKey={`${sessionId}:${messages.length}`}
+          reloadKey={`${sessionId}:${messages.length}:${session?.user?.id ?? 'guest'}`}
         />
       )}
       {isMobile && sidebarOpen && (
@@ -612,7 +599,7 @@ export default function App() {
               sessionId={sessionId}
               onSelect={(id) => { switchSession(id); setSidebarOpen(false) }}
               onNew={() => { resetSession(); setSidebarOpen(false) }}
-              reloadKey={`${sessionId}:${messages.length}`}
+              reloadKey={`${sessionId}:${messages.length}:${session?.user?.id ?? 'guest'}`}
             />
           </div>
         </>

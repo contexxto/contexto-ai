@@ -799,15 +799,16 @@ export default function App() {
       }}>
         <div style={{
           display:'flex', gap:8, alignItems:'flex-end',
-          background:'rgba(20,44,43,.5)', backdropFilter:'blur(16px)', WebkitBackdropFilter:'blur(16px)',
-          border:'1px solid rgba(45,189,182,.30)', borderRadius:26, padding:'8px',
-          transition:'border-color .18s, box-shadow .18s',
+          background: listening ? 'rgba(45,189,182,.16)' : 'rgba(20,44,43,.5)',
+          backdropFilter:'blur(16px)', WebkitBackdropFilter:'blur(16px)',
+          border:`1px solid ${listening ? 'var(--teal)' : 'rgba(45,189,182,.35)'}`, borderRadius:26, padding:'8px',
+          transition:'border-color .2s, box-shadow .2s, background .2s',
           boxShadow: listening
-            ? '0 0 0 1px var(--teal), 0 0 34px rgba(45,189,182,.35)'
-            : '0 0 26px rgba(45,189,182,.14)',
+            ? '0 0 0 1px var(--teal), 0 0 42px rgba(45,189,182,.5), 0 0 90px rgba(45,189,182,.22)'
+            : '0 0 28px rgba(45,189,182,.20), 0 0 64px rgba(45,189,182,.09)',
         }}
-          onFocusCapture={e => { e.currentTarget.style.borderColor='var(--teal)'; e.currentTarget.style.boxShadow='0 0 0 1px var(--teal), 0 0 30px rgba(45,189,182,.28)' }}
-          onBlurCapture={e => { e.currentTarget.style.borderColor='rgba(45,189,182,.30)'; e.currentTarget.style.boxShadow=listening ? '0 0 0 1px var(--teal), 0 0 34px rgba(45,189,182,.35)' : '0 0 26px rgba(45,189,182,.14)' }}
+          onFocusCapture={e => { e.currentTarget.style.borderColor='var(--teal)'; e.currentTarget.style.boxShadow='0 0 0 1px var(--teal), 0 0 34px rgba(45,189,182,.34), 0 0 72px rgba(45,189,182,.14)' }}
+          onBlurCapture={e => { e.currentTarget.style.borderColor=listening ? 'var(--teal)' : 'rgba(45,189,182,.35)'; e.currentTarget.style.boxShadow=listening ? '0 0 0 1px var(--teal), 0 0 42px rgba(45,189,182,.5), 0 0 90px rgba(45,189,182,.22)' : '0 0 28px rgba(45,189,182,.20), 0 0 64px rgba(45,189,182,.09)' }}
         >
           <button
             onClick={toggleGeo}

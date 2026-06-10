@@ -16,6 +16,7 @@ Estrategia de fuentes (decisión del producto):
 from __future__ import annotations
 
 import asyncio
+import re
 
 import httpx
 
@@ -46,6 +47,14 @@ _RADIO_M = 1200
 _TIMEOUT = 6.0
 
 
+# Nombres-placeholder de OSM/Google que no aportan (ej. "ID 1906", solo números).
+_PLACEHOLDER = re.compile(r"^(id\s*\d+|sin\s*nombre|\d+|área\s*verde.*\d+)$", re.I)
+
+
+def _nombre_valido(nombre: str | None) -> bool:
+    return bool(nombre) and not _PLACEHOLDER.match(nombre.strip())
+
+
 def _formatear(items: list[dict]) -> str:
     """items: [{emoji,label,nombre,distancia_m}] → texto compacto."""
     partes = [f"{i['emoji']} {i['nombre'] or i['label']} a ~{i['distancia_m']} m" for i in items]
@@ -59,7 +68,7 @@ def extraer_entorno_osm(pois: list[dict], lat: float, lon: float, max_items: int
         mejor = None
         for p in pois:
             tags = p.get("tags") or {}
-            if not tags.get("name") or not cat["osm"](tags):
+            if not _nombre_valido(tags.get("name")) or not cat["osm"](tags):
                 continue
             d = _haversine_m(lat, lon, p["lat"], p["lon"])
             if mejor is None or d < mejor[0]:
@@ -96,11 +105,12 @@ async def _google_nearest(client, cat: dict, lat: float, lon: float, key: str) -
     mejor = None
     for pl in resp.json().get("places", []):
         loc = pl.get("location", {})
-        if "latitude" not in loc:
+        nombre = (pl.get("displayName") or {}).get("text")
+        if "latitude" not in loc or not _nombre_valido(nombre):
             continue
         d = _haversine_m(lat, lon, loc["latitude"], loc["longitude"])
         if mejor is None or d < mejor[0]:
-            mejor = (d, (pl.get("displayName") or {}).get("text"))
+            mejor = (d, nombre)
     if mejor is None:
         return None
     return {"key": cat["key"], "emoji": cat["emoji"], "label": cat["label"],

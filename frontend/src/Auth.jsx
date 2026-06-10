@@ -35,18 +35,22 @@ export default function Auth({ onClose, onAuthed }) {
   }
   const labelStyle = { fontSize: '.78rem', color: C.muted, fontWeight: 600 }
 
+  function profileBody() {
+    return {
+      rol,
+      nombre: nombre || null,
+      invite_code: rol === 'corredor' && inviteCode ? inviteCode : null,
+      agency_nombre: rol === 'inmobiliaria' ? (agencyNombre || nombre || null) : null,
+    }
+  }
+
   async function setProfile(token) {
     // Registra rol/nombre en nuestro backend (corredor se une por invite_code;
     // inmobiliaria crea su agencia).
     await fetch(`${API_BASE}/api/v1/auth/profile`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({
-        rol,
-        nombre: nombre || null,
-        invite_code: rol === 'corredor' && inviteCode ? inviteCode : null,
-        agency_nombre: rol === 'inmobiliaria' ? (agencyNombre || nombre || null) : null,
-      }),
+      body: JSON.stringify(profileBody()),
     })
   }
 
@@ -70,8 +74,10 @@ export default function Auth({ onClose, onAuthed }) {
           onAuthed?.(data.session)
           onClose?.()
         } else {
-          // Email confirmation activada → no hay sesión inmediata.
-          setInfo('Cuenta creada. Revisa tu correo para confirmar y luego inicia sesión.')
+          // Email confirmation activada → no hay sesión inmediata. Guardamos el rol
+          // elegido para aplicarlo automáticamente cuando el usuario inicie sesión.
+          try { localStorage.setItem('pendingProfile', JSON.stringify(profileBody())) } catch { /* ignore */ }
+          setInfo('Cuenta creada. Si no te llega el correo, confírmala en Supabase y luego inicia sesión aquí.')
           setMode('login')
         }
       }

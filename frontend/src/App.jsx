@@ -232,13 +232,26 @@ export default function App() {
   // que apiHeaders() adjunta a cada llamada al backend.
   useEffect(() => {
     if (!authEnabled) return
+    // Si quedó un rol pendiente del registro (cuando hay confirmación por correo),
+    // lo aplicamos en cuanto haya sesión válida.
+    const applyPendingProfile = async (token) => {
+      const raw = localStorage.getItem('pendingProfile')
+      if (!raw || !token) return
+      try {
+        await axios.post(`${API_BASE}/api/v1/auth/profile`, JSON.parse(raw),
+          { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` } })
+        localStorage.removeItem('pendingProfile')
+      } catch { /* reintentará en el próximo inicio de sesión */ }
+    }
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session)
       setAccessToken(data.session?.access_token)
+      applyPendingProfile(data.session?.access_token)
     })
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
       setSession(s)
       setAccessToken(s?.access_token)
+      applyPendingProfile(s?.access_token)
     })
     return () => sub?.subscription?.unsubscribe?.()
   }, [])

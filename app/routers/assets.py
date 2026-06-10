@@ -17,6 +17,7 @@ from app.database import get_db
 from app.models import ActivoInmutable
 from app.schemas import ActivoCreateRequest, ActivoResponse
 from app.scores_heuristicos import scores_para
+from app.walk_score import walk_score_para
 
 router = APIRouter(prefix="/api/v1/assets", tags=["Assets — Catastro Inmutable"])
 
@@ -273,6 +274,15 @@ async def publish_asset(
 
     # 2) Scores heurísticos por zona (capa base, refinable con visión).
     sc = scores_para(payload.direccion, payload.tipo_activo)
+    sc["walk_score_fuente"] = "heuristico"
+
+    # 2b) Walk Score REAL desde OpenStreetMap (foso de datos). Si Overpass
+    #     responde, reemplaza la capa base; si no, conservamos el heurístico.
+    ws = await walk_score_para(lat, lon)
+    if ws is not None:
+        sc["walk_score"] = ws["walk_score"]
+        sc["walk_score_fuente"] = ws["fuente"]
+        sc["walk_score_desglose"] = ws["desglose"]
 
     aid = uuid.uuid4()
     asset = ActivoInmutable(

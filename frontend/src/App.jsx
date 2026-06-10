@@ -707,9 +707,6 @@ export default function App() {
                                textDecoration:'none', border:'1px solid rgba(45,189,182,.3)',
                                borderRadius:999, padding:'6px 14px' }}>Abrir Contexto AI</a>
         </header>
-        {shared?.titulo && (
-          <h1 style={{ fontSize:'1.1rem', margin:'8px 0 18px', color:'var(--text)' }}>{shared.titulo}</h1>
-        )}
         {sharedErr && (
           <div style={{ color:'var(--text-muted)', padding:'40px 0', textAlign:'center' }}>
             Este enlace no es válido o fue revocado.

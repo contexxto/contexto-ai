@@ -1,4 +1,5 @@
 import json
+import re
 import secrets
 import uuid
 from typing import AsyncIterator
@@ -289,6 +290,102 @@ async def delete_session(
         )
         await db.commit()
     return {"session_id": session_id, "archived": True}
+
+
+# ── Compartir conversación: enlace público de solo lectura (estilo Claude) ──
+_CTX_RE = re.compile(r"\s*\[Contexto del sistema:.*?\]", re.S)
+
+
+@router.post(
+    "/sessions/{session_id}/share",
+    summary="Crear/activar el enlace público de la conversación",
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("30/minute")
+async def share_session(
+    request: Request, session_id: str,
+    user: CurrentUser = Depends(get_current_user),
+):
+    token = secrets.token_urlsafe(9)
+    async with AsyncSessionLocal() as db:
+        await db.execute(
+            text(
+                "INSERT INTO chat_sessions (session_id, user_id, share_token, is_public) "
+                "VALUES (:sid, :uid, :tok, true) "
+                "ON CONFLICT (session_id) DO UPDATE SET "
+                "  share_token = COALESCE(chat_sessions.share_token, :tok), "
+                "  is_public = true, "
+                "  user_id = COALESCE(chat_sessions.user_id, :uid) "
+                "WHERE chat_sessions.user_id = :uid OR chat_sessions.user_id IS NULL"
+            ),
+            {"sid": session_id, "uid": user.user_id, "tok": token},
+        )
+        await db.commit()
+        row = (
+            await db.execute(
+                text("SELECT share_token, is_public FROM chat_sessions WHERE session_id = :sid"),
+                {"sid": session_id},
+            )
+        ).mappings().first()
+    tok = (row or {}).get("share_token") or token
+    return {"token": tok, "path": f"/s/{tok}", "is_public": bool((row or {}).get("is_public"))}
+
+
+@router.delete(
+    "/sessions/{session_id}/share",
+    summary="Revocar el enlace público (volver a privado)",
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("30/minute")
+async def unshare_session(
+    request: Request, session_id: str,
+    user: CurrentUser = Depends(get_current_user),
+):
+    async with AsyncSessionLocal() as db:
+        await db.execute(
+            text("UPDATE chat_sessions SET is_public = false WHERE session_id = :sid AND user_id = :uid"),
+            {"sid": session_id, "uid": user.user_id},
+        )
+        await db.commit()
+    return {"session_id": session_id, "is_public": False}
+
+
+@router.get(
+    "/shared/{token}",
+    summary="Ver una conversación compartida (público, solo lectura)",
+)
+@limiter.limit("60/minute")
+async def get_shared(request: Request, token: str) -> dict:
+    async with AsyncSessionLocal() as db:
+        row = (
+            await db.execute(
+                text("SELECT session_id, titulo FROM chat_sessions WHERE share_token = :t AND is_public = true"),
+                {"t": token},
+            )
+        ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Enlace no válido o revocado.")
+
+    sid = row["session_id"]
+    out: list[dict] = []
+    try:
+        state = await agent_graph.compiled_graph.aget_state(_langgraph_config(sid))
+        msgs = (state.values or {}).get("messages", []) if state else []
+        for m in msgs:
+            if isinstance(m, HumanMessage):
+                c = m.content if isinstance(m.content, str) else str(m.content)
+                c = _CTX_RE.sub("", c).strip()           # oculta el [Contexto del sistema...]
+                if c:
+                    out.append({"role": "user", "content": c})
+            elif isinstance(m, AIMessage) and not getattr(m, "tool_calls", None):
+                c = m.content if isinstance(m.content, str) else str(m.content)
+                if c.strip():
+                    out.append({"role": "assistant", "content": c})
+    except Exception:  # noqa: BLE001
+        pass
+
+    titulo = row["titulo"] or (out[0]["content"][:80] if out else "Conversación")
+    return {"titulo": titulo, "messages": out}
 
 
 @router.get(

@@ -7,6 +7,7 @@ import {
 import { supabase, authEnabled } from './supabaseClient'
 import Auth from './Auth'
 import PublishAsset from './PublishAsset'
+import ShareConversation from './ShareConversation'
 
 // Headers (backend key + Bearer del usuario) centralizados en api.js
 import { API_BASE, apiHeaders, setAccessToken } from './api'
@@ -135,16 +136,11 @@ function ActBtn({ title, onClick, active, children }) {
   )
 }
 
-function Message({ msg, onCopy, copied, onScrollTop }) {
+function Message({ msg, onCopy, copied, onScrollTop, onShare }) {
   const isUser = msg.role === 'user'
   const [speaking, setSpeaking] = useState(false)
   const [feedback, setFeedback] = useState(null)  // 'up' | 'down' | null
 
-  const share = async () => {
-    const text = _plainText(msg.content)
-    if (navigator.share) { try { await navigator.share({ text }) } catch { /* cancelado */ } }
-    else onCopy(msg.id, msg.content)
-  }
   const toggleSpeak = () => {
     const synth = window.speechSynthesis
     if (!synth) return
@@ -196,7 +192,7 @@ function Message({ msg, onCopy, copied, onScrollTop }) {
             <ActBtn title="Copiar" onClick={() => onCopy(msg.id, msg.content)} active={copied === msg.id}>
               {copied === msg.id ? <CheckCheck size={15}/> : <Copy size={15}/>}
             </ActBtn>
-            <ActBtn title="Compartir" onClick={share}><Share2 size={15}/></ActBtn>
+            <ActBtn title="Compartir" onClick={onShare}><Share2 size={15}/></ActBtn>
             <ActBtn title={speaking ? 'Detener audio' : 'Escuchar'} onClick={toggleSpeak} active={speaking}>
               <Volume2 size={15}/>
             </ActBtn>
@@ -257,6 +253,7 @@ const QUICK_PROMPTS = [
 export default function App() {
   // Deep link de QR: /a/{uuid} → sesión determinística qr-{id}
   const deepLinkId = (window.location.pathname.match(/^\/a\/([0-9a-fA-F-]{36})$/) || [])[1] || null
+  const shareToken = (window.location.pathname.match(/^\/s\/([A-Za-z0-9_-]+)$/) || [])[1] || null
   // Al abrir: chat nuevo y limpio (estilo Claude). Las conversaciones previas
   // quedan accesibles en el sidebar. Excepción: deep-link por QR (carga ese activo).
   const [sessionId, setSessionId] = useState(() => deepLinkId ? 'qr-' + deepLinkId : 'session-' + crypto.randomUUID())
@@ -279,6 +276,17 @@ export default function App() {
   const [authOpen, setAuthOpen] = useState(false)         // modal de login/registro
   const [rol, setRol] = useState(null)                    // rol del usuario (cliente/corredor/inmobiliaria)
   const [publishOpen, setPublishOpen] = useState(false)   // modal "Publicar mi inmueble"
+  const [shareOpen, setShareOpen] = useState(false)       // modal "Compartir conversación"
+  const [shared, setShared] = useState(null)              // datos de una conversación compartida (visor)
+  const [sharedErr, setSharedErr] = useState(false)
+
+  // Visor público de conversación compartida (/s/{token}) — solo lectura, sin login.
+  useEffect(() => {
+    if (!shareToken) return
+    axios.get(`${API_BASE}/api/v1/chat/shared/${shareToken}`)
+      .then(({ data }) => setShared(data))
+      .catch(() => setSharedErr(true))
+  }, [])
 
   // Sesión: cargar la actual y escuchar cambios (login/logout). Mantiene el token
   // que apiHeaders() adjunta a cada llamada al backend.
@@ -636,6 +644,52 @@ export default function App() {
 
   const isEmpty = messages.length === 0 && !loading
 
+  // Visor público de conversación compartida (solo lectura)
+  if (shareToken) {
+    return (
+      <div style={{ minHeight:'100dvh', maxWidth:820, margin:'0 auto', padding:isMobile ? '0 16px' : '0 24px' }}>
+        <header style={{ display:'flex', alignItems:'center', gap:10, padding:'16px 0 12px' }}>
+          <img src={sphereLogo} alt="Contexto AI" width={32} height={32} />
+          <div>
+            <div style={{ fontWeight:800 }}>Contexto <span style={{ color:'var(--teal)' }}>AI</span></div>
+            <div style={{ fontSize:'.72rem', color:'var(--text-muted)' }}>Conversación compartida · solo lectura</div>
+          </div>
+          <a href="/" style={{ marginLeft:'auto', fontSize:'.8rem', color:'var(--teal)',
+                               textDecoration:'none', border:'1px solid rgba(45,189,182,.3)',
+                               borderRadius:999, padding:'6px 14px' }}>Abrir Contexto AI</a>
+        </header>
+        {shared?.titulo && (
+          <h1 style={{ fontSize:'1.1rem', margin:'8px 0 18px', color:'var(--text)' }}>{shared.titulo}</h1>
+        )}
+        {sharedErr && (
+          <div style={{ color:'var(--text-muted)', padding:'40px 0', textAlign:'center' }}>
+            Este enlace no es válido o fue revocado.
+          </div>
+        )}
+        {!shared && !sharedErr && (
+          <div style={{ color:'var(--text-muted)', padding:'40px 0', textAlign:'center' }}>Cargando…</div>
+        )}
+        <div style={{ paddingBottom:60 }}>
+          {shared?.messages?.map((m, i) => (
+            <div key={i} style={{ display:'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start',
+                                  marginBottom:16, gap:10 }}>
+              {m.role !== 'user' && <img src={sphereLogo} alt="" width={30} height={30} style={{ flexShrink:0 }} />}
+              <div style={{ maxWidth:'80%',
+                            padding: m.role === 'user' ? '10px 14px' : 0,
+                            borderRadius: m.role === 'user' ? '18px 18px 4px 18px' : 0,
+                            background: m.role === 'user' ? 'linear-gradient(135deg, #1A7A76, #2DBDB6)' : 'transparent',
+                            color: m.role === 'user' ? '#fff' : 'inherit', fontSize:'.92rem', lineHeight:1.65 }}>
+                {m.role === 'user'
+                  ? <span>{m.content}</span>
+                  : <div className="ai-content" dangerouslySetInnerHTML={{ __html: renderMarkdown(m.content) }} />}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
   // Vista de Estación de Revisión (pantalla completa)
   if (view === 'review') {
     return (
@@ -775,6 +829,7 @@ export default function App() {
         <Auth onClose={() => setAuthOpen(false)} onAuthed={(s) => { setSession(s); setAccessToken(s?.access_token) }} />
       )}
       {publishOpen && <PublishAsset onClose={() => setPublishOpen(false)} />}
+      {shareOpen && <ShareConversation sessionId={sessionId} onClose={() => setShareOpen(false)} />}
 
       {/* ── Messages ── */}
       <div
@@ -824,7 +879,8 @@ export default function App() {
 
         {messages.map(msg => (
           <Message key={msg.id} msg={msg} onCopy={handleCopy} copied={copied}
-            onScrollTop={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })} />
+            onScrollTop={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+            onShare={() => setShareOpen(true)} />
         ))}
 
         {loading && <Thinking />}

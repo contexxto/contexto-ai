@@ -15,6 +15,8 @@ Estrategia de fuentes (decisión del producto):
 """
 from __future__ import annotations
 
+import asyncio
+
 import httpx
 
 from app.config import settings
@@ -72,17 +74,11 @@ def extraer_entorno_osm(pois: list[dict], lat: float, lon: float, max_items: int
     return {"fuente": "osm", "items": items, "texto": _formatear(items)}
 
 
-async def _entorno_google(lat: float, lon: float, key: str, max_items: int = 6) -> dict | None:
-    """
-    Enriquecimiento EN VIVO con la Places API (New) — compatible con la Clave de
-    Demo de Maps (gratis, sandbox). Una sola llamada: searchNearby con todos los
-    tipos, ordenado por distancia; luego el más cercano por categoría.
-    """
-    url = "https://places.googleapis.com/v1/places:searchNearby"
-    verify = settings.ssl_verify.lower() != "false"
+async def _google_nearest(client, cat: dict, lat: float, lon: float, key: str) -> dict | None:
+    """El lugar más cercano de UNA categoría vía Places API (New)."""
     body = {
-        "includedTypes": [c["google"] for c in _CATEGORIAS],
-        "maxResultCount": 20,
+        "includedTypes": [cat["google"]],
+        "maxResultCount": 5,
         "rankPreference": "DISTANCE",
         "languageCode": "es",
         "locationRestriction": {
@@ -92,35 +88,40 @@ async def _entorno_google(lat: float, lon: float, key: str, max_items: int = 6) 
     headers = {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": key,
-        "X-Goog-FieldMask": "places.displayName,places.location,places.types",
+        "X-Goog-FieldMask": "places.displayName,places.location",
     }
-    try:
-        async with httpx.AsyncClient(verify=verify, timeout=_TIMEOUT) as c:
-            resp = await c.post(url, json=body, headers=headers)
-            resp.raise_for_status()
-            places = resp.json().get("places", [])
-    except Exception:  # noqa: BLE001 — si Google falla, el llamador cae a OSM
-        return None
-
-    # Más cercano por categoría (un lugar puede traer varios "types").
-    mejor: dict[str, tuple] = {}
-    for pl in places:
+    resp = await client.post("https://places.googleapis.com/v1/places:searchNearby",
+                             json=body, headers=headers)
+    resp.raise_for_status()
+    mejor = None
+    for pl in resp.json().get("places", []):
         loc = pl.get("location", {})
         if "latitude" not in loc:
             continue
-        tipos = pl.get("types", [])
-        nombre = (pl.get("displayName") or {}).get("text")
         d = _haversine_m(lat, lon, loc["latitude"], loc["longitude"])
-        for cat in _CATEGORIAS:
-            if cat["google"] in tipos:
-                if cat["key"] not in mejor or d < mejor[cat["key"]][0]:
-                    mejor[cat["key"]] = (d, nombre, cat)
-                break
-    if not mejor:
+        if mejor is None or d < mejor[0]:
+            mejor = (d, (pl.get("displayName") or {}).get("text"))
+    if mejor is None:
         return None
+    return {"key": cat["key"], "emoji": cat["emoji"], "label": cat["label"],
+            "nombre": mejor[1], "distancia_m": int(mejor[0])}
 
-    items = [{"key": cat["key"], "emoji": cat["emoji"], "label": cat["label"],
-              "nombre": nombre, "distancia_m": int(d)} for (d, nombre, cat) in mejor.values()]
+
+async def _entorno_google(lat: float, lon: float, key: str, max_items: int = 6) -> dict | None:
+    """
+    Enriquecimiento EN VIVO con la Places API (New) — compatible con la Clave de
+    Demo de Maps. Una llamada POR categoría (el más cercano), así garantizamos
+    colegio, UPC, etc. aunque haya muchas tiendas más cerca.
+    """
+    verify = settings.ssl_verify.lower() != "false"
+    async with httpx.AsyncClient(verify=verify, timeout=_TIMEOUT) as c:
+        resultados = await asyncio.gather(
+            *[_google_nearest(c, cat, lat, lon, key) for cat in _CATEGORIAS],
+            return_exceptions=True,
+        )
+    items = [r for r in resultados if isinstance(r, dict)]
+    if not items:
+        return None  # todas fallaron o sin resultados → el llamador cae a OSM
     items.sort(key=lambda i: i["distancia_m"])
     items = items[:max_items]
     return {"fuente": "google", "items": items, "texto": _formatear(items)}

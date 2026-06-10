@@ -16,7 +16,7 @@ from app.config import settings
 from app.database import AsyncSessionLocal, get_db
 from app.models import ActivoInmutable
 from app.schemas import ActivoCreateRequest, ActivoResponse
-from app.entorno import entorno_destacado
+from app.entorno import entorno_destacado, extraer_entorno_osm
 from app.scores_heuristicos import scores_para
 from app.walk_score import (
     _fetch_pois,
@@ -182,6 +182,49 @@ async def asset_qr(activo_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> 
     buff = io.BytesIO()
     qr.save(buff, kind="svg", scale=8, border=2, dark="#0E0D13", light="#ffffff")
     return Response(content=buff.getvalue(), media_type="image/svg+xml")
+
+
+@router.get(
+    "/debug/entorno",
+    summary="Diagnóstico: ¿responde Google Places? (sin exponer la key)",
+    include_in_schema=False,
+)
+async def debug_entorno(lat: float, lon: float) -> dict:
+    """Comprueba si la Google key funciona server-side y compara con OSM."""
+    import httpx as _httpx
+
+    out: dict = {"google_key_present": bool(settings.google_maps_api_key)}
+    if settings.google_maps_api_key:
+        body = {
+            "includedTypes": ["school"],
+            "maxResultCount": 3,
+            "rankPreference": "DISTANCE",
+            "locationRestriction": {"circle": {
+                "center": {"latitude": lat, "longitude": lon}, "radius": 1200.0}},
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "X-Goog-Api-Key": settings.google_maps_api_key,
+            "X-Goog-FieldMask": "places.displayName,places.location",
+        }
+        try:
+            async with _httpx.AsyncClient(verify=settings.ssl_verify.lower() != "false", timeout=8) as c:
+                r = await c.post("https://places.googleapis.com/v1/places:searchNearby",
+                                 json=body, headers=headers)
+                out["google_status"] = r.status_code
+                # El cuerpo de error de Google NO contiene la API key — seguro mostrarlo.
+                out["google_body"] = r.text[:400]
+        except Exception as exc:  # noqa: BLE001
+            out["google_error"] = str(exc)[:300]
+
+    pois = await _fetch_pois(lat, lon, timeout=15.0)
+    out["osm_total_pois"] = len(pois) if pois else 0
+    osm = extraer_entorno_osm(pois, lat, lon) if pois else None
+    out["osm_entorno"] = osm["texto"] if osm else None
+    g = await entorno_destacado(lat, lon, pois)
+    out["elegido_fuente"] = g["fuente"] if g else None
+    out["elegido_texto"] = g["texto"] if g else None
+    return out
 
 
 @router.post(

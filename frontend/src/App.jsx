@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
 import axios from 'axios'
 import {
-  Send, MapPin, RefreshCw, Trash2, Copy, CheckCheck, ChevronDown, Menu, Mic
+  Send, MapPin, RefreshCw, Trash2, Copy, CheckCheck, ChevronDown, Menu, Mic, Map, Shield
 } from 'lucide-react'
 import { supabase, authEnabled } from './supabaseClient'
 import Auth from './Auth'
@@ -678,26 +678,24 @@ export default function App() {
             onClick={() => setView('map')}
             title="Mapa Vivo"
             style={{
-              background:'rgba(45,189,182,.10)', border:'1px solid rgba(45,189,182,.30)', borderRadius:999,
-              cursor:'pointer', color:'var(--teal-bright)', padding:'6px 12px',
-              display:'flex', alignItems:'center', gap:5, fontSize:'.8rem',
-              boxShadow:'0 0 14px rgba(45,189,182,.12)',
+              background:'rgba(45,189,182,.12)', border:'1px solid rgba(45,189,182,.3)',
+              borderRadius:999, width:38, height:38, flexShrink:0, cursor:'pointer',
+              display:'flex', alignItems:'center', justifyContent:'center', color:'var(--teal)',
             }}
           >
-            🗺️{!isMobile && ' Mapa'}
+            <Map size={17}/>
           </button>
           {(rol === 'corredor' || rol === 'inmobiliaria') && (
             <button
               onClick={() => setView('review')}
               title="Estación de Revisión"
               style={{
-                background:'rgba(45,189,182,.10)', border:'1px solid rgba(45,189,182,.30)', borderRadius:999,
-                cursor:'pointer', color:'var(--teal-bright)', padding:'6px 12px',
-                display:'flex', alignItems:'center', gap:5, fontSize:'.8rem',
-                boxShadow:'0 0 14px rgba(45,189,182,.12)',
+                background:'rgba(45,189,182,.12)', border:'1px solid rgba(45,189,182,.3)',
+                borderRadius:999, width:38, height:38, flexShrink:0, cursor:'pointer',
+                display:'flex', alignItems:'center', justifyContent:'center', color:'var(--teal)',
               }}
             >
-              🛡️{!isMobile && ' Revisión'}
+              <Shield size={17}/>
             </button>
           )}
         </div>
@@ -878,15 +876,12 @@ export default function App() {
             }
           </button>
         </div>
-        <div style={{
-          display:'flex', justifyContent:'space-between', marginTop:8,
-          fontSize:'.7rem', color:'var(--text-muted)', padding:'0 4px',
-        }}>
-          <span>{listening ? '🎤 Escuchando… habla ahora' : 'Enter para enviar · Shift+Enter nueva línea'}</span>
-          <span style={{ fontFamily:'var(--font-mono)', opacity:.6 }}>
-            {sessionId.slice(0, 22)}...
-          </span>
-        </div>
+        {listening && (
+          <div style={{ marginTop:8, fontSize:'.72rem', color:'var(--teal)',
+                        padding:'0 4px', textAlign:'center' }}>
+            🎤 Escuchando… habla ahora
+          </div>
+        )}
       </div>
 
       <style>{`

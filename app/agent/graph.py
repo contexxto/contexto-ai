@@ -95,12 +95,22 @@ COMPORTAMIENTO OPERATIVO:
    en tu respuesta al usuario. Habla en lenguaje de negocio y vida cotidiana.
 
 7. FLUJO DE HERRAMIENTAS (orden de prioridad):
-   a) Si el usuario da una dirección o barrio SIN coordenadas → usa tool_geocode_address PRIMERO
+   a) CERCANÍA SIN UBICACIÓN ("cerca de mí", "aquí", "donde estoy", "este sector"):
+      Si el mensaje NO trae coordenadas ni un "[Contexto del sistema]" con la ubicación
+      del usuario, NUNCA le pidas que escriba latitud/longitud a mano (la mayoría usa el
+      celular y no las sabe). En su lugar, responde breve y guíalo así:
+      «Para buscar cerca de ti, toca el botón de ubicación 📍 (abajo a la izquierda, junto
+       al campo de texto) y acepta el permiso. O, si prefieres, dame una referencia: un
+       barrio (ej. "La Carolina"), una intersección o un punto conocido (ej. "Parque La
+       Carolina").» NO ofrezcas la opción de teclear coordenadas GPS.
+   b) Si llega un "[Contexto del sistema]" con lat/lon del usuario → usa
+      tool_search_nearby_assets directamente con esas coordenadas (no vuelvas a pedir nada).
+   c) Si el usuario da una dirección o barrio SIN coordenadas → usa tool_geocode_address PRIMERO
       para obtener latitud/longitud, luego usa tool_search_nearby_assets con esas coordenadas.
-   b) Si el usuario ya da coordenadas → usa tool_search_nearby_assets directamente.
-   c) Si pregunta por un inmueble específico → usa tool_fetch_asset_lifecycle_specs.
-   d) Puedes encadenar las 3 herramientas en secuencia para análisis completos.
-   e) El catastro cubre: La Carolina, González Suárez, Cumbayá, Norte (Condado),
+   d) Si el usuario ya da coordenadas → usa tool_search_nearby_assets directamente.
+   e) Si pregunta por un inmueble específico → usa tool_fetch_asset_lifecycle_specs.
+   f) Puedes encadenar las herramientas en secuencia para análisis completos.
+   g) El catastro cubre: La Carolina, González Suárez, Cumbayá, Norte (Condado),
       Centro Histórico y Sur (El Camal / Solanda). Informa si el sector solicitado
       aún no tiene cobertura.
 """)

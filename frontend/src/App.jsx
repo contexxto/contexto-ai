@@ -377,21 +377,71 @@ export default function App() {
     rec.start()
   }, [listening])
 
-  // Ubicación del usuario para el agente ("estoy aquí, ¿qué hay cerca?")
-  const toggleGeo = useCallback(() => {
-    if (geo) { setGeo(null); return }       // ya activa → la quitamos
-    if (!navigator.geolocation) { setError('Tu navegador no permite geolocalización.'); return }
-    setGeoLoading(true)
-    navigator.geolocation.getCurrentPosition(
+  // Ubicación del usuario, estilo Uber: se autoriza UNA vez y queda activa en tiempo
+  // real (watchPosition). Si el navegador ya tiene el permiso concedido, al abrir la
+  // app se reactiva sola — sin volver a pedirla.
+  const watchIdRef = useRef(null)
+
+  const stopGeo = useCallback(() => {
+    if (watchIdRef.current != null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(watchIdRef.current)
+    }
+    watchIdRef.current = null
+    setGeo(null)
+    try { localStorage.removeItem('geoConsent') } catch { /* ignore */ }
+  }, [])
+
+  const startGeo = useCallback((silent = false) => {
+    if (!navigator.geolocation) {
+      if (!silent) setError('Tu navegador no permite geolocalización.')
+      return
+    }
+    if (watchIdRef.current != null) return   // ya activa
+    if (!silent) setGeoLoading(true)
+    let first = true
+    watchIdRef.current = navigator.geolocation.watchPosition(
       (pos) => {
         setGeo({ lat: +pos.coords.latitude.toFixed(6), lon: +pos.coords.longitude.toFixed(6) })
-        setGeoLoading(false)
-        setTimeout(() => inputRef.current?.focus(), 100)
+        try { localStorage.setItem('geoConsent', '1') } catch { /* ignore */ }
+        if (first) {
+          first = false
+          setGeoLoading(false)
+          if (!silent) setTimeout(() => inputRef.current?.focus(), 100)
+        }
       },
-      () => { setGeoLoading(false); setError('No pudimos obtener tu ubicación (permiso denegado).') },
-      { enableHighAccuracy: true, timeout: 10000 },
+      () => {
+        setGeoLoading(false)
+        watchIdRef.current = null
+        try { localStorage.removeItem('geoConsent') } catch { /* ignore */ }
+        if (!silent) setError('No pudimos obtener tu ubicación (permiso denegado).')
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 },
     )
-  }, [geo])
+  }, [])
+
+  const toggleGeo = useCallback(() => {
+    if (geo || watchIdRef.current != null) { stopGeo(); return }   // activa → apagar
+    startGeo(false)                                                // primera vez → pedir
+  }, [geo, startGeo, stopGeo])
+
+  // Al abrir la app: si el navegador YA tiene el permiso concedido (o lo activó antes),
+  // reactivamos la ubicación automáticamente — sin volver a molestar con el permiso.
+  useEffect(() => {
+    let consented = false
+    try { consented = localStorage.getItem('geoConsent') === '1' } catch { /* ignore */ }
+    if (navigator.permissions?.query) {
+      navigator.permissions.query({ name: 'geolocation' })
+        .then((status) => { if (status.state === 'granted') startGeo(true) })
+        .catch(() => { if (consented) startGeo(true) })
+    } else if (consented) {
+      startGeo(true)
+    }
+    return () => {
+      if (watchIdRef.current != null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchIdRef.current)
+      }
+    }
+  }, [startGeo])
 
   // ── Brief Intake C0: arrastra una foto → match por similitud visual ──
   const matchByImage = useCallback(async (dataUrl) => {

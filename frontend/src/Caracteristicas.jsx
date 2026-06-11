@@ -15,8 +15,11 @@ const NUMS = [
 const CHECKS = [
   ['amoblado', 'Amoblado'], ['sala', 'Sala'], ['comedor', 'Comedor'],
   ['estudio', 'Estudio'], ['cuarto_servicio', 'Cuarto de servicio'],
-  ['balcon', 'Balcón'], ['terraza', 'Terraza'],
+  ['balcon', 'Balcón'], ['terraza', 'Terraza'], ['acepta_mascotas', '🐾 Acepta mascotas'],
 ]
+const AMENIDADES = ['Piscina', 'Sauna', 'Turco', 'Gimnasio', 'Seguridad 24/7', 'CCTV',
+  'Ascensor', 'Áreas comunales', 'Generador', 'BBQ / Social']
+const INCLUYE = ['Alícuota', 'Agua', 'Luz', 'Internet', 'Gas']
 
 export default function Caracteristicas({ activo, onClose }) {
   const [f, setF] = useState({})
@@ -25,6 +28,10 @@ export default function Caracteristicas({ activo, onClose }) {
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState(null)
   const set = (k, v) => setF(prev => ({ ...prev, [k]: v }))
+  const toggleArr = (k, val) => setF(prev => {
+    const cur = prev[k] || []
+    return { ...prev, [k]: cur.includes(val) ? cur.filter(x => x !== val) : [...cur, val] }
+  })
 
   useEffect(() => {
     (async () => {
@@ -46,7 +53,9 @@ export default function Caracteristicas({ activo, onClose }) {
         num_bodegas: num(f.num_bodegas), alicuota: num(f.alicuota), precio: num(f.precio),
         amoblado: !!f.amoblado, sala: !!f.sala, comedor: !!f.comedor, estudio: !!f.estudio,
         cuarto_servicio: !!f.cuarto_servicio, balcon: !!f.balcon, terraza: !!f.terraza,
-        precio_negociable: !!f.precio_negociable, notas: f.notas || null,
+        acepta_mascotas: !!f.acepta_mascotas, precio_negociable: !!f.precio_negociable,
+        amenidades_edificio: f.amenidades_edificio || [], incluye: f.incluye || [],
+        ideal_para: f.ideal_para || null, notas: f.notas || null,
       }, { headers: { 'Content-Type': 'application/json', ...apiHeaders() } })
       setSaved(true); setTimeout(() => onClose?.(), 900)
     } catch (err) {
@@ -109,6 +118,42 @@ export default function Caracteristicas({ activo, onClose }) {
                   {f[k] ? '✓ ' : ''}{label}
                 </button>
               ))}
+            </div>
+
+            <div style={sec}>AMENIDADES DEL EDIFICIO</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {AMENIDADES.map(a => {
+                const on = (f.amenidades_edificio || []).includes(a)
+                return (
+                  <button type="button" key={a} onClick={() => toggleArr('amenidades_edificio', a)}
+                    style={{ padding: '7px 13px', borderRadius: 999, cursor: 'pointer', fontSize: '.8rem', fontWeight: 600,
+                             background: on ? 'rgba(45,189,182,.18)' : 'rgba(255,255,255,.04)',
+                             border: `1px solid ${on ? C.teal : C.line}`, color: on ? C.tealHi : C.muted }}>
+                    {on ? '✓ ' : ''}{a}
+                  </button>
+                )
+              })}
+            </div>
+
+            <div style={sec}>¿QUÉ INCLUYE?</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {INCLUYE.map(a => {
+                const on = (f.incluye || []).includes(a)
+                return (
+                  <button type="button" key={a} onClick={() => toggleArr('incluye', a)}
+                    style={{ padding: '7px 13px', borderRadius: 999, cursor: 'pointer', fontSize: '.8rem', fontWeight: 600,
+                             background: on ? 'rgba(45,189,182,.18)' : 'rgba(255,255,255,.04)',
+                             border: `1px solid ${on ? C.teal : C.line}`, color: on ? C.tealHi : C.muted }}>
+                    {on ? '✓ ' : ''}{a}
+                  </button>
+                )
+              })}
+            </div>
+
+            <div style={{ marginTop: 14 }}>
+              <label style={lbl}>Ideal para</label>
+              <input style={inp} value={f.ideal_para ?? ''} onChange={e => set('ideal_para', e.target.value)}
+                placeholder="Ejecutivos, diplomáticos o familia amplia" />
             </div>
 
             <div style={sec}>PRECIO Y GASTOS</div>

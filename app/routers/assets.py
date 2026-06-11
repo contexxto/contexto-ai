@@ -373,6 +373,11 @@ class CaracteristicasRequest(BaseModel):
     precio_negociable: bool | None = None
     notas: str | None = None
     precio: float | None = Field(default=None, ge=0)
+    # Marketing / anuncio
+    amenidades_edificio: list[str] | None = None   # Piscina, Gimnasio, Seguridad 24/7…
+    acepta_mascotas: bool | None = None
+    ideal_para: str | None = None                   # "ejecutivos, familia amplia…"
+    incluye: list[str] | None = None                # Alícuota, Agua, Luz, Internet…
 
 
 @router.get("/{activo_id}/caracteristicas", summary="Cargar características (dueño)")

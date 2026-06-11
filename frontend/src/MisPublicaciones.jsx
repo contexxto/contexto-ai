@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import axios from 'axios'
-import { X, Plus, QrCode, Copy, Check, Share2, MapPin } from 'lucide-react'
+import { X, Plus, QrCode, Copy, Check, Share2, MapPin, ClipboardList } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import PublishAsset from './PublishAsset'
+import FichaTecnica from './FichaTecnica'
 
 const C = {
   bg: '#16151E', panel: '#1E1D28', teal: '#2DBDB6', tealHi: '#5EEAD4',
@@ -15,6 +16,7 @@ export default function MisPublicaciones({ onClose }) {
   const [crear, setCrear] = useState(false)
   const [copied, setCopied] = useState(null)
   const [qrId, setQrId] = useState(null)
+  const [fichaAsset, setFichaAsset] = useState(null)
 
   const load = useCallback(async () => {
     setError(null)
@@ -106,6 +108,7 @@ export default function MisPublicaciones({ onClose }) {
                 </Btn>
                 <Btn onClick={() => compartir(it)}><Share2 size={14} /> Compartir</Btn>
                 <Btn onClick={() => setQrId(qrId === it.id ? null : it.id)}><QrCode size={14} /> QR</Btn>
+                <Btn onClick={() => setFichaAsset(it)}><ClipboardList size={14} /> Ficha técnica</Btn>
               </div>
 
               {qrId === it.id && (
@@ -122,6 +125,7 @@ export default function MisPublicaciones({ onClose }) {
       </div>
 
       {crear && <PublishAsset onClose={() => { setCrear(false); load() }} />}
+      {fichaAsset && <FichaTecnica activo={fichaAsset} onClose={() => setFichaAsset(null)} />}
     </div>
   )
 }

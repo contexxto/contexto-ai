@@ -1,5 +1,6 @@
 import asyncio
 import io
+import json
 import uuid
 
 import segno
@@ -237,6 +238,119 @@ async def my_assets(
         "deep_link": f"{base}/a/{r['id']}",
     } for r in rows]
     return {"total": len(items), "publicaciones": items}
+
+
+# ── Fase 2: Ficha técnica de mantenimiento (con evidencia) ──────────────────
+class FichaRequest(BaseModel):
+    tipo_tuberia: str | None = Field(default=None, max_length=50)
+    anio_construccion: int | None = Field(default=None, ge=1900, le=2100)
+    tipo_estructura: str | None = Field(default=None, max_length=50)
+    calidad_acabados: str | None = Field(default=None, max_length=30)
+    ultimo_mantenimiento_cisterna: str | None = None
+    ultima_impermeabilizacion_techo: str | None = None
+    ultima_pintura_fachada: str | None = None
+    ultimo_cambio_cableado_electrico: str | None = None
+    monto_invertido_mejoras: float | None = Field(default=None, ge=0)
+    descripcion_mejoras: str | None = None
+    foto_evidencias: list[str] | None = None
+
+
+async def _assert_owner(db: AsyncSession, activo_id: uuid.UUID, user: CurrentUser) -> None:
+    row = (
+        await db.execute(
+            text("SELECT owner_user_id::text AS u, owner_agency_id::text AS a "
+                 "FROM activos_inmutables WHERE id = :id"),
+            {"id": str(activo_id)},
+        )
+    ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inmueble no encontrado.")
+    es_dueño = row["u"] == user.user_id or (user.agency_id and row["a"] == user.agency_id)
+    if not es_dueño:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Este inmueble no es tuyo.")
+
+
+@router.get("/{activo_id}/ficha", summary="Cargar la ficha técnica (dueño)")
+async def get_ficha(
+    activo_id: uuid.UUID,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    await _assert_owner(db, activo_id, user)
+    f = (
+        await db.execute(
+            text('SELECT tipo_tuberia, "año_construccion" AS anio_construccion, tipo_estructura, '
+                 "calidad_acabados, ultimo_mantenimiento_cisterna, ultima_impermeabilizacion_techo, "
+                 "ultima_pintura_fachada, ultimo_cambio_cableado_electrico, monto_invertido_mejoras, "
+                 "descripcion_mejoras, foto_evidencias "
+                 "FROM ficha_tecnica_mantenimiento WHERE activo_id = :id"),
+            {"id": str(activo_id)},
+        )
+    ).mappings().first()
+    if not f:
+        return {"ficha": None}
+    d = dict(f)
+    for k in ("ultimo_mantenimiento_cisterna", "ultima_impermeabilizacion_techo",
+              "ultima_pintura_fachada", "ultimo_cambio_cableado_electrico"):
+        d[k] = d[k].isoformat() if d.get(k) else None
+    d["monto_invertido_mejoras"] = float(d["monto_invertido_mejoras"]) if d.get("monto_invertido_mejoras") is not None else None
+    d["foto_evidencias"] = json.loads(d["foto_evidencias"]) if d.get("foto_evidencias") else []
+    return {"ficha": d}
+
+
+@router.post("/{activo_id}/ficha", status_code=status.HTTP_200_OK,
+             summary="Guardar la ficha técnica (Fase 2, solo dueño)")
+async def save_ficha(
+    activo_id: uuid.UUID,
+    payload: FichaRequest,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    await _assert_owner(db, activo_id, user)
+    fotos = json.dumps(payload.foto_evidencias) if payload.foto_evidencias else None
+    params = {
+        "aid": str(activo_id),
+        "tuberia": payload.tipo_tuberia,
+        "anio": payload.anio_construccion,
+        "estructura": payload.tipo_estructura,
+        "acabados": payload.calidad_acabados,
+        "cisterna": payload.ultimo_mantenimiento_cisterna or None,
+        "techo": payload.ultima_impermeabilizacion_techo or None,
+        "fachada": payload.ultima_pintura_fachada or None,
+        "cableado": payload.ultimo_cambio_cableado_electrico or None,
+        "monto": payload.monto_invertido_mejoras,
+        "descripcion": payload.descripcion_mejoras,
+        "fotos": fotos,
+    }
+    await db.execute(
+        text(
+            'INSERT INTO ficha_tecnica_mantenimiento '
+            '(id, activo_id, tipo_tuberia, "año_construccion", tipo_estructura, calidad_acabados, '
+            ' ultimo_mantenimiento_cisterna, ultima_impermeabilizacion_techo, ultima_pintura_fachada, '
+            ' ultimo_cambio_cableado_electrico, monto_invertido_mejoras, descripcion_mejoras, '
+            ' foto_evidencias, estado_revision, updated_at) '
+            "VALUES (gen_random_uuid(), :aid, :tuberia, :anio, :estructura, :acabados, "
+            " :cisterna::date, :techo::date, :fachada::date, :cableado::date, :monto, :descripcion, "
+            " :fotos, 'publicado', now()) "
+            "ON CONFLICT (activo_id) DO UPDATE SET "
+            " tipo_tuberia = EXCLUDED.tipo_tuberia, "
+            ' "año_construccion" = EXCLUDED."año_construccion", '
+            " tipo_estructura = EXCLUDED.tipo_estructura, "
+            " calidad_acabados = EXCLUDED.calidad_acabados, "
+            " ultimo_mantenimiento_cisterna = EXCLUDED.ultimo_mantenimiento_cisterna, "
+            " ultima_impermeabilizacion_techo = EXCLUDED.ultima_impermeabilizacion_techo, "
+            " ultima_pintura_fachada = EXCLUDED.ultima_pintura_fachada, "
+            " ultimo_cambio_cableado_electrico = EXCLUDED.ultimo_cambio_cableado_electrico, "
+            " monto_invertido_mejoras = EXCLUDED.monto_invertido_mejoras, "
+            " descripcion_mejoras = EXCLUDED.descripcion_mejoras, "
+            " foto_evidencias = EXCLUDED.foto_evidencias, "
+            " updated_at = now()"
+        ),
+        params,
+    )
+    await db.commit()
+    return {"ok": True, "activo_id": str(activo_id)}
 
 
 @router.post(

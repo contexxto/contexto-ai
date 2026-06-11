@@ -193,6 +193,13 @@ async def my_assets(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
+    # WHERE condicional: evitamos bindear NULL (asyncpg no infiere su tipo).
+    params: dict = {"u": user.user_id}
+    where = "a.owner_user_id = :u"
+    if user.agency_id:
+        where += " OR a.owner_agency_id = :a"
+        params["a"] = user.agency_id
+
     rows = (
         await db.execute(
             text(
@@ -207,10 +214,10 @@ async def my_assets(
                 "   SELECT tipo_operacion, precio FROM transacciones_temporales tt "
                 "   WHERE tt.activo_id = a.id ORDER BY fecha_publicacion DESC LIMIT 1"
                 ") t ON true "
-                "WHERE a.owner_user_id = :u OR (:a IS NOT NULL AND a.owner_agency_id = :a) "
+                f"WHERE {where} "
                 "ORDER BY a.created_at DESC"
             ),
-            {"u": user.user_id, "a": user.agency_id},
+            params,
         )
     ).mappings().all()
 

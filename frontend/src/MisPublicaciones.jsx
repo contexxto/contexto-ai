@@ -11,8 +11,11 @@ const C = {
   text: '#EDEBF2', muted: '#9C99AC', line: 'rgba(45,189,182,.22)',
 }
 
+// Caché en memoria de la última lista → aperturas repetidas abren al instante.
+let _cacheMine = null
+
 export default function MisPublicaciones({ onClose }) {
-  const [items, setItems] = useState(null)
+  const [items, setItems] = useState(_cacheMine)   // si hay caché → sin "Cargando…"
   const [error, setError] = useState(null)
   const [crear, setCrear] = useState(false)
   const [copied, setCopied] = useState(null)
@@ -24,14 +27,17 @@ export default function MisPublicaciones({ onClose }) {
     setError(null)
     try {
       const { data } = await axios.get(`${API_BASE}/api/v1/assets/mine`, { headers: apiHeaders() })
-      setItems(data.publicaciones || [])
+      _cacheMine = data.publicaciones || []
+      setItems(_cacheMine)
     } catch (e) {
-      setError(e?.response?.data?.detail || 'No se pudieron cargar tus publicaciones.')
-      setItems([])
+      if (!_cacheMine) {   // si ya hay datos cacheados, no los borres por un fallo de red
+        setError(e?.response?.data?.detail || 'No se pudieron cargar tus publicaciones.')
+        setItems([])
+      }
     }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { load() }, [load])   // refresca siempre en segundo plano
 
   async function copiar(link, id) {
     try { await navigator.clipboard.writeText(link); setCopied(id); setTimeout(() => setCopied(null), 1600) } catch { /* ignore */ }
@@ -132,7 +138,7 @@ export default function MisPublicaciones({ onClose }) {
       </div>
 
       {crear && <PublishAsset onClose={() => { setCrear(false); load() }} />}
-      {fichaAsset && <FichaTecnica activo={fichaAsset} onClose={() => setFichaAsset(null)} />}
+      {fichaAsset && <FichaTecnica activo={fichaAsset} onClose={() => { setFichaAsset(null); load() }} />}
       {caracAsset && <Caracteristicas activo={caracAsset} onClose={() => { setCaracAsset(null); load() }} />}
     </div>
   )

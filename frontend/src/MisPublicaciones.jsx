@@ -44,8 +44,14 @@ export default function MisPublicaciones({ onClose }) {
   }
   async function compartir(it) {
     const url = it.deep_link
-    if (navigator.share) { try { await navigator.share({ title: it.direccion, url }) } catch { /* cancelado */ } }
-    else copiar(url, it.id)
+    // Solo en móvil/táctil usamos la hoja nativa; en escritorio copiamos el enlace
+    // (evita la bandeja de Windows, que tapa todo y es tosca).
+    const esTactil = window.matchMedia?.('(pointer: coarse)').matches
+    if (esTactil && navigator.share) {
+      try { await navigator.share({ title: it.direccion, url }) } catch { /* cancelado */ }
+    } else {
+      copiar(url, it.id)
+    }
   }
 
   return (

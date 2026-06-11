@@ -101,8 +101,23 @@ async def _decode(token: str) -> dict:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token inválido o expirado.") from exc
 
 
+# ── Caché de perfil (evita una consulta a la BD en cada petición autenticada) ─
+_profile_cache: dict[str, tuple[float, dict]] = {}
+_PROFILE_TTL = 90.0  # segundos
+
+
+def invalidate_profile(user_id: str) -> None:
+    """Limpia el perfil cacheado (llamar al cambiar rol/agencia)."""
+    _profile_cache.pop(user_id, None)
+
+
 async def _load_or_provision_profile(db: AsyncSession, user_id: str, email: str | None) -> dict:
-    """Lee el perfil; si no existe, lo crea como 'cliente' (auto-provisión)."""
+    """Lee el perfil (con caché en memoria); si no existe, lo crea como 'cliente'."""
+    now = time.time()
+    hit = _profile_cache.get(user_id)
+    if hit and now < hit[0]:
+        return hit[1]
+
     row = (
         await db.execute(
             text("SELECT rol, nombre, agency_id::text AS agency_id FROM profiles WHERE user_id = :u"),
@@ -110,7 +125,10 @@ async def _load_or_provision_profile(db: AsyncSession, user_id: str, email: str 
         )
     ).mappings().first()
     if row:
-        return dict(row)
+        prof = dict(row)
+        _profile_cache[user_id] = (now + _PROFILE_TTL, prof)
+        return prof
+
     await db.execute(
         text(
             "INSERT INTO profiles (user_id, rol, nombre) VALUES (:u, 'cliente', :n) "
@@ -118,7 +136,9 @@ async def _load_or_provision_profile(db: AsyncSession, user_id: str, email: str 
         ),
         {"u": user_id, "n": (email or "").split("@")[0] or None},
     )
-    return {"rol": "cliente", "nombre": (email or "").split("@")[0] or None, "agency_id": None}
+    prof = {"rol": "cliente", "nombre": (email or "").split("@")[0] or None, "agency_id": None}
+    _profile_cache[user_id] = (now + _PROFILE_TTL, prof)
+    return prof
 
 
 def _extract_token(authorization: str | None) -> str | None:

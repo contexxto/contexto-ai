@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import CurrentUser, get_current_user
+from app.auth import CurrentUser, get_current_user, invalidate_profile
 from app.database import get_db
 from app.limiter import limiter
 
@@ -90,6 +90,7 @@ async def set_profile(
         ),
         {"u": user.user_id, "r": rol, "n": payload.nombre, "a": agency_id},
     )
+    invalidate_profile(user.user_id)  # el rol/agencia cambió → refrescar caché
 
     return {"user_id": user.user_id, "rol": rol, "nombre": payload.nombre, "agency_id": agency_id}
 

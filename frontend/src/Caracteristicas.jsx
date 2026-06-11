@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
-import { X, Check } from 'lucide-react'
+import { X, Check, Upload, Loader, Trash2 } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
+import { supabase } from './supabaseClient'
 
 const C = {
   bg: '#16151E', panel: '#1E1D28', teal: '#2DBDB6', tealHi: '#5EEAD4',
@@ -34,6 +35,24 @@ export default function Caracteristicas({ activo, onClose }) {
     const cur = prev[k] || []
     return { ...prev, [k]: cur.includes(val) ? cur.filter(x => x !== val) : [...cur, val] }
   })
+  const [uploading, setUploading] = useState(false)
+  async function subirFotos(files) {
+    if (!supabase) { setError('Subida no disponible (Storage no configurado).'); return }
+    setError(null); setUploading(true)
+    try {
+      const nuevas = []
+      for (const file of files) {
+        const path = `inmuebles/${activo.id}/${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${file.name.replace(/[^\w.\-]/g, '_')}`
+        const { error: upErr } = await supabase.storage.from('evidencias').upload(path, file, { upsert: false })
+        if (upErr) throw upErr
+        const { data } = supabase.storage.from('evidencias').getPublicUrl(path)
+        nuevas.push(data.publicUrl)
+      }
+      set('fotos', [...(f.fotos || []), ...nuevas])
+    } catch {
+      setError('No se pudieron subir las fotos. ¿Existe el bucket "evidencias" (público)?')
+    } finally { setUploading(false) }
+  }
 
   async function cargar() {
     const { data } = await axios.get(`${API_BASE}/api/v1/assets/${activo.id}/caracteristicas`, { headers: apiHeaders() })
@@ -62,6 +81,7 @@ export default function Caracteristicas({ activo, onClose }) {
         acepta_mascotas: !!f.acepta_mascotas, precio_negociable: !!f.precio_negociable,
         amenidades_edificio: f.amenidades_edificio || [], incluye: f.incluye || [],
         ideal_para: f.ideal_para || null, notas: f.notas || null,
+        fotos: f.fotos || [],
       }, { headers: { 'Content-Type': 'application/json', ...apiHeaders() } })
       setSaved(true)
       try { await cargar() } catch { /* ignore */ }
@@ -98,6 +118,34 @@ export default function Caracteristicas({ activo, onClose }) {
           <form onSubmit={guardar}>
             <fieldset disabled={!editando} style={{ border: 0, padding: 0, margin: 0, minWidth: 0,
               opacity: editando ? 1 : .92 }}>
+            <div style={sec}>FOTOS DEL INMUEBLE</div>
+            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '11px',
+                            borderRadius: 12, cursor: uploading ? 'default' : 'pointer', fontSize: '.85rem',
+                            background: 'rgba(45,189,182,.08)', border: `1px dashed ${C.teal}`, color: C.tealHi }}>
+              {uploading ? <Loader size={16} /> : <Upload size={16} />}
+              {uploading ? 'Subiendo…' : 'Subir fotos (sala, cocina, dormitorios, vista…)'}
+              <input type="file" accept="image/*" multiple style={{ display: 'none' }} disabled={uploading}
+                onChange={e => e.target.files?.length && subirFotos(Array.from(e.target.files))} />
+            </label>
+            {(f.fotos || []).length > 0 && (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+                {f.fotos.map((url, i) => (
+                  <div key={url} style={{ position: 'relative' }}>
+                    {i === 0 && <span style={{ position: 'absolute', top: 3, left: 3, background: C.teal, color: '#0E0D13',
+                                  fontSize: '.55rem', fontWeight: 800, padding: '1px 5px', borderRadius: 5 }}>PORTADA</span>}
+                    <img src={url} alt={`foto ${i + 1}`} width={78} height={78}
+                      style={{ objectFit: 'cover', borderRadius: 8, border: `1px solid ${C.line}` }} />
+                    <button type="button" onClick={() => set('fotos', f.fotos.filter(u => u !== url))}
+                      style={{ position: 'absolute', top: -6, right: -6, background: C.coral, border: 'none',
+                               borderRadius: '50%', width: 20, height: 20, cursor: 'pointer', color: '#fff', display: 'flex',
+                               alignItems: 'center', justifyContent: 'center' }}>
+                      <Trash2 size={11} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div style={sec}>DISTRIBUCIÓN</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
               {NUMS.map(([k, label]) => (
@@ -201,9 +249,9 @@ export default function Caracteristicas({ activo, onClose }) {
                     Cancelar
                   </button>
                 )}
-                <button type="submit" disabled={saving}
+                <button type="submit" disabled={saving || uploading}
                   style={{ flex: 1, padding: '13px', borderRadius: 12, border: 'none',
-                           cursor: saving ? 'default' : 'pointer', fontWeight: 800, fontSize: '.92rem',
+                           cursor: (saving || uploading) ? 'default' : 'pointer', fontWeight: 800, fontSize: '.92rem',
                            background: saved ? '#2E9E6B' : `linear-gradient(90deg, ${C.teal}, ${C.tealHi})`,
                            color: '#0E0D13', opacity: saving ? .7 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                   {saved ? <><Check size={18} /> Guardadas</> : saving ? 'Guardando…' : (existe ? 'Actualizar' : 'Grabar')}

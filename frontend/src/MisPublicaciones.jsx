@@ -83,7 +83,11 @@ export default function MisPublicaciones({ onClose }) {
               style={{ border: `1px solid ${C.line}`, borderRadius: 14, padding: '13px 14px',
                        background: 'rgba(255,255,255,.03)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
-                <div style={{ minWidth: 0 }}>
+                {it.portada && (
+                  <img src={it.portada} alt="" width={54} height={54}
+                    style={{ objectFit: 'cover', borderRadius: 10, border: `1px solid ${C.line}`, flexShrink: 0 }} />
+                )}
+                <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ fontWeight: 700, fontSize: '.92rem', marginBottom: 2 }}>{it.direccion}</div>
                   <div style={{ fontSize: '.76rem', color: C.muted }}>
                     {it.tipo_activo} · Piso {it.piso_altura}

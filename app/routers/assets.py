@@ -208,7 +208,7 @@ async def my_assets(
                 "       a.tipo_activo, a.piso_altura, a.walk_score, "
                 "       a.score_ruido_predictivo AS ruido, "
                 "       a.porcentaje_cobertura_vegetal AS vegetacion, "
-                "       a.conectividad, a.servicios_cercanos, a.created_at, "
+                "       a.conectividad, a.servicios_cercanos, a.caracteristicas, a.created_at, "
                 "       t.tipo_operacion AS operacion, t.precio "
                 "FROM activos_inmutables a "
                 "LEFT JOIN LATERAL ("
@@ -223,20 +223,29 @@ async def my_assets(
     ).mappings().all()
 
     base = settings.public_app_url.rstrip("/")
-    items = [{
-        "id": r["id"],
-        "direccion": r["direccion"],
-        "tipo_activo": r["tipo_activo"],
-        "piso_altura": r["piso_altura"],
-        "walk_score": r["walk_score"],
-        "ruido": r["ruido"],
-        "vegetacion": float(r["vegetacion"]) if r["vegetacion"] is not None else None,
-        "conectividad": r["conectividad"],
-        "servicios_cercanos": r["servicios_cercanos"],
-        "operacion": r["operacion"],
-        "precio": float(r["precio"]) if r["precio"] is not None else None,
-        "deep_link": f"{base}/a/{r['id']}",
-    } for r in rows]
+    items = []
+    for r in rows:
+        car = r["caracteristicas"]
+        if isinstance(car, str):
+            car = json.loads(car or "{}")
+        car = car or {}
+        fotos = car.get("fotos") or []
+        items.append({
+            "id": r["id"],
+            "direccion": r["direccion"],
+            "tipo_activo": r["tipo_activo"],
+            "piso_altura": r["piso_altura"],
+            "walk_score": r["walk_score"],
+            "ruido": r["ruido"],
+            "vegetacion": float(r["vegetacion"]) if r["vegetacion"] is not None else None,
+            "conectividad": r["conectividad"],
+            "servicios_cercanos": r["servicios_cercanos"],
+            "operacion": r["operacion"],
+            "precio": float(r["precio"]) if r["precio"] is not None else None,
+            "portada": fotos[0] if fotos else None,
+            "num_fotos": len(fotos),
+            "deep_link": f"{base}/a/{r['id']}",
+        })
     return {"total": len(items), "publicaciones": items}
 
 
@@ -374,6 +383,7 @@ class CaracteristicasRequest(BaseModel):
     notas: str | None = None
     precio: float | None = Field(default=None, ge=0)
     # Marketing / anuncio
+    fotos: list[str] | None = None                  # fotos del inmueble (galería del anuncio)
     amenidades_edificio: list[str] | None = None   # Piscina, Gimnasio, Seguridad 24/7…
     acepta_mascotas: bool | None = None
     ideal_para: str | None = None                   # "ejecutivos, familia amplia…"

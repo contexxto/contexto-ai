@@ -25,21 +25,25 @@ export default function FichaTecnica({ activo, onClose }) {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState(null)
   const [saved, setSaved] = useState(false)
+  const [editando, setEditando] = useState(false)
+  const [existe, setExiste] = useState(false)
 
   const set = (k, v) => setF(prev => ({ ...prev, [k]: v }))
 
+  async function cargar() {
+    const { data } = await axios.get(`${API_BASE}/api/v1/assets/${activo.id}/ficha`, { headers: apiHeaders() })
+    if (data.ficha) {
+      setF(prev => ({
+        ...prev,
+        ...Object.fromEntries(Object.entries(data.ficha).map(([k, v]) => [k, v ?? (k === 'foto_evidencias' ? [] : '')])),
+      }))
+      setExiste(true); setEditando(false)
+    } else {
+      setExiste(false); setEditando(true)
+    }
+  }
   useEffect(() => {
-    (async () => {
-      try {
-        const { data } = await axios.get(`${API_BASE}/api/v1/assets/${activo.id}/ficha`, { headers: apiHeaders() })
-        if (data.ficha) {
-          setF(prev => ({
-            ...prev,
-            ...Object.fromEntries(Object.entries(data.ficha).map(([k, v]) => [k, v ?? (k === 'foto_evidencias' ? [] : '')])),
-          }))
-        }
-      } catch { /* ficha nueva */ } finally { setLoading(false) }
-    })()
+    (async () => { try { await cargar() } catch { setEditando(true) } finally { setLoading(false) } })()
   }, [activo.id])
 
   async function subirFotos(files) {
@@ -76,7 +80,9 @@ export default function FichaTecnica({ activo, onClose }) {
         descripcion_mejoras: f.descripcion_mejoras || null,
         foto_evidencias: f.foto_evidencias,
       }, { headers: { 'Content-Type': 'application/json', ...apiHeaders() } })
-      setSaved(true); setTimeout(() => { onClose?.() }, 900)
+      setSaved(true)
+      try { await cargar() } catch { /* ignore */ }
+      setTimeout(() => setSaved(false), 1500)
     } catch (err) {
       setError(err?.response?.data?.detail || 'No se pudo guardar la ficha.')
     } finally { setSaving(false) }
@@ -107,6 +113,8 @@ export default function FichaTecnica({ activo, onClose }) {
           <div style={{ color: C.muted, padding: '30px 0', textAlign: 'center' }}>Cargando…</div>
         ) : (
           <form onSubmit={guardar}>
+            <fieldset disabled={!editando} style={{ border: 0, padding: 0, margin: 0, minWidth: 0,
+              opacity: editando ? 1 : .92 }}>
             <div style={sec}>ESTRUCTURA</div>
             <div style={{ display: 'flex', gap: 10 }}>
               <div style={{ flex: 1 }}>
@@ -196,16 +204,36 @@ export default function FichaTecnica({ activo, onClose }) {
               </div>
             )}
 
+            </fieldset>
+
             {error && <div style={{ color: C.coral, fontSize: '.82rem', marginTop: 14 }}>⚠️ {error}</div>}
 
-            <button type="submit" disabled={saving || uploading}
-              style={{ width: '100%', marginTop: 20, padding: '13px', borderRadius: 12, border: 'none',
-                       cursor: (saving || uploading) ? 'default' : 'pointer', fontWeight: 800, fontSize: '.92rem',
-                       background: saved ? '#2E9E6B' : `linear-gradient(90deg, ${C.teal}, ${C.tealHi})`,
-                       color: '#0E0D13', opacity: (saving || uploading) ? .7 : 1, display: 'flex',
-                       alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-              {saved ? <><Check size={18} /> Guardada</> : saving ? 'Guardando…' : 'Guardar ficha técnica'}
-            </button>
+            {editando ? (
+              <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+                {existe && (
+                  <button type="button" onClick={async () => { setError(null); await cargar() }}
+                    style={{ padding: '13px 18px', borderRadius: 12, border: `1px solid ${C.line}`, cursor: 'pointer',
+                             background: 'transparent', color: C.muted, fontWeight: 700, fontSize: '.9rem' }}>
+                    Cancelar
+                  </button>
+                )}
+                <button type="submit" disabled={saving || uploading}
+                  style={{ flex: 1, padding: '13px', borderRadius: 12, border: 'none',
+                           cursor: (saving || uploading) ? 'default' : 'pointer', fontWeight: 800, fontSize: '.92rem',
+                           background: saved ? '#2E9E6B' : `linear-gradient(90deg, ${C.teal}, ${C.tealHi})`,
+                           color: '#0E0D13', opacity: (saving || uploading) ? .7 : 1, display: 'flex',
+                           alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                  {saved ? <><Check size={18} /> Guardada</> : saving ? 'Guardando…' : (existe ? 'Actualizar' : 'Grabar')}
+                </button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => setEditando(true)}
+                style={{ width: '100%', marginTop: 20, padding: '13px', borderRadius: 12, cursor: 'pointer',
+                         border: `1px solid ${C.teal}`, background: 'rgba(45,189,182,.10)', color: C.tealHi,
+                         fontWeight: 800, fontSize: '.92rem' }}>
+                ✏️ Editar
+              </button>
+            )}
             <div style={{ fontSize: '.72rem', color: C.muted, textAlign: 'center', marginTop: 10 }}>
               El agente usará estos datos para acreditar el mantenimiento del inmueble.
             </div>

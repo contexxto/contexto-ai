@@ -403,9 +403,8 @@ async def get_caracteristicas(
     car = row["caracteristicas"] if row and row["caracteristicas"] else {}
     if isinstance(car, str):
         car = json.loads(car)
-    if tx and tx["precio"] is not None and "precio" not in car:
-        car["precio"] = float(tx["precio"])
-    return {"caracteristicas": car}
+    precio = float(tx["precio"]) if tx and tx["precio"] is not None else None
+    return {"caracteristicas": car, "precio": precio}
 
 
 @router.post("/{activo_id}/caracteristicas", status_code=status.HTTP_200_OK,

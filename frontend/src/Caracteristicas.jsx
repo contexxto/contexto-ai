@@ -27,19 +27,25 @@ export default function Caracteristicas({ activo, onClose }) {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState(null)
+  const [editando, setEditando] = useState(false)
+  const [existe, setExiste] = useState(false)
   const set = (k, v) => setF(prev => ({ ...prev, [k]: v }))
   const toggleArr = (k, val) => setF(prev => {
     const cur = prev[k] || []
     return { ...prev, [k]: cur.includes(val) ? cur.filter(x => x !== val) : [...cur, val] }
   })
 
+  async function cargar() {
+    const { data } = await axios.get(`${API_BASE}/api/v1/assets/${activo.id}/caracteristicas`, { headers: apiHeaders() })
+    const car = data.caracteristicas || {}
+    const tiene = Object.keys(car).length > 0
+    setF({ ...car, ...(data.precio != null ? { precio: data.precio } : {}) })
+    setExiste(tiene)
+    setEditando(!tiene)   // si no hay datos aún → arranca en edición
+    return tiene
+  }
   useEffect(() => {
-    (async () => {
-      try {
-        const { data } = await axios.get(`${API_BASE}/api/v1/assets/${activo.id}/caracteristicas`, { headers: apiHeaders() })
-        setF(data.caracteristicas || {})
-      } catch { /* nuevas */ } finally { setLoading(false) }
-    })()
+    (async () => { try { await cargar() } catch { setEditando(true) } finally { setLoading(false) } })()
   }, [activo.id])
 
   async function guardar(e) {
@@ -57,7 +63,9 @@ export default function Caracteristicas({ activo, onClose }) {
         amenidades_edificio: f.amenidades_edificio || [], incluye: f.incluye || [],
         ideal_para: f.ideal_para || null, notas: f.notas || null,
       }, { headers: { 'Content-Type': 'application/json', ...apiHeaders() } })
-      setSaved(true); setTimeout(() => onClose?.(), 900)
+      setSaved(true)
+      try { await cargar() } catch { /* ignore */ }
+      setTimeout(() => setSaved(false), 1500)
     } catch (err) {
       setError(err?.response?.data?.detail || 'No se pudieron guardar las características.')
     } finally { setSaving(false) }
@@ -88,6 +96,8 @@ export default function Caracteristicas({ activo, onClose }) {
           <div style={{ color: C.muted, padding: '30px 0', textAlign: 'center' }}>Cargando…</div>
         ) : (
           <form onSubmit={guardar}>
+            <fieldset disabled={!editando} style={{ border: 0, padding: 0, margin: 0, minWidth: 0,
+              opacity: editando ? 1 : .92 }}>
             <div style={sec}>DISTRIBUCIÓN</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
               {NUMS.map(([k, label]) => (
@@ -178,16 +188,35 @@ export default function Caracteristicas({ activo, onClose }) {
               <label style={lbl}>Notas adicionales</label>
               <input style={inp} value={f.notas ?? ''} onChange={e => set('notas', e.target.value)} placeholder="Vista despejada, edificio con ascensor…" />
             </div>
+            </fieldset>
 
             {error && <div style={{ color: C.coral, fontSize: '.82rem', marginTop: 14 }}>⚠️ {error}</div>}
 
-            <button type="submit" disabled={saving}
-              style={{ width: '100%', marginTop: 20, padding: '13px', borderRadius: 12, border: 'none',
-                       cursor: saving ? 'default' : 'pointer', fontWeight: 800, fontSize: '.92rem',
-                       background: saved ? '#2E9E6B' : `linear-gradient(90deg, ${C.teal}, ${C.tealHi})`,
-                       color: '#0E0D13', opacity: saving ? .7 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-              {saved ? <><Check size={18} /> Guardadas</> : saving ? 'Guardando…' : 'Guardar características'}
-            </button>
+            {editando ? (
+              <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+                {existe && (
+                  <button type="button" onClick={async () => { setError(null); await cargar() }}
+                    style={{ padding: '13px 18px', borderRadius: 12, border: `1px solid ${C.line}`, cursor: 'pointer',
+                             background: 'transparent', color: C.muted, fontWeight: 700, fontSize: '.9rem' }}>
+                    Cancelar
+                  </button>
+                )}
+                <button type="submit" disabled={saving}
+                  style={{ flex: 1, padding: '13px', borderRadius: 12, border: 'none',
+                           cursor: saving ? 'default' : 'pointer', fontWeight: 800, fontSize: '.92rem',
+                           background: saved ? '#2E9E6B' : `linear-gradient(90deg, ${C.teal}, ${C.tealHi})`,
+                           color: '#0E0D13', opacity: saving ? .7 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                  {saved ? <><Check size={18} /> Guardadas</> : saving ? 'Guardando…' : (existe ? 'Actualizar' : 'Grabar')}
+                </button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => setEditando(true)}
+                style={{ width: '100%', marginTop: 20, padding: '13px', borderRadius: 12, cursor: 'pointer',
+                         border: `1px solid ${C.teal}`, background: 'rgba(45,189,182,.10)', color: C.tealHi,
+                         fontWeight: 800, fontSize: '.92rem' }}>
+                ✏️ Editar
+              </button>
+            )}
           </form>
         )}
       </div>

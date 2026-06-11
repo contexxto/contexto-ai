@@ -209,12 +209,19 @@ async def my_assets(
                 "       a.score_ruido_predictivo AS ruido, "
                 "       a.porcentaje_cobertura_vegetal AS vegetacion, "
                 "       a.conectividad, a.servicios_cercanos, a.caracteristicas, a.created_at, "
-                "       t.tipo_operacion AS operacion, t.precio "
+                "       t.tipo_operacion AS operacion, t.precio, "
+                '       ftm.tipo_tuberia, ftm."año_construccion" AS anio_construccion, '
+                "       ftm.tipo_estructura, ftm.calidad_acabados, "
+                "       ftm.ultimo_mantenimiento_cisterna, ftm.ultima_impermeabilizacion_techo, "
+                "       ftm.ultima_pintura_fachada, ftm.ultimo_cambio_cableado_electrico, "
+                "       ftm.monto_invertido_mejoras, ftm.descripcion_mejoras, ftm.foto_evidencias, "
+                "       (ftm.activo_id IS NOT NULL) AS tiene_ficha "
                 "FROM activos_inmutables a "
                 "LEFT JOIN LATERAL ("
                 "   SELECT tipo_operacion, precio FROM transacciones_temporales tt "
                 "   WHERE tt.activo_id = a.id ORDER BY fecha_publicacion DESC LIMIT 1"
                 ") t ON true "
+                "LEFT JOIN ficha_tecnica_mantenimiento ftm ON ftm.activo_id = a.id "
                 f"WHERE {where} "
                 "ORDER BY a.created_at DESC"
             ),
@@ -230,6 +237,23 @@ async def my_assets(
             car = json.loads(car or "{}")
         car = car or {}
         fotos = car.get("fotos") or []
+
+        ficha = None
+        if r["tiene_ficha"]:
+            ficha = {
+                "tipo_tuberia": r["tipo_tuberia"],
+                "anio_construccion": r["anio_construccion"],
+                "tipo_estructura": r["tipo_estructura"],
+                "calidad_acabados": r["calidad_acabados"],
+                "ultimo_mantenimiento_cisterna": r["ultimo_mantenimiento_cisterna"].isoformat() if r["ultimo_mantenimiento_cisterna"] else None,
+                "ultima_impermeabilizacion_techo": r["ultima_impermeabilizacion_techo"].isoformat() if r["ultima_impermeabilizacion_techo"] else None,
+                "ultima_pintura_fachada": r["ultima_pintura_fachada"].isoformat() if r["ultima_pintura_fachada"] else None,
+                "ultimo_cambio_cableado_electrico": r["ultimo_cambio_cableado_electrico"].isoformat() if r["ultimo_cambio_cableado_electrico"] else None,
+                "monto_invertido_mejoras": float(r["monto_invertido_mejoras"]) if r["monto_invertido_mejoras"] is not None else None,
+                "descripcion_mejoras": r["descripcion_mejoras"],
+                "foto_evidencias": json.loads(r["foto_evidencias"]) if r["foto_evidencias"] else [],
+            }
+
         items.append({
             "id": r["id"],
             "direccion": r["direccion"],
@@ -244,6 +268,8 @@ async def my_assets(
             "precio": float(r["precio"]) if r["precio"] is not None else None,
             "portada": fotos[0] if fotos else None,
             "num_fotos": len(fotos),
+            "caracteristicas": car,          # datos completos → form abre instantáneo
+            "ficha": ficha,                  # datos completos → form abre instantáneo
             "deep_link": f"{base}/a/{r['id']}",
         })
     return {"total": len(items), "publicaciones": items}

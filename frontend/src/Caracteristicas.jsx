@@ -54,17 +54,21 @@ export default function Caracteristicas({ activo, onClose }) {
     } finally { setUploading(false) }
   }
 
-  async function cargar() {
-    const { data } = await axios.get(`${API_BASE}/api/v1/assets/${activo.id}/caracteristicas`, { headers: apiHeaders() })
-    const car = data.caracteristicas || {}
+  function aplicar(car, precio) {
+    car = car || {}
     const tiene = Object.keys(car).length > 0
-    setF({ ...car, ...(data.precio != null ? { precio: data.precio } : {}) })
+    setF({ ...car, ...(precio != null ? { precio } : {}) })
     setExiste(tiene)
     setEditando(!tiene)   // si no hay datos aún → arranca en edición
-    return tiene
+  }
+  async function cargar() {
+    const { data } = await axios.get(`${API_BASE}/api/v1/assets/${activo.id}/caracteristicas`, { headers: apiHeaders() })
+    aplicar(data.caracteristicas, data.precio)
   }
   useEffect(() => {
-    (async () => { try { await cargar() } catch { setEditando(true) } finally { setLoading(false) } })()
+    // Si "Mis publicaciones" ya trajo los datos → abre instantáneo (sin pedir nada).
+    if (activo.caracteristicas !== undefined) { aplicar(activo.caracteristicas, activo.precio); setLoading(false) }
+    else { (async () => { try { await cargar() } catch { setEditando(true) } finally { setLoading(false) } })() }
   }, [activo.id])
 
   async function guardar(e) {

@@ -30,20 +30,25 @@ export default function FichaTecnica({ activo, onClose }) {
 
   const set = (k, v) => setF(prev => ({ ...prev, [k]: v }))
 
-  async function cargar() {
-    const { data } = await axios.get(`${API_BASE}/api/v1/assets/${activo.id}/ficha`, { headers: apiHeaders() })
-    if (data.ficha) {
+  function aplicar(ficha) {
+    if (ficha) {
       setF(prev => ({
         ...prev,
-        ...Object.fromEntries(Object.entries(data.ficha).map(([k, v]) => [k, v ?? (k === 'foto_evidencias' ? [] : '')])),
+        ...Object.fromEntries(Object.entries(ficha).map(([k, v]) => [k, v ?? (k === 'foto_evidencias' ? [] : '')])),
       }))
       setExiste(true); setEditando(false)
     } else {
       setExiste(false); setEditando(true)
     }
   }
+  async function cargar() {
+    const { data } = await axios.get(`${API_BASE}/api/v1/assets/${activo.id}/ficha`, { headers: apiHeaders() })
+    aplicar(data.ficha)
+  }
   useEffect(() => {
-    (async () => { try { await cargar() } catch { setEditando(true) } finally { setLoading(false) } })()
+    // Si "Mis publicaciones" ya trajo la ficha → abre instantáneo (sin pedir nada).
+    if (activo.ficha !== undefined) { aplicar(activo.ficha); setLoading(false) }
+    else { (async () => { try { await cargar() } catch { setEditando(true) } finally { setLoading(false) } })() }
   }, [activo.id])
 
   async function subirFotos(files) {

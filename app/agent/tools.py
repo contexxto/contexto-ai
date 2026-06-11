@@ -107,6 +107,7 @@ async def tool_fetch_asset_lifecycle_specs(activo_id: str) -> str:
             a.porcentaje_cobertura_vegetal,
             a.conectividad,
             a.servicios_cercanos,
+            a.caracteristicas,
             f.tipo_tuberia,
             f.año_construccion,
             f.tipo_estructura,

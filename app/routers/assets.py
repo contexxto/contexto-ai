@@ -353,6 +353,83 @@ async def save_ficha(
     return {"ok": True, "activo_id": str(activo_id)}
 
 
+# ── Características comerciales (dormitorios, baños, área, precio…) ───────────
+class CaracteristicasRequest(BaseModel):
+    area_total_m2: float | None = Field(default=None, ge=0)
+    area_construida_m2: float | None = Field(default=None, ge=0)
+    num_dormitorios: int | None = Field(default=None, ge=0, le=50)
+    num_banos: int | None = Field(default=None, ge=0, le=50)
+    num_medio_banos: int | None = Field(default=None, ge=0, le=50)
+    num_parqueaderos: int | None = Field(default=None, ge=0, le=50)
+    num_bodegas: int | None = Field(default=None, ge=0, le=50)
+    amoblado: bool | None = None
+    sala: bool | None = None
+    comedor: bool | None = None
+    estudio: bool | None = None
+    cuarto_servicio: bool | None = None
+    balcon: bool | None = None
+    terraza: bool | None = None
+    alicuota: float | None = Field(default=None, ge=0)
+    precio_negociable: bool | None = None
+    notas: str | None = None
+    precio: float | None = Field(default=None, ge=0)
+
+
+@router.get("/{activo_id}/caracteristicas", summary="Cargar características (dueño)")
+async def get_caracteristicas(
+    activo_id: uuid.UUID,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    await _assert_owner(db, activo_id, user)
+    row = (
+        await db.execute(
+            text("SELECT caracteristicas FROM activos_inmutables WHERE id = :id"),
+            {"id": str(activo_id)},
+        )
+    ).mappings().first()
+    tx = (
+        await db.execute(
+            text("SELECT precio FROM transacciones_temporales WHERE activo_id = :id "
+                 "ORDER BY fecha_publicacion DESC LIMIT 1"),
+            {"id": str(activo_id)},
+        )
+    ).mappings().first()
+    car = row["caracteristicas"] if row and row["caracteristicas"] else {}
+    if isinstance(car, str):
+        car = json.loads(car)
+    if tx and tx["precio"] is not None and "precio" not in car:
+        car["precio"] = float(tx["precio"])
+    return {"caracteristicas": car}
+
+
+@router.post("/{activo_id}/caracteristicas", status_code=status.HTTP_200_OK,
+             summary="Guardar características (solo dueño)")
+async def save_caracteristicas(
+    activo_id: uuid.UUID,
+    payload: CaracteristicasRequest,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    await _assert_owner(db, activo_id, user)
+    datos = {k: v for k, v in payload.model_dump().items() if v is not None}
+    await db.execute(
+        text("UPDATE activos_inmutables SET caracteristicas = CAST(:c AS jsonb) WHERE id = :id"),
+        {"c": json.dumps(datos), "id": str(activo_id)},
+    )
+    # Si actualiza el precio, reflejarlo en la transacción activa.
+    if payload.precio is not None:
+        await db.execute(
+            text("UPDATE transacciones_temporales SET precio = :p "
+                 "WHERE activo_id = :id AND id = ("
+                 "  SELECT id FROM transacciones_temporales WHERE activo_id = :id "
+                 "  ORDER BY fecha_publicacion DESC LIMIT 1)"),
+            {"p": payload.precio, "id": str(activo_id)},
+        )
+    await db.commit()
+    return {"ok": True, "activo_id": str(activo_id)}
+
+
 @router.post(
     "/",
     response_model=ActivoResponse,

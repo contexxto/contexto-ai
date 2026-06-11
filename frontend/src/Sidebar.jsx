@@ -132,7 +132,7 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, o
 
       {/* Acciones (estilo Claude: arriba a la izquierda) */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 10 }}>
-        <NavItem icon={<Home size={16} />} label="Publicar mi inmueble" onClick={onPublish} />
+        <NavItem icon={<Home size={16} />} label="Mis publicaciones" onClick={onPublish} />
         <NavItem icon={<Map size={16} />} label="Mapa" onClick={onMap} />
         {(user?.rol === 'corredor' || user?.rol === 'inmobiliaria') && (
           <NavItem icon={<Shield size={16} />} label="Revisión" onClick={onReview} />

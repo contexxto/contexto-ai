@@ -184,6 +184,54 @@ async def asset_qr(activo_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> 
     return Response(content=buff.getvalue(), media_type="image/svg+xml")
 
 
+@router.get(
+    "/mine",
+    summary="Mis publicaciones (inmuebles del usuario / su agencia)",
+    description="Lista los inmuebles publicados por el usuario autenticado (o su agencia).",
+)
+async def my_assets(
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    rows = (
+        await db.execute(
+            text(
+                "SELECT a.id::text AS id, a.direccion_estandarizada AS direccion, "
+                "       a.tipo_activo, a.piso_altura, a.walk_score, "
+                "       a.score_ruido_predictivo AS ruido, "
+                "       a.porcentaje_cobertura_vegetal AS vegetacion, "
+                "       a.conectividad, a.servicios_cercanos, a.created_at, "
+                "       t.tipo_operacion AS operacion, t.precio "
+                "FROM activos_inmutables a "
+                "LEFT JOIN LATERAL ("
+                "   SELECT tipo_operacion, precio FROM transacciones_temporales tt "
+                "   WHERE tt.activo_id = a.id ORDER BY fecha_publicacion DESC LIMIT 1"
+                ") t ON true "
+                "WHERE a.owner_user_id = :u OR (:a IS NOT NULL AND a.owner_agency_id = :a) "
+                "ORDER BY a.created_at DESC"
+            ),
+            {"u": user.user_id, "a": user.agency_id},
+        )
+    ).mappings().all()
+
+    base = settings.public_app_url.rstrip("/")
+    items = [{
+        "id": r["id"],
+        "direccion": r["direccion"],
+        "tipo_activo": r["tipo_activo"],
+        "piso_altura": r["piso_altura"],
+        "walk_score": r["walk_score"],
+        "ruido": r["ruido"],
+        "vegetacion": float(r["vegetacion"]) if r["vegetacion"] is not None else None,
+        "conectividad": r["conectividad"],
+        "servicios_cercanos": r["servicios_cercanos"],
+        "operacion": r["operacion"],
+        "precio": float(r["precio"]) if r["precio"] is not None else None,
+        "deep_link": f"{base}/a/{r['id']}",
+    } for r in rows]
+    return {"total": len(items), "publicaciones": items}
+
+
 @router.post(
     "/",
     response_model=ActivoResponse,

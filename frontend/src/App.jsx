@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import { supabase, authEnabled } from './supabaseClient'
 import Auth from './Auth'
-import PublishAsset from './PublishAsset'
+import MisPublicaciones from './MisPublicaciones'
 import ShareConversation from './ShareConversation'
 
 // Headers (backend key + Bearer del usuario) centralizados en api.js
@@ -312,7 +312,7 @@ export default function App() {
   const [session, setSession] = useState(null)            // sesión de Supabase | null
   const [authOpen, setAuthOpen] = useState(false)         // modal de login/registro
   const [rol, setRol] = useState(null)                    // rol del usuario (cliente/corredor/inmobiliaria)
-  const [publishOpen, setPublishOpen] = useState(false)   // modal "Publicar mi inmueble"
+  const [publishOpen, setPublishOpen] = useState(false)   // modal "Mis publicaciones"
   const [shareOpen, setShareOpen] = useState(false)       // modal "Compartir conversación"
   const [shared, setShared] = useState(null)              // datos de una conversación compartida (visor)
   const [sharedErr, setSharedErr] = useState(false)
@@ -901,7 +901,7 @@ export default function App() {
       {authOpen && (
         <Auth onClose={() => setAuthOpen(false)} onAuthed={(s) => { setSession(s); setAccessToken(s?.access_token) }} />
       )}
-      {publishOpen && <PublishAsset onClose={() => setPublishOpen(false)} />}
+      {publishOpen && <MisPublicaciones onClose={() => setPublishOpen(false)} />}
       {shareOpen && <ShareConversation sessionId={sessionId} onClose={() => setShareOpen(false)} />}
 
       {/* ── Messages ── */}

@@ -1,0 +1,138 @@
+import { useState, useEffect, useCallback } from 'react'
+import axios from 'axios'
+import { X, Plus, QrCode, Copy, Check, Share2, MapPin } from 'lucide-react'
+import { API_BASE, apiHeaders } from './api'
+import PublishAsset from './PublishAsset'
+
+const C = {
+  bg: '#16151E', panel: '#1E1D28', teal: '#2DBDB6', tealHi: '#5EEAD4',
+  text: '#EDEBF2', muted: '#9C99AC', line: 'rgba(45,189,182,.22)',
+}
+
+export default function MisPublicaciones({ onClose }) {
+  const [items, setItems] = useState(null)
+  const [error, setError] = useState(null)
+  const [crear, setCrear] = useState(false)
+  const [copied, setCopied] = useState(null)
+  const [qrId, setQrId] = useState(null)
+
+  const load = useCallback(async () => {
+    setError(null)
+    try {
+      const { data } = await axios.get(`${API_BASE}/api/v1/assets/mine`, { headers: apiHeaders() })
+      setItems(data.publicaciones || [])
+    } catch (e) {
+      setError(e?.response?.data?.detail || 'No se pudieron cargar tus publicaciones.')
+      setItems([])
+    }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  async function copiar(link, id) {
+    try { await navigator.clipboard.writeText(link); setCopied(id); setTimeout(() => setCopied(null), 1600) } catch { /* ignore */ }
+  }
+  async function compartir(it) {
+    const url = it.deep_link
+    if (navigator.share) { try { await navigator.share({ title: it.direccion, url }) } catch { /* cancelado */ } }
+    else copiar(url, it.id)
+  }
+
+  return (
+    <div onClick={onClose}
+      style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center',
+               justifyContent: 'center', padding: 16, background: 'rgba(10,9,16,.72)', backdropFilter: 'blur(6px)' }}>
+      <div onClick={(e) => e.stopPropagation()}
+        style={{ width: '100%', maxWidth: 560, maxHeight: '92vh', overflowY: 'auto', position: 'relative',
+                 background: `radial-gradient(120% 90% at 30% 0%, ${C.panel} 0%, ${C.bg} 70%)`,
+                 border: `1px solid ${C.line}`, borderRadius: 22, padding: '24px 22px', color: C.text,
+                 boxShadow: '0 24px 60px rgba(0,0,0,.55)' }}>
+        <button onClick={onClose} aria-label="Cerrar"
+          style={{ position: 'absolute', top: 14, right: 14, background: 'none', border: 'none', color: C.muted, cursor: 'pointer' }}>
+          <X size={18} />
+        </button>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 16, paddingRight: 24 }}>
+          <h2 style={{ margin: 0, fontSize: '1.15rem' }}>Mis publicaciones</h2>
+          <button onClick={() => setCrear(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', borderRadius: 10,
+                     border: 'none', cursor: 'pointer', fontWeight: 800, fontSize: '.84rem',
+                     background: `linear-gradient(90deg, ${C.teal}, ${C.tealHi})`, color: '#0E0D13' }}>
+            <Plus size={16} /> Nueva publicación
+          </button>
+        </div>
+
+        {error && <div style={{ color: '#E0685A', fontSize: '.85rem', marginBottom: 10 }}>⚠️ {error}</div>}
+        {items === null && <div style={{ color: C.muted, padding: '30px 0', textAlign: 'center' }}>Cargando…</div>}
+
+        {items !== null && items.length === 0 && !error && (
+          <div style={{ textAlign: 'center', padding: '30px 12px', color: C.muted }}>
+            <MapPin size={28} color={C.teal} style={{ marginBottom: 8 }} />
+            <div style={{ fontSize: '.9rem', marginBottom: 4, color: C.text }}>Aún no has publicado inmuebles.</div>
+            <div style={{ fontSize: '.8rem' }}>Toca <strong style={{ color: C.tealHi }}>Nueva publicación</strong> para crear el primero.</div>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {items?.map((it) => (
+            <div key={it.id}
+              style={{ border: `1px solid ${C.line}`, borderRadius: 14, padding: '13px 14px',
+                       background: 'rgba(255,255,255,.03)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: '.92rem', marginBottom: 2 }}>{it.direccion}</div>
+                  <div style={{ fontSize: '.76rem', color: C.muted }}>
+                    {it.tipo_activo} · Piso {it.piso_altura}
+                    {it.operacion ? ` · ${it.operacion?.toLowerCase()}` : ''}
+                    {it.precio ? ` · $${it.precio.toLocaleString('es-EC')}` : ''}
+                  </div>
+                </div>
+                {it.walk_score != null && (
+                  <div style={{ flexShrink: 0, textAlign: 'center', background: 'rgba(45,189,182,.12)',
+                                border: `1px solid ${C.line}`, borderRadius: 10, padding: '4px 9px' }}>
+                    <div style={{ fontWeight: 800, color: C.tealHi, fontSize: '1rem', lineHeight: 1 }}>{it.walk_score}</div>
+                    <div style={{ fontSize: '.6rem', color: C.muted }}>walk</div>
+                  </div>
+                )}
+              </div>
+
+              {it.conectividad && (
+                <div style={{ fontSize: '.74rem', color: C.muted, marginTop: 8 }}>🚇 {it.conectividad}</div>
+              )}
+
+              <div style={{ display: 'flex', gap: 7, marginTop: 11, flexWrap: 'wrap' }}>
+                <Btn onClick={() => copiar(it.deep_link, it.id)}>
+                  {copied === it.id ? <Check size={14} /> : <Copy size={14} />} {copied === it.id ? 'Copiado' : 'Copiar enlace'}
+                </Btn>
+                <Btn onClick={() => compartir(it)}><Share2 size={14} /> Compartir</Btn>
+                <Btn onClick={() => setQrId(qrId === it.id ? null : it.id)}><QrCode size={14} /> QR</Btn>
+              </div>
+
+              {qrId === it.id && (
+                <div style={{ marginTop: 12, textAlign: 'center' }}>
+                  <div style={{ background: '#fff', borderRadius: 14, padding: 10, display: 'inline-block' }}>
+                    <img src={`${API_BASE}/api/v1/assets/${it.id}/qr.svg`} alt="QR" width={160} height={160} style={{ display: 'block' }} />
+                  </div>
+                  <div style={{ fontSize: '.7rem', color: C.muted, marginTop: 6 }}>Imprime y pégalo en el letrero.</div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {crear && <PublishAsset onClose={() => { setCrear(false); load() }} />}
+    </div>
+  )
+}
+
+function Btn({ onClick, children }) {
+  return (
+    <button onClick={onClick}
+      style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 11px', borderRadius: 9,
+               background: 'rgba(255,255,255,.05)', border: '1px solid rgba(45,189,182,.25)',
+               color: '#5EEAD4', cursor: 'pointer', fontSize: '.76rem', fontWeight: 600 }}>
+      {children}
+    </button>
+  )
+}

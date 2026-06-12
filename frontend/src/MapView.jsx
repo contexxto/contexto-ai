@@ -85,34 +85,64 @@ function polilineaParcial(coords, t) {
   return out
 }
 
-// Añade una ruta con resplandor (glow estilo Google) y la "dibuja" progresivamente.
-// Devuelve los ids de capa creados (glow + línea) para limpiarlos después.
+// Secuencia de dasharrays que simula puntos "corriendo" por la línea (efecto flujo).
+const FLOW_DASH = [
+  [0, 4, 3], [0.5, 4, 2.5], [1, 4, 2], [1.5, 4, 1.5], [2, 4, 1], [2.5, 4, 0.5],
+  [3, 4, 0], [0, 0.5, 3, 3.5], [0, 1, 3, 3], [0, 1.5, 3, 2.5], [0, 2, 3, 2],
+  [0, 2.5, 3, 1.5], [0, 3, 3, 1], [0, 3.5, 3, 0.5],
+]
+
+// Añade una ruta estilo Google: resplandor que respira + estela de puntos en flujo,
+// y la "dibuja" progresivamente. Devuelve los ids de capa creados (para limpieza).
 function agregarRutaAnimada(map, id, coords, color, dur = 950) {
   if (!coords || coords.length < 2) return []
   map.addSource(id, { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: coords.slice(0, 1) } } })
-  // Resplandor exterior (ancho y difuso) — el "aura" de la ruta
+  // 1) Resplandor exterior (ancho y difuso) — el "aura" que respira
   map.addLayer({
     id: `${id}-glow`, type: 'line', source: id,
     layout: { 'line-cap': 'round', 'line-join': 'round' },
     paint: { 'line-color': color, 'line-width': 15, 'line-opacity': 0.22, 'line-blur': 9 },
   })
-  // Línea principal brillante
+  // 2) Línea principal brillante
   map.addLayer({
     id, type: 'line', source: id,
     layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: { 'line-color': color, 'line-width': 4.5, 'line-opacity': 0.97 },
+    paint: { 'line-color': color, 'line-width': 4.5, 'line-opacity': 0.95 },
+  })
+  // 3) Estela de puntos blancos "corriendo" hacia el destino
+  map.addLayer({
+    id: `${id}-flow`, type: 'line', source: id,
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: { 'line-color': '#F0ECE6', 'line-width': 2.3, 'line-opacity': 0.85, 'line-dasharray': FLOW_DASH[0] },
   })
   const src = map.getSource(id)
   const start = performance.now()
-  function frame(now) {
-    if (!map.getSource(id)) return  // la limpiaron antes de terminar
-    const t = Math.min(1, (now - start) / dur)
-    const e = 1 - Math.pow(1 - t, 3)  // easeOutCubic — arranca rápido, frena suave
-    src.setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: polilineaParcial(coords, e) } })
-    if (t < 1) requestAnimationFrame(frame)
+  let lleno = false
+  let paso = -1
+  function loop(now) {
+    if (!map.getSource(id)) return  // la limpiaron → corta la animación (sin fugas)
+    const dt = now - start
+    const t = Math.min(1, dt / dur)
+    if (t < 1) {
+      const e = 1 - Math.pow(1 - t, 3)  // easeOutCubic: arranca rápido, frena suave
+      src.setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: polilineaParcial(coords, e) } })
+    } else if (!lleno) {
+      src.setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: coords } })
+      lleno = true
+    }
+    // Glow que respira (seno suave)
+    const respira = 0.5 + 0.5 * Math.sin(dt / 620)
+    if (map.getLayer(`${id}-glow`)) {
+      map.setPaintProperty(`${id}-glow`, 'line-opacity', 0.16 + respira * 0.18)
+      map.setPaintProperty(`${id}-glow`, 'line-width', 13 + respira * 6)
+    }
+    // Estela de flujo (avanza el patrón de dash)
+    const p = Math.floor(dt / 85) % FLOW_DASH.length
+    if (p !== paso && map.getLayer(`${id}-flow`)) { paso = p; map.setPaintProperty(`${id}-flow`, 'line-dasharray', FLOW_DASH[p]) }
+    requestAnimationFrame(loop)
   }
-  requestAnimationFrame(frame)
-  return [`${id}-glow`, id]
+  requestAnimationFrame(loop)
+  return [`${id}-glow`, id, `${id}-flow`]
 }
 
 export default function MapView() {

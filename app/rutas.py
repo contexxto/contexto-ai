@@ -16,7 +16,7 @@ import httpx
 
 from app.config import settings
 from app.entorno import _CATEGORIAS, _nombre_valido
-from app.walk_score import _haversine_m
+from app.walk_score import _haversine_m, walk_score_para
 
 _TIMEOUT = 8.0
 _RADIO_M = 1500
@@ -202,12 +202,146 @@ async def _nearest_categoria(lat: float, lon: float, cat: str, key: str, tipos: 
     return None
 
 
+# ── Recorrido con Aura: tour narrado de la zona (la "experiencia", no la función) ──
+def _min_pie(d_m: int | float | None) -> int:
+    """Metros → minutos a pie (~80 m/min)."""
+    return max(1, round((d_m or 0) / 80))
+
+
+def _interpreta_walk(ws: int | None) -> str:
+    if ws is None:
+        return "Es una zona con su propio ritmo."
+    if ws >= 90:
+        return f"Con un Walk Score de {ws}/100, casi todo está a pie: podrías vivir sin auto."
+    if ws >= 75:
+        return f"Walk Score {ws}/100 — muy caminable; lo esencial lo tienes a la mano."
+    if ws >= 55:
+        return f"Walk Score {ws}/100 — caminable para lo básico; para el resto, un trayecto corto."
+    return f"Walk Score {ws}/100 — es una zona más de auto que de caminata."
+
+
+def _aura(ws: int | None, parque: dict | None, transporte: dict | None) -> str:
+    verde, metro = parque is not None, transporte is not None
+    if ws and ws >= 85 and verde and metro:
+        return "conveniencia urbana con pulmón verde"
+    if ws and ws >= 85 and metro:
+        return "vida urbana conectada, todo a un paso"
+    if verde and not metro:
+        return "un remanso residencial, verde y tranquilo"
+    if metro:
+        return "una zona bien conectada con la ciudad"
+    if ws and ws >= 70:
+        return "un barrio práctico para el día a día"
+    return "una zona en crecimiento, con carácter propio"
+
+
+async def recorrido_zona(lat: float, lon: float) -> dict:
+    """Genera un 'Recorrido con Aura': 4-6 escenas auto-narradas sobre la zona real."""
+    key = settings.google_maps_api_key
+    from app.agent.tools import _reverse_geocode  # lazy: evita import circular
+
+    tareas: dict = {"geo": _reverse_geocode(lat, lon), "walk": walk_score_para(lat, lon)}
+    if key:
+        tareas["parque"] = _nearest_categoria(lat, lon, "parque", key)
+        tareas["transporte"] = _nearest_categoria(
+            lat, lon, "transporte", key,
+            tipos=["subway_station", "train_station", "light_rail_station", "bus_station", "transit_station"])
+        tareas["super"] = _nearest_categoria(lat, lon, "supermercado", key)
+        tareas["salud"] = _nearest_categoria(lat, lon, "salud", key)
+    vals = await asyncio.gather(*tareas.values(), return_exceptions=True)
+    data = {k: (v if not isinstance(v, Exception) else None) for k, v in zip(tareas.keys(), vals)}
+
+    geo, walk = data.get("geo") or {}, data.get("walk") or {}
+    barrio = geo.get("barrio") or geo.get("ciudad") or "esta zona"
+    ciudad = geo.get("ciudad")
+    ws = walk.get("walk_score")
+    pq, tr = data.get("parque"), data.get("transporte")
+
+    escenas: list[dict] = []
+
+    # 1) Identidad de la zona
+    lugar = barrio + (f", {ciudad}" if ciudad and ciudad != barrio else "")
+    escenas.append({
+        "titulo": f"📍 {barrio}",
+        "narracion": f"Bienvenido a **{lugar}**. {_interpreta_walk(ws)}",
+        "centro": [lon, lat], "zoom": 15.2, "origen": True,
+    })
+
+    # 2) El pulmón verde
+    if pq:
+        escenas.append({
+            "titulo": "🌳 El pulmón del barrio",
+            "narracion": f"A {_min_pie(pq['distancia_m'])} min a pie tienes **{pq['nombre']}** — el lugar para "
+                         "correr al amanecer, sacar al perro o un domingo en familia.",
+            "centro": [pq["lon"], pq["lat"]], "zoom": 16,
+            "puntos": [{"coords": [pq["lon"], pq["lat"]], "etiqueta": f"🌳 {pq['nombre']}", "color": "#2DBDB6"}],
+        })
+
+    # 3) Cómo te mueves (ruta peatonal real al hub de transporte)
+    if tr and key:
+        try:
+            async with httpx.AsyncClient(verify=settings.ssl_verify.lower() != "false", timeout=_TIMEOUT) as c:
+                ruta = await _ruta_a_pie(c, lat, lon, tr["lat"], tr["lon"], key)
+        except Exception:  # noqa: BLE001
+            ruta = None
+        es_masivo = any(w in tr["nombre"].lower() for w in ("metro", "estación", "estacion", "terminal"))
+        plus = " Estar a pasos del transporte masivo es de las señales que más empujan la plusvalía." if es_masivo else ""
+        if ruta and ruta.get("coords"):
+            escenas.append({
+                "titulo": "🚶 Tu conexión con la ciudad",
+                "narracion": f"**{tr['nombre']}** está a {ruta['duracion_min']} min caminando.{plus}",
+                "centro": [(lon + tr["lon"]) / 2, (lat + tr["lat"]) / 2], "zoom": 14.8,
+                "ruta": {"coords": ruta["coords"], "destino": [tr["lon"], tr["lat"]],
+                         "etiqueta": f"🚶 {ruta['duracion_min']} min · {tr['nombre']}", "color": "#5EEAD4"},
+            })
+        else:
+            escenas.append({
+                "titulo": "🚶 Tu conexión con la ciudad",
+                "narracion": f"**{tr['nombre']}** a {_min_pie(tr['distancia_m'])} min a pie.{plus}",
+                "centro": [tr["lon"], tr["lat"]], "zoom": 15.5,
+                "puntos": [{"coords": [tr["lon"], tr["lat"]], "etiqueta": tr["nombre"], "color": "#5EEAD4"}],
+            })
+
+    # 4) Lo cotidiano, a la mano
+    cotid = [s for s in (data.get("super"), data.get("salud")) if s]
+    if cotid:
+        puntos, nombres = [], []
+        for s, col in zip(cotid, ("#E5C06A", "#E0685A")):
+            puntos.append({"coords": [s["lon"], s["lat"]], "etiqueta": f"{s['nombre']} ({_min_pie(s['distancia_m'])} min)", "color": col})
+            nombres.append(f"**{s['nombre']}** a {_min_pie(s['distancia_m'])} min")
+        escenas.append({
+            "titulo": "🛒 Lo cotidiano, a la mano",
+            "narracion": "Para el día a día: " + " y ".join(nombres) + ".",
+            "centro": [sum(p["coords"][0] for p in puntos) / len(puntos), sum(p["coords"][1] for p in puntos) / len(puntos)],
+            "zoom": 15.2, "puntos": puntos,
+        })
+
+    # 5) El aura (síntesis)
+    cierre = "Verde, conectada y caminable." if (pq and tr and ws and ws >= 75) else "Un lugar con identidad propia para vivir."
+    escenas.append({
+        "titulo": "✨ El aura de la zona",
+        "narracion": f"En síntesis, **{barrio}** es **{_aura(ws, pq, tr)}**. {cierre}",
+        "centro": [lon, lat], "zoom": 14.4, "origen": True,
+    })
+
+    return {
+        "texto": f"🎬 Iniciando recorrido por **{barrio}** — {len(escenas)} escenas.",
+        "acciones": [{"tipo": "tour", "escenas": escenas}],
+    }
+
+
 async def comando_mapa(pregunta: str, lat: float, lon: float) -> dict:
     """Interpreta una pregunta y devuelve {texto, acciones} para que el mapa reaccione."""
     key = settings.google_maps_api_key
     if not key:
         return {"texto": "El mapa interactivo necesita Google Maps activo.", "acciones": []}
     p = (pregunta or "").lower()
+
+    # 0) ¿Pide un recorrido/tour por la zona?
+    if any(k in p for k in ["tour", "recorre", "recorré", "recorrido", "recorrer", "pasea", "paseo",
+                            "muestrame la zona", "muéstrame la zona", "muestrame el barrio",
+                            "conoce la zona", "conocer la zona", "enséñame la zona", "ensename la zona"]):
+        return await recorrido_zona(lat, lon)
 
     # 1) ¿Pide una ruta a una categoría?
     cat = next((c for c, kws in _PALABRAS_CAT.items() if any(k in p for k in kws)), None)

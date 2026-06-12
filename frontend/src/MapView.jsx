@@ -157,8 +157,10 @@ export default function MapView() {
   const [mapaInput, setMapaInput] = useState('')
   const [mapaMsg, setMapaMsg] = useState(null)
   const [mapaLoading, setMapaLoading] = useState(false)
+  const [tour, setTour] = useState(null)  // { escenas, i } cuando hay un recorrido activo
   const lastPos = useRef(null)  // {lat, lon} de la última ubicación
   const capasRef = useRef({ ids: [], markers: [] })  // capas dibujadas por el chat del mapa
+  const tourTimer = useRef(null)  // timeout de auto-avance del recorrido
 
   function limpiarCapas() {
     const map = mapRef.current
@@ -173,9 +175,50 @@ export default function MapView() {
     el.textContent = etiqueta || ''
     capasRef.current.markers.push(new maplibregl.Marker({ element: el }).setLngLat(coords).addTo(mapRef.current))
   }
+  // Punto "tú estás aquí" que late (estilo Google).
+  function marcadorPulso(coords) {
+    const el = document.createElement('div')
+    el.style.cssText = 'width:14px;height:14px;border-radius:50%;background:#F0ECE6;border:3px solid #2DBDB6'
+    el.animate([{ boxShadow: '0 0 0 0 rgba(45,189,182,.45)' }, { boxShadow: '0 0 0 16px rgba(45,189,182,0)' }],
+      { duration: 1800, iterations: Infinity, easing: 'ease-out' })
+    capasRef.current.markers.push(new maplibregl.Marker({ element: el }).setLngLat(coords).addTo(mapRef.current))
+  }
+
+  // ── Recorrido con Aura: reproduce una secuencia de escenas narradas ──
+  function salirTour() {
+    if (tourTimer.current) { clearTimeout(tourTimer.current); tourTimer.current = null }
+    setTour(null); setMapaMsg(null); limpiarCapas()
+  }
+  function irAEscena(escenas, i) {
+    const map = mapRef.current
+    if (!map || !escenas?.length) return
+    if (i < 0 || i >= escenas.length) { salirTour(); return }
+    if (tourTimer.current) { clearTimeout(tourTimer.current); tourTimer.current = null }
+    setTour({ escenas, i })
+    const esc = escenas[i]
+    limpiarCapas()
+    map.flyTo({ center: esc.centro, zoom: esc.zoom || 15, duration: 1600, essential: true })
+    setMapaMsg((esc.titulo ? `**${esc.titulo}** — ` : '') + (esc.narracion || ''))
+    // Ilumina la escena cuando la cámara ya está en camino (más dinámico).
+    setTimeout(() => {
+      if (!mapRef.current) return
+      if (esc.origen) marcadorPulso(esc.centro)
+      if (esc.ruta?.coords?.length) {
+        const ids = agregarRutaAnimada(map, `tour-ruta-${i}`, esc.ruta.coords, esc.ruta.color || '#5EEAD4')
+        capasRef.current.ids.push(...ids)
+        if (esc.ruta.destino) marcadorEtiqueta(esc.ruta.destino, esc.ruta.etiqueta, esc.ruta.color || '#5EEAD4')
+      }
+      ;(esc.puntos || []).forEach(pt => marcadorEtiqueta(pt.coords, pt.etiqueta, pt.color || '#5EEAD4'))
+    }, 650)
+    // Auto-avance (salvo en la última escena).
+    if (i < escenas.length - 1) tourTimer.current = setTimeout(() => irAEscena(escenas, i + 1), 7500)
+  }
+
   function ejecutarAcciones(acciones) {
     const map = mapRef.current
     if (!map) return
+    const tourAcc = (acciones || []).find(a => a.tipo === 'tour')
+    if (tourAcc?.escenas?.length) { irAEscena(tourAcc.escenas, 0); return }
     limpiarCapas()
     const bounds = new maplibregl.LngLatBounds()
     let hay = false
@@ -194,12 +237,12 @@ export default function MapView() {
     })
     if (hay && !bounds.isEmpty()) map.fitBounds(bounds, { padding: 100, duration: 800, maxZoom: 16 })
   }
-  async function preguntarAlMapa(e) {
-    e?.preventDefault()
-    const q = mapaInput.trim()
+  async function enviarComando(q) {
     const map = mapRef.current
     if (!q || mapaLoading || !map) return
-    setMapaLoading(true); setMapaMsg(null); setMapaInput('')
+    if (tourTimer.current) { clearTimeout(tourTimer.current); tourTimer.current = null }
+    setTour(null)
+    setMapaLoading(true); setMapaMsg(null)
 
     // Prioriza tu UBICACIÓN REAL (GPS en tiempo real). Si aún no la tenemos, la pedimos.
     let centro = lastPos.current
@@ -221,21 +264,22 @@ export default function MapView() {
         body: JSON.stringify({ pregunta: q, lat: centro.lat, lon: centro.lon }),
       })
       const data = await res.json()
-      setMapaMsg(data.texto || '')
-      ejecutarAcciones(data.acciones || [])
-      // Punto "tú estás aquí" (origen real de las rutas).
-      if ((data.acciones || []).length) {
-        const el = document.createElement('div')
-        el.style.cssText = 'width:14px;height:14px;border-radius:50%;background:#F0ECE6;border:3px solid #2DBDB6'
-        el.animate(
-          [{ boxShadow: '0 0 0 0 rgba(45,189,182,.45)' }, { boxShadow: '0 0 0 16px rgba(45,189,182,0)' }],
-          { duration: 1800, iterations: Infinity, easing: 'ease-out' },
-        )
-        capasRef.current.markers.push(new maplibregl.Marker({ element: el }).setLngLat([centro.lon, centro.lat]).addTo(map))
+      const esTour = (data.acciones || []).some(a => a.tipo === 'tour')
+      ejecutarAcciones(data.acciones || [])  // si es tour, arranca el reproductor (maneja el mensaje)
+      if (!esTour) {
+        setMapaMsg(data.texto || '')
+        if ((data.acciones || []).length) marcadorPulso([centro.lon, centro.lat])  // "tú estás aquí"
       }
     } catch { setMapaMsg('No pude procesar tu pregunta.') }
     finally { setMapaLoading(false) }
   }
+  function preguntarAlMapa(e) {
+    e?.preventDefault()
+    const q = mapaInput.trim()
+    setMapaInput('')
+    enviarComando(q)
+  }
+  function iniciarRecorrido() { enviarComando('hazme un tour por aquí') }
 
   const RADII = [[250, '250 m'], [500, '500 m'], [1000, '1 km'], [2000, '2 km']]
   const fmt = (m) => m >= 1000 ? (m / 1000) + ' km' : m + ' m'
@@ -403,6 +447,7 @@ export default function MapView() {
           <div style={{ fontWeight: 800, color: '#5EEAD4', marginBottom: 6 }}>💡 Qué puedes hacer aquí</div>
           <div>🟢 <b>Toca un inmueble</b> → sus datos + <b>🚶 rutas a pie</b> reales al Metro y servicios</div>
           <div style={{ marginTop: 5 }}>💬 <b>Háblale al mapa</b> (abajo): <i>"ruta al Metro"</i>, <i>"qué hay cerca"</i>, <i>"colegio más cercano"</i> → responde desde tu ubicación</div>
+          <div style={{ marginTop: 5 }}>🎬 <b>"Recorre esta zona"</b> → un tour narrado de la zona donde estás</div>
           <div style={{ marginTop: 5 }}>🎨 <b>Colores</b> = nivel de ruido (verde = tranquilo)</div>
         </div>
       )}
@@ -442,10 +487,61 @@ export default function MapView() {
             padding: '10px 14px', color: '#F0ECE6', fontSize: 13, marginBottom: 9, lineHeight: 1.5,
             display: 'flex', gap: 9, alignItems: 'flex-start', boxShadow: '0 8px 26px rgba(0,0,0,.5)',
           }}>
-            <span style={{ flexShrink: 0 }}>🗺️</span>
+            <span style={{ flexShrink: 0 }}>{tour ? '🎬' : '🗺️'}</span>
             <span dangerouslySetInnerHTML={{ __html: mapaMsg.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\*(.+?)\*/g, '<i>$1</i>') }} />
           </div>
         )}
+
+        {/* Controles del Recorrido con Aura */}
+        {tour && (
+          <div style={{
+            display: 'flex', gap: 8, alignItems: 'center', marginBottom: 9,
+            background: 'rgba(14,13,19,.95)', border: '1px solid rgba(94,234,212,.45)', borderRadius: 26,
+            padding: '6px 8px 6px 14px', boxShadow: '0 8px 26px rgba(0,0,0,.5)',
+          }}>
+            {/* Progreso por escenas */}
+            <div style={{ display: 'flex', gap: 5, flex: 1 }}>
+              {tour.escenas.map((_, idx) => (
+                <span key={idx} style={{
+                  height: 4, flex: 1, borderRadius: 999,
+                  background: idx <= tour.i ? '#5EEAD4' : 'rgba(255,255,255,.18)',
+                  transition: 'background .3s',
+                }} />
+              ))}
+            </div>
+            <span style={{ color: '#A8A3B3', fontSize: 11, fontFamily: "'IBM Plex Mono',monospace", whiteSpace: 'nowrap' }}>
+              {tour.i + 1}/{tour.escenas.length}
+            </span>
+            {tour.i < tour.escenas.length - 1 ? (
+              <button onClick={() => irAEscena(tour.escenas, tour.i + 1)} title="Siguiente escena"
+                style={{ background: '#2DBDB6', border: 'none', borderRadius: 999, padding: '5px 12px', cursor: 'pointer',
+                         color: '#0E0D13', fontWeight: 800, fontSize: 12, whiteSpace: 'nowrap' }}>
+                Siguiente ⏭
+              </button>
+            ) : (
+              <button onClick={() => irAEscena(tour.escenas, 0)} title="Repetir"
+                style={{ background: '#5EEAD4', border: 'none', borderRadius: 999, padding: '5px 12px', cursor: 'pointer',
+                         color: '#0E0D13', fontWeight: 800, fontSize: 12, whiteSpace: 'nowrap' }}>
+                ↻ Repetir
+              </button>
+            )}
+            <button onClick={salirTour} title="Salir del recorrido"
+              style={{ background: 'none', border: '1px solid rgba(255,255,255,.2)', borderRadius: 999, width: 30, height: 30,
+                       cursor: 'pointer', color: '#A8A3B3', fontSize: 14, flexShrink: 0 }}>×</button>
+          </div>
+        )}
+
+        {/* Botón: recorre esta zona (oculto durante el recorrido) */}
+        {!tour && (
+          <button onClick={iniciarRecorrido} disabled={mapaLoading} title="Tour narrado de la zona"
+            style={{ display: 'flex', alignItems: 'center', gap: 7, margin: '0 auto 9px',
+                     background: 'linear-gradient(90deg,#1A7A76,#2DBDB6)', border: 'none', borderRadius: 26,
+                     padding: '8px 16px', cursor: 'pointer', color: '#0E0D13', fontWeight: 800, fontSize: 12.5,
+                     boxShadow: '0 6px 20px rgba(45,189,182,.32)', opacity: mapaLoading ? 0.6 : 1 }}>
+            🎬 Recorre esta zona
+          </button>
+        )}
+
         <form onSubmit={preguntarAlMapa} style={{
           display: 'flex', gap: 8, alignItems: 'center',
           background: 'rgba(20,44,43,.65)', border: '1px solid rgba(45,189,182,.4)', borderRadius: 26,

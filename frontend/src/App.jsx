@@ -281,9 +281,9 @@ function Thinking() {
 
 // ── Main App ────────────────────────────────────────────────
 const QUICK_PROMPTS = [
-  '¿Cuáles son las opciones más tranquilas cerca de La Carolina en Quito?',
-  '¿Cómo está el mantenimiento técnico de las propiedades en Av. República del Salvador?',
-  '¿Qué riesgos futuros tienen los inmuebles cerca de Av. Amazonas?',
+  '¿Cómo es vivir en La Carolina? caminabilidad, ruido, seguridad y servicios',
+  '¿Qué hace especial a Cumbayá? transporte, parques, colegios y vida de barrio',
+  '🏠 Busco departamento en arriendo cerca del Metro de Quito',
 ]
 
 export default function App() {

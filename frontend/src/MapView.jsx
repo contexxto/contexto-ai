@@ -57,6 +57,64 @@ function circlePolygon(lon, lat, radiusM, points = 64) {
   return { type: 'Feature', geometry: { type: 'Polygon', coordinates: [coords] } }
 }
 
+// Devuelve los coords de la polilínea hasta la fracción t (0..1) — para "dibujar" la ruta.
+function polilineaParcial(coords, t) {
+  if (!coords || coords.length < 2) return coords || []
+  if (t >= 1) return coords
+  if (t <= 0) return coords.slice(0, 1)
+  const seg = []
+  let total = 0
+  for (let i = 1; i < coords.length; i++) {
+    const d = Math.hypot(coords[i][0] - coords[i - 1][0], coords[i][1] - coords[i - 1][1])
+    seg.push(d); total += d
+  }
+  const target = total * t
+  const out = [coords[0]]
+  let acc = 0
+  for (let i = 1; i < coords.length; i++) {
+    if (acc + seg[i - 1] < target) { out.push(coords[i]); acc += seg[i - 1] }
+    else {
+      const r = seg[i - 1] ? (target - acc) / seg[i - 1] : 0
+      out.push([
+        coords[i - 1][0] + (coords[i][0] - coords[i - 1][0]) * r,
+        coords[i - 1][1] + (coords[i][1] - coords[i - 1][1]) * r,
+      ])
+      break
+    }
+  }
+  return out
+}
+
+// Añade una ruta con resplandor (glow estilo Google) y la "dibuja" progresivamente.
+// Devuelve los ids de capa creados (glow + línea) para limpiarlos después.
+function agregarRutaAnimada(map, id, coords, color, dur = 950) {
+  if (!coords || coords.length < 2) return []
+  map.addSource(id, { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: coords.slice(0, 1) } } })
+  // Resplandor exterior (ancho y difuso) — el "aura" de la ruta
+  map.addLayer({
+    id: `${id}-glow`, type: 'line', source: id,
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: { 'line-color': color, 'line-width': 15, 'line-opacity': 0.22, 'line-blur': 9 },
+  })
+  // Línea principal brillante
+  map.addLayer({
+    id, type: 'line', source: id,
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: { 'line-color': color, 'line-width': 4.5, 'line-opacity': 0.97 },
+  })
+  const src = map.getSource(id)
+  const start = performance.now()
+  function frame(now) {
+    if (!map.getSource(id)) return  // la limpiaron antes de terminar
+    const t = Math.min(1, (now - start) / dur)
+    const e = 1 - Math.pow(1 - t, 3)  // easeOutCubic — arranca rápido, frena suave
+    src.setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: polilineaParcial(coords, e) } })
+    if (t < 1) requestAnimationFrame(frame)
+  }
+  requestAnimationFrame(frame)
+  return [`${id}-glow`, id]
+}
+
 export default function MapView() {
   const ref = useRef(null)
   const mapRef = useRef(null)
@@ -94,10 +152,8 @@ export default function MapView() {
     acciones.forEach((a, i) => {
       if (a.tipo === 'ruta' && a.coords?.length) {
         const id = `cmd-ruta-${i}`
-        map.addSource(id, { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: a.coords } } })
-        map.addLayer({ id, type: 'line', source: id, layout: { 'line-cap': 'round', 'line-join': 'round' },
-          paint: { 'line-color': a.color || '#5EEAD4', 'line-width': 5, 'line-opacity': 0.95 } })
-        capasRef.current.ids.push(id)
+        const capas = agregarRutaAnimada(map, id, a.coords, a.color || '#5EEAD4')
+        capasRef.current.ids.push(...capas)
         a.coords.forEach(c => { bounds.extend(c); hay = true })
         if (a.destino) marcadorEtiqueta(a.destino, a.etiqueta, a.color || '#5EEAD4')
       } else if (a.tipo === 'puntos' && a.items?.length) {
@@ -140,7 +196,11 @@ export default function MapView() {
       // Punto "tú estás aquí" (origen real de las rutas).
       if ((data.acciones || []).length) {
         const el = document.createElement('div')
-        el.style.cssText = 'width:14px;height:14px;border-radius:50%;background:#F0ECE6;border:3px solid #2DBDB6;box-shadow:0 0 0 5px rgba(45,189,182,.22)'
+        el.style.cssText = 'width:14px;height:14px;border-radius:50%;background:#F0ECE6;border:3px solid #2DBDB6'
+        el.animate(
+          [{ boxShadow: '0 0 0 0 rgba(45,189,182,.45)' }, { boxShadow: '0 0 0 16px rgba(45,189,182,0)' }],
+          { duration: 1800, iterations: Infinity, easing: 'ease-out' },
+        )
         capasRef.current.markers.push(new maplibregl.Marker({ element: el }).setLngLat([centro.lon, centro.lat]).addTo(map))
       }
     } catch { setMapaMsg('No pude procesar tu pregunta.') }
@@ -258,11 +318,8 @@ export default function MapView() {
             const bounds = new maplibregl.LngLatBounds()
             rutas.forEach((r, i) => {
               const id = `ruta-${i}`
-              map.addSource(id, { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: r.coords } } })
-              map.addLayer({ id, type: 'line', source: id,
-                layout: { 'line-cap': 'round', 'line-join': 'round' },
-                paint: { 'line-color': RUTA_COL[i % 3], 'line-width': 4, 'line-opacity': 0.9 } })
-              rutaIds.push(id)
+              const capas = agregarRutaAnimada(map, id, r.coords, RUTA_COL[i % 3])
+              rutaIds.push(...capas)
               r.coords.forEach(c => bounds.extend(c))
               const el = document.createElement('div')
               el.style.cssText = `background:${RUTA_COL[i % 3]};color:#0E0D13;font-weight:800;font-size:11px;padding:3px 9px;border-radius:999px;font-family:'Plus Jakarta Sans',sans-serif;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.45)`

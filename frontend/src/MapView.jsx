@@ -16,19 +16,32 @@ const RUIDO_COLOR = [
   '#969CA6',
 ]
 
+// Convierte cada "~123 m" del texto en "~123 m · 2 min" (a pie, ~80 m/min).
+function conTiempos(txt) {
+  if (!txt) return ''
+  return txt.replace(/~(\d+)\s*m/g, (_, m) => `~${m} m · ${Math.max(1, Math.round(+m / 80))} min`)
+}
+
 function popupHTML(p) {
   const row = (label, val) => val == null || val === '' ? '' :
     `<div style="display:flex;justify-content:space-between;gap:12px;font-size:12px;margin:2px 0">
        <span style="color:#A8A3B3">${label}</span><span style="color:#F0ECE6;font-weight:600">${val}</span></div>`
+  const block = (label, val) => !val ? '' :
+    `<div style="font-size:11px;margin-top:6px"><span style="color:#5EEAD4;font-weight:700">${label}</span>
+       <div style="color:#C9C6D6;line-height:1.5;margin-top:2px">${conTiempos(val)}</div></div>`
   const ruidoColor = { BAJO:'#2DBDB6', MEDIO:'#E5C06A', ALTO:'#E0685A' }[p.ruido] || '#969CA6'
-  return `<div style="font-family:'Plus Jakarta Sans',sans-serif;min-width:220px">
+  const verRutas = p.servicios_cercanos
+    ? `<button class="ctx-rutas-btn" data-id="${p.id}" style="margin-top:9px;width:100%;padding:7px;border:none;border-radius:9px;cursor:pointer;font-weight:700;font-size:11.5px;background:linear-gradient(90deg,#1A7A76,#2DBDB6);color:#0E0D13">🚶 Ver rutas a pie</button>`
+    : ''
+  return `<div style="font-family:'Plus Jakarta Sans',sans-serif;min-width:230px;max-width:280px">
     <div style="font-weight:700;font-size:13px;color:#F0ECE6;margin-bottom:6px">${p.direccion || 'Activo'}</div>
     <div style="display:inline-block;font-size:10px;font-family:'IBM Plex Mono',monospace;padding:1px 7px;border-radius:999px;background:rgba(45,189,182,.12);color:${ruidoColor};border:1px solid ${ruidoColor}55;margin-bottom:6px">ruido ${p.ruido || '—'}</div>
     ${row('Tipo', p.tipo_activo)}
     ${row('Walk Score', p.walk_score != null ? p.walk_score + '/100' : null)}
     ${row('Cobertura vegetal', p.vegetacion != null ? p.vegetacion + '%' : null)}
-    ${row('Tráfico', p.trafico != null ? p.trafico.toLocaleString() + ' veh/día' : null)}
-    ${row('Estado', p.estado_revision)}
+    ${block('🚇 Conectividad', p.conectividad)}
+    ${block('🏥 Servicios cercanos', p.servicios_cercanos)}
+    ${verRutas}
   </div>`
 }
 
@@ -143,10 +156,50 @@ export default function MapView() {
           },
         })
 
-        const popup = new maplibregl.Popup({ closeButton: true, offset: 12, className: 'ctx-popup' })
+        const popup = new maplibregl.Popup({ closeButton: true, offset: 12, className: 'ctx-popup', maxWidth: '300px' })
+
+        // --- Rutas a pie (Google Routes, vía backend) ---
+        const RUTA_COL = ['#5EEAD4', '#E5C06A', '#E0685A']
+        let rutaIds = []
+        let rutaMarkers = []
+        function clearRutas() {
+          rutaIds.forEach(id => { if (map.getLayer(id)) map.removeLayer(id); if (map.getSource(id)) map.removeSource(id) })
+          rutaIds = []
+          rutaMarkers.forEach(m => m.remove()); rutaMarkers = []
+        }
+        async function drawRutas(assetId, btn) {
+          if (btn) { btn.textContent = '⏳ Trazando rutas…'; btn.disabled = true }
+          clearRutas()
+          try {
+            const res = await fetch(`${API_BASE}/api/v1/assets/${assetId}/rutas`, { headers: apiHeaders() })
+            const data = await res.json()
+            const rutas = data.rutas || []
+            if (!rutas.length) { if (btn) btn.textContent = 'Sin rutas (¿Google Maps activo?)'; return }
+            const bounds = new maplibregl.LngLatBounds()
+            rutas.forEach((r, i) => {
+              const id = `ruta-${i}`
+              map.addSource(id, { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: r.coords } } })
+              map.addLayer({ id, type: 'line', source: id,
+                layout: { 'line-cap': 'round', 'line-join': 'round' },
+                paint: { 'line-color': RUTA_COL[i % 3], 'line-width': 4, 'line-opacity': 0.9 } })
+              rutaIds.push(id)
+              r.coords.forEach(c => bounds.extend(c))
+              const el = document.createElement('div')
+              el.style.cssText = `background:${RUTA_COL[i % 3]};color:#0E0D13;font-weight:800;font-size:11px;padding:3px 9px;border-radius:999px;font-family:'Plus Jakarta Sans',sans-serif;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.45)`
+              el.textContent = `🚶 ${r.duracion_min} min · ${r.nombre}`
+              rutaMarkers.push(new maplibregl.Marker({ element: el }).setLngLat(r.destino).addTo(map))
+            })
+            if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 90, duration: 700, maxZoom: 16 })
+            if (btn) btn.textContent = '🚶 Rutas trazadas ✓'
+          } catch { if (btn) btn.textContent = 'No se pudieron trazar' }
+          finally { if (btn) btn.disabled = false }
+        }
+
         map.on('click', 'activos-dot', e => {
           const f = e.features[0]
           popup.setLngLat(f.geometry.coordinates).setHTML(popupHTML(f.properties)).addTo(map)
+          const btn = popup.getElement()?.querySelector('.ctx-rutas-btn')
+          if (btn) btn.addEventListener('click', () => drawRutas(btn.dataset.id, btn))
         })
         map.on('mouseenter', 'activos-dot', () => { map.getCanvas().style.cursor = 'pointer' })
         map.on('mouseleave', 'activos-dot', () => { map.getCanvas().style.cursor = '' })

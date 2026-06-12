@@ -203,6 +203,29 @@ async def asset_qr(activo_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> 
 
 
 @router.get(
+    "/{activo_id}/rutas",
+    summary="Rutas a pie a los servicios cercanos (Google Routes, en vivo)",
+)
+@limiter.limit("30/minute")
+async def asset_rutas(
+    request: Request,
+    activo_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    row = (
+        await db.execute(
+            text("SELECT ST_Y(geom) AS lat, ST_X(geom) AS lon FROM activos_inmutables WHERE id = :id"),
+            {"id": str(activo_id)},
+        )
+    ).mappings().first()
+    if not row or row["lat"] is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inmueble no encontrado.")
+    from app.rutas import rutas_desde
+    rutas = await rutas_desde(float(row["lat"]), float(row["lon"]), n=3)
+    return {"rutas": rutas or [], "disponible": rutas is not None}
+
+
+@router.get(
     "/mine",
     summary="Mis publicaciones (inmuebles del usuario / su agencia)",
     description="Lista los inmuebles publicados por el usuario autenticado (o su agencia).",

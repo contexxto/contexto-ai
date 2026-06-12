@@ -66,7 +66,67 @@ export default function MapView() {
   const [locating, setLocating] = useState(false)
   const [radiusM, setRadiusM] = useState(500)
   const [showHints, setShowHints] = useState(true)
+  const [mapaInput, setMapaInput] = useState('')
+  const [mapaMsg, setMapaMsg] = useState(null)
+  const [mapaLoading, setMapaLoading] = useState(false)
   const lastPos = useRef(null)  // {lat, lon} de la última ubicación
+  const capasRef = useRef({ ids: [], markers: [] })  // capas dibujadas por el chat del mapa
+
+  function limpiarCapas() {
+    const map = mapRef.current
+    if (!map) return
+    capasRef.current.ids.forEach(id => { if (map.getLayer(id)) map.removeLayer(id); if (map.getSource(id)) map.removeSource(id) })
+    capasRef.current.markers.forEach(m => m.remove())
+    capasRef.current = { ids: [], markers: [] }
+  }
+  function marcadorEtiqueta(coords, etiqueta, color) {
+    const el = document.createElement('div')
+    el.style.cssText = `background:${color};color:#0E0D13;font-weight:800;font-size:11px;padding:3px 9px;border-radius:999px;font-family:'Plus Jakarta Sans',sans-serif;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.45)`
+    el.textContent = etiqueta || ''
+    capasRef.current.markers.push(new maplibregl.Marker({ element: el }).setLngLat(coords).addTo(mapRef.current))
+  }
+  function ejecutarAcciones(acciones) {
+    const map = mapRef.current
+    if (!map) return
+    limpiarCapas()
+    const bounds = new maplibregl.LngLatBounds()
+    let hay = false
+    acciones.forEach((a, i) => {
+      if (a.tipo === 'ruta' && a.coords?.length) {
+        const id = `cmd-ruta-${i}`
+        map.addSource(id, { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: a.coords } } })
+        map.addLayer({ id, type: 'line', source: id, layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: { 'line-color': a.color || '#5EEAD4', 'line-width': 5, 'line-opacity': 0.95 } })
+        capasRef.current.ids.push(id)
+        a.coords.forEach(c => { bounds.extend(c); hay = true })
+        if (a.destino) marcadorEtiqueta(a.destino, a.etiqueta, a.color || '#5EEAD4')
+      } else if (a.tipo === 'puntos' && a.items?.length) {
+        a.items.forEach(it => { marcadorEtiqueta(it.coords, it.etiqueta, a.color || '#5EEAD4'); bounds.extend(it.coords); hay = true })
+      } else if (a.tipo === 'volar' && a.coords) {
+        map.flyTo({ center: a.coords, zoom: a.zoom || 16, duration: 900 })
+      }
+    })
+    if (hay && !bounds.isEmpty()) map.fitBounds(bounds, { padding: 100, duration: 800, maxZoom: 16 })
+  }
+  async function preguntarAlMapa(e) {
+    e?.preventDefault()
+    const q = mapaInput.trim()
+    const map = mapRef.current
+    if (!q || mapaLoading || !map) return
+    const c = map.getCenter()
+    const centro = lastPos.current || { lat: c.lat, lon: c.lng }
+    setMapaLoading(true); setMapaMsg(null); setMapaInput('')
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/assets/mapa/comando`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...apiHeaders() },
+        body: JSON.stringify({ pregunta: q, lat: centro.lat, lon: centro.lon }),
+      })
+      const data = await res.json()
+      setMapaMsg(data.texto || '')
+      ejecutarAcciones(data.acciones || [])
+    } catch { setMapaMsg('No pude procesar tu pregunta.') }
+    finally { setMapaLoading(false) }
+  }
 
   const RADII = [[250, '250 m'], [500, '500 m'], [1000, '1 km'], [2000, '2 km']]
   const fmt = (m) => m >= 1000 ? (m / 1000) + ' km' : m + ' m'
@@ -303,6 +363,39 @@ export default function MapView() {
           padding: '8px 14px', borderRadius: 8, fontSize: 13,
         }}>{error}</div>
       )}
+
+      {/* Chat conversacional sobre el mapa — el mapa reacciona a tus preguntas */}
+      <div style={{
+        position: 'absolute', bottom: 22, left: '50%', transform: 'translateX(-50%)', zIndex: 7,
+        width: 'min(540px, calc(100% - 32px))', fontFamily: "'Plus Jakarta Sans',sans-serif",
+      }}>
+        {mapaMsg && (
+          <div style={{
+            background: 'rgba(14,13,19,.95)', border: '1px solid rgba(45,189,182,.4)', borderRadius: 14,
+            padding: '10px 14px', color: '#F0ECE6', fontSize: 13, marginBottom: 9, lineHeight: 1.5,
+            display: 'flex', gap: 9, alignItems: 'flex-start', boxShadow: '0 8px 26px rgba(0,0,0,.5)',
+          }}>
+            <span style={{ flexShrink: 0 }}>🗺️</span>
+            <span dangerouslySetInnerHTML={{ __html: mapaMsg.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\*(.+?)\*/g, '<i>$1</i>') }} />
+          </div>
+        )}
+        <form onSubmit={preguntarAlMapa} style={{
+          display: 'flex', gap: 8, alignItems: 'center',
+          background: 'rgba(20,44,43,.65)', border: '1px solid rgba(45,189,182,.4)', borderRadius: 26,
+          padding: 7, backdropFilter: 'blur(8px)', boxShadow: '0 0 30px rgba(45,189,182,.22)',
+        }}>
+          <input value={mapaInput} onChange={e => setMapaInput(e.target.value)}
+            placeholder='Pregúntale al mapa: "ruta al Metro", "qué hay cerca", "colegio más cercano"…'
+            style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#F0ECE6',
+                     fontSize: 13.5, padding: '6px 12px' }} />
+          <button type="submit" disabled={mapaLoading} title="Preguntar"
+            style={{ background: '#2DBDB6', border: 'none', borderRadius: 999, width: 38, height: 38,
+                     display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                     color: '#0E0D13', fontWeight: 800, opacity: mapaLoading ? 0.6 : 1 }}>
+            {mapaLoading ? '…' : '➤'}
+          </button>
+        </form>
+      </div>
     </div>
   )
 }

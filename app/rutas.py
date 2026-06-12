@@ -157,6 +157,92 @@ async def _ruta_a_pie(client: httpx.AsyncClient, o_lat: float, o_lon: float,
     }
 
 
+# ── Mapa conversacional: pregunta → acciones de mapa ────────────────────────
+_PALABRAS_CAT = {
+    "transporte": ["metro", "estacion", "estación", "terminal", "parada", "bus", "transporte"],
+    "educacion": ["colegio", "escuela", "educacion", "educación", "universidad", "guarderia", "guardería"],
+    "salud": ["hospital", "salud", "clinica", "clínica", "consultorio", "medico", "médico", "doctor"],
+    "farmacia": ["farmacia", "botica"],
+    "supermercado": ["super", "mercado", "supermercado", "tienda", "abasto", "víveres", "viveres"],
+    "parque": ["parque", "area verde", "área verde", "verde", "jardin", "jardín"],
+    "iglesia": ["iglesia", "templo", "misa", "parroquia"],
+    "seguridad": ["upc", "policia", "policía", "seguridad", "patrulla"],
+    "centro_comercial": ["centro comercial", "mall", "quicentro", "comercial"],
+}
+_CAT_GOOGLE = {c["key"]: [c["google"]] for c in _CATEGORIAS}
+_CAT_GOOGLE["transporte"] = ["subway_station", "train_station", "bus_station", "transit_station"]
+_CAT_LABEL = {
+    "transporte": "🚇 transporte", "educacion": "🏫 educación", "salud": "🏥 salud",
+    "farmacia": "💊 farmacia", "supermercado": "🛒 supermercado", "parque": "🌳 parque",
+    "iglesia": "⛪ iglesia", "seguridad": "🛡️ seguridad", "centro_comercial": "🛍️ centro comercial",
+}
+
+
+async def _nearest_categoria(lat: float, lon: float, cat: str, key: str) -> dict | None:
+    body = {
+        "includedTypes": _CAT_GOOGLE.get(cat, []), "maxResultCount": 8, "rankPreference": "DISTANCE",
+        "languageCode": "es",
+        "locationRestriction": {"circle": {"center": {"latitude": lat, "longitude": lon}, "radius": 3000.0}},
+    }
+    headers = {"Content-Type": "application/json", "X-Goog-Api-Key": key,
+               "X-Goog-FieldMask": "places.displayName,places.location"}
+    verify = settings.ssl_verify.lower() != "false"
+    try:
+        async with httpx.AsyncClient(verify=verify, timeout=_TIMEOUT) as c:
+            r = await c.post("https://places.googleapis.com/v1/places:searchNearby", json=body, headers=headers)
+            r.raise_for_status()
+            for pl in r.json().get("places", []):
+                loc = pl.get("location", {})
+                nombre = (pl.get("displayName") or {}).get("text")
+                if "latitude" in loc and _nombre_valido(nombre):
+                    return {"nombre": nombre, "lat": loc["latitude"], "lon": loc["longitude"],
+                            "distancia_m": int(_haversine_m(lat, lon, loc["latitude"], loc["longitude"]))}
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+async def comando_mapa(pregunta: str, lat: float, lon: float) -> dict:
+    """Interpreta una pregunta y devuelve {texto, acciones} para que el mapa reaccione."""
+    key = settings.google_maps_api_key
+    if not key:
+        return {"texto": "El mapa interactivo necesita Google Maps activo.", "acciones": []}
+    p = (pregunta or "").lower()
+
+    # 1) ¿Pide una ruta a una categoría?
+    cat = next((c for c, kws in _PALABRAS_CAT.items() if any(k in p for k in kws)), None)
+    if cat:
+        dest = await _nearest_categoria(lat, lon, cat, key)
+        if not dest:
+            return {"texto": f"No encontré {_CAT_LABEL.get(cat, cat)} cerca de ese punto.", "acciones": []}
+        try:
+            async with httpx.AsyncClient(verify=settings.ssl_verify.lower() != "false", timeout=_TIMEOUT) as c:
+                ruta = await _ruta_a_pie(c, lat, lon, dest["lat"], dest["lon"], key)
+        except Exception:  # noqa: BLE001
+            ruta = None
+        if ruta and ruta.get("coords"):
+            etiqueta = f"🚶 {ruta['duracion_min']} min · {dest['nombre']}"
+            return {
+                "texto": f"Ilumino la ruta a **{dest['nombre']}**: {ruta['duracion_min']} min a pie ({ruta['distancia_m']} m).",
+                "acciones": [{"tipo": "ruta", "coords": ruta["coords"], "destino": [dest["lon"], dest["lat"]],
+                              "etiqueta": etiqueta, "color": "#5EEAD4"}],
+            }
+        return {"texto": f"Encontré {dest['nombre']} a {dest['distancia_m']} m, pero no pude trazar la ruta.",
+                "acciones": [{"tipo": "puntos", "items": [{"coords": [dest["lon"], dest["lat"]], "etiqueta": dest["nombre"]}], "color": "#5EEAD4"}]}
+
+    # 2) ¿Pide ver lo que hay alrededor?
+    if any(k in p for k in ["cerca", "servicios", "que hay", "qué hay", "alrededor", "entorno", "rodea"]):
+        servicios = await _servicios_con_coords(lat, lon, key, 6)
+        if not servicios:
+            return {"texto": "No encontré servicios mapeados en este punto.", "acciones": []}
+        items = [{"coords": [s["lon"], s["lat"]], "etiqueta": f"{s['nombre']} ({s['distancia_m']} m)"} for s in servicios]
+        return {"texto": "Enciendo los servicios cercanos en el mapa.", "acciones": [{"tipo": "puntos", "items": items, "color": "#5EEAD4"}]}
+
+    # 3) Fallback: guía
+    return {"texto": "Pídeme algo como *“ruta al Metro”*, *“colegio más cercano”* o *“qué hay cerca”* y lo ilumino en el mapa.",
+            "acciones": []}
+
+
 async def rutas_desde(lat: float, lon: float, n: int = 3) -> list[dict] | None:
     """Rutas peatonales reales a los N servicios más cercanos. None si no hay key."""
     key = settings.google_maps_api_key

@@ -202,6 +202,19 @@ async def asset_qr(activo_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> 
     return Response(content=buff.getvalue(), media_type="image/svg+xml")
 
 
+class MapaComandoRequest(BaseModel):
+    pregunta: str = Field(..., min_length=1, max_length=300)
+    lat: float = Field(..., ge=-90, le=90)
+    lon: float = Field(..., ge=-180, le=180)
+
+
+@router.post("/mapa/comando", summary="Mapa conversacional: pregunta → acciones de mapa")
+@limiter.limit("40/minute")
+async def mapa_comando(request: Request, payload: MapaComandoRequest) -> dict:
+    from app.rutas import comando_mapa
+    return await comando_mapa(payload.pregunta, payload.lat, payload.lon)
+
+
 @router.get(
     "/{activo_id}/rutas",
     summary="Rutas a pie a los servicios cercanos (Google Routes, en vivo)",

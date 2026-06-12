@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import CurrentUser, get_current_user
+from app.auth import CurrentUser, get_current_user, get_optional_user
 from app.config import settings
 from app.database import AsyncSessionLocal, get_db
 from app.limiter import limiter
@@ -40,7 +40,11 @@ router = APIRouter(prefix="/api/v1/assets", tags=["Assets — Catastro Inmutable
     ),
 )
 @limiter.limit("60/minute")
-async def assets_geojson(request: Request, db: AsyncSession = Depends(get_db)) -> dict:
+async def assets_geojson(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: CurrentUser | None = Depends(get_optional_user),
+) -> dict:
     rows = (
         await db.execute(
             text(
@@ -60,31 +64,40 @@ async def assets_geojson(request: Request, db: AsyncSession = Depends(get_db)) -
         )
     ).mappings().all()
 
+    # Protección del foso: los scores premium (walk, ruido, vegetación, tráfico,
+    # conectividad, servicios) SOLO se entregan a usuarios con sesión. El público
+    # ve el mapa (pin + dirección + tipo) pero no puede bajar el catastro completo.
+    con_scores = user is not None
+
     features = []
     for r in rows:
         if r["lon"] is None or r["lat"] is None:
             continue
-        features.append({
-            "type": "Feature",
-            "geometry": {"type": "Point", "coordinates": [float(r["lon"]), float(r["lat"])]},
-            "properties": {
-                "id": r["id"],
-                "direccion": r["direccion"],
-                "tipo_activo": r["tipo_activo"],
-                "piso_altura": r["piso_altura"],
+        props: dict = {
+            "id": r["id"],
+            "direccion": r["direccion"],
+            "tipo_activo": r["tipo_activo"],
+            "piso_altura": r["piso_altura"],
+            "imagen_url": r["imagen_url"],
+        }
+        if con_scores:
+            props.update({
                 "walk_score": r["walk_score"],
                 "ruido": r["ruido"],
                 "vegetacion": float(r["vegetacion"]) if r["vegetacion"] is not None else None,
                 "trafico": r["trafico"],
                 "conectividad": r["conectividad"],
                 "servicios_cercanos": r["servicios_cercanos"],
-                "imagen_url": r["imagen_url"],
                 "estado_revision": r["estado_revision"],
                 "confianza": float(r["confianza_extraccion"]) if r["confianza_extraccion"] is not None else None,
-            },
+            })
+        features.append({
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [float(r["lon"]), float(r["lat"])]},
+            "properties": props,
         })
 
-    return {"type": "FeatureCollection", "features": features}
+    return {"type": "FeatureCollection", "features": features, "scores_incluidos": con_scores}
 
 
 @router.get(

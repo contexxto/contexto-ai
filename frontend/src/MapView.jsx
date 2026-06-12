@@ -1,10 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-
-const API_BASE = import.meta.env.VITE_API_URL ?? ''
-const API_KEY = import.meta.env.VITE_API_KEY ?? ''
-const authHeaders = API_KEY ? { 'X-API-Key': API_KEY } : {}
+import { API_BASE, apiHeaders } from './api'
 
 // Estilo de mapa oscuro premium (CARTO dark-matter, gratuito, sin token).
 const DARK_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
@@ -85,7 +82,7 @@ export default function MapView() {
     const b = c.reduce((acc, p) => acc.extend(p), new maplibregl.LngLatBounds(c[0], c[0]))
     map.fitBounds(b, { padding: 60, duration: 700 })
     try {
-      const res = await fetch(`${API_BASE}/api/v1/assets/near?lat=${lat}&lon=${lon}&radius_m=${radius}`, { headers: authHeaders })
+      const res = await fetch(`${API_BASE}/api/v1/assets/near?lat=${lat}&lon=${lon}&radius_m=${radius}`, { headers: apiHeaders() })
       const data = await res.json()
       const n = data.total ?? 0
       setNearMsg(n > 0
@@ -126,7 +123,7 @@ export default function MapView() {
 
     map.on('load', async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/v1/assets/geojson`, { headers: authHeaders })
+        const res = await fetch(`${API_BASE}/api/v1/assets/geojson`, { headers: apiHeaders() })
         if (!res.ok) throw new Error('HTTP ' + res.status)
         const geojson = await res.json()
         setCount(geojson.features?.length ?? 0)

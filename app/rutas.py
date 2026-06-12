@@ -90,24 +90,28 @@ async def _servicios_con_coords(lat: float, lon: float, key: str, n: int = 3) ->
     # Búsqueda dedicada del hub de transporte (Metro/terminal): suele estar más
     # lejos que los 20 resultados generales, pero es el héroe de plusvalía.
     if "transporte" not in mejor:
-        try:
-            tbody = {
-                "includedTypes": ["subway_station", "bus_station", "train_station", "transit_station"],
-                "maxResultCount": 5, "rankPreference": "DISTANCE", "languageCode": "es",
-                "locationRestriction": {"circle": {"center": {"latitude": lat, "longitude": lon}, "radius": 2500.0}},
-            }
-            async with httpx.AsyncClient(verify=verify, timeout=_TIMEOUT) as c2:
-                tr = await c2.post("https://places.googleapis.com/v1/places:searchNearby", json=tbody, headers=headers)
-                tr.raise_for_status()
-                for pl in tr.json().get("places", []):
-                    loc = pl.get("location", {})
-                    nombre = (pl.get("displayName") or {}).get("text")
-                    if "latitude" in loc and _nombre_valido(nombre):
-                        mejor["transporte"] = {"nombre": nombre, "lat": loc["latitude"], "lon": loc["longitude"],
-                                               "distancia_m": int(_haversine_m(lat, lon, loc["latitude"], loc["longitude"]))}
-                        break
-        except Exception:  # noqa: BLE001
-            pass
+        # Primero Metro/tren/terminal (héroe de plusvalía); si no hay, bus.
+        for tipos_t in (["subway_station", "train_station", "light_rail_station"], ["bus_station", "transit_station"]):
+            if "transporte" in mejor:
+                break
+            try:
+                tbody = {
+                    "includedTypes": tipos_t, "maxResultCount": 5, "rankPreference": "DISTANCE",
+                    "languageCode": "es",
+                    "locationRestriction": {"circle": {"center": {"latitude": lat, "longitude": lon}, "radius": 3000.0}},
+                }
+                async with httpx.AsyncClient(verify=verify, timeout=_TIMEOUT) as c2:
+                    tr = await c2.post("https://places.googleapis.com/v1/places:searchNearby", json=tbody, headers=headers)
+                    tr.raise_for_status()
+                    for pl in tr.json().get("places", []):
+                        loc = pl.get("location", {})
+                        nombre = (pl.get("displayName") or {}).get("text")
+                        if "latitude" in loc and _nombre_valido(nombre):
+                            mejor["transporte"] = {"nombre": nombre, "lat": loc["latitude"], "lon": loc["longitude"],
+                                                   "distancia_m": int(_haversine_m(lat, lon, loc["latitude"], loc["longitude"]))}
+                            break
+            except Exception:  # noqa: BLE001
+                pass
 
     if not mejor:
         return []

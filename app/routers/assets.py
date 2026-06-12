@@ -4,7 +4,7 @@ import json
 import uuid
 
 import segno
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.responses import Response
 from geoalchemy2.elements import WKTElement
 from geopy.geocoders import Nominatim
@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import CurrentUser, get_current_user
 from app.config import settings
 from app.database import AsyncSessionLocal, get_db
+from app.limiter import limiter
 from app.models import ActivoInmutable
 from app.schemas import ActivoCreateRequest, ActivoResponse
 from app.entorno import entorno_destacado
@@ -38,7 +39,8 @@ router = APIRouter(prefix="/api/v1/assets", tags=["Assets — Catastro Inmutable
         "Pensado para alimentar la vista de mapa del frontend."
     ),
 )
-async def assets_geojson(db: AsyncSession = Depends(get_db)) -> dict:
+@limiter.limit("60/minute")
+async def assets_geojson(request: Request, db: AsyncSession = Depends(get_db)) -> dict:
     rows = (
         await db.execute(
             text(
@@ -95,7 +97,9 @@ async def assets_geojson(db: AsyncSession = Depends(get_db)) -> dict:
         "en el radio, devuelve una FeatureCollection vacía (cobertura honesta)."
     ),
 )
+@limiter.limit("60/minute")
 async def assets_near(
+    request: Request,
     lat: float,
     lon: float,
     radius_m: int = 500,

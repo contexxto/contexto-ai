@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
 from sqlalchemy import text
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -49,6 +50,12 @@ app.include_router(vision.router)
 app.include_router(ingest.router)
 app.include_router(review.router)
 app.include_router(match.router)
+
+
+@app.get("/robots.txt", include_in_schema=False)
+async def robots_txt() -> PlainTextResponse:
+    """Le dice a los crawlers que NO indexen la API (la data vive aquí)."""
+    return PlainTextResponse("User-agent: *\nDisallow: /\n")
 
 
 @app.get("/health", tags=["System"])

@@ -178,9 +178,9 @@ _CAT_LABEL = {
 }
 
 
-async def _nearest_categoria(lat: float, lon: float, cat: str, key: str) -> dict | None:
+async def _nearest_categoria(lat: float, lon: float, cat: str, key: str, tipos: list[str] | None = None) -> dict | None:
     body = {
-        "includedTypes": _CAT_GOOGLE.get(cat, []), "maxResultCount": 8, "rankPreference": "DISTANCE",
+        "includedTypes": tipos or _CAT_GOOGLE.get(cat, []), "maxResultCount": 8, "rankPreference": "DISTANCE",
         "languageCode": "es",
         "locationRestriction": {"circle": {"center": {"latitude": lat, "longitude": lon}, "radius": 3000.0}},
     }
@@ -212,7 +212,13 @@ async def comando_mapa(pregunta: str, lat: float, lon: float) -> dict:
     # 1) ¿Pide una ruta a una categoría?
     cat = next((c for c, kws in _PALABRAS_CAT.items() if any(k in p for k in kws)), None)
     if cat:
-        dest = await _nearest_categoria(lat, lon, cat, key)
+        tipos = None
+        if cat == "transporte":
+            if "metro" in p:
+                tipos = ["subway_station", "train_station", "light_rail_station"]
+            elif "terminal" in p:
+                tipos = ["bus_station"]
+        dest = await _nearest_categoria(lat, lon, cat, key, tipos)
         if not dest:
             return {"texto": f"No encontré {_CAT_LABEL.get(cat, cat)} cerca de ese punto.", "acciones": []}
         try:

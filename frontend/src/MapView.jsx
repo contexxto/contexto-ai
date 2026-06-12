@@ -113,9 +113,22 @@ export default function MapView() {
     const q = mapaInput.trim()
     const map = mapRef.current
     if (!q || mapaLoading || !map) return
-    const c = map.getCenter()
-    const centro = lastPos.current || { lat: c.lat, lon: c.lng }
     setMapaLoading(true); setMapaMsg(null); setMapaInput('')
+
+    // Prioriza tu UBICACIÓN REAL (GPS en tiempo real). Si aún no la tenemos, la pedimos.
+    let centro = lastPos.current
+    if (!centro && navigator.geolocation) {
+      setMapaMsg('📍 Ubicándote para responder desde donde estás…')
+      centro = await new Promise(resolve => {
+        navigator.geolocation.getCurrentPosition(
+          pos => { const g = { lat: +pos.coords.latitude.toFixed(6), lon: +pos.coords.longitude.toFixed(6) }; lastPos.current = g; resolve(g) },
+          () => resolve(null),
+          { enableHighAccuracy: true, timeout: 8000 },
+        )
+      })
+    }
+    if (!centro) { const c = map.getCenter(); centro = { lat: c.lat, lon: c.lng } }
+
     try {
       const res = await fetch(`${API_BASE}/api/v1/assets/mapa/comando`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', ...apiHeaders() },
@@ -124,6 +137,12 @@ export default function MapView() {
       const data = await res.json()
       setMapaMsg(data.texto || '')
       ejecutarAcciones(data.acciones || [])
+      // Punto "tú estás aquí" (origen real de las rutas).
+      if ((data.acciones || []).length) {
+        const el = document.createElement('div')
+        el.style.cssText = 'width:14px;height:14px;border-radius:50%;background:#F0ECE6;border:3px solid #2DBDB6;box-shadow:0 0 0 5px rgba(45,189,182,.22)'
+        capasRef.current.markers.push(new maplibregl.Marker({ element: el }).setLngLat([centro.lon, centro.lat]).addTo(map))
+      }
     } catch { setMapaMsg('No pude procesar tu pregunta.') }
     finally { setMapaLoading(false) }
   }

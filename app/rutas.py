@@ -46,8 +46,14 @@ def _decode_polyline(enc: str) -> list[list[float]]:
     return coords
 
 
+# Mapa tipo-de-Google → categoría (para elegir servicios DIVERSOS, no 3 farmacias).
+_TIPO_CAT = {c["google"]: c["key"] for c in _CATEGORIAS}
+for _t in ("subway_station", "bus_station", "train_station", "transit_station"):
+    _TIPO_CAT[_t] = "transporte"
+
+
 async def _servicios_con_coords(lat: float, lon: float, key: str, n: int = 3) -> list[dict]:
-    """Los N servicios nombrados más cercanos, con coordenadas (Places New)."""
+    """El servicio más cercano POR CATEGORÍA (diverso), priorizando transporte."""
     tipos = [c["google"] for c in _CATEGORIAS] + ["subway_station", "bus_station", "train_station"]
     body = {
         "includedTypes": tipos,
@@ -59,26 +65,42 @@ async def _servicios_con_coords(lat: float, lon: float, key: str, n: int = 3) ->
     headers = {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": key,
-        "X-Goog-FieldMask": "places.displayName,places.location",
+        "X-Goog-FieldMask": "places.displayName,places.location,places.types",
     }
     verify = settings.ssl_verify.lower() != "false"
     async with httpx.AsyncClient(verify=verify, timeout=_TIMEOUT) as c:
         r = await c.post("https://places.googleapis.com/v1/places:searchNearby", json=body, headers=headers)
         r.raise_for_status()
         places = r.json().get("places", [])
-    items, vistos = [], set()
+
+    # El más cercano por categoría.
+    mejor: dict[str, dict] = {}
     for pl in places:
         loc = pl.get("location", {})
         nombre = (pl.get("displayName") or {}).get("text")
-        if "latitude" not in loc or not _nombre_valido(nombre) or nombre in vistos:
+        if "latitude" not in loc or not _nombre_valido(nombre):
             continue
-        vistos.add(nombre)
-        items.append({
-            "nombre": nombre, "lat": loc["latitude"], "lon": loc["longitude"],
-            "distancia_m": int(_haversine_m(lat, lon, loc["latitude"], loc["longitude"])),
-        })
-    items.sort(key=lambda i: i["distancia_m"])
-    return items[:n]
+        cat = next((_TIPO_CAT[t] for t in pl.get("types", []) if t in _TIPO_CAT), None)
+        if not cat:
+            continue
+        d = int(_haversine_m(lat, lon, loc["latitude"], loc["longitude"]))
+        if cat not in mejor or d < mejor[cat]["distancia_m"]:
+            mejor[cat] = {"nombre": nombre, "lat": loc["latitude"], "lon": loc["longitude"], "distancia_m": d}
+
+    if not mejor:
+        return []
+    # Priorizar transporte (Metro/terminal) + completar con los más cercanos distintos.
+    orden = sorted(mejor.values(), key=lambda i: i["distancia_m"])
+    res: list[dict] = []
+    if "transporte" in mejor:
+        res.append(mejor["transporte"])
+    for it in orden:
+        if len(res) >= n:
+            break
+        if it not in res:
+            res.append(it)
+    res.sort(key=lambda i: i["distancia_m"])
+    return res[:n]
 
 
 async def _ruta_a_pie(client: httpx.AsyncClient, o_lat: float, o_lon: float,

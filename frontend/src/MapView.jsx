@@ -302,45 +302,6 @@ export default function MapView() {
     <div style={{ position: 'relative', height: '100%', width: '100%' }}>
       <div ref={ref} style={{ position: 'absolute', inset: 0 }} />
 
-      {/* Botón "Cerca de mí" */}
-      <button onClick={nearMe} disabled={locating}
-        style={{
-          position: 'absolute', top: 16, left: 16, zIndex: 6,
-          display: 'flex', alignItems: 'center', gap: 7, padding: '9px 14px',
-          background: '#2DBDB6', color: '#0E0D13', border: 'none', borderRadius: 999,
-          cursor: locating ? 'default' : 'pointer', fontWeight: 700, fontSize: 13,
-          fontFamily: "'Plus Jakarta Sans',sans-serif", boxShadow: '0 4px 12px rgba(0,0,0,.4)',
-        }}>
-        📍 {locating ? 'Ubicando…' : '¿Puedo vivir aquí? · Cerca de mí'}
-      </button>
-
-      {/* Selector de radio (lo elige el usuario) */}
-      <div style={{
-        position: 'absolute', top: 56, left: 16, zIndex: 6,
-        display: 'flex', alignItems: 'center', gap: 6,
-        background: 'rgba(22,21,30,.92)', border: '1px solid #2E2D3A', borderRadius: 999,
-        padding: '4px 6px', fontFamily: "'Plus Jakarta Sans',sans-serif",
-      }}>
-        <span style={{ color: '#A8A3B3', fontSize: 11, padding: '0 4px' }}>Radio:</span>
-        {RADII.map(([m, label]) => (
-          <button key={m} onClick={() => changeRadius(m)}
-            style={{
-              border: 'none', cursor: 'pointer', borderRadius: 999, padding: '4px 10px',
-              fontSize: 12, fontWeight: 600,
-              background: radiusM === m ? '#2DBDB6' : 'transparent',
-              color: radiusM === m ? '#0E0D13' : '#A8A3B3',
-            }}>{label}</button>
-        ))}
-      </div>
-
-      {nearMsg && (
-        <div style={{
-          position: 'absolute', top: 104, left: 16, zIndex: 6, maxWidth: 340,
-          background: 'rgba(22,21,30,.95)', border: '1px solid #2E2D3A', borderRadius: 10,
-          padding: '10px 14px', color: '#F0ECE6', fontSize: 13,
-          fontFamily: "'Plus Jakarta Sans',sans-serif",
-        }}>{nearMsg}</div>
-      )}
       {/* Pistas de uso (qué puedes hacer en el mapa) */}
       {showHints && (
         <div style={{
@@ -354,7 +315,7 @@ export default function MapView() {
                      color: '#A8A3B3', cursor: 'pointer', fontSize: 15, lineHeight: 1 }}>×</button>
           <div style={{ fontWeight: 800, color: '#5EEAD4', marginBottom: 6 }}>💡 Qué puedes hacer aquí</div>
           <div>🟢 <b>Toca un inmueble</b> → sus datos + <b>🚶 rutas a pie</b> reales al Metro y servicios</div>
-          <div style={{ marginTop: 5 }}>📍 <b>"Cerca de mí"</b> → analiza tu zona y lo que la rodea</div>
+          <div style={{ marginTop: 5 }}>💬 <b>Háblale al mapa</b> (abajo): <i>"ruta al Metro"</i>, <i>"qué hay cerca"</i>, <i>"colegio más cercano"</i> → responde desde tu ubicación</div>
           <div style={{ marginTop: 5 }}>🎨 <b>Colores</b> = nivel de ruido (verde = tranquilo)</div>
         </div>
       )}

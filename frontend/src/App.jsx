@@ -478,9 +478,10 @@ export default function App() {
     setTimeout(() => setCopied(null), 2000)
   }, [])
 
-  const sendMessage = useCallback(async (text) => {
+  const sendMessage = useCallback(async (text, geoOverride) => {
     const userText = (text ?? input).trim()
     if (!userText || loading) return
+    const g = geoOverride || geo
 
     setInput('')
     setError(null)
@@ -495,8 +496,8 @@ export default function App() {
 
     // Si la ubicación está activa, se la pasamos al agente como contexto
     // (sin ensuciar la burbuja visible). El agente usa tool_search_nearby_assets.
-    const apiMessage = geo
-      ? `${userText}\n\n[Contexto del sistema: el usuario está físicamente en estas coordenadas → lat=${geo.lat}, lon=${geo.lon}. Si su pregunta es sobre cercanía ("cerca de mí", "aquí", "este sector", "a X metros/km"), usa tool_search_nearby_assets con estas coordenadas y el radio que indique (por defecto 1000 m). Si no menciona distancia, usa 1000 m.]`
+    const apiMessage = g
+      ? `${userText}\n\n[Contexto del sistema: el usuario está físicamente en estas coordenadas → lat=${g.lat}, lon=${g.lon}. Para describir cómo es vivir AQUÍ / en este lugar (su entorno, Walk Score, conectividad, servicios), usa tool_analyze_location con estas coordenadas — funciona en CUALQUIER ciudad o país. Si además busca inmuebles registrados cerca, usa tool_search_nearby_assets (radio 1000 m por defecto).]`
       : userText
 
     try {
@@ -524,6 +525,23 @@ export default function App() {
       setTimeout(() => inputRef.current?.focus(), 100)
     }
   }, [input, loading, sessionId, geo])
+
+  // "Analiza dónde estás": pide la ubicación y dispara el análisis del lugar (global).
+  const analizarMiUbicacion = useCallback(() => {
+    const MSG = '¿Cómo es vivir aquí? Analiza el lugar donde estoy ahora.'
+    if (geo) { sendMessage(MSG); return }
+    if (!navigator.geolocation) { setError('Tu navegador no permite ubicación.'); return }
+    setGeoLoading(true)
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const g = { lat: +pos.coords.latitude.toFixed(6), lon: +pos.coords.longitude.toFixed(6) }
+        setGeo(g); setGeoLoading(false)
+        sendMessage(MSG, g)
+      },
+      () => { setGeoLoading(false); setError('No pudimos obtener tu ubicación (permiso denegado).') },
+      { enableHighAccuracy: true, timeout: 10000 },
+    )
+  }, [geo, sendMessage])
 
   // Enganche viral: si llega ?q= (desde un link compartido), auto-envía esa pregunta
   // en una sesión nueva → el visitante queda chateando en vivo con el agente.
@@ -928,10 +946,24 @@ export default function App() {
               Cada lugar tiene un aura
             </div>
             <p style={{ color:'var(--text-mid)', fontSize:isMobile ? '.92rem' : '1rem', lineHeight:1.7,
-                        maxWidth:560, margin:'0 auto 34px' }}>
+                        maxWidth:560, margin:'0 auto 26px' }}>
               Tu agente inteligente que absorbe capas de contexto — ruido, seguridad, vida,
               historia — y te las traduce para que encuentres el lugar perfecto.
             </p>
+
+            {/* CTA destacado: analiza dónde estás (global, viral) */}
+            <button onClick={analizarMiUbicacion} disabled={geoLoading}
+              style={{ display:'inline-flex', alignItems:'center', gap:9, margin:'0 auto 14px',
+                       padding:'13px 24px', borderRadius:999, border:'none', cursor:geoLoading ? 'default' : 'pointer',
+                       fontWeight:800, fontSize:'.95rem', color:'#0E0D13',
+                       background:'linear-gradient(90deg, #1A7A76, #2DBDB6, #5EEAD4)',
+                       boxShadow:'0 0 34px rgba(45,189,182,.45)' }}>
+              <MapPin size={18} /> {geoLoading ? 'Ubicándote…' : 'Analiza dónde estás'}
+            </button>
+            <div style={{ fontSize:'.76rem', color:'var(--text-muted)', marginBottom:30 }}>
+              Comparte tu ubicación y te cuento cómo es vivir ahí — en Quito o en cualquier ciudad. 🌎
+            </div>
+
             <div style={{ display:'flex', flexDirection:'column', gap:8, alignItems:'center' }}>
               {QUICK_PROMPTS.map((p, i) => (
                 <button

@@ -196,4 +196,66 @@ async def tool_geocode_address(address: str) -> str:
         })
 
 
-AGENT_TOOLS = [tool_geocode_address, tool_search_nearby_assets, tool_fetch_asset_lifecycle_specs]
+async def _reverse_geocode(lat: float, lon: float) -> dict | None:
+    """Coordenadas → lugar legible (barrio, ciudad, país). Funciona en todo el mundo."""
+    def _sync():
+        geo = Nominatim(user_agent="contexto_ai_v2", timeout=8)
+        return geo.reverse((lat, lon), language="es", zoom=16, addressdetails=True)
+    try:
+        loc = await asyncio.get_event_loop().run_in_executor(None, _sync)
+    except (GeocoderTimedOut, GeocoderUnavailable, Exception):  # noqa: BLE001
+        return None
+    if not loc:
+        return None
+    a = getattr(loc, "raw", {}).get("address", {}) or {}
+    return {
+        "texto": loc.address,
+        "barrio": a.get("suburb") or a.get("neighbourhood") or a.get("quarter") or a.get("city_district"),
+        "ciudad": a.get("city") or a.get("town") or a.get("municipality") or a.get("county"),
+        "pais": a.get("country"),
+    }
+
+
+@tool
+async def tool_analyze_location(latitude: float, longitude: float) -> str:
+    """
+    Analyze the habitability of ANY point on Earth from its coordinates.
+
+    Reverse-geocodes the place (neighborhood, city, country) and computes the LIVE
+    environment of that exact spot: Walk Score, connectivity (Metro / transit hubs)
+    and named nearby services. It works ANYWHERE — not only Quito — and even where
+    there are NO registered assets.
+
+    Use this whenever the user shares their location, or asks "what is it like to
+    live HERE / at this point". After calling it, if useful, you may ALSO call
+    tool_search_nearby_assets to add any registered listings nearby.
+
+    Args:
+        latitude: WGS84 latitude of the point (e.g. the user's shared location).
+        longitude: WGS84 longitude of the point.
+    """
+    from app.entorno import entorno_destacado
+    from app.walk_score import _fetch_pois, compute_walk_score, extraer_conectividad
+
+    lugar = await _reverse_geocode(latitude, longitude)
+    pois = await _fetch_pois(latitude, longitude, timeout=12.0)
+    walk = compute_walk_score(pois, latitude, longitude) if pois else None
+    conect = extraer_conectividad(pois, latitude, longitude) if pois else None
+    ent = await entorno_destacado(latitude, longitude, pois)
+
+    return json.dumps({
+        "lugar": lugar,
+        "walk_score": walk["walk_score"] if walk else None,
+        "conectividad": conect["texto"] if conect else None,
+        "servicios_cercanos": ent["texto"] if ent else None,
+        "pois_analizados": len(pois) if pois else 0,
+        "cobertura": "rica" if (pois and len(pois) > 100) else ("media" if pois else "sin datos"),
+    }, ensure_ascii=False, default=str)
+
+
+AGENT_TOOLS = [
+    tool_geocode_address,
+    tool_search_nearby_assets,
+    tool_fetch_asset_lifecycle_specs,
+    tool_analyze_location,
+]

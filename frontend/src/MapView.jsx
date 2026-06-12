@@ -65,6 +65,7 @@ export default function MapView() {
   const [nearMsg, setNearMsg] = useState(null)
   const [locating, setLocating] = useState(false)
   const [radiusM, setRadiusM] = useState(500)
+  const [showHints, setShowHints] = useState(true)
   const lastPos = useRef(null)  // {lat, lon} de la última ubicación
 
   const RADII = [[250, '250 m'], [500, '500 m'], [1000, '1 km'], [2000, '2 km']]
@@ -261,6 +262,24 @@ export default function MapView() {
           fontFamily: "'Plus Jakarta Sans',sans-serif",
         }}>{nearMsg}</div>
       )}
+      {/* Pistas de uso (qué puedes hacer en el mapa) */}
+      {showHints && (
+        <div style={{
+          position: 'absolute', top: 16, right: 16, zIndex: 6, maxWidth: 260,
+          background: 'rgba(22,21,30,.95)', border: '1px solid rgba(45,189,182,.3)', borderRadius: 12,
+          padding: '13px 15px', color: '#F0ECE6', fontSize: 12.5, lineHeight: 1.6,
+          fontFamily: "'Plus Jakarta Sans',sans-serif", boxShadow: '0 6px 22px rgba(0,0,0,.45)',
+        }}>
+          <button onClick={() => setShowHints(false)}
+            style={{ position: 'absolute', top: 8, right: 10, background: 'none', border: 'none',
+                     color: '#A8A3B3', cursor: 'pointer', fontSize: 15, lineHeight: 1 }}>×</button>
+          <div style={{ fontWeight: 800, color: '#5EEAD4', marginBottom: 6 }}>💡 Qué puedes hacer aquí</div>
+          <div>🟢 <b>Toca un inmueble</b> → sus datos + <b>🚶 rutas a pie</b> reales al Metro y servicios</div>
+          <div style={{ marginTop: 5 }}>📍 <b>"Cerca de mí"</b> → analiza tu zona y lo que la rodea</div>
+          <div style={{ marginTop: 5 }}>🎨 <b>Colores</b> = nivel de ruido (verde = tranquilo)</div>
+        </div>
+      )}
+
       {/* Leyenda */}
       <div style={{
         position: 'absolute', bottom: 24, left: 16, zIndex: 5,

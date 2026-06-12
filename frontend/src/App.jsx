@@ -902,7 +902,9 @@ export default function App() {
             </button>
           )}
           <img src={sphereLogo} alt="Contexto AI" width={isMobile ? 30 : 36} height={isMobile ? 30 : 36}
-               style={{ display:'block', flexShrink:0 }} />
+               style={{ display:'block', flexShrink:0,
+                        filter:'drop-shadow(0 0 10px rgba(45,189,182,.45))',
+                        animation:'spin 18s linear infinite' }} />
           <div style={{ minWidth:0 }}>
             <div style={{ fontWeight:800, fontSize:isMobile ? '.95rem' : '1rem', letterSpacing:'-.3px' }}>
               Contexto <span style={{ color:'var(--teal)' }}>AI</span>
@@ -929,11 +931,7 @@ export default function App() {
         style={{ flex:1, overflowY:'auto', padding:'20px 0', position:'relative' }}
       >
         {isEmpty && (
-          <div style={{ textAlign:'center', paddingTop:isMobile ? 28 : 48 }}>
-            <img src={sphereLogo} alt="Contexto AI" width={isMobile ? 100 : 128} height={isMobile ? 100 : 128}
-                 style={{ display:'block', margin:'0 auto 24px',
-                          filter:'drop-shadow(0 0 34px rgba(45,189,182,.55))',
-                          animation:'floaty 4.5s ease-in-out infinite' }} />
+          <div style={{ textAlign:'center', paddingTop:isMobile ? 40 : 64 }}>
             <h1 style={{ fontFamily:'var(--font-display)', fontWeight:800,
                          fontSize:isMobile ? '2rem' : '2.6rem', letterSpacing:'-1px', marginBottom:14, lineHeight:1.05 }}>
               Contexto <span style={{
@@ -1137,7 +1135,7 @@ export default function App() {
           50%       { transform: translateY(-7px); }
         }
         @media (prefers-reduced-motion: reduce) {
-          [style*="floaty"] { animation: none !important; }
+          [style*="floaty"], [style*="spin 18s"] { animation: none !important; }
         }
       `}</style>
       </div>

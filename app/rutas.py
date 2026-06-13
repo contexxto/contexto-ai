@@ -208,6 +208,21 @@ def _min_pie(d_m: int | float | None) -> int:
     return max(1, round((d_m or 0) / 80))
 
 
+def _nombre_limpio(n: str | None, max_len: int = 42) -> str:
+    """Recorta nombres kilométricos de Google (corta en separadores y por longitud)."""
+    if not n:
+        return "este lugar"
+    # Google a veces devuelve "Nombre | keyword SEO | keyword | …": nos quedamos con lo 1ro.
+    for sep in (" | ", " - ", " — ", " · ", ", "):
+        if sep in n:
+            n = n.split(sep)[0].strip()
+            break
+    n = n.strip()
+    if len(n) > max_len:
+        n = n[:max_len].rsplit(" ", 1)[0].rstrip(",.;:") + "…"
+    return n or "este lugar"
+
+
 def _interpreta_walk(ws: int | None) -> str:
     if ws is None:
         return "Es una zona con su propio ritmo."
@@ -235,6 +250,15 @@ def _aura(ws: int | None, parque: dict | None, transporte: dict | None) -> str:
     return "una zona en crecimiento, con carácter propio"
 
 
+async def _mejor_transporte(lat: float, lon: float, key: str) -> dict | None:
+    """Prioriza el hub MASIVO (Metro/tren) aunque haya una parada de bus más cerca."""
+    metro = await _nearest_categoria(lat, lon, "transporte", key,
+                                     tipos=["subway_station", "train_station", "light_rail_station"])
+    if metro:
+        return metro
+    return await _nearest_categoria(lat, lon, "transporte", key, tipos=["bus_station", "transit_station"])
+
+
 async def recorrido_zona(lat: float, lon: float) -> dict:
     """Genera un 'Recorrido con Aura': 4-6 escenas auto-narradas sobre la zona real."""
     key = settings.google_maps_api_key
@@ -243,9 +267,7 @@ async def recorrido_zona(lat: float, lon: float) -> dict:
     tareas: dict = {"geo": _reverse_geocode(lat, lon), "walk": walk_score_para(lat, lon)}
     if key:
         tareas["parque"] = _nearest_categoria(lat, lon, "parque", key)
-        tareas["transporte"] = _nearest_categoria(
-            lat, lon, "transporte", key,
-            tipos=["subway_station", "train_station", "light_rail_station", "bus_station", "transit_station"])
+        tareas["transporte"] = _mejor_transporte(lat, lon, key)
         tareas["super"] = _nearest_categoria(lat, lon, "supermercado", key)
         tareas["salud"] = _nearest_categoria(lat, lon, "salud", key)
     vals = await asyncio.gather(*tareas.values(), return_exceptions=True)
@@ -269,12 +291,13 @@ async def recorrido_zona(lat: float, lon: float) -> dict:
 
     # 2) El pulmón verde
     if pq:
+        nom_pq = _nombre_limpio(pq["nombre"])
         escenas.append({
             "titulo": "🌳 El pulmón del barrio",
-            "narracion": f"A {_min_pie(pq['distancia_m'])} min a pie tienes **{pq['nombre']}** — el lugar para "
+            "narracion": f"A {_min_pie(pq['distancia_m'])} min a pie tienes **{nom_pq}** — el lugar para "
                          "correr al amanecer, sacar al perro o un domingo en familia.",
             "centro": [pq["lon"], pq["lat"]], "zoom": 16,
-            "puntos": [{"coords": [pq["lon"], pq["lat"]], "etiqueta": f"🌳 {pq['nombre']}", "color": "#2DBDB6"}],
+            "puntos": [{"coords": [pq["lon"], pq["lat"]], "etiqueta": f"🌳 {nom_pq}", "color": "#2DBDB6"}],
         })
 
     # 3) Cómo te mueves (ruta peatonal real al hub de transporte)
@@ -286,20 +309,21 @@ async def recorrido_zona(lat: float, lon: float) -> dict:
             ruta = None
         es_masivo = any(w in tr["nombre"].lower() for w in ("metro", "estación", "estacion", "terminal"))
         plus = " Estar a pasos del transporte masivo es de las señales que más empujan la plusvalía." if es_masivo else ""
+        nom_tr = _nombre_limpio(tr["nombre"])
         if ruta and ruta.get("coords"):
             escenas.append({
                 "titulo": "🚶 Tu conexión con la ciudad",
-                "narracion": f"**{tr['nombre']}** está a {ruta['duracion_min']} min caminando.{plus}",
+                "narracion": f"**{nom_tr}** está a {ruta['duracion_min']} min caminando.{plus}",
                 "centro": [(lon + tr["lon"]) / 2, (lat + tr["lat"]) / 2], "zoom": 14.8,
                 "ruta": {"coords": ruta["coords"], "destino": [tr["lon"], tr["lat"]],
-                         "etiqueta": f"🚶 {ruta['duracion_min']} min · {tr['nombre']}", "color": "#5EEAD4"},
+                         "etiqueta": f"🚶 {ruta['duracion_min']} min · {nom_tr}", "color": "#5EEAD4"},
             })
         else:
             escenas.append({
                 "titulo": "🚶 Tu conexión con la ciudad",
-                "narracion": f"**{tr['nombre']}** a {_min_pie(tr['distancia_m'])} min a pie.{plus}",
+                "narracion": f"**{nom_tr}** a {_min_pie(tr['distancia_m'])} min a pie.{plus}",
                 "centro": [tr["lon"], tr["lat"]], "zoom": 15.5,
-                "puntos": [{"coords": [tr["lon"], tr["lat"]], "etiqueta": tr["nombre"], "color": "#5EEAD4"}],
+                "puntos": [{"coords": [tr["lon"], tr["lat"]], "etiqueta": nom_tr, "color": "#5EEAD4"}],
             })
 
     # 4) Lo cotidiano, a la mano
@@ -307,8 +331,9 @@ async def recorrido_zona(lat: float, lon: float) -> dict:
     if cotid:
         puntos, nombres = [], []
         for s, col in zip(cotid, ("#E5C06A", "#E0685A")):
-            puntos.append({"coords": [s["lon"], s["lat"]], "etiqueta": f"{s['nombre']} ({_min_pie(s['distancia_m'])} min)", "color": col})
-            nombres.append(f"**{s['nombre']}** a {_min_pie(s['distancia_m'])} min")
+            nom_s = _nombre_limpio(s["nombre"])
+            puntos.append({"coords": [s["lon"], s["lat"]], "etiqueta": f"{nom_s} ({_min_pie(s['distancia_m'])} min)", "color": col})
+            nombres.append(f"**{nom_s}** a {_min_pie(s['distancia_m'])} min")
         escenas.append({
             "titulo": "🛒 Lo cotidiano, a la mano",
             "narracion": "Para el día a día: " + " y ".join(nombres) + ".",

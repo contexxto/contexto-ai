@@ -177,27 +177,62 @@ export default function MapView() {
   const capasRef = useRef({ ids: [], markers: [] })  // capas dibujadas por el chat del mapa
   const tourTimer = useRef(null)  // timeout de auto-avance del recorrido
   const recRef = useRef(null)     // SpeechRecognition
+  const watchIdRef = useRef(null) // id de watchPosition (ubicación en segundo plano)
 
   // Persiste la ubicación para no volver a pedirla en cada recarga.
   function guardarPos(g) {
     lastPos.current = g
     try { localStorage.setItem('ctx_lastpos', JSON.stringify(g)) } catch { /* sin localStorage */ }
   }
-  // Al montar: recupera la última ubicación conocida y, si el permiso ya fue
-  // concedido, la refresca en silencio (sin molestar con el mensaje "Ubicándote").
+  // Modelo Uber: pide permiso UNA vez y luego mantiene la ubicación viva en
+  // segundo plano (watchPosition). En sesiones siguientes, si el permiso ya fue
+  // concedido, se reactiva sola — sin volver a molestar.
+  function iniciarWatch(silent, onFirst) {
+    if (!navigator.geolocation) {
+      if (!silent) setMapaMsg('Tu navegador no permite ubicación. Igual puedes preguntarme y respondo desde el área visible del mapa.')
+      return
+    }
+    try { localStorage.removeItem('geoOptOut') } catch { /* ignore */ }
+    if (watchIdRef.current != null) { onFirst?.(lastPos.current); return }  // ya activa
+    if (!silent) setUbicando(true)
+    let first = true
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      pos => {
+        const g = { lat: +pos.coords.latitude.toFixed(6), lon: +pos.coords.longitude.toFixed(6) }
+        guardarPos(g); setUbicado(true)
+        try { localStorage.setItem('geoConsent', '1') } catch { /* ignore */ }
+        if (first) { first = false; setUbicando(false); onFirst?.(g) }
+      },
+      err => {
+        setUbicando(false); watchIdRef.current = null
+        try { localStorage.removeItem('geoConsent') } catch { /* ignore */ }
+        if (!silent) {
+          setMapaMsg(err.code === 1
+            ? '📍 Ubicación bloqueada. Actívala en el ícono 🔒 (o de ubicación) de la barra del navegador y vuelve a tocar el pin. Mientras tanto, pregúntame y respondo desde el área visible del mapa.'
+            : '📍 No pude obtener tu ubicación. Pregúntame y respondo desde el área visible del mapa.')
+        }
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 },
+    )
+  }
+  // Al montar: recupera la última ubicación conocida y reactiva el watch en
+  // segundo plano si el permiso ya fue concedido (y el usuario no la apagó).
   useEffect(() => {
+    let optOut = false, consent = false
     try {
       const s = JSON.parse(localStorage.getItem('ctx_lastpos') || 'null')
       if (s && typeof s.lat === 'number') { lastPos.current = s; setUbicado(true) }
+      optOut = localStorage.getItem('geoOptOut') === '1'
+      consent = localStorage.getItem('geoConsent') === '1'
     } catch { /* ignore */ }
-    navigator.permissions?.query?.({ name: 'geolocation' }).then(p => {
-      if (p.state === 'granted' && navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          pos => guardarPos({ lat: +pos.coords.latitude.toFixed(6), lon: +pos.coords.longitude.toFixed(6) }),
-          () => {}, { enableHighAccuracy: true, timeout: 8000 },
-        )
-      }
-    }).catch(() => {})
+    if (!optOut) {
+      if (navigator.permissions?.query) {
+        navigator.permissions.query({ name: 'geolocation' })
+          .then(p => { if (p.state === 'granted') iniciarWatch(true) })
+          .catch(() => { if (consent) iniciarWatch(true) })
+      } else if (consent) { iniciarWatch(true) }
+    }
+    return () => { if (watchIdRef.current != null && navigator.geolocation) navigator.geolocation.clearWatch(watchIdRef.current) }
   }, [])
 
   function limpiarCapas() {
@@ -338,29 +373,15 @@ export default function MapView() {
       if (res.ok) setAura(await res.json())
     } catch { /* silencioso: la tarjeta es un extra, no rompe el mapa */ }
   }
-  // Ubícame: GPS real → centra el mapa y deja un punto que late.
+  // Botón de ubicación: la 1ª vez pide permiso y arranca el watch en segundo
+  // plano; ya activo, solo recentra el mapa en tu posición viva.
   function ubicarme() {
     const map = mapRef.current
-    if (!navigator.geolocation) { setMapaMsg('Tu navegador no permite ubicación. Igual puedes preguntarme y respondo desde el área visible del mapa.'); return }
-    setUbicando(true)
-    navigator.geolocation.getCurrentPosition(
-      pos => {
-        const g = { lat: +pos.coords.latitude.toFixed(6), lon: +pos.coords.longitude.toFixed(6) }
-        guardarPos(g); setUbicado(true); setUbicando(false)
-        if (map) { map.flyTo({ center: [g.lon, g.lat], zoom: 15, duration: 1200 }); marcadorPulso([g.lon, g.lat]) }
-        cargarAura(g.lat, g.lon)
-      },
-      err => {
-        setUbicando(false)
-        const msg = err.code === 1
-          ? '📍 Ubicación bloqueada. Actívala en el ícono 🔒 (o de ubicación) de la barra del navegador y vuelve a tocar el pin. Mientras tanto, pregúntame y respondo desde el área visible del mapa.'
-          : err.code === 3
-            ? '📍 La ubicación tardó demasiado. Reintenta, o pregúntame y respondo desde el área visible del mapa.'
-            : '📍 No pude obtener tu ubicación. Pregúntame y respondo desde el área visible del mapa.'
-        setMapaMsg(msg)
-      },
-      { enableHighAccuracy: true, timeout: 10000 },
-    )
+    const recentrar = g => {
+      if (g && map) { map.flyTo({ center: [g.lon, g.lat], zoom: 15, duration: 1200 }); marcadorPulso([g.lon, g.lat]); cargarAura(g.lat, g.lon) }
+    }
+    if (watchIdRef.current != null && lastPos.current) { recentrar(lastPos.current); return }
+    iniciarWatch(false, recentrar)
   }
 
   const RADII = [[250, '250 m'], [500, '500 m'], [1000, '1 km'], [2000, '2 km']]

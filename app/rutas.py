@@ -46,87 +46,38 @@ def _decode_polyline(enc: str) -> list[list[float]]:
     return coords
 
 
-# Mapa tipo-de-Google → categoría (para elegir servicios DIVERSOS, no 3 farmacias).
-_TIPO_CAT = {c["google"]: c["key"] for c in _CATEGORIAS}
-for _t in ("subway_station", "bus_station", "train_station", "transit_station"):
-    _TIPO_CAT[_t] = "transporte"
+# Categorías de vida diaria para "qué hay cerca" (diverso y DETERMINÍSTICO).
+_CATS_ENTORNO = ["salud", "farmacia", "supermercado", "educacion", "parque", "centro_comercial"]
 
 
-async def _servicios_con_coords(lat: float, lon: float, key: str, n: int = 3) -> list[dict]:
-    """El servicio más cercano POR CATEGORÍA (diverso), priorizando transporte."""
-    tipos = [c["google"] for c in _CATEGORIAS] + ["subway_station", "bus_station", "train_station"]
-    body = {
-        "includedTypes": tipos,
-        "maxResultCount": 20,
-        "rankPreference": "DISTANCE",
-        "languageCode": "es",
-        "locationRestriction": {"circle": {"center": {"latitude": lat, "longitude": lon}, "radius": float(_RADIO_M)}},
-    }
-    headers = {
-        "Content-Type": "application/json",
-        "X-Goog-Api-Key": key,
-        "X-Goog-FieldMask": "places.displayName,places.location,places.types",
-    }
-    verify = settings.ssl_verify.lower() != "false"
-    async with httpx.AsyncClient(verify=verify, timeout=_TIMEOUT) as c:
-        r = await c.post("https://places.googleapis.com/v1/places:searchNearby", json=body, headers=headers)
-        r.raise_for_status()
-        places = r.json().get("places", [])
+async def _servicios_con_coords(lat: float, lon: float, key: str, n: int = 6) -> list[dict]:
+    """
+    El servicio más cercano POR CATEGORÍA, vía una búsqueda dedicada por categoría.
 
-    # El más cercano por categoría.
-    mejor: dict[str, dict] = {}
-    for pl in places:
-        loc = pl.get("location", {})
-        nombre = (pl.get("displayName") or {}).get("text")
-        if "latitude" not in loc or not _nombre_valido(nombre):
+    Antes se pedía un único top-20 mezclado de todas las categorías; en zonas densas
+    una categoría (p. ej. consultorios) llenaba la ventana y el supermercado/parque
+    quedaba fuera → resultados inestables entre búsquedas. Ahora cada categoría se
+    busca por separado en paralelo: el resultado es estable y reproducible.
+    """
+    # Transporte: el hub masivo (Metro/terminal), héroe de plusvalía; el resto, por categoría.
+    tareas = [_mejor_transporte(lat, lon, key)] + [_nearest_categoria(lat, lon, c, key) for c in _CATS_ENTORNO]
+    res = await asyncio.gather(*tareas, return_exceptions=True)
+    res = [r if isinstance(r, dict) else None for r in res]
+
+    transporte = res[0]
+    otros = sorted([r for r in res[1:] if r], key=lambda i: i["distancia_m"])
+
+    # Priorizar transporte (aunque sea el más lejano) + completar por cercanía, sin duplicar nombres.
+    out: list[dict] = []
+    vistos: set[str] = set()
+    for it in ([transporte] if transporte else []) + otros:
+        if not it or it["nombre"] in vistos:
             continue
-        cat = next((_TIPO_CAT[t] for t in pl.get("types", []) if t in _TIPO_CAT), None)
-        if not cat:
-            continue
-        d = int(_haversine_m(lat, lon, loc["latitude"], loc["longitude"]))
-        if cat not in mejor or d < mejor[cat]["distancia_m"]:
-            mejor[cat] = {"nombre": nombre, "lat": loc["latitude"], "lon": loc["longitude"], "distancia_m": d}
-
-    # Búsqueda dedicada del hub de transporte (Metro/terminal): suele estar más
-    # lejos que los 20 resultados generales, pero es el héroe de plusvalía.
-    if "transporte" not in mejor:
-        # Primero Metro/tren/terminal (héroe de plusvalía); si no hay, bus.
-        for tipos_t in (["subway_station", "train_station", "light_rail_station"], ["bus_station", "transit_station"]):
-            if "transporte" in mejor:
-                break
-            try:
-                tbody = {
-                    "includedTypes": tipos_t, "maxResultCount": 5, "rankPreference": "DISTANCE",
-                    "languageCode": "es",
-                    "locationRestriction": {"circle": {"center": {"latitude": lat, "longitude": lon}, "radius": 3000.0}},
-                }
-                async with httpx.AsyncClient(verify=verify, timeout=_TIMEOUT) as c2:
-                    tr = await c2.post("https://places.googleapis.com/v1/places:searchNearby", json=tbody, headers=headers)
-                    tr.raise_for_status()
-                    for pl in tr.json().get("places", []):
-                        loc = pl.get("location", {})
-                        nombre = (pl.get("displayName") or {}).get("text")
-                        if "latitude" in loc and _nombre_valido(nombre):
-                            mejor["transporte"] = {"nombre": nombre, "lat": loc["latitude"], "lon": loc["longitude"],
-                                                   "distancia_m": int(_haversine_m(lat, lon, loc["latitude"], loc["longitude"]))}
-                            break
-            except Exception:  # noqa: BLE001
-                pass
-
-    if not mejor:
-        return []
-    # Priorizar transporte (Metro/terminal) + completar con los más cercanos distintos.
-    orden = sorted(mejor.values(), key=lambda i: i["distancia_m"])
-    res: list[dict] = []
-    if "transporte" in mejor:
-        res.append(mejor["transporte"])
-    for it in orden:
-        if len(res) >= n:
+        out.append(it); vistos.add(it["nombre"])
+        if len(out) >= n:
             break
-        if it not in res:
-            res.append(it)
-    res.sort(key=lambda i: i["distancia_m"])
-    return res[:n]
+    out.sort(key=lambda i: i["distancia_m"])
+    return out
 
 
 async def _ruta_a_pie(client: httpx.AsyncClient, o_lat: float, o_lon: float,

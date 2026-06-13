@@ -234,22 +234,19 @@ async def tool_analyze_location(latitude: float, longitude: float) -> str:
         latitude: WGS84 latitude of the point (e.g. the user's shared location).
         longitude: WGS84 longitude of the point.
     """
-    from app.entorno import entorno_destacado
-    from app.walk_score import _fetch_pois, compute_walk_score, extraer_conectividad
+    # Fuente ÚNICA de verdad: el MISMO motor que alimenta el mapa, para que la
+    # salida del home y la del mapa sean idénticas (mismo Metro, mismos servicios).
+    from app.rutas import analizar_zona
 
-    lugar = await _reverse_geocode(latitude, longitude)
-    pois = await _fetch_pois(latitude, longitude, timeout=12.0)
-    walk = compute_walk_score(pois, latitude, longitude) if pois else None
-    conect = extraer_conectividad(pois, latitude, longitude) if pois else None
-    ent = await entorno_destacado(latitude, longitude, pois)
-
+    a = await analizar_zona(latitude, longitude)
+    pois = a.get("pois_analizados", 0)
     return json.dumps({
-        "lugar": lugar,
-        "walk_score": walk["walk_score"] if walk else None,
-        "conectividad": conect["texto"] if conect else None,
-        "servicios_cercanos": ent["texto"] if ent else None,
-        "pois_analizados": len(pois) if pois else 0,
-        "cobertura": "rica" if (pois and len(pois) > 100) else ("media" if pois else "sin datos"),
+        "lugar": a["lugar"],
+        "walk_score": a["walk_score"],
+        "conectividad": a["conectividad"],
+        "servicios_cercanos": a["servicios_texto"],
+        "pois_analizados": pois,
+        "cobertura": "rica" if pois > 100 else ("media" if pois else "sin datos"),
     }, ensure_ascii=False, default=str)
 
 

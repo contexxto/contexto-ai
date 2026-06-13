@@ -320,6 +320,50 @@ async def recorrido_zona(lat: float, lon: float) -> dict:
     }
 
 
+async def analizar_zona(lat: float, lon: float) -> dict:
+    """
+    FUENTE ÚNICA DE VERDAD de una zona: la consumen el agente (home) y el mapa,
+    para que la salida sea idéntica venga de donde venga.
+
+    Combina: lugar (reverse-geocode), Walk Score (OSM) y servicios + transporte
+    (Google Places, el MISMO motor que ilumina el mapa).
+    """
+    from app.agent.tools import _reverse_geocode  # lazy: evita import circular
+    key = settings.google_maps_api_key
+
+    async def _serv():
+        return await _servicios_con_coords(lat, lon, key, 6) if key else []
+
+    geo, walk, servicios = await asyncio.gather(
+        _reverse_geocode(lat, lon), walk_score_para(lat, lon), _serv(),
+        return_exceptions=True,
+    )
+    geo = geo if isinstance(geo, dict) else {}
+    walk = walk if isinstance(walk, dict) else {}
+    servicios = servicios if isinstance(servicios, list) else []
+
+    transporte = next((s for s in servicios if s.get("cat") == "transporte"), None)
+    conect_txt = None
+    if transporte:
+        conect_txt = (f"{_CAT_EMOJI['transporte']} {_nombre_limpio(transporte['nombre'])} "
+                      f"a ~{transporte['distancia_m']} m ({_min_pie(transporte['distancia_m'])} min a pie)")
+
+    otros = [s for s in servicios if s.get("cat") != "transporte"]
+    serv_txt = ", ".join(
+        f"{_CAT_EMOJI.get(s.get('cat'), '📍')} {_nombre_limpio(s['nombre'])} (~{s['distancia_m']} m)"
+        for s in otros
+    ) or None
+
+    return {
+        "lugar": geo,
+        "walk_score": walk.get("walk_score"),
+        "conectividad": conect_txt,
+        "servicios": servicios,
+        "servicios_texto": serv_txt,
+        "pois_analizados": walk.get("pois_analizados", 0),
+    }
+
+
 async def aura_zona(lat: float, lon: float) -> dict:
     """Tarjeta proactiva ligera: barrio + Walk Score + titular del 'aura' (sin Google)."""
     from app.agent.tools import _reverse_geocode  # lazy: evita import circular

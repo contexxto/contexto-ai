@@ -587,7 +587,7 @@ export default function App() {
     watchIdRef.current = null
     setGeo(null)
     // El usuario apagó la ubicación a propósito → recordar para NO reactivar al reabrir.
-    try { localStorage.removeItem('geoConsent'); localStorage.setItem('geoOptOut', '1') } catch { /* ignore */ }
+    try { localStorage.removeItem('geoConsent'); localStorage.removeItem('ctx_lastpos'); localStorage.setItem('geoOptOut', '1') } catch { /* ignore */ }
   }, [])
 
   const startGeo = useCallback((silent = false) => {
@@ -601,8 +601,10 @@ export default function App() {
     let first = true
     watchIdRef.current = navigator.geolocation.watchPosition(
       (pos) => {
-        setGeo({ lat: +pos.coords.latitude.toFixed(6), lon: +pos.coords.longitude.toFixed(6) })
-        try { localStorage.setItem('geoConsent', '1') } catch { /* ignore */ }
+        const g = { lat: +pos.coords.latitude.toFixed(6), lon: +pos.coords.longitude.toFixed(6) }
+        setGeo(g)
+        // Posición compartida con el Mapa (capturada una vez, sirve en todas las entradas).
+        try { localStorage.setItem('geoConsent', '1'); localStorage.setItem('ctx_lastpos', JSON.stringify(g)) } catch { /* ignore */ }
         if (first) {
           first = false
           setGeoLoading(false)
@@ -629,6 +631,9 @@ export default function App() {
   useEffect(() => {
     let optOut = false, consented = false
     try {
+      // Posición compartida: si el Mapa (u otra entrada) ya la capturó, úsala al instante.
+      const s = JSON.parse(localStorage.getItem('ctx_lastpos') || 'null')
+      if (s && typeof s.lat === 'number') setGeo(prev => prev || s)
       optOut = localStorage.getItem('geoOptOut') === '1'
       consented = localStorage.getItem('geoConsent') === '1'
     } catch { /* ignore */ }

@@ -192,12 +192,12 @@ def _interpreta_walk(ws: int | None) -> str:
     if ws is None:
         return "Es una zona con su propio ritmo."
     if ws >= 90:
-        return f"Con un Walk Score de {ws}/100, casi todo está a pie: podrías vivir sin auto."
+        return f"Con una caminabilidad de {ws}/100, casi todo está a pie: podrías vivir sin auto."
     if ws >= 75:
-        return f"Walk Score {ws}/100 — muy caminable; lo esencial lo tienes a la mano."
+        return f"Caminabilidad {ws}/100 — muy caminable; lo esencial lo tienes a la mano."
     if ws >= 55:
-        return f"Walk Score {ws}/100 — caminable para lo básico; para el resto, un trayecto corto."
-    return f"Walk Score {ws}/100 — es una zona más de auto que de caminata."
+        return f"Caminabilidad {ws}/100 — caminable para lo básico; para el resto, un trayecto corto."
+    return f"Caminabilidad {ws}/100 — es una zona más de auto que de caminata."
 
 
 def _aura(ws: int | None, parque: dict | None, transporte: dict | None) -> str:

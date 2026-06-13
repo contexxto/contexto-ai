@@ -497,7 +497,7 @@ export default function App() {
     // Si la ubicación está activa, se la pasamos al agente como contexto
     // (sin ensuciar la burbuja visible). El agente usa tool_search_nearby_assets.
     const apiMessage = g
-      ? `${userText}\n\n[Contexto del sistema: el usuario está físicamente en estas coordenadas → lat=${g.lat}, lon=${g.lon}. Para describir cómo es vivir AQUÍ / en este lugar (su entorno, Walk Score, conectividad, servicios), usa tool_analyze_location con estas coordenadas — funciona en CUALQUIER ciudad o país. Si además busca inmuebles registrados cerca, usa tool_search_nearby_assets (radio 1000 m por defecto).]`
+      ? `${userText}\n\n[Contexto del sistema: el usuario está físicamente en estas coordenadas → lat=${g.lat}, lon=${g.lon}. Para describir cómo es vivir AQUÍ / en este lugar (su entorno, caminabilidad, conectividad, servicios), usa tool_analyze_location con estas coordenadas — funciona en CUALQUIER ciudad o país. Si además busca inmuebles registrados cerca, usa tool_search_nearby_assets (radio 1000 m por defecto).]`
       : userText
 
     try {

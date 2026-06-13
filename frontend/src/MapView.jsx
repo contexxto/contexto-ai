@@ -48,7 +48,7 @@ function popupHTML(p) {
     <div style="font-weight:700;font-size:13px;color:#F0ECE6;margin-bottom:6px">${p.direccion || 'Activo'}</div>
     <div style="display:inline-block;font-size:10px;font-family:'IBM Plex Mono',monospace;padding:1px 7px;border-radius:999px;background:rgba(45,189,182,.12);color:${ruidoColor};border:1px solid ${ruidoColor}55;margin-bottom:6px">ruido ${p.ruido || '—'}</div>
     ${row('Tipo', p.tipo_activo)}
-    ${row('Walk Score', p.walk_score != null ? p.walk_score + '/100' : null)}
+    ${row('Caminabilidad', p.walk_score != null ? p.walk_score + '/100' : null)}
     ${row('Cobertura vegetal', p.vegetacion != null ? p.vegetacion + '%' : null)}
     ${block('🚇 Conectividad', p.conectividad)}
     ${block('🏥 Servicios cercanos', p.servicios_cercanos)}
@@ -552,7 +552,7 @@ export default function MapView() {
             {aura.walk_score != null && (
               <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, padding: '1px 8px', borderRadius: 999,
                              background: 'rgba(45,189,182,.14)', color: '#5EEAD4', border: '1px solid rgba(45,189,182,.4)' }}>
-                Walk {aura.walk_score}/100
+                Caminabilidad {aura.walk_score}/100
               </span>
             )}
           </div>
@@ -609,6 +609,10 @@ export default function MapView() {
             <span style={{ color: '#A8A3B3' }}>Ruido {k}</span>
           </div>
         ))}
+        <div style={{ marginTop: 8, paddingTop: 7, borderTop: '1px solid #2E2D3A',
+                      fontSize: 10, color: '#6E6A7A', lineHeight: 1.4 }}>
+          Servicios y rutas: <b style={{ color: '#8A8694' }}>Google</b> · Caminabilidad: <b style={{ color: '#8A8694' }}>OpenStreetMap</b>
+        </div>
       </div>
       {error && (
         <div style={{

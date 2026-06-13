@@ -301,7 +301,7 @@ export default function MapView() {
   // Ubícame: GPS real → centra el mapa y deja un punto que late.
   function ubicarme() {
     const map = mapRef.current
-    if (!navigator.geolocation) { setMapaMsg('Tu navegador no permite ubicación.'); return }
+    if (!navigator.geolocation) { setMapaMsg('Tu navegador no permite ubicación. Igual puedes preguntarme y respondo desde el área visible del mapa.'); return }
     setUbicando(true)
     navigator.geolocation.getCurrentPosition(
       pos => {
@@ -309,7 +309,15 @@ export default function MapView() {
         lastPos.current = g; setUbicado(true); setUbicando(false)
         if (map) { map.flyTo({ center: [g.lon, g.lat], zoom: 15, duration: 1200 }); marcadorPulso([g.lon, g.lat]) }
       },
-      () => { setUbicando(false); setMapaMsg('No pudimos obtener tu ubicación (permiso denegado).') },
+      err => {
+        setUbicando(false)
+        const msg = err.code === 1
+          ? '📍 Ubicación bloqueada. Actívala en el ícono 🔒 (o de ubicación) de la barra del navegador y vuelve a tocar el pin. Mientras tanto, pregúntame y respondo desde el área visible del mapa.'
+          : err.code === 3
+            ? '📍 La ubicación tardó demasiado. Reintenta, o pregúntame y respondo desde el área visible del mapa.'
+            : '📍 No pude obtener tu ubicación. Pregúntame y respondo desde el área visible del mapa.'
+        setMapaMsg(msg)
+      },
       { enableHighAccuracy: true, timeout: 10000 },
     )
   }

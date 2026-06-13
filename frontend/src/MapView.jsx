@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { Send, MapPin, Mic, RefreshCw } from 'lucide-react'
+import { Send, MapPin, Mic, RefreshCw, LocateFixed } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 
 // Estilo de mapa oscuro premium (CARTO dark-matter, gratuito, sin token).
@@ -15,6 +15,16 @@ const RUIDO_COLOR = [
   'MEDIO', '#E5C06A',
   'ALTO', '#E0685A',
   '#969CA6',
+]
+
+// Chips de categoría (un toque = ilumina esa capa), estilo Google Maps.
+const CHIPS = [
+  ['🚇', 'Transporte', 'ruta al metro'],
+  ['🏥', 'Salud', 'hospital más cercano'],
+  ['💊', 'Farmacia', 'farmacia más cercana'],
+  ['🛒', 'Súper', 'supermercado más cercano'],
+  ['🌳', 'Parques', 'parque más cercano'],
+  ['🏫', 'Colegios', 'colegio más cercano'],
 ]
 
 // Convierte cada "~123 m" del texto en "~123 m · 2 min" (a pie, ~80 m/min).
@@ -162,6 +172,7 @@ export default function MapView() {
   const [escuchando, setEscuchando] = useState(false)  // dictado por voz
   const [ubicado, setUbicado] = useState(false)        // GPS activo
   const [ubicando, setUbicando] = useState(false)
+  const [aura, setAura] = useState(null)               // tarjeta proactiva { barrio, walk_score, titular, ciudad }
   const lastPos = useRef(null)  // {lat, lon} de la última ubicación
   const capasRef = useRef({ ids: [], markers: [] })  // capas dibujadas por el chat del mapa
   const tourTimer = useRef(null)  // timeout de auto-avance del recorrido
@@ -235,7 +246,7 @@ export default function MapView() {
         a.coords.forEach(c => { bounds.extend(c); hay = true })
         if (a.destino) marcadorEtiqueta(a.destino, a.etiqueta, a.color || '#5EEAD4')
       } else if (a.tipo === 'puntos' && a.items?.length) {
-        a.items.forEach(it => { marcadorEtiqueta(it.coords, it.etiqueta, a.color || '#5EEAD4'); bounds.extend(it.coords); hay = true })
+        a.items.forEach(it => { marcadorEtiqueta(it.coords, it.etiqueta, it.color || a.color || '#5EEAD4'); bounds.extend(it.coords); hay = true })
       } else if (a.tipo === 'volar' && a.coords) {
         map.flyTo({ center: a.coords, zoom: a.zoom || 16, duration: 900 })
       }
@@ -298,6 +309,13 @@ export default function MapView() {
     rec.onend = () => setEscuchando(false)
     recRef.current = rec; setEscuchando(true); rec.start()
   }
+  // Tarjeta de aura proactiva (barrio + Walk Score + titular) para una coordenada.
+  async function cargarAura(lat, lon) {
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/assets/mapa/aura?lat=${lat}&lon=${lon}`, { headers: apiHeaders() })
+      if (res.ok) setAura(await res.json())
+    } catch { /* silencioso: la tarjeta es un extra, no rompe el mapa */ }
+  }
   // Ubícame: GPS real → centra el mapa y deja un punto que late.
   function ubicarme() {
     const map = mapRef.current
@@ -308,6 +326,7 @@ export default function MapView() {
         const g = { lat: +pos.coords.latitude.toFixed(6), lon: +pos.coords.longitude.toFixed(6) }
         lastPos.current = g; setUbicado(true); setUbicando(false)
         if (map) { map.flyTo({ center: [g.lon, g.lat], zoom: 15, duration: 1200 }); marcadorPulso([g.lon, g.lat]) }
+        cargarAura(g.lat, g.lon)
       },
       err => {
         setUbicando(false)
@@ -474,6 +493,45 @@ export default function MapView() {
     <div style={{ position: 'relative', height: '100%', width: '100%' }}>
       <div ref={ref} style={{ position: 'absolute', inset: 0 }} />
 
+      {/* Tarjeta de aura proactiva (estilo Google: "estás en X · condición de zona") */}
+      {aura && (
+        <div style={{
+          position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 6,
+          width: 'min(420px, calc(100% - 32px))', background: 'rgba(14,13,19,.96)',
+          border: '1px solid rgba(94,234,212,.45)', borderRadius: 14, padding: '12px 14px',
+          color: '#F0ECE6', fontFamily: "'Plus Jakarta Sans',sans-serif", boxShadow: '0 8px 26px rgba(0,0,0,.5)',
+        }}>
+          <button onClick={() => setAura(null)}
+            style={{ position: 'absolute', top: 8, right: 10, background: 'none', border: 'none',
+                     color: '#A8A3B3', cursor: 'pointer', fontSize: 15, lineHeight: 1 }}>×</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <span style={{ fontWeight: 800, fontSize: 14 }}>📍 {aura.barrio}{aura.ciudad && aura.ciudad !== aura.barrio ? `, ${aura.ciudad}` : ''}</span>
+            {aura.walk_score != null && (
+              <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, padding: '1px 8px', borderRadius: 999,
+                             background: 'rgba(45,189,182,.14)', color: '#5EEAD4', border: '1px solid rgba(45,189,182,.4)' }}>
+                Walk {aura.walk_score}/100
+              </span>
+            )}
+          </div>
+          <div style={{ fontSize: 12.5, color: '#C9C6D6', lineHeight: 1.5, marginBottom: 9 }}>{aura.titular}</div>
+          <button onClick={iniciarRecorrido} disabled={mapaLoading}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'linear-gradient(90deg,#1A7A76,#2DBDB6)',
+                     border: 'none', borderRadius: 999, padding: '6px 13px', cursor: 'pointer', color: '#0E0D13',
+                     fontWeight: 800, fontSize: 12, opacity: mapaLoading ? 0.6 : 1 }}>
+            🎬 Recorre esta zona
+          </button>
+        </div>
+      )}
+
+      {/* Botón flotante "ubícame" (control estándar de mapa, estilo Google) */}
+      <button onClick={ubicarme} disabled={ubicando} title="Ir a mi ubicación"
+        style={{ position: 'absolute', bottom: 120, right: 14, zIndex: 6, width: 42, height: 42, borderRadius: 12,
+                 background: 'rgba(14,13,19,.92)', border: `1px solid ${ubicado ? '#2DBDB6' : 'rgba(45,189,182,.4)'}`,
+                 cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                 color: ubicado ? '#5EEAD4' : '#A8A3B3', boxShadow: '0 4px 14px rgba(0,0,0,.45)' }}>
+        {ubicando ? <RefreshCw size={18} style={{ animation: 'spin 1s linear infinite' }} /> : <LocateFixed size={18} />}
+      </button>
+
       {/* Pistas de uso (qué puedes hacer en el mapa) */}
       {showHints && (
         <div style={{
@@ -581,6 +639,21 @@ export default function MapView() {
                      boxShadow: '0 6px 20px rgba(45,189,182,.32)', opacity: mapaLoading ? 0.6 : 1 }}>
             🎬 Recorre esta zona
           </button>
+        )}
+
+        {/* Chips de categoría — un toque ilumina esa capa */}
+        {!tour && (
+          <div style={{ display: 'flex', gap: 7, overflowX: 'auto', paddingBottom: 9, scrollbarWidth: 'none' }}>
+            {CHIPS.map(([emoji, label, q]) => (
+              <button key={label} type="button" onClick={() => enviarComando(q)} disabled={mapaLoading}
+                style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0, cursor: 'pointer',
+                         background: 'rgba(14,13,19,.9)', border: '1px solid rgba(45,189,182,.35)', borderRadius: 999,
+                         padding: '6px 13px', color: '#F0ECE6', fontSize: 12.5, fontWeight: 600,
+                         fontFamily: "'Plus Jakarta Sans',sans-serif", whiteSpace: 'nowrap', opacity: mapaLoading ? 0.6 : 1 }}>
+                <span>{emoji}</span>{label}
+              </button>
+            ))}
+          </div>
         )}
 
         <form onSubmit={preguntarAlMapa} style={{

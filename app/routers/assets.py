@@ -4,7 +4,7 @@ import json
 import uuid
 
 import segno
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
 from geoalchemy2.elements import WKTElement
 from geopy.geocoders import Nominatim
@@ -213,6 +213,17 @@ class MapaComandoRequest(BaseModel):
 async def mapa_comando(request: Request, payload: MapaComandoRequest) -> dict:
     from app.rutas import comando_mapa
     return await comando_mapa(payload.pregunta, payload.lat, payload.lon)
+
+
+@router.get("/mapa/aura", summary="Tarjeta de aura proactiva: barrio + Walk Score + titular")
+@limiter.limit("40/minute")
+async def mapa_aura(
+    request: Request,
+    lat: float = Query(..., ge=-90, le=90),
+    lon: float = Query(..., ge=-180, le=180),
+) -> dict:
+    from app.rutas import aura_zona
+    return await aura_zona(lat, lon)
 
 
 @router.get(

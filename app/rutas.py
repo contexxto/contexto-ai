@@ -63,6 +63,10 @@ async def _servicios_con_coords(lat: float, lon: float, key: str, n: int = 6) ->
     tareas = [_mejor_transporte(lat, lon, key)] + [_nearest_categoria(lat, lon, c, key) for c in _CATS_ENTORNO]
     res = await asyncio.gather(*tareas, return_exceptions=True)
     res = [r if isinstance(r, dict) else None for r in res]
+    # Etiqueta cada resultado con su categoría (para ícono/color semántico).
+    for it, cat in zip(res, ["transporte"] + _CATS_ENTORNO):
+        if it:
+            it["cat"] = cat
 
     transporte = res[0]
     otros = sorted([r for r in res[1:] if r], key=lambda i: i["distancia_m"])
@@ -126,6 +130,16 @@ _CAT_LABEL = {
     "transporte": "🚇 transporte", "educacion": "🏫 educación", "salud": "🏥 salud",
     "farmacia": "💊 farmacia", "supermercado": "🛒 supermercado", "parque": "🌳 parque",
     "iglesia": "⛪ iglesia", "seguridad": "🛡️ seguridad", "centro_comercial": "🛍️ centro comercial",
+}
+# Ícono + color por categoría (capa visual semántica, estilo Google Maps).
+_CAT_EMOJI = {
+    "transporte": "🚇", "educacion": "🏫", "salud": "🏥", "farmacia": "💊", "supermercado": "🛒",
+    "parque": "🌳", "iglesia": "⛪", "seguridad": "🛡️", "centro_comercial": "🛍️",
+}
+_CAT_COLOR = {
+    "transporte": "#5EEAD4", "educacion": "#9B8CFF", "salud": "#E0685A", "farmacia": "#5EEAD4",
+    "supermercado": "#E5C06A", "parque": "#2DBDB6", "iglesia": "#C9C6D6", "seguridad": "#7FB2FF",
+    "centro_comercial": "#E5C06A",
 }
 
 
@@ -306,6 +320,22 @@ async def recorrido_zona(lat: float, lon: float) -> dict:
     }
 
 
+async def aura_zona(lat: float, lon: float) -> dict:
+    """Tarjeta proactiva ligera: barrio + Walk Score + titular del 'aura' (sin Google)."""
+    from app.agent.tools import _reverse_geocode  # lazy: evita import circular
+    geo, walk = await asyncio.gather(_reverse_geocode(lat, lon), walk_score_para(lat, lon), return_exceptions=True)
+    geo = geo if isinstance(geo, dict) else {}
+    walk = walk if isinstance(walk, dict) else {}
+    ws = walk.get("walk_score")
+    barrio = geo.get("barrio") or geo.get("ciudad") or "tu zona"
+    return {
+        "barrio": barrio,
+        "ciudad": geo.get("ciudad"),
+        "walk_score": ws,
+        "titular": _interpreta_walk(ws),
+    }
+
+
 async def comando_mapa(pregunta: str, lat: float, lon: float) -> dict:
     """Interpreta una pregunta y devuelve {texto, acciones} para que el mapa reaccione."""
     key = settings.google_maps_api_key
@@ -351,7 +381,11 @@ async def comando_mapa(pregunta: str, lat: float, lon: float) -> dict:
         servicios = await _servicios_con_coords(lat, lon, key, 6)
         if not servicios:
             return {"texto": "No encontré servicios mapeados en este punto.", "acciones": []}
-        items = [{"coords": [s["lon"], s["lat"]], "etiqueta": f"{s['nombre']} ({s['distancia_m']} m)"} for s in servicios]
+        items = [{
+            "coords": [s["lon"], s["lat"]],
+            "etiqueta": f"{_CAT_EMOJI.get(s.get('cat'), '📍')} {_nombre_limpio(s['nombre'])} ({s['distancia_m']} m)",
+            "color": _CAT_COLOR.get(s.get("cat"), "#5EEAD4"),
+        } for s in servicios]
         return {"texto": "Enciendo los servicios cercanos en el mapa.", "acciones": [{"tipo": "puntos", "items": items, "color": "#5EEAD4"}]}
 
     # 3) Fallback: guía

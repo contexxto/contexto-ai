@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
+import { Send, MapPin, Mic, RefreshCw } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 
 // Estilo de mapa oscuro premium (CARTO dark-matter, gratuito, sin token).
@@ -158,9 +159,13 @@ export default function MapView() {
   const [mapaMsg, setMapaMsg] = useState(null)
   const [mapaLoading, setMapaLoading] = useState(false)
   const [tour, setTour] = useState(null)  // { escenas, i } cuando hay un recorrido activo
+  const [escuchando, setEscuchando] = useState(false)  // dictado por voz
+  const [ubicado, setUbicado] = useState(false)        // GPS activo
+  const [ubicando, setUbicando] = useState(false)
   const lastPos = useRef(null)  // {lat, lon} de la última ubicación
   const capasRef = useRef({ ids: [], markers: [] })  // capas dibujadas por el chat del mapa
   const tourTimer = useRef(null)  // timeout de auto-avance del recorrido
+  const recRef = useRef(null)     // SpeechRecognition
 
   function limpiarCapas() {
     const map = mapRef.current
@@ -280,6 +285,34 @@ export default function MapView() {
     enviarComando(q)
   }
   function iniciarRecorrido() { enviarComando('hazme un tour por aquí') }
+
+  // Dictado por voz (Web Speech API) — mismas funciones que el chat del home.
+  function dictarVoz() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SR) { setMapaMsg('El dictado por voz no está disponible. Prueba en Chrome.'); return }
+    if (escuchando) { recRef.current?.stop(); return }
+    const rec = new SR()
+    rec.lang = 'es-419'; rec.interimResults = true; rec.continuous = false
+    rec.onresult = e => { let t = ''; for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript; setMapaInput(t) }
+    rec.onerror = () => setEscuchando(false)
+    rec.onend = () => setEscuchando(false)
+    recRef.current = rec; setEscuchando(true); rec.start()
+  }
+  // Ubícame: GPS real → centra el mapa y deja un punto que late.
+  function ubicarme() {
+    const map = mapRef.current
+    if (!navigator.geolocation) { setMapaMsg('Tu navegador no permite ubicación.'); return }
+    setUbicando(true)
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        const g = { lat: +pos.coords.latitude.toFixed(6), lon: +pos.coords.longitude.toFixed(6) }
+        lastPos.current = g; setUbicado(true); setUbicando(false)
+        if (map) { map.flyTo({ center: [g.lon, g.lat], zoom: 15, duration: 1200 }); marcadorPulso([g.lon, g.lat]) }
+      },
+      () => { setUbicando(false); setMapaMsg('No pudimos obtener tu ubicación (permiso denegado).') },
+      { enableHighAccuracy: true, timeout: 10000 },
+    )
+  }
 
   const RADII = [[250, '250 m'], [500, '500 m'], [1000, '1 km'], [2000, '2 km']]
   const fmt = (m) => m >= 1000 ? (m / 1000) + ' km' : m + ' m'
@@ -544,21 +577,55 @@ export default function MapView() {
 
         <form onSubmit={preguntarAlMapa} style={{
           display: 'flex', gap: 8, alignItems: 'center',
-          background: 'rgba(20,44,43,.65)', border: '1px solid rgba(45,189,182,.4)', borderRadius: 26,
+          background: escuchando ? 'rgba(45,189,182,.16)' : 'rgba(20,44,43,.65)',
+          border: `1px solid ${escuchando ? '#2DBDB6' : 'rgba(45,189,182,.4)'}`, borderRadius: 26,
           padding: 7, backdropFilter: 'blur(8px)', boxShadow: '0 0 30px rgba(45,189,182,.22)',
+          transition: 'border-color .2s, background .2s',
         }}>
+          {/* Ubicación */}
+          <button type="button" onClick={ubicarme} disabled={ubicando}
+            title={ubicado ? 'Ubicación activa' : 'Usar mi ubicación'}
+            style={{ background: 'rgba(45,189,182,.12)', border: '1px solid rgba(45,189,182,.3)', borderRadius: 999,
+                     width: 38, height: 38, flexShrink: 0, cursor: 'pointer', display: 'flex', alignItems: 'center',
+                     justifyContent: 'center', color: '#2DBDB6', boxShadow: ubicado ? '0 0 12px rgba(45,189,182,.4)' : 'none' }}>
+            {ubicando ? <RefreshCw size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <MapPin size={16} />}
+          </button>
           <input value={mapaInput} onChange={e => setMapaInput(e.target.value)}
             placeholder='Pregúntale al mapa: "ruta al Metro", "qué hay cerca", "colegio más cercano"…'
             style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#F0ECE6',
                      fontSize: 13.5, padding: '6px 12px' }} />
+          {/* Dictado por voz */}
+          <button type="button" onClick={dictarVoz}
+            title={escuchando ? 'Escuchando… toca para detener' : 'Hablar (dictado por voz)'}
+            style={{ background: escuchando ? '#2DBDB6' : 'rgba(45,189,182,.12)',
+                     border: `1px solid ${escuchando ? '#2DBDB6' : 'rgba(45,189,182,.3)'}`, borderRadius: 999,
+                     width: 38, height: 38, flexShrink: 0, cursor: 'pointer', display: 'flex', alignItems: 'center',
+                     justifyContent: 'center', color: escuchando ? '#0E0D13' : '#2DBDB6',
+                     animation: escuchando ? 'pulseGlow 1.2s ease-in-out infinite' : 'none' }}>
+            <Mic size={16} />
+          </button>
+          {/* Enviar */}
           <button type="submit" disabled={mapaLoading} title="Preguntar"
             style={{ background: '#2DBDB6', border: 'none', borderRadius: 999, width: 38, height: 38,
                      display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                     color: '#0E0D13', fontWeight: 800, opacity: mapaLoading ? 0.6 : 1 }}>
-            {mapaLoading ? '…' : '➤'}
+                     color: '#0E0D13', opacity: mapaLoading ? 0.6 : 1, flexShrink: 0 }}>
+            {mapaLoading ? <RefreshCw size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Send size={16} />}
           </button>
         </form>
+        {escuchando && (
+          <div style={{ marginTop: 8, fontSize: 11.5, color: '#5EEAD4', textAlign: 'center' }}>
+            🎤 Escuchando… habla ahora
+          </div>
+        )}
       </div>
+
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes pulseGlow {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(45,189,182,.5); }
+          50%       { box-shadow: 0 0 0 6px rgba(45,189,182,0); }
+        }
+      `}</style>
     </div>
   )
 }

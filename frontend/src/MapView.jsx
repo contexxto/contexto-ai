@@ -178,6 +178,28 @@ export default function MapView() {
   const tourTimer = useRef(null)  // timeout de auto-avance del recorrido
   const recRef = useRef(null)     // SpeechRecognition
 
+  // Persiste la ubicación para no volver a pedirla en cada recarga.
+  function guardarPos(g) {
+    lastPos.current = g
+    try { localStorage.setItem('ctx_lastpos', JSON.stringify(g)) } catch { /* sin localStorage */ }
+  }
+  // Al montar: recupera la última ubicación conocida y, si el permiso ya fue
+  // concedido, la refresca en silencio (sin molestar con el mensaje "Ubicándote").
+  useEffect(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem('ctx_lastpos') || 'null')
+      if (s && typeof s.lat === 'number') { lastPos.current = s; setUbicado(true) }
+    } catch { /* ignore */ }
+    navigator.permissions?.query?.({ name: 'geolocation' }).then(p => {
+      if (p.state === 'granted' && navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          pos => guardarPos({ lat: +pos.coords.latitude.toFixed(6), lon: +pos.coords.longitude.toFixed(6) }),
+          () => {}, { enableHighAccuracy: true, timeout: 8000 },
+        )
+      }
+    }).catch(() => {})
+  }, [])
+
   function limpiarCapas() {
     const map = mapRef.current
     if (!map) return
@@ -266,7 +288,7 @@ export default function MapView() {
       setMapaMsg('📍 Ubicándote para responder desde donde estás…')
       centro = await new Promise(resolve => {
         navigator.geolocation.getCurrentPosition(
-          pos => { const g = { lat: +pos.coords.latitude.toFixed(6), lon: +pos.coords.longitude.toFixed(6) }; lastPos.current = g; resolve(g) },
+          pos => { const g = { lat: +pos.coords.latitude.toFixed(6), lon: +pos.coords.longitude.toFixed(6) }; guardarPos(g); resolve(g) },
           () => resolve(null),
           { enableHighAccuracy: true, timeout: 8000 },
         )
@@ -324,7 +346,7 @@ export default function MapView() {
     navigator.geolocation.getCurrentPosition(
       pos => {
         const g = { lat: +pos.coords.latitude.toFixed(6), lon: +pos.coords.longitude.toFixed(6) }
-        lastPos.current = g; setUbicado(true); setUbicando(false)
+        guardarPos(g); setUbicado(true); setUbicando(false)
         if (map) { map.flyTo({ center: [g.lon, g.lat], zoom: 15, duration: 1200 }); marcadorPulso([g.lon, g.lat]) }
         cargarAura(g.lat, g.lon)
       },

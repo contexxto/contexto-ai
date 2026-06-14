@@ -333,18 +333,13 @@ export default function App() {
   const [shareInput, setShareInput] = useState('')        // input "sigue preguntándole al agente" en el visor
 
   // Visor público de conversación compartida (/s/{token}) — solo lectura, sin login.
+  // El scroll lo maneja el contenedor flex interno (como la app principal), así que
+  // el overflow:hidden global del body no estorba.
   useEffect(() => {
     if (!shareToken) return
-    // El body global tiene overflow:hidden (app-shell del chat). En esta ruta de
-    // PÁGINA hay que desbloquear el scroll del documento, o el contenido no se
-    // puede recorrer (en móvil queda congelado).
-    const prev = { ov: document.body.style.overflow, ht: document.body.style.height }
-    document.body.style.overflow = 'auto'
-    document.body.style.height = 'auto'
     axios.get(`${API_BASE}/api/v1/chat/shared/${shareToken}`)
       .then(({ data }) => setShared(data))
       .catch(() => setSharedErr(true))
-    return () => { document.body.style.overflow = prev.ov; document.body.style.height = prev.ht }
   }, [])
 
   // Sesión: cargar la actual y escuchar cambios (login/logout). Mantiene el token
@@ -761,8 +756,9 @@ export default function App() {
   // Visor público de conversación compartida (solo lectura)
   if (shareToken) {
     return (
-      <div style={{ minHeight:'100dvh', maxWidth:820, margin:'0 auto', padding:isMobile ? '0 16px' : '0 24px' }}>
-        <header style={{ display:'flex', alignItems:'center', gap:10, padding:'16px 0 12px' }}>
+      <div style={{ height:'100dvh', maxWidth:820, margin:'0 auto', padding:isMobile ? '0 16px' : '0 24px',
+                    display:'flex', flexDirection:'column' }}>
+        <header style={{ display:'flex', alignItems:'center', gap:10, padding:'16px 0 12px', flexShrink:0 }}>
           <img src={sphereLogo} alt="Contexto AI" width={32} height={32} />
           <div>
             <div style={{ fontWeight:800 }}>Contexto <span style={{ color:'var(--teal)' }}>AI</span></div>
@@ -772,6 +768,7 @@ export default function App() {
                                textDecoration:'none', border:'1px solid rgba(45,189,182,.3)',
                                borderRadius:999, padding:'6px 14px' }}>Abrir Contexto AI</a>
         </header>
+        <div style={{ flex:1, overflowY:'auto', WebkitOverflowScrolling:'touch', minHeight:0 }}>
         {sharedErr && (
           <div style={{ color:'var(--text-muted)', padding:'40px 0', textAlign:'center' }}>
             Este enlace no es válido o fue revocado.
@@ -780,7 +777,7 @@ export default function App() {
         {!shared && !sharedErr && (
           <div style={{ color:'var(--text-muted)', padding:'40px 0', textAlign:'center' }}>Cargando…</div>
         )}
-        <div style={{ paddingBottom:170 }}>
+        <div style={{ paddingBottom:24 }}>
           {shared?.messages?.map((m, i) => (
             <div key={i} style={{ display:'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start',
                                   marginBottom:16, gap:10 }}>
@@ -797,10 +794,12 @@ export default function App() {
             </div>
           ))}
         </div>
+        </div>
 
         {/* Superficie de conversión: el visitante sigue la conversación con el agente */}
         {shared && (
-          <div style={{ position:'sticky', bottom:0, paddingBottom:16, paddingTop:10, background:'#0E0D13' }}>
+          <div style={{ flexShrink:0, paddingBottom:16, paddingTop:10, background:'#0E0D13',
+                        borderTop:'1px solid #1E1D28' }}>
             <div style={{ fontSize:'.82rem', color:'var(--teal-bright)', marginBottom:8, textAlign:'center' }}>
               💬 Sigue tú la conversación con el agente
             </div>

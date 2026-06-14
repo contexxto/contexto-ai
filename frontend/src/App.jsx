@@ -380,6 +380,14 @@ export default function App() {
     return () => mq.removeEventListener('change', h)
   }, [])
 
+  // Quita el bloque interno "[Contexto del sistema: …]" que se inyecta al agente
+  // (ubicación/reglas) para que NUNCA se muestre al usuario al restaurar el historial.
+  const limpiarCtx = (m) => {
+    if (m.role !== 'user' || !m.content) return m.content
+    const i = m.content.indexOf('[Contexto del sistema')
+    return (i === -1 ? m.content : m.content.slice(0, i)).trim()
+  }
+
   // Restore history from API on mount / session change
   useEffect(() => {
     if (skipFirstRestore.current) { skipFirstRestore.current = false; return }
@@ -389,7 +397,7 @@ export default function App() {
         const restored = data.messages.map((m, i) => ({
           id: `restored-${i}`,
           role: m.role === 'user' ? 'user' : 'ai',
-          content: m.content,
+          content: limpiarCtx(m),
           time: '',
           toolCalls: [],
         }))
@@ -409,7 +417,7 @@ export default function App() {
       const { data } = await axios.get(`${API_BASE}/api/v1/chat/${sid}/history`, { headers: apiHeaders() })
       if (data.messages?.length) {
         setMessages(data.messages.map((m, i) => ({
-          id: `r-${i}`, role: m.role === 'user' ? 'user' : 'ai', content: m.content, time: '', toolCalls: [],
+          id: `r-${i}`, role: m.role === 'user' ? 'user' : 'ai', content: limpiarCtx(m), time: '', toolCalls: [],
         })))
         return
       }

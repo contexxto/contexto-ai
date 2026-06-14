@@ -216,12 +216,19 @@ def _aura(ws: int | None, parque: dict | None, transporte: dict | None) -> str:
 
 
 async def _mejor_transporte(lat: float, lon: float, key: str) -> dict | None:
-    """Prioriza el hub MASIVO (Metro/tren) aunque haya una parada de bus más cerca."""
+    """
+    Prioriza el hub MASIVO (Metro/tren) aunque haya una parada de bus más cerca.
+    Marca es_masivo para NO confundir un Metro con una simple parada de bus.
+    """
     metro = await _nearest_categoria(lat, lon, "transporte", key,
                                      tipos=["subway_station", "train_station", "light_rail_station"])
     if metro:
+        metro["es_masivo"] = True
         return metro
-    return await _nearest_categoria(lat, lon, "transporte", key, tipos=["bus_station", "transit_station"])
+    bus = await _nearest_categoria(lat, lon, "transporte", key, tipos=["bus_station", "transit_station"])
+    if bus:
+        bus["es_masivo"] = False
+    return bus
 
 
 async def recorrido_zona(lat: float, lon: float) -> dict:
@@ -345,7 +352,10 @@ async def analizar_zona(lat: float, lon: float) -> dict:
     transporte = next((s for s in servicios if s.get("cat") == "transporte"), None)
     conect_txt = None
     if transporte:
-        conect_txt = (f"{_CAT_EMOJI['transporte']} {_nombre_limpio(transporte['nombre'])} "
+        masivo = transporte.get("es_masivo", False)
+        icono = "🚇" if masivo else "🚏"
+        tipo = "" if masivo else " (parada de bus, NO es Metro)"
+        conect_txt = (f"{icono} {_nombre_limpio(transporte['nombre'])}{tipo} "
                       f"a ~{transporte['distancia_m']} m ({_min_pie(transporte['distancia_m'])} min a pie)")
 
     otros = [s for s in servicios if s.get("cat") != "transporte"]
@@ -425,11 +435,16 @@ async def comando_mapa(pregunta: str, lat: float, lon: float) -> dict:
         servicios = await _servicios_con_coords(lat, lon, key, 6)
         if not servicios:
             return {"texto": "No encontré servicios mapeados en este punto.", "acciones": []}
-        items = [{
-            "coords": [s["lon"], s["lat"]],
-            "etiqueta": f"{_CAT_EMOJI.get(s.get('cat'), '📍')} {_nombre_limpio(s['nombre'])} ({s['distancia_m']} m)",
-            "color": _CAT_COLOR.get(s.get("cat"), "#5EEAD4"),
-        } for s in servicios]
+        items = []
+        for s in servicios:
+            emoji = _CAT_EMOJI.get(s.get("cat"), "📍")
+            if s.get("cat") == "transporte" and not s.get("es_masivo"):
+                emoji = "🚏"  # parada de bus, no Metro
+            items.append({
+                "coords": [s["lon"], s["lat"]],
+                "etiqueta": f"{emoji} {_nombre_limpio(s['nombre'])} ({s['distancia_m']} m)",
+                "color": _CAT_COLOR.get(s.get("cat"), "#5EEAD4"),
+            })
         return {"texto": "Enciendo los servicios cercanos en el mapa.", "acciones": [{"tipo": "puntos", "items": items, "color": "#5EEAD4"}]}
 
     # 3) Fallback: guía

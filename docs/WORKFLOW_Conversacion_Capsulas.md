@@ -2,7 +2,9 @@
 
 **Fecha:** 2026-06-14
 **Base:** `INVESTIGACION_Comportamiento_y_Enganche.md`
-**Estado:** BORRADOR para revisión de Carlos. No aplicado al agente todavía.
+**Estado:** ✅ APLICADO al agente (Regla 0 en `graph.py`, commit a639cff) y VALIDADO en
+la prueba de esfuerzo (cápsula, plan e informe — los 3 modos). Diseñado en plan mode con
+Opus 4.8 + esfuerzo máximo.
 **Objetivo:** que el agente deje de *volcar informes* y empiece a *conversar en cápsulas* — manteniendo vivo el "wanting" (dopamina del viaje), reduciendo parálisis, transfiriendo responsabilidad y cerrando siempre con un gancho útil. Enganche **ético** (honestidad > retención).
 
 ---

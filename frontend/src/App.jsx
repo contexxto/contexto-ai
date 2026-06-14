@@ -758,7 +758,7 @@ export default function App() {
         {!shared && !sharedErr && (
           <div style={{ color:'var(--text-muted)', padding:'40px 0', textAlign:'center' }}>Cargando…</div>
         )}
-        <div style={{ paddingBottom:60 }}>
+        <div style={{ paddingBottom:170 }}>
           {shared?.messages?.map((m, i) => (
             <div key={i} style={{ display:'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start',
                                   marginBottom:16, gap:10 }}>

@@ -754,7 +754,8 @@ export default function App() {
   // Visor público de conversación compartida (solo lectura)
   if (shareToken) {
     return (
-      <div style={{ minHeight:'100dvh', maxWidth:820, margin:'0 auto', padding:isMobile ? '0 16px' : '0 24px' }}>
+      <div style={{ height:'100dvh', overflowY:'auto', WebkitOverflowScrolling:'touch',
+                    maxWidth:820, margin:'0 auto', padding:isMobile ? '0 16px' : '0 24px' }}>
         <header style={{ display:'flex', alignItems:'center', gap:10, padding:'16px 0 12px' }}>
           <img src={sphereLogo} alt="Contexto AI" width={32} height={32} />
           <div>

@@ -309,6 +309,7 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)  // colapsar sidebar (escritorio)
   const [listening, setListening] = useState(false)       // dictado por voz
   const recognitionRef = useRef(null)
+  const lastAiRef = useRef('')   // última respuesta del agente (para bloquear ecos/reenvíos)
   const [session, setSession] = useState(null)            // sesión de Supabase | null
   const [authOpen, setAuthOpen] = useState(false)         // modal de login/registro
   const [rol, setRol] = useState(null)                    // rol del usuario (cliente/corredor/inmobiliaria)
@@ -402,6 +403,8 @@ export default function App() {
           toolCalls: [],
         }))
         setMessages(restored)
+        const lastAi = [...restored].reverse().find(m => m.role === 'ai')
+        lastAiRef.current = lastAi?.content || ''
       })
       .catch(() => {}) // silent — no history yet
   }, [sessionId])
@@ -489,6 +492,13 @@ export default function App() {
   const sendMessage = useCallback(async (text, geoOverride) => {
     const userText = (text ?? input).trim()
     if (!userText || loading) return
+    // Guard: nunca reenviar la respuesta anterior del agente como si fuera del usuario
+    // (eco por copiar/pegar o lazo de audio). Una pregunta real jamás es idéntica.
+    if (lastAiRef.current && userText === lastAiRef.current.trim()) {
+      setInput('')
+      setError('Eso es la respuesta anterior 🙂 Escribe tu pregunta.')
+      return
+    }
     const g = geoOverride || geo
 
     setInput('')
@@ -523,6 +533,7 @@ export default function App() {
           : [],
       }
       setMessages(prev => [...prev, aiMsg])
+      lastAiRef.current = data.reply || ''
     } catch (err) {
       setError(
         err.response?.data?.detail
@@ -567,6 +578,7 @@ export default function App() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SR) { setError('El dictado por voz no está disponible en este navegador. Prueba en Chrome.'); return }
     if (listening) { recognitionRef.current?.stop(); return }
+    window.speechSynthesis?.cancel()  // corta el "Escuchar" (TTS) para que el micrófono no capte la voz del agente
     const rec = new SR()
     rec.lang = 'es-419'      // español de Latinoamérica
     rec.interimResults = true

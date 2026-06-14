@@ -32,7 +32,7 @@ async def tool_search_nearby_assets(
     Search for registered immutable assets within a geographic radius.
 
     Returns a JSON list of nearby properties with their habitability scores,
-    noise levels, walk scores, and traffic volumes. Use this tool whenever
+    noise levels, walkability scores, and traffic volumes. Use this tool whenever
     the user asks about a neighborhood, street, or area.
 
     Args:
@@ -47,7 +47,7 @@ async def tool_search_nearby_assets(
             a.direccion_estandarizada,
             a.tipo_activo,
             a.piso_altura,
-            a.walk_score,
+            a.walk_score AS caminabilidad,
             a.score_ruido_predictivo,
             a.volumen_trafico_historico,
             a.densidad_poblacional_pico,
@@ -82,7 +82,7 @@ async def tool_fetch_asset_lifecycle_specs(activo_id: str) -> str:
     """
     Retrieve the full profile of a specific property asset by its UUID.
 
-    ALWAYS returns the asset's permanent environment data — walk score, noise,
+    ALWAYS returns the asset's permanent environment data — walkability, noise,
     traffic, vegetation, and CONNECTIVITY (nearby Metro / bus terminals, a
     plusvalía signal) — even when no maintenance log exists yet. The structural
     maintenance fields (pipes, year, structure, waterproofing, electrical, etc.)
@@ -90,7 +90,7 @@ async def tool_fetch_asset_lifecycle_specs(activo_id: str) -> str:
 
     Use this whenever the user scans a QR or asks about a specific property by id.
     If `tiene_ficha_tecnica` is false, still present all the environment data
-    (especially walk score and connectivity) as valuable context, and note that
+    (especially walkability and connectivity) as valuable context, and note that
     the structural sheet is pending.
 
     Args:
@@ -101,7 +101,7 @@ async def tool_fetch_asset_lifecycle_specs(activo_id: str) -> str:
             a.direccion_estandarizada,
             a.tipo_activo,
             a.piso_altura,
-            a.walk_score,
+            a.walk_score AS caminabilidad,
             a.score_ruido_predictivo,
             a.volumen_trafico_historico,
             a.porcentaje_cobertura_vegetal,
@@ -222,7 +222,7 @@ async def tool_analyze_location(latitude: float, longitude: float) -> str:
     Analyze the habitability of ANY point on Earth from its coordinates.
 
     Reverse-geocodes the place (neighborhood, city, country) and computes the LIVE
-    environment of that exact spot: Walk Score, connectivity (Metro / transit hubs)
+    environment of that exact spot: walkability, connectivity (Metro / transit hubs)
     and named nearby services. It works ANYWHERE — not only Quito — and even where
     there are NO registered assets.
 
@@ -242,7 +242,7 @@ async def tool_analyze_location(latitude: float, longitude: float) -> str:
     pois = a.get("pois_analizados", 0)
     return json.dumps({
         "lugar": a["lugar"],
-        "walk_score": a["walk_score"],
+        "caminabilidad": a["walk_score"],
         "conectividad": a["conectividad"],
         "servicios_cercanos": a["servicios_texto"],
         "pois_analizados": pois,

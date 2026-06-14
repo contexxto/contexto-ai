@@ -31,6 +31,19 @@ function getOrCreateSession() {
   return id
 }
 
+// ID estable por dispositivo/navegador. Hace que la sesión del QR sea PRIVADA por
+// visitante (cada quien su conversación del inmueble), no compartida entre todos.
+const DEVICE_KEY = 'contexto_ai_device_id'
+function getDeviceId() {
+  try {
+    let id = localStorage.getItem(DEVICE_KEY)
+    if (!id) { id = (crypto.randomUUID?.() || (Date.now() + Math.random().toString(36).slice(2))); localStorage.setItem(DEVICE_KEY, id) }
+    return id
+  } catch { return 'anon' }
+}
+// Sesión del QR: única por (inmueble × dispositivo).
+const qrSessionId = (id) => `qr-${id}-${getDeviceId()}`
+
 /** Markdown → HTML: headers h1-h4, tablas, listas (ol/ul), bold, italic, code, hr.
  *  Parser línea por línea (robusto ante líneas en blanco del agente). */
 function renderMarkdown(text) {
@@ -293,7 +306,7 @@ export default function App() {
   const initialQ = new URLSearchParams(window.location.search).get('q')   // pregunta que llega desde un link compartido
   // Al abrir: chat nuevo y limpio (estilo Claude). Las conversaciones previas
   // quedan accesibles en el sidebar. Excepción: deep-link por QR (carga ese activo).
-  const [sessionId, setSessionId] = useState(() => deepLinkId ? 'qr-' + deepLinkId : 'session-' + crypto.randomUUID())
+  const [sessionId, setSessionId] = useState(() => deepLinkId ? qrSessionId(deepLinkId) : 'session-' + crypto.randomUUID())
   const [messages, setMessages]   = useState([])
   const [input, setInput]         = useState('')
   const [loading, setLoading]     = useState(false)
@@ -414,7 +427,7 @@ export default function App() {
   // Deep link de QR (letrero inteligente): /a/{id} → el agente entrega el informe.
   // Sesión determinística por inmueble: re-escanear reutiliza la conversación.
   const loadFromDeepLink = useCallback(async (id) => {
-    const sid = 'qr-' + id
+    const sid = qrSessionId(id)
     localStorage.setItem(SESSION_KEY, sid)
     setSessionId(sid)
     // Si ya fue escaneado antes, restauramos (rápido, sin volver a llamar al agente).

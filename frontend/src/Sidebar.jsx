@@ -7,11 +7,20 @@ const C = {
   bg: '#0B0A10', border: '#2E2D3A', text: '#F0ECE6', dim: '#A8A3B3', accent: '#2DBDB6', active: '#1E1D28',
 }
 
+// Quita el bloque interno "[Contexto del sistema: …]" que pudo colarse al
+// autogenerar el título desde el primer mensaje (ubicación/reglas del agente).
+function tituloLimpio(t) {
+  if (!t) return 'Conversación'
+  const i = t.indexOf('[Contexto del sistema')
+  return (i === -1 ? t : t.slice(0, i)).trim() || 'Conversación'
+}
+
 export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, onLogin, onLogout, onPublish, onMap, onReview }) {
   const [sessions, setSessions] = useState([])
   const [menuId, setMenuId] = useState(null)
   const [editingId, setEditingId] = useState(null)
   const [editValue, setEditValue] = useState('')
+  const [porEliminar, setPorEliminar] = useState(null)  // confirmación propia (no confirm() nativo)
   const editRef = useRef(null)
 
   const load = useCallback(async () => {
@@ -51,14 +60,17 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, o
     } catch (e) { console.error('No se pudo fijar/desfijar:', e); alert('No se pudo fijar/desfijar la conversación.') }
   }
 
-  async function remove(s) {
-    setMenuId(null)
-    if (!window.confirm(`¿Eliminar "${s.titulo}"? Se ocultará de la lista.`)) return
+  function remove(s) { setMenuId(null); setPorEliminar(s) }
+
+  async function confirmarEliminar() {
+    const s = porEliminar
+    setPorEliminar(null)
+    if (!s) return
     try {
       await axios.delete(`${API_BASE}/api/v1/chat/sessions/${s.session_id}`, { headers: apiHeaders() })
       await load()
       if (s.session_id === sessionId) onNew()
-    } catch (e) { console.error('No se pudo eliminar la conversación:', e); alert('No se pudo eliminar la conversación.') }
+    } catch (e) { console.error('No se pudo eliminar la conversación:', e) }
   }
 
   const pinned = sessions.filter(s => s.pinned)
@@ -88,7 +100,7 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, o
         ) : (
           <span style={{ flex: 1, fontSize: '.84rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: C.text }}>
             {s.pinned && <Pin size={11} color={C.accent} style={{ marginRight: 4, verticalAlign: 'middle' }} />}
-            {s.titulo}
+            {tituloLimpio(s.titulo)}
           </span>
         )}
         {!editing && (
@@ -106,7 +118,7 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, o
               boxShadow: '0 8px 24px rgba(0,0,0,.5)', overflow: 'hidden',
             }}>
             <MenuItem icon={<Pencil size={14} />} label="Renombrar"
-              onClick={() => { setEditingId(s.session_id); setEditValue(s.titulo); setMenuId(null) }} />
+              onClick={() => { setEditingId(s.session_id); setEditValue(tituloLimpio(s.titulo)); setMenuId(null) }} />
             <MenuItem icon={s.pinned ? <PinOff size={14} /> : <Pin size={14} />}
               label={s.pinned ? 'Desfijar' : 'Fijar'} onClick={() => togglePin(s)} />
             <MenuItem icon={<Trash2 size={14} />} label="Eliminar" danger onClick={() => remove(s)} />
@@ -190,6 +202,31 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, o
           </button>
         )}
       </div>
+
+      {/* Confirmación propia de borrado (en lugar del confirm() nativo del navegador) */}
+      {porEliminar && (
+        <div onClick={() => setPorEliminar(null)}
+          style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,.55)',
+                   display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ width: 'min(360px, 100%)', background: '#16151E', border: `1px solid ${C.border}`,
+                     borderRadius: 14, padding: '18px', boxShadow: '0 12px 40px rgba(0,0,0,.6)',
+                     fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+            <div style={{ color: C.text, fontWeight: 700, fontSize: '.95rem', marginBottom: 6 }}>Eliminar conversación</div>
+            <div style={{ color: C.dim, fontSize: '.84rem', lineHeight: 1.5, marginBottom: 16 }}>
+              Se quitará <b style={{ color: C.text }}>"{tituloLimpio(porEliminar.titulo)}"</b> de tu lista.
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setPorEliminar(null)}
+                style={{ padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: '.84rem',
+                         background: 'transparent', border: `1px solid ${C.border}`, color: C.text }}>Cancelar</button>
+              <button onClick={confirmarEliminar}
+                style={{ padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: '.84rem', fontWeight: 600,
+                         background: '#E0685A', border: 'none', color: '#0E0D13' }}>Eliminar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

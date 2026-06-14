@@ -385,6 +385,8 @@ export default function App() {
   // (ubicación/reglas) para que NUNCA se muestre al usuario al restaurar el historial.
   const limpiarCtx = (m) => {
     if (m.role !== 'user' || !m.content) return m.content
+    // Mensaje técnico del QR → texto amigable (no exponer la instrucción interna).
+    if (m.content.startsWith('El usuario escaneó el QR')) return '📍 Escaneé el QR de este inmueble. ¿Qué sabes de él?'
     const i = m.content.indexOf('[Contexto del sistema')
     return (i === -1 ? m.content : m.content.slice(0, i)).trim()
   }
@@ -769,7 +771,7 @@ export default function App() {
                             background: m.role === 'user' ? 'linear-gradient(135deg, #1A7A76, #2DBDB6)' : 'transparent',
                             color: m.role === 'user' ? '#fff' : 'inherit', fontSize:'.92rem', lineHeight:1.65 }}>
                 {m.role === 'user'
-                  ? <span>{m.content}</span>
+                  ? <span>{limpiarCtx(m)}</span>
                   : <div className="ai-content" dangerouslySetInnerHTML={{ __html: renderMarkdown(m.content) }} />}
               </div>
             </div>

@@ -50,9 +50,20 @@ _TIMEOUT = 6.0
 # Nombres-placeholder de OSM/Google que no aportan (ej. "ID 1906", solo números).
 _PLACEHOLDER = re.compile(r"^(id\s*\d+|sin\s*nombre|\d+|área\s*verde.*\d+)$", re.I)
 
+# Etiquetas personales/genéricas que la gente registra en mapas y NO son destinos
+# reales (ej. alguien fija "TRABAJO" o "CASA" en Google Maps y se filtra como POI).
+_GENERICOS = {
+    "trabajo", "casa", "mi casa", "mi trabajo", "hogar", "oficina", "mi oficina",
+    "local", "departamento", "depto", "tienda", "negocio", "edificio", "lote",
+    "terreno", "domicilio", "aqui", "aquí",
+}
+
 
 def _nombre_valido(nombre: str | None) -> bool:
-    return bool(nombre) and not _PLACEHOLDER.match(nombre.strip())
+    if not nombre:
+        return False
+    n = nombre.strip()
+    return not _PLACEHOLDER.match(n) and n.casefold() not in _GENERICOS
 
 
 def _formatear(items: list[dict]) -> str:

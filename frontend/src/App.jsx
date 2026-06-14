@@ -335,9 +335,16 @@ export default function App() {
   // Visor público de conversación compartida (/s/{token}) — solo lectura, sin login.
   useEffect(() => {
     if (!shareToken) return
+    // El body global tiene overflow:hidden (app-shell del chat). En esta ruta de
+    // PÁGINA hay que desbloquear el scroll del documento, o el contenido no se
+    // puede recorrer (en móvil queda congelado).
+    const prev = { ov: document.body.style.overflow, ht: document.body.style.height }
+    document.body.style.overflow = 'auto'
+    document.body.style.height = 'auto'
     axios.get(`${API_BASE}/api/v1/chat/shared/${shareToken}`)
       .then(({ data }) => setShared(data))
       .catch(() => setSharedErr(true))
+    return () => { document.body.style.overflow = prev.ov; document.body.style.height = prev.ht }
   }, [])
 
   // Sesión: cargar la actual y escuchar cambios (login/logout). Mantiene el token
@@ -754,8 +761,7 @@ export default function App() {
   // Visor público de conversación compartida (solo lectura)
   if (shareToken) {
     return (
-      <div style={{ height:'100dvh', overflowY:'auto', WebkitOverflowScrolling:'touch',
-                    maxWidth:820, margin:'0 auto', padding:isMobile ? '0 16px' : '0 24px' }}>
+      <div style={{ minHeight:'100dvh', maxWidth:820, margin:'0 auto', padding:isMobile ? '0 16px' : '0 24px' }}>
         <header style={{ display:'flex', alignItems:'center', gap:10, padding:'16px 0 12px' }}>
           <img src={sphereLogo} alt="Contexto AI" width={32} height={32} />
           <div>

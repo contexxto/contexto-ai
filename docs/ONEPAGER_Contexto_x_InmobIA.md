@@ -41,14 +41,24 @@ Eso es **exactamente lo que te diferencia de Facebook, los portales y los referi
 
 ---
 
-## Cómo lo usas — menú de integración
+## Cómo lo usas — menú de integración (API-first)
 
 - **A. API de inteligencia de zona** — InmobIA consume nuestros datos y los muestra en tu funnel.
 - **B. Mapa + Recorrido con Aura embebido** — white-label dentro de tu sitio.
 - **C. "Powered by Contexto"** — co-branded, credibilidad inmediata.
 - **D. Captura de intención** — convertimos la exploración del comprador en señal de cita calificada.
+- **E. API de análisis de INVERSIÓN** 🆕 — rentabilidad (bruta/neta), precio/m², veredicto y
+  riesgos del inmueble. **Esto convierte un lead común en un lead premium:** tu desarrollador
+  no recibe "alguien preguntó", recibe *"comprador interesado en un activo que rinde 6,4%
+  verificado"*. Por eso paga más.
 
-Empezamos por lo más simple (A o D) y escalamos según el piloto.
+> **Ya es real, no una promesa.** El motor de inversión está vivo como endpoint REST hoy:
+> `GET /assets/{id}/investment` → devuelve KPIs + alertas honestas + **nivel de confianza por
+> dato** (verificado vs. estimado). Así es exactamente como InmobIA lo integraría. *(En la demo
+> te lo muestro corriendo.)*
+
+Empezamos por lo más simple (A, D o E) y escalamos según el piloto. La web y el agente de Contexto
+son *clientes* del mismo API que tú consumirías — no construyes nada, lo integras.
 
 ---
 
@@ -74,14 +84,14 @@ Empezamos por lo más simple (A o D) y escalamos según el piloto.
 ## Qué ganas
 
 - **Diferenciación real** frente a Facebook/portales (resuelve tu Riesgo #2).
-- **Leads mejor calificados** → tu desarrollador paga más por cita.
-- **Inteligencia de zona instantánea** — sin construirla tú (ahorras meses y capital).
+- **Leads premium, no solo "calificados"** → llegan con tesis de inversión (yield verificado) → tu desarrollador paga mucho más.
+- **Inteligencia de zona + inversión instantánea** — sin construirla tú (ahorras meses y capital).
 - **Un socio de producto**, no un proveedor más.
 
 ---
 
 ## Próximo paso
 
-Una **llamada de 30 minutos** + un **NDA mutuo**, y arrancamos un **piloto acotado** en Mazatlán. Te muestro el motor funcionando **en vivo sobre tu ciudad** — párate en cualquier punto y pregúntale al mapa.
+Una **llamada de 30 minutos** + un **NDA mutuo**, y arrancamos un **piloto acotado** en Mazatlán. En la demo te muestro, **en vivo sobre tu ciudad**: (1) el mapa conversacional respondiendo desde cualquier punto, y (2) el **API de inversión devolviendo el análisis de un inmueble real** — para que veas cómo se integraría en InmobIA.
 
 **Carlos Valencia** · Contexto AI · contexxto.ai@gmail.com · contexto-ai-six.vercel.app

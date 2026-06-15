@@ -88,8 +88,13 @@ export default function AnuncioView({ id, onChat }) {
       <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
         {/* Hero */}
         <div style={{ position: 'relative', height: fotos.length ? 240 : 120,
-                      background: fotos.length ? `#000 url(${fotos[0]}) center/cover no-repeat`
-                        : `linear-gradient(135deg, ${C.panel}, ${C.bg})` }}>
+                      background: `linear-gradient(135deg, ${C.panel}, ${C.bg})`, overflow: 'hidden' }}>
+          {fotos.length > 0 && (
+            // <img> con onError → si la URL no carga (p. ej. bucket no público),
+            // se oculta y queda el degradado en vez de un bloque negro.
+            <img src={fotos[0]} alt="" onError={(e) => { e.currentTarget.style.display = 'none' }}
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+          )}
           <div style={{ position: 'absolute', inset: 0,
                         background: 'linear-gradient(to top, rgba(14,13,19,.92) 0%, rgba(14,13,19,.1) 60%)' }} />
           <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '0 16px 14px' }}>
@@ -110,6 +115,7 @@ export default function AnuncioView({ id, onChat }) {
             <div style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '12px 0 2px' }}>
               {fotos.slice(1).map((u, i) => (
                 <img key={i} src={u} alt="" width={92} height={70}
+                  onError={(e) => { e.currentTarget.style.display = 'none' }}
                   style={{ objectFit: 'cover', borderRadius: 10, border: `1px solid ${C.line}`, flexShrink: 0 }} />
               ))}
             </div>

@@ -143,6 +143,22 @@ _CAT_COLOR = {
 }
 
 
+# Marcas reconocibles (LATAM): se prefieren como destino aunque un genérico esté un poco más cerca.
+_MARCAS_ANCLA = (
+    "tuti", "supermaxi", "megamaxi", "santa maría", "santa maria", "mi comisariato",
+    "akí", "aki", "gran akí", "tía", "tia", "coral",                       # supermercados
+    "fybeca", "sana sana", "pharmacys", "medicity", "cruz azul", "difare",  # farmacias
+    "quicentro", "el recreo", "scala", "san luis", "el condado", "granados",
+    "el bosque", "paseo san francisco", "ventura", "el jardín", "el jardin",  # centros comerciales
+)
+_MARGEN_MARCA_M = 350  # una marca gana si está a ≤ (más cercano + este margen)
+
+
+def _es_marca(nombre: str | None) -> bool:
+    n = (nombre or "").lower()
+    return any(m in n for m in _MARCAS_ANCLA)
+
+
 async def _nearest_categoria(lat: float, lon: float, cat: str, key: str, tipos: list[str] | None = None) -> dict | None:
     body = {
         "includedTypes": tipos or _CAT_GOOGLE.get(cat, []), "maxResultCount": 8, "rankPreference": "DISTANCE",
@@ -156,12 +172,21 @@ async def _nearest_categoria(lat: float, lon: float, cat: str, key: str, tipos: 
         async with httpx.AsyncClient(verify=verify, timeout=_TIMEOUT) as c:
             r = await c.post("https://places.googleapis.com/v1/places:searchNearby", json=body, headers=headers)
             r.raise_for_status()
+            candidatos = []
             for pl in r.json().get("places", []):
                 loc = pl.get("location", {})
                 nombre = (pl.get("displayName") or {}).get("text")
                 if "latitude" in loc and _nombre_valido(nombre):
-                    return {"nombre": nombre, "lat": loc["latitude"], "lon": loc["longitude"],
-                            "distancia_m": int(_haversine_m(lat, lon, loc["latitude"], loc["longitude"]))}
+                    candidatos.append({"nombre": nombre, "lat": loc["latitude"], "lon": loc["longitude"],
+                                       "distancia_m": int(_haversine_m(lat, lon, loc["latitude"], loc["longitude"]))})
+            if not candidatos:
+                return None
+            candidatos.sort(key=lambda c: c["distancia_m"])
+            nearest = candidatos[0]
+            # Prefiere una marca reconocible si está razonablemente cerca (mejor destino para el usuario).
+            marca = next((c for c in candidatos
+                          if _es_marca(c["nombre"]) and c["distancia_m"] <= nearest["distancia_m"] + _MARGEN_MARCA_M), None)
+            return marca or nearest
     except Exception:  # noqa: BLE001
         pass
     return None

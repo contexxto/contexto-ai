@@ -156,7 +156,7 @@ function sectionTitle(slide, text, y) {
 
   // Features grid
   const features = [
-    { icon:"🗺️", title:"Walk Score", body:"Distancia real peatonal\na puntos de interés clave" },
+    { icon:"🗺️", title:"Caminabilidad", body:"Distancia real peatonal\na puntos de interés clave" },
     { icon:"🔊", title:"Score de Ruido", body:"Predictivo por tráfico vehicular,\nsin sensores físicos" },
     { icon:"🌳", title:"Cobertura Vegetal", body:"% árboles via visión\ncomputacional aérea" },
     { icon:"🔧", title:"Ficha Técnica", body:"Tuberías, impermeabilización,\ncableado — como un auto" },
@@ -225,7 +225,7 @@ function sectionTitle(slide, text, y) {
   sl.addText([
     { text: "🏆 Isla Fernandina N44-28", options:{ bold:true, breakLine:true, color:TEXT } },
     { text: "Ruido: BAJO · Tráfico: 980 veh/día · Vegetal: 51%\n", options:{ color:MUTED } },
-    { text: "Walk Score 87 · Impermeabilización: Jun 2023 ✓", options:{ color:MUTED } },
+    { text: "Caminabilidad 87 · Impermeabilización: Jun 2023 ✓", options:{ color:MUTED } },
   ], { x:chatX+0.75, y:chatY+1.8, w:4.3, h:1.15, fontSize:9 });
 
   // Input bar mockup

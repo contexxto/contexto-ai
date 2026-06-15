@@ -9,7 +9,6 @@ import Auth from './Auth'
 import MisPublicaciones from './MisPublicaciones'
 import ShareConversation from './ShareConversation'
 import AnuncioView from './AnuncioView'
-import IntentPulse from './IntentPulse'
 
 // Headers (backend key + Bearer del usuario) centralizados en api.js
 import { API_BASE, apiHeaders, setAccessToken } from './api'
@@ -306,7 +305,6 @@ export default function App() {
   const deepLinkId = (window.location.pathname.match(/^\/a\/([0-9a-fA-F-]{36})$/) || [])[1] || null
   const shareToken = (window.location.pathname.match(/^\/s\/([A-Za-z0-9_-]+)$/) || [])[1] || null
   const initialQ = new URLSearchParams(window.location.search).get('q')   // pregunta que llega desde un link compartido
-  const showIntent = new URLSearchParams(window.location.search).get('intent') === '1'  // pulso de intención (dev/corredor)
   // Al abrir: chat nuevo y limpio (estilo Claude). Las conversaciones previas
   // quedan accesibles en el sidebar. Excepción: deep-link por QR (carga ese activo).
   const [sessionId, setSessionId] = useState(() => deepLinkId ? qrSessionId(deepLinkId) : 'session-' + crypto.randomUUID())
@@ -934,7 +932,6 @@ export default function App() {
 
   return (
     <div style={{ display:'flex', height:'100dvh' }}>
-      {showIntent && <IntentPulse sessionId={sessionId} trigger={messages.length} />}
       {/* Desktop: barra lateral fija (colapsable). Móvil: cajón con backdrop. */}
       {!isMobile && !sidebarCollapsed && (
         <Sidebar

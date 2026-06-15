@@ -96,6 +96,7 @@ export default function Caracteristicas({ activo, onClose }) {
     } finally { setSaving(false) }
   }
 
+  const esVenta = (activo.operacion || '').toLowerCase() === 'venta'
   const inp = { width: '100%', padding: '10px 12px', borderRadius: 10, marginTop: 5, boxSizing: 'border-box',
     background: 'rgba(255,255,255,.04)', border: `1px solid ${C.line}`, color: C.text, fontSize: '.9rem', outline: 'none' }
   const lbl = { fontSize: '.76rem', color: C.muted, fontWeight: 600 }
@@ -220,10 +221,16 @@ export default function Caracteristicas({ activo, onClose }) {
             </div>
 
             <div style={sec}>PRECIO Y GASTOS</div>
+            <div style={{ fontSize: '.72rem', color: C.muted, marginBottom: 8 }}>
+              {esVenta
+                ? '📌 Operación: VENTA — el precio es el valor total de venta del inmueble.'
+                : '📌 Operación: ARRIENDO — el precio es el canon mensual (lo que cobras al mes).'}
+            </div>
             <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
               <div style={{ flex: 1 }}>
-                <label style={lbl}>Precio (USD)</label>
-                <input type="number" min={0} style={inp} value={f.precio ?? ''} onChange={e => set('precio', e.target.value)} placeholder="850" />
+                <label style={lbl}>{esVenta ? 'Precio de venta (USD)' : 'Canon de arriendo (USD/mes)'}</label>
+                <input type="number" min={0} style={inp} value={f.precio ?? ''} onChange={e => set('precio', e.target.value)}
+                  placeholder={esVenta ? '48000' : '850'} />
               </div>
               <div style={{ flex: 1 }}>
                 <label style={lbl}>Alícuota (USD/mes)</label>
@@ -243,7 +250,9 @@ export default function Caracteristicas({ activo, onClose }) {
               <input type="number" min={0} style={inp} value={f.renta_mensual_estimada ?? ''}
                 onChange={e => set('renta_mensual_estimada', e.target.value)} placeholder="650" />
               <div style={{ fontSize: '.7rem', color: C.muted, marginTop: 5 }}>
-                Tu estimación del arriendo lograble. Es la base para calcular rentabilidad (yield) — se marcará como estimación.
+                {esVenta
+                  ? 'Tu estimación del arriendo lograble. Es la base para calcular la rentabilidad (yield) de la venta — se marcará como estimación.'
+                  : 'En arriendo suele coincidir con el canon de arriba. Sirve para calcular la rentabilidad — se marcará como estimación.'}
               </div>
             </div>
 

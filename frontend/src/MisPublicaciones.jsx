@@ -56,7 +56,7 @@ export default function MisPublicaciones({ onClose }) {
   }
 
   return (
-    <div onClick={onClose}
+    <div onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}
       style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center',
                justifyContent: 'center', padding: 16, background: 'rgba(10,9,16,.72)', backdropFilter: 'blur(6px)' }}>
       <div onClick={(e) => e.stopPropagation()}

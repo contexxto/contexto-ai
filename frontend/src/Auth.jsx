@@ -90,7 +90,7 @@ export default function Auth({ onClose, onAuthed }) {
 
   return (
     <div
-      onClick={onClose}
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}
       style={{
         position: 'fixed', inset: 0, zIndex: 1000, display: 'flex',
         alignItems: 'center', justifyContent: 'center', padding: 16,

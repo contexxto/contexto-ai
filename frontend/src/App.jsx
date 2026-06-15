@@ -455,7 +455,7 @@ export default function App() {
     setLoading(true)
     try {
       const { data } = await axios.post(`${API_BASE}/api/v1/chat/`, {
-        message: `El usuario escaneó el QR del inmueble ${id} y abrió el chat. ABRE EN MODO CÁPSULA (no un informe): consulta el inmueble con tool_fetch_asset_lifecycle_specs y responde corto y cálido — un saludo, UNA píldora memorable y verificable del inmueble (el pico), y un gancho con 2-3 caminos para profundizar. ADAPTA los caminos a la OPERACIÓN (campo "operacion"): si es ARRIENDO ofrece "cómo es vivir aquí / qué incluye el arriendo / estado del inmueble" y NUNCA "¿es buena inversión?"; si es VENTA sí puedes ofrecer "si es buena inversión". NO vuelques todos los datos; deja que el usuario elija. El informe completo solo si lo pide. Si el id no existe, dilo con honestidad.`,
+        message: `El usuario escaneó el QR del inmueble ${id} y abrió el chat. ABRE EN MODO CÁPSULA (no un informe): consulta el inmueble con tool_fetch_asset_lifecycle_specs y responde corto y cálido — un saludo, UN dato memorable y verificable del inmueble dicho con naturalidad (NO escribas etiquetas como "El pico:"), y un gancho con 2-3 caminos para profundizar. ADAPTA los caminos a la OPERACIÓN (campo "operacion"): si es ARRIENDO ofrece "cómo es vivir aquí / qué incluye el arriendo / estado del inmueble" y NUNCA "¿es buena inversión?"; si es VENTA sí puedes ofrecer "si es buena inversión". NO vuelques todos los datos; deja que el usuario elija. El informe completo solo si lo pide. Si el id no existe, dilo con honestidad.`,
         session_id: sid,
       }, { headers: apiHeaders() })
       setMessages(prev => [...prev, { id: crypto.randomUUID(), role:'ai', content: data.reply,

@@ -472,6 +472,8 @@ class CaracteristicasRequest(BaseModel):
     precio_negociable: bool | None = None
     notas: str | None = None
     precio: float | None = Field(default=None, ge=0)
+    # Input para la capa de inversión: renta mensual lograble (estimación del corredor).
+    renta_mensual_estimada: float | None = Field(default=None, ge=0)
     # Marketing / anuncio
     fotos: list[str] | None = None                  # fotos del inmueble (galería del anuncio)
     amenidades_edificio: list[str] | None = None   # Piscina, Gimnasio, Seguridad 24/7…

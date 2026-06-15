@@ -80,6 +80,7 @@ export default function Caracteristicas({ activo, onClose }) {
         num_dormitorios: num(f.num_dormitorios), num_banos: num(f.num_banos),
         num_medio_banos: num(f.num_medio_banos), num_parqueaderos: num(f.num_parqueaderos),
         num_bodegas: num(f.num_bodegas), alicuota: num(f.alicuota), precio: num(f.precio),
+        renta_mensual_estimada: num(f.renta_mensual_estimada),
         amoblado: !!f.amoblado, sala: !!f.sala, comedor: !!f.comedor, estudio: !!f.estudio,
         cuarto_servicio: !!f.cuarto_servicio, balcon: !!f.balcon, terraza: !!f.terraza,
         acepta_mascotas: !!f.acepta_mascotas, precio_negociable: !!f.precio_negociable,
@@ -235,6 +236,16 @@ export default function Caracteristicas({ activo, onClose }) {
                        border: `1px solid ${f.precio_negociable ? C.teal : C.line}`, color: f.precio_negociable ? C.tealHi : C.muted }}>
               {f.precio_negociable ? '✓ ' : ''}Precio negociable
             </button>
+
+            <div style={sec}>POTENCIAL DE INVERSIÓN</div>
+            <div>
+              <label style={lbl}>Renta mensual estimada (USD/mes)</label>
+              <input type="number" min={0} style={inp} value={f.renta_mensual_estimada ?? ''}
+                onChange={e => set('renta_mensual_estimada', e.target.value)} placeholder="650" />
+              <div style={{ fontSize: '.7rem', color: C.muted, marginTop: 5 }}>
+                Tu estimación del arriendo lograble. Es la base para calcular rentabilidad (yield) — se marcará como estimación.
+              </div>
+            </div>
 
             <div style={{ marginTop: 14 }}>
               <label style={lbl}>Notas adicionales</label>

@@ -244,17 +244,19 @@ export default function Caracteristicas({ activo, onClose }) {
               {f.precio_negociable ? '✓ ' : ''}Precio negociable
             </button>
 
-            <div style={sec}>POTENCIAL DE INVERSIÓN</div>
-            <div>
-              <label style={lbl}>Renta mensual estimada (USD/mes)</label>
-              <input type="number" min={0} style={inp} value={f.renta_mensual_estimada ?? ''}
-                onChange={e => set('renta_mensual_estimada', e.target.value)} placeholder="650" />
-              <div style={{ fontSize: '.7rem', color: C.muted, marginTop: 5 }}>
-                {esVenta
-                  ? 'Tu estimación del arriendo lograble. Es la base para calcular la rentabilidad (yield) de la venta — se marcará como estimación.'
-                  : 'En arriendo suele coincidir con el canon de arriba. Sirve para calcular la rentabilidad — se marcará como estimación.'}
-              </div>
-            </div>
+            {esVenta && (
+              <>
+                <div style={sec}>POTENCIAL DE INVERSIÓN</div>
+                <div>
+                  <label style={lbl}>Renta mensual estimada (USD/mes)</label>
+                  <input type="number" min={0} style={inp} value={f.renta_mensual_estimada ?? ''}
+                    onChange={e => set('renta_mensual_estimada', e.target.value)} placeholder="650" />
+                  <div style={{ fontSize: '.7rem', color: C.muted, marginTop: 5 }}>
+                    Tu estimación del arriendo lograble. Es la base para calcular la rentabilidad (yield) de la venta — se marcará como estimación.
+                  </div>
+                </div>
+              </>
+            )}
 
             <div style={{ marginTop: 14 }}>
               <label style={lbl}>Notas adicionales</label>

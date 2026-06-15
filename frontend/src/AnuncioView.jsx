@@ -136,7 +136,7 @@ export default function AnuncioView({ id, onChat }) {
           {d.conectividad && (
             <div style={{ fontSize: '.8rem', color: C.text, marginTop: 10, padding: '10px 12px',
                           borderRadius: 12, background: 'rgba(45,189,182,.07)', border: `1px solid ${C.line}` }}>
-              🚇 {d.conectividad}
+              {d.conectividad}
             </div>
           )}
           {d.servicios_cercanos && (

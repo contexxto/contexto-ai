@@ -1083,3 +1083,33 @@ async def edit_asset(
         background.add_task(_recompute_walk_score, str(activo_id), lat, lon)
 
     return {"id": str(activo_id), "ok": True, "reubicado": direccion_cambio}
+
+
+@router.post(
+    "/{activo_id}/recompute",
+    summary="Recalcular la capa base del inmueble (caminabilidad, conectividad, entorno)",
+    description=(
+        "Vuelve a calcular Walk Score, conectividad y servicios cercanos desde OSM/Google "
+        "con los filtros actuales (limpia POIs basura como nombres genéricos). Útil cuando "
+        "el dato guardado quedó estancado. Solo el dueño."
+    ),
+)
+@limiter.limit("10/minute")
+async def recompute_asset(
+    request: Request, activo_id: uuid.UUID,
+    user: CurrentUser = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+) -> dict:
+    await _assert_owner(db, activo_id, user)
+    row = (await db.execute(
+        text("SELECT ST_Y(geom) AS lat, ST_X(geom) AS lon FROM activos_inmutables WHERE id = :id"),
+        {"id": str(activo_id)},
+    )).mappings().first()
+    if not row or row["lat"] is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inmueble no encontrado.")
+    await _recompute_walk_score(str(activo_id), float(row["lat"]), float(row["lon"]))
+    fresh = (await db.execute(
+        text("SELECT walk_score, conectividad, servicios_cercanos FROM activos_inmutables WHERE id = :id"),
+        {"id": str(activo_id)},
+    )).mappings().first()
+    return {"ok": True, "walk_score": fresh["walk_score"],
+            "conectividad": fresh["conectividad"], "servicios_cercanos": fresh["servicios_cercanos"]}

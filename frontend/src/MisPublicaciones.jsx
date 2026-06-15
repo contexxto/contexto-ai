@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import axios from 'axios'
-import { X, Plus, QrCode, Copy, Check, Share2, MapPin, ClipboardList, ListChecks, Pencil, Users } from 'lucide-react'
+import { X, Plus, QrCode, Copy, Check, Share2, MapPin, ClipboardList, ListChecks, Pencil, Users, RefreshCw } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import PublishAsset from './PublishAsset'
 import FichaTecnica from './FichaTecnica'
@@ -25,6 +25,16 @@ export default function MisPublicaciones({ onClose }) {
   const [fichaAsset, setFichaAsset] = useState(null)
   const [caracAsset, setCaracAsset] = useState(null)
   const [leadsAsset, setLeadsAsset] = useState(null)
+  const [recomputando, setRecomputando] = useState(null)
+
+  async function actualizarZona(it) {
+    setRecomputando(it.id)
+    try {
+      await axios.post(`${API_BASE}/api/v1/assets/${it.id}/recompute`, {}, { headers: apiHeaders() })
+      _cacheMine = null
+      await load()
+    } catch { /* ignore */ } finally { setRecomputando(null) }
+  }
 
   const load = useCallback(async () => {
     setError(null)
@@ -133,6 +143,10 @@ export default function MisPublicaciones({ onClose }) {
                 <Btn onClick={() => setQrId(qrId === it.id ? null : it.id)}><QrCode size={14} /> QR</Btn>
                 <Btn onClick={() => setCaracAsset(it)}><ListChecks size={14} /> Características</Btn>
                 <Btn onClick={() => setFichaAsset(it)}><ClipboardList size={14} /> Ficha técnica</Btn>
+                <Btn onClick={() => actualizarZona(it)}>
+                  <RefreshCw size={14} style={recomputando === it.id ? { animation: 'spin 1s linear infinite' } : undefined} />
+                  {recomputando === it.id ? 'Actualizando…' : 'Actualizar zona'}
+                </Btn>
               </div>
 
               {qrId === it.id && (

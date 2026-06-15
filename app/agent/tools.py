@@ -13,6 +13,7 @@ from langchain_core.tools import tool
 from sqlalchemy import text
 
 from app.database import AsyncSessionLocal
+from app.entorno import limpiar_texto_servicios
 
 
 async def _fetch_rows(query: str, params: dict) -> list[dict[str, Any]]:
@@ -20,6 +21,14 @@ async def _fetch_rows(query: str, params: dict) -> list[dict[str, Any]]:
         result = await session.execute(text(query), params)
         rows = result.mappings().all()
         return [dict(row) for row in rows]
+
+
+def _limpiar_servicios_en(row: dict) -> dict:
+    """Filtra POIs basura (nombres genéricos como TRABAJO) del servicios_cercanos
+    guardado, para que el agente nunca los mencione (el dato puede estar estancado)."""
+    if isinstance(row, dict) and row.get("servicios_cercanos"):
+        row["servicios_cercanos"] = limpiar_texto_servicios(row["servicios_cercanos"])
+    return row
 
 
 @tool
@@ -74,6 +83,7 @@ async def tool_search_nearby_assets(
     if not rows:
         return json.dumps({"assets": [], "message": "No registered assets found in this radius."})
 
+    rows = [_limpiar_servicios_en(r) for r in rows]
     return json.dumps({"assets": rows, "total": len(rows)}, default=str)
 
 
@@ -132,7 +142,7 @@ async def tool_fetch_asset_lifecycle_specs(activo_id: str) -> str:
             "message": f"No asset found with id {activo_id}. This QR/id is not registered in the catastro."
         })
 
-    return json.dumps({"specs": rows[0]}, default=str)
+    return json.dumps({"specs": _limpiar_servicios_en(rows[0])}, default=str)
 
 
 @tool

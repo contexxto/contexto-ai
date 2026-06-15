@@ -415,3 +415,53 @@ async def get_session_history(session_id: str):
         "turns": sum(1 for h in history if h["role"] == "user"),
         "messages": history,
     }
+
+
+@router.get(
+    "/{session_id}/intencion",
+    summary="Estado de intención de una sesión (motor de intención)",
+    description=(
+        "Clasifica DÓNDE está el deseo del usuario (de 'anónimo' a 'intención de "
+        "transacción') con un score explicable. Mismo motor (app.intencion) que "
+        "consumirán el agente, el panel del corredor y la API B2B — patrón API-first."
+    ),
+)
+@limiter.limit("60/minute")
+async def session_intencion(request: Request, session_id: str) -> dict:
+    from app.intencion import analizar_intencion
+
+    config = _langgraph_config(session_id)
+    try:
+        state = await agent_graph.compiled_graph.aget_state(config)
+    except Exception:  # noqa: BLE001
+        state = None
+    messages = (state.values or {}).get("messages", []) if (state and state.values) else []
+
+    mensajes_usuario: list[str] = []
+    herramientas = 0
+    uso_inversion = False
+    for m in messages:
+        if isinstance(m, HumanMessage):
+            c = m.content if isinstance(m.content, str) else str(m.content)
+            c = _CTX_RE.sub("", c).strip()
+            # El mensaje técnico del QR no es una señal del usuario; lo omitimos.
+            if c and not c.startswith("El usuario escaneó el QR"):
+                mensajes_usuario.append(c)
+        elif getattr(m, "type", "") == "tool":
+            herramientas += 1
+            if "investment" in (getattr(m, "name", "") or "").lower():
+                uso_inversion = True
+        elif isinstance(m, AIMessage):
+            for tc in (getattr(m, "tool_calls", None) or []):
+                nombre = (tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", "")) or ""
+                if "investment" in nombre.lower():
+                    uso_inversion = True
+
+    analisis = analizar_intencion(
+        mensajes_usuario=mensajes_usuario,
+        herramientas_usadas=herramientas,
+        es_qr=session_id.startswith("qr-"),
+        uso_tool_inversion=uso_inversion,
+    )
+    analisis["session_id"] = session_id
+    return analisis

@@ -66,6 +66,27 @@ def _nombre_valido(nombre: str | None) -> bool:
     return not _PLACEHOLDER.match(n) and n.casefold() not in _GENERICOS
 
 
+# Limpieza al SERVIR (no depende de recalcular): quita segmentos cuyo nombre sea
+# genérico/basura de un texto YA formateado tipo
+# "🛍️ TRABAJO a ~257 m · 💊 Farmacia X a ~62 m".
+_SEG_SUFIJO = re.compile(r"\s*a\s*~?\s*[\d.,]+\s*m\.?$", re.I)
+_SEG_PREFIJO = re.compile(r"^[^0-9A-Za-zÁÉÍÓÚÑÜáéíóúñü]+")  # emojis/símbolos iniciales
+
+
+def limpiar_texto_servicios(texto: str | None) -> str | None:
+    """Filtra POIs basura (nombres genéricos) de un texto de servicios ya guardado."""
+    if not texto:
+        return texto
+    out = []
+    for seg in (s.strip() for s in texto.split("·")):
+        if not seg:
+            continue
+        nombre = _SEG_PREFIJO.sub("", _SEG_SUFIJO.sub("", seg)).strip()
+        if _nombre_valido(nombre):
+            out.append(seg)
+    return " · ".join(out) if out else None
+
+
 def _formatear(items: list[dict]) -> str:
     """items: [{emoji,label,nombre,distancia_m}] → texto compacto."""
     partes = [f"{i['emoji']} {i['nombre'] or i['label']} a ~{i['distancia_m']} m" for i in items]

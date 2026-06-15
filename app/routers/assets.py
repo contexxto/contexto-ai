@@ -18,7 +18,7 @@ from app.database import AsyncSessionLocal, get_db
 from app.limiter import limiter
 from app.models import ActivoInmutable
 from app.schemas import ActivoCreateRequest, ActivoResponse
-from app.entorno import entorno_destacado
+from app.entorno import entorno_destacado, limpiar_texto_servicios
 from app.scores_heuristicos import scores_para
 from app.walk_score import (
     _fetch_pois,
@@ -349,7 +349,7 @@ async def asset_anuncio(
             "trafico": row["trafico"],
         },
         "conectividad": row["conectividad"],
-        "servicios_cercanos": row["servicios_cercanos"],
+        "servicios_cercanos": limpiar_texto_servicios(row["servicios_cercanos"]),
         "caracteristicas": car,
         "ficha": ficha,
         "inversion": inversion,

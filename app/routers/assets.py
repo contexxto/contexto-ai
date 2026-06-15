@@ -262,6 +262,101 @@ async def asset_investment(
 
 
 @router.get(
+    "/{activo_id}/anuncio",
+    summary="Detalle público del inmueble (página de anuncio del QR)",
+    description=(
+        "Devuelve el detalle público de UN inmueble que su dueño publicó (el que abre "
+        "el QR del letrero): fotos, características, capa base (caminabilidad/ruido/"
+        "vegetación), conectividad, ficha técnica verificada y, si es venta, el análisis "
+        "de inversión. Es público a propósito — el dueño puso un QR para que el público "
+        "lo vea. No expone el catastro completo, solo este activo."
+    ),
+)
+@limiter.limit("60/minute")
+async def asset_anuncio(
+    request: Request,
+    activo_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    row = (await db.execute(text(
+        "SELECT a.id::text AS id, a.direccion_estandarizada AS direccion, a.tipo_activo, "
+        "       a.piso_altura, a.walk_score, a.score_ruido_predictivo AS ruido, "
+        "       a.porcentaje_cobertura_vegetal AS vegetacion, "
+        "       a.volumen_trafico_historico AS trafico, a.conectividad, "
+        "       a.servicios_cercanos, a.caracteristicas, "
+        "       t.tipo_operacion AS operacion, t.precio, "
+        '       ftm."año_construccion" AS anio_construccion, ftm.tipo_estructura, '
+        "       ftm.tipo_tuberia, ftm.calidad_acabados, "
+        "       ftm.ultima_impermeabilizacion_techo, ftm.ultimo_cambio_cableado_electrico, "
+        "       ftm.ultimo_mantenimiento_cisterna, ftm.ultima_pintura_fachada, "
+        "       ftm.descripcion_mejoras, ftm.estado_revision, ftm.confianza_extraccion, "
+        "       (ftm.activo_id IS NOT NULL) AS tiene_ficha "
+        "FROM activos_inmutables a "
+        "LEFT JOIN LATERAL (SELECT tipo_operacion, precio FROM transacciones_temporales tt "
+        "  WHERE tt.activo_id = a.id ORDER BY fecha_publicacion DESC LIMIT 1) t ON true "
+        "LEFT JOIN ficha_tecnica_mantenimiento ftm ON ftm.activo_id = a.id "
+        "WHERE a.id = :id"), {"id": str(activo_id)})).mappings().first()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inmueble no encontrado.")
+
+    car = row["caracteristicas"] or {}
+    if isinstance(car, str):
+        car = json.loads(car or "{}")
+
+    operacion = (row["operacion"] or "").lower() or None
+    precio = float(row["precio"]) if row["precio"] is not None else None
+
+    ficha = None
+    if row["tiene_ficha"]:
+        def _d(v):
+            return v.isoformat() if v else None
+        ficha = {
+            "anio_construccion": row["anio_construccion"],
+            "tipo_estructura": row["tipo_estructura"],
+            "tipo_tuberia": row["tipo_tuberia"],
+            "calidad_acabados": row["calidad_acabados"],
+            "ultima_impermeabilizacion_techo": _d(row["ultima_impermeabilizacion_techo"]),
+            "ultimo_cambio_cableado_electrico": _d(row["ultimo_cambio_cableado_electrico"]),
+            "ultimo_mantenimiento_cisterna": _d(row["ultimo_mantenimiento_cisterna"]),
+            "ultima_pintura_fachada": _d(row["ultima_pintura_fachada"]),
+            "descripcion_mejoras": row["descripcion_mejoras"],
+            "estado_revision": row["estado_revision"],
+            "confianza": float(row["confianza_extraccion"]) if row["confianza_extraccion"] is not None else None,
+        }
+
+    # Inversión: solo si es venta (en arriendo el canon ya es la renta).
+    inversion = None
+    if operacion == "venta":
+        from app.inversion import analizar_inversion
+        inversion = analizar_inversion(
+            direccion=row["direccion"], tipo_activo=row["tipo_activo"], precio=precio,
+            area=car.get("area_total_m2"), renta_mensual=car.get("renta_mensual_estimada"),
+            alicuota_mensual=car.get("alicuota"), tiene_ficha=bool(row["tiene_ficha"]),
+        )
+
+    return {
+        "id": row["id"],
+        "direccion": row["direccion"],
+        "tipo_activo": row["tipo_activo"],
+        "piso_altura": row["piso_altura"],
+        "operacion": operacion,
+        "precio": precio,
+        "precio_negociable": bool(car.get("precio_negociable")),
+        "scores": {
+            "caminabilidad": row["walk_score"],
+            "ruido": row["ruido"],
+            "vegetacion": float(row["vegetacion"]) if row["vegetacion"] is not None else None,
+            "trafico": row["trafico"],
+        },
+        "conectividad": row["conectividad"],
+        "servicios_cercanos": row["servicios_cercanos"],
+        "caracteristicas": car,
+        "ficha": ficha,
+        "inversion": inversion,
+    }
+
+
+@router.get(
     "/{activo_id}/rutas",
     summary="Rutas a pie a los servicios cercanos (Google Routes, en vivo)",
 )

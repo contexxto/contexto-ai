@@ -8,6 +8,7 @@ import { supabase, authEnabled } from './supabaseClient'
 import Auth from './Auth'
 import MisPublicaciones from './MisPublicaciones'
 import ShareConversation from './ShareConversation'
+import AnuncioView from './AnuncioView'
 
 // Headers (backend key + Bearer del usuario) centralizados en api.js
 import { API_BASE, apiHeaders, setAccessToken } from './api'
@@ -314,6 +315,9 @@ export default function App() {
   const [copied, setCopied]       = useState(null)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const [view, setView] = useState('chat')  // 'chat' | 'review' | 'map'
+  // QR (/a/{id}) → primero la página de anuncio (la "puerta"); el chat con el agente
+  // (runtime propio) se abre solo al tocar el CTA. No arrancamos en el informe.
+  const [anuncioMode, setAnuncioMode] = useState(!!deepLinkId)
   const [dragOver, setDragOver] = useState(false)
   const [geo, setGeo] = useState(null)          // {lat, lon} | null — ubicación del usuario
   const [geoLoading, setGeoLoading] = useState(false)
@@ -464,8 +468,10 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    // Con QR arrancamos en la página de anuncio (anuncioMode=true); el informe del
+    // agente se dispara desde el CTA, no en el montaje.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (deepLinkId) loadFromDeepLink(deepLinkId)
+    if (deepLinkId && !anuncioMode) loadFromDeepLink(deepLinkId)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -752,6 +758,13 @@ export default function App() {
   }, [sessionId])
 
   const isEmpty = messages.length === 0 && !loading
+
+  // Página de anuncio del QR (/a/{id}) — landing pública del inmueble. El CTA abre
+  // el chat con el agente (runtime propio) y dispara el informe.
+  if (deepLinkId && anuncioMode) {
+    return <AnuncioView id={deepLinkId}
+      onChat={() => { setAnuncioMode(false); loadFromDeepLink(deepLinkId) }} />
+  }
 
   // Visor público de conversación compartida (solo lectura)
   if (shareToken) {

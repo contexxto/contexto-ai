@@ -255,7 +255,7 @@ export default function AnuncioView({ id, onChat }) {
                    justifyContent: 'center', gap: 9, padding: '14px', borderRadius: 14, border: 'none',
                    cursor: 'pointer', fontWeight: 800, fontSize: '.95rem',
                    background: `linear-gradient(90deg, ${C.teal}, ${C.tealHi})`, color: '#0E0D13' }}>
-          <MessageCircle size={18} /> Pregúntale al agente de este inmueble
+          <MessageCircle size={18} /> Pregúntale al agente sobre este inmueble
         </button>
         <div style={{ textAlign: 'center', fontSize: '.66rem', color: C.muted, marginTop: 7 }}>
           Caminabilidad, ruido, transporte, inversión — pregunta lo que quieras.

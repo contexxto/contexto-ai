@@ -53,6 +53,16 @@ Operación: **Carlos (visión/orquestación) + Gemini (estrategia) + Claude (eje
 
 ---
 
+## La capa de distribución: API-first (infraestructura, patrón Apaleo)
+El producto es el foso; **la API es la distribución.** Contexto no se vende como "una app" — se integra como **el motor de inteligencia inmobiliaria que la banca, los fondos y las constructoras consumen en vez de construir** (igual que Apaleo es el PMS que el hotel integra, no construye). La web y el agente son *clientes* del mismo API.
+- **Hoy:** API-first como **arquitectura** (`app/inversion.py` lo consumen el agente y `GET /assets/{id}/investment`).
+- **Con design partner (InmobIA/Bolívar):** se expone el API de negocio (Ficha/Investment/Scoring/Market) — *que el integrador hale la API a existir*.
+- **Con tracción:** plataforma de developers (sandbox, Swagger, OAuth, webhooks, Store).
+- **Efecto de red:** cada integrador que consume **hidrata el catálogo** → foso más profundo.
+> Detalle en `ESTRATEGIA_API_First.md`. Reencuadra el pitch a Bolívar: no "compra mi app", sino "integra mi motor en Ciencuadras/Davivienda".
+
+---
+
 ## Hoja de ruta (sin perder foco — *scope mata, profundidad gana*)
 
 - **Fase 1 — ahora:** asesor honesto de habitabilidad + ficha técnica. Piloto del corredor (Quito). *(Casi listo.)*

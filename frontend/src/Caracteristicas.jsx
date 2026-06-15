@@ -36,19 +36,37 @@ export default function Caracteristicas({ activo, onClose }) {
     return { ...prev, [k]: cur.includes(val) ? cur.filter(x => x !== val) : [...cur, val] }
   })
   const [uploading, setUploading] = useState(false)
+
+  // HEIC (formato por defecto de iPhone/Samsung) NO lo muestran los navegadores.
+  // Lo convertimos a JPEG en el navegador ANTES de subir (carga diferida del lib).
+  async function aJpegSiHeic(file) {
+    const esHeic = /\.(heic|heif)$/i.test(file.name) || /image\/hei[cf]/i.test(file.type || '')
+    if (!esHeic) return file
+    const { default: heic2any } = await import('heic2any')
+    const blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 })
+    const out = Array.isArray(blob) ? blob[0] : blob
+    return new File([out], file.name.replace(/\.(heic|heif)$/i, '.jpg'), { type: 'image/jpeg' })
+  }
+
   async function subirFotos(files) {
     if (!supabase) { setError('Subida no disponible (Storage no configurado).'); return }
     setError(null); setUploading(true)
     try {
       const nuevas = []
-      for (const file of files) {
+      for (const original of files) {
+        let file
+        try {
+          file = await aJpegSiHeic(original)
+        } catch {
+          setError('No se pudo convertir una foto HEIC. Súbela en JPG/PNG.'); continue
+        }
         const path = `inmuebles/${activo.id}/${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${file.name.replace(/[^\w.\-]/g, '_')}`
         const { error: upErr } = await supabase.storage.from('evidencias').upload(path, file, { upsert: false })
         if (upErr) throw upErr
         const { data } = supabase.storage.from('evidencias').getPublicUrl(path)
         nuevas.push(data.publicUrl)
       }
-      set('fotos', [...(f.fotos || []), ...nuevas])
+      if (nuevas.length) set('fotos', [...(f.fotos || []), ...nuevas])
     } catch {
       setError('No se pudieron subir las fotos. ¿Existe el bucket "evidencias" (público)?')
     } finally { setUploading(false) }

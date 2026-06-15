@@ -432,22 +432,15 @@ export default function App() {
       .catch(() => {}) // silent — no history yet
   }, [sessionId])
 
-  // Deep link de QR (letrero inteligente): /a/{id} → el agente entrega el informe.
-  // Sesión determinística por inmueble: re-escanear reutiliza la conversación.
+  // Deep link de QR (letrero inteligente): /a/{id} → apertura SIEMPRE fresca.
+  // Sesión nueva por apertura (sufijo aleatorio) → cada escaneo arranca en cápsula,
+  // sin reproducir conversaciones viejas ni arrastrar contexto. El prefijo
+  // qr-{id}-{device}- mantiene el lead agrupado por inmueble y dispositivo (el panel
+  // de Interesados busca qr-{id}-% y deduplica por dispositivo).
   const loadFromDeepLink = useCallback(async (id) => {
-    const sid = qrSessionId(id)
+    const sid = `${qrSessionId(id)}-${Math.random().toString(36).slice(2, 8)}`
     localStorage.setItem(SESSION_KEY, sid)
     setSessionId(sid)
-    // Si ya fue escaneado antes, restauramos (rápido, sin volver a llamar al agente).
-    try {
-      const { data } = await axios.get(`${API_BASE}/api/v1/chat/${sid}/history`, { headers: apiHeaders() })
-      if (data.messages?.length) {
-        setMessages(data.messages.map((m, i) => ({
-          id: `r-${i}`, role: m.role === 'user' ? 'user' : 'ai', content: limpiarCtx(m), time: '', toolCalls: [],
-        })))
-        return
-      }
-    } catch { /* sin historial: seguimos al brief */ }
 
     const t = new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })
     setMessages([{ id: crypto.randomUUID(), role:'user',

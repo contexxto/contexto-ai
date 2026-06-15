@@ -397,8 +397,11 @@ async def asset_leads(
     except Exception:  # noqa: BLE001 — tabla aún no existe
         handoff_map = {}
 
-    funnel = {e: 0 for e in ESTADOS}
-    leads: list[dict] = []
+    # Cada apertura del QR crea una sesión nueva (qr-{activo}-{device}-{rand}).
+    # Deduplicamos por DISPOSITIVO → un lead por visitante (el de mayor intención
+    # o el que pidió corredor), no uno por cada escaneo.
+    prefix = f"qr-{activo_id}-"
+    by_device: dict[str, dict] = {}
     for sid in thread_ids:
         try:
             a = await intencion_de_sesion(sid)
@@ -406,15 +409,23 @@ async def asset_leads(
             continue
         if not a.get("turnos"):
             continue  # solo escaneó / sin mensajes propios → aún no es un lead real
-        funnel[a["estado"]] = funnel.get(a["estado"], 0) + 1
-        leads.append({
+        device = sid[len(prefix):len(prefix) + 36] or sid
+        lead = {
             "session_id": sid,
-            "lead": f"Lead #{sid.rsplit('-', 1)[-1][:4]}",
+            "lead": f"Lead #{device[:4]}",
             "estado": a["estado"], "nivel": a["nivel"], "score": a["score"],
             "resumen": a["resumen"], "razones": a["razones"],
             "handoff_sugerido": a["handoff_sugerido"], "accion_sugerida": a["accion_sugerida"],
             "handoff_estado": handoff_map.get(sid),
-        })
+        }
+        prev = by_device.get(device)
+        if prev is None or (bool(lead["handoff_estado"]), lead["score"]) > (bool(prev["handoff_estado"]), prev["score"]):
+            by_device[device] = lead
+
+    leads = list(by_device.values())
+    funnel = {e: 0 for e in ESTADOS}
+    for ld in leads:
+        funnel[ld["estado"]] = funnel.get(ld["estado"], 0) + 1
     leads.sort(key=lambda x: (bool(x["handoff_estado"]), x["handoff_sugerido"], x["score"]), reverse=True)
     return {"total": len(leads), "funnel": funnel, "leads": leads}
 

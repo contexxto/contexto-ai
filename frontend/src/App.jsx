@@ -329,6 +329,8 @@ export default function App() {
   const [listening, setListening] = useState(false)       // dictado por voz
   const recognitionRef = useRef(null)
   const lastAiRef = useRef('')   // última respuesta del agente (para bloquear ecos/reenvíos)
+  const [modoCorredor, setModoCorredor] = useState(false)  // handoff en vivo: el lead habla con el corredor (no el AI)
+  const handoffSeenRef = useRef(0)                          // último id de mensaje de handoff visto
   const [session, setSession] = useState(null)            // sesión de Supabase | null
   const [authOpen, setAuthOpen] = useState(false)         // modal de login/registro
   const [rol, setRol] = useState(null)                    // rol del usuario (cliente/corredor/inmobiliaria)
@@ -535,6 +537,16 @@ export default function App() {
       toolCalls: [],
     }
     setMessages(prev => [...prev, userMsg])
+
+    // Modo corredor: el mensaje va al corredor humano (in-platform), no al agente.
+    if (modoCorredor) {
+      try {
+        await axios.post(`${API_BASE}/api/v1/chat/${sessionId}/handoff/mensaje`,
+          { texto: userText }, { headers: apiHeaders() })
+      } catch { setError('No se pudo enviar tu mensaje al corredor. Intenta de nuevo.') }
+      return
+    }
+
     setLoading(true)
 
     // Si la ubicación está activa, se la pasamos al agente como contexto
@@ -568,7 +580,47 @@ export default function App() {
       setLoading(false)
       setTimeout(() => inputRef.current?.focus(), 100)
     }
-  }, [input, loading, sessionId, geo])
+  }, [input, loading, sessionId, geo, modoCorredor])
+
+  // Handoff en vivo: el lead pide hablar con el corredor (dentro de Contexto).
+  const iniciarHandoff = useCallback(async () => {
+    try {
+      await axios.post(`${API_BASE}/api/v1/chat/${sessionId}/handoff`, {}, { headers: apiHeaders() })
+      setModoCorredor(true)
+      setMessages(prev => [...prev, {
+        id: crypto.randomUUID(), role: 'ai',
+        content: '🤝 Te conecté con el corredor. Escríbele aquí mismo — te responde en este chat, sin salir de Contexto.',
+        time: new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }), toolCalls: [],
+      }])
+    } catch { setError('No se pudo conectar con el corredor en este momento.') }
+  }, [sessionId])
+
+  // Sondeo del handoff (solo en sesiones de QR): trae respuestas del corredor
+  // y, si el corredor ya entró, activa el modo corredor aunque el lead recargue.
+  useEffect(() => {
+    if (!deepLinkId || anuncioMode) return
+    let vivo = true
+    const tick = async () => {
+      try {
+        const { data } = await axios.get(`${API_BASE}/api/v1/chat/${sessionId}/handoff`,
+          { params: { desde: handoffSeenRef.current }, headers: apiHeaders() })
+        if (!vivo || !data?.activo) return
+        if (!modoCorredor) setModoCorredor(true)
+        const nuevos = (data.mensajes || []).filter(m => m.autor === 'corredor')
+        for (const m of (data.mensajes || [])) handoffSeenRef.current = Math.max(handoffSeenRef.current, m.id)
+        if (nuevos.length) {
+          setMessages(prev => [...prev, ...nuevos.map(m => ({
+            id: `h-${m.id}`, role: 'ai', content: `👤 Corredor: ${m.texto}`,
+            time: new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }), toolCalls: [],
+          }))])
+        }
+      } catch { /* silencioso */ }
+    }
+    const iv = setInterval(tick, 6000)
+    tick()
+    return () => { vivo = false; clearInterval(iv) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkId, anuncioMode, sessionId, modoCorredor])
 
   // "Analiza dónde estás": pide la ubicación y dispara el análisis del lugar (global).
   const analizarMiUbicacion = useCallback(() => {
@@ -1089,6 +1141,22 @@ export default function App() {
       <div style={{
         padding:'14px 0 18px', flexShrink:0,
       }}>
+        {deepLinkId && (
+          modoCorredor ? (
+            <div style={{ display:'flex', alignItems:'center', gap:8, margin:'0 0 8px', padding:'8px 14px',
+                          borderRadius:14, fontSize:'.78rem', color:'var(--teal)',
+                          background:'rgba(45,189,182,.10)', border:'1px solid rgba(45,189,182,.3)' }}>
+              🤝 Estás hablando con el corredor — te responde aquí mismo.
+            </div>
+          ) : (
+            <button onClick={iniciarHandoff}
+              style={{ display:'flex', alignItems:'center', gap:7, margin:'0 auto 8px', padding:'7px 14px',
+                       borderRadius:999, cursor:'pointer', fontSize:'.78rem', fontWeight:600,
+                       background:'rgba(45,189,182,.10)', border:'1px solid rgba(45,189,182,.3)', color:'var(--teal)' }}>
+              🤝 Hablar con el corredor
+            </button>
+          )
+        )}
         <div style={{
           display:'flex', gap:8, alignItems:'flex-end',
           background: listening ? 'rgba(45,189,182,.16)' : 'rgba(20,44,43,.5)',

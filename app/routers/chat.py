@@ -417,6 +417,124 @@ async def get_session_history(session_id: str):
     }
 
 
+# ── Handoff en vivo al corredor (dentro de Contexto, sin WhatsApp) ──────────
+_HANDOFF_DDL = [
+    "CREATE TABLE IF NOT EXISTS handoff_sesion (session_id text PRIMARY KEY, "
+    "activo_id uuid, estado text DEFAULT 'solicitado', corredor_id uuid, "
+    "creado_en timestamptz DEFAULT now(), actualizado_en timestamptz DEFAULT now())",
+    "CREATE TABLE IF NOT EXISTS handoff_mensaje (id bigserial PRIMARY KEY, "
+    "session_id text, autor text, texto text, creado_en timestamptz DEFAULT now())",
+    "CREATE INDEX IF NOT EXISTS ix_handoff_msg_sid ON handoff_mensaje (session_id, id)",
+]
+_handoff_ready = False
+
+
+async def ensure_handoff_tables(db) -> None:
+    """Crea las tablas de handoff si no existen (idempotente, una vez por proceso)."""
+    global _handoff_ready
+    if _handoff_ready:
+        return
+    for ddl in _HANDOFF_DDL:
+        await db.execute(text(ddl))
+    await db.commit()
+    _handoff_ready = True
+
+
+def activo_de_session(session_id: str) -> str | None:
+    """qr-{activo_uuid(36)}-{device_uuid} → activo_uuid (posición fija; el device también es uuid)."""
+    if session_id.startswith("qr-") and len(session_id) >= 39:
+        cand = session_id[3:39]
+        try:
+            return str(uuid.UUID(cand))
+        except ValueError:
+            return None
+    return None
+
+
+async def transcript_de_sesion(session_id: str) -> list[dict]:
+    """Transcripción usuario/asistente de la sesión (para que el corredor lea el hilo)."""
+    try:
+        state = await agent_graph.compiled_graph.aget_state(_langgraph_config(session_id))
+    except Exception:  # noqa: BLE001
+        return []
+    msgs = (state.values or {}).get("messages", []) if (state and state.values) else []
+    out: list[dict] = []
+    for m in msgs:
+        if isinstance(m, HumanMessage):
+            c = _CTX_RE.sub("", m.content if isinstance(m.content, str) else str(m.content)).strip()
+            if c and not c.startswith("El usuario escaneó el QR"):
+                out.append({"autor": "lead", "texto": c})
+        elif isinstance(m, AIMessage) and not getattr(m, "tool_calls", None):
+            c = m.content if isinstance(m.content, str) else str(m.content)
+            if c.strip():
+                out.append({"autor": "agente", "texto": c})
+    return out
+
+
+@router.post(
+    "/{session_id}/handoff",
+    summary="El interesado pide hablar con el corredor (handoff en vivo, sin salir de Contexto)",
+)
+@limiter.limit("20/minute")
+async def solicitar_handoff(request: Request, session_id: str) -> dict:
+    activo_id = activo_de_session(session_id)
+    async with AsyncSessionLocal() as db:
+        await ensure_handoff_tables(db)
+        await db.execute(text(
+            "INSERT INTO handoff_sesion (session_id, activo_id, estado) "
+            "VALUES (:s, :a, 'solicitado') ON CONFLICT (session_id) DO UPDATE "
+            "SET actualizado_en = now()"),
+            {"s": session_id, "a": activo_id})
+        await db.commit()
+    return {"ok": True, "estado": "solicitado"}
+
+
+class HandoffMsg(BaseModel):
+    texto: str = Field(..., min_length=1, max_length=2000)
+
+
+@router.post(
+    "/{session_id}/handoff/mensaje",
+    summary="El interesado escribe al corredor (mensaje in-platform)",
+)
+@limiter.limit("40/minute")
+async def handoff_mensaje_lead(request: Request, session_id: str, payload: HandoffMsg) -> dict:
+    async with AsyncSessionLocal() as db:
+        await ensure_handoff_tables(db)
+        await db.execute(text(
+            "INSERT INTO handoff_sesion (session_id, activo_id, estado) VALUES (:s, :a, 'solicitado') "
+            "ON CONFLICT (session_id) DO NOTHING"),
+            {"s": session_id, "a": activo_de_session(session_id)})
+        await db.execute(text(
+            "INSERT INTO handoff_mensaje (session_id, autor, texto) VALUES (:s, 'lead', :t)"),
+            {"s": session_id, "t": payload.texto.strip()})
+        await db.commit()
+    return {"ok": True}
+
+
+@router.get(
+    "/{session_id}/handoff",
+    summary="Estado + mensajes del handoff (el interesado consulta respuestas del corredor)",
+)
+@limiter.limit("120/minute")
+async def estado_handoff(request: Request, session_id: str, desde: int = 0) -> dict:
+    async with AsyncSessionLocal() as db:
+        try:
+            est = (await db.execute(text(
+                "SELECT estado FROM handoff_sesion WHERE session_id = :s"),
+                {"s": session_id})).scalar()
+            if est is None:
+                return {"activo": False, "estado": None, "mensajes": []}
+            rows = (await db.execute(text(
+                "SELECT id, autor, texto FROM handoff_mensaje "
+                "WHERE session_id = :s AND id > :d ORDER BY id ASC"),
+                {"s": session_id, "d": desde})).mappings().all()
+        except Exception:  # noqa: BLE001 — tablas aún no existen
+            return {"activo": False, "estado": None, "mensajes": []}
+    return {"activo": True, "estado": est,
+            "mensajes": [{"id": r["id"], "autor": r["autor"], "texto": r["texto"]} for r in rows]}
+
+
 async def intencion_de_sesion(session_id: str) -> dict:
     """Carga el estado de una sesión y corre el motor de intención. Reutilizable
     por el endpoint de sesión y por el panel de interesados del inmueble."""

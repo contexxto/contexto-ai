@@ -387,6 +387,16 @@ async def asset_leads(
     from app.routers.chat import intencion_de_sesion
     from app.intencion import ESTADOS
 
+    # Estado de handoff por sesión (quién pidió hablar con el corredor).
+    try:
+        h_rows = (await db.execute(
+            text("SELECT session_id, estado FROM handoff_sesion WHERE session_id LIKE :p"),
+            {"p": f"qr-{activo_id}-%"},
+        )).mappings().all()
+        handoff_map = {r["session_id"]: r["estado"] for r in h_rows}
+    except Exception:  # noqa: BLE001 — tabla aún no existe
+        handoff_map = {}
+
     funnel = {e: 0 for e in ESTADOS}
     leads: list[dict] = []
     for sid in thread_ids:
@@ -398,13 +408,72 @@ async def asset_leads(
             continue  # solo escaneó / sin mensajes propios → aún no es un lead real
         funnel[a["estado"]] = funnel.get(a["estado"], 0) + 1
         leads.append({
+            "session_id": sid,
             "lead": f"Lead #{sid.rsplit('-', 1)[-1][:4]}",
             "estado": a["estado"], "nivel": a["nivel"], "score": a["score"],
             "resumen": a["resumen"], "razones": a["razones"],
             "handoff_sugerido": a["handoff_sugerido"], "accion_sugerida": a["accion_sugerida"],
+            "handoff_estado": handoff_map.get(sid),
         })
-    leads.sort(key=lambda x: (x["handoff_sugerido"], x["score"]), reverse=True)
+    leads.sort(key=lambda x: (bool(x["handoff_estado"]), x["handoff_sugerido"], x["score"]), reverse=True)
     return {"total": len(leads), "funnel": funnel, "leads": leads}
+
+
+class CorredorMsg(BaseModel):
+    texto: str = Field(..., min_length=1, max_length=2000)
+
+
+@router.get(
+    "/{activo_id}/leads/{session_id}/conversacion",
+    summary="Conversación completa de un interesado (para el corredor)",
+)
+@limiter.limit("60/minute")
+async def lead_conversacion(
+    request: Request, activo_id: uuid.UUID, session_id: str,
+    user: CurrentUser = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+) -> dict:
+    await _assert_owner(db, activo_id, user)
+    if not session_id.startswith(f"qr-{activo_id}-"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="La sesión no es de este inmueble.")
+    from app.routers.chat import transcript_de_sesion, ensure_handoff_tables
+    trans = await transcript_de_sesion(session_id)
+    try:
+        await ensure_handoff_tables(db)
+        rows = (await db.execute(text(
+            "SELECT autor, texto FROM handoff_mensaje WHERE session_id = :s ORDER BY id ASC"),
+            {"s": session_id})).mappings().all()
+        hmsgs = [{"autor": r["autor"], "texto": r["texto"]} for r in rows]
+        estado = (await db.execute(text(
+            "SELECT estado FROM handoff_sesion WHERE session_id = :s"), {"s": session_id})).scalar()
+    except Exception:  # noqa: BLE001
+        hmsgs, estado = [], None
+    return {"transcript": trans, "handoff": hmsgs, "estado": estado}
+
+
+@router.post(
+    "/{activo_id}/leads/{session_id}/responder",
+    summary="El corredor responde al interesado (in-platform, sin WhatsApp)",
+)
+@limiter.limit("40/minute")
+async def responder_lead(
+    request: Request, activo_id: uuid.UUID, session_id: str, payload: CorredorMsg,
+    user: CurrentUser = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+) -> dict:
+    await _assert_owner(db, activo_id, user)
+    if not session_id.startswith(f"qr-{activo_id}-"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="La sesión no es de este inmueble.")
+    from app.routers.chat import ensure_handoff_tables
+    await ensure_handoff_tables(db)
+    await db.execute(text(
+        "INSERT INTO handoff_sesion (session_id, activo_id, estado, corredor_id) "
+        "VALUES (:s, :a, 'activo', :u) ON CONFLICT (session_id) DO UPDATE "
+        "SET estado = 'activo', corredor_id = :u, actualizado_en = now()"),
+        {"s": session_id, "a": str(activo_id), "u": user.user_id})
+    await db.execute(text(
+        "INSERT INTO handoff_mensaje (session_id, autor, texto) VALUES (:s, 'corredor', :t)"),
+        {"s": session_id, "t": payload.texto.strip()})
+    await db.commit()
+    return {"ok": True}
 
 
 @router.get(

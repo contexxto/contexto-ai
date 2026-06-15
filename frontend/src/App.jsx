@@ -455,7 +455,7 @@ export default function App() {
     setLoading(true)
     try {
       const { data } = await axios.post(`${API_BASE}/api/v1/chat/`, {
-        message: `El usuario escaneó el QR de un inmueble. Entrégale el informe completo en lenguaje natural, usando el identificador del activo ${id}. Incluye: dirección, tipo de activo, walk score, nivel de ruido, tráfico, cobertura vegetal y el estado de mantenimiento (tuberías, año de construcción, estructura, acabados, impermeabilización de techo, cableado eléctrico, cisterna, fachada e inversión en mejoras). Si no existen datos para ese identificador, dilo con honestidad.`,
+        message: `El usuario escaneó el QR del inmueble ${id} y abrió el chat. ABRE EN MODO CÁPSULA (no un informe): consulta el inmueble con tool_fetch_asset_lifecycle_specs y responde corto y cálido — un saludo, UNA píldora memorable y verificable del inmueble (el pico), y un gancho con 2-3 caminos para profundizar (cómo es vivir aquí / si es buena inversión / estado del inmueble). NO vuelques todos los datos; deja que el usuario elija. El informe completo solo si lo pide. Si el id no existe, dilo con honestidad.`,
         session_id: sid,
       }, { headers: apiHeaders() })
       setMessages(prev => [...prev, { id: crypto.randomUUID(), role:'ai', content: data.reply,

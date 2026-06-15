@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import axios from 'axios'
-import { X, Plus, QrCode, Copy, Check, Share2, MapPin, ClipboardList, ListChecks } from 'lucide-react'
+import { X, Plus, QrCode, Copy, Check, Share2, MapPin, ClipboardList, ListChecks, Pencil } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import PublishAsset from './PublishAsset'
 import FichaTecnica from './FichaTecnica'
@@ -18,6 +18,7 @@ export default function MisPublicaciones({ onClose }) {
   const [items, setItems] = useState(_cacheMine)   // si hay caché → sin "Cargando…"
   const [error, setError] = useState(null)
   const [crear, setCrear] = useState(false)
+  const [editar, setEditar] = useState(null)
   const [copied, setCopied] = useState(null)
   const [qrId, setQrId] = useState(null)
   const [fichaAsset, setFichaAsset] = useState(null)
@@ -111,7 +112,7 @@ export default function MisPublicaciones({ onClose }) {
                   <div style={{ flexShrink: 0, textAlign: 'center', background: 'rgba(45,189,182,.12)',
                                 border: `1px solid ${C.line}`, borderRadius: 10, padding: '4px 9px' }}>
                     <div style={{ fontWeight: 800, color: C.tealHi, fontSize: '1rem', lineHeight: 1 }}>{it.walk_score}</div>
-                    <div style={{ fontSize: '.6rem', color: C.muted }}>walk</div>
+                    <div style={{ fontSize: '.6rem', color: C.muted }}>camin.</div>
                   </div>
                 )}
               </div>
@@ -121,6 +122,7 @@ export default function MisPublicaciones({ onClose }) {
               )}
 
               <div style={{ display: 'flex', gap: 7, marginTop: 11, flexWrap: 'wrap' }}>
+                <Btn onClick={() => setEditar(it)}><Pencil size={14} /> Editar</Btn>
                 <Btn onClick={() => copiar(it.deep_link, it.id)}>
                   {copied === it.id ? <Check size={14} /> : <Copy size={14} />} {copied === it.id ? 'Copiado' : 'Copiar enlace'}
                 </Btn>
@@ -144,6 +146,7 @@ export default function MisPublicaciones({ onClose }) {
       </div>
 
       {crear && <PublishAsset onClose={() => { setCrear(false); load() }} />}
+      {editar && <PublishAsset existing={editar} onClose={() => { setEditar(null); load() }} />}
       {fichaAsset && <FichaTecnica activo={fichaAsset} onClose={() => { setFichaAsset(null); load() }} />}
       {caracAsset && <Caracteristicas activo={caracAsset} onClose={() => { setCaracAsset(null); load() }} />}
     </div>

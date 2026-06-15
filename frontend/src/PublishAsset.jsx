@@ -10,10 +10,15 @@ const C = {
 }
 const TIPOS = ['Departamento', 'Casa', 'Local Comercial', 'Oficina', 'Quinta']
 
-export default function PublishAsset({ onClose }) {
+export default function PublishAsset({ onClose, existing = null }) {
+  const editando = !!existing
   const [f, setF] = useState({
-    direccion: '', tipo_activo: 'Departamento', operacion: 'arriendo',
-    precio: '', piso_altura: 1, latitude: null, longitude: null,
+    direccion: existing?.direccion || '',
+    tipo_activo: existing?.tipo_activo || 'Departamento',
+    operacion: (existing?.operacion || 'arriendo').toLowerCase(),
+    precio: existing?.precio ?? '',
+    piso_altura: existing?.piso_altura ?? 1,
+    latitude: null, longitude: null,
   })
   const [loading, setLoading] = useState(false)
   const [geoMsg, setGeoMsg] = useState(null)
@@ -46,6 +51,17 @@ export default function PublishAsset({ onClose }) {
     e.preventDefault()
     setError(null); setLoading(true)
     try {
+      if (editando) {
+        await axios.patch(`${API_BASE}/api/v1/assets/${existing.id}`, {
+          direccion: f.direccion,
+          tipo_activo: f.tipo_activo,
+          operacion: f.operacion,
+          precio: f.precio !== '' ? Number(f.precio) : null,
+          piso_altura: Number(f.piso_altura) || 1,
+        }, { headers: { 'Content-Type': 'application/json', ...apiHeaders() } })
+        onClose()   // MisPublicaciones recarga la lista al cerrar
+        return
+      }
       const { data } = await axios.post(`${API_BASE}/api/v1/assets/publish`, {
         direccion: f.direccion,
         tipo_activo: f.tipo_activo,
@@ -56,7 +72,7 @@ export default function PublishAsset({ onClose }) {
       }, { headers: { 'Content-Type': 'application/json', ...apiHeaders() } })
       setResult(data)
     } catch (err) {
-      setError(err?.response?.data?.detail || 'No se pudo publicar. Revisa la dirección.')
+      setError(err?.response?.data?.detail || (editando ? 'No se pudieron guardar los cambios.' : 'No se pudo publicar. Revisa la dirección.'))
     } finally { setLoading(false) }
   }
 
@@ -116,10 +132,12 @@ export default function PublishAsset({ onClose }) {
           <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
               <img src={sphereLogo} width={30} height={30} alt="" style={{ filter: 'drop-shadow(0 0 8px rgba(45,189,182,.4))' }} />
-              <div style={{ fontWeight: 800, fontSize: '1.05rem' }}>Publicar mi inmueble</div>
+              <div style={{ fontWeight: 800, fontSize: '1.05rem' }}>{editando ? 'Editar inmueble' : 'Publicar mi inmueble'}</div>
             </div>
             <p style={{ fontSize: '.82rem', color: C.muted, margin: '0 0 16px' }}>
-              Sin intermediarios. Tu inmueble tendrá su propio agente 24/7 y un QR para el letrero.
+              {editando
+                ? 'Actualiza los datos de tu publicación. El QR y el enlace no cambian.'
+                : 'Sin intermediarios. Tu inmueble tendrá su propio agente 24/7 y un QR para el letrero.'}
             </p>
 
             <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
@@ -154,17 +172,26 @@ export default function PublishAsset({ onClose }) {
                 </div>
               </div>
 
-              <button type="button" onClick={usarUbicacion}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '9px',
-                         borderRadius: 12, cursor: 'pointer', fontSize: '.84rem',
-                         background: f.latitude ? 'rgba(45,189,182,.16)' : 'rgba(255,255,255,.04)',
-                         border: `1px solid ${f.latitude ? C.teal : C.line}`, color: f.latitude ? C.tealHi : C.text }}>
-                <MapPin size={15} /> {f.latitude ? 'Ubicación capturada ✓' : 'Estoy en el inmueble — usar mi ubicación'}
-              </button>
-              {geoMsg && <div style={{ fontSize: '.74rem', color: C.muted }}>{geoMsg}</div>}
-              <div style={{ fontSize: '.72rem', color: C.muted, marginTop: -4 }}>
-                Si no usas tu ubicación, geocodificamos la dirección automáticamente.
-              </div>
+              {!editando && (
+                <>
+                  <button type="button" onClick={usarUbicacion}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '9px',
+                             borderRadius: 12, cursor: 'pointer', fontSize: '.84rem',
+                             background: f.latitude ? 'rgba(45,189,182,.16)' : 'rgba(255,255,255,.04)',
+                             border: `1px solid ${f.latitude ? C.teal : C.line}`, color: f.latitude ? C.tealHi : C.text }}>
+                    <MapPin size={15} /> {f.latitude ? 'Ubicación capturada ✓' : 'Estoy en el inmueble — usar mi ubicación'}
+                  </button>
+                  {geoMsg && <div style={{ fontSize: '.74rem', color: C.muted }}>{geoMsg}</div>}
+                  <div style={{ fontSize: '.72rem', color: C.muted, marginTop: -4 }}>
+                    Si no usas tu ubicación, geocodificamos la dirección automáticamente.
+                  </div>
+                </>
+              )}
+              {editando && (
+                <div style={{ fontSize: '.72rem', color: C.muted, marginTop: -4 }}>
+                  Si cambias la dirección, recalcularemos la capa base (caminabilidad, conectividad) automáticamente.
+                </div>
+              )}
 
               {error && <div style={{ color: C.coral, fontSize: '.82rem' }}>⚠️ {error}</div>}
 
@@ -172,11 +199,13 @@ export default function PublishAsset({ onClose }) {
                 style={{ marginTop: 4, padding: '12px', borderRadius: 12, border: 'none',
                          cursor: loading ? 'default' : 'pointer', fontWeight: 800, fontSize: '.92rem',
                          background: `linear-gradient(90deg, ${C.teal}, ${C.tealHi})`, color: '#0E0D13', opacity: loading ? .7 : 1 }}>
-                {loading ? 'Publicando…' : 'Publicar y generar mi QR'}
+                {loading ? (editando ? 'Guardando…' : 'Publicando…') : (editando ? 'Guardar cambios' : 'Publicar y generar mi QR')}
               </button>
-              <div style={{ fontSize: '.72rem', color: C.muted, textAlign: 'center' }}>
-                Pasará por una revisión de calidad antes de difundirse.
-              </div>
+              {!editando && (
+                <div style={{ fontSize: '.72rem', color: C.muted, textAlign: 'center' }}>
+                  Pasará por una revisión de calidad antes de difundirse.
+                </div>
+              )}
             </form>
           </>
         )}

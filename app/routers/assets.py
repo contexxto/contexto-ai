@@ -762,3 +762,109 @@ async def publish_asset(
         "conectividad": conectividad_txt,
         "deep_link": f"{settings.public_app_url.rstrip('/')}/a/{aid}",
     }
+
+
+# ── Editar mi inmueble (propietario o corredor) ─────────────────────────────
+class EditAssetRequest(BaseModel):
+    direccion: str | None = Field(default=None, min_length=5, max_length=255)
+    tipo_activo: str | None = Field(default=None, max_length=50)
+    operacion: str | None = Field(default=None, description="arriendo | venta")
+    precio: float | None = Field(default=None, ge=0)
+    piso_altura: int | None = Field(default=None, ge=1, le=200)
+
+
+@router.patch(
+    "/{activo_id}",
+    summary="Editar mi inmueble (propietario autenticado)",
+    description=(
+        "Actualiza los datos editables de un inmueble propio: dirección, tipo, "
+        "operación, precio y piso. Si la dirección cambia, se vuelve a geocodificar "
+        "y recalcular la capa base (Walk Score, conectividad, entorno) en segundo plano. "
+        "Solo el dueño (o su agencia) puede editar."
+    ),
+)
+async def edit_asset(
+    activo_id: uuid.UUID,
+    payload: EditAssetRequest,
+    background: BackgroundTasks,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    await _assert_owner(db, activo_id, user)
+
+    # Estado actual (para detectar si cambió la dirección).
+    cur = (
+        await db.execute(
+            text("SELECT direccion_estandarizada AS dir, ST_Y(geom::geometry) AS lat, "
+                 "ST_X(geom::geometry) AS lon FROM activos_inmutables WHERE id = :id"),
+            {"id": str(activo_id)},
+        )
+    ).mappings().first()
+
+    # 1) Campos del activo (dirección / tipo / piso).
+    sets, params = [], {"id": str(activo_id)}
+    nueva_dir = payload.direccion.strip() if payload.direccion else None
+    direccion_cambio = bool(nueva_dir and nueva_dir != (cur["dir"] or "").strip())
+
+    if nueva_dir:
+        sets.append("direccion_estandarizada = :dir")
+        params["dir"] = nueva_dir
+    if payload.tipo_activo:
+        sets.append("tipo_activo = :tipo")
+        params["tipo"] = payload.tipo_activo
+    if payload.piso_altura is not None:
+        sets.append("piso_altura = :piso")
+        params["piso"] = payload.piso_altura
+
+    # Si cambió la dirección → re-geocodificar (si falla, mantenemos coords previas).
+    lat, lon = cur["lat"], cur["lon"]
+    if direccion_cambio:
+        geo = await _geocode(nueva_dir)
+        if geo:
+            lat, lon = geo
+            sets.append("geom = ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)")
+            params["lat"], params["lon"] = lat, lon
+
+    if sets:
+        await db.execute(
+            text(f"UPDATE activos_inmutables SET {', '.join(sets)} WHERE id = :id"),
+            params,
+        )
+
+    # 2) Operación / precio (transacción más reciente; si no existe, se crea).
+    if payload.operacion is not None or payload.precio is not None:
+        tset, tparams = [], {"aid": str(activo_id)}
+        if payload.operacion is not None:
+            op_norm = (payload.operacion or "").strip().upper()
+            if op_norm not in ("ARRIENDO", "VENTA", "MONITOREO_PASIVO"):
+                op_norm = "ARRIENDO"
+            tset.append("tipo_operacion = :op")
+            tparams["op"] = op_norm
+        if payload.precio is not None:
+            tset.append("precio = :precio")
+            tparams["precio"] = payload.precio
+
+        upd = await db.execute(
+            text("UPDATE transacciones_temporales SET " + ", ".join(tset) +
+                 " WHERE id = (SELECT id FROM transacciones_temporales WHERE activo_id = :aid "
+                 "ORDER BY fecha_publicacion DESC LIMIT 1)"),
+            tparams,
+        )
+        if upd.rowcount == 0:  # no había transacción → crear una
+            op_norm = ((payload.operacion or "arriendo").strip().upper())
+            if op_norm not in ("ARRIENDO", "VENTA", "MONITOREO_PASIVO"):
+                op_norm = "ARRIENDO"
+            await db.execute(
+                text("INSERT INTO transacciones_temporales (id, activo_id, tipo_operacion, precio, estado_anuncio) "
+                     "VALUES (:tid, :aid, :op, :precio, 'ACTIVO')"),
+                {"tid": str(uuid.uuid4()), "aid": str(activo_id),
+                 "op": op_norm, "precio": payload.precio},
+            )
+
+    await db.commit()
+
+    # 3) Si cambió la dirección, recalcular la capa base en segundo plano.
+    if direccion_cambio:
+        background.add_task(_recompute_walk_score, str(activo_id), lat, lon)
+
+    return {"id": str(activo_id), "ok": True, "reubicado": direccion_cambio}

@@ -118,6 +118,8 @@ async def tool_fetch_asset_lifecycle_specs(activo_id: str) -> str:
             a.conectividad,
             a.servicios_cercanos,
             a.caracteristicas,
+            t.tipo_operacion AS operacion,
+            t.precio,
             f.tipo_tuberia,
             f.año_construccion,
             f.tipo_estructura,
@@ -132,6 +134,10 @@ async def tool_fetch_asset_lifecycle_specs(activo_id: str) -> str:
             (f.activo_id IS NOT NULL) AS tiene_ficha_tecnica
         FROM activos_inmutables a
         LEFT JOIN ficha_tecnica_mantenimiento f ON f.activo_id = a.id
+        LEFT JOIN LATERAL (
+            SELECT tipo_operacion, precio FROM transacciones_temporales tt
+            WHERE tt.activo_id = a.id ORDER BY tt.fecha_publicacion DESC LIMIT 1
+        ) t ON true
         WHERE a.id = :activo_id
     """
     rows = await _fetch_rows(query, {"activo_id": activo_id})
@@ -281,17 +287,36 @@ async def tool_analyze_investment(activo_id: str) -> str:
             a.direccion_estandarizada,
             a.tipo_activo,
             a.caracteristicas,
-            (SELECT t.precio FROM transacciones_temporales t
-             WHERE t.activo_id = a.id ORDER BY t.fecha_publicacion DESC LIMIT 1) AS precio,
+            t.precio,
+            t.tipo_operacion AS operacion,
             (f.activo_id IS NOT NULL) AS tiene_ficha_tecnica
         FROM activos_inmutables a
         LEFT JOIN ficha_tecnica_mantenimiento f ON f.activo_id = a.id
+        LEFT JOIN LATERAL (
+            SELECT precio, tipo_operacion FROM transacciones_temporales tt
+            WHERE tt.activo_id = a.id ORDER BY tt.fecha_publicacion DESC LIMIT 1
+        ) t ON true
         WHERE a.id = :id
     """
     rows = await _fetch_rows(query, {"id": activo_id})
     if not rows:
         return json.dumps({"message": f"No asset found with id {activo_id}."})
     r = rows[0]
+
+    # El análisis de inversión (yield de COMPRA, precio/m²) aplica solo a VENTA.
+    # En arriendo no hay precio de compra → no calcular (daría números absurdos).
+    operacion = (r.get("operacion") or "").upper()
+    if operacion and operacion != "VENTA":
+        return json.dumps({
+            "puede_calcular": False,
+            "operacion": operacion.lower(),
+            "message": (
+                "Este inmueble está en ARRIENDO, no en venta. El análisis de inversión "
+                "(rentabilidad de compra, precio/m²) aplica a inmuebles en VENTA. Aquí no "
+                "ofrezcas yield de compra; enfócate en el canon, lo que incluye y la zona."
+            ),
+        }, ensure_ascii=False)
+
     car = r.get("caracteristicas") or {}
     if isinstance(car, str):
         try:

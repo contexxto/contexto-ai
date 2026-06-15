@@ -357,6 +357,57 @@ async def asset_anuncio(
 
 
 @router.get(
+    "/{activo_id}/leads",
+    summary="Interesados del inmueble (CRM de intención por propiedad)",
+    description=(
+        "Lista los interesados que conversaron tras escanear el QR de este inmueble "
+        "(sesiones qr-{id}-{dispositivo}), clasificados por el motor de intención: "
+        "estado, score explicable, razones y handoff sugerido. Solo el dueño (o su agencia)."
+    ),
+)
+@limiter.limit("30/minute")
+async def asset_leads(
+    request: Request,
+    activo_id: uuid.UUID,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    await _assert_owner(db, activo_id, user)
+
+    # Fuente de verdad: el checkpointer de LangGraph (thread_id == session_id).
+    # Las sesiones de QR codifican el inmueble: qr-{activo_id}-{dispositivo}.
+    try:
+        thread_ids = (await db.execute(
+            text("SELECT DISTINCT thread_id FROM checkpoints WHERE thread_id LIKE :p"),
+            {"p": f"qr-{activo_id}-%"},
+        )).scalars().all()
+    except Exception:  # noqa: BLE001 — tabla aún no creada / checkpointer en memoria
+        thread_ids = []
+
+    from app.routers.chat import intencion_de_sesion
+    from app.intencion import ESTADOS
+
+    funnel = {e: 0 for e in ESTADOS}
+    leads: list[dict] = []
+    for sid in thread_ids:
+        try:
+            a = await intencion_de_sesion(sid)
+        except Exception:  # noqa: BLE001
+            continue
+        if not a.get("turnos"):
+            continue  # solo escaneó / sin mensajes propios → aún no es un lead real
+        funnel[a["estado"]] = funnel.get(a["estado"], 0) + 1
+        leads.append({
+            "lead": f"Lead #{sid.rsplit('-', 1)[-1][:4]}",
+            "estado": a["estado"], "nivel": a["nivel"], "score": a["score"],
+            "resumen": a["resumen"], "razones": a["razones"],
+            "handoff_sugerido": a["handoff_sugerido"], "accion_sugerida": a["accion_sugerida"],
+        })
+    leads.sort(key=lambda x: (x["handoff_sugerido"], x["score"]), reverse=True)
+    return {"total": len(leads), "funnel": funnel, "leads": leads}
+
+
+@router.get(
     "/{activo_id}/rutas",
     summary="Rutas a pie a los servicios cercanos (Google Routes, en vivo)",
 )

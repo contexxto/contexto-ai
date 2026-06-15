@@ -417,17 +417,9 @@ async def get_session_history(session_id: str):
     }
 
 
-@router.get(
-    "/{session_id}/intencion",
-    summary="Estado de intención de una sesión (motor de intención)",
-    description=(
-        "Clasifica DÓNDE está el deseo del usuario (de 'anónimo' a 'intención de "
-        "transacción') con un score explicable. Mismo motor (app.intencion) que "
-        "consumirán el agente, el panel del corredor y la API B2B — patrón API-first."
-    ),
-)
-@limiter.limit("60/minute")
-async def session_intencion(request: Request, session_id: str) -> dict:
+async def intencion_de_sesion(session_id: str) -> dict:
+    """Carga el estado de una sesión y corre el motor de intención. Reutilizable
+    por el endpoint de sesión y por el panel de interesados del inmueble."""
     from app.intencion import analizar_intencion
 
     config = _langgraph_config(session_id)
@@ -465,3 +457,17 @@ async def session_intencion(request: Request, session_id: str) -> dict:
     )
     analisis["session_id"] = session_id
     return analisis
+
+
+@router.get(
+    "/{session_id}/intencion",
+    summary="Estado de intención de una sesión (motor de intención)",
+    description=(
+        "Clasifica DÓNDE está el deseo del usuario (de 'anónimo' a 'intención de "
+        "transacción') con un score explicable. Mismo motor (app.intencion) que "
+        "consumirán el agente, el panel del corredor y la API B2B — patrón API-first."
+    ),
+)
+@limiter.limit("60/minute")
+async def session_intencion(request: Request, session_id: str) -> dict:
+    return await intencion_de_sesion(session_id)

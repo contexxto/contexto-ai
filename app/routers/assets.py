@@ -226,6 +226,41 @@ async def mapa_aura(
     return await aura_zona(lat, lon)
 
 
+@router.get("/{activo_id}/investment", summary="Análisis de inversión del activo (API-first)")
+@limiter.limit("30/minute")
+async def asset_investment(
+    request: Request,
+    activo_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    Análisis de inversión de un inmueble registrado: yields, precio/m², veredicto y
+    alertas honestas. Mismo motor que usa el agente (app.inversion) — la web, el
+    agente y los integradores B2B son clientes del MISMO recurso (principio API-first).
+    """
+    from app.inversion import analizar_inversion
+    row = (await db.execute(text(
+        "SELECT a.direccion_estandarizada, a.tipo_activo, a.caracteristicas, "
+        "(f.activo_id IS NOT NULL) AS tiene_ficha_tecnica "
+        "FROM activos_inmutables a "
+        "LEFT JOIN ficha_tecnica_mantenimiento f ON f.activo_id = a.id "
+        "WHERE a.id = :id"), {"id": str(activo_id)})).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Activo no encontrado")
+    tx = (await db.execute(text(
+        "SELECT precio FROM transacciones_temporales WHERE activo_id = :id "
+        "ORDER BY fecha_publicacion DESC LIMIT 1"), {"id": str(activo_id)})).mappings().first()
+    car = row["caracteristicas"] or {}
+    if isinstance(car, str):
+        car = json.loads(car)
+    return analizar_inversion(
+        direccion=row["direccion_estandarizada"], tipo_activo=row["tipo_activo"],
+        precio=float(tx["precio"]) if tx and tx["precio"] is not None else None,
+        area=car.get("area_total_m2"), renta_mensual=car.get("renta_mensual_estimada"),
+        alicuota_mensual=car.get("alicuota"), tiene_ficha=bool(row["tiene_ficha_tecnica"]),
+    )
+
+
 @router.get(
     "/{activo_id}/rutas",
     summary="Rutas a pie a los servicios cercanos (Google Routes, en vivo)",

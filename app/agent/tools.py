@@ -250,47 +250,6 @@ async def tool_analyze_location(latitude: float, longitude: float) -> str:
     }, ensure_ascii=False, default=str)
 
 
-# ── Capa de inversión: motor financiero honesto sobre dato verificado ────────
-# Parámetros por mercado (defaults Ecuador/LATAM; configurables a futuro).
-_INV = {
-    "costo_adquisicion_pct": 0.07,    # notaría, registro, alcabala, etc.
-    "vacancia_meses": 1.0,            # ~1 mes/año sin arrendar
-    "mantenimiento_pct_renta": 0.05,  # 5% de la renta anual
-    "predial_pct_precio": 0.005,      # impuesto predial anual aprox.
-}
-
-
-def _veredicto_bruta(b: float) -> str:
-    if b >= 7:
-        return "muy buena (renta atractiva)"
-    if b >= 5:
-        return "buena (sobre el umbral de inversión)"
-    if b >= 3.5:
-        return "marginal (apenas; revisa los gastos)"
-    return "baja como renta — solo tendría sentido por revalorización/ubicación, no por flujo"
-
-
-def _analisis_inversion(precio: float, area: float | None, renta_mensual: float,
-                        alicuota_mensual: float | None) -> dict:
-    """Cálculo PURO de la inversión. Sin red, sin efectos."""
-    renta_anual = renta_mensual * 12
-    bruta = renta_anual / precio * 100
-    inversion_total = precio * (1 + _INV["costo_adquisicion_pct"])
-    gastos = ((alicuota_mensual or 0) * 12
-              + renta_mensual * _INV["vacancia_meses"]
-              + renta_anual * _INV["mantenimiento_pct_renta"]
-              + precio * _INV["predial_pct_precio"])
-    neta = (renta_anual - gastos) / inversion_total * 100
-    return {
-        "rentabilidad_bruta_pct": round(bruta, 1),
-        "rentabilidad_neta_pct": round(neta, 1),
-        "precio_m2": round(precio / area) if area else None,
-        "renta_anual_usd": round(renta_anual),
-        "inversion_total_estimada_usd": round(inversion_total),
-        "veredicto": _veredicto_bruta(bruta),
-    }
-
-
 @tool
 async def tool_analyze_investment(activo_id: str) -> str:
     """
@@ -305,6 +264,8 @@ async def tool_analyze_investment(activo_id: str) -> str:
     Args:
         activo_id: UUID of the registered asset in the catastro.
     """
+    from app.inversion import analizar_inversion  # fuente única (la usan agente y API REST)
+
     query = """
         SELECT
             a.direccion_estandarizada,
@@ -328,44 +289,13 @@ async def tool_analyze_investment(activo_id: str) -> str:
         except Exception:  # noqa: BLE001
             car = {}
 
-    precio = float(r["precio"]) if r.get("precio") is not None else None
-    area = car.get("area_total_m2")
-    renta = car.get("renta_mensual_estimada")
-    alicuota = car.get("alicuota")
-
-    # Inputs faltantes → honestidad total, sin inventar.
-    faltan = [n for n, v in (("precio", precio), ("área (m²)", area),
-                             ("renta mensual estimada", renta)) if not v]
-    if faltan:
-        return json.dumps({
-            "direccion": r["direccion_estandarizada"], "puede_calcular": False,
-            "faltan_inputs": faltan,
-            "mensaje": "Para analizar la inversión faltan: " + ", ".join(faltan)
-                       + ". El dueño puede agregarlos en la ficha del inmueble.",
-        }, ensure_ascii=False, default=str)
-
-    kpis = _analisis_inversion(precio, float(area), float(renta), alicuota)
-
-    # Chequeo honesto de la CALIDAD del input (el diferenciador).
-    alertas = ["La renta es una ESTIMACIÓN del corredor, no un contrato verificado."]
-    b = kpis["rentabilidad_bruta_pct"]
-    if b > 14:
-        alertas.append("Rentabilidad implausiblemente alta — verifica que el precio y la renta sean correctos.")
-    elif b < 3.5:
-        alertas.append("La renta estimada parece baja para el precio — vale la pena verificarla; podría cambiar el veredicto.")
-    if not r["tiene_ficha_tecnica"]:
-        alertas.append("Estado estructural SIN verificar (ficha técnica pendiente) — riesgo de reparaciones no cuantificado.")
-
-    return json.dumps({
-        "direccion": r["direccion_estandarizada"], "tipo_activo": r["tipo_activo"],
-        "puede_calcular": True,
-        "inputs": {"precio_usd": precio, "area_m2": area,
-                   "renta_mensual_estimada_usd": renta, "alicuota_mensual_usd": alicuota},
-        "kpis": kpis,
-        "supuestos": "Adquisición 7% · vacancia 1 mes/año · mantenimiento 5% de renta · predial 0.5%/año (configurables por mercado)",
-        "alertas_honestas": alertas,
-        "umbral_referencia": "Bruta >5% se considera buena inversión de renta en LATAM (sobre el costo de oportunidad).",
-    }, ensure_ascii=False, default=str)
+    resultado = analizar_inversion(
+        direccion=r["direccion_estandarizada"], tipo_activo=r["tipo_activo"],
+        precio=float(r["precio"]) if r.get("precio") is not None else None,
+        area=car.get("area_total_m2"), renta_mensual=car.get("renta_mensual_estimada"),
+        alicuota_mensual=car.get("alicuota"), tiene_ficha=bool(r["tiene_ficha_tecnica"]),
+    )
+    return json.dumps(resultado, ensure_ascii=False, default=str)
 
 
 AGENT_TOOLS = [

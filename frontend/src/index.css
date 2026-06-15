@@ -141,6 +141,12 @@ div:focus, div:focus-visible { outline: none; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
 /* ---- Render de respuestas del agente ---- */
+/* Selección de texto habilitada explícitamente (móvil: long-press para copiar). */
+.ai-content {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
 .ai-content h2, .ai-content h3 {
   font-family: var(--font-display); font-weight: 700;
   margin: .9rem 0 .35rem; color: var(--accent); font-size: 1rem;

@@ -86,26 +86,31 @@ export default function AnuncioView({ id, onChat }) {
 
       {/* Scroll */}
       <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
-        {/* Hero */}
-        <div style={{ position: 'relative', height: fotos.length ? 240 : 120,
-                      background: `linear-gradient(135deg, ${C.panel}, ${C.bg})`, overflow: 'hidden' }}>
-          {fotos.length > 0 && (
-            // <img> con onError → si la URL no carga (p. ej. bucket no público),
-            // se oculta y queda el degradado en vez de un bloque negro.
-            <img src={fotos[0]} alt="" onError={(e) => { e.currentTarget.style.display = 'none' }}
-              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
-          )}
-          <div style={{ position: 'absolute', inset: 0,
-                        background: 'linear-gradient(to top, rgba(14,13,19,.92) 0%, rgba(14,13,19,.1) 60%)' }} />
-          <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '0 16px 14px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, color: C.muted, fontSize: '.74rem', marginBottom: 4 }}>
-              <MapPin size={13} color={C.teal} /> {d.tipo_activo}{d.piso_altura ? ` · Piso ${d.piso_altura}` : ''}
-              {d.operacion && <span style={{ color: C.tealHi, fontWeight: 700, textTransform: 'capitalize' }}> · {d.operacion}</span>}
-            </div>
-            <h1 style={{ margin: 0, fontSize: '1.25rem', lineHeight: 1.2 }}>{d.direccion}</h1>
-            {precioTxt && (
-              <div style={{ marginTop: 6, fontSize: '1.05rem', fontWeight: 800, color: C.tealHi }}>{precioTxt}</div>
+        {/* Hero — acotado al ancho del contenido (640) para no estirarse en escritorio
+            (a todo lo ancho, `cover` recortaría a una franja delgada). En móvil llena. */}
+        <div style={{ maxWidth: 640, margin: '0 auto' }}>
+          <div style={{ position: 'relative', height: fotos.length ? 260 : 120,
+                        background: `linear-gradient(135deg, ${C.panel}, ${C.bg})`,
+                        overflow: 'hidden', borderRadius: '0 0 18px 18px' }}>
+            {fotos.length > 0 && (
+              // <img> con onError → si la URL no carga (p. ej. bucket no público),
+              // se oculta y queda el degradado en vez de un bloque negro.
+              <img src={fotos[0]} alt="" onError={(e) => { e.currentTarget.style.display = 'none' }}
+                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%',
+                         objectFit: 'cover', objectPosition: 'center' }} />
             )}
+            <div style={{ position: 'absolute', inset: 0,
+                          background: 'linear-gradient(to top, rgba(14,13,19,.92) 0%, rgba(14,13,19,.1) 60%)' }} />
+            <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '0 16px 14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, color: C.muted, fontSize: '.74rem', marginBottom: 4 }}>
+                <MapPin size={13} color={C.teal} /> {d.tipo_activo}{d.piso_altura ? ` · Piso ${d.piso_altura}` : ''}
+                {d.operacion && <span style={{ color: C.tealHi, fontWeight: 700, textTransform: 'capitalize' }}> · {d.operacion}</span>}
+              </div>
+              <h1 style={{ margin: 0, fontSize: '1.25rem', lineHeight: 1.2 }}>{d.direccion}</h1>
+              {precioTxt && (
+                <div style={{ marginTop: 6, fontSize: '1.05rem', fontWeight: 800, color: C.tealHi }}>{precioTxt}</div>
+              )}
+            </div>
           </div>
         </div>
 

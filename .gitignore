@@ -3,6 +3,9 @@
 .env.*
 !.env.example
 
+# Claude Code — configuración personal (no compartir al repo)
+.claude/settings.local.json
+
 # Docker volumes locales
 postgres_data/
 

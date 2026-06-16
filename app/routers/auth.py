@@ -81,18 +81,41 @@ async def set_profile(
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Código de invitación no válido.")
         agency_id = ag["id"]
 
+    # Anti-degradación: NUNCA bajar un corredor/inmobiliaria a "cliente" por esta vía.
+    # El frontend aplica un "pendingProfile" guardado en localStorage al iniciar sesión;
+    # si ese dato quedó con el rol por defecto ('cliente'), reescribiría el perfil y
+    # degradaría a un corredor cada vez que vuelve a entrar (incluso desde otro
+    # dispositivo con el dato viejo). Aquí el servidor preserva el rol/agencia
+    # existentes cuando la petición intenta poner 'cliente' sobre un rol superior.
     await db.execute(
         text(
             "INSERT INTO profiles (user_id, rol, nombre, agency_id) "
             "VALUES (:u, :r, :n, :a) "
-            "ON CONFLICT (user_id) DO UPDATE SET rol = :r, nombre = COALESCE(:n, profiles.nombre), "
-            "agency_id = :a"
+            "ON CONFLICT (user_id) DO UPDATE SET "
+            "  rol = CASE WHEN EXCLUDED.rol = 'cliente' "
+            "             AND profiles.rol IN ('corredor', 'inmobiliaria') "
+            "        THEN profiles.rol ELSE EXCLUDED.rol END, "
+            "  nombre = COALESCE(EXCLUDED.nombre, profiles.nombre), "
+            "  agency_id = CASE WHEN EXCLUDED.rol = 'cliente' "
+            "                   AND profiles.rol IN ('corredor', 'inmobiliaria') "
+            "              THEN profiles.agency_id ELSE EXCLUDED.agency_id END"
         ),
         {"u": user.user_id, "r": rol, "n": payload.nombre, "a": agency_id},
     )
     invalidate_profile(user.user_id)  # el rol/agencia cambió → refrescar caché
 
-    return {"user_id": user.user_id, "rol": rol, "nombre": payload.nombre, "agency_id": agency_id}
+    # Releemos el rol realmente guardado (la guardia anti-degradación pudo conservar
+    # uno superior), para no devolverle al cliente un rol que no se aplicó.
+    saved = (
+        await db.execute(
+            text("SELECT rol, agency_id::text AS agency_id FROM profiles WHERE user_id = :u"),
+            {"u": user.user_id},
+        )
+    ).mappings().first()
+    rol_final = (saved or {}).get("rol", rol)
+    agency_final = (saved or {}).get("agency_id", agency_id)
+
+    return {"user_id": user.user_id, "rol": rol_final, "nombre": payload.nombre, "agency_id": agency_final}
 
 
 @router.get("/agency", summary="Datos de la agencia del usuario")

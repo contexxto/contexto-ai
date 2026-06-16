@@ -63,8 +63,13 @@ export default function Auth({ onClose, onAuthed, motivo = null }) {
         options: { redirectTo: window.location.href },
       })
       if (error) throw error
-      // Si elige corredor/inmobiliaria en el registro, lo aplicamos al volver del OAuth.
-      try { localStorage.setItem('pendingProfile', JSON.stringify(profileBody())) } catch { /* ignore */ }
+      // SOLO en registro ("Crear cuenta") guardamos el rol elegido para aplicarlo
+      // al volver del OAuth. En modo "login" NO tocamos el perfil: si lo hiciéramos,
+      // un corredor/inmobiliaria que vuelve a entrar con Google se degradaría a
+      // "cliente" (el rol por defecto del formulario).
+      if (mode === 'signup') {
+        try { localStorage.setItem('pendingProfile', JSON.stringify(profileBody())) } catch { /* ignore */ }
+      }
     } catch (err) {
       setError('Google no está disponible aún (habilítalo en Supabase). Usa tu correo por ahora.')
     }

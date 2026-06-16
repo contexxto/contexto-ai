@@ -392,9 +392,17 @@ export default function App() {
     return () => sub?.subscription?.unsubscribe?.()
   }, [])
 
-  const logout = useCallback(async () => {
-    if (authEnabled) await supabase.auth.signOut()
+  const logout = useCallback(() => {
+    // Limpiamos el estado local PRIMERO para que la UI responda al instante.
+    // Si esperáramos el await de signOut() (que hace una llamada de red para
+    // revocar el token) y la red está lenta o falla, la UI quedaría congelada.
     setSession(null); setAccessToken(null); setRol(null)
+    setView('chat'); setSidebarOpen(false)
+    // scope:'local' borra la sesión de este dispositivo sin round-trip global.
+    // Fire-and-forget: no bloquea la UI; si falla, el estado local ya se limpió.
+    if (authEnabled) {
+      supabase.auth.signOut({ scope: 'local' }).catch(() => {})
+    }
   }, [])
 
   const bottomRef  = useRef(null)

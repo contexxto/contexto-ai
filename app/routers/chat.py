@@ -567,11 +567,29 @@ async def intencion_de_sesion(session_id: str) -> dict:
                 if "investment" in nombre.lower():
                     uso_inversion = True
 
+    # Señales del handoff in-platform: pedir corredor es el pico de intención, y los
+    # mensajes que el lead escribió al corredor ("quiero reservar una visita") también
+    # cuentan como señales (viven en handoff_mensaje, fuera del estado del agente).
+    pidio_corredor = False
+    try:
+        async with AsyncSessionLocal() as db:
+            est = (await db.execute(text(
+                "SELECT estado FROM handoff_sesion WHERE session_id = :s"), {"s": session_id})).scalar()
+            pidio_corredor = est is not None
+            if pidio_corredor:
+                hmsgs = (await db.execute(text(
+                    "SELECT texto FROM handoff_mensaje WHERE session_id = :s AND autor = 'lead' ORDER BY id"),
+                    {"s": session_id})).scalars().all()
+                mensajes_usuario.extend([t for t in hmsgs if t])
+    except Exception:  # noqa: BLE001 — tablas de handoff aún no existen
+        pass
+
     analisis = analizar_intencion(
         mensajes_usuario=mensajes_usuario,
         herramientas_usadas=herramientas,
         es_qr=session_id.startswith("qr-"),
         uso_tool_inversion=uso_inversion,
+        pidio_corredor=pidio_corredor,
     )
     analisis["session_id"] = session_id
     return analisis

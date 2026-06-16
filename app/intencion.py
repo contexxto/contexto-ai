@@ -64,6 +64,7 @@ def analizar_intencion(
     turnos: int | None = None,
     es_qr: bool = False,
     uso_tool_inversion: bool = False,
+    pidio_corredor: bool = False,
 ) -> dict:
     """
     Analiza la intención de una sesión a partir de señales observables.
@@ -111,6 +112,12 @@ def analizar_intencion(
         score += 20
         razones.append("Corrió el análisis de inversión")
 
+    # Pedir hablar con el corredor es el PICO de intención (in-platform handoff).
+    if pidio_corredor:
+        detectadas["corredor"] = True
+        score += 35
+        razones.insert(0, "Pidió hablar con el corredor")
+
     # Herramientas usadas (profundidad de exploración): aporta poco, con tope.
     if herramientas_usadas:
         score += min(herramientas_usadas * 4, 12)
@@ -122,8 +129,8 @@ def analizar_intencion(
     score = max(0, min(score, 100))
 
     # ── Derivar el ESTADO (precedencia de mayor a menor intención) ──────────
-    transaccion = any(detectadas.get(k) for k in ("contacto", "visita", "precio", "ficha", "inversion"))
-    handoff = bool(detectadas.get("contacto") or detectadas.get("visita")) or score >= 70
+    transaccion = any(detectadas.get(k) for k in ("contacto", "visita", "precio", "ficha", "inversion", "corredor"))
+    handoff = bool(detectadas.get("contacto") or detectadas.get("visita") or detectadas.get("corredor")) or score >= 70
 
     if transaccion:
         estado = "intencion"

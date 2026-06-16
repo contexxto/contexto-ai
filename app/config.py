@@ -44,8 +44,9 @@ class Settings(BaseSettings):
     # caemos automáticamente a OpenStreetMap (base persistible del catastro).
     google_maps_api_key: str = ""
 
-    # URL pública del frontend (para los QR de los letreros inteligentes).
-    public_app_url: str = "https://contexto-ai-six.vercel.app"
+    # URL pública del frontend (para los QR de los letreros inteligentes,
+    # enlaces de "Mis publicaciones" y links de los emails). Dominio de marca.
+    public_app_url: str = "https://contexxto.com"
 
     # Supabase Auth — URL del proyecto (pública). El backend deriva el endpoint
     # JWKS para validar los JWT (ECC P-256/ES256). Vacío = auth desactivada.

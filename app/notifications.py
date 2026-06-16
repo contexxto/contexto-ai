@@ -30,7 +30,7 @@ log = logging.getLogger(__name__)
 # ── Config ──────────────────────────────────────────────────────────────────
 RESEND_API_KEY = os.getenv("RESEND_API_KEY")
 FROM_EMAIL     = os.getenv("NOTIFY_FROM_EMAIL", "Contexto AI <onboarding@resend.dev>")
-APP_URL        = os.getenv("APP_URL", "https://contexto-ai-six.vercel.app").rstrip("/")
+APP_URL        = os.getenv("APP_URL", "https://contexxto.com").rstrip("/")
 
 # Private key: base64 de un PEM (scripts/gen_vapid.py). Soporta también PEM crudo.
 _VAPID_RAW = os.getenv("VAPID_PRIVATE_KEY", "")

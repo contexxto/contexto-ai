@@ -58,9 +58,15 @@ export default function Auth({ onClose, onAuthed, motivo = null }) {
     if (!supabase) { setError('Autenticación no disponible (configuración pendiente).'); return }
     setError(null)
     try {
+      // redirectTo SIN el hash: si usáramos window.location.href y la URL ya tiene
+      // un "#" (la SPA lo deja al limpiar el token), Google devolvería
+      // "contexxto.com/##access_token=..." con doble "#", y Supabase no puede leer
+      // el token de ese fragmento → la sesión nunca se establece. Usamos origin +
+      // pathname para conservar el deep-link (/a/{id}) pero sin hash ni query.
+      const redirectTo = window.location.origin + window.location.pathname
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
-        options: { redirectTo: window.location.href },
+        options: { redirectTo },
       })
       if (error) throw error
       // SOLO en registro ("Crear cuenta") guardamos el rol elegido para aplicarlo

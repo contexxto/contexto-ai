@@ -189,8 +189,13 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, o
               )}
             </div>
             <button onClick={onLogout} title="Cerrar sesión"
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.dim, display: 'flex', padding: 4 }}>
-              <LogOut size={16} />
+              style={{
+                background: 'rgba(224,104,90,.10)', border: '1px solid rgba(224,104,90,.25)',
+                borderRadius: 8, cursor: 'pointer', color: '#E0685A',
+                display: 'flex', alignItems: 'center', gap: 5,
+                padding: '6px 10px', fontSize: '.75rem', fontWeight: 600, flexShrink: 0,
+              }}>
+              <LogOut size={13} /> Salir
             </button>
           </div>
         ) : (

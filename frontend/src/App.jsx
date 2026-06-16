@@ -614,28 +614,73 @@ export default function App() {
     }
   }, [])
 
-  // Suscribe al lead a Web Push y envía la suscripción al backend.
-  // Se llama cuando el handoff se confirma (el lead pasó a modo corredor).
-  const subscribeToPush = useCallback(async (sid) => {
+  // Obtiene (o crea) la PushSubscription del navegador. Devuelve el JSON o null
+  // si no hay soporte / el usuario denegó el permiso. Pide permiso explícitamente.
+  const ensurePushSubscription = useCallback(async () => {
     const vapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY
-    if (!vapidKey || !('serviceWorker' in navigator) || !('PushManager' in window)) return
+    if (!vapidKey || !('serviceWorker' in navigator) || !('PushManager' in window)) return null
     try {
+      if (Notification.permission === 'denied') return null
+      if (Notification.permission === 'default') {
+        const perm = await Notification.requestPermission()
+        if (perm !== 'granted') return null
+      }
       const reg = await navigator.serviceWorker.ready
       const existing = await reg.pushManager.getSubscription()
       const sub = existing || await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(vapidKey),
       })
-      await axios.post(
-        `${API_BASE}/api/v1/chat/${sid}/handoff/push`,
-        sub.toJSON(),
-        { headers: apiHeaders() },
-      )
+      return sub.toJSON()
     } catch (e) {
-      // El usuario puede haber denegado las notificaciones — no es un error crítico.
       console.warn('Push subscription:', e)
+      return null
     }
   }, [])
+
+  // Suscribe al LEAD a Web Push (ligada a su sesión de QR). Se llama al confirmar handoff.
+  const subscribeToPush = useCallback(async (sid) => {
+    const sub = await ensurePushSubscription()
+    if (!sub) return
+    try {
+      await axios.post(`${API_BASE}/api/v1/chat/${sid}/handoff/push`, sub, { headers: apiHeaders() })
+    } catch (e) { console.warn('Lead push:', e) }
+  }, [ensurePushSubscription])
+
+  // Registra push + email del CORREDOR para avisarle de leads nuevos.
+  //  - withPush=false → solo email (silencioso, sin pedir permiso). Al iniciar sesión.
+  //  - withPush=true  → además pide permiso de notificación. Al abrir el CRM.
+  const subscribeUserPush = useCallback(async (withPush) => {
+    if (!session) return
+    const sub = withPush ? await ensurePushSubscription() : null
+    try {
+      await axios.post(`${API_BASE}/api/v1/chat/push/subscribe`, { subscription: sub }, { headers: apiHeaders() })
+    } catch (e) { console.warn('User push:', e) }
+  }, [session, ensurePushSubscription])
+
+  // Al iniciar sesión como corredor/inmobiliaria: registra el email (silencioso)
+  // para poder avisarle por correo aunque no acepte notificaciones del navegador.
+  useEffect(() => {
+    if (session && (rol === 'corredor' || rol === 'inmobiliaria')) subscribeUserPush(false)
+  }, [session, rol, subscribeUserPush])
+
+  // Deep-link del corredor: una notificación de lead abre /?crm=1 → entra al CRM
+  // en cuanto la sesión esté lista (con auth para poder cargar sus leads).
+  const crmDeepLink = useRef(new URLSearchParams(window.location.search).get('crm') === '1')
+  useEffect(() => {
+    if (crmDeepLink.current && session && (rol === 'corredor' || rol === 'inmobiliaria')) {
+      crmDeepLink.current = false
+      window.history.replaceState({}, '', '/')   // limpia el ?crm=1
+      setView('crm')
+    }
+  }, [session, rol])
+
+  // Abre el CRM y aprovecha para pedir permiso de notificaciones nativas (contextual).
+  const abrirCRM = useCallback(() => {
+    setView('crm')
+    setSidebarOpen(false)
+    subscribeUserPush(true)
+  }, [subscribeUserPush])
 
   // Handoff en vivo: el lead pide hablar con el corredor (dentro de Contexto).
   // Requiere registro (correo/Google) → identidad + poder avisarle. Si no hay
@@ -1031,7 +1076,7 @@ export default function App() {
           onPublish={() => (authEnabled && session) ? setPublishOpen(true) : setAuthOpen(true)}
           onMap={() => setView('map')}
           onReview={() => setView('review')}
-          onCRM={() => setView('crm')}
+          onCRM={abrirCRM}
         />
       )}
       {isMobile && sidebarOpen && (
@@ -1050,7 +1095,7 @@ export default function App() {
               onPublish={() => { (authEnabled && session) ? setPublishOpen(true) : setAuthOpen(true); setSidebarOpen(false) }}
               onMap={() => { setView('map'); setSidebarOpen(false) }}
               onReview={() => { setView('review'); setSidebarOpen(false) }}
-              onCRM={() => { setView('crm'); setSidebarOpen(false) }}
+              onCRM={abrirCRM}
             />
           </div>
         </>

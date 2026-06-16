@@ -429,6 +429,10 @@ _HANDOFF_DDL = [
     "CREATE TABLE IF NOT EXISTS handoff_mensaje (id bigserial PRIMARY KEY, "
     "session_id text, autor text, texto text, creado_en timestamptz DEFAULT now())",
     "CREATE INDEX IF NOT EXISTS ix_handoff_msg_sid ON handoff_mensaje (session_id, id)",
+    # Suscripción push + email de usuarios autenticados (corredores) → notificarles
+    # cuando un lead pide hablar o escribe. El email se captura del JWT al suscribirse.
+    "CREATE TABLE IF NOT EXISTS push_usuario (user_id uuid PRIMARY KEY, "
+    "email text, subscription jsonb, actualizado_en timestamptz DEFAULT now())",
 ]
 _handoff_ready = False
 
@@ -453,6 +457,51 @@ def activo_de_session(session_id: str) -> str | None:
         except ValueError:
             return None
     return None
+
+
+async def _corredor_de_activo(db, activo_id: str | None) -> tuple[str | None, dict | None]:
+    """Email + suscripción push del corredor dueño de un inmueble (para notificarle).
+    Resuelve dueño directo (owner_user_id) o dueño de la agencia (owner_agency_id)."""
+    if not activo_id:
+        return None, None
+    try:
+        owner = (await db.execute(text(
+            "SELECT COALESCE(a.owner_user_id, ag.owner_user)::text AS owner "
+            "FROM activos_inmutables a LEFT JOIN agencies ag ON ag.id = a.owner_agency_id "
+            "WHERE a.id = :id"), {"id": activo_id})).scalar()
+        if not owner:
+            return None, None
+        row = (await db.execute(text(
+            "SELECT email, subscription FROM push_usuario WHERE user_id = :u"),
+            {"u": owner})).mappings().first()
+    except Exception:  # noqa: BLE001 — tablas aún no creadas
+        return None, None
+    if not row:
+        return None, None
+    return row.get("email"), row.get("subscription")
+
+
+def _notificar_corredor(activo_id: str | None, title: str, body: str) -> None:
+    """Dispara (fire-and-forget) la notificación al corredor dueño del inmueble.
+    Abre directo en el CRM. No bloquea la respuesta HTTP."""
+    if not activo_id:
+        return
+    import asyncio as _aio
+
+    async def _run() -> None:
+        async with AsyncSessionLocal() as db:
+            await ensure_handoff_tables(db)
+            email, sub = await _corredor_de_activo(db, activo_id)
+        if not email and not sub:
+            return
+        from app.notifications import send_notification
+        await send_notification(
+            email=email, push_subscription=sub,
+            title=title, body=body, url="/?crm=1",
+            email_subject=title,
+        )
+
+    _aio.create_task(_run())
 
 
 async def transcript_de_sesion(session_id: str) -> list[dict]:
@@ -496,6 +545,13 @@ async def solicitar_handoff(
             {"s": session_id, "a": activo_id,
              "u": user.user_id if user else None, "e": user.email if user else None})
         await db.commit()
+
+    # Avisa al corredor: un lead caliente quiere hablar (lo más valioso del embudo).
+    quien = (user.nombre or user.email) if user else "Un interesado"
+    _notificar_corredor(activo_id,
+        "🔥 Un interesado quiere hablar contigo",
+        f"{quien} pidió hablar con el corredor. Ábrelo en tu CRM para responderle.")
+
     return {"ok": True, "estado": "solicitado", "identificado": bool(user)}
 
 
@@ -525,6 +581,16 @@ async def handoff_mensaje_lead(
             "INSERT INTO handoff_mensaje (session_id, autor, texto) VALUES (:s, 'lead', :t)"),
             {"s": session_id, "t": payload.texto.strip()})
         await db.commit()
+
+    # Avisa al corredor que el lead le escribió (con vista previa del mensaje).
+    quien = (user.nombre or user.email) if user else "Un interesado"
+    preview = payload.texto.strip()
+    if len(preview) > 90:
+        preview = preview[:90] + "…"
+    _notificar_corredor(activo_de_session(session_id),
+        f"💬 {quien} te escribió",
+        preview)
+
     return {"ok": True}
 
 
@@ -639,7 +705,6 @@ async def registrar_push_subscription(
     cuando el corredor responda. La suscripción viene de
     registration.pushManager.subscribe() en el frontend."""
     if not payload.get("endpoint"):
-        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail="Suscripción push inválida (sin endpoint).")
     async with AsyncSessionLocal() as db:
         await ensure_handoff_tables(db)
@@ -652,3 +717,37 @@ async def registrar_push_subscription(
         )
         await db.commit()
     return {"ok": True}
+
+
+class PushUsuarioPayload(BaseModel):
+    subscription: dict | None = None  # PushSubscription JSON (None si denegó permiso)
+
+
+@router.post(
+    "/push/subscribe",
+    summary="Registrar push + email del usuario autenticado (corredor) para notificaciones",
+)
+@limiter.limit("20/minute")
+async def registrar_push_usuario(
+    request: Request,
+    payload: PushUsuarioPayload,
+    user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """El corredor registra su dispositivo (push) y email para recibir avisos
+    cuando un lead pide hablar o le escribe. El email se toma del JWT (no del
+    cliente). Si denegó el permiso de push, igual guardamos el email."""
+    sub = payload.subscription if (payload.subscription and payload.subscription.get("endpoint")) else None
+    async with AsyncSessionLocal() as db:
+        await ensure_handoff_tables(db)
+        await db.execute(
+            text(
+                "INSERT INTO push_usuario (user_id, email, subscription, actualizado_en) "
+                "VALUES (:u, :e, :s, now()) ON CONFLICT (user_id) DO UPDATE SET "
+                "  email = COALESCE(EXCLUDED.email, push_usuario.email), "
+                "  subscription = COALESCE(EXCLUDED.subscription, push_usuario.subscription), "
+                "  actualizado_en = now()"
+            ),
+            {"u": user.user_id, "e": user.email, "s": json.dumps(sub) if sub else None},
+        )
+        await db.commit()
+    return {"ok": True, "push": bool(sub), "email": bool(user.email)}

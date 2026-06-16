@@ -522,14 +522,18 @@ async def responder_lead(
     await db.commit()
 
     # Notifica al lead (fire-and-forget: no bloquea la respuesta al corredor).
+    # La URL /a/{activo_id} reanuda la conversación del handoff en su dispositivo.
     import asyncio as _aio
-    from app.notifications import notify_lead
-    _aio.create_task(notify_lead(
-        lead_email=(h_row or {}).get("lead_email"),
+    from app.notifications import send_notification
+    corredor_nombre = getattr(user, "nombre", None) or "El corredor"
+    inmueble_txt = f" sobre {addr}" if addr else ""
+    _aio.create_task(send_notification(
+        email=(h_row or {}).get("lead_email"),
         push_subscription=(h_row or {}).get("push_subscription"),
-        session_id=session_id,
-        corredor_nombre=getattr(user, "nombre", None) or "El corredor",
-        inmueble=addr or "",
+        title=f"💬 {corredor_nombre} te respondió",
+        body=f"Tienes un mensaje nuevo{inmueble_txt}. Ábrelo para continuar la conversación.",
+        url=f"/a/{activo_id}",
+        email_subject=f"💬 {corredor_nombre} te respondió en Contexto AI",
     ))
 
     return {"ok": True}

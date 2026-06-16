@@ -425,6 +425,7 @@ _HANDOFF_DDL = [
     "creado_en timestamptz DEFAULT now(), actualizado_en timestamptz DEFAULT now())",
     "ALTER TABLE handoff_sesion ADD COLUMN IF NOT EXISTS lead_user_id uuid",
     "ALTER TABLE handoff_sesion ADD COLUMN IF NOT EXISTS lead_email text",
+    "ALTER TABLE handoff_sesion ADD COLUMN IF NOT EXISTS push_subscription jsonb",
     "CREATE TABLE IF NOT EXISTS handoff_mensaje (id bigserial PRIMARY KEY, "
     "session_id text, autor text, texto text, creado_en timestamptz DEFAULT now())",
     "CREATE INDEX IF NOT EXISTS ix_handoff_msg_sid ON handoff_mensaje (session_id, id)",
@@ -622,3 +623,32 @@ async def intencion_de_sesion(session_id: str) -> dict:
 @limiter.limit("60/minute")
 async def session_intencion(request: Request, session_id: str) -> dict:
     return await intencion_de_sesion(session_id)
+
+
+@router.post(
+    "/{session_id}/handoff/push",
+    summary="Registrar suscripción Web Push del lead (para notificaciones nativas)",
+)
+@limiter.limit("10/minute")
+async def registrar_push_subscription(
+    request: Request,
+    session_id: str,
+    payload: dict,
+) -> dict:
+    """Guarda la PushSubscription del browser para enviar notificaciones
+    cuando el corredor responda. La suscripción viene de
+    registration.pushManager.subscribe() en el frontend."""
+    if not payload.get("endpoint"):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="Suscripción push inválida (sin endpoint).")
+    async with AsyncSessionLocal() as db:
+        await ensure_handoff_tables(db)
+        await db.execute(
+            text(
+                "UPDATE handoff_sesion SET push_subscription = :sub, actualizado_en = now() "
+                "WHERE session_id = :s"
+            ),
+            {"s": session_id, "sub": json.dumps(payload)},
+        )
+        await db.commit()
+    return {"ok": True}

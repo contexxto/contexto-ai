@@ -510,7 +510,28 @@ async def responder_lead(
     await db.execute(text(
         "INSERT INTO handoff_mensaje (session_id, autor, texto) VALUES (:s, 'corredor', :t)"),
         {"s": session_id, "t": payload.texto.strip()})
+
+    # Captura datos para notificación ANTES de cerrar la sesión de DB.
+    h_row = (await db.execute(
+        text("SELECT lead_email, push_subscription FROM handoff_sesion WHERE session_id = :s"),
+        {"s": session_id})).mappings().first()
+    addr = (await db.execute(
+        text("SELECT direccion FROM activos_inmutables WHERE id = :id"),
+        {"id": str(activo_id)})).scalar()
+
     await db.commit()
+
+    # Notifica al lead (fire-and-forget: no bloquea la respuesta al corredor).
+    import asyncio as _aio
+    from app.notifications import notify_lead
+    _aio.create_task(notify_lead(
+        lead_email=(h_row or {}).get("lead_email"),
+        push_subscription=(h_row or {}).get("push_subscription"),
+        session_id=session_id,
+        corredor_nombre=getattr(user, "nombre", None) or "El corredor",
+        inmueble=addr or "",
+    ))
+
     return {"ok": True}
 
 

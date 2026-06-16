@@ -33,6 +33,14 @@ function getOrCreateSession() {
   return id
 }
 
+// Convierte una clave VAPID base64url a Uint8Array para pushManager.subscribe().
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
+  const raw = atob(base64)
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)))
+}
+
 // ID estable por dispositivo/navegador. Hace que la sesión del QR sea PRIVADA por
 // visitante (cada quien su conversación del inmueble), no compartida entre todos.
 const DEVICE_KEY = 'contexto_ai_device_id'
@@ -599,6 +607,36 @@ export default function App() {
     }
   }, [input, loading, sessionId, geo, modoCorredor])
 
+  // Registra el Service Worker (notificaciones push nativas) una vez al montar.
+  useEffect(() => {
+    if ('serviceWorker' in navigator && 'PushManager' in window) {
+      navigator.serviceWorker.register('/sw.js').catch(e => console.warn('SW:', e))
+    }
+  }, [])
+
+  // Suscribe al lead a Web Push y envía la suscripción al backend.
+  // Se llama cuando el handoff se confirma (el lead pasó a modo corredor).
+  const subscribeToPush = useCallback(async (sid) => {
+    const vapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY
+    if (!vapidKey || !('serviceWorker' in navigator) || !('PushManager' in window)) return
+    try {
+      const reg = await navigator.serviceWorker.ready
+      const existing = await reg.pushManager.getSubscription()
+      const sub = existing || await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(vapidKey),
+      })
+      await axios.post(
+        `${API_BASE}/api/v1/chat/${sid}/handoff/push`,
+        sub.toJSON(),
+        { headers: apiHeaders() },
+      )
+    } catch (e) {
+      // El usuario puede haber denegado las notificaciones — no es un error crítico.
+      console.warn('Push subscription:', e)
+    }
+  }, [])
+
   // Handoff en vivo: el lead pide hablar con el corredor (dentro de Contexto).
   // Requiere registro (correo/Google) → identidad + poder avisarle. Si no hay
   // sesión, abrimos el registro y reintentamos el handoff al autenticarse.
@@ -616,8 +654,10 @@ export default function App() {
         content: '🤝 Te conecté con el corredor. Escríbele aquí mismo — te responde en este chat, sin salir de Contexto.',
         time: new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }), toolCalls: [],
       }])
+      // Suscribe al lead a Web Push para recibir notificación nativa cuando el corredor responda.
+      subscribeToPush(sessionId)
     } catch { setError('No se pudo conectar con el corredor en este momento.') }
-  }, [sessionId, session])
+  }, [sessionId, session, subscribeToPush])
 
   // Tras registrarse, continúa el handoff que quedó pendiente.
   useEffect(() => {

@@ -359,7 +359,7 @@ async def asset_anuncio(
 async def _leads_de_activo(db: AsyncSession, activo_id: str, direccion: str | None = None) -> list[dict]:
     """Interesados (deduplicados por dispositivo) de UN inmueble. Reutilizable por
     el panel por-propiedad y por el CRM agregado del corredor."""
-    from app.routers.chat import intencion_de_sesion
+    from app.routers.chat import intencion_de_sesion, ensure_handoff_tables
     # Fuente: checkpointer de LangGraph (thread_id == session_id, qr-{activo}-{device}-…).
     try:
         thread_ids = (await db.execute(
@@ -368,12 +368,14 @@ async def _leads_de_activo(db: AsyncSession, activo_id: str, direccion: str | No
         )).scalars().all()
     except Exception:  # noqa: BLE001 — tabla aún no creada / checkpointer en memoria
         thread_ids = []
+    handoff_map: dict[str, dict] = {}
     try:
+        await ensure_handoff_tables(db)
         h_rows = (await db.execute(
-            text("SELECT session_id, estado FROM handoff_sesion WHERE session_id LIKE :p"),
+            text("SELECT session_id, estado, lead_email FROM handoff_sesion WHERE session_id LIKE :p"),
             {"p": f"qr-{activo_id}-%"},
         )).mappings().all()
-        handoff_map = {r["session_id"]: r["estado"] for r in h_rows}
+        handoff_map = {r["session_id"]: {"estado": r["estado"], "email": r["lead_email"]} for r in h_rows}
     except Exception:  # noqa: BLE001
         handoff_map = {}
 
@@ -387,13 +389,16 @@ async def _leads_de_activo(db: AsyncSession, activo_id: str, direccion: str | No
         if not a.get("turnos"):
             continue  # solo escaneó / sin mensajes propios → aún no es un lead real
         device = sid[len(prefix):len(prefix) + 36] or sid
+        ho = handoff_map.get(sid) or {}
+        email = ho.get("email")
         lead = {
             "session_id": sid, "activo_id": str(activo_id), "direccion": direccion,
-            "lead": f"Lead #{device[:4]}",
+            "lead": email or f"Lead #{device[:4]}",
+            "email": email,
             "estado": a["estado"], "nivel": a["nivel"], "score": a["score"],
             "resumen": a["resumen"], "razones": a["razones"],
             "handoff_sugerido": a["handoff_sugerido"], "accion_sugerida": a["accion_sugerida"],
-            "handoff_estado": handoff_map.get(sid),
+            "handoff_estado": ho.get("estado"),
         }
         prev = by_device.get(device)
         if prev is None or (bool(lead["handoff_estado"]), lead["score"]) > (bool(prev["handoff_estado"]), prev["score"]):

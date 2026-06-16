@@ -330,6 +330,7 @@ export default function App() {
   const lastAiRef = useRef('')   // última respuesta del agente (para bloquear ecos/reenvíos)
   const [modoCorredor, setModoCorredor] = useState(false)  // handoff en vivo: el lead habla con el corredor (no el AI)
   const handoffSeenRef = useRef(0)                          // último id de mensaje de handoff visto
+  const [handoffPendiente, setHandoffPendiente] = useState(false)  // handoff esperando registro del lead
   const [session, setSession] = useState(null)            // sesión de Supabase | null
   const [authOpen, setAuthOpen] = useState(false)         // modal de login/registro
   const [rol, setRol] = useState(null)                    // rol del usuario (cliente/corredor/inmobiliaria)
@@ -599,7 +600,14 @@ export default function App() {
   }, [input, loading, sessionId, geo, modoCorredor])
 
   // Handoff en vivo: el lead pide hablar con el corredor (dentro de Contexto).
+  // Requiere registro (correo/Google) → identidad + poder avisarle. Si no hay
+  // sesión, abrimos el registro y reintentamos el handoff al autenticarse.
   const iniciarHandoff = useCallback(async () => {
+    if (authEnabled && !session) {
+      setHandoffPendiente(true)
+      setAuthOpen(true)
+      return
+    }
     try {
       await axios.post(`${API_BASE}/api/v1/chat/${sessionId}/handoff`, {}, { headers: apiHeaders() })
       setModoCorredor(true)
@@ -609,7 +617,12 @@ export default function App() {
         time: new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }), toolCalls: [],
       }])
     } catch { setError('No se pudo conectar con el corredor en este momento.') }
-  }, [sessionId])
+  }, [sessionId, session])
+
+  // Tras registrarse, continúa el handoff que quedó pendiente.
+  useEffect(() => {
+    if (session && handoffPendiente) { setHandoffPendiente(false); iniciarHandoff() }
+  }, [session, handoffPendiente, iniciarHandoff])
 
   // Sondeo del handoff (solo en sesiones de QR): trae respuestas del corredor
   // y, si el corredor ya entró, activa el modo corredor aunque el lead recargue.
@@ -1065,7 +1078,9 @@ export default function App() {
       </header>
 
       {authOpen && (
-        <Auth onClose={() => setAuthOpen(false)} onAuthed={(s) => { setSession(s); setAccessToken(s?.access_token) }} />
+        <Auth motivo={handoffPendiente ? 'Regístrate para hablar con un corredor — así puede responderte y avisarte.' : null}
+          onClose={() => { setAuthOpen(false); setHandoffPendiente(false) }}
+          onAuthed={(s) => { setSession(s); setAccessToken(s?.access_token) }} />
       )}
       {publishOpen && <MisPublicaciones onClose={() => setPublishOpen(false)} />}
       {shareOpen && <ShareConversation sessionId={sessionId} onClose={() => setShareOpen(false)} />}

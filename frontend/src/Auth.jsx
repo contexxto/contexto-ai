@@ -16,7 +16,7 @@ const C = {
   coral: '#E0685A', text: '#EDEBF2', muted: '#9C99AC', line: 'rgba(45,189,182,.25)',
 }
 
-export default function Auth({ onClose, onAuthed }) {
+export default function Auth({ onClose, onAuthed, motivo = null }) {
   const [mode, setMode] = useState('login')      // 'login' | 'signup'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -52,6 +52,22 @@ export default function Auth({ onClose, onAuthed }) {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify(profileBody()),
     })
+  }
+
+  async function google() {
+    if (!supabase) { setError('Autenticación no disponible (configuración pendiente).'); return }
+    setError(null)
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: window.location.href },
+      })
+      if (error) throw error
+      // Si elige corredor/inmobiliaria en el registro, lo aplicamos al volver del OAuth.
+      try { localStorage.setItem('pendingProfile', JSON.stringify(profileBody())) } catch { /* ignore */ }
+    } catch (err) {
+      setError('Google no está disponible aún (habilítalo en Supabase). Usa tu correo por ahora.')
+    }
   }
 
   async function handleSubmit(e) {
@@ -120,9 +136,23 @@ export default function Auth({ onClose, onAuthed }) {
             Contexto <span style={{ color: C.teal }}>AI</span>
           </div>
         </div>
-        <p style={{ fontSize: '.82rem', color: C.muted, margin: '0 0 18px' }}>
-          {mode === 'login' ? 'Inicia sesión para guardar tus conversaciones.' : 'Crea tu cuenta en segundos.'}
+        <p style={{ fontSize: '.82rem', color: C.muted, margin: '0 0 14px' }}>
+          {motivo || (mode === 'login' ? 'Inicia sesión para guardar tus conversaciones.' : 'Crea tu cuenta en segundos.')}
         </p>
+
+        {/* Google (requiere proveedor habilitado en Supabase) */}
+        <button type="button" onClick={google}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9, width: '100%',
+                   padding: '11px', borderRadius: 12, cursor: 'pointer', marginBottom: 12,
+                   background: '#fff', border: 'none', color: '#1f1f1f', fontWeight: 700, fontSize: '.9rem' }}>
+          <svg width="17" height="17" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.4 29.3 35 24 35c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 5.1 29.6 3 24 3 12.9 3 4 11.9 4 23s8.9 20 20 20c11 0 19.7-8 19.7-20 0-1.3-.1-2.3-.1-2.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 16 19 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 5.1 29.6 3 24 3 16.3 3 9.7 7.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 43c5.2 0 10-2 13.6-5.2l-6.3-5.2C29.2 34.3 26.7 35 24 35c-5.3 0-9.7-2.6-11.3-7l-6.5 5C9.6 38.6 16.2 43 24 43z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4 5.6l6.3 5.2C41.8 35.7 44 30.3 44 23c0-1.3-.1-2.3-.4-2.5z"/></svg>
+          Continuar con Google
+        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 14px' }}>
+          <div style={{ flex: 1, height: 1, background: C.line }} />
+          <span style={{ fontSize: '.72rem', color: C.muted }}>o con tu correo</span>
+          <div style={{ flex: 1, height: 1, background: C.line }} />
+        </div>
 
         {/* Tabs */}
         <div style={{ display: 'flex', gap: 6, marginBottom: 18, background: 'rgba(255,255,255,.04)',

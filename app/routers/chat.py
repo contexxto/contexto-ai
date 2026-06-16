@@ -421,7 +421,10 @@ async def get_session_history(session_id: str):
 _HANDOFF_DDL = [
     "CREATE TABLE IF NOT EXISTS handoff_sesion (session_id text PRIMARY KEY, "
     "activo_id uuid, estado text DEFAULT 'solicitado', corredor_id uuid, "
+    "lead_user_id uuid, lead_email text, "
     "creado_en timestamptz DEFAULT now(), actualizado_en timestamptz DEFAULT now())",
+    "ALTER TABLE handoff_sesion ADD COLUMN IF NOT EXISTS lead_user_id uuid",
+    "ALTER TABLE handoff_sesion ADD COLUMN IF NOT EXISTS lead_email text",
     "CREATE TABLE IF NOT EXISTS handoff_mensaje (id bigserial PRIMARY KEY, "
     "session_id text, autor text, texto text, creado_en timestamptz DEFAULT now())",
     "CREATE INDEX IF NOT EXISTS ix_handoff_msg_sid ON handoff_mensaje (session_id, id)",
@@ -476,17 +479,23 @@ async def transcript_de_sesion(session_id: str) -> list[dict]:
     summary="El interesado pide hablar con el corredor (handoff en vivo, sin salir de Contexto)",
 )
 @limiter.limit("20/minute")
-async def solicitar_handoff(request: Request, session_id: str) -> dict:
+async def solicitar_handoff(
+    request: Request, session_id: str,
+    user: CurrentUser | None = Depends(get_optional_user),
+) -> dict:
     activo_id = activo_de_session(session_id)
     async with AsyncSessionLocal() as db:
         await ensure_handoff_tables(db)
         await db.execute(text(
-            "INSERT INTO handoff_sesion (session_id, activo_id, estado) "
-            "VALUES (:s, :a, 'solicitado') ON CONFLICT (session_id) DO UPDATE "
-            "SET actualizado_en = now()"),
-            {"s": session_id, "a": activo_id})
+            "INSERT INTO handoff_sesion (session_id, activo_id, estado, lead_user_id, lead_email) "
+            "VALUES (:s, :a, 'solicitado', :u, :e) ON CONFLICT (session_id) DO UPDATE "
+            "SET actualizado_en = now(), "
+            "    lead_user_id = COALESCE(EXCLUDED.lead_user_id, handoff_sesion.lead_user_id), "
+            "    lead_email = COALESCE(EXCLUDED.lead_email, handoff_sesion.lead_email)"),
+            {"s": session_id, "a": activo_id,
+             "u": user.user_id if user else None, "e": user.email if user else None})
         await db.commit()
-    return {"ok": True, "estado": "solicitado"}
+    return {"ok": True, "estado": "solicitado", "identificado": bool(user)}
 
 
 class HandoffMsg(BaseModel):
@@ -498,13 +507,19 @@ class HandoffMsg(BaseModel):
     summary="El interesado escribe al corredor (mensaje in-platform)",
 )
 @limiter.limit("40/minute")
-async def handoff_mensaje_lead(request: Request, session_id: str, payload: HandoffMsg) -> dict:
+async def handoff_mensaje_lead(
+    request: Request, session_id: str, payload: HandoffMsg,
+    user: CurrentUser | None = Depends(get_optional_user),
+) -> dict:
     async with AsyncSessionLocal() as db:
         await ensure_handoff_tables(db)
         await db.execute(text(
-            "INSERT INTO handoff_sesion (session_id, activo_id, estado) VALUES (:s, :a, 'solicitado') "
-            "ON CONFLICT (session_id) DO NOTHING"),
-            {"s": session_id, "a": activo_de_session(session_id)})
+            "INSERT INTO handoff_sesion (session_id, activo_id, estado, lead_user_id, lead_email) "
+            "VALUES (:s, :a, 'solicitado', :u, :e) ON CONFLICT (session_id) DO UPDATE SET "
+            "    lead_user_id = COALESCE(EXCLUDED.lead_user_id, handoff_sesion.lead_user_id), "
+            "    lead_email = COALESCE(EXCLUDED.lead_email, handoff_sesion.lead_email)"),
+            {"s": session_id, "a": activo_de_session(session_id),
+             "u": user.user_id if user else None, "e": user.email if user else None})
         await db.execute(text(
             "INSERT INTO handoff_mensaje (session_id, autor, texto) VALUES (:s, 'lead', :t)"),
             {"s": session_id, "t": payload.texto.strip()})

@@ -433,14 +433,38 @@ export default function App() {
       .catch(() => {}) // silent — no history yet
   }, [sessionId])
 
-  // Deep link de QR (letrero inteligente): /a/{id} → apertura SIEMPRE fresca.
-  // Sesión nueva por apertura (sufijo aleatorio) → cada escaneo arranca en cápsula,
-  // sin reproducir conversaciones viejas ni arrastrar contexto. El prefijo
-  // qr-{id}-{device}- mantiene el lead agrupado por inmueble y dispositivo (el panel
-  // de Interesados busca qr-{id}-% y deduplica por dispositivo).
+  // Deep link de QR (letrero inteligente): /a/{id}.
+  // - Si el lead ya pidió corredor en este inmueble (handoff activo) → REANUDA esa
+  //   conversación para que vea la respuesta del corredor (no se pierde al volver).
+  // - Si no → apertura FRESCA en cápsula (sesión nueva, sin replay del muro viejo).
   const loadFromDeepLink = useCallback(async (id) => {
+    const storeKey = 'ctx_qr_' + id
+
+    // ¿Conversación con corredor en curso para este inmueble en este dispositivo?
+    const prev = localStorage.getItem(storeKey)
+    if (prev) {
+      try {
+        const { data: h } = await axios.get(`${API_BASE}/api/v1/chat/${prev}/handoff`, { headers: apiHeaders() })
+        if (h?.activo) {
+          setSessionId(prev)
+          const hist = await axios.get(`${API_BASE}/api/v1/chat/${prev}/history`, { headers: apiHeaders() })
+            .then(r => r.data).catch(() => ({ messages: [] }))
+          const base = (hist.messages || []).map((m, i) => ({
+            id: `r-${i}`, role: m.role === 'user' ? 'user' : 'ai', content: limpiarCtx(m), time: '', toolCalls: [] }))
+          const hmsgs = (h.mensajes || []).map((m) => ({
+            id: `h-${m.id}`, role: m.autor === 'corredor' ? 'ai' : 'user',
+            content: m.autor === 'corredor' ? `👤 Corredor: ${m.texto}` : m.texto, time: '', toolCalls: [] }))
+          for (const m of (h.mensajes || [])) handoffSeenRef.current = Math.max(handoffSeenRef.current, m.id)
+          setMessages([...base, ...hmsgs])
+          setModoCorredor(true)
+          return
+        }
+      } catch { /* sin handoff: seguimos a cápsula fresca */ }
+    }
+
     const sid = `${qrSessionId(id)}-${Math.random().toString(36).slice(2, 8)}`
     localStorage.setItem(SESSION_KEY, sid)
+    localStorage.setItem(storeKey, sid)
     setSessionId(sid)
 
     const t = new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })

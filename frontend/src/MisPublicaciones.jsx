@@ -1,11 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
 import axios from 'axios'
-import { X, Plus, QrCode, Copy, Check, Share2, MapPin, ClipboardList, ListChecks, Pencil, Users, RefreshCw } from 'lucide-react'
+import { X, Plus, QrCode, Copy, Check, Share2, MapPin, ClipboardList, ListChecks, Pencil, RefreshCw } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import PublishAsset from './PublishAsset'
 import FichaTecnica from './FichaTecnica'
 import Caracteristicas from './Caracteristicas'
-import LeadsPanel from './LeadsPanel'
 
 const C = {
   bg: '#16151E', panel: '#1E1D28', teal: '#2DBDB6', tealHi: '#5EEAD4',
@@ -24,7 +23,6 @@ export default function MisPublicaciones({ onClose }) {
   const [qrId, setQrId] = useState(null)
   const [fichaAsset, setFichaAsset] = useState(null)
   const [caracAsset, setCaracAsset] = useState(null)
-  const [leadsAsset, setLeadsAsset] = useState(null)
   const [recomputando, setRecomputando] = useState(null)
 
   async function actualizarZona(it) {
@@ -135,7 +133,6 @@ export default function MisPublicaciones({ onClose }) {
 
               <div style={{ display: 'flex', gap: 7, marginTop: 11, flexWrap: 'wrap' }}>
                 <Btn onClick={() => setEditar(it)}><Pencil size={14} /> Editar</Btn>
-                <Btn onClick={() => setLeadsAsset(it)}><Users size={14} /> Interesados</Btn>
                 <Btn onClick={() => copiar(it.deep_link, it.id)}>
                   {copied === it.id ? <Check size={14} /> : <Copy size={14} />} {copied === it.id ? 'Copiado' : 'Copiar enlace'}
                 </Btn>
@@ -166,7 +163,6 @@ export default function MisPublicaciones({ onClose }) {
       {editar && <PublishAsset existing={editar} onClose={() => { setEditar(null); load() }} />}
       {fichaAsset && <FichaTecnica activo={fichaAsset} onClose={() => { setFichaAsset(null); load() }} />}
       {caracAsset && <Caracteristicas activo={caracAsset} onClose={() => { setCaracAsset(null); load() }} />}
-      {leadsAsset && <LeadsPanel activo={leadsAsset} onClose={() => setLeadsAsset(null)} />}
     </div>
   )
 }

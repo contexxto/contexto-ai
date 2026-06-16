@@ -356,26 +356,11 @@ async def asset_anuncio(
     }
 
 
-@router.get(
-    "/{activo_id}/leads",
-    summary="Interesados del inmueble (CRM de intención por propiedad)",
-    description=(
-        "Lista los interesados que conversaron tras escanear el QR de este inmueble "
-        "(sesiones qr-{id}-{dispositivo}), clasificados por el motor de intención: "
-        "estado, score explicable, razones y handoff sugerido. Solo el dueño (o su agencia)."
-    ),
-)
-@limiter.limit("30/minute")
-async def asset_leads(
-    request: Request,
-    activo_id: uuid.UUID,
-    user: CurrentUser = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> dict:
-    await _assert_owner(db, activo_id, user)
-
-    # Fuente de verdad: el checkpointer de LangGraph (thread_id == session_id).
-    # Las sesiones de QR codifican el inmueble: qr-{activo_id}-{dispositivo}.
+async def _leads_de_activo(db: AsyncSession, activo_id: str, direccion: str | None = None) -> list[dict]:
+    """Interesados (deduplicados por dispositivo) de UN inmueble. Reutilizable por
+    el panel por-propiedad y por el CRM agregado del corredor."""
+    from app.routers.chat import intencion_de_sesion
+    # Fuente: checkpointer de LangGraph (thread_id == session_id, qr-{activo}-{device}-…).
     try:
         thread_ids = (await db.execute(
             text("SELECT DISTINCT thread_id FROM checkpoints WHERE thread_id LIKE :p"),
@@ -383,23 +368,15 @@ async def asset_leads(
         )).scalars().all()
     except Exception:  # noqa: BLE001 — tabla aún no creada / checkpointer en memoria
         thread_ids = []
-
-    from app.routers.chat import intencion_de_sesion
-    from app.intencion import ESTADOS
-
-    # Estado de handoff por sesión (quién pidió hablar con el corredor).
     try:
         h_rows = (await db.execute(
             text("SELECT session_id, estado FROM handoff_sesion WHERE session_id LIKE :p"),
             {"p": f"qr-{activo_id}-%"},
         )).mappings().all()
         handoff_map = {r["session_id"]: r["estado"] for r in h_rows}
-    except Exception:  # noqa: BLE001 — tabla aún no existe
+    except Exception:  # noqa: BLE001
         handoff_map = {}
 
-    # Cada apertura del QR crea una sesión nueva (qr-{activo}-{device}-{rand}).
-    # Deduplicamos por DISPOSITIVO → un lead por visitante (el de mayor intención
-    # o el que pidió corredor), no uno por cada escaneo.
     prefix = f"qr-{activo_id}-"
     by_device: dict[str, dict] = {}
     for sid in thread_ids:
@@ -411,7 +388,7 @@ async def asset_leads(
             continue  # solo escaneó / sin mensajes propios → aún no es un lead real
         device = sid[len(prefix):len(prefix) + 36] or sid
         lead = {
-            "session_id": sid,
+            "session_id": sid, "activo_id": str(activo_id), "direccion": direccion,
             "lead": f"Lead #{device[:4]}",
             "estado": a["estado"], "nivel": a["nivel"], "score": a["score"],
             "resumen": a["resumen"], "razones": a["razones"],
@@ -421,13 +398,58 @@ async def asset_leads(
         prev = by_device.get(device)
         if prev is None or (bool(lead["handoff_estado"]), lead["score"]) > (bool(prev["handoff_estado"]), prev["score"]):
             by_device[device] = lead
+    return list(by_device.values())
 
-    leads = list(by_device.values())
+
+def _funnel_y_orden(leads: list[dict]) -> dict:
+    from app.intencion import ESTADOS
     funnel = {e: 0 for e in ESTADOS}
     for ld in leads:
         funnel[ld["estado"]] = funnel.get(ld["estado"], 0) + 1
     leads.sort(key=lambda x: (bool(x["handoff_estado"]), x["handoff_sugerido"], x["score"]), reverse=True)
     return {"total": len(leads), "funnel": funnel, "leads": leads}
+
+
+@router.get(
+    "/mine/leads",
+    summary="CRM del corredor — interesados de TODOS sus inmuebles",
+    description="Agrega los interesados de todas las propiedades del corredor (o su agencia), "
+                "clasificados por el motor de intención. Solo corredores/agencias.",
+)
+@limiter.limit("20/minute")
+async def mine_leads(
+    request: Request,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    params: dict = {"u": user.user_id}
+    where = "owner_user_id = :u"
+    if user.agency_id:
+        where += " OR owner_agency_id = :a"
+        params["a"] = user.agency_id
+    rows = (await db.execute(
+        text(f"SELECT id::text AS id, direccion_estandarizada AS direccion "
+             f"FROM activos_inmutables WHERE {where}"), params)).mappings().all()
+    all_leads: list[dict] = []
+    for r in rows:
+        all_leads.extend(await _leads_de_activo(db, r["id"], r["direccion"]))
+    return _funnel_y_orden(all_leads)
+
+
+@router.get(
+    "/{activo_id}/leads",
+    summary="Interesados del inmueble (CRM de intención por propiedad)",
+)
+@limiter.limit("30/minute")
+async def asset_leads(
+    request: Request,
+    activo_id: uuid.UUID,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    await _assert_owner(db, activo_id, user)
+    leads = await _leads_de_activo(db, str(activo_id))
+    return _funnel_y_orden(leads)
 
 
 class CorredorMsg(BaseModel):

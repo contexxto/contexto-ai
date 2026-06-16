@@ -14,6 +14,7 @@ import AnuncioView from './AnuncioView'
 import { API_BASE, apiHeaders, setAccessToken } from './api'
 import './App.css'
 import ReviewStation from './ReviewStation'
+import CRM from './CRM'
 import Sidebar from './Sidebar'
 import sphereLogo from './assets/sphere.svg'
 
@@ -885,6 +886,21 @@ export default function App() {
     )
   }
 
+  // Vista de CRM del corredor (pantalla completa)
+  if (view === 'crm') {
+    return (
+      <div style={{ height:'100dvh', display:'flex', flexDirection:'column' }}>
+        <div style={{ padding:'8px 16px' }}>
+          <button onClick={() => setView('chat')} style={{
+            background:'none', border:'1px solid var(--border)', borderRadius:8,
+            cursor:'pointer', color:'var(--text-muted)', padding:'6px 12px', fontSize:'.85rem',
+          }}>← Volver al chat</button>
+        </div>
+        <div style={{ flex:1, minHeight:0 }}><CRM /></div>
+      </div>
+    )
+  }
+
   // Vista de Estación de Revisión (pantalla completa)
   if (view === 'review') {
     return (
@@ -938,6 +954,7 @@ export default function App() {
           onPublish={() => (authEnabled && session) ? setPublishOpen(true) : setAuthOpen(true)}
           onMap={() => setView('map')}
           onReview={() => setView('review')}
+          onCRM={() => setView('crm')}
         />
       )}
       {isMobile && sidebarOpen && (
@@ -956,6 +973,7 @@ export default function App() {
               onPublish={() => { (authEnabled && session) ? setPublishOpen(true) : setAuthOpen(true); setSidebarOpen(false) }}
               onMap={() => { setView('map'); setSidebarOpen(false) }}
               onReview={() => { setView('review'); setSidebarOpen(false) }}
+              onCRM={() => { setView('crm'); setSidebarOpen(false) }}
             />
           </div>
         </>

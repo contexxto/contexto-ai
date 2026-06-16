@@ -135,7 +135,7 @@ export default function LeadsPanel({ activo, onClose }) {
 }
 
 // ── Conversación del corredor con un interesado (in-platform) ───────────────
-function LeadChat({ activo, lead, onBack }) {
+export function LeadChat({ activo, lead, onBack }) {
   const [msgs, setMsgs] = useState(null)
   const [texto, setTexto] = useState('')
   const [enviando, setEnviando] = useState(false)

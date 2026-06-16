@@ -89,7 +89,13 @@ export default function AnuncioView({ id, onChat }) {
         {/* Hero — acotado al ancho del contenido (640) para no estirarse en escritorio
             (a todo lo ancho, `cover` recortaría a una franja delgada). En móvil llena. */}
         <div style={{ maxWidth: 640, margin: '0 auto' }}>
-          <div style={{ position: 'relative', height: fotos.length ? 260 : 120,
+          <div style={{ position: 'relative', width: '100%',
+                        // aspect-ratio (no altura fija) → misma proporción en móvil y
+                        // escritorio. A 640px de ancho crece a ~400px de alto y muestra
+                        // todo el inmueble, en vez de recortar a una franja panorámica.
+                        aspectRatio: fotos.length ? '16 / 10' : undefined,
+                        height: fotos.length ? undefined : 120,
+                        minHeight: fotos.length ? 230 : undefined, maxHeight: 440,
                         background: `linear-gradient(135deg, ${C.panel}, ${C.bg})`,
                         overflow: 'hidden', borderRadius: '0 0 18px 18px' }}>
             {fotos.length > 0 && (

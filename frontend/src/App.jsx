@@ -492,7 +492,7 @@ export default function App() {
       axios.patch(`${API_BASE}/api/v1/chat/sessions/${sid}`,
         { titulo: '📍 Inmueble escaneado (QR)' }, { headers: apiHeaders() }).catch(() => {})
     } catch {
-      setError('No se pudo cargar el informe del inmueble escaneado.')
+      setError('No pudimos cargar este inmueble ahora mismo. Reintenta en un momento 🔄')
     } finally { setLoading(false) }
   }, [])
 
@@ -599,7 +599,7 @@ export default function App() {
     } catch (err) {
       setError(
         err.response?.data?.detail
-        ?? 'Error al conectar con el agente. Verifica que la API esté corriendo en :8000.'
+        ?? 'No pudimos conectar en este momento. Reintenta en unos segundos 🔄'
       )
     } finally {
       setLoading(false)

@@ -39,6 +39,21 @@ Eso no se copia scrapeando — requiere haber **estado** en el inmueble.
 
 ---
 
+## El motor del foso: el sistema vivo
+
+> **Contexto no es un buscador de inmuebles. Es el sistema de conocimiento VIVO de la habitabilidad — que se vuelve más inteligente con cada corredor y cada cliente que lo toca.**
+
+El chat, las fichas y la UI son la superficie *commoditizable*. El **loop que aprende** (corredor confirma/corrige/agrega → catastro mejora → mejores respuestas → más leads → más corredores aportan) es lo que **compone** y no se copia. Validado casi línea por línea por el ensayo de Satya Nadella sobre la *AI-driven economy* (jun 2026). Cuatro principios que de aquí se derivan:
+
+1. **El loop ES el producto, no una feature.** El compounding del aprendizaje es el foso; lo demás se commoditiza.
+2. **Portabilidad = doctrina de arquitectura.** El conocimiento vive en PostGIS propio + formato portable (OKF). *"El modelo lo alquilas, no lo posees."*
+3. **Evals en plata.** Medir handoffs calificados, no minutos ni vanity.
+4. **El handoff humano es la espina, no el fallback.** *"La venta es fricción humana"*; la IA da contexto, el humano cierra.
+
+> Derivación completa, paralelos con Nadella y contrapunto honesto en `VISION_Sistema_Vivo.md`.
+
+---
+
 ## El stack de capacidades (cómo se construye — modelo AI-nativo)
 
 Operación: **Carlos (visión/orquestación) + Gemini (estrategia) + Claude (ejecución técnica y cerebro del agente).** Envía como un equipo de 10 con el burn de uno.

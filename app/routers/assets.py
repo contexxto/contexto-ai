@@ -703,6 +703,10 @@ class CuracionRequest(BaseModel):
     nombre: str = Field(..., min_length=2, max_length=120)
     categoria: str | None = Field(default=None, max_length=60)
     distancia_m: int | None = Field(default=None, ge=0, le=20000)
+    # El corredor captura su GPS junto al lugar nuevo; el backend calcula la
+    # distancia real con el geom del inmueble. (Nunca se teclea un metro a ojo.)
+    lat: float | None = Field(default=None, ge=-90, le=90)
+    lon: float | None = Field(default=None, ge=-180, le=180)
 
 
 @router.get(
@@ -745,11 +749,26 @@ async def post_entorno(
     accion = payload.accion.strip().lower()
     if accion not in ("cerrado", "agregado"):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Acción inválida.")
+
+    # Si el corredor capturó su GPS junto al lugar nuevo, calculamos la distancia
+    # REAL con el geom del inmueble (PostGIS) — nunca un metro tecleado a ojo.
+    distancia = payload.distancia_m
+    if accion == "agregado" and payload.lat is not None and payload.lon is not None:
+        d = (await db.execute(
+            text("SELECT ST_Distance(geom::geography, "
+                 "ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography) AS d "
+                 "FROM activos_inmutables WHERE id = :id"),
+            {"lon": payload.lon, "lat": payload.lat, "id": str(activo_id)},
+        )).mappings().first()
+        if d and d["d"] is not None:
+            distancia = int(round(d["d"]))
+
     await db.execute(
-        text("INSERT INTO entorno_curacion (activo_id, accion, nombre, categoria, distancia_m, corredor_id) "
-             "VALUES (:a, :ac, :n, :c, :d, :u)"),
+        text("INSERT INTO entorno_curacion (activo_id, accion, nombre, categoria, distancia_m, lat, lon, corredor_id) "
+             "VALUES (:a, :ac, :n, :c, :d, :lat, :lon, :u)"),
         {"a": str(activo_id), "ac": accion, "n": payload.nombre.strip(),
-         "c": (payload.categoria or None), "d": payload.distancia_m, "u": user.user_id},
+         "lat": payload.lat, "lon": payload.lon,
+         "c": (payload.categoria or None), "d": distancia, "u": user.user_id},
     )
     await db.commit()
     curaciones = await fetch_curaciones(db, str(activo_id))

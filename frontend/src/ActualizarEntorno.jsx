@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import axios from 'axios'
-import { X, Plus, Trash2, Store, Check, Loader } from 'lucide-react'
+import { X, Plus, Trash2, Store, Check, Loader, MapPin } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 
 const C = {
@@ -17,7 +17,8 @@ export default function ActualizarEntorno({ activo, onClose }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
-  const [nuevo, setNuevo] = useState({ nombre: '', categoria: '', distancia_m: '' })
+  const [nuevo, setNuevo] = useState({ nombre: '', categoria: '', lat: null, lon: null })
+  const [geo, setGeo] = useState('idle')   // idle | capturando | ok | error
 
   const cargar = useCallback(async () => {
     try {
@@ -63,13 +64,24 @@ export default function ActualizarEntorno({ activo, onClose }) {
     } finally { setBusy(false) }
   }
 
+  function capturarUbicacion() {
+    if (!navigator.geolocation) { setGeo('error'); return }
+    setGeo('capturando'); setError(null)
+    navigator.geolocation.getCurrentPosition(
+      (pos) => { setNuevo(p => ({ ...p, lat: pos.coords.latitude, lon: pos.coords.longitude })); setGeo('ok') },
+      () => setGeo('error'),
+      { enableHighAccuracy: true, timeout: 10000 },
+    )
+  }
+
   function agregarLugar(e) {
     e.preventDefault()
     const nombre = nuevo.nombre.trim()
     if (nombre.length < 2) { setError('Escribe el nombre del lugar.'); return }
-    const dist = nuevo.distancia_m === '' ? null : Number(nuevo.distancia_m)
-    aplicar({ accion: 'agregado', nombre, categoria: nuevo.categoria.trim() || null, distancia_m: dist })
-    setNuevo({ nombre: '', categoria: '', distancia_m: '' })
+    // El corredor aporta el GPS (estoy aquí); el backend calcula la distancia real.
+    aplicar({ accion: 'agregado', nombre, categoria: nuevo.categoria.trim() || null,
+              lat: nuevo.lat, lon: nuevo.lon })
+    setNuevo({ nombre: '', categoria: '', lat: null, lon: null }); setGeo('idle')
   }
 
   const inp = { width: '100%', padding: '9px 11px', borderRadius: 10, marginTop: 4, boxSizing: 'border-box',
@@ -150,16 +162,25 @@ export default function ActualizarEntorno({ activo, onClose }) {
                 <input style={inp} value={nuevo.nombre} onChange={e => setNuevo(p => ({ ...p, nombre: e.target.value }))}
                   placeholder="Ej. Supermercado Santa María" />
               </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <div style={{ flex: 1.4 }}>
-                  <label style={lbl}>Categoría (opcional)</label>
-                  <input style={inp} value={nuevo.categoria} onChange={e => setNuevo(p => ({ ...p, categoria: e.target.value }))}
-                    placeholder="supermercado, restaurante…" />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={lbl}>Distancia (m)</label>
-                  <input type="number" min={0} style={inp} value={nuevo.distancia_m}
-                    onChange={e => setNuevo(p => ({ ...p, distancia_m: e.target.value }))} placeholder="150" />
+              <div>
+                <label style={lbl}>Categoría (opcional)</label>
+                <input style={inp} value={nuevo.categoria} onChange={e => setNuevo(p => ({ ...p, categoria: e.target.value }))}
+                  placeholder="supermercado, restaurante…" />
+              </div>
+              <div>
+                <label style={lbl}>Distancia</label>
+                <button type="button" onClick={capturarUbicacion} disabled={busy || geo === 'capturando'}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, width: '100%',
+                           marginTop: 4, padding: '10px', borderRadius: 10, cursor: 'pointer', fontSize: '.84rem', fontWeight: 600,
+                           background: geo === 'ok' ? 'rgba(45,189,182,.14)' : 'rgba(255,255,255,.04)',
+                           border: `1px solid ${geo === 'ok' ? C.teal : C.line}`, color: geo === 'ok' ? C.tealHi : C.text }}>
+                  <MapPin size={15} />
+                  {geo === 'ok' ? 'Ubicación capturada ✓' : geo === 'capturando' ? 'Capturando…' : 'Estoy aquí — usar mi ubicación'}
+                </button>
+                <div style={{ fontSize: '.72rem', color: geo === 'error' ? C.coral : C.muted, marginTop: 5 }}>
+                  {geo === 'ok' ? 'Calcularemos la distancia exacta desde el inmueble.'
+                    : geo === 'error' ? 'No se pudo obtener tu ubicación. Se agregará como “cerca”; puedes reintentar.'
+                    : 'Párate junto al lugar y toca — medimos la distancia por ti, sin teclear metros.'}
                 </div>
               </div>
               <button type="submit" disabled={busy}

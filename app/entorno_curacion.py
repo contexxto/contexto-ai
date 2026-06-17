@@ -28,8 +28,13 @@ _CURACION_DDL = [
     "  nombre text NOT NULL,"
     "  categoria text,"
     "  distancia_m integer,"
+    "  lat double precision,"           # coord. del lugar (capturada por GPS del corredor)
+    "  lon double precision,"           # → semilla del grafo de habitabilidad (escalón 2)
     "  corredor_id uuid,"
     "  creado_en timestamptz DEFAULT now())",
+    # Para tablas ya creadas en un deploy anterior (idempotente):
+    "ALTER TABLE entorno_curacion ADD COLUMN IF NOT EXISTS lat double precision",
+    "ALTER TABLE entorno_curacion ADD COLUMN IF NOT EXISTS lon double precision",
     "CREATE INDEX IF NOT EXISTS ix_entorno_cur_activo ON entorno_curacion (activo_id)",
 ]
 _curacion_ready = False

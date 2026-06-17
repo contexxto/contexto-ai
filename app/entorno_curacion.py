@@ -30,11 +30,13 @@ _CURACION_DDL = [
     "  distancia_m integer,"
     "  lat double precision,"           # coord. del lugar (capturada por GPS del corredor)
     "  lon double precision,"           # → semilla del grafo de habitabilidad (escalón 2)
+    "  foto text,"                       # URL de la foto del lugar (captura ahora, display luego)
     "  corredor_id uuid,"
     "  creado_en timestamptz DEFAULT now())",
     # Para tablas ya creadas en un deploy anterior (idempotente):
     "ALTER TABLE entorno_curacion ADD COLUMN IF NOT EXISTS lat double precision",
     "ALTER TABLE entorno_curacion ADD COLUMN IF NOT EXISTS lon double precision",
+    "ALTER TABLE entorno_curacion ADD COLUMN IF NOT EXISTS foto text",
     "CREATE INDEX IF NOT EXISTS ix_entorno_cur_activo ON entorno_curacion (activo_id)",
 ]
 _curacion_ready = False
@@ -121,7 +123,7 @@ async def fetch_curaciones(db, activo_id) -> list[dict[str, Any]]:
     try:
         rows = (
             await db.execute(
-                text("SELECT id, accion, nombre, categoria, distancia_m, "
+                text("SELECT id, accion, nombre, categoria, distancia_m, foto, "
                      "creado_en::text AS creado_en FROM entorno_curacion "
                      "WHERE activo_id = :a ORDER BY creado_en DESC"),
                 {"a": str(activo_id)},

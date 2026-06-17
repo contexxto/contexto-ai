@@ -707,6 +707,9 @@ class CuracionRequest(BaseModel):
     # distancia real con el geom del inmueble. (Nunca se teclea un metro a ojo.)
     lat: float | None = Field(default=None, ge=-90, le=90)
     lon: float | None = Field(default=None, ge=-180, le=180)
+    # Foto del lugar (URL ya subida a Storage). Se captura ahora; el display
+    # (anuncio / mapa) llega después — el dato ya queda guardado, sin re-fotografiar.
+    foto: str | None = Field(default=None, max_length=600)
 
 
 @router.get(
@@ -764,10 +767,10 @@ async def post_entorno(
             distancia = int(round(d["d"]))
 
     await db.execute(
-        text("INSERT INTO entorno_curacion (activo_id, accion, nombre, categoria, distancia_m, lat, lon, corredor_id) "
-             "VALUES (:a, :ac, :n, :c, :d, :lat, :lon, :u)"),
+        text("INSERT INTO entorno_curacion (activo_id, accion, nombre, categoria, distancia_m, lat, lon, foto, corredor_id) "
+             "VALUES (:a, :ac, :n, :c, :d, :lat, :lon, :f, :u)"),
         {"a": str(activo_id), "ac": accion, "n": payload.nombre.strip(),
-         "lat": payload.lat, "lon": payload.lon,
+         "lat": payload.lat, "lon": payload.lon, "f": (payload.foto or None),
          "c": (payload.categoria or None), "d": distancia, "u": user.user_id},
     )
     await db.commit()

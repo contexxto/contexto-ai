@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import axios from 'axios'
-import { X, Plus, Trash2, Store, Check, Loader, MapPin } from 'lucide-react'
+import { X, Plus, Trash2, Store, Check, Loader, MapPin, Camera } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
+import { supabase } from './supabaseClient'
 
 const C = {
   bg: '#16151E', panel: '#1E1D28', teal: '#2DBDB6', tealHi: '#5EEAD4',
@@ -17,8 +18,9 @@ export default function ActualizarEntorno({ activo, onClose }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
-  const [nuevo, setNuevo] = useState({ nombre: '', categoria: '', lat: null, lon: null })
+  const [nuevo, setNuevo] = useState({ nombre: '', categoria: '', lat: null, lon: null, foto: null })
   const [geo, setGeo] = useState('idle')   // idle | capturando | ok | error
+  const [uploading, setUploading] = useState(false)
 
   const cargar = useCallback(async () => {
     try {
@@ -64,6 +66,33 @@ export default function ActualizarEntorno({ activo, onClose }) {
     } finally { setBusy(false) }
   }
 
+  // HEIC (iPhone/Samsung) → JPEG en el navegador antes de subir (carga diferida).
+  async function aJpegSiHeic(file) {
+    const esHeic = /\.(heic|heif)$/i.test(file.name) || /image\/hei[cf]/i.test(file.type || '')
+    if (!esHeic) return file
+    const { default: heic2any } = await import('heic2any')
+    const blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 })
+    const out = Array.isArray(blob) ? blob[0] : blob
+    return new File([out], file.name.replace(/\.(heic|heif)$/i, '.jpg'), { type: 'image/jpeg' })
+  }
+
+  async function subirFoto(file) {
+    if (!file) return
+    if (!supabase) { setError('Subida no disponible (Storage no configurado).'); return }
+    setError(null); setUploading(true)
+    try {
+      let f = file
+      try { f = await aJpegSiHeic(file) } catch { setError('No se pudo convertir la foto HEIC. Súbela en JPG/PNG.'); return }
+      const path = `entorno/${activo.id}/${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${f.name.replace(/[^\w.\-]/g, '_')}`
+      const { error: upErr } = await supabase.storage.from('evidencias').upload(path, f, { upsert: false })
+      if (upErr) throw upErr
+      const { data } = supabase.storage.from('evidencias').getPublicUrl(path)
+      setNuevo(p => ({ ...p, foto: data.publicUrl }))
+    } catch {
+      setError('No se pudo subir la foto. Reintenta 🔄')
+    } finally { setUploading(false) }
+  }
+
   function capturarUbicacion() {
     if (!navigator.geolocation) { setGeo('error'); return }
     setGeo('capturando'); setError(null)
@@ -80,8 +109,8 @@ export default function ActualizarEntorno({ activo, onClose }) {
     if (nombre.length < 2) { setError('Escribe el nombre del lugar.'); return }
     // El corredor aporta el GPS (estoy aquí); el backend calcula la distancia real.
     aplicar({ accion: 'agregado', nombre, categoria: nuevo.categoria.trim() || null,
-              lat: nuevo.lat, lon: nuevo.lon })
-    setNuevo({ nombre: '', categoria: '', lat: null, lon: null }); setGeo('idle')
+              lat: nuevo.lat, lon: nuevo.lon, foto: nuevo.foto })
+    setNuevo({ nombre: '', categoria: '', lat: null, lon: null, foto: null }); setGeo('idle')
   }
 
   const inp = { width: '100%', padding: '9px 11px', borderRadius: 10, marginTop: 4, boxSizing: 'border-box',
@@ -183,6 +212,23 @@ export default function ActualizarEntorno({ activo, onClose }) {
                     : 'Párate junto al lugar y toca — medimos la distancia por ti, sin teclear metros.'}
                 </div>
               </div>
+              <div>
+                <label style={lbl}>Foto del lugar (opcional)</label>
+                <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, marginTop: 4,
+                                padding: '10px', borderRadius: 10, cursor: uploading ? 'default' : 'pointer', fontSize: '.84rem',
+                                fontWeight: 600, background: 'rgba(255,255,255,.04)', border: `1px dashed ${C.line}`, color: C.text }}>
+                  {uploading ? <Loader size={15} style={{ animation: 'spin 1s linear infinite' }} /> : <Camera size={15} />}
+                  {uploading ? 'Subiendo…' : nuevo.foto ? 'Cambiar foto' : 'Tomar / subir foto'}
+                  <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
+                    onChange={e => { if (e.target.files?.[0]) subirFoto(e.target.files[0]) }} />
+                </label>
+                {nuevo.foto && (
+                  <img src={nuevo.foto} alt="lugar" style={{ marginTop: 8, width: '100%', maxHeight: 140, objectFit: 'cover', borderRadius: 10 }} />
+                )}
+                <div style={{ fontSize: '.7rem', color: C.muted, marginTop: 4 }}>
+                  Se guarda ahora; se mostrará cuando tengamos el mapa propio — sin volver a fotografiar.
+                </div>
+              </div>
               <button type="submit" disabled={busy}
                 style={{ marginTop: 4, padding: '10px', borderRadius: 10, border: 'none', cursor: busy ? 'default' : 'pointer',
                          fontWeight: 800, fontSize: '.88rem', background: `linear-gradient(90deg, ${C.teal}, ${C.tealHi})`,
@@ -199,11 +245,14 @@ export default function ActualizarEntorno({ activo, onClose }) {
                   {curaciones.map((c) => (
                     <div key={c.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
                                              padding: '7px 10px', borderRadius: 9, background: 'rgba(255,255,255,.03)' }}>
-                      <span style={{ fontSize: '.82rem', color: C.text }}>
-                        {c.accion === 'cerrado' ? '🚫' : '➕'} {c.nombre}
-                        {c.distancia_m ? ` · ~${c.distancia_m} m` : ''}
-                        <span style={{ color: C.muted, fontSize: '.72rem' }}>
-                          {c.accion === 'cerrado' ? ' (cerrado)' : ' (agregado)'}
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '.82rem', color: C.text, minWidth: 0 }}>
+                        {c.foto && <img src={c.foto} alt="" style={{ width: 34, height: 34, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />}
+                        <span style={{ minWidth: 0 }}>
+                          {c.accion === 'cerrado' ? '🚫' : '➕'} {c.nombre}
+                          {c.distancia_m ? ` · ~${c.distancia_m} m` : ''}
+                          <span style={{ color: C.muted, fontSize: '.72rem' }}>
+                            {c.accion === 'cerrado' ? ' (cerrado)' : ' (agregado)'}
+                          </span>
                         </span>
                       </span>
                       <button disabled={busy} onClick={() => deshacer(c.id)} title="Deshacer"

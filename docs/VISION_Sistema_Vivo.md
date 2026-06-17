@@ -55,9 +55,37 @@ Medir lo que importa: *¿la respuesta llevó a un handoff calificado?* No "cuán
 
 ---
 
+## El grafo de habitabilidad — por qué NO competimos con Google Maps
+
+La contribución del corredor debe ser **tan frictionless y rica como la de Google Maps** — pero construyendo un **grafo PROPIO**. Cuidado con la trampa de "igual o superior a Google":
+
+**La trampa:** Google tiene miles de millones de contribuyentes (Local Guides). Su foso es **escala + ubicuidad** en POIs genéricos (nombre, categoría, horarios, fotos). **Si compites ahí — "más POIs que Google" — pierdes** (P5). Nunca tendrás sus contribuyentes.
+
+**Dónde SÍ eres superior:** Google sabe *"PROMART está aquí, abre 9-6"*. Google NO sabe *"calle residencial tranquila, buena para familias; la escuela de 2 cuadras cerró; el Metro la vuelve ideal para quien trabaja en el norte; el ruido real a las 7pm es medio"*. Esa es la **capa de habitabilidad** — el grafo que vale, porque Google **no está en el negocio de la decisión inmobiliaria**, tú sí.
+
+> **"Superior a Google" ≠ más cantidad. = una dimensión más profunda que Google no captura, con contribuyentes que Google no tiene (corredores + residentes con conocimiento tácito y piel en el juego — P7).**
+
+**Qué es el grafo:**
+- **Nodos:** lugares y zonas (coordenadas) + atributos de habitabilidad.
+- **Aristas:** proximidad, "pertenece a zona X", "a N min a pie de".
+- **Atributos:** lo verificable (caminabilidad, ruido) + lo tácito-curado (cerró/abrió, carácter de zona, perfil ideal).
+- **Portable:** es **literalmente OKF** — un grafo de conocimiento en archivos portables. El día que lo exportes, cualquier agente consume "la verdad de los lugares de Quito" desde ti. Foso + interoperabilidad en una pieza.
+
+**La secuencia (roadmap del grafo — disciplina, no "boil the ocean"):**
+1. ✅ **Curación por inmueble** (cerrar/agregar POIs) — el átomo del grafo. *(Hecho — jun 2026.)*
+2. 🔜 **Geo-localizar la contribución + propagación a zona** — que un POI confirmado cerca del depto A enriquezca a todos los inmuebles del sector. **Este escalón es el que "conecta con el mapa"** y empieza a construir el grafo de verdad.
+3. 🔜 **Atributos de habitabilidad estructurados** — tags curados (carácter de zona, ruido percibido, perfil ideal), NO texto libre (que miente).
+4. 🔜 **El grafo portable (OKF)** — el activo canónico exportable a terceros (B2B2C).
+
+Cada escalón **gana** el siguiente. El escalón 2 es el próximo incremento natural.
+
+---
+
 ## La disciplina (lo que NO hacer)
 
 El ensayo es macro y seductor. **No expandirse a "IA para todos los negocios de Latam".** Nadella le habla al mundo entero; Contexto gana por **profundidad en un vertical** (patrón P5: *scope mata, profundidad gana*). Se reencuadra la **altura** de Contexto, no su **alcance**.
+
+Y dentro del grafo: **no reconstruir Google Maps.** No es un grafo de POIs (su cancha), es un grafo de **habitabilidad** (la tuya).
 
 ---
 

@@ -14,6 +14,7 @@ from sqlalchemy import text
 
 from app.database import AsyncSessionLocal
 from app.entorno import limpiar_texto_servicios
+from app.entorno_curacion import aplicar_curacion
 
 
 async def _fetch_rows(query: str, params: dict) -> list[dict[str, Any]]:
@@ -162,6 +163,21 @@ async def tool_fetch_asset_lifecycle_specs(activo_id: str) -> str:
     if isinstance(car, dict):
         car.pop("notas", None)
         row["caracteristicas"] = car
+
+    # Overlay de curación del corredor (el "loop" del Catastro Vivo): quita los POIs
+    # que el corredor marcó cerrados y añade los que confirmó. El corredor sabe antes
+    # que el mapa. Defensivo: si la tabla aún no existe, no rompe.
+    try:
+        curaciones = await _fetch_rows(
+            "SELECT accion, nombre, categoria, distancia_m, creado_en::text AS creado_en "
+            "FROM entorno_curacion WHERE activo_id = :a ORDER BY creado_en DESC",
+            {"a": activo_id},
+        )
+    except Exception:  # noqa: BLE001
+        curaciones = []
+    if curaciones:
+        row["servicios_cercanos"] = aplicar_curacion(row.get("servicios_cercanos"), curaciones)
+
     return json.dumps({"specs": _limpiar_servicios_en(row)}, default=str)
 
 

@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import axios from 'axios'
-import { X, Plus, QrCode, Copy, Check, Share2, MapPin, ClipboardList, ListChecks, Pencil, RefreshCw } from 'lucide-react'
+import { X, Plus, QrCode, Copy, Check, Share2, MapPin, ClipboardList, ListChecks, Pencil, RefreshCw, Store } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import PublishAsset from './PublishAsset'
 import FichaTecnica from './FichaTecnica'
 import Caracteristicas from './Caracteristicas'
+import ActualizarEntorno from './ActualizarEntorno'
 
 const C = {
   bg: '#16151E', panel: '#1E1D28', teal: '#2DBDB6', tealHi: '#5EEAD4',
@@ -23,6 +24,7 @@ export default function MisPublicaciones({ onClose }) {
   const [qrId, setQrId] = useState(null)
   const [fichaAsset, setFichaAsset] = useState(null)
   const [caracAsset, setCaracAsset] = useState(null)
+  const [entornoAsset, setEntornoAsset] = useState(null)
   const [recomputando, setRecomputando] = useState(null)
 
   async function actualizarZona(it) {
@@ -140,6 +142,7 @@ export default function MisPublicaciones({ onClose }) {
                 <Btn onClick={() => setQrId(qrId === it.id ? null : it.id)}><QrCode size={14} /> QR</Btn>
                 <Btn onClick={() => setCaracAsset(it)}><ListChecks size={14} /> Características</Btn>
                 <Btn onClick={() => setFichaAsset(it)}><ClipboardList size={14} /> Ficha técnica</Btn>
+                <Btn onClick={() => setEntornoAsset(it)}><Store size={14} /> Entorno</Btn>
                 <Btn onClick={() => actualizarZona(it)}>
                   <RefreshCw size={14} style={recomputando === it.id ? { animation: 'spin 1s linear infinite' } : undefined} />
                   {recomputando === it.id ? 'Actualizando…' : 'Actualizar zona'}
@@ -163,6 +166,7 @@ export default function MisPublicaciones({ onClose }) {
       {editar && <PublishAsset existing={editar} onClose={() => { setEditar(null); load() }} />}
       {fichaAsset && <FichaTecnica activo={fichaAsset} onClose={() => { setFichaAsset(null); load() }} />}
       {caracAsset && <Caracteristicas activo={caracAsset} onClose={() => { setCaracAsset(null); load() }} />}
+      {entornoAsset && <ActualizarEntorno activo={entornoAsset} onClose={() => { setEntornoAsset(null); load() }} />}
     </div>
   )
 }

@@ -19,6 +19,13 @@ from app.limiter import limiter
 from app.models import ActivoInmutable
 from app.schemas import ActivoCreateRequest, ActivoResponse
 from app.entorno import entorno_destacado, limpiar_texto_servicios
+from app.entorno_curacion import (
+    aplicar_curacion,
+    ensure_curacion_table,
+    fetch_curaciones,
+    info_verificacion,
+    parse_servicios,
+)
 from app.scores_heuristicos import scores_para
 from app.walk_score import (
     _fetch_pois,
@@ -334,6 +341,10 @@ async def asset_anuncio(
             alicuota_mensual=car.get("alicuota"), tiene_ficha=bool(row["tiene_ficha"]),
         )
 
+    # Overlay de curación del corredor (Catastro Vivo) + insignia de verificación.
+    _curaciones = await fetch_curaciones(db, str(activo_id))
+    _servicios = limpiar_texto_servicios(aplicar_curacion(row["servicios_cercanos"], _curaciones))
+
     return {
         "id": row["id"],
         "direccion": row["direccion"],
@@ -349,10 +360,11 @@ async def asset_anuncio(
             "trafico": row["trafico"],
         },
         "conectividad": row["conectividad"],
-        "servicios_cercanos": limpiar_texto_servicios(row["servicios_cercanos"]),
+        "servicios_cercanos": _servicios,
         "caracteristicas": car,
         "ficha": ficha,
         "inversion": inversion,
+        "entorno_verificado": info_verificacion(_curaciones),
     }
 
 
@@ -681,6 +693,88 @@ async def _assert_owner(db: AsyncSession, activo_id: uuid.UUID, user: CurrentUse
     if not es_dueño:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                             detail="Este inmueble no es tuyo.")
+
+
+# ── Curación del entorno por el corredor (el "loop" del Catastro Vivo) ───────
+# El corredor sabe antes que el mapa: marca POIs cerrados y agrega los nuevos.
+# Se guarda como overlay (autor + fecha) sobre el texto hidratado, reversible.
+class CuracionRequest(BaseModel):
+    accion: str = Field(..., description="cerrado | agregado")
+    nombre: str = Field(..., min_length=2, max_length=120)
+    categoria: str | None = Field(default=None, max_length=60)
+    distancia_m: int | None = Field(default=None, ge=0, le=20000)
+
+
+@router.get(
+    "/{activo_id}/entorno",
+    summary="Entorno editable del inmueble (servicios base + curación del corredor)",
+)
+async def get_entorno(
+    activo_id: uuid.UUID,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    await ensure_curacion_table(db)
+    await _assert_owner(db, activo_id, user)
+    row = (await db.execute(
+        text("SELECT servicios_cercanos FROM activos_inmutables WHERE id = :id"),
+        {"id": str(activo_id)},
+    )).mappings().first()
+    curaciones = await fetch_curaciones(db, str(activo_id))
+    return {
+        "servicios_base": parse_servicios((row or {}).get("servicios_cercanos")),
+        "curaciones": curaciones,
+        "verificado": info_verificacion(curaciones),
+    }
+
+
+@router.post(
+    "/{activo_id}/entorno",
+    summary="Curar el entorno: marcar un servicio cerrado o agregar uno nuevo",
+)
+@limiter.limit("60/minute")
+async def post_entorno(
+    request: Request,
+    activo_id: uuid.UUID,
+    payload: CuracionRequest,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    await ensure_curacion_table(db)
+    await _assert_owner(db, activo_id, user)
+    accion = payload.accion.strip().lower()
+    if accion not in ("cerrado", "agregado"):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Acción inválida.")
+    await db.execute(
+        text("INSERT INTO entorno_curacion (activo_id, accion, nombre, categoria, distancia_m, corredor_id) "
+             "VALUES (:a, :ac, :n, :c, :d, :u)"),
+        {"a": str(activo_id), "ac": accion, "n": payload.nombre.strip(),
+         "c": (payload.categoria or None), "d": payload.distancia_m, "u": user.user_id},
+    )
+    await db.commit()
+    curaciones = await fetch_curaciones(db, str(activo_id))
+    return {"ok": True, "curaciones": curaciones, "verificado": info_verificacion(curaciones)}
+
+
+@router.delete(
+    "/{activo_id}/entorno/{curacion_id}",
+    summary="Deshacer una curación del entorno",
+)
+async def delete_entorno(
+    activo_id: uuid.UUID,
+    curacion_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    await ensure_curacion_table(db)
+    await _assert_owner(db, activo_id, user)
+    await db.execute(
+        text("DELETE FROM entorno_curacion WHERE id = :id AND activo_id = :a"),
+        {"id": curacion_id, "a": str(activo_id)},
+    )
+    await db.commit()
+    curaciones = await fetch_curaciones(db, str(activo_id))
+    return {"ok": True, "curaciones": curaciones, "verificado": info_verificacion(curaciones)}
 
 
 @router.get("/{activo_id}/ficha", summary="Cargar la ficha técnica (dueño)")

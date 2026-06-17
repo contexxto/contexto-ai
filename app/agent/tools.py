@@ -148,7 +148,21 @@ async def tool_fetch_asset_lifecycle_specs(activo_id: str) -> str:
             "message": f"No asset found with id {activo_id}. This QR/id is not registered in the catastro."
         })
 
-    return json.dumps({"specs": _limpiar_servicios_en(rows[0])}, default=str)
+    # Quitamos las "notas" libres del propietario antes de dárselas al agente:
+    # ese texto sin verificar (p. ej. "cerca del Trole", "a 20 m", "muy comercial")
+    # NO debe presentarse como hecho. Se eliminó del formulario; esto blinda
+    # cualquier dato heredado. Robusto a caracteristicas como dict o JSON string.
+    row = rows[0]
+    car = row.get("caracteristicas")
+    if isinstance(car, str):
+        try:
+            car = json.loads(car)
+        except Exception:  # noqa: BLE001
+            car = None
+    if isinstance(car, dict):
+        car.pop("notas", None)
+        row["caracteristicas"] = car
+    return json.dumps({"specs": _limpiar_servicios_en(row)}, default=str)
 
 
 @tool

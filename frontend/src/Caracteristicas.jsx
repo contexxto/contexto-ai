@@ -103,7 +103,7 @@ export default function Caracteristicas({ activo, onClose }) {
         cuarto_servicio: !!f.cuarto_servicio, balcon: !!f.balcon, terraza: !!f.terraza,
         acepta_mascotas: !!f.acepta_mascotas, precio_negociable: !!f.precio_negociable,
         amenidades_edificio: f.amenidades_edificio || [], incluye: f.incluye || [],
-        ideal_para: f.ideal_para || null, notas: f.notas || null,
+        ideal_para: f.ideal_para || null,
         fotos: f.fotos || [],
       }, { headers: { 'Content-Type': 'application/json', ...apiHeaders() } })
       setSaved(true)
@@ -276,10 +276,6 @@ export default function Caracteristicas({ activo, onClose }) {
               </>
             )}
 
-            <div style={{ marginTop: 14 }}>
-              <label style={lbl}>Notas adicionales</label>
-              <input style={inp} value={f.notas ?? ''} onChange={e => set('notas', e.target.value)} placeholder="Vista despejada, edificio con ascensor…" />
-            </div>
             </fieldset>
 
             {error && <div style={{ color: C.coral, fontSize: '.82rem', marginTop: 14 }}>⚠️ {error}</div>}

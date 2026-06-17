@@ -187,9 +187,6 @@ export default function AnuncioView({ id, onChat }) {
               {car.ideal_para && (
                 <div style={{ marginTop: 8, fontSize: '.82rem', color: C.text }}>✨ Ideal para: {car.ideal_para}</div>
               )}
-              {car.notas && (
-                <div style={{ marginTop: 8, fontSize: '.82rem', color: C.muted, fontStyle: 'italic' }}>“{car.notas}”</div>
-              )}
             </>
           )}
 

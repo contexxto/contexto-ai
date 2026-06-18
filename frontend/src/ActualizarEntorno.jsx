@@ -9,6 +9,25 @@ const C = {
   coral: '#E0685A', text: '#EDEBF2', muted: '#9C99AC', line: 'rgba(45,189,182,.22)',
 }
 
+// Taxonomía CURADA de habitabilidad — el corredor elige de aquí (no texto libre,
+// para no fragmentar ni "alucinar"). El emoji sirve también de ícono en el mapa.
+const CATEGORIAS = [
+  '🛒 Supermercado / Mercado',
+  '💊 Farmacia',
+  '🏥 Salud (clínica, consultorio, hospital)',
+  '🎓 Educación (colegio, escuela, guardería)',
+  '🚌 Transporte (parada, estación, terminal)',
+  '🛡️ Seguridad (UPC, policía)',
+  '🌳 Parque / Áreas verdes',
+  '🍽️ Restaurante / Café',
+  '🏦 Banco / Cajero',
+  '⛪ Iglesia / Culto',
+  '🏋️ Gimnasio / Deporte',
+  '🏬 Centro comercial',
+  '🔧 Hogar / Ferretería',
+  '🐾 Veterinaria / Mascotas',
+]
+
 // El "loop" del Catastro Vivo: el corredor sabe antes que el mapa.
 // Marca POIs cerrados (❌) y agrega los nuevos (➕). Su voz queda verificada.
 export default function ActualizarEntorno({ activo, onClose }) {
@@ -107,8 +126,9 @@ export default function ActualizarEntorno({ activo, onClose }) {
     e.preventDefault()
     const nombre = nuevo.nombre.trim()
     if (nombre.length < 2) { setError('Escribe el nombre del lugar.'); return }
+    if (!nuevo.categoria) { setError('Elige una categoría (es obligatoria).'); return }
     // El corredor aporta el GPS (estoy aquí); el backend calcula la distancia real.
-    aplicar({ accion: 'agregado', nombre, categoria: nuevo.categoria.trim() || null,
+    aplicar({ accion: 'agregado', nombre, categoria: nuevo.categoria,
               lat: nuevo.lat, lon: nuevo.lon, foto: nuevo.foto })
     setNuevo({ nombre: '', categoria: '', lat: null, lon: null, foto: null }); setGeo('idle')
   }
@@ -192,9 +212,12 @@ export default function ActualizarEntorno({ activo, onClose }) {
                   placeholder="Ej. Supermercado Santa María" />
               </div>
               <div>
-                <label style={lbl}>Categoría (opcional)</label>
-                <input style={inp} value={nuevo.categoria} onChange={e => setNuevo(p => ({ ...p, categoria: e.target.value }))}
-                  placeholder="supermercado, restaurante…" />
+                <label style={lbl}>Categoría</label>
+                <select value={nuevo.categoria} onChange={e => setNuevo(p => ({ ...p, categoria: e.target.value }))}
+                  style={{ ...inp, appearance: 'auto', cursor: 'pointer' }}>
+                  <option value="">Elige una categoría…</option>
+                  {CATEGORIAS.map(c => <option key={c} value={c} style={{ background: C.panel, color: C.text }}>{c}</option>)}
+                </select>
               </div>
               <div>
                 <label style={lbl}>Distancia</label>

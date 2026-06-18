@@ -752,6 +752,11 @@ async def post_entorno(
     accion = payload.accion.strip().lower()
     if accion not in ("cerrado", "agregado"):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Acción inválida.")
+    # La categoría es obligatoria al AGREGAR (lista curada en el front, no texto
+    # libre): datos consistentes para el grafo y los íconos del mapa.
+    if accion == "agregado" and not (payload.categoria and payload.categoria.strip()):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "La categoría es obligatoria para agregar un lugar.")
 
     # Si el corredor capturó su GPS junto al lugar nuevo, calculamos la distancia
     # REAL con el geom del inmueble (PostGIS) — nunca un metro tecleado a ojo.

@@ -84,6 +84,8 @@ El producto es el foso; **la API es la distribución.** Contexto no se vende com
 - **Fase 2 — el salto:** (a) **visión** que hidrata el catastro desde fotos/documentos; (b) **capa de inversión** (yield/margen/riesgo/escenarios), montada sobre dato verificado. *Aquí superamos la barra de Invisor.*
 - **Fase 3 — escala:** pre-hidratación de ciudades + B2B (InmobIA México, Grupo Bolívar) como **distribución** del motor.
 
+> 📌 *Nota de enriquecimiento de datos (futuro, no pivote):* la **capa ambiental** (hoy "cobertura vegetal" heurística) puede alimentarse de **satélite real** vía Google Earth Engine (NDVI). Google ya tiene agentes geoespaciales sobre Earth Engine para lo ambiental/planetario — es **fuente de datos complementaria, no competidor** (su capa es ambiental/global; la nuestra, habitabilidad local + dato del corredor). Doctrina de portabilidad intacta: no se cambia el stack, solo se considera Earth Engine como fuente de la capa verde cuando toque escalar.
+
 ---
 
 ## Por qué ahora / por qué nosotros

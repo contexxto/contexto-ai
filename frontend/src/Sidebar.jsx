@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import axios from 'axios'
-import { Plus, Pin, PinOff, Pencil, Trash2, MoreHorizontal, MessageSquare, LogIn, LogOut, Home, Map, Shield, Users } from 'lucide-react'
+import { Plus, Pin, PinOff, Pencil, Trash2, MoreHorizontal, MessageSquare, LogIn, LogOut, Home, Map, Shield, Users, Briefcase } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 
 const C = {
@@ -15,7 +15,7 @@ function tituloLimpio(t) {
   return (i === -1 ? t : t.slice(0, i)).trim() || 'Conversación'
 }
 
-export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, onLogin, onLogout, onPublish, onMap, onReview, onCRM }) {
+export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, onLogin, onLogout, onPublish, onMap, onReview, onCRM, onUpgrade }) {
   const [sessions, setSessions] = useState([])
   const [menuId, setMenuId] = useState(null)
   const [editingId, setEditingId] = useState(null)
@@ -151,6 +151,9 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, o
             <NavItem icon={<Users size={16} />} label="CRM" onClick={onCRM} />
             <NavItem icon={<Shield size={16} />} label="Revisión" onClick={onReview} />
           </>
+        )}
+        {user && user.rol !== 'corredor' && user.rol !== 'inmobiliaria' && onUpgrade && (
+          <NavItem icon={<Briefcase size={16} />} label="Conviértete en corredor" onClick={onUpgrade} />
         )}
       </div>
 

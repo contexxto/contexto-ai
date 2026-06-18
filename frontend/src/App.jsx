@@ -7,6 +7,7 @@ import {
 import { supabase, authEnabled } from './supabaseClient'
 import Auth from './Auth'
 import MisPublicaciones from './MisPublicaciones'
+import ConvierteteCorredor from './ConvierteteCorredor'
 import ShareConversation from './ShareConversation'
 import AnuncioView from './AnuncioView'
 
@@ -343,6 +344,7 @@ export default function App() {
   const [authOpen, setAuthOpen] = useState(false)         // modal de login/registro
   const [rol, setRol] = useState(null)                    // rol del usuario (cliente/corredor/inmobiliaria)
   const [publishOpen, setPublishOpen] = useState(false)   // modal "Mis publicaciones"
+  const [upgradeOpen, setUpgradeOpen] = useState(false)   // modal "Conviértete en corredor"
   const [shareOpen, setShareOpen] = useState(false)       // modal "Compartir conversación"
   const [shared, setShared] = useState(null)              // datos de una conversación compartida (visor)
   const [sharedErr, setSharedErr] = useState(false)
@@ -1085,6 +1087,7 @@ export default function App() {
           onMap={() => setView('map')}
           onReview={() => setView('review')}
           onCRM={abrirCRM}
+          onUpgrade={() => setUpgradeOpen(true)}
         />
       )}
       {isMobile && sidebarOpen && (
@@ -1104,6 +1107,7 @@ export default function App() {
               onMap={() => { setView('map'); setSidebarOpen(false) }}
               onReview={() => { setView('review'); setSidebarOpen(false) }}
               onCRM={abrirCRM}
+              onUpgrade={() => { setUpgradeOpen(true); setSidebarOpen(false) }}
             />
           </div>
         </>
@@ -1176,6 +1180,12 @@ export default function App() {
           onAuthed={(s) => { setSession(s); setAccessToken(s?.access_token) }} />
       )}
       {publishOpen && <MisPublicaciones onClose={() => setPublishOpen(false)} />}
+      {upgradeOpen && (
+        <ConvierteteCorredor
+          onClose={() => setUpgradeOpen(false)}
+          onUpgraded={(nuevoRol) => { setRol(nuevoRol); setUpgradeOpen(false); setPublishOpen(true) }}
+        />
+      )}
       {shareOpen && <ShareConversation sessionId={sessionId} onClose={() => setShareOpen(false)} />}
 
       {/* ── Messages ── */}

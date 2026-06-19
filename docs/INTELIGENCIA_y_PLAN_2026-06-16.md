@@ -71,6 +71,25 @@
 
 ---
 
+### 1.5 ⭐ EVIDENCIA EMPÍRICA DEL FOSO — el agente es fácil, el dato es el muro (Cynthia Wu)
+
+*(Cynthia Wu —ex-Google, ex-fundadora— construyó un "agente cazador de casas" y publicó el resultado, jun 2026. NO valida la categoría como los competidores: prueba el FOSO desde las trincheras.)*
+
+**Qué hizo:** un agente que filtra anuncios por geo-intención granular (casas a X min de un parque o estación, por distrito escolar) con polígonos geoJSON. Lo armó en un fin de semana.
+
+**El muro (textual):** *"Este flujo NO es automatizable: Redfin, Zillow y MLS restringen el acceso a los anuncios. Intenté con Playwright y me bloquearon. Para tener la lista, tendría que volverme agente inmobiliario."* Su conclusión: ***"Los datos determinan el resultado."***
+
+**La lección (P7, probado en carne propia):**
+- **El agente de IA es commodity** — lo arma una ingeniera de Google en un finde.
+- **El DATO es el foso.** En EE.UU. está **bloqueado** (los portales lo gatekeepean); en LatAm **no existe**. Mismo final: gana quien **controla** el dato.
+- Contexto no scrapea un portal cerrado ni depende de un MLS: **construye su propio catastro** con corredores (botas en el terreno). El dato es propio — ni rentado ni robado.
+
+**Bonus — valida el emparejamiento por intención:** el "filtro soñado" de Cynthia (a X min de parque/estación, distrito escolar) ES nuestro intent-matching (chips: familia tranquila, colegios, parque, cerca del Metro). La necesidad es real, específica y dolorosa.
+
+**Disciplina (P5):** el foso NO es "un mejor agente cazador de casas" (el finde de Cynthia). Es el **dato propio + el loop.** Quedarse ahí.
+
+---
+
 ## 🥊 Competidor de referencia #1 — Esri "Real Estate AI Agent"
 
 *(Showcase de Esri —el gigante mundial del GIS/ArcGIS— publicado jun 2026 por Sajit Thomas, Application Architect. Demo, no producto lanzado. La respuesta lista cuando un inversor pregunte "¿y si Esri/Google entra?".)*
@@ -215,6 +234,8 @@
 - "The AI House Hunter Meets a Skeptical Market" — PYMNTS: https://www.pymnts.com/artificial-intelligence-2/2026/the-ai-house-hunter-meets-a-skeptical-market/
 - Eva — análisis de ubicación multifamiliar (Aino AI): https://eva.aino.world/
 - Alex Kamenev (Aino AI) — LinkedIn: anuncio de Eva, jun 2026
+- Cynthia Wu — "House Hunter Agent" (evidencia del foso de datos: portales gatekeepean los listados) — LinkedIn, jun 2026
+- Aravind Srinivas (Perplexity) — "Context graphs / Perplexity Brain" (5ª validación, ver VISION_Sistema_Vivo): LinkedIn, jun 2026
 
 ---
 

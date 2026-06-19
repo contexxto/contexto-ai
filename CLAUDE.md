@@ -7,13 +7,16 @@
 
 ## ⛔ Decisiones zanjadas (NO proponer lo contrario, NO "volver" a esto)
 
-- **Geocoding = OpenStreetMap / Nominatim.** NO usar Google Geocoding API. Decidido por
-  el fundador en varias sesiones. Razones: portabilidad / sin lock-in de Google, costo
-  cero / sin facturación, y el geocoder NO es el foso. Si el tema reaparece, la respuesta
-  es: "ya está decidido, se queda OSM."
-  - *El descubrimiento de inventario NO depende del geocoder.* Se resuelve con el
-    **catastro propio** (`tool_find_assets_by_text`, búsqueda por texto de dirección) +
-    **radio progresivo** en `tool_search_nearby_assets`. Ahí está el moat, no en el geocoder.
+- **Mapas / geocoding = Google Maps API. Se ABANDONA OpenStreetMap / Nominatim.**
+  Decisión del fundador, ya tomada en sesiones previas. Activar TODO el poder de Google
+  Maps con la API key que solicitamos: **Geocoding API + Places API (New) + Routes API**
+  (y lo que esa key habilite). OSM/Nominatim queda solo como red de seguridad de último
+  recurso (si falta la key o Google falla), **nunca** como la vía preferida.
+  - ⚠️ **ERROR HISTÓRICO A NO REPETIR:** "dejar a OpenStreetMap" significaba **ABANDONARLO**,
+    no conservarlo. El fundador NUNCA quiso OSM. NO proponer OSM, NO revertir el geocoder a
+    Nominatim, NO "volver" a OpenStreetMap. Si dudo, la dirección es **siempre hacia Google**.
+  - El descubrimiento de inventario por nombre TAMBIÉN usa el catastro propio
+    (`tool_find_assets_by_text`) — eso se mantiene, es complementario, no sustituye a Google.
 
 - **La honestidad del output se arregla en la CAPA DE DATOS, no agregando reglas al prompt.**
   (Ej.: el campo libre "Notas adicionales" causaba alucinaciones → se eliminó el campo, no

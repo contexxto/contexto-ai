@@ -71,6 +71,43 @@
 
 ---
 
+## 🥊 Competidor de referencia #1 — Esri "Real Estate AI Agent"
+
+*(Showcase de Esri —el gigante mundial del GIS/ArcGIS— publicado jun 2026 por Sajit Thomas, Application Architect. Demo, no producto lanzado. La respuesta lista cuando un inversor pregunte "¿y si Esri/Google entra?".)*
+
+**Qué es:** un agente (por voz) que, sobre una escena 3D cinematográfica de Manhattan, analiza el entorno de un listing por factores. Datos: **NYC Open Data + synthetic listings + ArcGIS Location Services.**
+
+**El método (debajo del eye-candy):** *proximidad a hotspot por factor* — hexbins + top 5º percentil + distancia en metros al pico, narrado por el agente:
+| Factor | Narración del agente |
+|---|---|
+| Crimen | "296 incidentes; mayor concentración (113) a 52m del listing" |
+| 311 service requests (proxy de molestia/ruido) | "1000 solicitudes en 500m: vendedores, parqueo ilegal, ruido-comercial; pico a 69m" |
+| Dining | "20 lugares en 500m: lounges, postres, bubble tea; concentración a 135m" |
+
+**Las 3 confirmaciones (todas a nuestro favor):**
+1. **El concepto es el futuro** — el líder del GIS valida nuestra tesis (igual que Nadella validó el "sistema vivo").
+2. **El DATO es el foso** — su demo solo funciona en NYC por el open data + listings falsos. *Pídeselo para Quito y se desarma* (no hay crime data, no hay 311, no hay listings reales).
+3. **Su enfoque NO llega a Latam** — depende justo de lo que la región no tiene. Nuestro **corredor-loop resuelve el dato** donde ellos no pueden.
+
+**Diferenciación (tabla de pitch):**
+| Esri agent | Contexto |
+|---|---|
+| Data pública (NYC Open Data) | Dato local + **contribuido por el corredor** donde no hay data pública |
+| **Synthetic listings** (inventario falso) | **Listings reales** |
+| Datasets con lag | **Dato fresco verificado** (PROMART de hace 1 mes, ya capturado) |
+| Plataforma B2B/enterprise (ArcGIS) | **App de consumo + handoff humano** |
+| Eye-candy 3D | Honestidad + confianza + conversación |
+
+**2 takeaways para robar (técnica, no estrategia):**
+- La **narración "proximidad a concentración + distancia"** ("la mayor concentración de X está a Ym del inmueble") — adoptar cuando el grafo contribuido sea denso.
+- El **corredor es nuestro "311"**: el proxy humano de molestia/ruido donde no hay datos públicos de quejas.
+
+**Qué NO hacer (P5):** no competir en GIS multi-factor ni en render 3D — su cancha, pierdes. Nuestro foso es el dato local-contribuido, ortogonal a su fortaleza.
+
+> **Frase de pitch:** *"Esri tiene el mapa; nosotros tenemos el territorio. Ellos, un demo bello con listings sintéticos sobre data pública de EE.UU.; nosotros, un producto real con dato fresco del corredor, donde la data pública no existe."*
+
+---
+
 ## PARTE 2 — Plan de Acción
 
 ### Principios rectores (validados esta sesión)
@@ -118,6 +155,9 @@
 - OKF SPEC v0.1 — GitHub: https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md
 - OKF mejora el compartir datos — Google Cloud Blog: https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing/
 - OKF, spec markdown vendor-neutral — MarkTechPost: https://www.marktechpost.com/2026/06/16/google-cloud-introduces-open-knowledge-format-okf-a-vendor-neutral-markdown-spec-for-giving-ai-agents-curated-context/
+- ArcGIS for Real Estate (B2B) — Esri: https://www.esri.com/en-us/industries/real-estate/overview
+- Geospatial AI en ArcGIS — Esri: https://www.esri.com/en-us/geospatial-artificial-intelligence/overview
+- Sajit Thomas, Application Architect @ Esri — LinkedIn: https://www.linkedin.com/in/sajit-thomas-33a9a034/
 
 ---
 

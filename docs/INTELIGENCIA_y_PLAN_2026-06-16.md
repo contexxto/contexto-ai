@@ -130,7 +130,33 @@
 
 > **Frase de pitch:** *"Realtor.com hace más inteligente buscar anuncios en EE.UU. con data de Google. Nosotros decimos la verdad de dónde vivirías en Quito, con dato del corredor que Google no tiene — y en un mercado que ya no confía en la IA, somos la que no miente."*
 
-**Síntesis de los dos competidores:** Esri (demo, data pública) + Realtor.com (portal real, MLS) + Nadella → **tres validaciones en una semana.** Ambos son **US, sin capa contribuida, ausentes en Latam.** Nuestro foso —dato local verificado + contribuido + honestidad— es **estructuralmente ortogonal** a ambos.
+## 🥊 Competidor de referencia #3 — Eva (Aino AI) "Site intelligence"
+
+*(Herramienta de Alex Kamenev / Aino AI —"AI infrastructure for the built environment"—, jun 2026. Análisis de ubicación multifamiliar en EE.UU. para inversores/desarrolladores. Gratis, como vitrina de la infraestructura de Aino. La respuesta lista cuando un inversor pregunte "¿y si una herramienta de IA de ubicación entra a Quito?".)*
+
+**Qué es:** memo de inversión **Go/No-Go en ~50s** para cualquier dirección multifamiliar de EE.UU. Genera puntuación de ubicación, caminabilidad, POIs, comps de alquiler, zonificación y demografía — con **nivel de confianza por dato** y un memo "Por qué nos gusta / Qué vigilar". Es **screening/underwriting institucional**, no para el consumidor que elige dónde vivir.
+
+**Cómo lo hace (lo decisivo):** **AGREGA datasets de terceros** — Mapbox isochrones, Overture + Google POIs, **RentCast** (140M propiedades), **Regrid** (parcelas/zonificación), **Census ACS** (demografía).
+
+**Diferenciación (tabla de pitch):**
+| Eva / Aino | Contexto |
+|---|---|
+| **US, inversor/desarrollador** (underwriting B2B) | **Quito, consumidor + corredor** (recomendación + leads) |
+| **AGREGA** datasets que existen en EE.UU. (RentCast, Regrid, Census…) | **CONSTRUYE** el dato donde no existe (catastro vivo + corredor) |
+| Memo Go/No-Go para fondos (screening) | Empareja la intención de vivir con la verdad del lugar |
+| Data commodity agregada | Dato tácito contribuido (el atajo del Terminal que ni Google supo) |
+
+**El punto clave:** la receta de Eva **NO es replicable en Latam.** No hay un RentCast ecuatoriano, ni un Regrid de Quitumbe, ni Census micro. Sin esos datasets, su modelo se cae. **La única forma de tener inteligencia de ubicación en Latam es CREARLA** — que es justo nuestro foso (P7: nadie lo replica sin operar el territorio).
+
+**Takeaway estratégico (disciplina, P5):** NO copiar su carril de **memo de inversión institucional** — necesita datos que Latam no tiene y nos saca de la profundidad. Quedarse en **consumidor + corredor + verdad local.**
+
+> **Frase de pitch:** *"Esas herramientas agregan datos de Estados Unidos que para Quito no existen. Nosotros CONSTRUIMOS la verdad de los lugares de Quito, con corredores — ese dato no lo tiene nadie, y es tuyo."*
+
+*(Confirmación, no copia: su "nivel de confianza por dato" + memo "Por qué nos gusta / Qué vigilar" ≈ nuestra tarjeta ✅/⚠️ + alertas honestas. El instinto ya iba bien.)*
+
+---
+
+**Síntesis de los competidores:** Esri (demo, data pública) + Realtor.com (portal real, MLS) + Eva/Aino (screening de inversión) + Nadella → **cuatro validaciones de la categoría.** Los tres son **US, sobre data commodity/agregada, ausentes en Latam.** Eva lo desnuda: su receta es **agregar datasets que en Latam NO existen** → no replicable aquí. Nuestro foso —dato local **construido**, verificado, contribuido + honestidad— es **estructuralmente ortogonal** a los tres.
 
 ---
 
@@ -187,6 +213,8 @@
 - Realtor.com lanza RealAssist AI — Google Cloud Press: https://www.googlecloudpresscorner.com/2026-06-02-Realtor-com-R-Launches-RealAssist-TM-AI-A-Completely-Reimagined-Way-to-Find-A-Home
 - RealAssist conversational search — RISMedia: https://www.rismedia.com/2026/06/08/realtor-com-launches-realassist-conversational-home-search-experience/
 - "The AI House Hunter Meets a Skeptical Market" — PYMNTS: https://www.pymnts.com/artificial-intelligence-2/2026/the-ai-house-hunter-meets-a-skeptical-market/
+- Eva — análisis de ubicación multifamiliar (Aino AI): https://eva.aino.world/
+- Alex Kamenev (Aino AI) — LinkedIn: anuncio de Eva, jun 2026
 
 ---
 

@@ -104,6 +104,23 @@ function renderMarkdown(text) {
     if ((m = t.match(/^#\s+(.+)$/)))    { closeList(); out.push(`<h2>${inline(m[1])}</h2>`); i++; continue }
     if (/^(---+|___+|\*\*\*+)$/.test(t)) { closeList(); out.push('<hr/>'); i++; continue }
 
+    // ── Tarjeta de ENCAJE (intent-matching): corrida de líneas ✅ / ⚠️ ──
+    // El agente emite el encaje como líneas ✅ (coincide) / ⚠️ (trade-off);
+    // aquí se agrupan en una tarjeta escaneable (verde / ámbar) en vez de texto plano.
+    if (/^[-*]?\s*(✅|⚠)️?\s*\S/.test(t)) {
+      closeList()
+      const rows = []
+      while (i < lines.length) {
+        const mm = lines[i].trim().match(/^[-*]?\s*(✅|⚠)️?\s*(.+)$/)
+        if (!mm) break
+        const ok = mm[1] === '✅'
+        rows.push(`<div style="display:flex;gap:8px;align-items:flex-start;padding:5px 0;font-size:.9rem;line-height:1.45;"><span style="flex-shrink:0;">${ok ? '✅' : '⚠️'}</span><span style="color:${ok ? '#5EEAD4' : '#E8B04B'};">${inline(mm[2])}</span></div>`)
+        i++
+      }
+      out.push(`<div style="margin:12px 0;border:1px solid rgba(45,189,182,.25);border-radius:14px;padding:8px 14px;background:rgba(45,189,182,.06);">${rows.join('')}</div>`)
+      continue
+    }
+
     if ((m = t.match(/^\d+[.)]\s+(.+)$/))) {
       if (list !== 'ol') { closeList(); out.push('<ol>'); list = 'ol' }
       out.push(`<li>${inline(m[1])}</li>`); i++; continue

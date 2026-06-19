@@ -1211,8 +1211,8 @@ export default function App() {
             </div>
             <p style={{ color:'var(--text-mid)', fontSize:isMobile ? '.92rem' : '1rem', lineHeight:1.7,
                         maxWidth:560, margin:'0 auto 26px' }}>
-              Tu agente inteligente que absorbe capas de contexto — ruido, seguridad, vida,
-              historia — y te las traduce para que encuentres el lugar perfecto.
+              Entiende qué buscas para vivir, te dice la verdad de cada lugar, su ruido,
+              seguridad, transporte y vida de barrio, y te ayuda a elegir el que encaja contigo.
             </p>
 
             {/* CTA destacado: analiza dónde estás (global, viral) */}

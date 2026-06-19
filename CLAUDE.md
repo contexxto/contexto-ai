@@ -26,6 +26,11 @@
   (Ej.: el campo libre "Notas adicionales" causaba alucinaciones → se eliminó el campo, no
   se parchó el prompt.)
 
+- **Español limpio, SIN anglicismos** — en TODO lo que ve el usuario (agente, UI) y también en
+  la comunicación con el fundador. NADA de "trade-off", "score", "ranking", "fit", "walk score",
+  "feedback", "insight", "match". Usar el equivalente en español ("la contra"/"lo que cede",
+  "nivel"/"índice", "encaje"/"coincidencia"…). Ya decidido en sesiones previas — NO repetir.
+
 - **El loop de contribución del corredor es el producto (el "sistema vivo"), no una feature.**
 
 ---

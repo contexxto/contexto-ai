@@ -81,6 +81,26 @@ Cada escalón **gana** el siguiente. El escalón 2 es el próximo incremento nat
 
 ---
 
+## De RANKING a RECOMENDACIÓN — por qué la verdad del lugar es el sustrato del intent-matching
+
+*(La tesis económica más profunda. NO es UX — es estructural. Surgió de la analogía de Airbnb: cuando la IA se vuelve el intermediario, se compite por recomendaciones, no por rankings.)*
+
+**El cambio:** hoy todos compiten en **ranking** (SEO, posición en el portal, OTA rankings). Cuando la IA es el intermediario entre la persona y el inventario, eso muere: la IA **no rankea — empareja intención con resultado.** *"La IA no está buscando tu inventario; quiere que la intención coincida con un resultado."*
+
+**La pregunta que importa deja de ser** "¿cómo subo en la lista?" **y pasa a ser** "¿qué tan bien la VERDAD de mi lugar coincide con la intención de la persona, y cuánto del recorrido resuelve?"
+
+**Por qué reposiciona a los competidores:** Realtor.com / Esri / Zillow siguen jugando el juego del **ranking** (búsqueda más inteligente sobre listings). **Contexto construye la infraestructura de la RECOMENDACIÓN.** Para emparejar *"familia que quiere tranquilidad + caminable + cerca de un buen colegio + parque"*, la IA necesita **saber la verdad del lugar** — justo lo que los portales NO tienen (ellos tienen listings + specs + comportamiento; nosotros, la verdad del lugar).
+
+> **Nuestra data no es "más data" — es el SUSTRATO del intent-matching.** Sin saber cómo ES vivir ahí, nadie puede recomendar que encaja con una vida. Eso es lo que el Catastro Vivo construye.
+
+**La razón económica NUEVA del loop del corredor:** en el mundo del ranking el corredor paga por posición / pelea SEO. En el mundo de la recomendación, **el corredor cuyo lugar tiene el dato más rico y verdadero es el que la IA RECOMIENDA mejor → más leads.** Hidratar deja de ser "insignia de verificado" y pasa a ser **"ser encontrable por intención."** El dato fresco = más recomendaciones = más cierres → **incentivo directo de mercado para alimentar el grafo.**
+
+**El recorrido completo (analogía Airbnb):** Airbnb → alojamiento + bienestar + experiencias + transfers; *"más necesidades bajo un mismo techo = ventaja"*. Para "dónde vivir": descubrir zona → habitabilidad → ver la unidad → confiar en el dato → conectar con el corredor → decidir. **Contexto ya abarca más de ese recorrido que un portal** (que solo lista + refiere).
+
+> **Síntesis:** los portales construyeron la infraestructura del **ranking** (listings, SEO, comportamiento). Contexto construye la del **emparejamiento de intención**: la verdad de los lugares. En la era de la recomendación, **quien la IA confía para saber "cómo es realmente vivir ahí" gana la recomendación** — y eso requiere dato local, verificado y contribuido que los gigantes no tienen. *No compites por estar arriba en una lista; compites por ser la verdad que la IA recomienda.*
+
+---
+
 ## La disciplina (lo que NO hacer)
 
 El ensayo es macro y seductor. **No expandirse a "IA para todos los negocios de Latam".** Nadella le habla al mundo entero; Contexto gana por **profundidad en un vertical** (patrón P5: *scope mata, profundidad gana*). Se reencuadra la **altura** de Contexto, no su **alcance**.

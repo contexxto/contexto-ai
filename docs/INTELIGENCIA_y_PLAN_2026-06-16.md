@@ -108,6 +108,32 @@
 
 ---
 
+## 🥊 Competidor de referencia #2 — Realtor.com "RealAssist™ AI"
+
+*(Portal inmobiliario real de EE.UU. —News Corp/Move Inc.—, NO un demo. Beta desde el 2 jun 2026, sobre Google Gemini + Cloud. El competidor-concepto MÁS cercano hasta ahora.)*
+
+**Qué es:** búsqueda de vivienda **AI-first conversacional** sobre su inventario MLS. Integra listings MLS, affordability, conexión con agentes, prompts iterativos — y **commute-time, amenities cercanas y "cómo encaja un barrio en tu rutina"** (sí toca nuestra capa de "cómo es vivir aquí"). Enmarca la IA como *"hacer al agente humano MÁS valioso, no menos"* — nuestra tesis exacta.
+
+**Diferenciación (tabla de pitch):**
+| RealAssist | Contexto |
+|---|---|
+| **US / MLS** (no hay MLS en Ecuador; no operan en Latam) | **Quito/Latam** — donde están ausentes |
+| "Neighborhood fit" desde **data commodity de Google** | Entorno **verificado + contribuido por el corredor, más fresco** que Google |
+| Sin ficha técnica verificada | Catastro vivo verificado |
+| **Portal** (inventario MLS + referidos) | **Catastro vivo** — el dato pertenece a la coordenada, no al anuncio |
+
+**El punto clave:** incluso su capa de barrio usa **data commodity de Google** — la misma que cualquiera tiene. **Nuestro dato del corredor le gana en nuestro mercado** (local, verificado, fresco). Ellos = portal más inteligente; nosotros = modelo distinto.
+
+**El regalo escondido (PYMNTS, *"The AI House Hunter Meets a Skeptical Market"*):** el mercado está **escéptico** de los buscadores con IA. Nuestra marca entera es **honestidad ("la IA en la que confías")**. En un mercado escéptico, **la IA que NO miente gana** → el recelo del consumidor valida nuestro posicionamiento.
+
+**Takeaway estratégico:** la ventana para "búsqueda genérica con IA" **se cierra en EE.UU.** (los incumbentes la tomarán). Espacio defendible = **Latam + capa de dato verificado/contribuido** (que ni ellos, con Google, tienen). NO derivar a "portal con IA mejor" (ahí ganan por inventario); quedarse en **"la verdad del lugar, en Latam."**
+
+> **Frase de pitch:** *"Realtor.com hace más inteligente buscar anuncios en EE.UU. con data de Google. Nosotros decimos la verdad de dónde vivirías en Quito, con dato del corredor que Google no tiene — y en un mercado que ya no confía en la IA, somos la que no miente."*
+
+**Síntesis de los dos competidores:** Esri (demo, data pública) + Realtor.com (portal real, MLS) + Nadella → **tres validaciones en una semana.** Ambos son **US, sin capa contribuida, ausentes en Latam.** Nuestro foso —dato local verificado + contribuido + honestidad— es **estructuralmente ortogonal** a ambos.
+
+---
+
 ## PARTE 2 — Plan de Acción
 
 ### Principios rectores (validados esta sesión)
@@ -158,6 +184,9 @@
 - ArcGIS for Real Estate (B2B) — Esri: https://www.esri.com/en-us/industries/real-estate/overview
 - Geospatial AI en ArcGIS — Esri: https://www.esri.com/en-us/geospatial-artificial-intelligence/overview
 - Sajit Thomas, Application Architect @ Esri — LinkedIn: https://www.linkedin.com/in/sajit-thomas-33a9a034/
+- Realtor.com lanza RealAssist AI — Google Cloud Press: https://www.googlecloudpresscorner.com/2026-06-02-Realtor-com-R-Launches-RealAssist-TM-AI-A-Completely-Reimagined-Way-to-Find-A-Home
+- RealAssist conversational search — RISMedia: https://www.rismedia.com/2026/06/08/realtor-com-launches-realassist-conversational-home-search-experience/
+- "The AI House Hunter Meets a Skeptical Market" — PYMNTS: https://www.pymnts.com/artificial-intelligence-2/2026/the-ai-house-hunter-meets-a-skeptical-market/
 
 ---
 

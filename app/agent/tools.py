@@ -8,13 +8,11 @@ import json
 import re
 from typing import Any
 
-import httpx
 from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut, GeocoderUnavailable
 from langchain_core.tools import tool
 from sqlalchemy import text
 
-from app.config import settings
 from app.database import AsyncSessionLocal
 from app.entorno import limpiar_texto_servicios
 from app.entorno_curacion import aplicar_curacion
@@ -283,61 +281,20 @@ async def tool_fetch_asset_lifecycle_specs(activo_id: str) -> str:
     return json.dumps({"specs": _limpiar_servicios_en(row)}, default=str)
 
 
-async def _geocode_google(address: str, key: str) -> dict | None:
-    """Geocodifica con Google Geocoding API (cobertura de calles de Quito MUY superior
-    a OSM, y no confunde estaciones del Metro). Devuelve lat/lon/formatted o None."""
-    verify = settings.ssl_verify.lower() != "false"
-    params = {
-        "address": f"{address.strip()}, Quito, Ecuador",
-        "key": key,
-        "language": "es",
-        "region": "ec",
-        "components": "country:EC",
-    }
-    async with httpx.AsyncClient(verify=verify, timeout=8) as c:
-        resp = await c.get("https://maps.googleapis.com/maps/api/geocode/json", params=params)
-        resp.raise_for_status()
-        data = resp.json()
-    if data.get("status") != "OK" or not data.get("results"):
-        return None
-    top = data["results"][0]
-    loc = top["geometry"]["location"]
-    return {"lat": round(loc["lat"], 6), "lon": round(loc["lng"], 6),
-            "formatted": top.get("formatted_address", address)}
-
-
 @tool
 async def tool_geocode_address(address: str) -> str:
     """
     Convert a human-readable address or neighborhood name into geographic coordinates
-    (latitude and longitude). Uses Google Geocoding (street-accurate in Quito) when an
-    API key is configured, and falls back to OpenStreetMap Nominatim otherwise.
+    (latitude and longitude) using OpenStreetMap Nominatim.
 
-    NOTE: For finding REGISTERED inventory by a street/sector name, prefer
-    tool_find_assets_by_text (it searches our own catastro). Use this geocoder for
-    zone-level context or when our catastro has no match.
+    Use this tool FIRST whenever the user provides an address, street name, or
+    neighborhood (e.g. "Av. Colon y 10 de Agosto", "Cumbaya", "Centro Historico")
+    instead of explicit coordinates. Once you have the coordinates, use
+    tool_search_nearby_assets to find properties near that location.
 
     Args:
         address: Free-text address, intersection, or place name in Quito, Ecuador.
     """
-    # 1) Google Geocoding primero (si hay key) — cobertura de Quito muy superior a OSM.
-    if settings.google_maps_api_key:
-        try:
-            g = await _geocode_google(address, settings.google_maps_api_key)
-            if g:
-                return json.dumps({
-                    "found": True,
-                    "address_input": address,
-                    "address_resolved": g["formatted"],
-                    "latitude": g["lat"],
-                    "longitude": g["lon"],
-                    "source": "google",
-                    "tip": "Google geocoding is street-accurate; radius_meters=1500 is fine.",
-                })
-        except Exception:
-            pass  # cualquier fallo de red/cuota → caemos a Nominatim
-
-    # 2) Fallback: OpenStreetMap Nominatim (gratis, sin key, pero flojo en Quito).
     # Append Quito context to improve geocoding accuracy
     query = f"{address.strip()}, Quito, Ecuador"
 

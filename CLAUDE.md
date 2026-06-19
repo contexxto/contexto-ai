@@ -17,6 +17,10 @@
     Nominatim, NO "volver" a OpenStreetMap. Si dudo, la dirección es **siempre hacia Google**.
   - El descubrimiento de inventario por nombre TAMBIÉN usa el catastro propio
     (`tool_find_assets_by_text`) — eso se mantiene, es complementario, no sustituye a Google.
+  - **Tiempos a pie (conectividad al Metro/transporte) = Google Routes** (caminata real por
+    calles), decidido jun-2026 — aun sabiendo que puede ignorar atajos peatonales locales
+    (ej. el Terminal Terrestre de Quitumbe). NO revertir a línea recta ni a OSM. La corrección
+    por el corredor queda como refinamiento futuro, encima de Google Routes.
 
 - **La honestidad del output se arregla en la CAPA DE DATOS, no agregando reglas al prompt.**
   (Ej.: el campo libre "Notas adicionales" causaba alucinaciones → se eliminó el campo, no

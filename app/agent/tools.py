@@ -5,6 +5,7 @@ Both tools connect directly to the async engine to remain framework-agnostic
 """
 import asyncio
 import json
+import re
 from typing import Any
 
 from geopy.geocoders import Nominatim
@@ -79,11 +80,110 @@ async def tool_search_nearby_assets(
         ORDER BY distancia_metros ASC
         LIMIT 10
     """
-    rows = await _fetch_rows(query, {"lat": latitude, "lon": longitude, "radius": radius_meters})
+    # Radio progresivo: con inventario escaso, un radio fijo deja fuera inmuebles
+    # relevantes que están un poco más lejos. Si no hay nada, expandimos antes de
+    # rendirnos — y devolvemos el radio usado para que el agente sea honesto con la distancia.
+    radii = [radius_meters] + [r for r in (3000, 6000) if r > radius_meters]
+    rows: list = []
+    used = radius_meters
+    for r in radii:
+        rows = await _fetch_rows(query, {"lat": latitude, "lon": longitude, "radius": r})
+        used = r
+        if rows:
+            break
 
     if not rows:
-        return json.dumps({"assets": [], "message": "No registered assets found in this radius."})
+        return json.dumps({
+            "assets": [], "radius_searched_m": used,
+            "message": f"No registered assets within {used} m of this point.",
+        })
 
+    rows = [_limpiar_servicios_en(r) for r in rows]
+    return json.dumps({
+        "assets": rows, "total": len(rows), "radius_searched_m": used,
+        "note": "distancia_metros = how far each asset is from the search point; be honest about distance if it is large.",
+    }, default=str)
+
+
+_STOP_WORDS = {"de", "la", "el", "y", "del", "los", "las", "en", "con", "por",
+               "un", "una", "al", "a", "calle", "av", "avenida", "pasaje", "sector"}
+
+
+@tool
+async def tool_find_assets_by_text(query: str) -> str:
+    """
+    Find registered assets in OUR OWN catastro by matching their stored address text
+    (and connectivity/services notes) — WITHOUT relying on external geocoding.
+
+    Use this FIRST whenever the user names a street, address, building, or local
+    landmark/sector (e.g. "Jorge Salvador Lara", "Quitumbe", "Quicentro Sur").
+    OpenStreetMap/Nominatim does NOT know most Quito streets and confuses Metro
+    station names, so OUR catastro is the source of truth for finding registered
+    properties by name. Only fall back to tool_geocode_address if this returns nothing.
+
+    Returns matching assets with their habitability scores and coordinates (lat/lon).
+    You can describe them directly, or call tool_search_nearby_assets with their
+    lat/lon for neighborhood context.
+
+    Args:
+        query: Free-text street name, address, building or sector in Quito.
+    """
+    raw = (query or "").strip()
+    if not raw:
+        return json.dumps({"assets": [], "message": "Empty query."})
+
+    tokens = [t for t in re.split(r"[\s,]+", raw) if len(t) >= 3 and t.lower() not in _STOP_WORDS]
+    if not tokens:
+        tokens = [raw]
+
+    params: dict[str, Any] = {"phrase": f"%{raw}%"}
+    dir_conds = []
+    for i, t in enumerate(tokens):
+        params[f"t{i}"] = f"%{t}%"
+        dir_conds.append(f"a.direccion_estandarizada ILIKE :t{i}")
+    direccion_match = "(" + " AND ".join(dir_conds) + ")"
+
+    query_sql = f"""
+        SELECT
+            a.id::text,
+            a.direccion_estandarizada,
+            a.tipo_activo,
+            a.piso_altura,
+            a.walk_score AS caminabilidad,
+            a.score_ruido_predictivo,
+            a.volumen_trafico_historico,
+            a.porcentaje_cobertura_vegetal,
+            a.conectividad,
+            a.servicios_cercanos,
+            t.tipo_operacion AS operacion,
+            t.precio,
+            ROUND(ST_Y(a.geom::geometry)::numeric, 6) AS lat,
+            ROUND(ST_X(a.geom::geometry)::numeric, 6) AS lon,
+            (CASE WHEN {direccion_match} THEN 0 ELSE 1 END) AS _rank
+        FROM activos_inmutables a
+        LEFT JOIN LATERAL (
+            SELECT tipo_operacion, precio FROM transacciones_temporales tt
+            WHERE tt.activo_id = a.id ORDER BY tt.fecha_publicacion DESC LIMIT 1
+        ) t ON true
+        WHERE {direccion_match}
+           OR a.conectividad ILIKE :phrase
+           OR a.servicios_cercanos ILIKE :phrase
+        ORDER BY _rank ASC, a.created_at DESC
+        LIMIT 10
+    """
+    rows = await _fetch_rows(query_sql, params)
+    if not rows:
+        return json.dumps({
+            "assets": [],
+            "message": (
+                f"No registered asset matches '{raw}' by name in the catastro. "
+                "It may not be registered yet, or be listed under a different address. "
+                "You may try tool_geocode_address as a fallback for zone-level context."
+            ),
+        })
+
+    for r in rows:
+        r.pop("_rank", None)
     rows = [_limpiar_servicios_en(r) for r in rows]
     return json.dumps({"assets": rows, "total": len(rows)}, default=str)
 
@@ -364,6 +464,7 @@ async def tool_analyze_investment(activo_id: str) -> str:
 
 
 AGENT_TOOLS = [
+    tool_find_assets_by_text,
     tool_geocode_address,
     tool_search_nearby_assets,
     tool_fetch_asset_lifecycle_specs,

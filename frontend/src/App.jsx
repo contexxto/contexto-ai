@@ -1199,16 +1199,12 @@ export default function App() {
         {isEmpty && (
           <div style={{ textAlign:'center', paddingTop:isMobile ? 40 : 64 }}>
             <h1 style={{ fontFamily:'var(--font-display)', fontWeight:800,
-                         fontSize:isMobile ? '2rem' : '2.6rem', letterSpacing:'-1px', marginBottom:14, lineHeight:1.05 }}>
-              Contexto <span style={{
+                         fontSize:isMobile ? '2.1rem' : '2.8rem', letterSpacing:'-.5px', marginBottom:18, lineHeight:1.12 }}>
+              Cada lugar tiene un <span style={{
                 background:'linear-gradient(135deg, #5EEAD4, #2DBDB6 55%, #E0685A)',
                 WebkitBackgroundClip:'text', backgroundClip:'text', WebkitTextFillColor:'transparent',
-              }}>AI</span>
+              }}>aura</span>
             </h1>
-            <div style={{ fontFamily:'var(--font-mono)', fontSize:'.72rem', letterSpacing:'3px',
-                          color:'var(--teal)', textTransform:'uppercase', marginBottom:18 }}>
-              Cada lugar tiene un aura
-            </div>
             <p style={{ color:'var(--text-mid)', fontSize:isMobile ? '.92rem' : '1rem', lineHeight:1.7,
                         maxWidth:560, margin:'0 auto 26px' }}>
               Entiende qué buscas para vivir, te dice la verdad de cada lugar, su ruido,

@@ -304,10 +304,12 @@ function Thinking() {
 }
 
 // ── Main App ────────────────────────────────────────────────
+// Chips de INTENCIÓN (no de zona): capturan qué busca la persona para vivir y
+// arrancan una conversación de emparejamiento (intent-matching), no una consulta.
 const QUICK_PROMPTS = [
-  '¿Cómo es vivir en La Carolina? caminabilidad, ruido, seguridad y servicios',
-  '¿Qué hace especial a Cumbayá? transporte, parques, colegios y vida de barrio',
-  '🏠 Busco departamento en arriendo cerca del Metro de Quito',
+  '🏡 Busco para mi familia: tranquilo, con colegios y parque cerca',
+  '🚇 Quiero vivir cerca del Metro o de mi trabajo',
+  '💰 Dime qué me conviene para mi presupuesto',
 ]
 
 export default function App() {

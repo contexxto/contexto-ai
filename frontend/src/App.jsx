@@ -1361,7 +1361,7 @@ export default function App() {
             onKeyDown={e => {
               if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() }
             }}
-            placeholder="Pregunta sobre habitabilidad, mantenimiento técnico o infraestructura..."
+            placeholder="Escribe tu pregunta…"
             disabled={loading}
             rows={1}
             style={{

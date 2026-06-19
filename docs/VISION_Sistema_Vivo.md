@@ -27,6 +27,22 @@ El ensayo de Nadella no nos dice que pivoteemos. **Describe, casi línea por lí
 
 ---
 
+## Segunda confirmación — Aravind Srinivas (Perplexity): el grafo de contexto ES el foso
+
+**Fecha:** 18 jun 2026 (~1 semana después de Nadella). Al lanzar **Perplexity Brain**, el CEO de Perplexity describió —sin conocernos— el MECANISMO exacto del foso de Contexto:
+
+> *"Los **grafos de contexto** serán la mejor forma de desplegar agentes en las empresas… una vista que **se automejora y se auto-organiza** es cómo se captura el **conocimiento tácito**… sin contexto que **evoluciona**, todos los agentes son **stateless** y tienen **costo de cambio mínimo**."*
+
+Si Nadella validó la **categoría** (*"los sistemas que se automejoran ganan"*), Aravind valida el **mecanismo**:
+
+- **El grafo vivo = el foso.** El catastro vivo + el loop del corredor ES ese grafo de contexto que se auto-organiza.
+- **Conocimiento tácito = P7, nombrado por un CEO.** Lo que captura el corredor (el atajo peatonal del Terminal Terrestre que ni Google supo) es justo el *tacit knowledge* que Aravind dice que es el foso.
+- **Define por qué un agregador NO tiene foso.** Por su propia definición: un agregador de datasets (ej. Eva/Aino) es **stateless** → costo de cambio mínimo → poco foso. Contexto **evoluciona** → alto costo de cambio → foso. *Switching cost aplicado a nosotros: una inmobiliaria que hidrató el contexto de su inventario pierde esa verdad acumulada si se va. Esa es la retención.*
+
+**La disciplina (no copiar):** Perplexity va **horizontal** (enterprise, todas las herramientas, "god-mode"). Contexto va **vertical + local.** La ventaja es el conocimiento tácito **local** que un god-mode horizontal no captura sin operar el territorio (P5 + P7). Validan la **altura**, no el **alcance**.
+
+---
+
 ## El reencuadre
 
 > **Contexto AI no es un buscador de inmuebles. Es el sistema de conocimiento VIVO de la habitabilidad — que se vuelve más inteligente con cada corredor y cada cliente que lo toca.**

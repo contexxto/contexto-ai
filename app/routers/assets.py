@@ -1055,8 +1055,15 @@ async def _recompute_walk_score(asset_id: str, lat: float, lon: float) -> None:
         if pois is None:
             return
         ws = compute_walk_score(pois, lat, lon)
-        conect = (extraer_conectividad(pois, lat, lon) or {}).get("texto")
-        ent = (await entorno_destacado(lat, lon, pois) or {}).get("texto")
+        # Conectividad y entorno: PRIMERO Google (analizar_zona usa Google Routes para la
+        # caminata REAL al Metro, no la línea recta de OSM). OSM queda solo de respaldo.
+        from app.rutas import analizar_zona  # lazy: evita import circular
+        try:
+            az = await analizar_zona(lat, lon)
+        except Exception:  # noqa: BLE001
+            az = {}
+        conect = az.get("conectividad") or (extraer_conectividad(pois, lat, lon) or {}).get("texto")
+        ent = az.get("servicios_texto") or (await entorno_destacado(lat, lon, pois) or {}).get("texto")
         async with AsyncSessionLocal() as session:
             await session.execute(
                 text("UPDATE activos_inmutables SET walk_score = :w, conectividad = :c, "

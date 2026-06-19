@@ -380,8 +380,22 @@ async def analizar_zona(lat: float, lon: float) -> dict:
         masivo = transporte.get("es_masivo", False)
         icono = "🚇" if masivo else "🚏"
         tipo = "" if masivo else " (parada de bus, NO es Metro)"
+        # Caminata REAL por calles (Google Routes), NO en línea recta: la recta miente
+        # (ej. Metro a ~640 m en recta = "8 min", pero ~1.5 km caminando = 19 min).
+        # Fallback al estimado recta ÷ 80 si Routes falla o no hay coords.
+        dist_m = transporte["distancia_m"]
+        dur_min = _min_pie(dist_m)
+        if key and transporte.get("lat") is not None and transporte.get("lon") is not None:
+            try:
+                async with httpx.AsyncClient(verify=settings.ssl_verify.lower() != "false", timeout=_TIMEOUT) as c:
+                    ruta = await _ruta_a_pie(c, lat, lon, transporte["lat"], transporte["lon"], key)
+                if ruta and ruta.get("duracion_min"):
+                    dur_min = ruta["duracion_min"]
+                    dist_m = ruta.get("distancia_m") or dist_m
+            except Exception:  # noqa: BLE001
+                pass  # nos quedamos con el estimado en línea recta
         conect_txt = (f"{icono} {_nombre_limpio(transporte['nombre'])}{tipo} "
-                      f"a ~{transporte['distancia_m']} m ({_min_pie(transporte['distancia_m'])} min a pie)")
+                      f"a ~{dist_m} m ({dur_min} min a pie)")
 
     otros = [s for s in servicios if s.get("cat") != "transporte"]
     serv_txt = ", ".join(

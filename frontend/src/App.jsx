@@ -577,12 +577,14 @@ export default function App() {
     // (eco por copiar/pegar o lazo de audio). Una pregunta real jamás es idéntica.
     if (lastAiRef.current && userText === lastAiRef.current.trim()) {
       setInput('')
+      if (inputRef.current) inputRef.current.style.height = 'auto'
       setError('Eso es la respuesta anterior 🙂 Escribe tu pregunta.')
       return
     }
     const g = geoOverride || geo
 
     setInput('')
+    if (inputRef.current) inputRef.current.style.height = 'auto'  // reinicia el auto-grow al enviar
     setError(null)
 
     const userMsg = {

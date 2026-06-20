@@ -40,6 +40,28 @@ import uuid
 
 import httpx
 
+
+def _load_dotenv(path: str = ".env") -> None:
+    """Carga .env al entorno (sin sobreescribir lo ya definido). Sin dependencias."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, _, v = line.partition("=")
+                k, v = k.strip(), v.strip().strip('"').strip("'")
+                if k and k not in os.environ:
+                    os.environ[k] = v
+    except FileNotFoundError:
+        pass
+
+
+_load_dotenv()
+# La X-API-Key del backend vive en .env como API_KEY (nombre del setting de la app).
+if not os.environ.get("CONTEXTO_API_KEY") and os.environ.get("API_KEY"):
+    os.environ["CONTEXTO_API_KEY"] = os.environ["API_KEY"]
+
 # ── Configuración (todo por entorno; cero secretos en el archivo) ──
 API_URL = os.environ.get("CONTEXTO_API_URL", "https://contexto-ai-oregon.onrender.com").rstrip("/")
 API_KEY = os.environ.get("CONTEXTO_API_KEY", "")

@@ -64,8 +64,11 @@ if not os.environ.get("CONTEXTO_API_KEY") and os.environ.get("API_KEY"):
 
 # ── Configuración (todo por entorno; cero secretos en el archivo) ──
 API_URL = os.environ.get("CONTEXTO_API_URL", "https://contexto-ai-oregon.onrender.com").rstrip("/")
-API_KEY = os.environ.get("CONTEXTO_API_KEY", "")
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+API_KEY = os.environ.get("CONTEXTO_API_KEY", "").strip()
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+if API_KEY and not API_KEY.isascii():
+    sys.exit("✗ CONTEXTO_API_KEY tiene caracteres no-ASCII (¿quedó el placeholder 'aquí…'?).\n"
+             "  Pega SOLO la clave real de Render, sin texto extra ni acentos.")
 JUDGE_MODEL = os.environ.get("CONTEXTO_JUDGE_MODEL", "claude-3-5-haiku-latest")
 TIMEOUT = float(os.environ.get("CONTEXTO_EVAL_TIMEOUT", "120"))  # cold-start de Render
 VERIFY = os.environ.get("CONTEXTO_EVAL_VERIFY", "true").lower() != "false"

@@ -1,4 +1,4 @@
-# La Brújula — Modelo Contexto para Mazatlán (terrenos)
+# La Brújula — Modelo Contexto para Mazatlán (proyectos inmobiliarios y terrenos)
 
 **Fecha:** 20 jun 2026
 **Para qué sirve:** alinear a Ricardo en un modelo **claro y angosto** (no "plataforma de todo"),
@@ -15,27 +15,42 @@ ponemos el foco, él pone el territorio.
 - **La búsqueda ya empieza en la IA:** 61% de las búsquedas inmobiliarias arrancan en un motor con IA
   (17%→67% en 18 meses). México es 2º del mundo en respuestas con IA. La **primera conversación** del
   comprador es con una IA que **resume, compara y recomienda antes del primer clic.**
+- **El contenido existente está SESGADO (ingeniería inversa, jun 2026):** lo que la IA encuentra hoy
+  sobre invertir/comprar en Mazatlán son **portales de listados** (Lamudi, Vivanuncios) **+ marketing de
+  desarrolladores** (cada quien vende su lote/proyecto). **NO existe una fuente independiente y
+  verificada.** Ese **vacío de confianza —donde hay plata— es nuestra entrada.** (Para barrios famosos
+  de consumo, en cambio, ChatGPT/Gemini ya dan respuestas excelentes: ahí NO competimos.)
 
 ---
 
 ## El modelo en una frase (la brújula)
 
-> **Contexto no es una guía de todo. Es el motor que convierte la intención de quien busca TERRENO en
-> Mazatlán + la verdad del lugar en INTERESADOS CALIFICADOS — y la fuente que la IA cita cuando alguien
-> pregunta dónde invertir o dónde construir.**
+> **Contexto no es una guía de todo. Es la VERDAD independiente y verificada de las zonas de Mazatlán
+> —para PROYECTOS inmobiliarios y para TERRENOS— que convierte la intención del comprador en
+> INTERESADOS CALIFICADOS, en un mercado donde todo el contenido lo escribe quien te quiere vender.**
 
 ---
 
-## A quién servimos — dos segmentos de TERRENO, un solo sustrato
+## A quién servimos — DOS mercados, un solo sustrato
 
-| | Desarrollador / inversionista | Familia |
-|---|---|---|
-| Compra terreno para… | un **proyecto** | **construir su próximo gran sueño** |
-| Su pregunta | ¿se aprecia?, ¿hacia dónde crece la ciudad?, ¿qué viene en infraestructura?, ¿hay demanda? | ¿cómo será vivir ahí?, ¿es seguro?, ¿crecerá bien?, ¿servicios cerca? |
-| Lo que entregamos | **interesado calificado de inversión** | **guía honesta + conexión** con quien vende el lote |
+Mazatlán en auge mueve **dos mercados** que comparten el mismo sustrato (la verdad independiente y
+verificada de las zonas):
 
-Ambos comparten el sustrato: **la verdad del lugar** (el conocimiento local). Solo cambia el lente —
-**apreciación** vs. **vida**.
+### A) Proyectos inmobiliarios (los desarrollos en auge)
+- **Comprador de unidad** (condo / casa en un desarrollo) → **interesado calificado para el desarrollador.**
+- **Inversionista** que entra a un proyecto (preventa, plusvalía) → **interesado calificado.**
+
+### B) Terrenos
+- **Desarrollador** que compra terreno para su proyecto → **interesado calificado.**
+- **Familia** que compra terreno para **construir su próximo gran sueño** → **guía honesta + conexión** con quien vende el lote.
+
+| Pregunta del comprador | Lo que entregamos |
+|---|---|
+| ¿Se aprecia?, ¿hacia dónde crece la ciudad?, ¿qué infraestructura viene?, ¿hay demanda? *(inversor / desarrollador)* | Interesado calificado de inversión |
+| ¿Cómo será vivir ahí?, ¿es seguro?, ¿crecerá bien?, ¿servicios cerca? *(familia)* | Guía honesta + conexión |
+
+**El sustrato común:** la **verdad del lugar** (el conocimiento local de Ricardo). Cambian el lente
+—**apreciación** vs. **vida**— y el producto —**proyecto** vs. **terreno**—, pero la verdad es la misma.
 
 ---
 
@@ -84,7 +99,7 @@ No construir todavía. Que Ricardo te conecte con **2-3 desarrolladores / vended
 
 ## La disciplina (guardarraíles)
 
-- **No "plataforma de todo".** Una cuña: **terrenos + la verdad del lugar.**
+- **No "plataforma de todo".** Una cuña: **la verdad independiente de las zonas de Mazatlán** (aplicada a **proyectos y terrenos**), no viajes + servicios + todo.
 - **No copiar el método de Eva/Aino** (agregar datasets que en México no existen). Construir el dato **con Ricardo** (local).
 - **No pivotear por impulso** (ni por el rebote de un mal roadshow). Validar primero. El motor es portable,
   pero **estás solo:** Quito vs. Mazatlán es una elección de foco — **no las dos a medias.**

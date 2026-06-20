@@ -25,15 +25,26 @@ el **foso (la verdad del lugar) debe volverse el CANAL** (ser citado por la IA).
 
 ### Paso 0 — confirmar el vacío (hoy, costo cero)
 Preguntar a ChatGPT / Perplexity / Gemini: *"¿Cómo es vivir en [zona], Quito?"* → ver qué tan
-**genérica/pobre** es la respuesta y **qué citan**. Ese vacío es la oportunidad: nadie tiene la verdad local citable.
+**genérica/pobre** es la respuesta y **qué citan**.
 
-### Increment A — el núcleo: páginas públicas por lugar/zona
-- Página **pública (sin login)** por zona/inmueble con dato bueno.
-- La verdad del lugar en **texto estructurado:** caminabilidad, conectividad real (rutas Google), servicios,
-  "cómo es vivir aquí", lo **verificado por el corredor** + etiqueta de frescura.
-- **URL semántica** (`/quito/la-floresta/`) → compartible, indexable.
-- **Marcado** (schema.org / texto claro) para que la IA la **cite**.
-- Empezar con **1 zona fuerte** → medir si la IA la cita → escalar.
+### ✅ Resultado del Paso 0 (20 jun) — RE-APUNTA el plan
+Probamos en vivo (ChatGPT, Gemini, búsqueda web), en Quito y Mazatlán. Hallazgo honesto:
+- **Barrios famosos / zonas conocidas:** la IA ya da respuestas **excelentes** (La Floresta: nuanced,
+  calle por calle, honesta). **AHÍ NO competimos** — describir lugares conocidos es commodity.
+- **Lo ESPECÍFICO / no documentado / verificable:** la IA es **ciega**. No conoce el inmueble/lote real,
+  no verifica quién cumple, no está fresca, no conecta. Cada respuesta pide *"tráeme lo concreto"*.
+
+→ **El plan se re-apunta:** la capa citable **NO es para barrios famosos.** Es para **inmuebles
+específicos + lugares no documentados + dato verificado-fresco** — lo que la IA citaría porque **no lo
+tiene.** El foso pasa de *"describir"* a *"verificar lo específico + conectar"*.
+
+### Increment A — páginas citables de lo ESPECÍFICO (no de barrios famosos)
+- Página **pública (sin login)** por **INMUEBLE/lote verificado** y por **lugar NO documentado** (no barrios famosos).
+- Dato **específico y verificado:** caminabilidad, **rutas reales (Google)**, servicios, entorno
+  **confirmado por el corredor + fecha de frescura** — lo que la IA NO puede generar ni verificar.
+- **URL semántica** (`/quito/[inmueble-o-sector]/`) → compartible, indexable.
+- **Marcado** (schema.org / texto claro) para que la IA la **cite** — porque no tiene otra fuente.
+- Empezar con **1 inmueble/lugar fuerte** → medir si la IA lo cita → escalar.
 
 ### Increment B — el encaje relativo a la intención
 - Titular **"X% de encaje con lo que buscas"** (relativo), no "zona 87/100" (absoluto = ranking, gameable).

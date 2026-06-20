@@ -1,7 +1,7 @@
 # Contexto AI × Mazatlán — Plan Estratégico
 ### Construir la verdad verificada del inmobiliario de Mazatlán, en la era de la IA
 
-**Para:** Ricardo
+**Para:** Ricardo Suárez
 **De:** Carlos Valencia · Contexto AI
 **Fecha:** 20 de junio de 2026
 

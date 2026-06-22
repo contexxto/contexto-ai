@@ -1,7 +1,7 @@
-# Contexto AI — Piloto de calificación de interesados
-### Que tu equipo atienda solo a quienes SÍ van a comprar
+# Contexto AI — Calificación 24/7 de interesados para Linden
+### Que tus asesores atiendan solo a quienes SÍ van a comprar — y que ningún lead se enfríe de noche
 
-**Para:** [nombre del prospecto] · Puebla, México
+**Para:** [nombre del prospecto] · Linden Inmobiliaria, Puebla
 **De:** Carlos Valencia · Contexto AI
 **Fecha:** 22 de junio de 2026
 
@@ -9,37 +9,37 @@
 
 ## 1. El dolor que me contaste (para confirmar que te entendí)
 
-- Llegan **muchos interesados sin calificar.**
-- No puedes filtrar **quién tiene urgencia real** ni **quién tiene la capacidad de compra.**
-- Tu equipo de **20 vendedores** gasta esfuerzo y recursos atendiendo a **todos** por igual.
-- La **conversión queda baja** — mucho trabajo para pocos cierres.
+- Llegan **muchos interesados sin calificar**, por **varios canales** (WhatsApp, formularios de cada propiedad, contacto).
+- No puedes filtrar **quién tiene urgencia real** ni **capacidad de compra** — comprador serio vs. curioso vs. inversionista vs. quien quiere vender.
+- Tu equipo de **20 asesores** gasta esfuerzo atendiendo a todos por igual → **conversión baja.**
+- Y los leads que llegan **fuera de horario de oficina** alcanzan a **enfriarse** antes de que un asesor responda.
 
 *Si me faltó algo o lo dije de más, corrígeme — quiero entenderlo exacto.*
 
-## 2. Lo que Contexto hace
+## 2. Lo que Contexto hace — un calificador 24/7 ANTES del asesor
 
-- Un **agente de IA conversa** con cada interesado y lo **califica por intención:** qué tan cerca está de decidir, su urgencia y sus posibilidades reales.
-- Tu equipo recibe los interesados **ya priorizados** — atienden primero a los calientes, no a los curiosos.
-- Resultado esperado: **menos esfuerzo desperdiciado, más conversión.** Tus 20 vendedores enfocados donde está el dinero.
-
-*No es un CRM más ni un formulario. Es entender la **intención** de cada persona — algo que un formulario no captura.*
+- Un **agente de IA conversa al instante con cada interesado, 24/7** —incluido **WhatsApp**, tu canal principal— y lo **califica:** ¿comprador, inversionista o quien quiere vender (avalúo)? ¿presupuesto? ¿zona? ¿timing? ¿crédito o contado?
+- Tu asesor recibe el lead **ya calificado y enrutado** — atiende primero al caliente, con el contexto ya levantado.
+- **Nada se enfría de noche; nada se reparte a ciegas.**
+- No es un CRM ni un formulario más: es **entender la intención** de cada persona. Y como ustedes ya apuestan por la tecnología en sus estrategias, esto la lleva **al punto que más duele: la entrada del lead.**
 
 ## 3. El piloto (chico, medible, bajo riesgo)
 
-- Rutamos una **tajada** de tus interesados por el agente.
-- El agente los **califica y prioriza.**
-- **Medimos contra tu proceso actual:** ¿convierten mejor los priorizados? ¿cuánto esfuerzo ahorra el equipo?
-- Acotado, con **una métrica clara de éxito** — sin compromiso grande. Si funciona, escalamos; si no, aprendiste barato.
+- Conectamos el agente a una **tajada** de tus leads (ej. los de WhatsApp de una o dos semanas, o las consultas de ciertas propiedades).
+- Los **califica y los entrega priorizados** a tus asesores.
+- **Medimos contra tu proceso actual:** ¿convierten mejor los calificados? ¿cuánto tiempo ahorran los asesores? ¿cuántos leads nocturnos rescatamos?
+- Acotado, con **una métrica clara de éxito.** Si funciona, escalamos a todos los canales.
 
 ## 4. Para diseñar TU piloto a medida, necesito entender:
 
-1. ¿De dónde vienen tus interesados y **cuántos al mes** (portales, anuncios, referidos)?
-2. ¿Qué hace que un interesado sea **"bueno"** para ti — presupuesto, urgencia, que sea el decisor? ¿Cómo lo mides hoy?
-3. ¿Cuál es tu **conversión actual** (de interesado a venta)?
-4. ¿Cómo atiende hoy tu equipo a los interesados (quién, cómo, cuánto tiempo por cada uno)?
-5. ¿Cómo se vería el **éxito del piloto en números** (ej. +X% conversión, −Y% esfuerzo del equipo)?
+1. ¿**Cuántos interesados al mes**, y por qué canales (WhatsApp, formularios, portales)?
+2. ¿Qué **% llega fuera de horario** (noches / fines de semana)?
+3. ¿Qué hace que un interesado sea **"bueno"** — presupuesto, urgencia, que sea el decisor, apto a crédito? ¿Cómo lo filtras hoy?
+4. ¿Cómo **repartes hoy** los leads entre tus 20 asesores?
+5. ¿Cuál es tu **conversión actual** (de interesado a venta)?
+6. ¿Cómo se vería el **éxito del piloto en números** (ej. +X% conversión, −Y% esfuerzo, Z leads nocturnos rescatados)?
 
-*Con esas respuestas, te llego con un piloto diseñado para TU operación, no genérico.*
+*Con esas respuestas te llego con un piloto diseñado para TU operación, no genérico.*
 
 ## 5. El siguiente paso
 

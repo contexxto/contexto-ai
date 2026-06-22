@@ -18,10 +18,14 @@
 
 ## 2. Lo que Contexto hace — un calificador 24/7 ANTES del asesor
 
+Ya construyeron una **presencia digital fuerte** —TikTok, Instagram, WhatsApp— que les trae interesados
+de varios lados. Una capa de calificación 24/7 **multiplica ese esfuerzo que YA hacen:** que cada lead
+que generan le llegue a tu equipo **ya filtrado.**
+
 - Un **agente de IA conversa al instante con cada interesado, 24/7** —incluido **WhatsApp**, tu canal principal— y lo **califica:** ¿comprador, inversionista o quien quiere vender (avalúo)? ¿presupuesto? ¿zona? ¿timing? ¿crédito o contado?
 - Tu asesor recibe el lead **ya calificado y enrutado** — atiende primero al caliente, con el contexto ya levantado.
 - **Nada se enfría de noche; nada se reparte a ciegas.**
-- No es un CRM ni un formulario más: es **entender la intención** de cada persona. Y como ustedes ya apuestan por la tecnología en sus estrategias, esto la lleva **al punto que más duele: la entrada del lead.**
+- No es un CRM ni un formulario más: es **entender la intención** de cada persona, en el punto que más duele: **la entrada del lead.**
 
 ## 3. El piloto (chico, medible, bajo riesgo)
 

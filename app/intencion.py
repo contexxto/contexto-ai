@@ -53,7 +53,11 @@ _SENALES = {
     "contacto":  (re.compile(r"contacto|corredor|due[nñ]o|agente|llamar|tel[eé]fono|n[uú]mero|hablar con|whatsapp"), 32, "Pidió contacto humano"),
     "comparar":  (re.compile(r"comparar|versus|\bvs\b|cu[aá]l (es )?(mejor|conviene)|diferencia|otra opci|otras opciones"), 12, "Compara opciones"),
     "zona":      (re.compile(r"como es vivir|caminab|\bruido\b|segur|servicios|barrio|vecind|transporte|\bmetro\b|colegio|parque|vida de barrio"), 8, "Explora la zona"),
-    "perfil":    (re.compile(r"\bfamilia|\bhijos|esposa|esposo|mascota|para vivir|presupuesto|me mudo|mudarme|para m[ií]"), 8, "Declaró su perfil/necesidad"),
+    # Fair Housing: la composición del hogar (familia/hijos/esposa/mascota) es CLASE
+    # PROTEGIDA (familial status) y NO debe puntuar ni segmentar. Solo cuenta la
+    # necesidad transaccional DECLARADA por el usuario (uso/presupuesto/mudanza).
+    # Ver docs/COMPLIANCE_FairHousing_AgentSpec_2026-06-23.md.
+    "perfil":    (re.compile(r"para vivir|presupuesto|me mudo|mudarme"), 8, "Declaró su necesidad (uso/presupuesto)"),
 }
 
 
@@ -125,6 +129,13 @@ def analizar_intencion(
     # Profundidad de conversación (engagement): +2 por turno extra, tope 10.
     if turnos and turnos > 1:
         score += min((turnos - 1) * 2, 10)
+
+    # Amplitud de exploración: tocar la zona en 2+ mensajes distintos es búsqueda
+    # activa (recorrer/comparar varias zonas), no una línea de curiosidad. Un
+    # explorador real es un lead tibio, no frío → la amplitud suma al score.
+    if n_msgs_zona >= 2:
+        score += min((n_msgs_zona - 1) * 10, 20)
+        razones.append("Explora la zona en varios mensajes")
 
     score = max(0, min(score, 100))
 

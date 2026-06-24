@@ -18,9 +18,18 @@ def test_qr_suma_pero_sin_senales_es_frio():
 
 
 def test_identificado_da_perfil():
-    r = analizar_intencion(mensajes_usuario=["Busco algo para mi familia con hijos"])
+    # Necesidad DECLARADA (uso/presupuesto/mudanza) — eje objetivo, no protegido.
+    r = analizar_intencion(mensajes_usuario=["Busco algo para mudarme, dentro de mi presupuesto"])
     assert r["estado"] in ("identificado", "enganchado")
     assert r["senales"].get("perfil") is True
+
+
+def test_composicion_familiar_no_puntua():
+    """Fair Housing: mencionar familia/hijos/esposa NO genera señal ni puntúa
+    (familial status es clase protegida). Solo la necesidad declarada cuenta."""
+    r = analizar_intencion(mensajes_usuario=["Tengo dos hijos y una esposa"])
+    assert r["senales"].get("perfil") is not True
+    assert r["score"] == 0
 
 
 def test_explorando_compara_zonas():

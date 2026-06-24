@@ -524,15 +524,16 @@ async def transcript_de_sesion(session_id: str) -> list[dict]:
     return out
 
 
-@router.post(
-    "/{session_id}/handoff",
-    summary="El interesado pide hablar con el corredor (handoff en vivo, sin salir de Contexto)",
-)
-@limiter.limit("20/minute")
-async def solicitar_handoff(
-    request: Request, session_id: str,
-    user: CurrentUser | None = Depends(get_optional_user),
+async def registrar_handoff(
+    session_id: str,
+    *,
+    lead_user_id: str | None = None,
+    lead_email: str | None = None,
+    quien: str = "Un interesado",
 ) -> dict:
+    """Registra el handoff de una sesión y notifica al corredor dueño del inmueble.
+    Lógica ÚNICA compartida por el endpoint HTTP (botón del frontend) y por la tool del
+    agente (tool_connect_with_broker) — patrón API-first: el agente cierra sin un botón."""
     activo_id = activo_de_session(session_id)
     async with AsyncSessionLocal() as db:
         await ensure_handoff_tables(db)
@@ -542,17 +543,32 @@ async def solicitar_handoff(
             "SET actualizado_en = now(), "
             "    lead_user_id = COALESCE(EXCLUDED.lead_user_id, handoff_sesion.lead_user_id), "
             "    lead_email = COALESCE(EXCLUDED.lead_email, handoff_sesion.lead_email)"),
-            {"s": session_id, "a": activo_id,
-             "u": user.user_id if user else None, "e": user.email if user else None})
+            {"s": session_id, "a": activo_id, "u": lead_user_id, "e": lead_email})
         await db.commit()
-
     # Avisa al corredor: un lead caliente quiere hablar (lo más valioso del embudo).
-    quien = (user.nombre or user.email) if user else "Un interesado"
     _notificar_corredor(activo_id,
         "🔥 Un interesado quiere hablar contigo",
         f"{quien} pidió hablar con el corredor. Ábrelo en tu CRM para responderle.")
+    return {"ok": True, "estado": "solicitado", "activo_id": activo_id}
 
-    return {"ok": True, "estado": "solicitado", "identificado": bool(user)}
+
+@router.post(
+    "/{session_id}/handoff",
+    summary="El interesado pide hablar con el corredor (handoff en vivo, sin salir de Contexto)",
+)
+@limiter.limit("20/minute")
+async def solicitar_handoff(
+    request: Request, session_id: str,
+    user: CurrentUser | None = Depends(get_optional_user),
+) -> dict:
+    quien = (user.nombre or user.email) if user else "Un interesado"
+    res = await registrar_handoff(
+        session_id,
+        lead_user_id=user.user_id if user else None,
+        lead_email=user.email if user else None,
+        quien=quien,
+    )
+    return {"ok": True, "estado": res["estado"], "identificado": bool(user)}
 
 
 class HandoffMsg(BaseModel):

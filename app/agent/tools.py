@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut, GeocoderUnavailable
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from sqlalchemy import text
 
@@ -506,6 +507,45 @@ async def tool_analyze_investment(activo_id: str) -> str:
     return json.dumps(resultado, ensure_ascii=False, default=str)
 
 
+@tool
+async def tool_connect_with_broker(config: RunnableConfig) -> str:
+    """
+    Connect the interested user with the HUMAN broker who owns the property, IN-CHAT.
+
+    Use this at the CLOSING moment — when the user asks to VISIT, asks for CONTACT,
+    wants to talk to an agent/broker, or is clearly ready to decide. ALWAYS confirm
+    with the user FIRST ("¿te conecto con el corredor?") before calling it: this
+    transfers the conversation (consent + data minimization). The owning broker is
+    notified and can reply to the lead inside Contexto.
+
+    Takes NO arguments from you — the session is resolved automatically from context.
+    Never invent the broker's phone or email; the connection happens through this tool.
+    """
+    session_id = ((config or {}).get("configurable") or {}).get("thread_id")
+    if not session_id:
+        return json.dumps({"ok": False, "message": "Sin contexto de sesión; no puedo conectar ahora."})
+    # Import diferido: chat.py importa el grafo (→ tools), así que importar aquí
+    # arriba crearía un ciclo. Mismo patrón que tool_analyze_location/_investment.
+    from app.routers.chat import registrar_handoff
+    try:
+        res = await registrar_handoff(session_id)
+    except Exception as e:  # noqa: BLE001 — un fallo de handoff no debe tumbar el turno
+        return json.dumps({"ok": False, "message": f"No pude registrar la conexión ({type(e).__name__})."})
+    if not res.get("activo_id"):
+        # Sesión no ligada a un inmueble (no vino por QR): el corredor no se resuelve solo.
+        return json.dumps({
+            "ok": True, "estado": "solicitado", "con_inmueble": False,
+            "message": ("Registré la solicitud, pero esta conversación no está ligada a un inmueble "
+                        "específico. Dile al usuario que un corredor lo contactará y pídele el "
+                        "inmueble o la zona de interés para enrutarlo bien."),
+        })
+    return json.dumps({
+        "ok": True, "estado": "solicitado", "con_inmueble": True,
+        "message": ("Listo: avisé al corredor del inmueble. Confírmale al usuario que lo "
+                    "contactarán en breve dentro de Contexto."),
+    })
+
+
 AGENT_TOOLS = [
     tool_find_assets_by_text,
     tool_geocode_address,
@@ -513,4 +553,5 @@ AGENT_TOOLS = [
     tool_fetch_asset_lifecycle_specs,
     tool_analyze_location,
     tool_analyze_investment,
+    tool_connect_with_broker,
 ]

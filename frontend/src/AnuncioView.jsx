@@ -53,7 +53,11 @@ export default function AnuncioView({ id, onChat }) {
   )
 
   const car = d.caracteristicas || {}
-  const fotos = car.fotos || []
+  // d.fotos viene del endpoint /anuncio (imagen_url del catastro); car.fotos son
+  // fotos que el propietario subió desde la app. Primero propietario, luego catastro.
+  const fotos = (Array.isArray(d.fotos) && d.fotos.length ? d.fotos : null)
+             || car.fotos
+             || []
   const esVenta = d.operacion === 'venta'
   const precioTxt = d.precio != null
     ? fmtUSD(d.precio) + (esVenta ? '' : '/mes') + (d.precio_negociable ? ' · negociable' : '')

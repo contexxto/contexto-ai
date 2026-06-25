@@ -7,7 +7,7 @@ from typing import AsyncIterator
 from fastapi import APIRouter, Depends, HTTPException, Request, Security, status
 from fastapi.responses import StreamingResponse
 from fastapi.security.api_key import APIKeyHeader
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
@@ -497,14 +497,32 @@ async def get_session_history(session_id: str):
         return {"session_id": session_id, "messages": [], "turns": 0}
 
     messages = state.values.get("messages", [])
-    history = [
-        {
-            "role": "user" if isinstance(m, HumanMessage) else "assistant",
-            "content": m.content if isinstance(m.content, str) else str(m.content),
-        }
-        for m in messages
-        if isinstance(m, (HumanMessage, AIMessage)) and not getattr(m, "tool_calls", None)
-    ]
+
+    # Reconstruye el historial turno a turno, re-enriqueciendo las tarjetas
+    # de cada respuesta del agente con los ToolMessages de ese mismo turno.
+    history: list[dict] = []
+    turn_tool_msgs: list[ToolMessage] = []
+
+    for m in messages:
+        if isinstance(m, HumanMessage):
+            turn_tool_msgs = []          # nuevo turno → reset
+            history.append({
+                "role": "user",
+                "content": m.content if isinstance(m.content, str) else str(m.content),
+                "results": [],
+            })
+        elif isinstance(m, AIMessage) and getattr(m, "tool_calls", None):
+            pass                         # paso intermedio de planificación — ignorar
+        elif isinstance(m, AIMessage):
+            results = await build_result_cards(turn_tool_msgs)
+            history.append({
+                "role": "assistant",
+                "content": m.content if isinstance(m.content, str) else str(m.content),
+                "results": results,
+            })
+            turn_tool_msgs = []
+        elif isinstance(m, ToolMessage):
+            turn_tool_msgs.append(m)
 
     return {
         "session_id": session_id,

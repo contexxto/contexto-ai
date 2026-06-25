@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import axios from 'axios'
 import {
   MapPin, MessageCircle, ShieldCheck, Footprints, Trees, Volume2,
-  BedDouble, Bath, Car, Ruler, Check, TrendingUp, AlertTriangle,
+  BedDouble, Bath, Car, Ruler, Check, TrendingUp, AlertTriangle, ArrowLeft,
 } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import sphereLogo from './assets/sphere.svg'
@@ -20,7 +20,7 @@ const AMB = [
   ['acepta_mascotas', '🐾 Acepta mascotas'],
 ]
 
-export default function AnuncioView({ id, onChat }) {
+export default function AnuncioView({ id, onChat, onBack }) {
   const [d, setD] = useState(null)
   const [err, setErr] = useState(false)
 
@@ -83,6 +83,13 @@ export default function AnuncioView({ id, onChat }) {
       {/* Header */}
       <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 9, padding: '12px 16px',
                     borderBottom: `1px solid ${C.line}` }}>
+        {onBack && (
+          <button onClick={onBack} aria-label="Volver"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px 4px 0',
+                     color: C.teal, display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+            <ArrowLeft size={20} />
+          </button>
+        )}
         <img src={sphereLogo} width={24} height={24} alt="" style={{ filter: 'drop-shadow(0 0 6px rgba(45,189,182,.4))' }} />
         <span style={{ fontWeight: 800, fontSize: '.95rem' }}>Contexto <span style={{ color: C.teal }}>AI</span></span>
         <span style={{ marginLeft: 'auto', fontSize: '.66rem', color: C.muted }}>Letrero inteligente</span>

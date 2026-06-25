@@ -998,7 +998,9 @@ export default function App() {
   // Detalle abierto desde una tarjeta del chat: overlay sobre la conversación.
   // El chat (messages) sigue vivo en estado; al cerrar volvemos donde estábamos.
   if (openAnuncioId) {
-    return <AnuncioView id={openAnuncioId} onChat={() => setOpenAnuncioId(null)} />
+    return <AnuncioView id={openAnuncioId}
+      onBack={() => setOpenAnuncioId(null)}
+      onChat={() => setOpenAnuncioId(null)} />
   }
 
   // Visor público de conversación compartida (solo lectura)

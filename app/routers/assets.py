@@ -290,7 +290,7 @@ async def asset_anuncio(
         "       a.piso_altura, a.walk_score, a.score_ruido_predictivo AS ruido, "
         "       a.porcentaje_cobertura_vegetal AS vegetacion, "
         "       a.volumen_trafico_historico AS trafico, a.conectividad, "
-        "       a.servicios_cercanos, a.caracteristicas, "
+        "       a.servicios_cercanos, a.caracteristicas, a.imagen_url, "
         "       t.tipo_operacion AS operacion, t.precio, "
         '       ftm."año_construccion" AS anio_construccion, ftm.tipo_estructura, '
         "       ftm.tipo_tuberia, ftm.calidad_acabados, "
@@ -362,6 +362,8 @@ async def asset_anuncio(
         "conectividad": row["conectividad"],
         "servicios_cercanos": _servicios,
         "caracteristicas": car,
+        # Foto canónica del catastro → galería del anuncio (si no hay fotos en caracteristicas).
+        "fotos": car.get("fotos") or ([row["imagen_url"]] if row["imagen_url"] else []),
         "ficha": ficha,
         "inversion": inversion,
         "entorno_verificado": info_verificacion(_curaciones),

@@ -490,6 +490,7 @@ export default function App() {
           content: limpiarCtx(m),
           time: '',
           toolCalls: [],
+          results: Array.isArray(m.results) ? m.results : [],
         }))
         setMessages(restored)
         const lastAi = [...restored].reverse().find(m => m.role === 'ai')
@@ -515,7 +516,8 @@ export default function App() {
           const hist = await axios.get(`${API_BASE}/api/v1/chat/${prev}/history`, { headers: apiHeaders() })
             .then(r => r.data).catch(() => ({ messages: [] }))
           const base = (hist.messages || []).map((m, i) => ({
-            id: `r-${i}`, role: m.role === 'user' ? 'user' : 'ai', content: limpiarCtx(m), time: '', toolCalls: [] }))
+            id: `r-${i}`, role: m.role === 'user' ? 'user' : 'ai', content: limpiarCtx(m), time: '', toolCalls: [],
+            results: Array.isArray(m.results) ? m.results : [] }))
           const hmsgs = (h.mensajes || []).map((m) => ({
             id: `h-${m.id}`, role: m.autor === 'corredor' ? 'ai' : 'user',
             content: m.autor === 'corredor' ? `👤 Corredor: ${m.texto}` : m.texto, time: '', toolCalls: [] }))

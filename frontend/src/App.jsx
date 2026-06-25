@@ -10,6 +10,7 @@ import MisPublicaciones from './MisPublicaciones'
 import ConvierteteCorredor from './ConvierteteCorredor'
 import ShareConversation from './ShareConversation'
 import AnuncioView from './AnuncioView'
+import ResultCards from './ResultCards'
 
 // Headers (backend key + Bearer del usuario) centralizados en api.js
 import { API_BASE, apiHeaders, setAccessToken } from './api'
@@ -177,7 +178,7 @@ function ActBtn({ title, onClick, active, children }) {
   )
 }
 
-function Message({ msg, onCopy, copied, onScrollTop, onShare, isLast }) {
+function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, isLast }) {
   const isUser = msg.role === 'user'
   const sustancioso = !isUser && ((msg.toolCalls?.length > 0) || (msg.content?.length > 450))
   const [speaking, setSpeaking] = useState(false)
@@ -229,6 +230,8 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, isLast }) {
             />
           )}
         </div>
+        {/* Tarjetas de inmueble: la salida visual de la búsqueda (debajo del texto) */}
+        {!isUser && <ResultCards results={msg.results} onOpen={onOpenAnuncio} />}
         {!isUser && (
           <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:6, flexWrap:'wrap' }}>
             {/* Compartir destacado: pill teal con etiqueta — palanca de crecimiento */}
@@ -347,6 +350,9 @@ export default function App() {
   // QR (/a/{id}) → primero la página de anuncio (la "puerta"); el chat con el agente
   // (runtime propio) se abre solo al tocar el CTA. No arrancamos en el informe.
   const [anuncioMode, setAnuncioMode] = useState(!!deepLinkId)
+  // Detalle de un inmueble abierto desde una tarjeta de resultado (overlay sin
+  // perder el chat). Reutiliza AnuncioView; al cerrar volvemos a la conversación.
+  const [openAnuncioId, setOpenAnuncioId] = useState(null)
   const [dragOver, setDragOver] = useState(false)
   const [geo, setGeo] = useState(null)          // {lat, lon} | null — ubicación del usuario
   const [geoLoading, setGeoLoading] = useState(false)
@@ -624,6 +630,7 @@ export default function App() {
         toolCalls: data.tool_calls_made > 0
           ? Array(data.tool_calls_made).fill('tool_called')
           : [],
+        results: Array.isArray(data.results) ? data.results : [],
       }
       setMessages(prev => [...prev, aiMsg])
       lastAiRef.current = data.reply || ''
@@ -965,6 +972,12 @@ export default function App() {
       onChat={() => { setAnuncioMode(false); loadFromDeepLink(deepLinkId) }} />
   }
 
+  // Detalle abierto desde una tarjeta del chat: overlay sobre la conversación.
+  // El chat (messages) sigue vivo en estado; al cerrar volvemos donde estábamos.
+  if (openAnuncioId) {
+    return <AnuncioView id={openAnuncioId} onChat={() => setOpenAnuncioId(null)} />
+  }
+
   // Visor público de conversación compartida (solo lectura)
   if (shareToken) {
     return (
@@ -1265,6 +1278,7 @@ export default function App() {
           <Message key={msg.id} msg={msg} onCopy={handleCopy} copied={copied}
             isLast={i === messages.length - 1}
             onScrollTop={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+            onOpenAnuncio={setOpenAnuncioId}
             onShare={() => setShareOpen(true)} />
         ))}
 

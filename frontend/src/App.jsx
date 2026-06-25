@@ -195,80 +195,106 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, isL
     setSpeaking(true); synth.speak(u)
   }
 
+  // El icono de esfera ocupa 32px + 10px de gap = 42px de indent para alinear las tarjetas
+  const AVATAR_INDENT = 42
+
   return (
     <div style={{
-      display:'flex', justifyContent: isUser ? 'flex-end' : 'flex-start',
-      marginBottom:16, gap:10,
+      display:'flex', flexDirection:'column',
+      alignItems: isUser ? 'flex-end' : 'flex-start',
+      marginBottom:16,
     }}>
-      {!isUser && (
-        <img src={sphereLogo} alt="Contexto AI" width={32} height={32}
-             style={{ flexShrink:0, display:'block' }} />
-      )}
-      <div style={{ maxWidth:'78%' }}>
-        {msg.toolCalls?.length > 0 && (
-          <div style={{ marginBottom:6, fontSize:'.72rem', color:'var(--text-muted)',
-                        display:'flex', alignItems:'center', gap:5 }}>
-            🔧 Analizado con {msg.toolCalls.length} herramienta{msg.toolCalls.length > 1 ? 's' : ''} del catastro
-          </div>
-        )}
-        <div style={{
-          padding: isUser ? '10px 14px' : '2px 30px 2px 2px',
-          borderRadius: isUser ? '18px 18px 4px 18px' : 0,
-          background: isUser ? 'linear-gradient(135deg, #1A7A76, #2DBDB6)' : 'transparent',
-          border: 'none',
-          boxShadow: isUser ? '0 4px 18px rgba(45,189,182,.22)' : 'none',
-          color: isUser ? '#fff' : 'inherit',
-          fontSize:'.92rem', lineHeight:1.65,
-          position:'relative',
-        }}>
-          {isUser ? (
-            <span>{msg.content}</span>
-          ) : (
-            <div
-              className="ai-content"
-              dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }}
-            />
-          )}
-        </div>
-        {/* Tarjetas de inmueble: la salida visual de la búsqueda (debajo del texto) */}
-        {!isUser && <ResultCards results={msg.results} onOpen={onOpenAnuncio} />}
+      {/* ── Fila: avatar + burbuja de texto ── */}
+      <div style={{ display:'flex', gap:10, alignSelf:'stretch', justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
         {!isUser && (
-          <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:6, flexWrap:'wrap' }}>
-            {/* Compartir destacado: pill teal con etiqueta — palanca de crecimiento */}
-            <button onClick={onShare} title="Compartir esta conversación"
-              style={{
-                display:'flex', alignItems:'center', gap:6, padding:'6px 13px', borderRadius:999,
-                background:'rgba(45,189,182,.13)', border:'1px solid rgba(45,189,182,.42)',
-                color:'var(--teal-bright, #5EEAD4)', cursor:'pointer', fontSize:'.8rem', fontWeight:700,
-                transition:'all .14s',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(45,189,182,.22)' }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(45,189,182,.13)' }}>
-              <Share2 size={14}/> Compartir
-            </button>
-            {/* Acciones discretas */}
-            <div style={{ display:'flex', alignItems:'center', gap:2 }}>
-              <ActBtn title="Copiar" onClick={() => onCopy(msg.id, msg.content)} active={copied === msg.id}>
-                {copied === msg.id ? <CheckCheck size={15}/> : <Copy size={15}/>}
-              </ActBtn>
-              <ActBtn title={speaking ? 'Detener audio' : 'Escuchar'} onClick={toggleSpeak} active={speaking}>
-                <Volume2 size={15}/>
-              </ActBtn>
-              <ActBtn title="Me gusta" onClick={() => setFeedback(f => f === 'up' ? null : 'up')} active={feedback === 'up'}>
-                <ThumbsUp size={15}/>
-              </ActBtn>
-              <ActBtn title="No me gusta" onClick={() => setFeedback(f => f === 'down' ? null : 'down')} active={feedback === 'down'}>
-                <ThumbsDown size={15}/>
-              </ActBtn>
-              <ActBtn title="Ir al inicio de la conversación" onClick={onScrollTop}><ArrowUpToLine size={15}/></ActBtn>
-            </div>
-          </div>
+          <img src={sphereLogo} alt="Contexto AI" width={32} height={32}
+               style={{ flexShrink:0, display:'block' }} />
         )}
-
-        {/* Nudge contextual: tras análisis sustanciosos, solo en la última respuesta */}
-        {sustancioso && isLast && (
+        <div style={{ maxWidth:'78%' }}>
+          {msg.toolCalls?.length > 0 && (
+            <div style={{ marginBottom:6, fontSize:'.72rem', color:'var(--text-muted)',
+                          display:'flex', alignItems:'center', gap:5 }}>
+              🔧 Analizado con {msg.toolCalls.length} herramienta{msg.toolCalls.length > 1 ? 's' : ''} del catastro
+            </div>
+          )}
           <div style={{
-            marginTop:12, padding:'11px 13px', borderRadius:14,
+            padding: isUser ? '10px 14px' : '2px 30px 2px 2px',
+            borderRadius: isUser ? '18px 18px 4px 18px' : 0,
+            background: isUser ? 'linear-gradient(135deg, #1A7A76, #2DBDB6)' : 'transparent',
+            border: 'none',
+            boxShadow: isUser ? '0 4px 18px rgba(45,189,182,.22)' : 'none',
+            color: isUser ? '#fff' : 'inherit',
+            fontSize:'.92rem', lineHeight:1.65,
+            position:'relative',
+          }}>
+            {isUser ? (
+              <span>{msg.content}</span>
+            ) : (
+              <div
+                className="ai-content"
+                dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }}
+              />
+            )}
+          </div>
+        </div>
+        {isUser && (
+          <div style={{
+            width:32, height:32, borderRadius:'50%', flexShrink:0,
+            background:'#30363d', display:'flex', alignItems:'center',
+            justifyContent:'center', fontSize:13, fontWeight:600,
+          }}>Tú</div>
+        )}
+      </div>
+
+      {/* ── Tarjetas: FUERA del maxWidth 78%, ancho completo del chat ──
+           paddingLeft = AVATAR_INDENT para alinear con el inicio del texto */}
+      {!isUser && msg.results?.length > 0 && (
+        <div style={{ paddingLeft: AVATAR_INDENT, width:'100%', boxSizing:'border-box' }}>
+          <ResultCards results={msg.results} onOpen={onOpenAnuncio} />
+        </div>
+      )}
+
+      {/* ── Botones de acción ── */}
+      {!isUser && (
+        <div style={{ paddingLeft: AVATAR_INDENT, display:'flex', alignItems:'center', gap:8, marginTop:6, flexWrap:'wrap' }}>
+          {/* Compartir destacado */}
+          <button onClick={onShare} title="Compartir esta conversación"
+            style={{
+              display:'flex', alignItems:'center', gap:6, padding:'6px 13px', borderRadius:999,
+              background:'rgba(45,189,182,.13)', border:'1px solid rgba(45,189,182,.42)',
+              color:'var(--teal-bright, #5EEAD4)', cursor:'pointer', fontSize:'.8rem', fontWeight:700,
+              transition:'all .14s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(45,189,182,.22)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(45,189,182,.13)' }}>
+            <Share2 size={14}/> Compartir
+          </button>
+          {/* Acciones discretas */}
+          <div style={{ display:'flex', alignItems:'center', gap:2 }}>
+            <ActBtn title="Copiar" onClick={() => onCopy(msg.id, msg.content)} active={copied === msg.id}>
+              {copied === msg.id ? <CheckCheck size={15}/> : <Copy size={15}/>}
+            </ActBtn>
+            <ActBtn title={speaking ? 'Detener audio' : 'Escuchar'} onClick={toggleSpeak} active={speaking}>
+              <Volume2 size={15}/>
+            </ActBtn>
+            <ActBtn title="Me gusta" onClick={() => setFeedback(f => f === 'up' ? null : 'up')} active={feedback === 'up'}>
+              <ThumbsUp size={15}/>
+            </ActBtn>
+            <ActBtn title="No me gusta" onClick={() => setFeedback(f => f === 'down' ? null : 'down')} active={feedback === 'down'}>
+              <ThumbsDown size={15}/>
+            </ActBtn>
+            <ActBtn title="Ir al inicio de la conversación" onClick={onScrollTop}><ArrowUpToLine size={15}/></ActBtn>
+          </div>
+        </div>
+      )}
+
+      {/* ── Nudge contextual: tras análisis sustanciosos, solo en la última respuesta ── */}
+      {sustancioso && isLast && (
+        <div style={{
+          paddingLeft: AVATAR_INDENT, width:'100%', boxSizing:'border-box', marginTop:12,
+        }}>
+          <div style={{
+            padding:'11px 13px', borderRadius:14,
             background:'rgba(45,189,182,.06)', border:'1px solid rgba(45,189,182,.2)',
             display:'flex', alignItems:'center', gap:12, flexWrap:'wrap',
           }}>
@@ -284,19 +310,14 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, isL
               <Share2 size={14}/> Compartir
             </button>
           </div>
-        )}
-        <div style={{ fontSize:'.72rem', color:'var(--text-muted)', marginTop:4,
-                      textAlign: isUser ? 'right' : 'left' }}>
-          {msg.time}
         </div>
-      </div>
-      {isUser && (
-        <div style={{
-          width:32, height:32, borderRadius:'50%', flexShrink:0,
-          background:'#30363d', display:'flex', alignItems:'center',
-          justifyContent:'center', fontSize:13, fontWeight:600,
-        }}>Tú</div>
       )}
+
+      {/* ── Timestamp ── */}
+      <div style={{ paddingLeft: isUser ? 0 : AVATAR_INDENT, fontSize:'.72rem', color:'var(--text-muted)', marginTop:4,
+                    textAlign: isUser ? 'right' : 'left' }}>
+        {msg.time}
+      </div>
     </div>
   )
 }

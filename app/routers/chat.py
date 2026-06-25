@@ -72,11 +72,105 @@ class ChatResponse(BaseModel):
     reply: str
     session_id: str
     tool_calls_made: int = 0
+    # Tarjetas de inmueble que el frontend renderiza bajo la respuesta (Fase 1 del
+    # spec): el chat es la entrada, las tarjetas son la salida visual. Salen de los
+    # mismos resultados que vio el agente — no un texto aplanado.
+    results: list[dict] = Field(default_factory=list)
 
 
 def _langgraph_config(session_id: str) -> dict:
     """Construye el config de LangGraph con el thread_id de sesión."""
     return {"configurable": {"thread_id": session_id}}
+
+
+# ── Tarjetas de resultado (chat → visual) ───────────────────────────────────
+# Las tools de búsqueda devuelven assets para que el AGENTE razone; el LLM no
+# necesita la foto ni la ficha. Por eso aquí recolectamos solo los IDs que el
+# agente surfaceó y los ENRIQUECEMOS aparte con lo que la TARJETA necesita
+# (foto, precio, specs, caminabilidad). Separa la capa de razonamiento (lo que
+# ve el LLM) de la capa visual (lo que renderiza el frontend).
+_SEARCH_TOOLS = {"tool_search_nearby_assets", "tool_find_assets_by_text"}
+
+
+def _collect_asset_ids(messages, limit: int = 6) -> list[str]:
+    """IDs de inmueble que las tools de búsqueda devolvieron, en orden, sin repetir."""
+    ids: list[str] = []
+    seen: set[str] = set()
+    for m in messages:
+        if getattr(m, "type", "") != "tool":
+            continue
+        if (getattr(m, "name", "") or "") not in _SEARCH_TOOLS:
+            continue
+        try:
+            data = json.loads(m.content if isinstance(m.content, str) else str(m.content))
+        except Exception:  # noqa: BLE001 — un tool message no-JSON no debe romper el turno
+            continue
+        for a in (data.get("assets") or []):
+            aid = a.get("id")
+            if aid and aid not in seen:
+                seen.add(aid)
+                ids.append(aid)
+                if len(ids) >= limit:
+                    return ids
+    return ids
+
+
+def _card_from_row(row: dict) -> dict:
+    """Fila de DB → payload de tarjeta. Extrae specs y foto de `caracteristicas`."""
+    car = row.get("caracteristicas")
+    if isinstance(car, str):
+        try:
+            car = json.loads(car)
+        except Exception:  # noqa: BLE001
+            car = {}
+    car = car or {}
+    fotos = car.get("fotos") or []
+    foto = row.get("imagen_url") or (fotos[0] if fotos else None)
+    precio = row.get("precio")
+    return {
+        "id": row["id"],
+        "direccion": row.get("direccion"),
+        "tipo_activo": row.get("tipo_activo"),
+        "operacion": row.get("operacion"),
+        "precio": float(precio) if precio is not None else None,
+        "imagen_url": foto,
+        "caminabilidad": row.get("caminabilidad"),
+        "dormitorios": car.get("num_dormitorios"),
+        "banos": car.get("num_banos"),
+        "area_m2": car.get("area_total_m2"),
+    }
+
+
+async def build_result_cards(messages) -> list[dict]:
+    """Construye las tarjetas para los inmuebles que el agente surfaceó este turno.
+    Una sola query de enriquecimiento; preserva el orden en que aparecieron."""
+    ids = _collect_asset_ids(messages)
+    if not ids:
+        return []
+    query = """
+        SELECT
+            a.id::text AS id,
+            a.direccion_estandarizada AS direccion,
+            a.tipo_activo,
+            a.imagen_url,
+            a.walk_score AS caminabilidad,
+            a.caracteristicas,
+            t.tipo_operacion AS operacion,
+            t.precio
+        FROM activos_inmutables a
+        LEFT JOIN LATERAL (
+            SELECT tipo_operacion, precio FROM transacciones_temporales tt
+            WHERE tt.activo_id = a.id ORDER BY tt.fecha_publicacion DESC LIMIT 1
+        ) t ON true
+        WHERE a.id::text = ANY(:ids)
+    """
+    try:
+        async with AsyncSessionLocal() as db:
+            rows = (await db.execute(text(query), {"ids": ids})).mappings().all()
+    except Exception:  # noqa: BLE001 — sin tarjetas es degradación aceptable, no error
+        return []
+    by_id = {r["id"]: dict(r) for r in rows}
+    return [_card_from_row(by_id[i]) for i in ids if i in by_id]
 
 
 async def _stream_agent(message: str, session_id: str) -> AsyncIterator[str]:
@@ -149,11 +243,13 @@ async def chat(
     )
 
     tool_calls = sum(1 for m in messages if hasattr(m, "type") and m.type == "tool")
+    results = await build_result_cards(messages)
 
     return ChatResponse(
         reply=reply,
         session_id=payload.session_id,
         tool_calls_made=tool_calls,
+        results=results,
     )
 
 

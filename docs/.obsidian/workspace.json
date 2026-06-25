@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "DEMO_Linden_Calificador_2026-06-23.md",
+                "file": "SPEC_Tarjeta_Resultado_2026-06-24.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "DEMO_Linden_Calificador_2026-06-23"
+              "title": "SPEC_Tarjeta_Resultado_2026-06-24"
             }
           }
         ]
@@ -180,6 +180,8 @@
       "bases:Crear nueva base": false
     }
   },
-  "active": "7ecb301448a4d53e",
-  "lastOpenFiles": []
+  "active": "6201e91457a3fe0d",
+  "lastOpenFiles": [
+    "DEMO_Linden_Calificador_2026-06-23.md"
+  ]
 }

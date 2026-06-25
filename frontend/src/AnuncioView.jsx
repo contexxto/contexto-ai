@@ -269,7 +269,7 @@ export default function AnuncioView({ id, onChat, onBack }) {
       {/* CTA fijo — la puerta al runtime propio (el agente) */}
       <div style={{ flexShrink: 0, padding: '12px 16px', borderTop: `1px solid ${C.line}`,
                     background: 'rgba(14,13,19,.6)', backdropFilter: 'blur(8px)' }}>
-        <button onClick={onChat}
+        <button onClick={() => onChat && onChat({ direccion: d?.direccion, tipo: d?.tipo_activo })}
           style={{ width: '100%', maxWidth: 640, margin: '0 auto', display: 'flex', alignItems: 'center',
                    justifyContent: 'center', gap: 9, padding: '14px', borderRadius: 14, border: 'none',
                    cursor: 'pointer', fontWeight: 800, fontSize: '.95rem',

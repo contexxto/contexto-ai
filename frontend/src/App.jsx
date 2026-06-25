@@ -1000,7 +1000,14 @@ export default function App() {
   if (openAnuncioId) {
     return <AnuncioView id={openAnuncioId}
       onBack={() => setOpenAnuncioId(null)}
-      onChat={() => setOpenAnuncioId(null)} />
+      onChat={(info) => {
+        setOpenAnuncioId(null)
+        // Pequeño delay para que el overlay cierre y el chat se monte antes de enviar.
+        const txt = info?.direccion
+          ? `Cuéntame más sobre el inmueble en ${info.direccion}`
+          : 'Cuéntame más sobre este inmueble'
+        setTimeout(() => sendMessage(txt), 150)
+      }} />
   }
 
   // Visor público de conversación compartida (solo lectura)

@@ -188,6 +188,9 @@ def _card_from_row(row: dict) -> dict:
         "precio": float(precio) if precio is not None else None,
         "imagen_url": foto,
         "caminabilidad": row.get("caminabilidad"),
+        # Coordenadas para el Mapa Vivo (modo ZONA): los resultados leídos como espacio.
+        "lat": float(row["lat"]) if row.get("lat") is not None else None,
+        "lon": float(row["lon"]) if row.get("lon") is not None else None,
         "dormitorios": car.get("num_dormitorios"),
         "banos": car.get("num_banos"),
         "area_m2": car.get("area_total_m2"),
@@ -229,6 +232,8 @@ async def build_result_cards(messages) -> list[dict]:
             a.imagen_url,
             a.walk_score AS caminabilidad,
             a.servicios_cercanos,
+            ST_Y(a.geom) AS lat,
+            ST_X(a.geom) AS lon,
             a.caracteristicas,
             t.tipo_operacion AS operacion,
             t.precio

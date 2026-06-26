@@ -61,7 +61,7 @@ export default function MapSeed({ results, onOpen, onExpand, isLast }) {
   useEffect(() => {
     if (!isLast || !pins.length || !containerRef.current) return
     let cancelled = false
-    let loaded = false
+    let ready = false
     setFailed(false)
     const map = new maplibregl.Map({
       container: containerRef.current,
@@ -70,14 +70,14 @@ export default function MapSeed({ results, onOpen, onExpand, isLast }) {
       interactive: false,          // es un vistazo; "Ampliar" abre el mapa real
       fadeDuration: 0,
     })
-    // Si el estilo (CDN) no carga en un tiempo razonable, degrada al chip estático
-    // en vez de quedar como una caja oscura vacía.
-    const failTimer = setTimeout(() => { if (!loaded && !cancelled) setFailed(true) }, 8000)
 
-    map.on('load', () => {
-      loaded = true
+    // Encuadre + pines. Lo dispara lo que ocurra PRIMERO entre 'load' e 'idle'
+    // (respaldo: en algunos montajes 'load' no se emite, pero 'idle' —primer render
+    // ocioso— sí). Idempotente vía `ready`.
+    const finish = () => {
+      if (cancelled || ready) return
+      ready = true
       clearTimeout(failTimer)
-      if (cancelled) return        // el efecto ya limpió (map.remove): no tocar el mapa
       map.resize()
       const allSame = pins.every((p) => p.lat === pins[0].lat && p.lon === pins[0].lon)
       if (pins.length === 1 || allSame) {
@@ -97,7 +97,19 @@ export default function MapSeed({ results, onOpen, onExpand, isLast }) {
         el.addEventListener('click', (e) => { e.stopPropagation(); onOpenRef.current?.(p.id) })
         new maplibregl.Marker({ element: el }).setLngLat([p.lon, p.lat]).addTo(map)
       })
+    }
+
+    map.on('load', finish)
+    map.on('idle', finish)
+    // Un error real de carga del estilo (CDN caído/bloqueado) → degrada al chip
+    // estático en vez de una caja oscura vacía. Errores de tile tras cargar se ignoran.
+    map.on('error', (e) => {
+      if (!ready && !cancelled) { console.warn('[MapSeed] map error:', e?.error?.message || e); setFailed(true) }
     })
+    // El contenedor puede medir 0 en el primer tick dentro del flujo del chat → resize.
+    requestAnimationFrame(() => { if (!cancelled && !ready) map.resize() })
+    // Último recurso: si ni load ni idle ni error llegan, no dejes una caja muerta.
+    const failTimer = setTimeout(() => { if (!ready && !cancelled) setFailed(true) }, 15000)
 
     return () => { cancelled = true; clearTimeout(failTimer); map.remove() }
     // Re-inicia si pasa a ser el último turno o si cambia el CONTENIDO de los pines.

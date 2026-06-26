@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { MapPin, Maximize2 } from 'lucide-react'
@@ -31,7 +31,7 @@ const headerChip = {
   border: `1px solid ${C.line}`,
 }
 
-// Versión quieta (turnos NO-últimos, o si el mapa no carga): invita a abrir sin MapLibre.
+// Versión quieta (turnos NO-últimos): invita a abrir sin cargar MapLibre.
 function MapChip({ n, onExpand }) {
   return (
     <button onClick={onExpand} title="Abrir el mapa de estos inmuebles"
@@ -56,13 +56,10 @@ export default function MapSeed({ results, onOpen, onExpand, isLast }) {
   // aunque el efecto no se re-ejecute (cierra la trampa de closure obsoleto).
   const onOpenRef = useRef(onOpen)
   onOpenRef.current = onOpen
-  const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     if (!isLast || !pins.length || !containerRef.current) return
     let cancelled = false
-    let ready = false
-    setFailed(false)
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: DARK_STYLE,
@@ -71,13 +68,13 @@ export default function MapSeed({ results, onOpen, onExpand, isLast }) {
       fadeDuration: 0,
     })
 
-    // Encuadre + pines. Lo dispara lo que ocurra PRIMERO entre 'load' e 'idle'
-    // (respaldo: en algunos montajes 'load' no se emite, pero 'idle' —primer render
-    // ocioso— sí). Idempotente vía `ready`.
-    const finish = () => {
-      if (cancelled || ready) return
-      ready = true
-      clearTimeout(failTimer)
+    // La cámara y los pines (marcadores DOM) NO requieren el evento 'load': no
+    // añadimos capas al estilo, solo movemos cámara y proyectamos markers. Por eso
+    // los aplicamos de inmediato, SIN esperar 'load'/'idle' (que en ciertos contextos
+    // de render —tab en background, rAF throttled— no se emiten). El basemap (tiles)
+    // se pinta solo cuando llega. setTimeout (no rAF) → robusto ante throttling.
+    const dibujar = () => {
+      if (cancelled) return
       map.resize()
       const allSame = pins.every((p) => p.lat === pins[0].lat && p.lon === pins[0].lon)
       if (pins.length === 1 || allSame) {
@@ -98,25 +95,15 @@ export default function MapSeed({ results, onOpen, onExpand, isLast }) {
         new maplibregl.Marker({ element: el }).setLngLat([p.lon, p.lat]).addTo(map)
       })
     }
+    const t = setTimeout(dibujar, 60)   // tras el primer layout (contenedor con tamaño)
+    map.on('error', (e) => { if (!cancelled) console.warn('[MapSeed]', e?.error?.message || e) })
 
-    map.on('load', finish)
-    map.on('idle', finish)
-    // Un error real de carga del estilo (CDN caído/bloqueado) → degrada al chip
-    // estático en vez de una caja oscura vacía. Errores de tile tras cargar se ignoran.
-    map.on('error', (e) => {
-      if (!ready && !cancelled) { console.warn('[MapSeed] map error:', e?.error?.message || e); setFailed(true) }
-    })
-    // El contenedor puede medir 0 en el primer tick dentro del flujo del chat → resize.
-    requestAnimationFrame(() => { if (!cancelled && !ready) map.resize() })
-    // Último recurso: si ni load ni idle ni error llegan, no dejes una caja muerta.
-    const failTimer = setTimeout(() => { if (!ready && !cancelled) setFailed(true) }, 15000)
-
-    return () => { cancelled = true; clearTimeout(failTimer); map.remove() }
+    return () => { cancelled = true; clearTimeout(t); map.remove() }
     // Re-inicia si pasa a ser el último turno o si cambia el CONTENIDO de los pines.
   }, [isLast, firma])  // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!pins.length) return null
-  if (!isLast || failed) return <MapChip n={pins.length} onExpand={onExpand} />
+  if (!isLast) return <MapChip n={pins.length} onExpand={onExpand} />
 
   return (
     <div style={{

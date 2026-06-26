@@ -93,6 +93,25 @@ function ResultCard({ r, onOpen }) {
           <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
                          overflow: 'hidden' }}>{r.direccion || r.tipo_activo}</span>
         </div>
+        {/* ★ Encaje / intención: los POIs verificados más cercanos, con su tiempo a pie.
+            El diferenciador que Redfin/Zillow/Realtor NO muestran. Envuelven (móvil primero);
+            nombres largos se truncan con el nombre completo en el tooltip. Proveniencia OSM
+            en el tooltip y en la nota al pie del carrusel. */}
+        {r.pois?.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+            {r.pois.map((p, i) => (
+              <span key={i}
+                title={`${p.texto} · a ~${p.distancia_m} m (según el mapa — OpenStreetMap)`}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 4, maxWidth: '100%',
+                         padding: '3px 8px', borderRadius: 999, fontSize: '.66rem', fontWeight: 600,
+                         background: 'rgba(45,189,182,.10)', border: `1px solid ${C.line}`, color: C.tealHi }}>
+                <span style={{ flexShrink: 0 }}>{p.emoji}</span>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 116 }}>{p.texto}</span>
+                <span style={{ color: C.muted, fontWeight: 500, flexShrink: 0, whiteSpace: 'nowrap' }}>· {p.minutos} min</span>
+              </span>
+            ))}
+          </div>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: C.teal, fontSize: '.74rem',
                       fontWeight: 700, marginTop: 2 }}>
           Ver inmueble <ChevronRight size={14} />

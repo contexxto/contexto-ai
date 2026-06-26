@@ -1,6 +1,7 @@
 import json
 import re
 import secrets
+import unicodedata
 import uuid
 from typing import AsyncIterator
 
@@ -16,6 +17,8 @@ from app.agent.state import AgentState
 from app.auth import CurrentUser, get_current_user, get_optional_user
 from app.config import settings
 from app.database import AsyncSessionLocal
+from app.entorno import limpiar_texto_servicios
+from app.entorno_curacion import aplicar_curacion, parse_servicios
 from app.limiter import limiter
 
 router = APIRouter(prefix="/api/v1/chat", tags=["Chat — Agente Conversacional"])
@@ -115,6 +118,56 @@ def _collect_asset_ids(messages, limit: int = 6) -> list[str]:
     return ids
 
 
+# Caminata ~4.8 km/h → 80 m/min. Conservador y honesto (estimamos un poco de más,
+# no de menos). Solo para mostrar "~X min a pie", siempre con el calificador "~".
+_M_POR_MINUTO = 80
+
+
+def _emoji_de(raw: str) -> str:
+    """Emoji guía del POI: la SECUENCIA pictográfica inicial COMPLETA del segmento crudo
+    (los segmentos vienen como '🛡️ Nombre a ~120 m'). Captura el grafema entero —VS16,
+    ZWJ, banderas, tonos de piel—, no solo el primer code point (raw[0] partiría '🛡️'
+    perdiendo el VS16 → glifo monocromo), y descarta puntuación inicial (los nombres que
+    agrega el corredor pueden empezar con comillas/paréntesis). Fallback 📍."""
+    out: list[str] = []
+    for ch in (raw or "").strip():
+        if ch == " ":
+            break
+        # Símbolo pictográfico (categoría So) o continuador de emoji: VS16, ZWJ,
+        # tono de piel (U+1F3FB–FF) o indicador regional de bandera (U+1F1E6–FF).
+        if (unicodedata.category(ch) == "So"
+                or ch in ("️", "‍")  # VS16 (presentación emoji) · ZWJ (une secuencias)
+                or "\U0001F3FB" <= ch <= "\U0001F3FF"   # tonos de piel
+                or "\U0001F1E6" <= ch <= "\U0001F1FF"):  # indicadores regionales (banderas)
+            out.append(ch)
+        else:
+            break  # primer no-emoji (letra, dígito o puntuación) → fin del emoji guía
+    return "".join(out).strip("‍") or "\U0001F4CD"
+
+
+def _pois_de_intencion(texto: str | None, max_items: int = 3, max_m: int = 1500) -> list[dict]:
+    """`servicios_cercanos` (texto de OSM, ya curado por el corredor) → los POIs nombrados
+    MÁS CERCANOS y caminables, con minutos a pie. El diferenciador de la tarjeta: la
+    intención (qué hay cerca) visible CON proveniencia, lo que los portales no muestran.
+    v1 = más cercanos; el encaje contra la intención DECLARADA del usuario es la Fase 3
+    (tarea #8). Puro y degradable: sin servicios → lista vacía → la tarjeta no muestra chips.
+    Exige distancia > 0 (un '~0 m' es coordenada duplicada, no un dato creíble)."""
+    pois = [
+        p for p in parse_servicios(limpiar_texto_servicios(texto))
+        if p.get("visible") and p.get("distancia_m") is not None and 0 < p["distancia_m"] <= max_m
+    ]
+    pois.sort(key=lambda p: p["distancia_m"])
+    return [
+        {
+            "texto": p["visible"],
+            "distancia_m": p["distancia_m"],
+            "minutos": max(1, round(p["distancia_m"] / _M_POR_MINUTO)),
+            "emoji": _emoji_de(p["raw"]),
+        }
+        for p in pois[:max_items]
+    ]
+
+
 def _card_from_row(row: dict) -> dict:
     """Fila de DB → payload de tarjeta. Extrae specs y foto de `caracteristicas`."""
     car = row.get("caracteristicas")
@@ -138,7 +191,28 @@ def _card_from_row(row: dict) -> dict:
         "dormitorios": car.get("num_dormitorios"),
         "banos": car.get("num_banos"),
         "area_m2": car.get("area_total_m2"),
+        # ★ El diferenciador: POIs verificados más cercanos (la intención visible).
+        "pois": _pois_de_intencion(row.get("servicios_cercanos")),
     }
+
+
+async def _fetch_curaciones_batch(db, ids: list[str]) -> dict[str, list[dict]]:
+    """Curación del corredor (Catastro Vivo) para VARIOS activos en UNA query, agrupada
+    por activo_id. Defensiva: si la tabla aún no existe, devuelve {} → las tarjetas caen
+    al texto base sin curar (degradación aceptable, no error)."""
+    try:
+        rows = (await db.execute(
+            text("SELECT activo_id::text AS activo_id, accion, nombre, distancia_m "
+                 "FROM entorno_curacion WHERE activo_id::text = ANY(:ids) "
+                 "ORDER BY creado_en DESC"),
+            {"ids": ids},
+        )).mappings().all()
+    except Exception:  # noqa: BLE001 — tabla inexistente / error transitorio → sin overlay
+        return {}
+    out: dict[str, list[dict]] = {}
+    for r in rows:
+        out.setdefault(r["activo_id"], []).append(dict(r))
+    return out
 
 
 async def build_result_cards(messages) -> list[dict]:
@@ -154,6 +228,7 @@ async def build_result_cards(messages) -> list[dict]:
             a.tipo_activo,
             a.imagen_url,
             a.walk_score AS caminabilidad,
+            a.servicios_cercanos,
             a.caracteristicas,
             t.tipo_operacion AS operacion,
             t.precio
@@ -167,9 +242,17 @@ async def build_result_cards(messages) -> list[dict]:
     try:
         async with AsyncSessionLocal() as db:
             rows = (await db.execute(text(query), {"ids": ids})).mappings().all()
+            curaciones = await _fetch_curaciones_batch(db, ids)
     except Exception:  # noqa: BLE001 — sin tarjetas es degradación aceptable, no error
         return []
-    by_id = {r["id"]: dict(r) for r in rows}
+    by_id: dict[str, dict] = {}
+    for r in rows:
+        r = dict(r)
+        # Catastro Vivo: aplica el overlay del corredor (quita los POIs que marcó
+        # CERRADOS) ANTES de armar los chips, igual que la página de anuncio /a/{id}.
+        # Sin esto la tarjeta mostraría como "según el mapa" un negocio que ya cerró.
+        r["servicios_cercanos"] = aplicar_curacion(r.get("servicios_cercanos"), curaciones.get(r["id"], []))
+        by_id[r["id"]] = r
     return [_card_from_row(by_id[i]) for i in ids if i in by_id]
 
 

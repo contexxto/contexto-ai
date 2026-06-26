@@ -22,6 +22,9 @@ import sphereLogo from './assets/sphere.svg'
 
 // Carga diferida: MapLibre (pesado) solo se descarga al abrir el Mapa.
 const MapView = lazy(() => import('./MapView'))
+// Mapa Vivo (modo ZONA): la semilla de mapa que nace inline bajo la respuesta del
+// agente. Lazy → MapLibre solo se carga cuando aparece una semilla, no en el bundle base.
+const MapSeed = lazy(() => import('./MapSeed'))
 
 // ── Helpers ────────────────────────────────────────────────
 const SESSION_KEY = 'contexto_ai_session_id'
@@ -178,7 +181,7 @@ function ActBtn({ title, onClick, active, children }) {
   )
 }
 
-function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, isLast }) {
+function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onOpenMap, isLast }) {
   const isUser = msg.role === 'user'
   const sustancioso = !isUser && ((msg.toolCalls?.length > 0) || (msg.content?.length > 450))
   const [speaking, setSpeaking] = useState(false)
@@ -250,6 +253,12 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, isL
            paddingLeft = AVATAR_INDENT para alinear con el inicio del texto */}
       {!isUser && msg.results?.length > 0 && (
         <div style={{ paddingLeft: AVATAR_INDENT, width:'100%', boxSizing:'border-box' }}>
+          {/* ★ Mapa Vivo (modo ZONA): la semilla de mapa NACE en el hilo — los
+              resultados del turno leídos como espacio. Invitación viva que se abre
+              al mapa completo, no un botón del rail. (docs/SPEC_Mapa_Vivo.md) */}
+          <Suspense fallback={null}>
+            <MapSeed results={msg.results} onOpen={onOpenAnuncio} onExpand={onOpenMap} isLast={isLast} />
+          </Suspense>
           <ResultCards results={msg.results} onOpen={onOpenAnuncio} />
         </div>
       )}
@@ -1311,6 +1320,7 @@ export default function App() {
             isLast={i === messages.length - 1}
             onScrollTop={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
             onOpenAnuncio={setOpenAnuncioId}
+            onOpenMap={() => setView('map')}
             onShare={() => setShareOpen(true)} />
         ))}
 

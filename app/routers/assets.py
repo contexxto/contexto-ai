@@ -576,6 +576,78 @@ async def asset_rutas(
     return {"rutas": rutas or [], "disponible": rutas is not None}
 
 
+async def _pois_geo(lat: float, lon: float) -> list[dict]:
+    """POIs cercanos CON coordenadas para el Mapa Vivo (AURA-SINGLE): el inmueble leído
+    como espacio. Google Places en vivo (searchNearby por categoría, SIN routing — el
+    ruteo peatonal real es 2C). Degradable: sin key o ante fallo de Google → [] y el mapa
+    muestra solo el inmueble, nunca rompe el anuncio."""
+    key = settings.google_maps_api_key
+    if not key:
+        return []
+    try:
+        from app.rutas import _CAT_COLOR, _CAT_EMOJI, _servicios_con_coords
+        servicios = await _servicios_con_coords(lat, lon, key, n=6)
+    except Exception as e:  # noqa: BLE001 — Google caído/quota/timeout/import → sin pines, no rompas el anuncio
+        # Degradamos a [] (el mapa muestra solo el inmueble), pero NO en silencio: logueamos
+        # el tipo de fallo para que quota agotada / import roto sean visibles en producción.
+        import logging
+        logging.getLogger(__name__).warning("aura _pois_geo degradado a []: %s: %s", type(e).__name__, e)
+        return []
+    pois: list[dict] = []
+    for s in servicios:
+        if s.get("lat") is None or s.get("lon") is None:
+            continue
+        cat = s.get("cat")
+        dm = s.get("distancia_m")
+        pois.append({
+            "nombre": s.get("nombre"),
+            "lat": s["lat"],
+            "lon": s["lon"],
+            "distancia_m": dm,
+            # ~80 m/min, honesto: estimamos un poco de más, no de menos (igual que la tarjeta).
+            "minutos": max(1, round(dm / 80)) if dm else None,
+            "cat": cat,
+            "emoji": _CAT_EMOJI.get(cat, "\U0001F4CD"),
+            "color": _CAT_COLOR.get(cat, "#9C99AC"),
+            "fuente": "google",
+        })
+    return pois
+
+
+@router.get(
+    "/{activo_id}/aura",
+    summary="Mapa Vivo AURA-SINGLE: el inmueble + sus POIs cercanos con coordenadas",
+    description=(
+        "El inmueble re-centrado en su entorno + sus POIs cercanos CON lat/lon para "
+        "plotearlos en el mini-mapa del anuncio (modo AURA-SINGLE). Va SEPARADO de "
+        "/anuncio a propósito: el anuncio pinta al instante y este endpoint carga los "
+        "pines aparte, para que la latencia de Google Places no bloquee el primer paint. "
+        "Público (mismo criterio que /anuncio: el dueño puso un QR para que el público lo vea)."
+    ),
+)
+@limiter.limit("30/minute")
+async def asset_aura(
+    request: Request,
+    activo_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    row = (
+        await db.execute(
+            text("SELECT ST_Y(geom) AS lat, ST_X(geom) AS lon, tipo_activo "
+                 "FROM activos_inmutables WHERE id = :id"),
+            {"id": str(activo_id)},
+        )
+    ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inmueble no encontrado.")
+    # Público a propósito (igual que /anuncio): el dueño puso un QR para que el público lo vea;
+    # solo expone ESTE activo. Si en el futuro hay estados de visibilidad/archivado, filtrar aquí.
+    lat = float(row["lat"]) if row["lat"] is not None else None
+    lon = float(row["lon"]) if row["lon"] is not None else None
+    pois = await _pois_geo(lat, lon) if (lat is not None and lon is not None) else []
+    return {"lat": lat, "lon": lon, "tipo_activo": row["tipo_activo"], "pois": pois}
+
+
 @router.get(
     "/mine",
     summary="Mis publicaciones (inmuebles del usuario / su agencia)",

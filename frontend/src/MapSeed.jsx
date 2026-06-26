@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { MapPin, Maximize2 } from 'lucide-react'
@@ -17,8 +17,26 @@ const C = {
   line: 'rgba(45,189,182,.22)', panel: '#1E1D28',
 }
 
+// Coacciona a número SOLO si es numérico real: '' / null / 'abc' → NaN (se descartan).
+// Las coords vienen de PostGIS como números, pero un geom NULO puede llegar como ''/0.
+const aNum = (v) => {
+  if (typeof v === 'number') return v
+  if (typeof v === 'string' && v.trim() !== '') return Number(v)
+  return NaN
+}
+// Coordenada usable: finita, en rango terrestre, y NO el sentinel (0,0) "sin geo"
+// (un inmueble sin georreferencia caería en el golfo de Guinea y estiraría el encuadre).
+const coordOk = (lat, lon) =>
+  Number.isFinite(lat) && Number.isFinite(lon) &&
+  lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180 &&
+  !(lat === 0 && lon === 0)
+
+// Normaliza lat/lon a número y descarta lo no-geolocalizable. Devolver coords ya
+// numéricas evita además comparaciones string/number en `allSame`.
 const conGeo = (results) =>
-  (results || []).filter((r) => r && r.lat != null && r.lon != null)
+  (results || [])
+    .map((r) => (r ? { ...r, lat: aNum(r.lat), lon: aNum(r.lon) } : r))
+    .filter((r) => r && coordOk(r.lat, r.lon))
 
 // Firma del CONTENIDO (no solo el largo): re-inicia el mapa si cambian los pines,
 // no solo su cantidad. Evita markers/coords stale entre turnos del mismo componente.
@@ -31,7 +49,8 @@ const headerChip = {
   border: `1px solid ${C.line}`,
 }
 
-// Versión quieta (turnos NO-últimos): invita a abrir sin cargar MapLibre.
+// Versión quieta: turnos NO-últimos, o si el basemap no carga (CDN caído/bloqueado).
+// Invita a abrir el mapa completo sin dejar una caja oscura muerta.
 function MapChip({ n, onExpand }) {
   return (
     <button onClick={onExpand} title="Abrir el mapa de estos inmuebles"
@@ -56,10 +75,13 @@ export default function MapSeed({ results, onOpen, onExpand, isLast }) {
   // aunque el efecto no se re-ejecute (cierra la trampa de closure obsoleto).
   const onOpenRef = useRef(onOpen)
   onOpenRef.current = onOpen
+  // Degradación SOLO ante fallo real de carga del basemap (no por ausencia de 'load').
+  const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     if (!isLast || !pins.length || !containerRef.current) return
     let cancelled = false
+    setFailed(false)
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: DARK_STYLE,
@@ -75,35 +97,52 @@ export default function MapSeed({ results, onOpen, onExpand, isLast }) {
     // se pinta solo cuando llega. setTimeout (no rAF) → robusto ante throttling.
     const dibujar = () => {
       if (cancelled) return
-      map.resize()
-      const allSame = pins.every((p) => p.lat === pins[0].lat && p.lon === pins[0].lon)
-      if (pins.length === 1 || allSame) {
-        map.jumpTo({ center: [pins[0].lon, pins[0].lat], zoom: 14.5 })
-      } else {
-        const b = new maplibregl.LngLatBounds()
-        pins.forEach((p) => b.extend([p.lon, p.lat]))
-        map.fitBounds(b, { padding: 44, maxZoom: 15.5, duration: 0 })
+      // try/catch defensivo: conGeo ya sanea coords, pero una excepción síncrona de
+      // MapLibre (p.ej. LngLat inválida) no debe quedar sin capturar dentro del
+      // setTimeout → degrada al chip en vez de dejar una caja muerta.
+      try {
+        map.resize()
+        const allSame = pins.every((p) => p.lat === pins[0].lat && p.lon === pins[0].lon)
+        if (pins.length === 1 || allSame) {
+          map.jumpTo({ center: [pins[0].lon, pins[0].lat], zoom: 14.5 })
+        } else {
+          const b = new maplibregl.LngLatBounds()
+          pins.forEach((p) => b.extend([p.lon, p.lat]))
+          map.fitBounds(b, { padding: 44, maxZoom: 15.5, duration: 0 })
+        }
+        // Cada resultado = un pin con "aura" pulsante. Blanco táctil de 30px (el punto
+        // visible es 13px). Click → abre ese inmueble (via ref, nunca obsoleto).
+        pins.forEach((p) => {
+          const el = document.createElement('div')
+          el.className = 'ctx-aura-pin'
+          el.innerHTML = '<span class="ctx-aura-dot"></span>'
+          if (p.direccion) el.title = p.direccion
+          el.addEventListener('click', (e) => { e.stopPropagation(); onOpenRef.current?.(p.id) })
+          new maplibregl.Marker({ element: el }).setLngLat([p.lon, p.lat]).addTo(map)
+        })
+      } catch (err) {
+        if (!cancelled) { console.warn('[MapSeed] dibujar:', err?.message || err); setFailed(true) }
       }
-      // Cada resultado = un pin con "aura" pulsante. Blanco táctil de 30px (el punto
-      // visible es 13px). Click → abre ese inmueble (via ref, nunca obsoleto).
-      pins.forEach((p) => {
-        const el = document.createElement('div')
-        el.className = 'ctx-aura-pin'
-        el.innerHTML = '<span class="ctx-aura-dot"></span>'
-        if (p.direccion) el.title = p.direccion
-        el.addEventListener('click', (e) => { e.stopPropagation(); onOpenRef.current?.(p.id) })
-        new maplibregl.Marker({ element: el }).setLngLat([p.lon, p.lat]).addTo(map)
-      })
     }
     const t = setTimeout(dibujar, 60)   // tras el primer layout (contenedor con tamaño)
-    map.on('error', (e) => { if (!cancelled) console.warn('[MapSeed]', e?.error?.message || e) })
+    // Degradar al chip SOLO ante fallo de carga del basemap (CDN caído/bloqueado).
+    // La señal robusta: el estilo no llegó a cargar. Un tile 404 suelto NO degrada
+    // (los tiles se piden DESPUÉS de que el estilo carga, así que un error con el
+    // estilo aún sin cargar implica fallo de nivel-estilo, no un tile aislado).
+    // No reintroducimos el failTimer especulativo: la ausencia de 'load' (tab en
+    // background) NO es un error, y era justo el falso negativo que motivó el PR.
+    map.on('error', (e) => {
+      if (cancelled) return
+      console.warn('[MapSeed]', e?.error?.message || e)
+      if (!map.isStyleLoaded()) setFailed(true)
+    })
 
     return () => { cancelled = true; clearTimeout(t); map.remove() }
     // Re-inicia si pasa a ser el último turno o si cambia el CONTENIDO de los pines.
   }, [isLast, firma])  // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!pins.length) return null
-  if (!isLast) return <MapChip n={pins.length} onExpand={onExpand} />
+  if (!isLast || failed) return <MapChip n={pins.length} onExpand={onExpand} />
 
   return (
     <div style={{

@@ -1,6 +1,7 @@
 import asyncio
 import io
 import json
+import logging
 import uuid
 
 import segno
@@ -574,6 +575,141 @@ async def asset_rutas(
     from app.rutas import rutas_desde
     rutas = await rutas_desde(float(row["lat"]), float(row["lon"]), n=3)
     return {"rutas": rutas or [], "disponible": rutas is not None}
+
+
+async def _pois_geo(lat: float, lon: float) -> list[dict]:
+    """POIs cercanos CON coordenadas para el Mapa Vivo (AURA-SINGLE): el inmueble leído
+    como espacio. Google Places en vivo (searchNearby por categoría, SIN routing — el
+    ruteo peatonal real es 2C). Degradable: sin key o ante fallo de Google → [] y el mapa
+    muestra solo el inmueble, nunca rompe el anuncio."""
+    key = settings.google_maps_api_key
+    if not key:
+        return []
+    try:
+        from app.rutas import _CAT_COLOR, _CAT_EMOJI, _servicios_con_coords
+        servicios = await _servicios_con_coords(lat, lon, key, n=6)
+    except Exception as e:  # noqa: BLE001 — Google caído/quota/timeout/import → sin pines, no rompas el anuncio
+        # Degradamos a [] (el mapa muestra solo el inmueble), pero NO en silencio: logueamos
+        # el tipo de fallo para que quota agotada / import roto sean visibles en producción.
+        logging.getLogger(__name__).warning("aura _pois_geo degradado a []: %s: %s", type(e).__name__, e)
+        return []
+    pois: list[dict] = []
+    for s in servicios:
+        if s.get("lat") is None or s.get("lon") is None:
+            continue
+        cat = s.get("cat")
+        dm = s.get("distancia_m")
+        pois.append({
+            "nombre": s.get("nombre"),
+            "lat": s["lat"],
+            "lon": s["lon"],
+            "distancia_m": dm,
+            # ~80 m/min, honesto: estimamos un poco de más, no de menos (igual que la tarjeta).
+            "minutos": max(1, round(dm / 80)) if dm else None,
+            "cat": cat,
+            "emoji": _CAT_EMOJI.get(cat, "\U0001F4CD"),
+            "color": _CAT_COLOR.get(cat, "#9C99AC"),
+            "fuente": "google",
+        })
+    return pois
+
+
+# ── Caché de POIs del Mapa Vivo (AURA-SINGLE) ────────────────────────────────
+# _pois_geo hace ~7 llamadas a Google Places por inmueble. Como vive en
+# `activos_INMUTABLES` (su geom no cambia) y los servicios alrededor cambian lento,
+# cacheamos el resultado por activo_id con TTL largo → de "~7 llamadas Google por
+# VISTA del anuncio" a "~7 por inmueble cada N días". Hace AURA-SINGLE casi gratis.
+_AURA_CACHE_DDL = [
+    "CREATE TABLE IF NOT EXISTS aura_pois_cache ("
+    "  activo_id uuid PRIMARY KEY,"
+    "  pois jsonb NOT NULL,"
+    "  computed_at timestamptz NOT NULL DEFAULT now())",
+]
+_AURA_CACHE_TTL_DIAS = 30
+_aura_cache_ready = False
+
+
+async def ensure_aura_cache_table(db) -> None:
+    """Crea la tabla de caché si no existe (idempotente, una vez por proceso)."""
+    global _aura_cache_ready
+    if _aura_cache_ready:
+        return
+    for ddl in _AURA_CACHE_DDL:
+        await db.execute(text(ddl))
+    await db.commit()
+    _aura_cache_ready = True
+
+
+async def _pois_geo_cached(db, activo_id, lat: float, lon: float) -> list[dict]:
+    """POIs con coords, cacheados POR INMUEBLE. Lee la caché fresca (≤ TTL); si no hay
+    o expiró, computa vía Google y la rellena. Solo cachea resultados NO vacíos: un []
+    suele ser un fallo transitorio de Google, no 'sin servicios' → no lo congelamos N
+    días. Toda la caché es best-effort: si la BD falla, caemos a Google sin romper /aura."""
+    try:
+        await ensure_aura_cache_table(db)
+        hit = (await db.execute(
+            text("SELECT pois FROM aura_pois_cache "
+                 "WHERE activo_id = :id AND computed_at > now() - (:ttl * interval '1 day')"),
+            {"id": str(activo_id), "ttl": _AURA_CACHE_TTL_DIAS},
+        )).mappings().first()
+        if hit is not None:
+            pois = hit["pois"]
+            return json.loads(pois) if isinstance(pois, str) else pois
+    except Exception as e:  # noqa: BLE001 — caché caída / tabla no lista → recomputamos
+        # rollback OBLIGATORIO: un db.execute fallido deja la AsyncSession en transacción
+        # abortada; el commit del teardown de get_db reventaría con PendingRollbackError (→500).
+        await db.rollback()
+        logging.getLogger(__name__).warning("aura cache: lectura falló (%s: %s), recomputo", type(e).__name__, e)
+
+    pois = await _pois_geo(lat, lon)
+    if pois:  # no congelar un [] transitorio
+        try:
+            await db.execute(
+                text("INSERT INTO aura_pois_cache (activo_id, pois, computed_at) "
+                     "VALUES (:id, :pois::jsonb, now()) "
+                     "ON CONFLICT (activo_id) DO UPDATE "
+                     "SET pois = EXCLUDED.pois, computed_at = now()"),
+                {"id": str(activo_id), "pois": json.dumps(pois)},
+            )
+            await db.commit()
+        except Exception as e:  # noqa: BLE001 — fallo de escritura de caché no debe romper /aura
+            await db.rollback()  # limpia la transacción abortada (ver nota arriba)
+            logging.getLogger(__name__).warning("aura cache: escritura falló (%s: %s)", type(e).__name__, e)
+    return pois
+
+
+@router.get(
+    "/{activo_id}/aura",
+    summary="Mapa Vivo AURA-SINGLE: el inmueble + sus POIs cercanos con coordenadas",
+    description=(
+        "El inmueble re-centrado en su entorno + sus POIs cercanos CON lat/lon para "
+        "plotearlos en el mini-mapa del anuncio (modo AURA-SINGLE). Va SEPARADO de "
+        "/anuncio a propósito: el anuncio pinta al instante y este endpoint carga los "
+        "pines aparte, para que la latencia de Google Places no bloquee el primer paint. "
+        "Público (mismo criterio que /anuncio: el dueño puso un QR para que el público lo vea)."
+    ),
+)
+@limiter.limit("30/minute")
+async def asset_aura(
+    request: Request,
+    activo_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    row = (
+        await db.execute(
+            text("SELECT ST_Y(geom) AS lat, ST_X(geom) AS lon, tipo_activo "
+                 "FROM activos_inmutables WHERE id = :id"),
+            {"id": str(activo_id)},
+        )
+    ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inmueble no encontrado.")
+    # Público a propósito (igual que /anuncio): el dueño puso un QR para que el público lo vea;
+    # solo expone ESTE activo. Si en el futuro hay estados de visibilidad/archivado, filtrar aquí.
+    lat = float(row["lat"]) if row["lat"] is not None else None
+    lon = float(row["lon"]) if row["lon"] is not None else None
+    pois = await _pois_geo_cached(db, activo_id, lat, lon) if (lat is not None and lon is not None) else []
+    return {"lat": lat, "lon": lon, "tipo_activo": row["tipo_activo"], "pois": pois}
 
 
 @router.get(
@@ -1226,12 +1362,14 @@ async def edit_asset(
 
     # Si cambió la dirección → re-geocodificar (si falla, mantenemos coords previas).
     lat, lon = cur["lat"], cur["lon"]
+    geom_reubicado = False
     if direccion_cambio:
         geo = await _geocode(nueva_dir)
         if geo:
             lat, lon = geo
             sets.append("geom = ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)")
             params["lat"], params["lon"] = lat, lon
+            geom_reubicado = True
 
     if sets:
         await db.execute(
@@ -1270,6 +1408,19 @@ async def edit_asset(
             )
 
     await db.commit()
+
+    # Reubicado → la caché de POIs (Mapa Vivo AURA-SINGLE) quedó atada al punto VIEJO:
+    # invalidar para que /aura recompute en la nueva ubicación (la precisión verificada es el
+    # foso, no servir POIs de otra dirección). Best-effort y DESPUÉS del commit: el geom ya
+    # está persistido; si la tabla de caché aún no existe, el fallo no afecta la edición.
+    if geom_reubicado:
+        try:
+            await db.execute(text("DELETE FROM aura_pois_cache WHERE activo_id = :id"),
+                             {"id": str(activo_id)})
+            await db.commit()
+        except Exception as e:  # noqa: BLE001 — tabla aún no creada / error transitorio
+            await db.rollback()
+            logging.getLogger(__name__).warning("aura cache: invalidación tras reubicación falló (%s)", type(e).__name__)
 
     # 3) Si cambió la dirección, recalcular la capa base en segundo plano.
     if direccion_cambio:

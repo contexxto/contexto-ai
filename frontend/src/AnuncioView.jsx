@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import axios from 'axios'
 import {
   MapPin, MessageCircle, ShieldCheck, Footprints, Trees, Volume2,
@@ -6,6 +6,9 @@ import {
 } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import sphereLogo from './assets/sphere.svg'
+
+// Mapa Vivo AURA-SINGLE: lazy (arrastra MapLibre) → no engorda el bundle del anuncio.
+const AuraSingleMap = lazy(() => import('./AuraSingleMap'))
 
 const C = {
   bg: '#16151E', panel: '#1E1D28', teal: '#2DBDB6', tealHi: '#5EEAD4',
@@ -170,6 +173,12 @@ export default function AnuncioView({ id, onChat, onBack }) {
           {d.servicios_cercanos && (
             <div style={{ fontSize: '.78rem', color: C.muted, marginTop: 8 }}>📍 {d.servicios_cercanos}</div>
           )}
+
+          {/* Mapa Vivo — AURA-SINGLE: el inmueble re-centrado en su entorno, cálido.
+              Carga su propio /aura (no bloquea el primer paint del anuncio). */}
+          <Suspense fallback={null}>
+            <AuraSingleMap activoId={id} tipoActivo={d.tipo_activo} />
+          </Suspense>
 
           {/* Características */}
           {(distrib.length > 0 || AMB.some(([k]) => car[k]) || (car.amenidades_edificio || []).length > 0) && (

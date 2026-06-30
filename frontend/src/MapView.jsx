@@ -156,7 +156,7 @@ function agregarRutaAnimada(map, id, coords, color, dur = 950) {
   return [`${id}-glow`, id, `${id}-flow`]
 }
 
-export default function MapView() {
+export default function MapView({ seedIds } = {}) {
   const ref = useRef(null)
   const mapRef = useRef(null)
   const [count, setCount] = useState(null)
@@ -455,7 +455,14 @@ export default function MapView() {
       try {
         const res = await fetch(`${API_BASE}/api/v1/assets/geojson`, { headers: apiHeaders() })
         if (!res.ok) throw new Error('HTTP ' + res.status)
-        const geojson = await res.json()
+        let geojson = await res.json()
+        // El mapa es la TRADUCCIÓN de la conversación: si venimos de una semilla (modo
+        // ZONA), mostramos SOLO los inmuebles de ese turno (filtrados por id), nunca el
+        // catastro entero — la disciplina anti-portal: no replicar el muro de pines.
+        if (Array.isArray(seedIds) && seedIds.length) {
+          const set = new Set(seedIds.map(String))
+          geojson = { ...geojson, features: (geojson.features || []).filter((f) => set.has(String(f.properties?.id))) }
+        }
         setCount(geojson.features?.length ?? 0)
 
         map.addSource('activos', { type: 'geojson', data: geojson })
@@ -601,7 +608,10 @@ export default function MapView() {
         padding: '10px 14px', color: '#F0ECE6', fontSize: 12, fontFamily: "'Plus Jakarta Sans',sans-serif",
       }}>
         <div style={{ fontWeight: 700, marginBottom: 6 }}>
-          Catastro {count != null && <span style={{ color: '#A8A3B3', fontWeight: 400 }}>· {count} activos</span>}
+          {seedIds?.length ? 'Tu búsqueda' : 'Catastro'}
+          {count != null && <span style={{ color: '#A8A3B3', fontWeight: 400 }}>
+            {' · '}{count} {seedIds?.length ? (count === 1 ? 'inmueble' : 'inmuebles') : 'activos'}
+          </span>}
         </div>
         {[['BAJO', '#2DBDB6'], ['MEDIO', '#E5C06A'], ['ALTO', '#E0685A']].map(([k, c]) => (
           <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 7, margin: '3px 0' }}>

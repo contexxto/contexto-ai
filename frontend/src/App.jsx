@@ -395,6 +395,10 @@ export default function App() {
   const [copied, setCopied]       = useState(null)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const [view, setView] = useState('chat')  // 'chat' | 'review' | 'map'
+  // Mapa Vivo: ids del turno con que se abrió el mapa completo (modo ZONA). Si está set,
+  // el mapa muestra SOLO esos inmuebles (la traducción de la conversación); si es null,
+  // muestra el catastro completo (entrada desde el rail/barra). (docs/SPEC_Mapa_Vivo.md)
+  const [mapSeed, setMapSeed] = useState(null)
   // QR (/a/{id}) → primero la página de anuncio (la "puerta"); el chat con el agente
   // (runtime propio) se abre solo al tocar el CTA. No arrancamos en el informe.
   const [anuncioMode, setAnuncioMode] = useState(!!deepLinkId)
@@ -1157,7 +1161,10 @@ export default function App() {
               Cargando mapa…
             </div>
           }>
-            <MapView />
+            {/* key por seed → fuerza re-montar MapView cuando cambia el conjunto (de una
+                semilla a otra, o a catastro completo): el filtro del geojson se aplica al
+                montar, así que el remonte garantiza que nunca muestre un set stale. */}
+            <MapView key={mapSeed ? mapSeed.join(',') : 'all'} seedIds={mapSeed} />
           </Suspense>
         </div>
       </div>
@@ -1177,7 +1184,7 @@ export default function App() {
           onLogin={() => setAuthOpen(true)}
           onLogout={logout}
           onPublish={() => (authEnabled && session) ? setPublishOpen(true) : setAuthOpen(true)}
-          onMap={() => setView('map')}
+          onMap={() => { setMapSeed(null); setView('map') }}
           onReview={() => setView('review')}
           onCRM={abrirCRM}
           onUpgrade={() => setUpgradeOpen(true)}
@@ -1197,7 +1204,7 @@ export default function App() {
               onLogin={() => { setAuthOpen(true); setSidebarOpen(false) }}
               onLogout={logout}
               onPublish={() => { (authEnabled && session) ? setPublishOpen(true) : setAuthOpen(true); setSidebarOpen(false) }}
-              onMap={() => { setView('map'); setSidebarOpen(false) }}
+              onMap={() => { setMapSeed(null); setView('map'); setSidebarOpen(false) }}
               onReview={() => { setView('review'); setSidebarOpen(false) }}
               onCRM={abrirCRM}
               onUpgrade={() => { setUpgradeOpen(true); setSidebarOpen(false) }}
@@ -1338,7 +1345,7 @@ export default function App() {
             isLast={i === messages.length - 1}
             onScrollTop={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
             onOpenAnuncio={setOpenAnuncioId}
-            onOpenMap={() => setView('map')}
+            onOpenMap={(ids) => { setMapSeed(Array.isArray(ids) && ids.length ? ids : null); setView('map') }}
             onShare={() => setShareOpen(true)} />
         ))}
 

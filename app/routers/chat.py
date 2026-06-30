@@ -196,6 +196,11 @@ def _card_from_row(row: dict) -> dict:
         "area_m2": car.get("area_total_m2"),
         # ★ El diferenciador: POIs verificados más cercanos (la intención visible).
         "pois": _pois_de_intencion(row.get("servicios_cercanos")),
+        # Verificación del entorno por el corredor (Catastro Vivo). El pin del Mapa Vivo
+        # (modo ZONA) lo pinta como halo SÓLIDO (verificado) vs suave ("según el mapa").
+        # Es el eje HALO del pin-anillo; el eje ARCO (encaje a la intención) es la tarea
+        # #8 y aquí NO se inventa. Honesto: solo se enciende si hay curación real.
+        "fresco": bool(row.get("fresco")),
     }
 
 
@@ -253,10 +258,14 @@ async def build_result_cards(messages) -> list[dict]:
     by_id: dict[str, dict] = {}
     for r in rows:
         r = dict(r)
+        cur = curaciones.get(r["id"], [])
         # Catastro Vivo: aplica el overlay del corredor (quita los POIs que marcó
         # CERRADOS) ANTES de armar los chips, igual que la página de anuncio /a/{id}.
         # Sin esto la tarjeta mostraría como "según el mapa" un negocio que ya cerró.
-        r["servicios_cercanos"] = aplicar_curacion(r.get("servicios_cercanos"), curaciones.get(r["id"], []))
+        r["servicios_cercanos"] = aplicar_curacion(r.get("servicios_cercanos"), cur)
+        # Mapa Vivo (modo ZONA): el pin codifica VERIFICACIÓN. `fresco` = el corredor
+        # tocó el entorno de este inmueble (cualquier curación = un humano lo revisó).
+        r["fresco"] = bool(cur)
         by_id[r["id"]] = r
     return [_card_from_row(by_id[i]) for i in ids if i in by_id]
 

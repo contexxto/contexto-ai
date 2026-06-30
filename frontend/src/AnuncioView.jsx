@@ -17,6 +17,15 @@ const C = {
 }
 
 const fmtUSD = (n) => '$' + Number(n).toLocaleString('es-EC')
+// El tráfico es una ESTIMACIÓN heurística, no una medición con instrumento → se muestra
+// REDONDEADO a miles ("~18 mil veh/día"), NUNCA con falsa precisión ("18.400"). La honestidad
+// se arregla en la CAPA DE RENDER, no pidiéndosela al agente (CLAUDE.md: la honestidad del
+// output se arregla en los datos). Misma regla que el prompt del agente (≈18 mil, no 18.400).
+const fmtTrafico = (v) => {
+  const n = Number(v)
+  if (!Number.isFinite(n) || n <= 0) return null
+  return n >= 1000 ? `~${Math.round(n / 1000)} mil veh/día` : `~${Math.round(n / 100) * 100} veh/día`
+}
 const AMB = [
   ['amoblado', 'Amoblado'], ['sala', 'Sala'], ['comedor', 'Comedor'], ['estudio', 'Estudio'],
   ['cuarto_servicio', 'Cuarto de servicio'], ['balcon', 'Balcón'], ['terraza', 'Terraza'],
@@ -159,9 +168,9 @@ export default function AnuncioView({ id, onChat, onBack }) {
               <Stat icon={Volume2} val={d.scores.ruido} unit="" label="Índice de ruido" color={C.gold} />
             )}
           </div>
-          {d.scores?.trafico ? (
+          {fmtTrafico(d.scores?.trafico) ? (
             <div style={{ fontSize: '.72rem', color: C.muted, marginTop: 8 }}>
-              🚗 Tráfico histórico estimado: ~{Number(d.scores.trafico).toLocaleString('es-EC')} veh/día
+              🚗 Tráfico histórico estimado: {fmtTrafico(d.scores.trafico)}
             </div>
           ) : null}
           {d.conectividad && (

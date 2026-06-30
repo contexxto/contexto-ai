@@ -1,3 +1,4 @@
+import { useRef, useEffect } from 'react'
 import { MapPin, BedDouble, Bath, Ruler, Footprints, ChevronRight } from 'lucide-react'
 import sphereLogo from './assets/sphere.svg'
 
@@ -29,7 +30,7 @@ function Spec({ icon: Icon, val, unit }) {
   )
 }
 
-function ResultCard({ r, onOpen }) {
+function ResultCard({ r, onOpen, activeId, onActive }) {
   const precio = precioTexto(r)
   const specs = [
     [BedDouble, r.dormitorios, ''],
@@ -37,17 +38,27 @@ function ResultCard({ r, onOpen }) {
     [Ruler, r.area_m2, 'm²'],
   ].filter(([, v]) => v != null && v !== '')
 
+  // Sync lista⇄mapa: la tarjeta se resalta si su pin (o ella misma) tiene el hover. El
+  // deslizamiento al centro lo hace ResultCards (solo cuando el origen es el mapa) — aquí
+  // NO usamos scrollIntoView (arrastraba la página verticalmente y se auto-deslizaba bajo
+  // el cursor en el hover directo de la propia tarjeta).
+  const activa = activeId != null && activeId === r.id
+
   return (
     <button
+      data-id={r.id}
       onClick={() => onOpen?.(r.id)}
+      onMouseEnter={() => onActive?.(r.id, 'card')}
+      onMouseLeave={() => onActive?.(null)}
       style={{
         flex: '0 0 auto', width: 230, scrollSnapAlign: 'start', textAlign: 'left',
-        background: C.panel, border: `1px solid ${C.line}`, borderRadius: 16,
+        background: C.panel, border: `1px solid ${activa ? C.teal : C.line}`, borderRadius: 16,
         overflow: 'hidden', cursor: 'pointer', padding: 0, color: C.text,
-        display: 'flex', flexDirection: 'column', transition: 'border-color .14s, transform .14s',
+        display: 'flex', flexDirection: 'column',
+        transform: activa ? 'translateY(-2px)' : 'none',
+        boxShadow: activa ? '0 6px 20px rgba(45,189,182,.25)' : 'none',
+        transition: 'border-color .14s, transform .14s, box-shadow .14s',
       }}
-      onMouseEnter={(e) => { e.currentTarget.style.borderColor = C.teal; e.currentTarget.style.transform = 'translateY(-2px)' }}
-      onMouseLeave={(e) => { e.currentTarget.style.borderColor = C.line; e.currentTarget.style.transform = 'none' }}
     >
       {/* Foto */}
       <div style={{ position: 'relative', width: '100%', aspectRatio: '16 / 10',
@@ -121,13 +132,31 @@ function ResultCard({ r, onOpen }) {
   )
 }
 
-export default function ResultCards({ results, onOpen }) {
+export default function ResultCards({ results, onOpen, activeId, activeOrigin, onActive }) {
+  const scrollerRef = useRef(null)
+  // Sync lista⇄mapa: cuando el inmueble se activa DESDE EL MAPA, centra su tarjeta en el
+  // carrusel. Solo scroll HORIZONTAL del propio contenedor (vía scrollLeft) — nunca toca
+  // la página ni el chat (scrollIntoView sí recorría los ancestros y daba saltos verticales).
+  useEffect(() => {
+    if (activeId == null || activeOrigin !== 'map') return
+    const cont = scrollerRef.current
+    if (!cont) return
+    const el = cont.querySelector(`[data-id="${CSS.escape(String(activeId))}"]`)
+    if (!el) return
+    const cRect = cont.getBoundingClientRect()
+    const eRect = el.getBoundingClientRect()
+    const delta = (eRect.left + eRect.width / 2) - (cRect.left + cRect.width / 2)
+    cont.scrollTo({ left: cont.scrollLeft + delta, behavior: 'smooth' })
+  }, [activeId, activeOrigin])
+
   if (!results?.length) return null
   return (
     <div style={{ marginTop: 12, marginBottom: 4 }}>
-      <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 8,
+      <div ref={scrollerRef} style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 8,
                     scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}>
-        {results.map((r) => <ResultCard key={r.id} r={r} onOpen={onOpen} />)}
+        {results.map((r) => (
+          <ResultCard key={r.id} r={r} onOpen={onOpen} activeId={activeId} onActive={onActive} />
+        ))}
       </div>
       <div style={{ fontSize: '.7rem', color: C.muted, marginTop: 2, display: 'flex', alignItems: 'center', gap: 5 }}>
         <Footprints size={12} color={C.teal} />

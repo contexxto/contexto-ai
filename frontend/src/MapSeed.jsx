@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { MapPin, Maximize2 } from 'lucide-react'
@@ -113,15 +113,28 @@ function Leyenda({ algunoFresco }) {
   )
 }
 
-export default function MapSeed({ results, onOpen, onExpand, isLast }) {
-  const pins = conGeo(results)
-  const firma = firmaPines(pins)
-  const algunoFresco = pins.some((p) => p.fresco)
+export default function MapSeed({ results, onOpen, onExpand, isLast, activeId, onActive }) {
+  // Memoizados: el sync re-renderiza este componente en cada hover; sin memo, conGeo y
+  // firmaPines correrían O(n) por cada movimiento del ratón. Con memo, `firma` queda
+  // estable y el efecto de dibujo ([isLast, firma]) NO se re-dispara al resaltar.
+  const pins = useMemo(() => conGeo(results), [results])
+  const firma = useMemo(() => firmaPines(pins), [pins])
+  const algunoFresco = useMemo(() => pins.some((p) => p.fresco), [pins])
+  // Sync lista⇄mapa: el inmueble resaltado (hover de un pin o de su tarjeta).
+  const activo = useMemo(() => pins.find((p) => p.id === activeId) || null, [pins, activeId])
   const containerRef = useRef(null)
-  // onOpen por ref → el handler del marker siempre llama a la versión actual,
-  // aunque el efecto no se re-ejecute (cierra la trampa de closure obsoleto).
+  // onOpen / onActive por ref → el handler del marker siempre llama a la versión actual,
+  // aunque el efecto de dibujo no se re-ejecute (cierra la trampa de closure obsoleto).
   const onOpenRef = useRef(onOpen)
   onOpenRef.current = onOpen
+  const onActiveRef = useRef(onActive)
+  onActiveRef.current = onActive
+  // activeId por ref → al (re)dibujar los marcadores aplicamos .activo de inmediato, sin
+  // depender de que el efecto de resaltado corra después (los markers nacen a +60ms).
+  const activeIdRef = useRef(activeId)
+  activeIdRef.current = activeId
+  // Marcadores DOM por id → para resaltar el pin activo SIN re-montar el mapa.
+  const markersRef = useRef({})
   // Degradación SOLO ante fallo real de carga del basemap (no por ausencia de 'load').
   const [failed, setFailed] = useState(false)
 
@@ -170,19 +183,31 @@ export default function MapSeed({ results, onOpen, onExpand, isLast }) {
           el.className = 'ctx-zona-pin' + (p.fresco ? ' v' : '')
           const poi = badgeDe(p)
           // Seguridad: a innerHTML solo entran poi.emoji (el backend lo restringe a
-          // grafemas emoji) y poi.minutos (número). El texto libre (poi.texto, dirección,
-          // de OSM/corredor) va SOLO a el.title — propiedad → texto plano, sin parseo
-          // HTML → sin vector XSS. Si algún día metes texto libre al innerHTML, escápalo.
+          // grafemas emoji) y poi.minutos (número). El texto libre (dirección, nombre del
+          // POI, de OSM/corredor) NO toca el DOM por innerHTML: se muestra en el caption
+          // (React, escapado) y se enlaza por id → sin vector XSS.
           const lbl = poi
             ? `<span class="ctx-zona-lbl">${poi.emoji || '📍'}${poi.minutos != null ? ' ' + poi.minutos + ' min' : ''}</span>`
             : ''
           el.innerHTML = `<span class="ctx-zona-dot"></span>${lbl}`
-          const tip = []
-          if (p.direccion) tip.push(p.direccion)
-          if (poi) tip.push(`${poi.emoji || ''} ${poi.texto} · a ~${poi.distancia_m} m a pie`.trim())
-          tip.push(p.fresco ? 'Entorno verificado por el corredor' : 'Entorno según el mapa (OpenStreetMap)')
-          el.title = tip.join(' — ')
+          // a11y: el pin es clickable; sin el title nativo necesita texto accesible. El
+          // aria-label va por setAttribute (texto plano, sin innerHTML → sin XSS) y reemplaza
+          // lo que daba el title, ahora también legible por lector de pantalla.
+          el.setAttribute('role', 'button')
+          const aria = [p.direccion || p.tipo_activo || 'Inmueble']
+          if (poi) aria.push(`${poi.texto} a ~${poi.minutos} min a pie`)
+          aria.push(p.fresco ? 'entorno verificado por el corredor' : 'entorno según el mapa')
+          el.setAttribute('aria-label', aria.join(', '))
+          // Sync lista⇄mapa: hover/leave del pin resalta su tarjeta (y al revés) y enciende
+          // el caption capturable de abajo. Reemplaza al title nativo (que no se captura en
+          // un screenshot ni funciona al tacto). Click sigue abriendo el inmueble.
+          el.addEventListener('mouseenter', () => onActiveRef.current?.(p.id, 'map'))
+          el.addEventListener('mouseleave', () => onActiveRef.current?.(null))
           el.addEventListener('click', (e) => { e.stopPropagation(); onOpenRef.current?.(p.id) })
+          // Resalta de inmediato si este pin ya es el activo (re-dibujo con activeId vivo):
+          // evita el race en que el efecto de resaltado corre antes de existir el marcador.
+          if (p.id === activeIdRef.current) el.classList.add('activo')
+          markersRef.current[p.id] = el
           new maplibregl.Marker({ element: el }).setLngLat([p.lon, p.lat]).addTo(map)
         })
       } catch (err) {
@@ -205,9 +230,22 @@ export default function MapSeed({ results, onOpen, onExpand, isLast }) {
       if (!map.isStyleLoaded()) { clearTimeout(t); setFailed(true) }
     })
 
-    return () => { cancelled = true; clearTimeout(t); map.remove() }
+    return () => { cancelled = true; clearTimeout(t); map.remove(); markersRef.current = {} }
     // Re-inicia si pasa a ser el último turno o si cambia el CONTENIDO de los pines.
   }, [isLast, firma])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Resalta el pin activo (hover de pin o de tarjeta) SIN re-montar el mapa: alterna la
+  // clase .activo sobre los marcadores YA dibujados. El caso de re-dibujo (marcadores
+  // nuevos) lo cubre el dibujo mismo (aplica .activo al crear, vía activeIdRef), así que
+  // aquí basta depender de [activeId] para los cambios en vivo de hover.
+  useEffect(() => {
+    const m = markersRef.current
+    // Object.keys SIEMPRE da strings → normaliza activeId para no fallar si algún día los
+    // ids fueran numéricos (hoy son UUID string vía a.id::text). String(null)='null' no
+    // casa con ningún id real → apaga todos cuando no hay activo.
+    const sel = activeId == null ? null : String(activeId)
+    Object.keys(m).forEach((id) => { if (m[id]) m[id].classList.toggle('activo', id === sel) })
+  }, [activeId])
 
   if (!pins.length) return null
   if (!isLast || failed) return <MapChip n={pins.length} onExpand={onExpand} />
@@ -234,6 +272,28 @@ export default function MapSeed({ results, onOpen, onExpand, isLast }) {
             Ampliar <Maximize2 size={12} />
           </button>
         </div>
+        {/* Caption del inmueble activo — DOM real (se captura en un screenshot, funciona al
+            tacto y se puede estilizar), reemplaza al title nativo. La dirección viaja por
+            React (texto escapado), no por innerHTML. */}
+        {activo && (
+          <div style={{
+            position: 'absolute', left: 8, right: 8, bottom: 8, padding: '6px 11px', borderRadius: 10,
+            display: 'flex', alignItems: 'center', gap: 7, pointerEvents: 'none',
+            background: 'rgba(14,13,19,.82)', backdropFilter: 'blur(4px)',
+            border: `1px solid ${activo.fresco ? C.tealHi : C.line}`,
+            color: C.text, fontSize: '.72rem', fontWeight: 600,
+            boxShadow: '0 4px 16px rgba(0,0,0,.45)',
+          }}>
+            <span style={{ flexShrink: 0 }}>📍</span>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {activo.direccion || activo.tipo_activo || 'Inmueble'}
+            </span>
+            <span style={{ flexShrink: 0, marginLeft: 'auto', fontWeight: 700,
+                           color: activo.fresco ? C.tealHi : C.muted }}>
+              {activo.fresco ? '✓ verificado' : 'según el mapa'}
+            </span>
+          </div>
+        )}
         <style>{`
           /* blanco táctil de 30px (a11y/móvil) con el punto visible de 13px centrado;
              anchor center del Marker → el dot queda sobre la coord exacta. */
@@ -244,6 +304,7 @@ export default function MapSeed({ results, onOpen, onExpand, isLast }) {
           .ctx-zona-dot {
             width: 13px; height: 13px; border-radius: 50%; position: relative;
             background: ${C.tealHi}; box-shadow: 0 0 0 2px rgba(14,13,19,.7), 0 0 0 3px rgba(45,189,182,.22);
+            transition: transform .14s ease, box-shadow .14s ease;
           }
           /* "según el mapa" (no curado): anillo suave estático, sin pulso. Quieto = dato sin confirmar. */
           .ctx-zona-dot::after {
@@ -256,6 +317,13 @@ export default function MapSeed({ results, onOpen, onExpand, isLast }) {
           }
           .ctx-zona-pin.v .ctx-zona-dot::after {
             inset: -7px; border: 2px solid ${C.tealHi}; animation: ctxAuraPulse 2.4s ease-out infinite;
+          }
+          /* pin ACTIVO (sync con su tarjeta): se agranda y brilla, por encima del resto.
+             Va después de .v para ganar por orden de fuente (misma especificidad). */
+          .ctx-zona-pin.activo { z-index: 5; }
+          .ctx-zona-pin.activo .ctx-zona-dot {
+            transform: scale(1.3);
+            box-shadow: 0 0 0 2px rgba(14,13,19,.9), 0 0 0 5px ${C.tealHi}, 0 0 18px rgba(45,189,182,.85);
           }
           /* badge flotante a la derecha del dot — posición ABSOLUTA para NO descentrar
              el punto sobre la coord; pointer-events:none → el toque va al blanco de 30px. */

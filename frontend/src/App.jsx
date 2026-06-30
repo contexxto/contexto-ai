@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from 'react'
 import axios from 'axios'
 import {
   Send, MapPin, RefreshCw, Trash2, Copy, CheckCheck, ChevronDown, Menu, Mic, PanelLeft,
@@ -186,6 +186,22 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
   const sustancioso = !isUser && ((msg.toolCalls?.length > 0) || (msg.content?.length > 450))
   const [speaking, setSpeaking] = useState(false)
   const [feedback, setFeedback] = useState(null)  // 'up' | 'down' | null
+  // Sync lista⇄mapa (Mapa Vivo ZONA): {id, origen} del inmueble resaltado, compartido por
+  // MapSeed y ResultCards → hover en un pin resalta su tarjeta (y al revés). El `origen`
+  // ('map' | 'card') decide si el carrusel se desliza (solo cuando el hover viene del mapa,
+  // nunca por el hover de la propia tarjeta). Grace period: al salir (id=null) esperamos
+  // 120ms antes de apagar, para NO parpadear al cruzar el hueco mapa↔carrusel.
+  const [pinActivo, setPinActivo] = useState(null)
+  const limpiarPinRef = useRef(null)
+  const activarPin = (id, origen) => {
+    clearTimeout(limpiarPinRef.current)
+    if (id == null) limpiarPinRef.current = setTimeout(() => setPinActivo(null), 120)
+    else setPinActivo({ id, origen })
+  }
+  useEffect(() => () => clearTimeout(limpiarPinRef.current), [])
+  // renderMarkdown es caro; el sync re-renderiza este Message en cada hover. Memoizamos el
+  // HTML para re-parsear SOLO cuando cambia el contenido, no en cada movimiento del ratón.
+  const htmlContent = useMemo(() => (isUser ? '' : renderMarkdown(msg.content)), [isUser, msg.content])
 
   const toggleSpeak = () => {
     const synth = window.speechSynthesis
@@ -235,7 +251,7 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
             ) : (
               <div
                 className="ai-content"
-                dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }}
+                dangerouslySetInnerHTML={{ __html: htmlContent }}
               />
             )}
           </div>
@@ -257,9 +273,11 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
               resultados del turno leídos como espacio. Invitación viva que se abre
               al mapa completo, no un botón del rail. (docs/SPEC_Mapa_Vivo.md) */}
           <Suspense fallback={null}>
-            <MapSeed results={msg.results} onOpen={onOpenAnuncio} onExpand={onOpenMap} isLast={isLast} />
+            <MapSeed results={msg.results} onOpen={onOpenAnuncio} onExpand={onOpenMap} isLast={isLast}
+                     activeId={pinActivo?.id ?? null} onActive={activarPin} />
           </Suspense>
-          <ResultCards results={msg.results} onOpen={onOpenAnuncio} />
+          <ResultCards results={msg.results} onOpen={onOpenAnuncio} activeId={pinActivo?.id ?? null}
+                       activeOrigin={pinActivo?.origen ?? null} onActive={activarPin} />
         </div>
       )}
 

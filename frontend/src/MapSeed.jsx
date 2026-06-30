@@ -247,8 +247,12 @@ export default function MapSeed({ results, onOpen, onExpand, isLast, activeId, o
     Object.keys(m).forEach((id) => { if (m[id]) m[id].classList.toggle('activo', id === sel) })
   }, [activeId])
 
+  // "Ampliar" lleva al mapa completo SOLO los inmuebles de este turno (sus ids) → el
+  // mapa es la traducción de la conversación, no un volcado del catastro entero.
+  const abrir = () => onExpand?.(pins.map((p) => p.id))
+
   if (!pins.length) return null
-  if (!isLast || failed) return <MapChip n={pins.length} onExpand={onExpand} />
+  if (!isLast || failed) return <MapChip n={pins.length} onExpand={abrir} />
 
   return (
     <div>
@@ -266,7 +270,7 @@ export default function MapSeed({ results, onOpen, onExpand, isLast, activeId, o
           </span>
           {/* "Ampliar" es un botón real (no fall-through), para que abrir el mapa sea
               una acción explícita y no un toque accidental sobre la semilla. */}
-          <button onClick={(e) => { e.stopPropagation(); onExpand?.() }}
+          <button onClick={(e) => { e.stopPropagation(); abrir() }}
             title="Abrir el mapa completo"
             style={{ ...headerChip, gap: 6, cursor: 'pointer' }}>
             Ampliar <Maximize2 size={12} />

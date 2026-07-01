@@ -20,6 +20,21 @@ function precioTexto(r) {
   return fmtUSD(r.precio) + (esVenta ? '' : '/mes')
 }
 
+// Encaje relativo a la intención declarada (tarea #8). El score y sus razones vienen del
+// MOTOR determinístico del backend (app/encaje.py) sobre lo que el usuario PIDIÓ — nunca
+// sobre quién es (Fair Housing por construcción). Aquí solo lo pintamos; el color es del
+// grado de encaje, no un veredicto de idoneidad.
+const encajeTono = (s) =>
+  s == null ? null
+    : s >= 80 ? { dot: '#3FD99B', fg: '#8BF0C4' }
+    : s >= 55 ? { dot: '#E8B84B', fg: '#F2D27E' }
+    : { dot: '#E0685A', fg: '#F0A99E' }
+
+const cumpleTint = (c) =>
+  c === 'alto' ? { bg: 'rgba(63,217,155,.10)', bd: 'rgba(63,217,155,.30)', fg: '#8BF0C4' }
+    : c === 'parcial' ? { bg: 'rgba(232,184,75,.10)', bd: 'rgba(232,184,75,.30)', fg: '#F2D27E' }
+    : { bg: 'rgba(224,104,90,.10)', bd: 'rgba(224,104,90,.28)', fg: '#F0A99E' }
+
 function Spec({ icon: Icon, val, unit }) {
   if (val == null || val === '') return null
   return (
@@ -77,6 +92,16 @@ function ResultCard({ r, onOpen, activeId, onActive }) {
             {r.operacion}
           </span>
         )}
+        {/* Encaje contigo — el score del motor, glanceable arriba-derecha */}
+        {r.encaje != null && encajeTono(r.encaje) && (
+          <span style={{ position: 'absolute', top: 8, right: 8, display: 'inline-flex', alignItems: 'center',
+                         gap: 5, padding: '3px 9px', borderRadius: 999, fontSize: '.68rem', fontWeight: 800,
+                         background: 'rgba(14,13,19,.82)', color: encajeTono(r.encaje).fg, backdropFilter: 'blur(4px)' }}
+                title="Encaje con lo que pediste — calculado por nuestro motor sobre tus necesidades declaradas, no sobre quién eres.">
+            <span style={{ width: 7, height: 7, borderRadius: 999, background: encajeTono(r.encaje).dot }} />
+            {r.encaje}%
+          </span>
+        )}
         {/* Caminabilidad — la intención visible, con proveniencia */}
         {r.caminabilidad != null && (
           <span style={{ position: 'absolute', bottom: 8, left: 8, display: 'inline-flex', alignItems: 'center',
@@ -92,6 +117,33 @@ function ResultCard({ r, onOpen, activeId, onActive }) {
       <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
         {precio && (
           <div style={{ fontSize: '1.02rem', fontWeight: 800, color: C.tealHi, lineHeight: 1 }}>{precio}</div>
+        )}
+        {/* ★ Encaje contigo — el diferenciador de la tarea #8: el score + POR QUÉ (razones
+            dato+fuente del motor, jamás veredictos sobre la persona). Solo aparece si el
+            usuario declaró alguna necesidad; sin preferencias, encaje es null y no se pinta. */}
+        {r.encaje != null && encajeTono(r.encaje) && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '.8rem', fontWeight: 800,
+                          color: encajeTono(r.encaje).fg }}>
+              <span style={{ width: 8, height: 8, borderRadius: 999, background: encajeTono(r.encaje).dot }} />
+              {r.encaje}% encaje contigo
+            </div>
+            {r.encaje_razones?.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                {r.encaje_razones.slice(0, 2).map((z, i) => {
+                  const t = cumpleTint(z.cumple)
+                  return (
+                    <span key={i} title={z.texto}
+                      style={{ display: 'inline-flex', maxWidth: '100%', padding: '2px 8px', borderRadius: 999,
+                               fontSize: '.64rem', fontWeight: 600, background: t.bg, border: `1px solid ${t.bd}`,
+                               color: t.fg, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {z.texto}
+                    </span>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         )}
         {specs.length > 0 && (
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>

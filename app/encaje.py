@@ -59,18 +59,16 @@ def _clamp01(x: float) -> float:
 # donde se esperaba número). Lo no coaccionable → None = "sin dato": el motor NUNCA
 # revienta ni finge un dato; degrada honestamente. Núcleo Fair-Housing = jamás crashea.
 def _num(v):
-    """A float finito. Rechaza bool (True==1 no es un número declarado), NaN/inf y basura."""
+    """A float finito. Rechaza bool (True==1 no es un número declarado), NaN/inf y basura.
+    Acepta int/float/Decimal/str numérica — las señales pueden venir como Decimal de PostGIS
+    o como string de un scraper/LLM."""
     if isinstance(v, bool) or v is None:
         return None
-    if isinstance(v, (int, float)):
-        return float(v) if math.isfinite(v) else None
-    if isinstance(v, str):
-        try:
-            f = float(v.strip())
-        except ValueError:
-            return None
-        return f if math.isfinite(f) else None
-    return None
+    try:
+        f = float(v.strip() if isinstance(v, str) else v)
+    except (TypeError, ValueError):
+        return None
+    return f if math.isfinite(f) else None
 
 
 _BOOL_TRUE = {"true", "si", "sí", "yes", "y", "t", "1"}

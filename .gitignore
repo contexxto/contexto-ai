@@ -65,3 +65,7 @@ logo/deck-tmp/node_modules/
 # Obsidian: estado de layout/ventanas (ruido autogenerado, cambia con solo abrir notas).
 # El resto del config del vault (app/appearance/plugins) SÍ se versiona a propósito.
 **/.obsidian/workspace*.json
+
+# Tiles locales de Valhalla (docker-compose.valhalla.yml) — no versionar
+custom_files/
+cuña_demo_la_carolina.geojson

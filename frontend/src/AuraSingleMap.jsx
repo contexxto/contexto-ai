@@ -7,8 +7,10 @@ import { intentHue } from './intentHue'
 
 // Mapa Vivo — modo AURA-SINGLE. El inmueble re-centrado en SU entorno: nace cálido
 // (el "ya llegué", no el "estoy evaluando"). Pinta el inmueble como un aura que florece
-// en el hue de su propósito + sus POIs cercanos con tiempo a pie. Estático (sin isócrona/
-// routing — eso es 2C). Los POIs vienen con coords del endpoint /aura (Google en vivo).
+// en el hue de su propósito + sus POIs cercanos con tiempo a pie + su isócrona peatonal
+// REAL (motor propio, Valhalla — Ladrillo #7 del foso, ya no es "estático": el 2C que
+// este comentario esperaba ya existe). Los POIs vienen con coords del endpoint /aura
+// (Google en vivo); la isócrona viene del mismo endpoint, cacheada por inmueble.
 // (ver docs/SPEC_Mapa_Vivo.md "AURA-SINGLE" + "Temperatura emocional")
 //
 // Robustez heredada de MapSeed: la cámara y los markers DOM NO requieren el evento 'load'
@@ -32,7 +34,7 @@ const coordOk = (lat, lon) =>
 
 export default function AuraSingleMap({ activoId, tipoActivo }) {
   const containerRef = useRef(null)
-  const [data, setData] = useState(null)         // { lat, lon, pois }
+  const [data, setData] = useState(null)         // { lat, lon, pois, isocronas }
   const [estado, setEstado] = useState('loading') // loading | ready | vacio | error
   const [failed, setFailed] = useState(false)     // fallo de carga del basemap (CDN)
   const hue = intentHue(tipoActivo)
@@ -49,7 +51,12 @@ export default function AuraSingleMap({ activoId, tipoActivo }) {
         const pois = (Array.isArray(d?.pois) ? d.pois : [])
           .map((p) => ({ ...p, lat: aNum(p?.lat), lon: aNum(p?.lon) }))
           .filter((p) => coordOk(p.lat, p.lon))
-        setData({ lat, lon, pois })
+        // Isócronas (motor propio, Valhalla): contornos {minutos, geometry GeoJSON}.
+        // Degradable — sin Valhalla o inmueble aún sin batch, la lista viene vacía y
+        // el mapa simplemente no pinta el polígono (POIs + pin siguen mostrándose).
+        const isocronas = (Array.isArray(d?.isocronas) ? d.isocronas : [])
+          .filter((c) => c && c.geometry && Number.isFinite(c.minutos))
+        setData({ lat, lon, pois, isocronas })
         setEstado('ready')
       })
       .catch(() => { if (!cancelled) setEstado('error') })
@@ -59,7 +66,7 @@ export default function AuraSingleMap({ activoId, tipoActivo }) {
   // 2) Montaje del mapa cuando hay datos (mismo ciclo de vida robusto que MapSeed).
   useEffect(() => {
     if (estado !== 'ready' || !data || !containerRef.current) return
-    const { lat, lon, pois } = data
+    const { lat, lon, pois, isocronas } = data
     let cancelled = false
     setFailed(false)
     const map = new maplibregl.Map({
@@ -82,6 +89,40 @@ export default function AuraSingleMap({ activoId, tipoActivo }) {
           b.extend([lon, lat])
           cercanos.forEach((p) => b.extend([p.lon, p.lat]))
           map.fitBounds(b, { padding: 56, maxZoom: 15.5, duration: 0 })
+        }
+        // Isócrona peatonal (motor propio, Valhalla): el contorno MAYOR va debajo (se
+        // agrega primero → queda por debajo en el orden de pintado de MapLibre). Relleno
+        // translúcido + borde punteado en el hue del PROPÓSITO del inmueble (nunca teal
+        // frío aquí — AURA-SINGLE ya eligió, spec "Temperatura emocional"). A diferencia
+        // de la cámara/markers (DOM, no requieren el estilo listo), addSource/addLayer SÍ
+        // exige el estilo cargado — si aún no lo está (raro a los 60ms, pero posible en
+        // redes lentas), difiere a 'load' en vez de arriesgar una excepción que degrade
+        // TODO el mapa por culpa solo de la isócrona.
+        const pintarIsocronas = () => {
+          if (cancelled) return
+          try {
+            ;[...isocronas].sort((a, b) => b.minutos - a.minutos).forEach((c) => {
+              const id = `aura-iso-${c.minutos}`
+              if (map.getSource(id)) return
+              map.addSource(id, { type: 'geojson', data: { type: 'Feature', geometry: c.geometry } })
+              map.addLayer({
+                id: `${id}-fill`, type: 'fill', source: id,
+                paint: { 'fill-color': hue.accent, 'fill-opacity': c.minutos <= 15 ? 0.16 : 0.08 },
+              })
+              map.addLayer({
+                id: `${id}-line`, type: 'line', source: id,
+                paint: { 'line-color': hue.accent, 'line-width': 1.5, 'line-opacity': 0.65, 'line-dasharray': [2, 2] },
+              })
+            })
+          } catch (err) {
+            // Solo la isócrona se pierde; POIs + pin del inmueble (ya dibujados arriba,
+            // vía markers DOM) siguen en pie. No escala a `failed` del componente entero.
+            console.warn('[AuraSingle] isócrona no se pudo pintar:', err?.message || err)
+          }
+        }
+        if (isocronas.length) {
+          if (map.isStyleLoaded()) pintarIsocronas()
+          else map.once('load', pintarIsocronas)
         }
         // POIs: punto semántico (color por categoría) + etiqueta (emoji · min). DOM markers.
         pois.forEach((p) => {
@@ -160,6 +201,7 @@ export default function AuraSingleMap({ activoId, tipoActivo }) {
           </div>
           {pois.length > 0 && <PoiPills pois={pois} hue={hue} />}
           <div style={{ fontSize: '.66rem', color: C.muted, marginTop: 8 }}>
+            {(data?.isocronas?.length ?? 0) > 0 && <>🚶 Isócrona a pie: <b style={{ color: '#8A8694' }}>motor propio</b> · </>}
             📍 Pines según Google Maps · tiempos a pie estimados (~80 m/min, terreno plano)
           </div>
         </>

@@ -678,15 +678,53 @@ async def _pois_geo_cached(db, activo_id, lat: float, lon: float) -> list[dict]:
     return pois
 
 
+async def _isocronas_geo_cached(db, activo_id, lat: float | None, lon: float | None) -> list[dict]:
+    """Isócronas peatonales (15/30 min) CACHEADAS por inmueble, para AURA-SINGLE.
+
+    Mismo patrón que _pois_geo_cached: el batch (scripts/valhalla_isocronas_batch.py)
+    ya precomputó isocronas_inmueble para el inventario existente — lectura es gratis
+    (una query a PostGIS). Si el inmueble es nuevo (aún no pasó por el batch), hace UNA
+    llamada en vivo a Valhalla y la persiste, para que la próxima vista sea instantánea.
+    Degradable: sin Valhalla / sin coords → [] y el mini-mapa simplemente no pinta
+    isócronas (los POIs y el pin del inmueble igual se muestran)."""
+    try:
+        filas = (await db.execute(
+            text("SELECT minutos, ST_AsGeoJSON(geom)::json AS geometry "
+                 "FROM isocronas_inmueble WHERE activo_id = :id ORDER BY minutos"),
+            {"id": str(activo_id)},
+        )).mappings().all()
+        if filas:
+            return [{"minutos": f["minutos"], "geometry": f["geometry"]} for f in filas]
+    except Exception as e:  # noqa: BLE001 — tabla no lista / error transitorio
+        await db.rollback()  # limpia la transacción abortada (mismo motivo que _pois_geo_cached)
+        logging.getLogger(__name__).warning("aura isocronas: lectura falló (%s: %s)", type(e).__name__, e)
+
+    if lat is None or lon is None:
+        return []
+    from app.isocronas import guardar_isocronas_inmueble, isocrona
+    feats = await isocrona(lat, lon)  # None si Valhalla no responde → degrada a []
+    if not feats:
+        return []
+    try:
+        await guardar_isocronas_inmueble(db, activo_id, feats)
+        await db.commit()
+    except Exception as e:  # noqa: BLE001 — fallo de escritura no debe romper /aura
+        await db.rollback()
+        logging.getLogger(__name__).warning("aura isocronas: escritura falló (%s: %s)", type(e).__name__, e)
+    return feats
+
+
 @router.get(
     "/{activo_id}/aura",
     summary="Mapa Vivo AURA-SINGLE: el inmueble + sus POIs cercanos con coordenadas",
     description=(
-        "El inmueble re-centrado en su entorno + sus POIs cercanos CON lat/lon para "
-        "plotearlos en el mini-mapa del anuncio (modo AURA-SINGLE). Va SEPARADO de "
+        "El inmueble re-centrado en su entorno + sus POIs cercanos CON lat/lon e "
+        "isócronas peatonales (motor propio, Valhalla) para plotearlos en el mini-mapa "
+        "del anuncio (modo AURA-SINGLE, docs/SPEC_Mapa_Vivo.md). Va SEPARADO de "
         "/anuncio a propósito: el anuncio pinta al instante y este endpoint carga los "
-        "pines aparte, para que la latencia de Google Places no bloquee el primer paint. "
-        "Público (mismo criterio que /anuncio: el dueño puso un QR para que el público lo vea)."
+        "pines/isócronas aparte, para que la latencia de Google/Valhalla no bloquee el "
+        "primer paint. Público (mismo criterio que /anuncio: el dueño puso un QR para "
+        "que el público lo vea)."
     ),
 )
 @limiter.limit("30/minute")
@@ -709,7 +747,8 @@ async def asset_aura(
     lat = float(row["lat"]) if row["lat"] is not None else None
     lon = float(row["lon"]) if row["lon"] is not None else None
     pois = await _pois_geo_cached(db, activo_id, lat, lon) if (lat is not None and lon is not None) else []
-    return {"lat": lat, "lon": lon, "tipo_activo": row["tipo_activo"], "pois": pois}
+    isocronas = await _isocronas_geo_cached(db, activo_id, lat, lon) if (lat is not None and lon is not None) else []
+    return {"lat": lat, "lon": lon, "tipo_activo": row["tipo_activo"], "pois": pois, "isocronas": isocronas}
 
 
 @router.get(

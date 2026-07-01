@@ -316,7 +316,10 @@ export default function MapSeed({ results, mapSeed, onOpen, onExpand, isLast, ac
   return (
     <div>
       <div style={{
-        position: 'relative', height: 188, marginTop: 12, borderRadius: 16,
+        // 224px (antes 188): con varios inmuebles dispersos (o direcciones repetidas que
+        // agrupan pines), 188px se sentía apretado — la semilla necesita algo más de aire
+        // para leerse de un vistazo, sin llegar a competir con el mapa completo ("Ampliar").
+        position: 'relative', height: 224, marginTop: 12, borderRadius: 16,
         overflow: 'hidden', border: `1px solid ${C.line}`, background: '#0E0D13',
         // Fade-in del contenedor → el mapa nuevo APARECE (cross-fade sobre el turno anterior)
         // mientras la cámara vuela, en vez de un corte seco. (SPEC "transición como arribo").

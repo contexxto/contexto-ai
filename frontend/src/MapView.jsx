@@ -20,10 +20,14 @@ const RUIDO_COLOR = [
 // Coloreo por ENCAJE (SPEC_Mapa_Vivo: "colorea cada resultado por ENCAJE, no por precio").
 // Intensidad del MISMO teal (frío), NO un ramp rojo→verde: la magnitud la da el brillo, no un
 // juicio de valor cromático. 'sin dato' (encaje ausente → -1) = gris, no finge un encaje.
+// Piso de luminosidad: incluso un encaje bajo (ej. 4%) debe SEGUIR SIENDO UN PIN VISIBLE sobre
+// el basemap oscuro — que "bajo" case casi con el fondo (#0E0D13) se leía como "no hay nada
+// ahí", no como "esto encaja poco". La magnitud sigue siendo honesta (0% se ve más apagado que
+// 100%), pero nunca cae por debajo de un teal claramente perceptible.
 const ENCAJE_COLOR = [
   'interpolate', ['linear'], ['coalesce', ['get', 'encaje'], -1],
-  -1, '#4A4956',   // sin dato → gris
-  0, '#1C5450',    // encaje bajo → teal apagado
+  -1, '#6B6878',   // sin dato → gris, visible
+  0, '#3A8F89',    // encaje bajo → teal atenuado pero NUNCA casi-invisible
   50, '#2DBDB6',   // medio → teal de la marca
   100, '#5EEAD4',  // alto → teal brillante
 ]
@@ -533,17 +537,23 @@ export default function MapView({ seedIds, encajeById } = {}) {
         const COLOR = modoEncaje ? ENCAJE_COLOR : RUIDO_COLOR
 
         map.addSource('activos', { type: 'geojson', data: geojson })
-        // halo (aura)
+        // halo (aura). En modo encaje sube la opacidad/radio: sin esto, un encaje bajo (teal
+        // atenuado) se perdía contra el basemap oscuro — el pin debe LEERSE siempre, aunque
+        // encaje sea bajo; la magnitud la sigue dando el color/brillo, no la visibilidad.
         map.addLayer({
           id: 'activos-glow', type: 'circle', source: 'activos',
-          paint: { 'circle-radius': 16, 'circle-color': COLOR, 'circle-opacity': 0.12, 'circle-blur': 1 },
+          paint: { 'circle-radius': modoEncaje ? 18 : 16, 'circle-color': COLOR,
+                   'circle-opacity': modoEncaje ? 0.22 : 0.12, 'circle-blur': 1 },
         })
-        // punto
+        // punto — borde claro (no oscuro) en modo encaje: un stroke #0E0D13 se funde con el
+        // basemap oscuro y borra el contorno justo cuando el relleno ya es tenue.
         map.addLayer({
           id: 'activos-dot', type: 'circle', source: 'activos',
           paint: {
-            'circle-radius': 7, 'circle-color': COLOR,
-            'circle-stroke-width': 1.5, 'circle-stroke-color': '#0E0D13', 'circle-opacity': 0.95,
+            'circle-radius': modoEncaje ? 8 : 7, 'circle-color': COLOR,
+            'circle-stroke-width': modoEncaje ? 1.8 : 1.5,
+            'circle-stroke-color': modoEncaje ? 'rgba(240,236,230,.55)' : '#0E0D13',
+            'circle-opacity': 1,
           },
         })
 

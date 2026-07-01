@@ -233,7 +233,10 @@ export default function ResultCards({ results, onOpen, activeId, activeOrigin, o
   return (
     <div style={{ marginTop: 12, marginBottom: 4 }}>
       <div ref={scrollerRef} style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 8,
-                    scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}>
+                    paddingRight: 12, scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}>
+        {/* paddingRight: sin esto la ÚLTIMA tarjeta queda pegada al borde del scroller — se
+            ve "cortada" aunque técnicamente esté completa (su borde coincide con el borde del
+            contenedor, sin el margen de respiro que sí tienen las demás). */}
         {results.map((r) => (
           <ResultCard key={r.id} r={r} onOpen={onOpen} activeId={activeId} onActive={onActive}
                       seleccionado={seleccionComparar.includes(r.id)} onToggleComparar={onToggleComparar} />

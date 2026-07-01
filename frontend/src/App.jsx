@@ -183,7 +183,7 @@ function ActBtn({ title, onClick, active, children }) {
   )
 }
 
-function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onOpenMap, isLast, sessionId }) {
+function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onOpenMap, isLast, sessionId, mapBboxRef }) {
   const isUser = msg.role === 'user'
   const sustancioso = !isUser && ((msg.toolCalls?.length > 0) || (msg.content?.length > 450))
   const [speaking, setSpeaking] = useState(false)
@@ -295,7 +295,7 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
               al mapa completo, no un botón del rail. (docs/SPEC_Mapa_Vivo.md) */}
           <Suspense fallback={null}>
             <MapSeed results={msg.results} mapSeed={msg.mapSeed} onOpen={onOpenAnuncio} onExpand={onOpenMap}
-                     isLast={isLast} activeId={pinActivo?.id ?? null} onActive={activarPin} />
+                     isLast={isLast} activeId={pinActivo?.id ?? null} onActive={activarPin} bboxRef={mapBboxRef} />
           </Suspense>
           <ResultCards results={msg.results} onOpen={onOpenAnuncio} activeId={pinActivo?.id ?? null}
                        activeOrigin={pinActivo?.origen ?? null} onActive={activarPin}
@@ -435,6 +435,10 @@ export default function App() {
   // Encaje por-id del turno con el que se abrió el mapa full-screen → colorea los puntos por
   // ENCAJE (SPEC). null = sin preferencias / entrada por el rail → el mapa cae a color por ruido.
   const [mapEncaje, setMapEncaje] = useState(null)
+  // Handoff de cámara entre turnos (SPEC "arribo"): guarda el encuadre {center,zoom} del mapa
+  // vivo del turno anterior → el mapa del turno nuevo VUELA desde ahí. Ref único compartido (un
+  // solo mapa vivo a la vez); se resetea al cambiar de sesión (no volar desde un encuadre ajeno).
+  const mapBboxRef = useRef(null)
   // QR (/a/{id}) → primero la página de anuncio (la "puerta"); el chat con el agente
   // (runtime propio) se abre solo al tocar el CTA. No arrancamos en el informe.
   const [anuncioMode, setAnuncioMode] = useState(!!deepLinkId)
@@ -560,6 +564,7 @@ export default function App() {
           results: Array.isArray(m.results) ? m.results : [],
           mapSeed: m.map_seed || null,  // directiva de mapa del turno restaurado (SPEC_Mapa_Vivo)
         }))
+        mapBboxRef.current = null  // nueva sesión → el 1er mapa hace ease-in, no vuela desde otra
         setMessages(restored)
         const lastAi = [...restored].reverse().find(m => m.role === 'ai')
         lastAiRef.current = lastAi?.content || ''
@@ -1381,7 +1386,7 @@ export default function App() {
 
         {messages.map((msg, i) => (
           <Message key={msg.id} msg={msg} onCopy={handleCopy} copied={copied}
-            isLast={i === messages.length - 1} sessionId={sessionId}
+            isLast={i === messages.length - 1} sessionId={sessionId} mapBboxRef={mapBboxRef}
             onScrollTop={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
             onOpenAnuncio={setOpenAnuncioId}
             onOpenMap={(ids, encajeById) => {

@@ -125,7 +125,7 @@ function Leyenda({ algunoFresco, algunEncaje }) {
   )
 }
 
-export default function MapSeed({ results, mapSeed, onOpen, onExpand, isLast, activeId, onActive }) {
+export default function MapSeed({ results, mapSeed, onOpen, onExpand, isLast, activeId, onActive, bboxRef }) {
   // Memoizados: el sync re-renderiza este componente en cada hover; sin memo, conGeo y
   // firmaPines correrían O(n) por cada movimiento del ratón. Con memo, `firma` queda
   // estable y el efecto de dibujo ([isLast, firma]) NO se re-dispara al resaltar.
@@ -187,18 +187,30 @@ export default function MapSeed({ results, mapSeed, onOpen, onExpand, isLast, ac
       // setTimeout → degrada al chip en vez de dejar una caja muerta.
       try {
         map.resize()
+        // Cámara DESTINO del turno. Modo cálido (pocos/uno) → más cerca: el "arribo" del SPEC.
+        const PAD = { top: 40, right: 78, bottom: 30, left: 44 }  // badges se extienden a la derecha
         const allSame = pins.every((p) => p.lat === pins[0].lat && p.lon === pins[0].lon)
+        let target = null
         if (pins.length === 1 || allSame) {
-          // Modo cálido (pocos/uno) → cámara más cerca: el "arribo" del SPEC, se mira el aura.
-          map.jumpTo({ center: [pins[0].lon, pins[0].lat], zoom: warm ? 15.5 : 14.5 })
+          target = { center: [pins[0].lon, pins[0].lat], zoom: warm ? 15.5 : 14.5 }
         } else {
           const b = new maplibregl.LngLatBounds()
           pins.forEach((p) => b.extend([p.lon, p.lat]))
-          // Padding derecho mayor: los badges se extienden a la derecha del punto;
-          // sin holgura, el pin más al este se recortaría contra el borde.
-          map.fitBounds(b, { padding: { top: 40, right: 78, bottom: 30, left: 44 },
-                             maxZoom: warm ? 16.5 : 15.5, duration: 0 })
+          const cam = map.cameraForBounds(b, { padding: PAD, maxZoom: warm ? 16.5 : 15.5 })
+          if (cam) target = { center: cam.center, zoom: cam.zoom }
+          else map.fitBounds(b, { padding: PAD, maxZoom: warm ? 16.5 : 15.5, duration: 0 })  // fallback
         }
+        // ★ Handoff de cámara (SPEC "transición como ARRIBO"): arrancamos donde quedó el turno
+        // ANTERIOR (bboxRef compartido) y VOLAMOS al nuevo foco → la cámara se mueve ENTRE los
+        // mapas persistentes del hilo, no corta. Warm = vuelo más largo (el arribo); sin previo
+        // (primer turno) → ease-in suave. flyTo respeta prefers-reduced-motion (salta si aplica).
+        if (target) {
+          const from = bboxRef?.current
+          if (from) { map.jumpTo(from); map.flyTo({ ...target, duration: warm ? 1200 : 850, curve: 1.5 }) }
+          else map.easeTo({ ...target, duration: 600 })
+        }
+        // Recuerda el encuadre de ESTE turno para el vuelo del PRÓXIMO (continuidad del lente).
+        if (bboxRef) bboxRef.current = target || { center: map.getCenter(), zoom: map.getZoom() }
         // Cada resultado = un pin. El halo codifica VERIFICACIÓN (sólido pulsante =
         // verificado por el corredor; suave estático = según el mapa). El badge = el
         // POI más cercano con min a pie (la "intención visible"). Click → abre el
@@ -306,6 +318,9 @@ export default function MapSeed({ results, mapSeed, onOpen, onExpand, isLast, ac
       <div style={{
         position: 'relative', height: 188, marginTop: 12, borderRadius: 16,
         overflow: 'hidden', border: `1px solid ${C.line}`, background: '#0E0D13',
+        // Fade-in del contenedor → el mapa nuevo APARECE (cross-fade sobre el turno anterior)
+        // mientras la cámara vuela, en vez de un corte seco. (SPEC "transición como arribo").
+        animation: 'ctxMapIn .45s ease',
       }}>
         <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />
         <div style={{
@@ -366,6 +381,8 @@ export default function MapSeed({ results, mapSeed, onOpen, onExpand, isLast, ac
           .ctx-zona-pin.warm {
             border-radius: 50%;
             box-shadow: 0 0 18px 4px var(--warm-glow, rgba(232,184,75,.5));
+            /* El aura FLORECE al aterrizar (SPEC): el glow crece de 0 al valor final. */
+            animation: ctxWarmBloom .6s ease-out;
           }
           .ctx-zona-dot {
             width: 13px; height: 13px; border-radius: 50%; position: relative;
@@ -417,6 +434,17 @@ export default function MapSeed({ results, mapSeed, onOpen, onExpand, isLast, ac
           @keyframes ctxAuraPulse {
             0%   { transform: scale(.5); opacity: .85; }
             100% { transform: scale(1.9); opacity: 0; }
+          }
+          /* El mapa del turno APARECE (cross-fade sobre el anterior) mientras la cámara vuela. */
+          @keyframes ctxMapIn { from { opacity: 0; } to { opacity: 1; } }
+          /* El aura cálida FLORECE al aterrizar: el glow crece de 0 a su tamaño final. */
+          @keyframes ctxWarmBloom {
+            0%   { box-shadow: 0 0 0 0 var(--warm-glow, rgba(232,184,75,.5)); }
+            100% { box-shadow: 0 0 18px 4px var(--warm-glow, rgba(232,184,75,.5)); }
+          }
+          /* Respeta accesibilidad: sin animaciones si el sistema pide menos movimiento. */
+          @media (prefers-reduced-motion: reduce) {
+            .ctx-zona-pin.warm { animation: none; }
           }
         `}</style>
       </div>

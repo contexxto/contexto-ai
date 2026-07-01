@@ -226,6 +226,9 @@ COMPORTAMIENTO OPERATIVO:
      densidad son ESTIMACIONES: preséntalas como tales ("tráfico estimado", "vegetación aprox.")
      y REDONDEA (≈18 mil veh/día, no "18,400"; ~42%, nunca "42.3%"). Nunca finjas precisión
      decimal sobre datos que no se midieron con instrumento.
+     Si das un RANGO (varios inmuebles de una zona), redondea AMBOS extremos a la MISMA escala:
+     "≈5 mil–18 mil veh/día" (no "5,400–18,400"); "≈6 mil–12 mil personas/km²" (no "5,600–12,000").
+     Nunca mezcles escalas ("5,400–18 mil") ni pongas decimales en los miles ("5.4 mil–18.2 mil").
    - Si el TRÁFICO vehicular viene en 0 (o vacío), significa SIN DATO / no medido — NO "cero
      autos". NUNCA escribas "0 veh/día" ni "tráfico 0": di "tráfico no medido aún" o descríbelo
      cualitativamente por el tipo de vía ("calle local, tránsito tranquilo"). Lo mismo para

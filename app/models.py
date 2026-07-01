@@ -2,7 +2,19 @@ import uuid
 from datetime import datetime
 
 from geoalchemy2 import Geometry
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -99,6 +111,71 @@ class FichaTecnicaMantenimiento(Base):
             "estado_revision IN ('publicado', 'pendiente_revision', 'rechazado')",
             name="ck_ficha_estado_revision",
         ),
+    )
+
+
+class PoiPropio(Base):
+    """Capa propia de POIs (el foso): Overture Places (6 categorías) + OSM transporte.
+
+    La llena scripts/foso_pois_spike.py (Overture vía DuckDB/S3 anónimo + transporte vía
+    Overpass, sin API keys) y la consume app/rutas.py (_servicios_propios) como FUENTE
+    PRIMARIA del entorno, con Google solo de fallback por hueco. Es "catastro descargado",
+    no dato del usuario: no hay FK a activos_inmutables; la relación inmueble↔POI es
+    geoespacial en vivo (ST_DWithin). Ver docs/SPEC_Foso_Capa_de_Datos.md (Ladrillo #18).
+    """
+    __tablename__ = "pois_propios"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    nombre: Mapped[str | None] = mapped_column(Text, nullable=True)
+    categoria: Mapped[str] = mapped_column(Text, nullable=False)
+    categoria_overture: Mapped[str | None] = mapped_column(Text, nullable=True)
+    geom: Mapped[object] = mapped_column(Geometry(geometry_type="POINT", srid=4326), nullable=False)
+    fuente: Mapped[str] = mapped_column(Text, nullable=False, default="overture")
+    confianza: Mapped[float | None] = mapped_column(Float(precision=24), nullable=True)  # real (float4)
+    overture_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    osm_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    marca: Mapped[str | None] = mapped_column(Text, nullable=True)
+    direccion: Mapped[str | None] = mapped_column(Text, nullable=True)
+    operativo: Mapped[bool] = mapped_column(Boolean, default=True)
+    actualizado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "categoria IN ('salud','farmacia','supermercado','educacion',"
+            "'parque','centro_comercial','transporte')",
+            name="ck_pois_categoria",
+        ),
+        CheckConstraint("fuente IN ('overture','osm')", name="ck_pois_fuente"),
+    )
+
+
+class IsocronaInmueble(Base):
+    """Isócronas peatonales pre-computadas por inmueble (Ladrillo #7 del foso).
+
+    Motor: Valhalla auto-hospedado (/isochrone, costing=pedestrian). El inventario es
+    FIJO → se pre-computa UNA isócrona por (inmueble, minutos) y se cachea en PostGIS.
+    Habilita el overlay del Mapa Vivo 2C y la CUÑA de búsqueda por ancla+tiempo
+    (ST_Contains). Ver docs/SPEC_Foso_Capa_de_Datos.md (Ladrillo #7).
+    """
+    __tablename__ = "isocronas_inmueble"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    activo_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("activos_inmutables.id", ondelete="CASCADE"), nullable=False
+    )
+    minutos: Mapped[int] = mapped_column(Integer, nullable=False)  # 15 | 30
+    geom: Mapped[object] = mapped_column(
+        Geometry(geometry_type="MULTIPOLYGON", srid=4326), nullable=False
+    )
+    generado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint("minutos > 0 AND minutos <= 60", name="ck_isocrona_minutos"),
+        UniqueConstraint("activo_id", "minutos", name="uq_isocrona_activo_minutos"),
     )
 
 

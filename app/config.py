@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     # caemos automáticamente a OpenStreetMap (base persistible del catastro).
     google_maps_api_key: str = ""
 
+    # Valhalla auto-hospedado — isócronas peatonales propias (Ladrillo #7 del foso).
+    # Docker en :8002 con tiles de Ecuador. Si no responde, las isócronas degradan
+    # (el mapa no las pinta; la búsqueda por ancla cae a radio euclidiano).
+    valhalla_url: str = "http://localhost:8002"
+
     # URL pública del frontend (para los QR de los letreros inteligentes,
     # enlaces de "Mis publicaciones" y links de los emails). Dominio de marca.
     public_app_url: str = "https://contexxto.com"

@@ -47,9 +47,9 @@ const conGeo = (results) =>
     .map((r) => (r ? { ...r, lat: aNum(r.lat), lon: aNum(r.lon) } : r))
     .filter((r) => r && coordOk(r.lat, r.lon))
 
-// POI más cercano de la tarjeta (ya ordenados por cercanía en el backend) → el badge
-// del pin. Degradable: sin pois → null → el pin va sin etiqueta (solo el punto).
-const badgeDe = (r) => (Array.isArray(r?.pois) && r.pois.length ? r.pois[0] : null)
+// POI más cercano → el badge del pin. Acepta el pin de la DIRECTIVA (p.badge, ya es el POI
+// más cercano) o la tarjeta legacy (r.pois[0]). Degradable: sin badge → null (pin sin etiqueta).
+const badgeDe = (r) => r?.badge || (Array.isArray(r?.pois) && r.pois.length ? r.pois[0] : null)
 
 // Firma del CONTENIDO (no solo el largo): re-inicia el mapa si cambian los pines, su
 // verificación o su badge (POI más cercano), no solo su cantidad. Evita markers/halos/
@@ -124,11 +124,16 @@ function Leyenda({ algunoFresco, algunEncaje }) {
   )
 }
 
-export default function MapSeed({ results, onOpen, onExpand, isLast, activeId, onActive }) {
+export default function MapSeed({ results, mapSeed, onOpen, onExpand, isLast, activeId, onActive }) {
   // Memoizados: el sync re-renderiza este componente en cada hover; sin memo, conGeo y
   // firmaPines correrían O(n) por cada movimiento del ratón. Con memo, `firma` queda
   // estable y el efecto de dibujo ([isLast, firma]) NO se re-dispara al resaltar.
-  const pins = useMemo(() => conGeo(results), [results])
+  // El mapa es función de la DIRECTIVA (SPEC_Mapa_Vivo "MECANISMO ÚNICO"): los pines salen de
+  // mapSeed.pines cuando el backend la emite; fallback a results (historial previo a la directiva).
+  const pins = useMemo(() => {
+    const fuente = Array.isArray(mapSeed?.pines) && mapSeed.pines.length ? mapSeed.pines : results
+    return conGeo(fuente)
+  }, [mapSeed, results])
   const firma = useMemo(() => firmaPines(pins), [pins])
   const algunoFresco = useMemo(() => pins.some((p) => p.fresco), [pins])
   const algunEncaje = useMemo(() => pins.some((p) => p.encaje != null), [pins])
@@ -269,7 +274,12 @@ export default function MapSeed({ results, onOpen, onExpand, isLast, activeId, o
 
   // "Ampliar" lleva al mapa completo SOLO los inmuebles de este turno (sus ids) → el
   // mapa es la traducción de la conversación, no un volcado del catastro entero.
-  const abrir = () => onExpand?.(pins.map((p) => p.id))
+  // "Ampliar" lleva los ids + su ENCAJE por-id, para que el mapa full-screen coloree por
+  // encaje (SPEC), no por ruido. Solo los que tienen score (sin preferencias → sin encaje).
+  const abrir = () => onExpand?.(
+    pins.map((p) => p.id),
+    Object.fromEntries(pins.filter((p) => p.encaje != null).map((p) => [p.id, p.encaje])),
+  )
 
   if (!pins.length) return null
   if (!isLast || failed) return <MapChip n={pins.length} onExpand={abrir} />

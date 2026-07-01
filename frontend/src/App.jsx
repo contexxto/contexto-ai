@@ -26,6 +26,7 @@ const MapView = lazy(() => import('./MapView'))
 // Mapa Vivo (modo ZONA): la semilla de mapa que nace inline bajo la respuesta del
 // agente. Lazy → MapLibre solo se carga cuando aparece una semilla, no en el bundle base.
 const MapSeed = lazy(() => import('./MapSeed'))
+const CompararMap = lazy(() => import('./CompararMap'))
 
 // ── Helpers ────────────────────────────────────────────────
 const SESSION_KEY = 'contexto_ai_session_id'
@@ -293,16 +294,22 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
               resultados del turno leídos como espacio. Invitación viva que se abre
               al mapa completo, no un botón del rail. (docs/SPEC_Mapa_Vivo.md) */}
           <Suspense fallback={null}>
-            <MapSeed results={msg.results} onOpen={onOpenAnuncio} onExpand={onOpenMap} isLast={isLast}
-                     activeId={pinActivo?.id ?? null} onActive={activarPin} />
+            <MapSeed results={msg.results} mapSeed={msg.mapSeed} onOpen={onOpenAnuncio} onExpand={onOpenMap}
+                     isLast={isLast} activeId={pinActivo?.id ?? null} onActive={activarPin} />
           </Suspense>
           <ResultCards results={msg.results} onOpen={onOpenAnuncio} activeId={pinActivo?.id ?? null}
                        activeOrigin={pinActivo?.origen ?? null} onActive={activarPin}
                        seleccionComparar={comparar}
                        onToggleComparar={msg.results.length >= 2 ? toggleComparar : undefined} />
-          {/* Modo COMPARAR: panel de delta cuando hay 2 inmuebles marcados (⇄ en la tarjeta) */}
+          {/* Modo COMPARAR (2 inmuebles marcados con ⇄): las DOS AURAS superpuestas en el mapa
+              (SPEC — se VE el trade-off) + el delta dimensión-a-dimensión debajo. */}
           {comparar.length === 2 && (
-            <DeltaEncaje data={delta} loading={deltaLoading} onClose={() => setComparar([])} />
+            <>
+              <Suspense fallback={null}>
+                <CompararMap ids={comparar} cards={delta?.cards || []} onClose={() => setComparar([])} />
+              </Suspense>
+              <DeltaEncaje data={delta} loading={deltaLoading} onClose={() => setComparar([])} />
+            </>
           )}
         </div>
       )}
@@ -425,6 +432,9 @@ export default function App() {
   // el mapa muestra SOLO esos inmuebles (la traducción de la conversación); si es null,
   // muestra el catastro completo (entrada desde el rail/barra). (docs/SPEC_Mapa_Vivo.md)
   const [mapSeed, setMapSeed] = useState(null)
+  // Encaje por-id del turno con el que se abrió el mapa full-screen → colorea los puntos por
+  // ENCAJE (SPEC). null = sin preferencias / entrada por el rail → el mapa cae a color por ruido.
+  const [mapEncaje, setMapEncaje] = useState(null)
   // QR (/a/{id}) → primero la página de anuncio (la "puerta"); el chat con el agente
   // (runtime propio) se abre solo al tocar el CTA. No arrancamos en el informe.
   const [anuncioMode, setAnuncioMode] = useState(!!deepLinkId)
@@ -548,6 +558,7 @@ export default function App() {
           time: '',
           toolCalls: [],
           results: Array.isArray(m.results) ? m.results : [],
+          mapSeed: m.map_seed || null,  // directiva de mapa del turno restaurado (SPEC_Mapa_Vivo)
         }))
         setMessages(restored)
         const lastAi = [...restored].reverse().find(m => m.role === 'ai')
@@ -711,6 +722,8 @@ export default function App() {
           ? Array(data.tool_calls_made).fill('tool_called')
           : [],
         results: Array.isArray(data.results) ? data.results : [],
+        // Directiva de mapa del turno (SPEC_Mapa_Vivo): el mapa la interpreta. Puede ser null.
+        mapSeed: data.map_seed || null,
       }
       setMessages(prev => [...prev, aiMsg])
       lastAiRef.current = data.reply || ''
@@ -1190,7 +1203,7 @@ export default function App() {
             {/* key por seed → fuerza re-montar MapView cuando cambia el conjunto (de una
                 semilla a otra, o a catastro completo): el filtro del geojson se aplica al
                 montar, así que el remonte garantiza que nunca muestre un set stale. */}
-            <MapView key={mapSeed ? mapSeed.join(',') : 'all'} seedIds={mapSeed} />
+            <MapView key={mapSeed ? mapSeed.join(',') : 'all'} seedIds={mapSeed} encajeById={mapEncaje} />
           </Suspense>
         </div>
       </div>
@@ -1210,7 +1223,7 @@ export default function App() {
           onLogin={() => setAuthOpen(true)}
           onLogout={logout}
           onPublish={() => (authEnabled && session) ? setPublishOpen(true) : setAuthOpen(true)}
-          onMap={() => { setMapSeed(null); setView('map') }}
+          onMap={() => { setMapSeed(null); setMapEncaje(null); setView('map') }}
           onReview={() => setView('review')}
           onCRM={abrirCRM}
           onUpgrade={() => setUpgradeOpen(true)}
@@ -1230,7 +1243,7 @@ export default function App() {
               onLogin={() => { setAuthOpen(true); setSidebarOpen(false) }}
               onLogout={logout}
               onPublish={() => { (authEnabled && session) ? setPublishOpen(true) : setAuthOpen(true); setSidebarOpen(false) }}
-              onMap={() => { setMapSeed(null); setView('map'); setSidebarOpen(false) }}
+              onMap={() => { setMapSeed(null); setMapEncaje(null); setView('map'); setSidebarOpen(false) }}
               onReview={() => { setView('review'); setSidebarOpen(false) }}
               onCRM={abrirCRM}
               onUpgrade={() => { setUpgradeOpen(true); setSidebarOpen(false) }}
@@ -1371,7 +1384,11 @@ export default function App() {
             isLast={i === messages.length - 1} sessionId={sessionId}
             onScrollTop={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
             onOpenAnuncio={setOpenAnuncioId}
-            onOpenMap={(ids) => { setMapSeed(Array.isArray(ids) && ids.length ? ids : null); setView('map') }}
+            onOpenMap={(ids, encajeById) => {
+              setMapSeed(Array.isArray(ids) && ids.length ? ids : null)
+              setMapEncaje(encajeById && Object.keys(encajeById).length ? encajeById : null)
+              setView('map')
+            }}
             onShare={() => setShareOpen(true)} />
         ))}
 

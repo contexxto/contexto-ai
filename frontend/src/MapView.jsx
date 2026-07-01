@@ -17,6 +17,17 @@ const RUIDO_COLOR = [
   '#969CA6',
 ]
 
+// Coloreo por ENCAJE (SPEC_Mapa_Vivo: "colorea cada resultado por ENCAJE, no por precio").
+// Intensidad del MISMO teal (frío), NO un ramp rojo→verde: la magnitud la da el brillo, no un
+// juicio de valor cromático. 'sin dato' (encaje ausente → -1) = gris, no finge un encaje.
+const ENCAJE_COLOR = [
+  'interpolate', ['linear'], ['coalesce', ['get', 'encaje'], -1],
+  -1, '#4A4956',   // sin dato → gris
+  0, '#1C5450',    // encaje bajo → teal apagado
+  50, '#2DBDB6',   // medio → teal de la marca
+  100, '#5EEAD4',  // alto → teal brillante
+]
+
 // Chips de categoría (un toque = ilumina esa capa), estilo Google Maps.
 const CHIPS = [
   ['🚶', '15 min a pie', 'qué alcanzo a 15 minutos a pie'],
@@ -43,12 +54,17 @@ function popupHTML(p) {
     `<div style="font-size:11px;margin-top:6px"><span style="color:#5EEAD4;font-weight:700">${label}</span>
        <div style="color:#C9C6D6;line-height:1.5;margin-top:2px">${conTiempos(val)}</div></div>`
   const ruidoColor = { BAJO:'#2DBDB6', MEDIO:'#E5C06A', ALTO:'#E0685A' }[p.ruido] || '#969CA6'
+  // Encaje del turno (si el mapa vino coloreado por encaje) — el diferenciador visible.
+  const encajeChip = p.encaje != null
+    ? `<div style="display:inline-block;font-size:10px;font-family:'IBM Plex Mono',monospace;padding:1px 7px;border-radius:999px;background:rgba(94,234,212,.14);color:#5EEAD4;border:1px solid rgba(94,234,212,.4);margin:0 0 6px 5px">encaje ${p.encaje}%</div>`
+    : ''
   const verRutas = p.servicios_cercanos
     ? `<button class="ctx-rutas-btn" data-id="${p.id}" style="margin-top:9px;width:100%;padding:7px;border:none;border-radius:9px;cursor:pointer;font-weight:700;font-size:11.5px;background:linear-gradient(90deg,#1A7A76,#2DBDB6);color:#0E0D13">🚶 Ver rutas a pie</button>`
     : ''
   return `<div style="font-family:'Plus Jakarta Sans',sans-serif;min-width:230px;max-width:280px">
     <div style="font-weight:700;font-size:13px;color:#F0ECE6;margin-bottom:6px">${p.direccion || 'Activo'}</div>
-    <div style="display:inline-block;font-size:10px;font-family:'IBM Plex Mono',monospace;padding:1px 7px;border-radius:999px;background:rgba(45,189,182,.12);color:${ruidoColor};border:1px solid ${ruidoColor}55;margin-bottom:6px">ruido ${p.ruido || '—'}</div>
+    <div style="display:inline-block;font-size:10px;font-family:'IBM Plex Mono',monospace;padding:1px 7px;border-radius:999px;background:rgba(45,189,182,.12);color:${ruidoColor};border:1px solid ${ruidoColor}55;margin-bottom:6px">ruido ${p.ruido || '—'}</div>${encajeChip}
+    <div style="font-size:9.5px;color:#6E6A7A;margin:-2px 0 6px">ruido / vegetación: estimación por zona (heurístico), no medición</div>
     ${row('Tipo', p.tipo_activo)}
     ${row('Caminabilidad', p.walk_score != null ? p.walk_score + '/100' : null)}
     ${row('Cobertura vegetal', p.vegetacion != null ? p.vegetacion + '%' : null)}
@@ -170,7 +186,9 @@ function agregarRutaAnimada(map, id, coords, color, dur = 950) {
   return [`${id}-glow`, id, `${id}-flow`]
 }
 
-export default function MapView({ seedIds } = {}) {
+export default function MapView({ seedIds, encajeById } = {}) {
+  // ¿el turno trae encaje por-id? → el mapa colorea por ENCAJE (SPEC); si no, por ruido.
+  const modoEncaje = !!(encajeById && Object.keys(encajeById).length)
   const ref = useRef(null)
   const mapRef = useRef(null)
   const [count, setCount] = useState(null)
@@ -496,19 +514,27 @@ export default function MapView({ seedIds } = {}) {
           const set = new Set(seedIds.map(String))
           geojson = { ...geojson, features: (geojson.features || []).filter((f) => set.has(String(f.properties?.id))) }
         }
+        // Color por ENCAJE (SPEC): inyecta el score del turno por-id en cada feature; el dot
+        // se pinta por encaje (intensidad teal). Sin encaje del turno → coloreo por ruido.
+        if (modoEncaje) {
+          geojson = { ...geojson, features: (geojson.features || []).map((f) => ({
+            ...f, properties: { ...f.properties, encaje: encajeById[String(f.properties?.id)] ?? null },
+          })) }
+        }
         setCount(geojson.features?.length ?? 0)
+        const COLOR = modoEncaje ? ENCAJE_COLOR : RUIDO_COLOR
 
         map.addSource('activos', { type: 'geojson', data: geojson })
         // halo (aura)
         map.addLayer({
           id: 'activos-glow', type: 'circle', source: 'activos',
-          paint: { 'circle-radius': 16, 'circle-color': RUIDO_COLOR, 'circle-opacity': 0.12, 'circle-blur': 1 },
+          paint: { 'circle-radius': 16, 'circle-color': COLOR, 'circle-opacity': 0.12, 'circle-blur': 1 },
         })
         // punto
         map.addLayer({
           id: 'activos-dot', type: 'circle', source: 'activos',
           paint: {
-            'circle-radius': 7, 'circle-color': RUIDO_COLOR,
+            'circle-radius': 7, 'circle-color': COLOR,
             'circle-stroke-width': 1.5, 'circle-stroke-color': '#0E0D13', 'circle-opacity': 0.95,
           },
         })
@@ -630,7 +656,9 @@ export default function MapView({ seedIds } = {}) {
           <div>🟢 <b>Toca un inmueble</b> → sus datos + <b>🚶 rutas a pie</b> reales al Metro y servicios</div>
           <div style={{ marginTop: 5 }}>💬 <b>Háblale al mapa</b> (abajo): <i>"ruta al Metro"</i>, <i>"qué hay cerca"</i>, <i>"colegio más cercano"</i> → responde desde tu ubicación</div>
           <div style={{ marginTop: 5 }}>🎬 <b>"Recorre esta zona"</b> → un tour narrado de la zona donde estás</div>
-          <div style={{ marginTop: 5 }}>🎨 <b>Colores</b> = nivel de ruido (verde = tranquilo)</div>
+          <div style={{ marginTop: 5 }}>🎨 <b>Colores</b> = {modoEncaje
+            ? 'encaje con tu búsqueda (más brillante = mejor)'
+            : 'ruido estimado por zona (verde = tranquilo)'}</div>
         </div>
       )}
 
@@ -646,12 +674,22 @@ export default function MapView({ seedIds } = {}) {
             {' · '}{count} {seedIds?.length ? (count === 1 ? 'inmueble' : 'inmuebles') : 'activos'}
           </span>}
         </div>
-        {[['BAJO', '#2DBDB6'], ['MEDIO', '#E5C06A'], ['ALTO', '#E0685A']].map(([k, c]) => (
-          <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 7, margin: '3px 0' }}>
-            <span style={{ width: 10, height: 10, borderRadius: '50%', background: c }} />
-            <span style={{ color: '#A8A3B3' }}>Ruido {k}</span>
-          </div>
-        ))}
+        {modoEncaje
+          ? [['Encaje alto', '#5EEAD4'], ['Medio', '#2DBDB6'], ['Bajo', '#1C5450'], ['Sin dato', '#4A4956']].map(([k, c]) => (
+              <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 7, margin: '3px 0' }}>
+                <span style={{ width: 10, height: 10, borderRadius: '50%', background: c }} />
+                <span style={{ color: '#A8A3B3' }}>{k}</span>
+              </div>
+            ))
+          : [['BAJO', '#2DBDB6'], ['MEDIO', '#E5C06A'], ['ALTO', '#E0685A']].map(([k, c]) => (
+              <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 7, margin: '3px 0' }}>
+                <span style={{ width: 10, height: 10, borderRadius: '50%', background: c }} />
+                <span style={{ color: '#A8A3B3' }}>Ruido {k}</span>
+              </div>
+            ))}
+        {!modoEncaje && (
+          <div style={{ fontSize: 10, color: '#6E6A7A', marginTop: 2 }}>estimación por zona (heurístico)</div>
+        )}
         <div style={{ marginTop: 8, paddingTop: 7, borderTop: '1px solid #2E2D3A',
                       fontSize: 10, color: '#6E6A7A', lineHeight: 1.4 }}>
           Isócronas a pie: <b style={{ color: '#8A8694' }}>Valhalla (propio)</b> · Servicios/rutas: <b style={{ color: '#8A8694' }}>Google</b> · Caminabilidad: <b style={{ color: '#8A8694' }}>OpenStreetMap</b>

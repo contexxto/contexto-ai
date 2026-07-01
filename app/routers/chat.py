@@ -82,6 +82,11 @@ class ChatResponse(BaseModel):
     # spec): el chat es la entrada, las tarjetas son la salida visual. Salen de los
     # mismos resultados que vio el agente — no un texto aplanado.
     results: list[dict] = Field(default_factory=list)
+    # ★ Directiva de mapa (docs/SPEC_Mapa_Vivo.md "MECANISMO ÚNICO"): el mapa es función de
+    # ESTO — {modo, foco, capas, pines} — no de results planos. El backend RAZONA el foco
+    # espacial; el frontend RENDERIZA. Separa la capa de razonamiento de la visual, igual que
+    # results separa lo que ve el LLM de lo que renderiza la tarjeta. None si no hay pines geo.
+    map_seed: dict | None = None
 
 
 def _langgraph_config(session_id: str) -> dict:
@@ -360,6 +365,41 @@ async def build_result_cards(messages) -> list[dict]:
     return [_card_from_row(by_id[i], preferencias) for i in ids if i in by_id]
 
 
+def _map_seed_from_cards(cards: list[dict], modo: str = "zona") -> dict | None:
+    """Directiva de mapa (SPEC_Mapa_Vivo "MECANISMO ÚNICO") desde las cards del turno.
+
+    Para un turno de BÚSQUEDA el modo es "zona": encuadra la bbox de los resultados y pinta
+    cada pin por su ENCAJE + verificación. Los `pines` llevan SOLO lo que el mapa necesita
+    (coords, encaje, fresco, badge, dirección para el caption) — NO la foto/precio/specs (eso
+    es de la tarjeta): la misma separación razonamiento/visual que el SPEC pide para el mapa.
+    El pin NUNCA lleva precio (guardrail del SPEC). None si ningún resultado tiene coords."""
+    pines = [
+        {
+            "id": c["id"],
+            "lat": c.get("lat"),
+            "lon": c.get("lon"),
+            "encaje": c.get("encaje"),
+            "fresco": bool(c.get("fresco")),
+            "badge": (c["pois"][0] if c.get("pois") else None),
+            "direccion": c.get("direccion"),
+            "tipo_activo": c.get("tipo_activo"),
+        }
+        for c in cards
+        if c.get("lat") is not None and c.get("lon") is not None
+    ]
+    if not pines:
+        return None
+    lons = [p["lon"] for p in pines]
+    lats = [p["lat"] for p in pines]
+    bbox = [[min(lons), min(lats)], [max(lons), max(lats)]]  # [[minLon,minLat],[maxLon,maxLat]]
+    capas: list[str] = []
+    if any(p["encaje"] is not None for p in pines):
+        capas.append("encaje")
+    if any(p["fresco"] for p in pines):
+        capas.append("verificacion")
+    return {"modo": modo, "foco": {"bbox": bbox}, "capas": capas, "pines": pines}
+
+
 async def comparar_inmuebles(session_id: str, id_a: str, id_b: str) -> dict:
     """DELTA de encaje entre 2 inmuebles, contra las necesidades DECLARADAS del hilo.
 
@@ -500,12 +540,26 @@ async def chat(
 
     tool_calls = sum(1 for m in messages if hasattr(m, "type") and m.type == "tool")
     results = await build_result_cards(messages)
+    map_seed = _map_seed_from_cards(results)
+    # spatial_context VIVO (deja de ser placeholder muerto): persiste el foco del turno en el
+    # estado del agente para que la transición no pierda el encuadre. Best-effort: si el
+    # checkpointer falla, el turno igual responde (el mapa no depende de esta escritura).
+    if map_seed:
+        try:
+            await agent_graph.compiled_graph.aupdate_state(
+                config,
+                {"spatial_context": {"focus_mode": map_seed["modo"],
+                                     "bbox": map_seed["foco"]["bbox"], "capas": map_seed["capas"]}},
+            )
+        except Exception:  # noqa: BLE001 — persistir el foco es un extra; jamás rompe el chat
+            pass
 
     return ChatResponse(
         reply=reply,
         session_id=payload.session_id,
         tool_calls_made=tool_calls,
         results=results,
+        map_seed=map_seed,
     )
 
 
@@ -775,6 +829,7 @@ async def get_session_history(session_id: str):
                 "role": "assistant",
                 "content": m.content if isinstance(m.content, str) else str(m.content),
                 "results": results,
+                "map_seed": _map_seed_from_cards(results),  # directiva de mapa del turno restaurado
             })
             turn_tool_msgs = []
         elif isinstance(m, ToolMessage):

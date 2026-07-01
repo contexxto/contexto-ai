@@ -258,9 +258,10 @@ async def asset_investment(
     tx = (await db.execute(text(
         "SELECT precio FROM transacciones_temporales WHERE activo_id = :id "
         "ORDER BY fecha_publicacion DESC LIMIT 1"), {"id": str(activo_id)})).mappings().first()
-    car = row["caracteristicas"] or {}
+    car = row["caracteristicas"]
     if isinstance(car, str):
-        car = json.loads(car)
+        car = json.loads(car or "{}")
+    car = car if isinstance(car, dict) else {}  # jsonb no-objeto → {} (car.get nunca lanza)
     return analizar_inversion(
         direccion=row["direccion_estandarizada"], tipo_activo=row["tipo_activo"],
         precio=float(tx["precio"]) if tx and tx["precio"] is not None else None,
@@ -307,9 +308,10 @@ async def asset_anuncio(
     if not row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inmueble no encontrado.")
 
-    car = row["caracteristicas"] or {}
+    car = row["caracteristicas"]
     if isinstance(car, str):
         car = json.loads(car or "{}")
+    car = car if isinstance(car, dict) else {}  # jsonb no-objeto → {} (car.get nunca lanza)
 
     operacion = (row["operacion"] or "").lower() or None
     precio = float(row["precio"]) if row["precio"] is not None else None
@@ -801,7 +803,7 @@ async def my_assets(
         car = r["caracteristicas"]
         if isinstance(car, str):
             car = json.loads(car or "{}")
-        car = car or {}
+        car = car if isinstance(car, dict) else {}  # jsonb no-objeto → {} (car.get nunca lanza)
         fotos = car.get("fotos") or []
 
         ficha = None

@@ -11,6 +11,7 @@ import ConvierteteCorredor from './ConvierteteCorredor'
 import ShareConversation from './ShareConversation'
 import AnuncioView from './AnuncioView'
 import ResultCards from './ResultCards'
+import DeltaEncaje from './DeltaEncaje'
 
 // Headers (backend key + Bearer del usuario) centralizados en api.js
 import { API_BASE, apiHeaders, setAccessToken } from './api'
@@ -181,7 +182,7 @@ function ActBtn({ title, onClick, active, children }) {
   )
 }
 
-function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onOpenMap, isLast }) {
+function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onOpenMap, isLast, sessionId }) {
   const isUser = msg.role === 'user'
   const sustancioso = !isUser && ((msg.toolCalls?.length > 0) || (msg.content?.length > 450))
   const [speaking, setSpeaking] = useState(false)
@@ -199,6 +200,25 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
     else setPinActivo({ id, origen })
   }
   useEffect(() => () => clearTimeout(limpiarPinRef.current), [])
+  // Modo COMPARAR (tarea #21): hasta 2 inmuebles del turno → delta de encaje contra lo
+  // declarado. El número sale del motor DETERMINÍSTICO del backend (/comparar), no del LLM.
+  const [comparar, setComparar] = useState([])       // ids elegidos (máx 2)
+  const [delta, setDelta] = useState(null)           // {ok, delta, cards} | {ok:false,message} | null
+  const [deltaLoading, setDeltaLoading] = useState(false)
+  const toggleComparar = useCallback((id) => setComparar((prev) =>
+    prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id].slice(-2)), [])
+  const comparaKey = comparar.join('|')
+  useEffect(() => {
+    if (comparar.length !== 2) { setDelta(null); setDeltaLoading(false); return }
+    let cancel = false
+    setDeltaLoading(true); setDelta(null)
+    axios.post(`${API_BASE}/api/v1/chat/comparar`,
+      { session_id: sessionId, id_a: comparar[0], id_b: comparar[1] }, { headers: apiHeaders() })
+      .then(({ data }) => { if (!cancel) setDelta(data) })
+      .catch(() => { if (!cancel) setDelta({ ok: false, message: 'No pude comparar ahora mismo.' }) })
+      .finally(() => { if (!cancel) setDeltaLoading(false) })
+    return () => { cancel = true }
+  }, [comparaKey, sessionId])  // eslint-disable-line react-hooks/exhaustive-deps
   // renderMarkdown es caro; el sync re-renderiza este Message en cada hover. Memoizamos el
   // HTML para re-parsear SOLO cuando cambia el contenido, no en cada movimiento del ratón.
   const htmlContent = useMemo(() => (isUser ? '' : renderMarkdown(msg.content)), [isUser, msg.content])
@@ -277,7 +297,13 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
                      activeId={pinActivo?.id ?? null} onActive={activarPin} />
           </Suspense>
           <ResultCards results={msg.results} onOpen={onOpenAnuncio} activeId={pinActivo?.id ?? null}
-                       activeOrigin={pinActivo?.origen ?? null} onActive={activarPin} />
+                       activeOrigin={pinActivo?.origen ?? null} onActive={activarPin}
+                       seleccionComparar={comparar}
+                       onToggleComparar={msg.results.length >= 2 ? toggleComparar : undefined} />
+          {/* Modo COMPARAR: panel de delta cuando hay 2 inmuebles marcados (⇄ en la tarjeta) */}
+          {comparar.length === 2 && (
+            <DeltaEncaje data={delta} loading={deltaLoading} onClose={() => setComparar([])} />
+          )}
         </div>
       )}
 
@@ -1342,7 +1368,7 @@ export default function App() {
 
         {messages.map((msg, i) => (
           <Message key={msg.id} msg={msg} onCopy={handleCopy} copied={copied}
-            isLast={i === messages.length - 1}
+            isLast={i === messages.length - 1} sessionId={sessionId}
             onScrollTop={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
             onOpenAnuncio={setOpenAnuncioId}
             onOpenMap={(ids) => { setMapSeed(Array.isArray(ids) && ids.length ? ids : null); setView('map') }}

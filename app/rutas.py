@@ -13,8 +13,10 @@ from __future__ import annotations
 import asyncio
 
 import httpx
+from sqlalchemy import text
 
 from app.config import settings
+from app.database import engine
 from app.entorno import _CATEGORIAS, _nombre_valido
 from app.walk_score import _haversine_m, walk_score_para
 
@@ -49,27 +51,109 @@ def _decode_polyline(enc: str) -> list[list[float]]:
 # Categorías de vida diaria para "qué hay cerca" (diverso y DETERMINÍSTICO).
 _CATS_ENTORNO = ["salud", "farmacia", "supermercado", "educacion", "parque", "centro_comercial"]
 
+# ── Capa PROPIA (foso): pois_propios en PostGIS. Ver docs/SPEC_Foso_Capa_de_Datos.md ──
+# Subtipos de transporte "masivos" (Metro/tren/terminal) — héroes de plusvalía, se
+# priorizan sobre una simple parada de bus aunque estén más lejos (paridad con Google).
+_TRANSPORTE_MASIVO = ["metro", "estacion_tren", "terminal_bus", "estacion"]
+_RADIO_TRANSP_M = 3000  # el hub masivo puede estar más lejos (mismo criterio que Google)
+
+_PROPIOS_ENTORNO_SQL = text("""
+    SELECT DISTINCT ON (categoria)
+        categoria, nombre, marca,
+        ST_Y(geom) AS lat, ST_X(geom) AS lon,
+        ROUND(ST_Distance(geom::geography,
+              ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography))::int AS distancia_m
+    FROM pois_propios
+    WHERE operativo AND categoria = ANY(:cats)
+      AND ST_DWithin(geom::geography,
+                     ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, :max_m)
+    ORDER BY categoria, geom <-> ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)
+""")
+
+_PROPIOS_TRANSPORTE_SQL = text("""
+    SELECT nombre, ST_Y(geom) AS lat, ST_X(geom) AS lon,
+        ROUND(ST_Distance(geom::geography,
+              ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography))::int AS distancia_m,
+        (categoria_overture = ANY(:masivo)) AS es_masivo
+    FROM pois_propios
+    WHERE operativo AND categoria = 'transporte'
+      AND ST_DWithin(geom::geography,
+                     ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, :max_m)
+    ORDER BY (categoria_overture = ANY(:masivo)) DESC,
+             geom <-> ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)
+    LIMIT 1
+""")
+
+
+async def _servicios_propios(lat: float, lon: float) -> dict[str, dict]:
+    """
+    Servicio más cercano POR categoría desde NUESTRA capa (pois_propios, PostGIS).
+    Reemplaza 7 llamadas a Google Places por 2 queries a la DB propia (el foso).
+
+    Transporte: prioriza el hub masivo (Metro/terminal) aunque una parada esté más
+    cerca — misma semántica que _mejor_transporte con Google.
+
+    Devuelve {cat: item}. Una categoría AUSENTE = hueco en nuestra capa en este punto
+    (periferia / fuera del bbox de Quito); el llamador la rellena con Google.
+    """
+    out: dict[str, dict] = {}
+    try:
+        async with engine.connect() as conn:
+            filas = (await conn.execute(_PROPIOS_ENTORNO_SQL, {
+                "lat": lat, "lon": lon, "max_m": _RADIO_M, "cats": _CATS_ENTORNO,
+            })).mappings().all()
+            for f in filas:
+                out[f["categoria"]] = {
+                    "nombre": f["nombre"], "lat": f["lat"], "lon": f["lon"],
+                    "distancia_m": f["distancia_m"], "cat": f["categoria"],
+                    "marca": f["marca"], "fuente": "propio",
+                }
+            tr = (await conn.execute(_PROPIOS_TRANSPORTE_SQL, {
+                "lat": lat, "lon": lon, "max_m": _RADIO_TRANSP_M,
+                "masivo": _TRANSPORTE_MASIVO,
+            })).mappings().first()
+            if tr:
+                out["transporte"] = {
+                    "nombre": tr["nombre"], "lat": tr["lat"], "lon": tr["lon"],
+                    "distancia_m": tr["distancia_m"], "cat": "transporte",
+                    "es_masivo": bool(tr["es_masivo"]), "fuente": "propio",
+                }
+    except Exception:  # noqa: BLE001 — si la capa/DB falla, el llamador cae a Google
+        return {}
+    return out
+
 
 async def _servicios_con_coords(lat: float, lon: float, key: str, n: int = 6) -> list[dict]:
     """
-    El servicio más cercano POR CATEGORÍA, vía una búsqueda dedicada por categoría.
+    El servicio más cercano POR CATEGORÍA. FUENTE PRIMARIA: nuestra capa propia
+    (pois_propios, el foso). Google queda como FALLBACK solo para las categorías que
+    nuestra capa no cubre en este punto (periferia / fuera de Quito). Así el entorno
+    deja de gastar cuota de Google en cada consulta, salvo en los huecos reales.
 
-    Antes se pedía un único top-20 mezclado de todas las categorías; en zonas densas
-    una categoría (p. ej. consultorios) llenaba la ventana y el supermercado/parque
-    quedaba fuera → resultados inestables entre búsquedas. Ahora cada categoría se
-    busca por separado en paralelo: el resultado es estable y reproducible.
+    Antes: 7 llamadas a Google Places en cada consulta. Ahora: 2 queries a la DB
+    propia + Google solo si falta alguna categoría.
     """
-    # Transporte: el hub masivo (Metro/terminal), héroe de plusvalía; el resto, por categoría.
-    tareas = [_mejor_transporte(lat, lon, key)] + [_nearest_categoria(lat, lon, c, key) for c in _CATS_ENTORNO]
-    res = await asyncio.gather(*tareas, return_exceptions=True)
-    res = [r if isinstance(r, dict) else None for r in res]
-    # Etiqueta cada resultado con su categoría (para ícono/color semántico).
-    for it, cat in zip(res, ["transporte"] + _CATS_ENTORNO):
-        if it:
-            it["cat"] = cat
+    propios = await _servicios_propios(lat, lon)
 
-    transporte = res[0]
-    otros = sorted([r for r in res[1:] if r], key=lambda i: i["distancia_m"])
+    # Fallback a Google SOLO para lo que falta en nuestra capa (con key disponible).
+    faltantes = [c for c in _CATS_ENTORNO if c not in propios]
+    fb_tareas, fb_labels = [], []
+    if key:
+        if "transporte" not in propios:
+            fb_tareas.append(_mejor_transporte(lat, lon, key)); fb_labels.append("transporte")
+        for c in faltantes:
+            fb_tareas.append(_nearest_categoria(lat, lon, c, key)); fb_labels.append(c)
+    if fb_tareas:
+        res = await asyncio.gather(*fb_tareas, return_exceptions=True)
+        for lab, r in zip(fb_labels, res):
+            if isinstance(r, dict):
+                r["cat"] = lab
+                r.setdefault("fuente", "google")
+                propios[lab] = r
+
+    transporte = propios.get("transporte")
+    otros = sorted([v for k, v in propios.items() if k != "transporte"],
+                   key=lambda i: i["distancia_m"])
 
     # Priorizar transporte (aunque sea el más lejano) + completar por cercanía, sin duplicar nombres.
     out: list[dict] = []

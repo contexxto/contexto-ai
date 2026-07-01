@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react'
-import { MapPin, BedDouble, Bath, Ruler, Footprints, ChevronRight } from 'lucide-react'
+import { MapPin, BedDouble, Bath, Ruler, Footprints, ChevronRight, ArrowLeftRight, Check } from 'lucide-react'
 import sphereLogo from './assets/sphere.svg'
 
 // Tarjetas de resultado en el chat — la salida VISUAL de una búsqueda conversacional.
@@ -45,7 +45,7 @@ function Spec({ icon: Icon, val, unit }) {
   )
 }
 
-function ResultCard({ r, onOpen, activeId, onActive }) {
+function ResultCard({ r, onOpen, activeId, onActive, seleccionado, onToggleComparar }) {
   const precio = precioTexto(r)
   const specs = [
     [BedDouble, r.dormitorios, ''],
@@ -60,14 +60,20 @@ function ResultCard({ r, onOpen, activeId, onActive }) {
   const activa = activeId != null && activeId === r.id
 
   return (
-    <button
+    // role=button (no <button> real): la tarjeta contiene un control interactivo (el toggle
+    // COMPARAR); el modelo de contenido de <button> prohíbe descendientes interactivos/
+    // focusables, así que un <div role="button"> con teclado es el patrón accesible correcto.
+    <div
+      role="button"
+      tabIndex={0}
       data-id={r.id}
       onClick={() => onOpen?.(r.id)}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen?.(r.id) } }}
       onMouseEnter={() => onActive?.(r.id, 'card')}
       onMouseLeave={() => onActive?.(null)}
       style={{
         flex: '0 0 auto', width: 230, scrollSnapAlign: 'start', textAlign: 'left',
-        background: C.panel, border: `1px solid ${activa ? C.teal : C.line}`, borderRadius: 16,
+        background: C.panel, border: `1px solid ${(activa || seleccionado) ? C.teal : C.line}`, borderRadius: 16,
         overflow: 'hidden', cursor: 'pointer', padding: 0, color: C.text,
         display: 'flex', flexDirection: 'column',
         transform: activa ? 'translateY(-2px)' : 'none',
@@ -109,6 +115,27 @@ function ResultCard({ r, onOpen, activeId, onActive }) {
                          background: 'rgba(45,189,182,.92)', color: '#0E0D13' }}
                 title="Caminabilidad calculada sobre los comercios reales de la zona (OSM) — no un número de terceros.">
             <Footprints size={12} /> {r.caminabilidad}
+          </span>
+        )}
+        {/* Toggle COMPARAR (abajo-derecha; solo si el turno tiene ≥2 resultados). Es un
+            checkbox accesible, NO un <button> (estaría anidado en el <button> de la tarjeta
+            → HTML inválido); stopPropagation evita abrir el inmueble al marcarlo. */}
+        {onToggleComparar && (
+          <span role="checkbox" aria-checked={!!seleccionado} tabIndex={0}
+            aria-label={seleccionado ? 'Quitar de la comparación' : 'Comparar este inmueble'}
+            title={seleccionado ? 'Quitar de la comparación' : 'Comparar este inmueble'}
+            onClick={(e) => { e.stopPropagation(); onToggleComparar(r.id) }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onToggleComparar(r.id) }
+            }}
+            style={{
+              position: 'absolute', bottom: 8, right: 8, width: 26, height: 26, borderRadius: 999,
+              display: 'grid', placeItems: 'center', cursor: 'pointer',
+              background: seleccionado ? C.teal : 'rgba(14,13,19,.72)',
+              color: seleccionado ? '#0E0D13' : C.tealHi,
+              border: `1px solid ${seleccionado ? C.teal : C.line}`, backdropFilter: 'blur(4px)',
+            }}>
+            {seleccionado ? <Check size={14} /> : <ArrowLeftRight size={13} />}
           </span>
         )}
       </div>
@@ -180,11 +207,12 @@ function ResultCard({ r, onOpen, activeId, onActive }) {
           Ver inmueble <ChevronRight size={14} />
         </div>
       </div>
-    </button>
+    </div>
   )
 }
 
-export default function ResultCards({ results, onOpen, activeId, activeOrigin, onActive }) {
+export default function ResultCards({ results, onOpen, activeId, activeOrigin, onActive,
+                                      seleccionComparar = [], onToggleComparar }) {
   const scrollerRef = useRef(null)
   // Sync lista⇄mapa: cuando el inmueble se activa DESDE EL MAPA, centra su tarjeta en el
   // carrusel. Solo scroll HORIZONTAL del propio contenedor (vía scrollLeft) — nunca toca
@@ -207,7 +235,8 @@ export default function ResultCards({ results, onOpen, activeId, activeOrigin, o
       <div ref={scrollerRef} style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 8,
                     scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}>
         {results.map((r) => (
-          <ResultCard key={r.id} r={r} onOpen={onOpen} activeId={activeId} onActive={onActive} />
+          <ResultCard key={r.id} r={r} onOpen={onOpen} activeId={activeId} onActive={onActive}
+                      seleccionado={seleccionComparar.includes(r.id)} onToggleComparar={onToggleComparar} />
         ))}
       </div>
       <div style={{ fontSize: '.7rem', color: C.muted, marginTop: 2, display: 'flex', alignItems: 'center', gap: 5 }}>

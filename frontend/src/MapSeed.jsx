@@ -7,10 +7,11 @@ import { MapPin, Maximize2 } from 'lucide-react'
 // resultados del turno, leídos como espacio. Invitación viva que se abre al mapa
 // completo, NO un botón del rail. (ver docs/SPEC_Mapa_Vivo.md)
 //
-// El pin codifica VERIFICACIÓN (nunca precio): halo SÓLIDO pulsante = el corredor
-// curó el entorno (Catastro Vivo); halo suave estático = "según el mapa" (OSM). Es el
-// eje HALO del pin-anillo del spec. El eje ARCO (encaje a la intención) es la tarea #8
-// y aquí NO se finge: la calidez/realce no infla ningún dato (guardrail de honestidad).
+// El pin codifica dos ejes del pin-anillo del spec, NUNCA precio: el eje HALO =
+// VERIFICACIÓN (sólido pulsante = el corredor curó el entorno / Catastro Vivo; suave
+// estático = "según el mapa" / OSM), y el eje ARCO = ENCAJE con la intención declarada
+// (barrido teal proporcional al score, monocromo: la magnitud la da la longitud, no el
+// color — aquí NO se finge, el realce no infla ningún dato / guardrail de honestidad).
 // El badge (POI más cercano + min a pie) hace visible la "intención" que el portal oculta.
 //
 // Perf: la semilla LATE (MapLibre real) solo en el último turno; en turnos previos
@@ -57,7 +58,7 @@ const badgeDe = (r) => (Array.isArray(r?.pois) && r.pois.length ? r.pois[0] : nu
 const firmaPines = (pins) =>
   pins.map((p) => {
     const poi = badgeDe(p)
-    return `${p.id}@${p.lat},${p.lon}#${p.fresco ? 1 : 0}~${poi ? poi.emoji + poi.minutos : ''}`
+    return `${p.id}@${p.lat},${p.lon}#${p.fresco ? 1 : 0}=${p.encaje ?? ''}~${poi ? poi.emoji + poi.minutos : ''}`
   }).join('|')
 
 const headerChip = {
@@ -88,7 +89,7 @@ function MapChip({ n, onExpand }) {
 // Leyenda honesta del halo: explica qué significa el pin sólido vs el suave, y rotula
 // los tiempos como estimación a pie. Solo aparece si hay algún inmueble verificado (si
 // nada está curado, no afirmamos una distinción que el mapa no muestra).
-function Leyenda({ algunoFresco }) {
+function Leyenda({ algunoFresco, algunEncaje }) {
   return (
     <div style={{
       fontSize: '.64rem', color: C.muted, marginTop: 8, display: 'flex',
@@ -108,6 +109,16 @@ function Leyenda({ algunoFresco }) {
           </span>
         </>
       )}
+      {algunEncaje && (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          <span style={{
+            width: 11, height: 11, borderRadius: '50%',
+            background: `conic-gradient(${C.tealHi} 65%, ${C.line} 0)`,
+            WebkitMask: 'radial-gradient(farthest-side, transparent 66%, #000 0)',
+            mask: 'radial-gradient(farthest-side, transparent 66%, #000 0)',
+          }} /> el arco = % de encaje con lo que pediste
+        </span>
+      )}
       <span>📍 tiempos a pie estimados (~80 m/min)</span>
     </div>
   )
@@ -120,6 +131,7 @@ export default function MapSeed({ results, onOpen, onExpand, isLast, activeId, o
   const pins = useMemo(() => conGeo(results), [results])
   const firma = useMemo(() => firmaPines(pins), [pins])
   const algunoFresco = useMemo(() => pins.some((p) => p.fresco), [pins])
+  const algunEncaje = useMemo(() => pins.some((p) => p.encaje != null), [pins])
   // Sync lista⇄mapa: el inmueble resaltado (hover de un pin o de su tarjeta).
   const activo = useMemo(() => pins.find((p) => p.id === activeId) || null, [pins, activeId])
   const containerRef = useRef(null)
@@ -181,6 +193,13 @@ export default function MapSeed({ results, onOpen, onExpand, isLast, activeId, o
         pins.forEach((p) => {
           const el = document.createElement('div')
           el.className = 'ctx-zona-pin' + (p.fresco ? ' v' : '')
+          // Eje ARCO (encaje): anillo cuyo BARRIDO = % de encaje con lo declarado. Solo si
+          // hay preferencias (encaje != null); se setea como CSS var (número, no innerHTML
+          // → sin XSS). Monocromo teal: la magnitud la da la longitud, no el color.
+          if (p.encaje != null) {
+            el.classList.add('arco')
+            el.style.setProperty('--encaje', String(Math.max(0, Math.min(100, p.encaje))))
+          }
           const poi = badgeDe(p)
           // Seguridad: a innerHTML solo entran poi.emoji (el backend lo restringe a
           // grafemas emoji) y poi.minutos (número). El texto libre (dirección, nombre del
@@ -197,6 +216,7 @@ export default function MapSeed({ results, onOpen, onExpand, isLast, activeId, o
           const aria = [p.direccion || p.tipo_activo || 'Inmueble']
           if (poi) aria.push(`${poi.texto} a ~${poi.minutos} min a pie`)
           aria.push(p.fresco ? 'entorno verificado por el corredor' : 'entorno según el mapa')
+          if (p.encaje != null) aria.push(`${p.encaje}% de encaje con lo que pediste`)
           el.setAttribute('aria-label', aria.join(', '))
           // Sync lista⇄mapa: hover/leave del pin resalta su tarjeta (y al revés) y enciende
           // el caption capturable de abajo. Reemplaza al title nativo (que no se captura en
@@ -315,6 +335,21 @@ export default function MapSeed({ results, onOpen, onExpand, isLast, activeId, o
             content: ''; position: absolute; inset: -6px; border-radius: 50%;
             border: 1.5px solid rgba(45,189,182,.32);
           }
+          /* Eje ARCO (encaje 0-100): anillo teal cuyo BARRIDO = grado de encaje con lo que
+             el usuario pidió. Monocromo (frío): la magnitud la da la longitud, NO el color
+             — separado del eje HALO (verificación) para no confundir "más verificado" con
+             "mejor encaje". Solo se pinta si hay preferencias (clase .arco). El track vacío
+             usa C.line para leerse como pista, no como ausencia. Va más afuera (inset -10px)
+             que los halos (-6/-7px) para no pisarlos. */
+          .ctx-zona-pin.arco .ctx-zona-dot::before {
+            content: ''; position: absolute; inset: -10px; border-radius: 50%; pointer-events: none;
+            /* z-index 1: el arco (encaje) se pinta POR ENCIMA del pulso ::after del pin
+               verificado, para que el barrido quede nítido y no lo lave el halo animado. */
+            z-index: 1;
+            background: conic-gradient(${C.tealHi} calc(var(--encaje, 0) * 1%), ${C.line} 0);
+            -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2.5px));
+                    mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2.5px));
+          }
           /* verificado por el corredor: dot a tope + anillo SÓLIDO brillante que respira (el realce honesto). */
           .ctx-zona-pin.v .ctx-zona-dot {
             box-shadow: 0 0 0 2px rgba(14,13,19,.8), 0 0 0 4px ${C.tealHi}, 0 0 12px rgba(45,189,182,.6);
@@ -343,7 +378,7 @@ export default function MapSeed({ results, onOpen, onExpand, isLast, activeId, o
           }
         `}</style>
       </div>
-      <Leyenda algunoFresco={algunoFresco} />
+      <Leyenda algunoFresco={algunoFresco} algunEncaje={algunEncaje} />
     </div>
   )
 }

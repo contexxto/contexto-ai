@@ -18,7 +18,7 @@ from app.agent.state import AgentState
 from app.auth import CurrentUser, get_current_user, get_optional_user
 from app.config import settings
 from app.database import AsyncSessionLocal
-from app.encaje import calcular_encaje
+from app.encaje import calcular_encaje, delta_encaje
 from app.entorno import limpiar_texto_servicios
 from app.entorno_curacion import aplicar_curacion, parse_servicios
 from app.limiter import limiter
@@ -236,7 +236,9 @@ def _card_from_row(row: dict, preferencias: dict | None = None) -> dict:
             car = json.loads(car)
         except Exception:  # noqa: BLE001
             car = {}
-    car = car or {}
+    # `caracteristicas` es jsonb: un JSON válido no-objeto (5, [..], true) NO debe pasar como
+    # `car` (rompería car.get(...) → AttributeError → 500). Solo un dict cuenta como specs.
+    car = car if isinstance(car, dict) else {}
     fotos = car.get("fotos") or []
     foto = row.get("imagen_url") or (fotos[0] if fotos else None)
     precio = row.get("precio")
@@ -356,6 +358,75 @@ async def build_result_cards(messages) -> list[dict]:
         r["fresco"] = bool(cur)  # verificación (halo del pin); ver _card_from_row
         by_id[r["id"]] = r
     return [_card_from_row(by_id[i], preferencias) for i in ids if i in by_id]
+
+
+async def comparar_inmuebles(session_id: str, id_a: str, id_b: str) -> dict:
+    """DELTA de encaje entre 2 inmuebles, contra las necesidades DECLARADAS del hilo.
+
+    Reconstruye las preferencias del hilo EXACTAMENTE como build_result_cards (mismo insumo
+    `_user_texts`), así el delta es coherente con el % de encaje que ya muestran las tarjetas.
+    Devuelve {ok, delta, cards} o {ok:False, message}. Degradable: nunca lanza — un fallo de
+    estado/DB/LLM devuelve ok:False (el frontend muestra un aviso, no un 500). El delta lo
+    calcula el motor determinístico (app.encaje.delta_encaje): dato+fuente, jamás veredictos.
+    """
+    if not id_a or not id_b or id_a == id_b:
+        return {"ok": False, "message": "Se necesitan dos inmuebles distintos para comparar."}
+    ids = [id_a, id_b]
+    # Preferencias del hilo (mismo insumo que las cards) + fetch de los 2 inmuebles, en paralelo.
+    try:
+        state = await agent_graph.compiled_graph.aget_state(_langgraph_config(session_id))
+    except Exception:  # noqa: BLE001 — sin estado de sesión → sin preferencias, no error
+        state = None
+    messages = (state.values or {}).get("messages", []) if (state and state.values) else []
+    prefs, fetched = await asyncio.gather(
+        extraer_preferencias(_user_texts(messages)),
+        _fetch_cards_rows(ids),
+        return_exceptions=True,
+    )
+    if isinstance(fetched, Exception) or fetched is None:
+        return {"ok": False, "message": "No pude cargar los inmuebles para comparar."}
+    preferencias = prefs if isinstance(prefs, dict) else {}
+    rows, curaciones = fetched
+    by_id: dict[str, dict] = {}
+    for r in rows:
+        r = dict(r)
+        cur = curaciones.get(r["id"], [])
+        # Mismo prep que build_result_cards: aplica curación del corredor y marca `fresco`,
+        # para que las señales (parque, etc.) y las cards del delta calcen con el chat.
+        r["servicios_cercanos"] = aplicar_curacion(r.get("servicios_cercanos"), cur)
+        r["fresco"] = bool(cur)
+        by_id[r["id"]] = r
+    if id_a not in by_id or id_b not in by_id:
+        return {"ok": False, "message": "No encontré uno de los inmuebles a comparar."}
+
+    def _senales(rid: str) -> dict:
+        r = by_id[rid]
+        car = r.get("caracteristicas")
+        if isinstance(car, str):
+            try:
+                car = json.loads(car)
+            except Exception:  # noqa: BLE001
+                car = {}
+        return _senales_encaje(r, car if isinstance(car, dict) else {})
+
+    delta = delta_encaje(preferencias, _senales(id_a), _senales(id_b))
+    cards = [_card_from_row(by_id[i], preferencias) for i in (id_a, id_b)]
+    return {"ok": True, "delta": delta, "cards": cards}
+
+
+class CompararReq(BaseModel):
+    session_id: str = Field(..., min_length=1)
+    id_a: str = Field(..., min_length=1)
+    id_b: str = Field(..., min_length=1)
+
+
+@router.post("/comparar", summary="DELTA de encaje entre 2 inmuebles (modo COMPARAR)")
+@limiter.limit("30/minute")
+async def comparar_endpoint(request: Request, payload: CompararReq) -> dict:
+    """Compara 2 inmuebles contra las necesidades declaradas del hilo. Determinístico:
+    el delta sale del motor auditable (app.encaje), no del LLM. Lo dispara el frontend al
+    seleccionar 2 tarjetas; comparte lógica con una futura tool del agente (API-first)."""
+    return await comparar_inmuebles(payload.session_id, payload.id_a, payload.id_b)
 
 
 async def _stream_agent(message: str, session_id: str) -> AsyncIterator[str]:

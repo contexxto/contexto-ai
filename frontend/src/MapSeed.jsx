@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { MapPin, Maximize2 } from 'lucide-react'
+import { intentHue } from './intentHue'
 
 // Mapa Vivo — modo ZONA (semilla inline). El mapa NACE en la conversación: los
 // resultados del turno, leídos como espacio. Invitación viva que se abre al mapa
@@ -134,7 +135,14 @@ export default function MapSeed({ results, mapSeed, onOpen, onExpand, isLast, ac
     const fuente = Array.isArray(mapSeed?.pines) && mapSeed.pines.length ? mapSeed.pines : results
     return conGeo(fuente)
   }, [mapSeed, results])
-  const firma = useMemo(() => firmaPines(pins), [pins])
+  // Modo del lente (FSM del backend, SPEC "Estados y transiciones"): AURAS/AURA = "warm" (la
+  // profundidad de la intención CALIENTA el mapa → hue del PROPÓSITO, cámara más cerca); ZONA =
+  // frío. El hue se keyea a QUÉ buscás (tipo_activo), NUNCA a quién sos (guardrail Fair Housing).
+  const modo = mapSeed?.modo || 'zona'
+  const warm = modo === 'auras' || modo === 'aura'
+  const hue = useMemo(() => (warm ? intentHue(pins[0]?.tipo_activo) : null), [warm, pins])
+  // La firma incluye el MODO → el mapa se re-dibuja (frío⇄cálido) cuando el lente transiciona.
+  const firma = useMemo(() => modo + '|' + firmaPines(pins), [modo, pins])
   const algunoFresco = useMemo(() => pins.some((p) => p.fresco), [pins])
   const algunEncaje = useMemo(() => pins.some((p) => p.encaje != null), [pins])
   // Sync lista⇄mapa: el inmueble resaltado (hover de un pin o de su tarjeta).
@@ -181,13 +189,15 @@ export default function MapSeed({ results, mapSeed, onOpen, onExpand, isLast, ac
         map.resize()
         const allSame = pins.every((p) => p.lat === pins[0].lat && p.lon === pins[0].lon)
         if (pins.length === 1 || allSame) {
-          map.jumpTo({ center: [pins[0].lon, pins[0].lat], zoom: 14.5 })
+          // Modo cálido (pocos/uno) → cámara más cerca: el "arribo" del SPEC, se mira el aura.
+          map.jumpTo({ center: [pins[0].lon, pins[0].lat], zoom: warm ? 15.5 : 14.5 })
         } else {
           const b = new maplibregl.LngLatBounds()
           pins.forEach((p) => b.extend([p.lon, p.lat]))
           // Padding derecho mayor: los badges se extienden a la derecha del punto;
           // sin holgura, el pin más al este se recortaría contra el borde.
-          map.fitBounds(b, { padding: { top: 40, right: 78, bottom: 30, left: 44 }, maxZoom: 15.5, duration: 0 })
+          map.fitBounds(b, { padding: { top: 40, right: 78, bottom: 30, left: 44 },
+                             maxZoom: warm ? 16.5 : 15.5, duration: 0 })
         }
         // Cada resultado = un pin. El halo codifica VERIFICACIÓN (sólido pulsante =
         // verificado por el corredor; suave estático = según el mapa). El badge = el
@@ -204,6 +214,13 @@ export default function MapSeed({ results, mapSeed, onOpen, onExpand, isLast, ac
           if (p.encaje != null) {
             el.classList.add('arco')
             el.style.setProperty('--encaje', String(Math.max(0, Math.min(100, p.encaje))))
+          }
+          // Modo cálido (AURAS/AURA): el aura del PROPÓSITO florece detrás del pin (hue por
+          // tipo_activo). CSS vars (números/colores del token, no innerHTML → sin XSS).
+          if (warm && hue) {
+            el.classList.add('warm')
+            el.style.setProperty('--warm', hue.accent)
+            el.style.setProperty('--warm-glow', hue.glow)
           }
           const poi = badgeDe(p)
           // Seguridad: a innerHTML solo entran poi.emoji (el backend lo restringe a
@@ -295,8 +312,13 @@ export default function MapSeed({ results, mapSeed, onOpen, onExpand, isLast, ac
           position: 'absolute', top: 8, left: 8, right: 8, display: 'flex',
           alignItems: 'center', justifyContent: 'space-between',
         }}>
-          <span style={{ ...headerChip, pointerEvents: 'none' }}>
-            <MapPin size={12} /> {pins.length} en el mapa
+          {/* Chip de MODO: en cálido (AURAS/AURA) el lente se "templó" a pocos candidatos →
+              lo decimos y lo teñimos al hue del propósito; en ZONA, el conteo frío. */}
+          <span style={{ ...headerChip, pointerEvents: 'none',
+                         ...(warm && hue ? { color: hue.accent, border: `1px solid ${hue.glow}` } : {}) }}>
+            {warm
+              ? <>✨ {pins.length} {pins.length === 1 ? 'candidato' : 'candidatos'}</>
+              : <><MapPin size={12} /> {pins.length} en el mapa</>}
           </span>
           {/* "Ampliar" es un botón real (no fall-through), para que abrir el mapa sea
               una acción explícita y no un toque accidental sobre la semilla. */}
@@ -334,6 +356,16 @@ export default function MapSeed({ results, mapSeed, onOpen, onExpand, isLast, ac
           .ctx-zona-pin {
             position: relative; width: 30px; height: 30px; display: grid; place-items: center;
             cursor: pointer;
+          }
+          /* Modo AURAS/AURA (warm): un aura CÁLIDA envuelve el pin, en el hue del propósito
+             (SPEC "Temperatura emocional": la profundidad de la intención calienta el mapa).
+             Va como box-shadow del wrapper → SIEMPRE visible (no depende de z-index/stacking),
+             detrás del dot y SIN tocar el arco (encaje) ni el halo (verificación) — cada eje
+             intacto. El hue va por tipo_activo (qué buscás), nunca por quién sos (guardrail
+             Fair Housing). El realce NO infla ningún dato. */
+          .ctx-zona-pin.warm {
+            border-radius: 50%;
+            box-shadow: 0 0 18px 4px var(--warm-glow, rgba(232,184,75,.5));
           }
           .ctx-zona-dot {
             width: 13px; height: 13px; border-radius: 50%; position: relative;

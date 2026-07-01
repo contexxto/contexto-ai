@@ -365,13 +365,33 @@ async def build_result_cards(messages) -> list[dict]:
     return [_card_from_row(by_id[i], preferencias) for i in ids if i in by_id]
 
 
-def _map_seed_from_cards(cards: list[dict], modo: str = "zona") -> dict | None:
+# FSM del lente (SPEC_Mapa_Vivo "Estados y transiciones"): el modo lo decide la PRECISIÓN de
+# la intención, que aproximamos por cuántos candidatos quedaron en el turno. 2..4 = "pocos"
+# (interés concreto) → AURAS; 5+ = seguís explorando → ZONA; 1 = te enfocaste → AURA.
+_UMBRAL_AURAS = 4
+
+
+def _decidir_modo(n_pines: int, prev_mode: str | None = None) -> str:
+    """Decide el modo del lente del turno. Lee el modo PERSISTIDO del turno anterior
+    (spatial_context.focus_mode) para dar CONTINUIDAD: si venías enfocado (aura/auras) y el
+    turno apenas se ensanchó, el lente NO salta de golpe a ZONA (histéresis, no parpadeo —
+    es exactamente el "no perder el estado del turno anterior" del SPEC). Determinístico."""
+    if n_pines <= 0:
+        return "zona"
+    base = "aura" if n_pines == 1 else ("auras" if n_pines <= _UMBRAL_AURAS else "zona")
+    if base == "zona" and prev_mode in ("aura", "auras") and n_pines <= _UMBRAL_AURAS + 2:
+        return "auras"
+    return base
+
+
+def _map_seed_from_cards(cards: list[dict], prev_mode: str | None = None) -> dict | None:
     """Directiva de mapa (SPEC_Mapa_Vivo "MECANISMO ÚNICO") desde las cards del turno.
 
-    Para un turno de BÚSQUEDA el modo es "zona": encuadra la bbox de los resultados y pinta
-    cada pin por su ENCAJE + verificación. Los `pines` llevan SOLO lo que el mapa necesita
-    (coords, encaje, fresco, badge, dirección para el caption) — NO la foto/precio/specs (eso
-    es de la tarjeta): la misma separación razonamiento/visual que el SPEC pide para el mapa.
+    El MODO lo decide el backend (FSM `_decidir_modo`) según la precisión de la intención +
+    el modo persistido del turno anterior — el lente se MUEVE, no es una pantalla fija. Encuadra
+    la bbox y pinta cada pin por su ENCAJE + verificación. Los `pines` llevan SOLO lo que el mapa
+    necesita (coords, encaje, fresco, badge, dirección, tipo_activo para la temperatura) — NO la
+    foto/precio/specs (eso es de la tarjeta): la separación razonamiento/visual que el SPEC pide.
     El pin NUNCA lleva precio (guardrail del SPEC). None si ningún resultado tiene coords."""
     pines = [
         {
@@ -397,6 +417,7 @@ def _map_seed_from_cards(cards: list[dict], modo: str = "zona") -> dict | None:
         capas.append("encaje")
     if any(p["fresco"] for p in pines):
         capas.append("verificacion")
+    modo = _decidir_modo(len(pines), prev_mode)
     return {"modo": modo, "foco": {"bbox": bbox}, "capas": capas, "pines": pines}
 
 
@@ -522,6 +543,13 @@ async def chat(
         )
 
     config = _langgraph_config(payload.session_id)
+    # Modo del lente del turno ANTERIOR (persistido en spatial_context) → continuidad del FSM
+    # (histéresis). Se lee ANTES de invocar, porque el input reinicia spatial_context a {}.
+    try:
+        _prev = await agent_graph.compiled_graph.aget_state(config)
+        prev_mode = ((_prev.values or {}).get("spatial_context") or {}).get("focus_mode")
+    except Exception:  # noqa: BLE001 — sin estado previo → sin continuidad, no error
+        prev_mode = None
     input_state: AgentState = {
         "messages": [HumanMessage(content=payload.message)],
         "spatial_context": {},
@@ -540,7 +568,7 @@ async def chat(
 
     tool_calls = sum(1 for m in messages if hasattr(m, "type") and m.type == "tool")
     results = await build_result_cards(messages)
-    map_seed = _map_seed_from_cards(results)
+    map_seed = _map_seed_from_cards(results, prev_mode)
     # spatial_context VIVO (deja de ser placeholder muerto): persiste el foco del turno en el
     # estado del agente para que la transición no pierda el encuadre. Best-effort: si el
     # checkpointer falla, el turno igual responde (el mapa no depende de esta escritura).

@@ -491,12 +491,15 @@ async def tool_analyze_investment(activo_id: str) -> str:
             ),
         }, ensure_ascii=False)
 
-    car = r.get("caracteristicas") or {}
+    car = r.get("caracteristicas")
     if isinstance(car, str):
         try:
             car = json.loads(car)
         except Exception:  # noqa: BLE001
             car = {}
+    # `caracteristicas` es jsonb: un JSON válido no-objeto (5, [..], true, "5") NO debe pasar
+    # como `car` (rompería car.get(...) → AttributeError → tool revienta). Solo un dict cuenta.
+    car = car if isinstance(car, dict) else {}
 
     resultado = analizar_inversion(
         direccion=r["direccion_estandarizada"], tipo_activo=r["tipo_activo"],

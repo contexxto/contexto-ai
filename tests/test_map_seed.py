@@ -4,7 +4,29 @@ La directiva {modo, foco, capas, pines} es el "MECANISMO ÚNICO" del SPEC_Mapa_V
 es función de ESTO, no de results planos. Verificamos: forma, bbox, que los pines llevan solo
 lo del mapa (encaje/fresco/badge/dirección) y NUNCA precio (guardrail), y degradación honesta.
 """
-from app.routers.chat import _map_seed_from_cards
+from app.routers.chat import _UMBRAL_AURAS, _decidir_modo, _map_seed_from_cards
+
+
+# ── FSM del lente (SPEC "Estados y transiciones") ────────────────────────────────────
+def test_decidir_modo_por_precision():
+    # 1 candidato = te enfocaste → AURA; 2..UMBRAL = pocos → AURAS; UMBRAL+ = explorás → ZONA.
+    assert _decidir_modo(0) == "zona"
+    assert _decidir_modo(1) == "aura"
+    assert _decidir_modo(2) == "auras"
+    assert _decidir_modo(_UMBRAL_AURAS) == "auras"
+    assert _decidir_modo(_UMBRAL_AURAS + 1) == "zona"
+    assert _decidir_modo(20) == "zona"
+
+
+def test_decidir_modo_histeresis_no_parpadea():
+    # Venías enfocado (auras/aura) y el turno apenas se ensanchó → NO saltás de golpe a ZONA.
+    assert _decidir_modo(_UMBRAL_AURAS + 1, prev_mode="auras") == "auras"
+    assert _decidir_modo(_UMBRAL_AURAS + 2, prev_mode="aura") == "auras"
+    # Pero un ensanche grande sí vuelve a ZONA (ya estás explorando de nuevo).
+    assert _decidir_modo(_UMBRAL_AURAS + 3, prev_mode="auras") == "zona"
+    # Sin modo previo (o veníamos en zona) → sin histéresis, manda la precisión.
+    assert _decidir_modo(_UMBRAL_AURAS + 1, prev_mode=None) == "zona"
+    assert _decidir_modo(_UMBRAL_AURAS + 1, prev_mode="zona") == "zona"
 
 
 def _card(cid, lat, lon, **over):
@@ -28,7 +50,7 @@ def test_sin_coords_es_none():
 def test_forma_y_bbox():
     cards = [_card("a", -0.18, -78.48), _card("b", -0.20, -78.50, encaje=60, fresco=True)]
     ms = _map_seed_from_cards(cards)
-    assert ms["modo"] == "zona"
+    assert ms["modo"] == "auras"  # 2 candidatos = pocos → AURAS (FSM)
     assert set(ms) == {"modo", "foco", "capas", "pines"}
     # bbox = [[minLon, minLat], [maxLon, maxLat]]
     assert ms["foco"]["bbox"] == [[-78.50, -0.20], [-78.48, -0.18]]

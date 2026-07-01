@@ -19,9 +19,14 @@ services:
       - key: SSL_VERIFY
         value: "true"
       # Isócronas peatonales — motor propio Valhalla (private service de abajo).
-      # URL INTERNA (red privada de Render), no es secreto: no se expone a internet.
+      # NO es un valor fijo: los private services de Render creados a mano (no por
+      # sync de Blueprint) reciben una dirección interna con sufijo aleatorio
+      # (ej. "valhalla-ncj7:8002", NO "valhalla:8002"). Copia la dirección REAL
+      # desde el dashboard → servicio 'valhalla' → "Service Address", y ponla aquí
+      # como http://<esa-direccion>. No es secreto (red privada), pero varía por
+      # despliegue → sync:false para que cada quien la configure con su valor real.
       - key: VALHALLA_URL
-        value: "http://valhalla:8002"
+        sync: false
       # Fallback si no se usa DATABASE_URL_OVERRIDE
       - key: POSTGRES_HOST
         value: "db.jzxeigzxgbglfsiiqpxv.supabase.co"
@@ -36,10 +41,14 @@ services:
 
   # ── Valhalla: motor de isócronas peatonales (Ladrillo #7 del foso) ──
   # Private service (NO expuesto a internet); solo el web service lo alcanza por
-  # la red interna en http://valhalla:8002. Imagen prearmada valhalla-scripted:
-  # al primer arranque baja el PBF de Ecuador y construye los tiles (~5-15 min,
-  # necesita ~2-4 GB RAM → plan standard); el disco persistente los conserva, así
-  # que reinicios y deploys posteriores NO reconstruyen (use_tiles_ignore_pbf).
+  # la red interna, en la dirección que Render le asigne (ver "Service Address"
+  # en el dashboard tras crearlo — copia ESA a VALHALLA_URL arriba). Imagen
+  # prearmada valhalla-scripted: al primer arranque baja el PBF de Ecuador y
+  # construye los tiles (~5-15 min, necesita ~2-4 GB RAM → plan standard); el
+  # disco persistente los conserva, así que reinicios y deploys posteriores NO
+  # reconstruyen (use_tiles_ignore_pbf). PORT=8002 es OBLIGATORIO: Render espera
+  # 10000 por defecto, pero Valhalla escucha en 8002 — sin este env var el
+  # servicio queda inalcanzable aunque el build termine bien.
   # Ver docs/DEPLOY_Valhalla.md y SPEC_Foso_Capa_de_Datos.md §2.
   - type: pserv
     name: valhalla
@@ -67,3 +76,5 @@ services:
         value: "2"          # acota RAM del build (NO 'concurrency')
       - key: force_rebuild
         value: "False"
+      - key: PORT
+        value: "8002"    # OBLIGATORIO — Valhalla escucha en 8002, no en el 10000 default

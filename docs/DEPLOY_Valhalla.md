@@ -10,24 +10,35 @@ mismo Blueprint (`render.yaml`) — sin exponerlo a internet.
 
 ## Opción A — Render private service (recomendada, ya en el Blueprint)
 
-`render.yaml` ya define el servicio `valhalla` (`type: pserv`) y le cablea al web
-service el env `VALHALLA_URL=http://valhalla:8002` (URL interna de Render, no secreto).
+`render.yaml` define el servicio `valhalla` (`type: pserv`) con `PORT=8002` (ver nota
+crítica abajo). El env `VALHALLA_URL` del web service queda `sync: false` — se
+configura a mano con la dirección REAL que Render asigne (tiene un sufijo aleatorio).
 
 **Pasos (dashboard de Render — los hace el fundador):**
 
 1. Merge este PR a `main` (deja `render.yaml` + este doc en la rama principal).
-2. En Render → tu Blueprint → **Manual Sync** (o auto-sync si está activo). Render
-   detecta el nuevo `pserv valhalla` y lo aprovisiona con su disco `valhalla-tiles` (5 GB).
-3. **Primer arranque (~5-15 min):** el contenedor baja el PBF de Ecuador (~113 MB) y
-   construye los tiles. Míralo en Render → servicio `valhalla` → **Logs**: espera
-   `Tile build complete` y el server escuchando en `:8002`.
-4. Verifica desde el web service (Render → `contexto-ai-api` → **Shell**):
+2. En Render → tu Blueprint → **Manual Sync** (o auto-sync si está activo; si el
+   `pserv valhalla` ya existía porque lo creaste a mano antes, Render lo reconoce
+   por el nombre y lo toma bajo el Blueprint, sin duplicarlo).
+3. **⚠️ CRÍTICO — puerto:** Render espera por defecto que el servicio escuche en el
+   puerto `10000`; Valhalla escucha en `8002`. **Sin `PORT=8002` como env var, el
+   servicio queda inalcanzable aunque el build termine bien** (verificado: sin este
+   fix, `Service Address` queda apuntando al puerto equivocado). Ya está en el
+   `render.yaml`, pero si lo creaste a mano antes de sincronizar, agrégalo tú:
+   Environment → `+ Add variable` → `PORT` = `8002` → **Save and deploy**.
+4. **Build de tiles (~5-15 min):** el contenedor baja el PBF de Ecuador (~113 MB) y
+   construye los tiles. Míralo en Render → servicio `valhalla` → **Logs**.
+5. Copia la dirección real: en la vista principal del servicio `valhalla`, el campo
+   **"Service Address"** (ej. `valhalla-ncj7:8002` — el sufijo `-ncj7` es aleatorio,
+   NO uses `valhalla:8002` a secas). Ve a `contexto-ai-oregon` → **Environment** →
+   agrega `VALHALLA_URL` = `http://<esa-dirección-exacta>` → guarda.
+6. Verifica desde el Shell del web service (Render → `contexto-ai-oregon` → **Shell**):
    ```bash
-   curl -s -X POST http://valhalla:8002/isochrone -H 'Content-Type: application/json' \
+   curl -s -X POST $VALHALLA_URL/isochrone -H 'Content-Type: application/json' \
      -d '{"locations":[{"lat":-0.1807,"lon":-78.4678}],"costing":"pedestrian","contours":[{"time":15}],"polygons":true}' | head -c 200
    ```
    Debe devolver un GeoJSON `FeatureCollection`.
-5. Cuando responda: **mergea el PR del overlay 2C** → los chips quedan vivos en prod.
+7. Cuando responda: **mergea el PR del overlay 2C** → los chips quedan vivos en prod.
 
 **Costo / RAM:** el build de tiles necesita ~2-4 GB → el `pserv` va en plan **standard**
 (2 GB, ~$25/mes). Ecuador es chico y `server_threads=2` acota la RAM, así que 2 GB alcanza.
@@ -47,10 +58,9 @@ Si $25/mes es mucho para el spike, una VM (Hetzner/Fly.io/DigitalOcean) con Dock
 git clone <repo> && cd contexto-ai
 docker compose -f docker-compose.valhalla.yml up -d      # mismo compose que en local
 ```
-Luego en Render → `contexto-ai-api` → Environment, pon `VALHALLA_URL=http://<IP_VM>:8002`
+Luego en Render → `contexto-ai-oregon` → Environment, pon `VALHALLA_URL=http://<IP_VM>:8002`
 (y protege el puerto 8002 con firewall a solo la IP de Render, o un túnel privado —
-Valhalla NO debe quedar abierto a internet). El `VALHALLA_URL` del Blueprint (interno)
-solo aplica a la Opción A; en la Opción B lo sobreescribes en el dashboard.
+Valhalla NO debe quedar abierto a internet).
 
 ## Notas
 

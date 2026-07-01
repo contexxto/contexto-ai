@@ -78,3 +78,21 @@ def test_ignora_cards_sin_coords_mezcladas():
     cards = [_card("a", -0.18, -78.48), _card("b", None, None)]
     ms = _map_seed_from_cards(cards)
     assert len(ms["pines"]) == 1 and ms["pines"][0]["id"] == "a"
+
+
+# ── Endurecimiento defensivo (stress-test) ───────────────────────────────────────────
+def test_card_sin_id_no_lanza():
+    # Card con coords pero SIN 'id' → se filtra (no KeyError). Degrada, no rompe.
+    assert _map_seed_from_cards([{"lat": -0.1, "lon": -78.4}]) is None
+    # Una válida + una sin id → solo la válida entra.
+    ms = _map_seed_from_cards([_card("a", -0.18, -78.48), {"lat": -0.2, "lon": -78.5}])
+    assert len(ms["pines"]) == 1 and ms["pines"][0]["id"] == "a"
+
+
+def test_min_a_pie_no_str_es_none():
+    # Solo texto (columnas str|None); un no-str NO debe crashear → sin dato.
+    from app.routers.chat import _EMOJI_PARQUE, _min_a_pie, _transporte_min
+    assert _min_a_pie(["🌳 a ~10 m"], _EMOJI_PARQUE) is None
+    assert _min_a_pie(None, _EMOJI_PARQUE) is None
+    assert _transporte_min(["x"]) is None
+    assert _transporte_min(None) is None

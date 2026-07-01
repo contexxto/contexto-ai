@@ -551,6 +551,9 @@ export default function App() {
 
   // Restore history from API on mount / session change
   useEffect(() => {
+    // Nueva sesión (o vacía) → resetea el handoff de cámara ANTES de cualquier early-return,
+    // para que el 1er mapa haga ease-in y NO vuele desde el encuadre de la sesión anterior.
+    mapBboxRef.current = null
     if (skipFirstRestore.current) { skipFirstRestore.current = false; return }
     axios.get(`${API_BASE}/api/v1/chat/${sessionId}/history`, { headers: apiHeaders() })
       .then(({ data }) => {
@@ -564,7 +567,6 @@ export default function App() {
           results: Array.isArray(m.results) ? m.results : [],
           mapSeed: m.map_seed || null,  // directiva de mapa del turno restaurado (SPEC_Mapa_Vivo)
         }))
-        mapBboxRef.current = null  // nueva sesión → el 1er mapa hace ease-in, no vuela desde otra
         setMessages(restored)
         const lastAi = [...restored].reverse().find(m => m.role === 'ai')
         lastAiRef.current = lastAi?.content || ''

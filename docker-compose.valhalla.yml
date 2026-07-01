@@ -1,0 +1,29 @@
+# Valhalla auto-hospedado para isócronas peatonales (Ladrillo #7 del foso).
+# Construye los tiles de Ecuador al arrancar (~5-15 min la 1ª vez, 2-4 GB RAM);
+# luego los reusa (mmap, ~512 MB-1 GB). Ver docs/SPEC_Foso_Capa_de_Datos.md §2.1.
+#
+#   Levantar:   docker compose -f docker-compose.valhalla.yml up -d
+#   Ver build:  docker compose -f docker-compose.valhalla.yml logs -f   # espera 'Tile build complete'
+#   Probar:     curl -s -X POST http://localhost:8002/isochrone -H 'Content-Type: application/json' \
+#                 -d '{"locations":[{"lat":-0.1807,"lon":-78.4678}],"costing":"pedestrian","contours":[{"time":15}],"polygons":true}'
+#   Apagar:     docker compose -f docker-compose.valhalla.yml down
+#
+# Infra (SPEC §2.5): empezar EFÍMERO — levantar, correr scripts/valhalla_isocronas_batch.py
+# para llenar isocronas_inmueble, y apagar. Queda vivo solo para la cuña del ancla en vivo.
+services:
+  valhalla:
+    image: ghcr.io/valhalla/valhalla-scripted:latest
+    container_name: valhalla
+    ports:
+      - "8002:8002"
+    volumes:
+      - ./custom_files:/custom_files   # persiste los tiles → no reconstruye en cada arranque
+    environment:
+      - tile_urls=https://download.geofabrik.de/south-america/ecuador-latest.osm.pbf
+      - use_tiles_ignore_pbf=True       # si ya hay tiles, NO reconstruye al reiniciar
+      - build_admins=True               # sin admin polygons, isócronas/ruteo degradan
+      - build_time_zones=True
+      - build_elevation=False           # peatonal urbano: no necesita elevación
+      - server_threads=2                # ⚠️ server_threads (NO concurrency): acota RAM del build
+      - force_rebuild=False
+    restart: unless-stopped

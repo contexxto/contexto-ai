@@ -40,7 +40,15 @@ const CHIPS = [
   ['🏫', 'Colegios', 'colegio más cercano'],
 ]
 
-// Convierte cada "~123 m" del texto en "~123 m · 2 min" (a pie, ~80 m/min).
+// Escapa HTML. El popup se pinta con setHTML() (= innerHTML), y estos campos son TEXTO LIBRE
+// del catastro (dirección subida por el corredor, servicios de OSM/Google) → sin escapar sería
+// un XSS ALMACENADO (una dirección con `<img onerror>` ejecuta JS al abrir el pin). Escapamos
+// en el sink, que es el fix correcto para XSS de salida.
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+
+// Convierte cada "~123 m" del texto en "~123 m · 2 min" (a pie, ~80 m/min). Recibe texto YA
+// escapado (esc antes de conTiempos): el `&lt;` escapado no matchea el patrón de metros.
 function conTiempos(txt) {
   if (!txt) return ''
   return txt.replace(/~(\d+)\s*m/g, (_, m) => `~${m} m · ${Math.max(1, Math.round(+m / 80))} min`)
@@ -49,21 +57,21 @@ function conTiempos(txt) {
 function popupHTML(p) {
   const row = (label, val) => val == null || val === '' ? '' :
     `<div style="display:flex;justify-content:space-between;gap:12px;font-size:12px;margin:2px 0">
-       <span style="color:#A8A3B3">${label}</span><span style="color:#F0ECE6;font-weight:600">${val}</span></div>`
+       <span style="color:#A8A3B3">${label}</span><span style="color:#F0ECE6;font-weight:600">${esc(val)}</span></div>`
   const block = (label, val) => !val ? '' :
     `<div style="font-size:11px;margin-top:6px"><span style="color:#5EEAD4;font-weight:700">${label}</span>
-       <div style="color:#C9C6D6;line-height:1.5;margin-top:2px">${conTiempos(val)}</div></div>`
+       <div style="color:#C9C6D6;line-height:1.5;margin-top:2px">${conTiempos(esc(val))}</div></div>`
   const ruidoColor = { BAJO:'#2DBDB6', MEDIO:'#E5C06A', ALTO:'#E0685A' }[p.ruido] || '#969CA6'
   // Encaje del turno (si el mapa vino coloreado por encaje) — el diferenciador visible.
   const encajeChip = p.encaje != null
-    ? `<div style="display:inline-block;font-size:10px;font-family:'IBM Plex Mono',monospace;padding:1px 7px;border-radius:999px;background:rgba(94,234,212,.14);color:#5EEAD4;border:1px solid rgba(94,234,212,.4);margin:0 0 6px 5px">encaje ${p.encaje}%</div>`
+    ? `<div style="display:inline-block;font-size:10px;font-family:'IBM Plex Mono',monospace;padding:1px 7px;border-radius:999px;background:rgba(94,234,212,.14);color:#5EEAD4;border:1px solid rgba(94,234,212,.4);margin:0 0 6px 5px">encaje ${esc(p.encaje)}%</div>`
     : ''
   const verRutas = p.servicios_cercanos
-    ? `<button class="ctx-rutas-btn" data-id="${p.id}" style="margin-top:9px;width:100%;padding:7px;border:none;border-radius:9px;cursor:pointer;font-weight:700;font-size:11.5px;background:linear-gradient(90deg,#1A7A76,#2DBDB6);color:#0E0D13">🚶 Ver rutas a pie</button>`
+    ? `<button class="ctx-rutas-btn" data-id="${esc(p.id)}" style="margin-top:9px;width:100%;padding:7px;border:none;border-radius:9px;cursor:pointer;font-weight:700;font-size:11.5px;background:linear-gradient(90deg,#1A7A76,#2DBDB6);color:#0E0D13">🚶 Ver rutas a pie</button>`
     : ''
   return `<div style="font-family:'Plus Jakarta Sans',sans-serif;min-width:230px;max-width:280px">
-    <div style="font-weight:700;font-size:13px;color:#F0ECE6;margin-bottom:6px">${p.direccion || 'Activo'}</div>
-    <div style="display:inline-block;font-size:10px;font-family:'IBM Plex Mono',monospace;padding:1px 7px;border-radius:999px;background:rgba(45,189,182,.12);color:${ruidoColor};border:1px solid ${ruidoColor}55;margin-bottom:6px">ruido ${p.ruido || '—'}</div>${encajeChip}
+    <div style="font-weight:700;font-size:13px;color:#F0ECE6;margin-bottom:6px">${esc(p.direccion || 'Activo')}</div>
+    <div style="display:inline-block;font-size:10px;font-family:'IBM Plex Mono',monospace;padding:1px 7px;border-radius:999px;background:rgba(45,189,182,.12);color:${ruidoColor};border:1px solid ${ruidoColor}55;margin-bottom:6px">ruido ${esc(p.ruido || '—')}</div>${encajeChip}
     <div style="font-size:9.5px;color:#6E6A7A;margin:-2px 0 6px">ruido / vegetación: estimación por zona (heurístico), no medición</div>
     ${row('Tipo', p.tipo_activo)}
     ${row('Caminabilidad', p.walk_score != null ? p.walk_score + '/100' : null)}

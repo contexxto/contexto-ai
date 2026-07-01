@@ -186,6 +186,8 @@ _EMOJI_PARQUE = {"🌳", "🌲", "🏞️", "🏞"}
 def _min_a_pie(texto: str | None, emojis: set[str]) -> int | None:
     """Minutos a pie al POI MÁS CERCANO de una categoría (por su emoji) en el texto de
     servicios. None si no hay ninguno → el motor de encaje lo trata como 'sin dato'."""
+    if not isinstance(texto, str):  # solo texto (columnas str|None); nada más debe crashear
+        return None
     best = None
     for p in parse_servicios(limpiar_texto_servicios(texto)):
         dm = p.get("distancia_m")
@@ -205,7 +207,7 @@ def _transporte_min(conectividad: str | None) -> int | None:
     """Minutos a pie al transporte masivo, desde `conectividad`. Prefiere el tiempo real de
     Google Routes ('(19 min a pie)'); si no está (respaldo OSM, solo metros), cae a la
     distancia más cercana ÷ velocidad peatonal. None si no hay transporte → 'sin dato'."""
-    if not conectividad:
+    if not isinstance(conectividad, str) or not conectividad:  # solo texto; no-str → sin dato
         return None
     m = _MIN_PAREN_RE.search(conectividad)
     if m:
@@ -248,7 +250,7 @@ def _card_from_row(row: dict, preferencias: dict | None = None) -> dict:
     foto = row.get("imagen_url") or (fotos[0] if fotos else None)
     precio = row.get("precio")
     card = {
-        "id": row["id"],
+        "id": row.get("id"),
         "direccion": row.get("direccion"),
         "tipo_activo": row.get("tipo_activo"),
         "operacion": row.get("operacion"),
@@ -395,7 +397,7 @@ def _map_seed_from_cards(cards: list[dict], prev_mode: str | None = None) -> dic
     El pin NUNCA lleva precio (guardrail del SPEC). None si ningún resultado tiene coords."""
     pines = [
         {
-            "id": c["id"],
+            "id": c.get("id"),
             "lat": c.get("lat"),
             "lon": c.get("lon"),
             "encaje": c.get("encaje"),
@@ -405,7 +407,7 @@ def _map_seed_from_cards(cards: list[dict], prev_mode: str | None = None) -> dic
             "tipo_activo": c.get("tipo_activo"),
         }
         for c in cards
-        if c.get("lat") is not None and c.get("lon") is not None
+        if c.get("id") and c.get("lat") is not None and c.get("lon") is not None
     ]
     if not pines:
         return None
@@ -444,19 +446,24 @@ async def comparar_inmuebles(session_id: str, id_a: str, id_b: str) -> dict:
         _fetch_cards_rows(ids),
         return_exceptions=True,
     )
-    if isinstance(fetched, Exception) or fetched is None:
+    # Defensivo: cumple la promesa "nunca lanza → {ok:False}" aun si la dependencia devolviera
+    # algo malformado (no una tupla-de-2). En el contrato real _fetch_cards_rows da (list,dict)|None.
+    if isinstance(fetched, Exception) or not (isinstance(fetched, tuple) and len(fetched) == 2):
         return {"ok": False, "message": "No pude cargar los inmuebles para comparar."}
     preferencias = prefs if isinstance(prefs, dict) else {}
     rows, curaciones = fetched
     by_id: dict[str, dict] = {}
-    for r in rows:
+    for r in (rows if isinstance(rows, (list, tuple)) else []):  # rows None/basura → sin filas, no crash
         r = dict(r)
-        cur = curaciones.get(r["id"], [])
+        rid = r.get("id")
+        if not rid:
+            continue
+        cur = curaciones.get(rid, []) if isinstance(curaciones, dict) else []
         # Mismo prep que build_result_cards: aplica curación del corredor y marca `fresco`,
         # para que las señales (parque, etc.) y las cards del delta calcen con el chat.
         r["servicios_cercanos"] = aplicar_curacion(r.get("servicios_cercanos"), cur)
         r["fresco"] = bool(cur)
-        by_id[r["id"]] = r
+        by_id[rid] = r
     if id_a not in by_id or id_b not in by_id:
         return {"ok": False, "message": "No encontré uno de los inmuebles a comparar."}
 

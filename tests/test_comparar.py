@@ -63,6 +63,13 @@ def test_fetch_none_degrada(monkeypatch):
     assert asyncio.run(chat.comparar_inmuebles("s", "A", "B"))["ok"] is False
 
 
+def test_fetch_malformado_no_lanza(monkeypatch):
+    # Contrato roto (fetched no es tupla-de-2) → {ok:False}, NUNCA un 500.
+    for malo in [("solo_uno",), {"weird": 1}, (None, {})]:
+        _patch(monkeypatch, {}, [], fetched=malo)
+        assert asyncio.run(chat.comparar_inmuebles("s", "A", "B"))["ok"] is False
+
+
 def test_estado_sin_sesion_no_lanza(monkeypatch):
     # aget_state devuelve None (sesión sin estado) → sin preferencias, pero compara igual.
     _patch(monkeypatch, {}, [_mk_row("A"), _mk_row("B")], state=None)

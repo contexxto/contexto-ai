@@ -1,3 +1,4 @@
+import asyncio
 import json
 import re
 import secrets
@@ -17,9 +18,11 @@ from app.agent.state import AgentState
 from app.auth import CurrentUser, get_current_user, get_optional_user
 from app.config import settings
 from app.database import AsyncSessionLocal
+from app.encaje import calcular_encaje
 from app.entorno import limpiar_texto_servicios
 from app.entorno_curacion import aplicar_curacion, parse_servicios
 from app.limiter import limiter
+from app.preferencias import extraer_preferencias
 
 router = APIRouter(prefix="/api/v1/chat", tags=["Chat — Agente Conversacional"])
 
@@ -168,7 +171,64 @@ def _pois_de_intencion(texto: str | None, max_items: int = 3, max_m: int = 1500)
     ]
 
 
-def _card_from_row(row: dict) -> dict:
+# Emojis que codifican categoría en el texto de servicios (OSM/curado): para derivar el
+# transporte masivo / parque MÁS CERCANO como señal del encaje, sin depender solo de los
+# 3 chips visibles (que son los más cercanos de cualquier categoría).
+_EMOJI_TRANSPORTE = {"🚇", "🚏", "🚌", "🚈", "🚉", "🚊", "🚆"}
+_EMOJI_PARQUE = {"🌳", "🌲", "🏞️", "🏞"}
+
+
+def _min_a_pie(texto: str | None, emojis: set[str]) -> int | None:
+    """Minutos a pie al POI MÁS CERCANO de una categoría (por su emoji) en el texto de
+    servicios. None si no hay ninguno → el motor de encaje lo trata como 'sin dato'."""
+    best = None
+    for p in parse_servicios(limpiar_texto_servicios(texto)):
+        dm = p.get("distancia_m")
+        if dm and dm > 0 and _emoji_de(p.get("raw", "")) in emojis and (best is None or dm < best):
+            best = dm
+    return max(1, round(best / _M_POR_MINUTO)) if best else None
+
+
+# El transporte masivo NO vive en `servicios_cercanos` (solo comercios/servicios de barrio,
+# ver app/entorno.py _CATEGORIAS); vive en la columna `conectividad`. Su texto trae el tiempo
+# REAL de caminata de Google Routes entre paréntesis ("… a ~640 m (19 min a pie)") — más
+# honesto que la línea recta; respaldo OSM solo trae metros.
+_MIN_PAREN_RE = re.compile(r"\((\d{1,3})\s*min", re.I)
+
+
+def _transporte_min(conectividad: str | None) -> int | None:
+    """Minutos a pie al transporte masivo, desde `conectividad`. Prefiere el tiempo real de
+    Google Routes ('(19 min a pie)'); si no está (respaldo OSM, solo metros), cae a la
+    distancia más cercana ÷ velocidad peatonal. None si no hay transporte → 'sin dato'."""
+    if not conectividad:
+        return None
+    m = _MIN_PAREN_RE.search(conectividad)
+    if m:
+        return max(1, int(m.group(1)))
+    return _min_a_pie(conectividad, _EMOJI_TRANSPORTE)
+
+
+def _user_texts(messages) -> list[str]:
+    """Los textos que el USUARIO escribió en el hilo — el insumo del extractor de preferencias."""
+    return [m.content for m in messages
+            if isinstance(m, HumanMessage) and isinstance(m.content, str) and m.content.strip()]
+
+
+def _senales_encaje(row: dict, car: dict) -> dict:
+    """Señales del inmueble que consume app.encaje.calcular_encaje (solo NECESIDADES)."""
+    return {
+        "walk_score": row.get("caminabilidad"),
+        "ruido": row.get("ruido"),
+        "vegetacion": row.get("vegetacion"),
+        "precio": row.get("precio"),
+        "num_dormitorios": car.get("num_dormitorios"),
+        "acepta_mascotas": car.get("acepta_mascotas"),
+        "transporte_min": _transporte_min(row.get("conectividad")),
+        "parque_min": _min_a_pie(row.get("servicios_cercanos"), _EMOJI_PARQUE),
+    }
+
+
+def _card_from_row(row: dict, preferencias: dict | None = None) -> dict:
     """Fila de DB → payload de tarjeta. Extrae specs y foto de `caracteristicas`."""
     car = row.get("caracteristicas")
     if isinstance(car, str):
@@ -180,7 +240,7 @@ def _card_from_row(row: dict) -> dict:
     fotos = car.get("fotos") or []
     foto = row.get("imagen_url") or (fotos[0] if fotos else None)
     precio = row.get("precio")
-    return {
+    card = {
         "id": row["id"],
         "direccion": row.get("direccion"),
         "tipo_activo": row.get("tipo_activo"),
@@ -198,10 +258,20 @@ def _card_from_row(row: dict) -> dict:
         "pois": _pois_de_intencion(row.get("servicios_cercanos")),
         # Verificación del entorno por el corredor (Catastro Vivo). El pin del Mapa Vivo
         # (modo ZONA) lo pinta como halo SÓLIDO (verificado) vs suave ("según el mapa").
-        # Es el eje HALO del pin-anillo; el eje ARCO (encaje a la intención) es la tarea
-        # #8 y aquí NO se inventa. Honesto: solo se enciende si hay curación real.
+        # Es el eje HALO del pin-anillo. Honesto: solo se enciende si hay curación real.
         "fresco": bool(row.get("fresco")),
     }
+    # ★ ENCAJE (tarea #8): eje ARCO del pin-anillo. "X% de encaje contigo" contra las
+    # necesidades DECLARADAS. Solo si el usuario declaró algo (preferencias no vacías) y
+    # el motor pudo puntuar honestamente; si no, `encaje=None` y el frontend no pinta badge
+    # (nada de un % inventado). Fair Housing: calcular_encaje solo lee necesidades.
+    enc = calcular_encaje(preferencias, _senales_encaje(row, car)) if preferencias else None
+    card["encaje"] = enc["score"] if enc else None
+    card["encaje_razones"] = [
+        {"texto": r["texto"], "cumple": r["cumple"], "fuente": r["fuente"]}
+        for r in (enc["razones"] if enc else []) if r.get("aporta")
+    ][:4]
+    return card
 
 
 async def _fetch_curaciones_batch(db, ids: list[str]) -> dict[str, list[dict]]:
@@ -223,12 +293,8 @@ async def _fetch_curaciones_batch(db, ids: list[str]) -> dict[str, list[dict]]:
     return out
 
 
-async def build_result_cards(messages) -> list[dict]:
-    """Construye las tarjetas para los inmuebles que el agente surfaceó este turno.
-    Una sola query de enriquecimiento; preserva el orden en que aparecieron."""
-    ids = _collect_asset_ids(messages)
-    if not ids:
-        return []
+async def _fetch_cards_rows(ids: list[str]) -> tuple[list, dict] | None:
+    """Query de enriquecimiento de tarjetas + curación. None si la DB falla (degradación)."""
     query = """
         SELECT
             a.id::text AS id,
@@ -236,7 +302,10 @@ async def build_result_cards(messages) -> list[dict]:
             a.tipo_activo,
             a.imagen_url,
             a.walk_score AS caminabilidad,
+            a.score_ruido_predictivo AS ruido,
+            a.porcentaje_cobertura_vegetal AS vegetacion,
             a.servicios_cercanos,
+            a.conectividad,
             ST_Y(a.geom) AS lat,
             ST_X(a.geom) AS lon,
             a.caracteristicas,
@@ -253,21 +322,40 @@ async def build_result_cards(messages) -> list[dict]:
         async with AsyncSessionLocal() as db:
             rows = (await db.execute(text(query), {"ids": ids})).mappings().all()
             curaciones = await _fetch_curaciones_batch(db, ids)
+            return rows, curaciones
     except Exception:  # noqa: BLE001 — sin tarjetas es degradación aceptable, no error
+        return None
+
+
+async def build_result_cards(messages) -> list[dict]:
+    """Construye las tarjetas para los inmuebles que el agente surfaceó este turno.
+    Preserva el orden en que aparecieron. Cada tarjeta lleva su ENCAJE (tarea #8) contra
+    las necesidades DECLARADAS del usuario, extraídas del hilo (LLM → schema fijo)."""
+    ids = _collect_asset_ids(messages)
+    if not ids:
         return []
+    # Extracción de preferencias (LLM) y fetch de tarjetas EN PARALELO: ninguna bloquea a
+    # la otra. Ambas degradan solas (prefs → {}, fetch → None) sin romper el turno.
+    prefs, fetched = await asyncio.gather(
+        extraer_preferencias(_user_texts(messages)),
+        _fetch_cards_rows(ids),
+        return_exceptions=True,
+    )
+    if isinstance(fetched, Exception) or fetched is None:
+        return []
+    preferencias = prefs if isinstance(prefs, dict) else {}
+    rows, curaciones = fetched
+
     by_id: dict[str, dict] = {}
     for r in rows:
         r = dict(r)
         cur = curaciones.get(r["id"], [])
         # Catastro Vivo: aplica el overlay del corredor (quita los POIs que marcó
         # CERRADOS) ANTES de armar los chips, igual que la página de anuncio /a/{id}.
-        # Sin esto la tarjeta mostraría como "según el mapa" un negocio que ya cerró.
         r["servicios_cercanos"] = aplicar_curacion(r.get("servicios_cercanos"), cur)
-        # Mapa Vivo (modo ZONA): el pin codifica VERIFICACIÓN. `fresco` = el corredor
-        # tocó el entorno de este inmueble (cualquier curación = un humano lo revisó).
-        r["fresco"] = bool(cur)
+        r["fresco"] = bool(cur)  # verificación (halo del pin); ver _card_from_row
         by_id[r["id"]] = r
-    return [_card_from_row(by_id[i]) for i in ids if i in by_id]
+    return [_card_from_row(by_id[i], preferencias) for i in ids if i in by_id]
 
 
 async def _stream_agent(message: str, session_id: str) -> AsyncIterator[str]:

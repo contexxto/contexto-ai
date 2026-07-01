@@ -11,6 +11,7 @@ devuelve None y el mapa simplemente no muestra rutas.
 from __future__ import annotations
 
 import asyncio
+import re
 
 import httpx
 from sqlalchemy import text
@@ -18,6 +19,7 @@ from sqlalchemy import text
 from app.config import settings
 from app.database import engine
 from app.entorno import _CATEGORIAS, _nombre_valido
+from app.isocronas import isocrona
 from app.walk_score import _haversine_m, walk_score_para
 
 _TIMEOUT = 8.0
@@ -513,12 +515,51 @@ async def aura_zona(lat: float, lon: float) -> dict:
     }
 
 
+# ── Mapa Vivo 2C: isócrona peatonal (motor propio Valhalla, sin Google) ──
+_ISO_MIN, _ISO_MAX = 5, 45  # minutos a pie razonables para el overlay
+
+
+def _intent_isocrona(p: str) -> bool:
+    """¿La pregunta pide el ÁREA alcanzable a pie (isócrona), no una ruta puntual?"""
+    if "isocron" in p or "isócron" in p:
+        return True
+    pie = any(k in p for k in ("a pie", "caminando", "andando", "a patas"))
+    tiempo = bool(re.search(r"\d+\s*min", p)) or ("minuto" in p)
+    alcance = any(k in p for k in ("alcanzo", "alcanz", "llego", "puedo llegar", "qué tan lejos"))
+    return (pie and (tiempo or alcance)) or (alcance and tiempo)
+
+
+def _extraer_minutos(p: str) -> int:
+    m = re.search(r"(\d{1,3})\s*min", p) or re.search(r"\b(\d{1,2})\b", p)
+    val = int(m.group(1)) if m else 15
+    return max(_ISO_MIN, min(_ISO_MAX, val))
+
+
+async def _accion_isocrona(lat: float, lon: float, p: str) -> dict:
+    """Isócrona peatonal EN VIVO (Valhalla) → acción de polígono para el mapa."""
+    minutos = _extraer_minutos(p)
+    isos = await isocrona(lat, lon, [minutos])
+    if not isos:
+        return {"texto": "El motor de isócronas peatonales no está disponible ahora mismo.", "acciones": []}
+    contornos = [{"minutos": it["minutos"], "geometry": it["geometry"]} for it in isos]
+    return {
+        "texto": f"Te ilumino **todo lo que alcanzas a {minutos} min a pie** desde aquí — "
+                 "por calles reales, no en línea recta.",
+        "acciones": [{"tipo": "isocrona", "contornos": contornos, "centro": [lon, lat]}],
+    }
+
+
 async def comando_mapa(pregunta: str, lat: float, lon: float) -> dict:
     """Interpreta una pregunta y devuelve {texto, acciones} para que el mapa reaccione."""
+    p = (pregunta or "").lower()
+
+    # 0a) ¿Isócrona peatonal? — motor propio (Valhalla), NO requiere Google.
+    if _intent_isocrona(p):
+        return await _accion_isocrona(lat, lon, p)
+
     key = settings.google_maps_api_key
     if not key:
         return {"texto": "El mapa interactivo necesita Google Maps activo.", "acciones": []}
-    p = (pregunta or "").lower()
 
     # 0) ¿Pide un recorrido/tour por la zona?
     if any(k in p for k in ["tour", "recorre", "recorré", "recorrido", "recorrer", "pasea", "paseo",

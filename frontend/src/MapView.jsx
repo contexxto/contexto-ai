@@ -19,6 +19,8 @@ const RUIDO_COLOR = [
 
 // Chips de categoría (un toque = ilumina esa capa), estilo Google Maps.
 const CHIPS = [
+  ['🚶', '15 min a pie', 'qué alcanzo a 15 minutos a pie'],
+  ['🚶', '30 min a pie', 'qué alcanzo a 30 minutos a pie'],
   ['🚇', 'Transporte', 'ruta al metro'],
   ['🏥', 'Salud', 'hospital más cercano'],
   ['💊', 'Farmacia', 'farmacia más cercana'],
@@ -54,6 +56,18 @@ function popupHTML(p) {
     ${block('🏥 Servicios cercanos', p.servicios_cercanos)}
     ${verRutas}
   </div>`
+}
+
+// Recorre todas las coordenadas de una geometría GeoJSON (Polygon/MultiPolygon).
+function eachCoord(geom, fn) {
+  const walk = (a) => { if (typeof a[0] === 'number') fn(a); else a.forEach(walk) }
+  if (geom && geom.coordinates) walk(geom.coordinates)
+}
+// Vértice más al norte de una geometría — buen anclaje para la etiqueta del contorno.
+function puntoNorte(geom) {
+  let best = null
+  eachCoord(geom, (xy) => { if (!best || xy[1] > best[1]) best = xy })
+  return best
 }
 
 // Genera un polígono GeoJSON que aproxima un círculo (radio en metros).
@@ -304,6 +318,25 @@ export default function MapView({ seedIds } = {}) {
         if (a.destino) marcadorEtiqueta(a.destino, a.etiqueta, a.color || '#5EEAD4')
       } else if (a.tipo === 'puntos' && a.items?.length) {
         a.items.forEach(it => { marcadorEtiqueta(it.coords, it.etiqueta, it.color || a.color || '#5EEAD4'); bounds.extend(it.coords); hay = true })
+      } else if (a.tipo === 'isocrona' && a.contornos?.length) {
+        // Mapa Vivo 2C: el área REAL alcanzable a pie (Valhalla). El contorno mayor
+        // va debajo; cada uno se pinta como relleno translúcido + borde punteado.
+        const orden = [...a.contornos].sort((x, y) => y.minutos - x.minutos)
+        orden.forEach((c) => {
+          const id = `cmd-iso-${i}-${c.minutos}`
+          if (map.getSource(id)) return
+          map.addSource(id, { type: 'geojson', data: { type: 'Feature', geometry: c.geometry } })
+          const col = c.minutos <= 15 ? '#5EEAD4' : '#2DBDB6'
+          map.addLayer({ id: `${id}-fill`, type: 'fill', source: id,
+            paint: { 'fill-color': col, 'fill-opacity': 0.16 } })
+          map.addLayer({ id: `${id}-line`, type: 'line', source: id,
+            paint: { 'line-color': col, 'line-width': 2, 'line-opacity': 0.9, 'line-dasharray': [3, 2] } })
+          capasRef.current.ids.push(`${id}-fill`, `${id}-line`, id)
+          eachCoord(c.geometry, xy => { bounds.extend(xy); hay = true })
+          const norte = puntoNorte(c.geometry)
+          if (norte) marcadorEtiqueta(norte, `🚶 ${c.minutos} min`, col)
+        })
+        if (a.centro) marcadorPulso(a.centro)
       } else if (a.tipo === 'volar' && a.coords) {
         map.flyTo({ center: a.coords, zoom: a.zoom || 16, duration: 900 })
       }
@@ -621,7 +654,7 @@ export default function MapView({ seedIds } = {}) {
         ))}
         <div style={{ marginTop: 8, paddingTop: 7, borderTop: '1px solid #2E2D3A',
                       fontSize: 10, color: '#6E6A7A', lineHeight: 1.4 }}>
-          Servicios y rutas: <b style={{ color: '#8A8694' }}>Google</b> · Caminabilidad: <b style={{ color: '#8A8694' }}>OpenStreetMap</b>
+          Isócronas a pie: <b style={{ color: '#8A8694' }}>Valhalla (propio)</b> · Servicios/rutas: <b style={{ color: '#8A8694' }}>Google</b> · Caminabilidad: <b style={{ color: '#8A8694' }}>OpenStreetMap</b>
         </div>
       </div>
       {error && (

@@ -18,6 +18,10 @@ services:
         value: claude-sonnet-4-5-20250929
       - key: SSL_VERIFY
         value: "true"
+      # Isócronas peatonales — motor propio Valhalla (private service de abajo).
+      # URL INTERNA (red privada de Render), no es secreto: no se expone a internet.
+      - key: VALHALLA_URL
+        value: "http://valhalla:8002"
       # Fallback si no se usa DATABASE_URL_OVERRIDE
       - key: POSTGRES_HOST
         value: "db.jzxeigzxgbglfsiiqpxv.supabase.co"
@@ -29,3 +33,37 @@ services:
         value: "postgres"
       - key: POSTGRES_PASSWORD
         sync: false
+
+  # ── Valhalla: motor de isócronas peatonales (Ladrillo #7 del foso) ──
+  # Private service (NO expuesto a internet); solo el web service lo alcanza por
+  # la red interna en http://valhalla:8002. Imagen prearmada valhalla-scripted:
+  # al primer arranque baja el PBF de Ecuador y construye los tiles (~5-15 min,
+  # necesita ~2-4 GB RAM → plan standard); el disco persistente los conserva, así
+  # que reinicios y deploys posteriores NO reconstruyen (use_tiles_ignore_pbf).
+  # Ver docs/DEPLOY_Valhalla.md y SPEC_Foso_Capa_de_Datos.md §2.
+  - type: pserv
+    name: valhalla
+    runtime: image
+    image:
+      url: ghcr.io/valhalla/valhalla-scripted:latest
+    plan: standard          # 2 GB RAM — necesario para el build de tiles
+    region: oregon          # MISMA región que el web service (red interna)
+    disk:
+      name: valhalla-tiles
+      mountPath: /custom_files
+      sizeGB: 5
+    envVars:
+      - key: tile_urls
+        value: "https://download.geofabrik.de/south-america/ecuador-latest.osm.pbf"
+      - key: use_tiles_ignore_pbf
+        value: "True"       # si ya hay tiles en el disco, NO reconstruye
+      - key: build_admins
+        value: "True"       # sin admin polygons, isócronas/ruteo degradan
+      - key: build_time_zones
+        value: "True"
+      - key: build_elevation
+        value: "False"      # peatonal urbano: sin elevación
+      - key: server_threads
+        value: "2"          # acota RAM del build (NO 'concurrency')
+      - key: force_rebuild
+        value: "False"

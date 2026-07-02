@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import axios from 'axios'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
+import { Maximize2, X } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import { intentHue } from './intentHue'
 
@@ -32,11 +33,100 @@ const coordOk = (lat, lon) =>
   lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180 &&
   !(lat === 0 && lon === 0)
 
+// Dibuja pin + POIs + isócrona sobre un mapa YA creado. Compartida entre la tarjeta chica
+// (no interactiva) y el modal ampliado (interactivo) para no duplicar esta lógica dos veces
+// — mismo criterio que el resto del archivo: una sola fuente de verdad para el render.
+// `isCancelled` es un getter (no un booleano) porque el valor real vive en una closure que
+// cambia con el tiempo (el cleanup del efecto la vuelve true de forma asíncrona).
+function pintarAura(map, { lat, lon, pois, isocronas }, hue, isCancelled, opts = {}) {
+  const { padding = 56, maxZoom = 15.5, zoomSolo = 15 } = opts
+  if (isCancelled()) return true
+  try {
+    map.resize()
+    // Encuadre: el inmueble queda CENTRAL (re-centra en ÉL). fitBounds SOLO sobre los
+    // POIs cercanos (≤900 m): un hub de transporte a 2-3 km no debe estirar el zoom y
+    // encoger el inmueble a un punto. Los POIs lejanos igual se listan en las pills.
+    const cercanos = pois.filter((p) => (p.distancia_m ?? Infinity) <= 900)
+    if (!cercanos.length) {
+      map.jumpTo({ center: [lon, lat], zoom: zoomSolo })
+    } else {
+      const b = new maplibregl.LngLatBounds()
+      b.extend([lon, lat])
+      cercanos.forEach((p) => b.extend([p.lon, p.lat]))
+      map.fitBounds(b, { padding, maxZoom, duration: 0 })
+    }
+    // Isócrona peatonal (motor propio, Valhalla): el contorno MAYOR va debajo (se agrega
+    // primero → queda por debajo en el orden de pintado de MapLibre). Relleno translúcido +
+    // borde punteado en el hue del PROPÓSITO del inmueble (nunca teal frío aquí —
+    // AURA-SINGLE ya eligió, spec "Temperatura emocional"). A diferencia de la cámara/
+    // markers (DOM, no requieren el estilo listo), addSource/addLayer SÍ exige el estilo
+    // cargado — si aún no lo está, difiere a 'load' en vez de arriesgar una excepción que
+    // degrade TODO el mapa por culpa solo de la isócrona.
+    const pintarIsocronas = () => {
+      if (isCancelled()) return
+      try {
+        ;[...isocronas].sort((a, b) => b.minutos - a.minutos).forEach((c) => {
+          const id = `aura-iso-${c.minutos}`
+          if (map.getSource(id)) return
+          map.addSource(id, { type: 'geojson', data: { type: 'Feature', geometry: c.geometry } })
+          map.addLayer({
+            id: `${id}-fill`, type: 'fill', source: id,
+            paint: { 'fill-color': hue.accent, 'fill-opacity': c.minutos <= 15 ? 0.16 : 0.08 },
+          })
+          map.addLayer({
+            id: `${id}-line`, type: 'line', source: id,
+            paint: { 'line-color': hue.accent, 'line-width': 1.5, 'line-opacity': 0.65, 'line-dasharray': [2, 2] },
+          })
+        })
+      } catch (err) {
+        // Solo la isócrona se pierde; POIs + pin del inmueble (ya dibujados arriba, vía
+        // markers DOM) siguen en pie. No escala a `failed` del componente entero.
+        console.warn('[AuraSingle] isócrona no se pudo pintar:', err?.message || err)
+      }
+    }
+    if (isocronas.length) {
+      if (map.isStyleLoaded()) pintarIsocronas()
+      else map.once('load', pintarIsocronas)
+    }
+    // POIs: punto semántico (color por categoría) + etiqueta (emoji · min). DOM markers.
+    pois.forEach((p) => {
+      const el = document.createElement('div')
+      el.className = 'ctx-poi'
+      const mins = p.minutos != null ? `${p.minutos} min` : ''
+      el.innerHTML =
+        `<span class="ctx-poi-dot" style="background:${p.color || C.teal}"></span>` +
+        `<span class="ctx-poi-lbl">${p.emoji || '📍'}${mins ? ' ' + mins : ''}</span>`
+      if (p.nombre) {
+        el.title = `${p.nombre}${p.distancia_m ? ` · a ~${p.distancia_m} m a pie` : ''} (según Google Maps)`
+      }
+      new maplibregl.Marker({ element: el, anchor: 'left' }).setLngLat([p.lon, p.lat]).addTo(map)
+    })
+    // El inmueble: aura que FLORECE en el hue del propósito (el pago emocional del modo).
+    const home = document.createElement('div')
+    home.className = 'ctx-aura-home'
+    home.innerHTML =
+      `<span class="ctx-aura-home-dot" style="background:${hue.accent};` +
+      `box-shadow:0 0 0 4px ${hue.glow}, 0 0 20px ${hue.glow}"></span>`
+    new maplibregl.Marker({ element: home, anchor: 'center' }).setLngLat([lon, lat]).addTo(map)
+    return true
+  } catch (err) {
+    if (!isCancelled()) console.warn('[AuraSingle] dibujar:', err?.message || err)
+    return false
+  }
+}
+
 export default function AuraSingleMap({ activoId, tipoActivo }) {
   const containerRef = useRef(null)
+  const expandedRef = useRef(null)
   const [data, setData] = useState(null)         // { lat, lon, pois, isocronas }
   const [estado, setEstado] = useState('loading') // loading | ready | vacio | error
   const [failed, setFailed] = useState(false)     // fallo de carga del basemap (CDN)
+  // Modal de mapa ampliado — el mapa chico es deliberadamente NO interactivo (no compite
+  // con el scroll de la pagina, ver comentario mas abajo), pero eso dejaba al usuario sin
+  // forma de verlo mas grande o hacer zoom/pan. Feedback en vivo (2026-07-02): "no me deja
+  // abrir o ampliar el mapa". El modal es un mapa NUEVO (interactive:true), no una versión
+  // agrandada del mismo — mas simple y robusto que reparentar el canvas de MapLibre.
+  const [expanded, setExpanded] = useState(false)
   const hue = intentHue(tipoActivo)
 
   // 1) Fetch del aura — SEPARADO de /anuncio para no bloquear el primer paint del inmueble.
@@ -66,89 +156,16 @@ export default function AuraSingleMap({ activoId, tipoActivo }) {
   // 2) Montaje del mapa cuando hay datos (mismo ciclo de vida robusto que MapSeed).
   useEffect(() => {
     if (estado !== 'ready' || !data || !containerRef.current) return
-    const { lat, lon, pois, isocronas } = data
     let cancelled = false
     setFailed(false)
     const map = new maplibregl.Map({
       container: containerRef.current, style: DARK_STYLE,
       attributionControl: false, interactive: false, fadeDuration: 0,
     })
-
-    const dibujar = () => {
-      if (cancelled) return
-      try {
-        map.resize()
-        // Encuadre: el inmueble queda CENTRAL (re-centra en ÉL). fitBounds SOLO sobre los
-        // POIs cercanos (≤900 m): un hub de transporte a 2-3 km no debe estirar el zoom y
-        // encoger el inmueble a un punto. Los POIs lejanos igual se listan en las pills.
-        const cercanos = pois.filter((p) => (p.distancia_m ?? Infinity) <= 900)
-        if (!cercanos.length) {
-          map.jumpTo({ center: [lon, lat], zoom: 15 })
-        } else {
-          const b = new maplibregl.LngLatBounds()
-          b.extend([lon, lat])
-          cercanos.forEach((p) => b.extend([p.lon, p.lat]))
-          map.fitBounds(b, { padding: 56, maxZoom: 15.5, duration: 0 })
-        }
-        // Isócrona peatonal (motor propio, Valhalla): el contorno MAYOR va debajo (se
-        // agrega primero → queda por debajo en el orden de pintado de MapLibre). Relleno
-        // translúcido + borde punteado en el hue del PROPÓSITO del inmueble (nunca teal
-        // frío aquí — AURA-SINGLE ya eligió, spec "Temperatura emocional"). A diferencia
-        // de la cámara/markers (DOM, no requieren el estilo listo), addSource/addLayer SÍ
-        // exige el estilo cargado — si aún no lo está (raro a los 60ms, pero posible en
-        // redes lentas), difiere a 'load' en vez de arriesgar una excepción que degrade
-        // TODO el mapa por culpa solo de la isócrona.
-        const pintarIsocronas = () => {
-          if (cancelled) return
-          try {
-            ;[...isocronas].sort((a, b) => b.minutos - a.minutos).forEach((c) => {
-              const id = `aura-iso-${c.minutos}`
-              if (map.getSource(id)) return
-              map.addSource(id, { type: 'geojson', data: { type: 'Feature', geometry: c.geometry } })
-              map.addLayer({
-                id: `${id}-fill`, type: 'fill', source: id,
-                paint: { 'fill-color': hue.accent, 'fill-opacity': c.minutos <= 15 ? 0.16 : 0.08 },
-              })
-              map.addLayer({
-                id: `${id}-line`, type: 'line', source: id,
-                paint: { 'line-color': hue.accent, 'line-width': 1.5, 'line-opacity': 0.65, 'line-dasharray': [2, 2] },
-              })
-            })
-          } catch (err) {
-            // Solo la isócrona se pierde; POIs + pin del inmueble (ya dibujados arriba,
-            // vía markers DOM) siguen en pie. No escala a `failed` del componente entero.
-            console.warn('[AuraSingle] isócrona no se pudo pintar:', err?.message || err)
-          }
-        }
-        if (isocronas.length) {
-          if (map.isStyleLoaded()) pintarIsocronas()
-          else map.once('load', pintarIsocronas)
-        }
-        // POIs: punto semántico (color por categoría) + etiqueta (emoji · min). DOM markers.
-        pois.forEach((p) => {
-          const el = document.createElement('div')
-          el.className = 'ctx-poi'
-          const mins = p.minutos != null ? `${p.minutos} min` : ''
-          el.innerHTML =
-            `<span class="ctx-poi-dot" style="background:${p.color || C.teal}"></span>` +
-            `<span class="ctx-poi-lbl">${p.emoji || '📍'}${mins ? ' ' + mins : ''}</span>`
-          if (p.nombre) {
-            el.title = `${p.nombre}${p.distancia_m ? ` · a ~${p.distancia_m} m a pie` : ''} (según Google Maps)`
-          }
-          new maplibregl.Marker({ element: el, anchor: 'left' }).setLngLat([p.lon, p.lat]).addTo(map)
-        })
-        // El inmueble: aura que FLORECE en el hue del propósito (el pago emocional del modo).
-        const home = document.createElement('div')
-        home.className = 'ctx-aura-home'
-        home.innerHTML =
-          `<span class="ctx-aura-home-dot" style="background:${hue.accent};` +
-          `box-shadow:0 0 0 4px ${hue.glow}, 0 0 20px ${hue.glow}"></span>`
-        new maplibregl.Marker({ element: home, anchor: 'center' }).setLngLat([lon, lat]).addTo(map)
-      } catch (err) {
-        if (!cancelled) { console.warn('[AuraSingle] dibujar:', err?.message || err); setFailed(true) }
-      }
-    }
-    const t = setTimeout(dibujar, 60)
+    const t = setTimeout(() => {
+      const ok = pintarAura(map, data, hue, () => cancelled)
+      if (!ok && !cancelled) setFailed(true)
+    }, 60)
     // Degradar SOLO ante fallo de carga del basemap (estilo no cargó), nunca por ausencia de 'load'.
     map.on('error', (e) => {
       if (cancelled) return
@@ -160,6 +177,31 @@ export default function AuraSingleMap({ activoId, tipoActivo }) {
     return () => { cancelled = true; clearTimeout(t); map.remove() }
     // hue.accent/glow se recalculan con tipoActivo; re-montar si cambia el inmueble o su tipo.
   }, [estado, data, hue.accent, hue.glow])
+
+  // 3) Mapa AMPLIADO (modal, interactive:true) — instancia SEPARADA del mapa chico, montada
+  // solo mientras `expanded` es true. Reusa el mismo `data` ya cargado (no vuelve a pedir
+  // /aura). Se destruye al cerrar el modal para no dejar un mapa MapLibre invisible vivo.
+  useEffect(() => {
+    if (!expanded || estado !== 'ready' || !data || !expandedRef.current) return
+    let cancelled = false
+    const map = new maplibregl.Map({
+      container: expandedRef.current, style: DARK_STYLE,
+      attributionControl: false, interactive: true, fadeDuration: 0,
+    })
+    const t = setTimeout(() => {
+      pintarAura(map, data, hue, () => cancelled, { padding: 72, maxZoom: 17, zoomSolo: 16 })
+    }, 60)
+    map.on('error', (e) => { if (!cancelled) console.warn('[AuraSingle expandido]', e?.error?.message || e) })
+    return () => { cancelled = true; clearTimeout(t); map.remove() }
+  }, [expanded, estado, data, hue.accent, hue.glow])
+
+  // Cerrar el modal ampliado con Escape (patron estandar de modal).
+  useEffect(() => {
+    if (!expanded) return
+    const onKey = (e) => { if (e.key === 'Escape') setExpanded(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [expanded])
 
   // Inmueble sin geo o fallo del fetch → no renderizamos el bloque (el anuncio ya muestra
   // los servicios en texto; no dejamos una caja muerta).
@@ -188,8 +230,11 @@ export default function AuraSingleMap({ activoId, tipoActivo }) {
         </div>
       ) : (
         <>
-          <div style={{ position: 'relative', height: 240, borderRadius: 16, overflow: 'hidden',
-                        border: `1px solid ${hue.glow}`, background: '#0E0D13',
+          <div onClick={() => setExpanded(true)} role="button" tabIndex={0}
+               aria-label="Ampliar mapa del entorno"
+               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setExpanded(true) }}
+               style={{ position: 'relative', height: 240, borderRadius: 16, overflow: 'hidden',
+                        border: `1px solid ${hue.glow}`, background: '#0E0D13', cursor: 'pointer',
                         boxShadow: `0 0 0 1px ${C.line}, inset 0 0 60px ${hue.glow}` }}>
             <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />
             <span style={{ position: 'absolute', top: 8, left: 8, display: 'inline-flex', alignItems: 'center',
@@ -198,6 +243,16 @@ export default function AuraSingleMap({ activoId, tipoActivo }) {
                            border: `1px solid ${hue.glow}`, pointerEvents: 'none' }}>
               ✦ Su aura · a pie
             </span>
+            {/* El mapa chico es deliberadamente estatico (interactive:false, no compite con
+                el scroll de la pagina) — este boton es la unica forma de ampliarlo/hacer
+                zoom-pan, y por eso necesita ser bien visible, no un detalle escondido. */}
+            <span aria-hidden="true"
+                  style={{ position: 'absolute', top: 8, right: 8, width: 30, height: 30, borderRadius: 8,
+                           display: 'flex', alignItems: 'center', justifyContent: 'center',
+                           background: 'rgba(14,13,19,.7)', color: hue.accent, backdropFilter: 'blur(4px)',
+                           border: `1px solid ${hue.glow}` }}>
+              <Maximize2 size={14} />
+            </span>
           </div>
           {pois.length > 0 && <PoiPills pois={pois} hue={hue} />}
           <div style={{ fontSize: '.66rem', color: C.muted, marginTop: 8 }}>
@@ -205,6 +260,29 @@ export default function AuraSingleMap({ activoId, tipoActivo }) {
             📍 Pines según Google Maps · tiempos a pie estimados (~80 m/min, terreno plano)
           </div>
         </>
+      )}
+
+      {expanded && (
+        <div onClick={(e) => { if (e.target === e.currentTarget) setExpanded(false) }}
+             style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(10,9,14,.94)',
+                      backdropFilter: 'blur(6px)', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        padding: '14px 16px', flexShrink: 0 }}>
+            <span style={{ fontSize: '.78rem', color: C.muted }}>
+              🚶 Arrastra para mover · pellizca o usa scroll para hacer zoom
+            </span>
+            <button onClick={() => setExpanded(false)} aria-label="Cerrar mapa ampliado"
+              style={{ width: 38, height: 38, borderRadius: '50%', border: 'none', cursor: 'pointer',
+                       background: 'rgba(255,255,255,.08)', color: C.text, display: 'flex',
+                       alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <X size={20} />
+            </button>
+          </div>
+          <div style={{ flex: 1, position: 'relative', margin: '0 16px 16px', borderRadius: 16,
+                        overflow: 'hidden', border: `1px solid ${hue.glow}` }}>
+            <div ref={expandedRef} style={{ position: 'absolute', inset: 0 }} />
+          </div>
+        </div>
       )}
 
       <style>{`

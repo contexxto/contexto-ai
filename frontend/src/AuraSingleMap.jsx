@@ -150,7 +150,7 @@ function pintarAura(map, { lat, lon, pois, isocronas, rutas = [] }, hue, isCance
   }
 }
 
-export default function AuraSingleMap({ activoId, tipoActivo }) {
+export default function AuraSingleMap({ activoId, tipoActivo, onExpandMap }) {
   const containerRef = useRef(null)
   const expandedRef = useRef(null)
   const [data, setData] = useState(null)         // { lat, lon, pois, isocronas, rutas }
@@ -163,6 +163,12 @@ export default function AuraSingleMap({ activoId, tipoActivo }) {
   // agrandada del mismo — mas simple y robusto que reparentar el canvas de MapLibre.
   const [expanded, setExpanded] = useState(false)
   const hue = intentHue(tipoActivo)
+  // Feedback en vivo (2026-07-02, segunda vuelta): "ampliar" NO debe abrir un mapa pelado
+  // con solo pan/zoom — debe llevar al Mapa Vivo CONVERSACIONAL completo (el mismo que ya
+  // existe en el chat: "Pregúntale al mapa", "Recorre esta zona", colores de encaje). El
+  // padre (AnuncioView → App.jsx) pasa `onExpandMap` para eso. El modal interno de abajo
+  // queda como fallback SOLO si algún consumidor futuro de AuraSingleMap no pasa esa prop.
+  const abrirAmpliado = () => { if (onExpandMap) onExpandMap(); else setExpanded(true) }
 
   // 1) Fetch del aura — SEPARADO de /anuncio para no bloquear el primer paint del inmueble.
   // /rutas (rutas peatonales REALES, Google Routes) se pide EN PARALELO: si falla o no hay
@@ -273,9 +279,9 @@ export default function AuraSingleMap({ activoId, tipoActivo }) {
         </div>
       ) : (
         <>
-          <div onClick={() => setExpanded(true)} role="button" tabIndex={0}
+          <div onClick={abrirAmpliado} role="button" tabIndex={0}
                aria-label="Ampliar mapa del entorno"
-               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setExpanded(true) }}
+               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') abrirAmpliado() }}
                style={{ position: 'relative', height: 240, borderRadius: 16, overflow: 'hidden',
                         border: `1px solid ${hue.glow}`, background: '#0E0D13', cursor: 'pointer',
                         boxShadow: `0 0 0 1px ${C.line}, inset 0 0 60px ${hue.glow}` }}>
@@ -287,8 +293,9 @@ export default function AuraSingleMap({ activoId, tipoActivo }) {
               ✦ Su aura · a pie
             </span>
             {/* El mapa chico es deliberadamente estatico (interactive:false, no compite con
-                el scroll de la pagina) — este boton es la unica forma de ampliarlo/hacer
-                zoom-pan, y por eso necesita ser bien visible, no un detalle escondido. */}
+                el scroll de la pagina) — este boton es la unica entrada al Mapa Vivo completo
+                (conversacional, con rutas/tour/encaje), y por eso necesita ser bien visible,
+                no un detalle escondido. */}
             <span aria-hidden="true"
                   style={{ position: 'absolute', top: 8, right: 8, width: 30, height: 30, borderRadius: 8,
                            display: 'flex', alignItems: 'center', justifyContent: 'center',

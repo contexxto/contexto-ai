@@ -847,10 +847,19 @@ async def get_session_history(session_id: str):
     # de cada respuesta del agente con los ToolMessages de ese mismo turno.
     history: list[dict] = []
     turn_tool_msgs: list[ToolMessage] = []
+    # Acumula TODOS los HumanMessage vistos hasta ahora (no solo los del turno actual):
+    # build_result_cards → extraer_preferencias(_user_texts(...)) necesita el hilo COMPLETO
+    # de mensajes del usuario para reconstruir las preferencias, igual que en el turno EN
+    # VIVO. Bug real (encontrado por feedback en vivo): pasar solo `turn_tool_msgs` (sin
+    # ningún HumanMessage) hacía que _user_texts SIEMPRE devolviera [] → preferencias={} en
+    # TODA recarga de historial → el encaje desaparecía al volver a una conversación, aunque
+    # el turno original SÍ lo hubiera calculado bien.
+    todos_humanos: list[HumanMessage] = []
 
     for m in messages:
         if isinstance(m, HumanMessage):
-            turn_tool_msgs = []          # nuevo turno → reset
+            todos_humanos.append(m)
+            turn_tool_msgs = []          # nuevo turno → reset (los tool msgs, no los humanos)
             history.append({
                 "role": "user",
                 "content": m.content if isinstance(m.content, str) else str(m.content),
@@ -859,7 +868,7 @@ async def get_session_history(session_id: str):
         elif isinstance(m, AIMessage) and getattr(m, "tool_calls", None):
             pass                         # paso intermedio de planificación — ignorar
         elif isinstance(m, AIMessage):
-            results = await build_result_cards(turn_tool_msgs)
+            results = await build_result_cards(turn_tool_msgs + todos_humanos)
             history.append({
                 "role": "assistant",
                 "content": m.content if isinstance(m.content, str) else str(m.content),

@@ -26,6 +26,41 @@ export default function MisPublicaciones({ onClose }) {
   const [caracAsset, setCaracAsset] = useState(null)
   const [entornoAsset, setEntornoAsset] = useState(null)
   const [recomputando, setRecomputando] = useState(null)
+  const [descargandoBanner, setDescargandoBanner] = useState(null)
+
+  // Feedback en vivo (2026-07-02): abrir el banner en pestaña nueva (window.open) dejaba
+  // al usuario sin saber dónde imprimir/descargar — el navegador no siempre muestra su
+  // propia barra de imagen con el ícono de descarga. Se descarga el PNG directo (blob +
+  // <a download>) con un nombre útil, en vez de depender de "clic derecho > Guardar como".
+  async function descargarBanner(it) {
+    setDescargandoBanner(it.id)
+    try {
+      const { data } = await axios.get(`${API_BASE}/api/v1/assets/${it.id}/letrero.png`, {
+        headers: apiHeaders(), responseType: 'blob',
+      })
+      const slug = (it.direccion || 'inmueble').toLowerCase()
+        // sin tildes/diacriticos: normalize('NFD') separa la letra base de su marca
+        // combinante (rango Unicode 0300-036F), que este regex elimina. \uXXXX (sin
+        // llaves) es la sintaxis JS correcta para code points de 4 hex digitos — \x{...}
+        // es PCRE/Perl, NO JavaScript (invalido, aunque el build no lo detecto).
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+      const url = URL.createObjectURL(data)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `letrero-${slug || it.id}.png`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch {
+      // Si la descarga falla (red, bloqueo del navegador), al menos abrimos la imagen
+      // para que el usuario la guarde manualmente — nunca dejar el botón sin hacer nada.
+      window.open(`${API_BASE}/api/v1/assets/${it.id}/letrero.png`, '_blank')
+    } finally {
+      setDescargandoBanner(null)
+    }
+  }
 
   async function actualizarZona(it) {
     setRecomputando(it.id)
@@ -140,8 +175,9 @@ export default function MisPublicaciones({ onClose }) {
                 </Btn>
                 <Btn onClick={() => compartir(it)}><Share2 size={14} /> Compartir</Btn>
                 <Btn onClick={() => setQrId(qrId === it.id ? null : it.id)}><QrCode size={14} /> QR</Btn>
-                <Btn onClick={() => window.open(`${API_BASE}/api/v1/assets/${it.id}/letrero.png`, '_blank')}>
-                  <ImageIcon size={14} /> Banner
+                <Btn onClick={() => descargarBanner(it)}>
+                  <ImageIcon size={14} style={descargandoBanner === it.id ? { animation: 'spin 1s linear infinite' } : undefined} />
+                  {descargandoBanner === it.id ? 'Descargando…' : 'Banner'}
                 </Btn>
                 <Btn onClick={() => setCaracAsset(it)}><ListChecks size={14} /> Características</Btn>
                 <Btn onClick={() => setFichaAsset(it)}><ClipboardList size={14} /> Ficha técnica</Btn>

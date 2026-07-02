@@ -220,8 +220,10 @@ async def asset_qr(activo_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> 
 _TEAL = (45, 189, 182)
 _TEAL_HI = (94, 234, 212)
 _INK = (14, 13, 19)
+_INK_PANEL = (22, 21, 30)
 _MUTED = (156, 153, 172)
 _WHITE = (255, 255, 255)
+_GOLD = (232, 184, 75)
 # DejaVu Sans (instalada via apt en Dockerfile, fonts-dejavu-core) — TTF real para texto
 # nitido. Si no esta (dev local sin la fuente del sistema), degradamos al bitmap font de
 # PIL: el banner se sigue generando, solo con tipografia fea, nunca rompe el endpoint.
@@ -262,59 +264,48 @@ def _envolver_texto(draw, texto: str, fuente, max_ancho: int) -> list[str]:
     return lineas
 
 
-def _fmt_precio_letrero(precio: float | None, operacion: str | None) -> str | None:
-    if precio is None:
+def _fuente_ajustada_a_ancho(draw, texto: str, max_ancho: int, tam_inicial: int, tam_min: int = 40):
+    """Fuente en negrita lo más grande posible (arrancando en `tam_inicial`) tal que
+    `texto` en una sola línea quepa en `max_ancho` px. Usado para el "SE ARRIENDA"/
+    "SE VENDE" del letrero — debe leerse grande y de lejos, pero sin desbordar el
+    banner con direcciones/tipos de inmueble más largos de lo esperado."""
+    tam = tam_inicial
+    while tam > tam_min:
+        fuente = _fuente_letrero(tam, True)
+        if draw.textlength(texto, font=fuente) <= max_ancho:
+            return fuente
+        tam -= 4
+    return _fuente_letrero(tam_min, True)
+
+
+def _telefono_visible(numero_wsp: str | None) -> str | None:
+    """Formato legible del WhatsApp del corredor para el letrero — pensado para quien NO
+    sabe escanear un QR y necesita poder MARCAR el número a mano desde su celular.
+    Caso Ecuador (593 + 9 dígitos, el piloto actual): se muestra en formato local con el
+    0 inicial de celular (ej. 593984171860 -> 0984171860), que es como la gente reconoce
+    y marca un número en Ecuador — NO el formato internacional con código de país, que
+    nadie usa para marcar de memoria. Para otros países (sin regla local codificada aún),
+    se muestra con '+' internacional como fallback razonable."""
+    if not numero_wsp:
         return None
-    txt = f"${precio:,.0f}".replace(",", ".")
-    return txt + ("/mes" if operacion == "arriendo" else "")
-
-
-async def _descargar_foto(url: str | None):
-    """Descarga la foto de portada para el banner. Degradable: cualquier fallo (URL rota,
-    bucket privado, timeout) devuelve None y el banner cae a un panel sin foto — nunca
-    revienta el endpoint por culpa de una imagen externa."""
-    if not url:
-        return None
-    try:
-        import httpx
-        from PIL import Image
-        verify = settings.ssl_verify.lower() != "false"
-        async with httpx.AsyncClient(verify=verify, timeout=8.0) as client:
-            r = await client.get(url)
-            r.raise_for_status()
-        return Image.open(io.BytesIO(r.content)).convert("RGB")
-    except Exception as e:  # noqa: BLE001
-        logging.getLogger(__name__).warning("letrero: no se pudo descargar la foto: %s: %s", type(e).__name__, e)
-        return None
-
-
-def _recortar_cubrir(img, ancho: int, alto: int):
-    """Recorta `img` (PIL Image) al centro para llenar ancho x alto sin deformar (mismo
-    comportamiento que object-fit:cover en CSS)."""
-    from PIL import Image
-    ratio_destino = ancho / alto
-    ratio_origen = img.width / img.height
-    if ratio_origen > ratio_destino:
-        nuevo_ancho = int(img.height * ratio_destino)
-        x0 = (img.width - nuevo_ancho) // 2
-        img = img.crop((x0, 0, x0 + nuevo_ancho, img.height))
-    else:
-        nuevo_alto = int(img.width / ratio_destino)
-        y0 = (img.height - nuevo_alto) // 2
-        img = img.crop((0, y0, img.width, y0 + nuevo_alto))
-    return img.resize((ancho, alto), Image.LANCZOS)
+    if numero_wsp.startswith("593") and len(numero_wsp) == 12:
+        return "0" + numero_wsp[3:]
+    return "+" + numero_wsp
 
 
 async def _generar_letrero_png(
     *, activo_id: uuid.UUID, direccion: str | None, tipo_activo: str | None,
-    operacion: str | None, precio: float | None, foto_url: str | None,
+    operacion: str | None, telefono_wsp: str | None,
 ) -> bytes:
     from PIL import Image, ImageDraw
 
-    # H=1980 (no 1748/A4 "de libro") porque el contenido (foto + direccion en 2 lineas +
-    # sub + CTA + tarjeta QR de 520px + pie) mide ~1850px en el peor caso — con A4 el QR
-    # quedaba cortado abajo. Se verifico generando el banner y midiendo el resultado.
-    W, H = 1240, 1980
+    # H=2200: el precio salió del banner (feedback en vivo, 2026-07-02) y se sumó el
+    # teléfono del corredor MUY VISIBLE bajo el QR (para quien no sabe escanear) — el
+    # contenido (bloque de operación + dirección en 2 líneas + sub + CTA + tarjeta QR de
+    # 520px + bloque de teléfono + pie) mide ~2100px en el peor caso. Se verificó
+    # generando el banner y midiendo el resultado (mismo criterio que el ajuste de H
+    # anterior, de 1748 a 1980, cuando el QR quedaba cortado).
+    W, H = 1240, 2200
     img = Image.new("RGB", (W, H), _INK)
     draw = ImageDraw.Draw(img)
 
@@ -324,16 +315,22 @@ async def _generar_letrero_png(
     draw.text((60, 42), "CONTEXTO AI", font=_fuente_letrero(52, True), fill=_WHITE)
     draw.text((60, 104), "Cada lugar tiene un aura", font=_fuente_letrero(24), fill=(230, 250, 247))
 
-    # Foto de portada (recortada a cubrir) — o un degradado si no hay/falló la descarga.
+    # Bloque "SE ARRIENDA" / "SE VENDE" — reemplaza la foto (feedback en vivo, 2026-07-02:
+    # la foto ya se ve al escanear el QR; en el letrero FÍSICO lo que hace falta leer de
+    # lejos, a la calle, es el tipo de operación en letras grandes, no una imagen chica).
     foto_h = 780
-    foto = await _descargar_foto(foto_url)
-    if foto:
-        img.paste(_recortar_cubrir(foto, W, foto_h), (0, header_h))
-    else:
-        for y in range(foto_h):
-            t = y / foto_h
-            color = tuple(int(_INK[i] + (30 - _INK[i]) * t) for i in range(3))
-            draw.line([(0, header_h + y), (W, header_h + y)], fill=color)
+    op_texto = {"arriendo": "SE ARRIENDA", "venta": "SE VENDE"}.get(operacion, "DISPONIBLE")
+    op_color = _TEAL_HI if operacion == "arriendo" else _GOLD
+    draw.rectangle([0, header_h, W, header_h + foto_h], fill=_INK_PANEL)
+    # Línea decorativa arriba/abajo del texto, en el color de la operación.
+    linea_y_arriba, linea_y_abajo = header_h + 90, header_h + foto_h - 90
+    draw.rectangle([90, linea_y_arriba, W - 90, linea_y_arriba + 4], fill=op_color)
+    draw.rectangle([90, linea_y_abajo, W - 90, linea_y_abajo + 4], fill=op_color)
+    fuente_op = _fuente_ajustada_a_ancho(draw, op_texto, W - 160, tam_inicial=150)
+    bbox = draw.textbbox((0, 0), op_texto, font=fuente_op)
+    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    draw.text(((W - tw) // 2 - bbox[0], header_h + (foto_h - th) // 2 - bbox[1]),
+              op_texto, font=fuente_op, fill=op_color)
 
     # Panel de datos del inmueble
     y = header_h + foto_h + 50
@@ -342,10 +339,11 @@ async def _generar_letrero_png(
             draw.text((60, y), linea, font=_fuente_letrero(46, True), fill=_WHITE)
             y += 58
     y += 10
+    # El precio NO va en el banner (feedback en vivo, 2026-07-02) — el letrero es para
+    # atraer la llamada/escaneo, no para negociar; el precio se conversa con el corredor.
     sub = " · ".join(x for x in [
         (tipo_activo or "").capitalize() or None,
         (operacion or "").capitalize() or None,
-        _fmt_precio_letrero(precio, operacion),
     ] if x)
     if sub:
         draw.text((60, y), sub, font=_fuente_letrero(34), fill=_TEAL_HI)
@@ -371,6 +369,33 @@ async def _generar_letrero_png(
         radius=20, fill=_WHITE,
     )
     img.paste(qr_img, (tarjeta_x0 + tarjeta_pad, tarjeta_y0 + tarjeta_pad))
+    y = tarjeta_y0 + qr_lado + 2 * tarjeta_pad
+
+    # Teléfono del corredor — LO MÁS VISIBLE bajo el QR (feedback en vivo, 2026-07-02: hay
+    # gente que no sabe usar el QR; el número para marcar a mano es el respaldo). Solo se
+    # dibuja si el corredor cargó su WhatsApp — degradable, el banner sigue siendo válido
+    # sin él (el QR solo también sirve).
+    tel = _telefono_visible(telefono_wsp)
+    if tel:
+        y += 44
+        etiqueta = "¿No puedes escanear? Llámanos:"
+        fuente_etiqueta = _fuente_letrero(30)
+        bbox_e = draw.textbbox((0, 0), etiqueta, font=fuente_etiqueta)
+        draw.text(((W - (bbox_e[2] - bbox_e[0])) // 2 - bbox_e[0], y), etiqueta,
+                   font=fuente_etiqueta, fill=_MUTED)
+        y += 50
+        # tam_inicial=150 (mismo peso visual que "SE ARRIENDA"/"SE VENDE"): el corredor
+        # pidió que este número sea LO MÁS VISIBLE del letrero, para quien no sabe usar
+        # el QR — no un dato chico al pie, sino el segundo elemento que salta a la vista.
+        fuente_tel = _fuente_ajustada_a_ancho(draw, tel, W - 160, tam_inicial=150)
+        bbox_t = draw.textbbox((0, 0), tel, font=fuente_tel)
+        tw, th = bbox_t[2] - bbox_t[0], bbox_t[3] - bbox_t[1]
+        pad_x, pad_y = 50, 34
+        caja_w, caja_h = tw + 2 * pad_x, th + 2 * pad_y
+        caja_x0 = (W - caja_w) // 2
+        draw.rounded_rectangle([caja_x0, y, caja_x0 + caja_w, y + caja_h], radius=20, fill=_TEAL)
+        draw.text((caja_x0 + pad_x - bbox_t[0], y + pad_y - bbox_t[1]), tel, font=fuente_tel, fill=_INK)
+        y += caja_h
 
     # Pie de página
     pie_y = H - 60
@@ -383,36 +408,33 @@ async def _generar_letrero_png(
 
 @router.get(
     "/{activo_id}/letrero.png",
-    summary="Banner imprimible del letrero (foto + datos + QR)",
+    summary="Banner imprimible del letrero (SE ARRIENDA/SE VENDE + QR + teléfono)",
     description=(
-        "Genera un banner PNG listo para imprimir: foto del inmueble, dirección/precio y "
-        "el QR de /a/{id} — mismo enlace que qr.svg, presentado como un banner atractivo "
-        "en vez de un QR pelado."
+        "Genera un banner PNG listo para imprimir: 'SE ARRIENDA'/'SE VENDE' en letras "
+        "grandes (legible de lejos, en el letrero físico), el QR de /a/{id} y — si el "
+        "corredor cargó su WhatsApp — el teléfono bien visible bajo el QR, para quien no "
+        "sabe escanear. Sin foto (ya se ve al escanear) y sin precio (se conversa con el "
+        "corredor, no se negocia desde el letrero)."
     ),
 )
 async def asset_letrero(activo_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> Response:
     row = (await db.execute(text(
-        "SELECT a.direccion_estandarizada AS direccion, a.tipo_activo, a.caracteristicas, "
-        "       a.imagen_url, t.tipo_operacion AS operacion, t.precio "
+        "SELECT a.direccion_estandarizada AS direccion, a.tipo_activo, "
+        "       t.tipo_operacion AS operacion "
         "FROM activos_inmutables a "
-        "LEFT JOIN LATERAL (SELECT tipo_operacion, precio FROM transacciones_temporales tt "
+        "LEFT JOIN LATERAL (SELECT tipo_operacion FROM transacciones_temporales tt "
         "  WHERE tt.activo_id = a.id ORDER BY fecha_publicacion DESC LIMIT 1) t ON true "
         "WHERE a.id = :id"), {"id": str(activo_id)})).mappings().first()
     if not row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inmueble no encontrado.")
 
-    car = row["caracteristicas"]
-    if isinstance(car, str):
-        car = json.loads(car or "{}")
-    car = car if isinstance(car, dict) else {}
-    # Misma prioridad que /anuncio y el chat: foto real del corredor antes que el stock.
-    fotos = car.get("fotos") or ([row["imagen_url"]] if row["imagen_url"] else [])
     operacion = (row["operacion"] or "").lower() or None
-    precio = float(row["precio"]) if row["precio"] is not None else None
+    from app.routers.chat import _whatsapp_de_activo
+    telefono_wsp = await _whatsapp_de_activo(db, str(activo_id))
 
     png = await _generar_letrero_png(
         activo_id=activo_id, direccion=row["direccion"], tipo_activo=row["tipo_activo"],
-        operacion=operacion, precio=precio, foto_url=fotos[0] if fotos else None,
+        operacion=operacion, telefono_wsp=telefono_wsp,
     )
     return Response(content=png, media_type="image/png")
 
@@ -1427,12 +1449,26 @@ def _normalizar_wsp(raw: str | None) -> str | None:
     """Deja el número en formato wa.me: solo dígitos (código de país + número), sin '+',
     sin '00' de prefijo internacional, sin espacios. Ej. '+593 99 912 3456' o
     '00593999123456' -> '593999123456'. None si queda vacío (así NO pisa el número
-    existente del perfil cuando el campo se manda en blanco)."""
+    existente del perfil cuando el campo se manda en blanco).
+
+    Bug real detectado en revisión (2026-07-02, antes de mergear el bloque de teléfono
+    del letrero): un corredor ecuatoriano lo más probable es que teclee su número tal
+    como lo ve en su propio celular — formato LOCAL con el 0 inicial (ej.
+    '0984171860'), no en formato internacional. Sin este bloque, ese '0984171860' se
+    guardaba TAL CUAL (sin código de país) y el enlace wa.me/0984171860 del botón de
+    WhatsApp queda roto en silencio (wa.me exige código de país) — y además
+    `_telefono_visible` no lo reconocía como ecuatoriano y mostraba "+0984171860" en el
+    banner, un numero no marcable. Se completa a formato internacional (593 + 9
+    dígitos) SOLO para el patrón inequívoco de celular ecuatoriano (0 + 9 dígitos, 10
+    en total); si el corredor ya escribió el código de país (empieza con dígito != 0,
+    o ya trae 593/+593), este bloque no aplica."""
     if not raw:
         return None
     digits = re.sub(r"\D", "", raw)
     if digits.startswith("00"):
         digits = digits[2:]
+    if digits.startswith("0") and len(digits) == 10:
+        digits = "593" + digits[1:]
     return digits or None
 
 

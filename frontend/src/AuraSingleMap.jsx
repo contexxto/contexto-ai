@@ -38,21 +38,26 @@ const coordOk = (lat, lon) =>
 // — mismo criterio que el resto del archivo: una sola fuente de verdad para el render.
 // `isCancelled` es un getter (no un booleano) porque el valor real vive en una closure que
 // cambia con el tiempo (el cleanup del efecto la vuelve true de forma asíncrona).
-function pintarAura(map, { lat, lon, pois, isocronas }, hue, isCancelled, opts = {}) {
+function pintarAura(map, { lat, lon, pois, isocronas, rutas = [] }, hue, isCancelled, opts = {}) {
   const { padding = 56, maxZoom = 15.5, zoomSolo = 15 } = opts
   if (isCancelled()) return true
   try {
     map.resize()
     // Encuadre: el inmueble queda CENTRAL (re-centra en ÉL). fitBounds SOLO sobre los
-    // POIs cercanos (≤900 m): un hub de transporte a 2-3 km no debe estirar el zoom y
-    // encoger el inmueble a un punto. Los POIs lejanos igual se listan en las pills.
+    // POIs cercanos (≤900 m) + las rutas reales (si las hay): una ruta caminando SIEMPRE
+    // serpentea más que la línea recta al POI (rodea manzanas), así que si solo
+    // encuadráramos por POI, la ruta se saldría de cámara justo cuando el usuario más
+    // quiere verla completa ("de un solo vistazo... ver las rutas"). Un hub de transporte
+    // a 2-3 km no debe estirar el zoom y encoger el inmueble a un punto — esos POIs lejanos
+    // igual se listan en las pills.
     const cercanos = pois.filter((p) => (p.distancia_m ?? Infinity) <= 900)
-    if (!cercanos.length) {
+    if (!cercanos.length && !rutas.length) {
       map.jumpTo({ center: [lon, lat], zoom: zoomSolo })
     } else {
       const b = new maplibregl.LngLatBounds()
       b.extend([lon, lat])
       cercanos.forEach((p) => b.extend([p.lon, p.lat]))
+      rutas.forEach((r) => r.coords.forEach((c) => b.extend(c)))
       map.fitBounds(b, { padding, maxZoom, duration: 0 })
     }
     // Isócrona peatonal (motor propio, Valhalla): el contorno MAYOR va debajo (se agrega
@@ -88,6 +93,36 @@ function pintarAura(map, { lat, lon, pois, isocronas }, hue, isCancelled, opts =
       if (map.isStyleLoaded()) pintarIsocronas()
       else map.once('load', pintarIsocronas)
     }
+    // Rutas peatonales REALES (Google Routes API, geometría turn-by-turn — no es la línea
+    // recta al POI, es la calle real que caminarías). Antes solo existía el endpoint
+    // /rutas en el backend (app/rutas.py `rutas_desde`) sin conectar al mapa; el mapa solo
+    // mostraba el área de isócrona (cuánto alcanzas en general), nunca el camino concreto
+    // a un lugar puntual. Encima de la isócrona, debajo de los markers DOM.
+    const pintarRutas = () => {
+      if (isCancelled()) return
+      try {
+        rutas.forEach((r, i) => {
+          const id = `aura-ruta-${i}`
+          if (map.getSource(id)) return
+          map.addSource(id, {
+            type: 'geojson',
+            data: { type: 'Feature', geometry: { type: 'LineString', coordinates: r.coords } },
+          })
+          map.addLayer({
+            id: `${id}-line`, type: 'line', source: id,
+            layout: { 'line-cap': 'round', 'line-join': 'round' },
+            paint: { 'line-color': hue.accent, 'line-width': 2.5, 'line-opacity': 0.85 },
+          })
+        })
+      } catch (err) {
+        // Solo las rutas se pierden; isócrona + POIs + pin siguen en pie.
+        console.warn('[AuraSingle] rutas no se pudieron pintar:', err?.message || err)
+      }
+    }
+    if (rutas.length) {
+      if (map.isStyleLoaded()) pintarRutas()
+      else map.once('load', pintarRutas)
+    }
     // POIs: punto semántico (color por categoría) + etiqueta (emoji · min). DOM markers.
     pois.forEach((p) => {
       const el = document.createElement('div')
@@ -118,7 +153,7 @@ function pintarAura(map, { lat, lon, pois, isocronas }, hue, isCancelled, opts =
 export default function AuraSingleMap({ activoId, tipoActivo }) {
   const containerRef = useRef(null)
   const expandedRef = useRef(null)
-  const [data, setData] = useState(null)         // { lat, lon, pois, isocronas }
+  const [data, setData] = useState(null)         // { lat, lon, pois, isocronas, rutas }
   const [estado, setEstado] = useState('loading') // loading | ready | vacio | error
   const [failed, setFailed] = useState(false)     // fallo de carga del basemap (CDN)
   // Modal de mapa ampliado — el mapa chico es deliberadamente NO interactivo (no compite
@@ -130,11 +165,17 @@ export default function AuraSingleMap({ activoId, tipoActivo }) {
   const hue = intentHue(tipoActivo)
 
   // 1) Fetch del aura — SEPARADO de /anuncio para no bloquear el primer paint del inmueble.
+  // /rutas (rutas peatonales REALES, Google Routes) se pide EN PARALELO: si falla o no hay
+  // key configurada, degradamos a rutas:[] y el mapa sigue mostrando la isócrona + POIs
+  // como antes — nunca rompe el aura por culpa solo de las rutas.
   useEffect(() => {
     let cancelled = false
     setEstado('loading'); setData(null); setFailed(false)
-    axios.get(`${API_BASE}/api/v1/assets/${activoId}/aura`, { headers: apiHeaders() })
-      .then(({ data: d }) => {
+    Promise.all([
+      axios.get(`${API_BASE}/api/v1/assets/${activoId}/aura`, { headers: apiHeaders() }),
+      axios.get(`${API_BASE}/api/v1/assets/${activoId}/rutas`, { headers: apiHeaders() }).catch(() => null),
+    ])
+      .then(([{ data: d }, rutasRes]) => {
         if (cancelled) return
         const lat = aNum(d?.lat), lon = aNum(d?.lon)
         if (!coordOk(lat, lon)) { setEstado('vacio'); return } // inmueble sin georreferencia
@@ -146,7 +187,9 @@ export default function AuraSingleMap({ activoId, tipoActivo }) {
         // el mapa simplemente no pinta el polígono (POIs + pin siguen mostrándose).
         const isocronas = (Array.isArray(d?.isocronas) ? d.isocronas : [])
           .filter((c) => c && c.geometry && Number.isFinite(c.minutos))
-        setData({ lat, lon, pois, isocronas })
+        const rutas = (Array.isArray(rutasRes?.data?.rutas) ? rutasRes.data.rutas : [])
+          .filter((r) => Array.isArray(r?.coords) && r.coords.length > 1)
+        setData({ lat, lon, pois, isocronas, rutas })
         setEstado('ready')
       })
       .catch(() => { if (!cancelled) setEstado('error') })
@@ -256,7 +299,8 @@ export default function AuraSingleMap({ activoId, tipoActivo }) {
           </div>
           {pois.length > 0 && <PoiPills pois={pois} hue={hue} />}
           <div style={{ fontSize: '.66rem', color: C.muted, marginTop: 8 }}>
-            {(data?.isocronas?.length ?? 0) > 0 && <>🚶 Isócrona a pie: <b style={{ color: '#8A8694' }}>motor propio</b> · </>}
+            {(data?.rutas?.length ?? 0) > 0 && <>🚶 Rutas reales a pie: <b style={{ color: '#8A8694' }}>Google Routes</b> · </>}
+            {(data?.isocronas?.length ?? 0) > 0 && <>Isócrona: <b style={{ color: '#8A8694' }}>motor propio</b> · </>}
             📍 Pines según Google Maps · tiempos a pie estimados (~80 m/min, terreno plano)
           </div>
         </>
@@ -269,7 +313,9 @@ export default function AuraSingleMap({ activoId, tipoActivo }) {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                         padding: '14px 16px', flexShrink: 0 }}>
             <span style={{ fontSize: '.78rem', color: C.muted }}>
-              🚶 Arrastra para mover · pellizca o usa scroll para hacer zoom
+              {(data?.rutas?.length ?? 0) > 0
+                ? '🚶 Rutas reales a pie · arrastra para explorar, pellizca o usa scroll para zoom'
+                : '🚶 Arrastra para mover · pellizca o usa scroll para hacer zoom'}
             </span>
             <button onClick={() => setExpanded(false)} aria-label="Cerrar mapa ampliado"
               style={{ width: 38, height: 38, borderRadius: '50%', border: 'none', cursor: 'pointer',

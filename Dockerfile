@@ -2,9 +2,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# System deps for psycopg2 / GeoAlchemy2 / geopy
+# System deps for psycopg2 / GeoAlchemy2 / geopy.
+# fonts-dejavu-core: TTF real para el banner "letrero" (Pillow) — sin esto, PIL cae al
+# font bitmap por defecto (diminuto, feo, no escala) y el letrero impreso se ve mal.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc libpq-dev libgdal-dev && \
+    gcc libpq-dev libgdal-dev fonts-dejavu-core && \
     rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

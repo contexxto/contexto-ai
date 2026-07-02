@@ -210,6 +210,212 @@ async def asset_qr(activo_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> 
     return Response(content=buff.getvalue(), media_type="image/svg+xml")
 
 
+# ── Banner "letrero" (foto + datos + QR), listo para imprimir ──────────────────────────
+# Feedback en vivo (2026-07-02): el QR pelado con "Imprime y pégalo en el letrero" invita
+# poco a escanear. El usuario mostró un ejemplo (confirmación de evento Forbes: foto/
+# encabezado + texto + QR grande) y pidió algo asi. Se genera en el BACKEND con Pillow
+# (mismo criterio que qr.svg arriba: PDF/PNG server-side es mas confiable para imprimir
+# que componerlo en el navegador, y no exige agregar html2canvas/dom-to-image al frontend).
+_TEAL = (45, 189, 182)
+_TEAL_HI = (94, 234, 212)
+_INK = (14, 13, 19)
+_MUTED = (156, 153, 172)
+_WHITE = (255, 255, 255)
+# DejaVu Sans (instalada via apt en Dockerfile, fonts-dejavu-core) — TTF real para texto
+# nitido. Si no esta (dev local sin la fuente del sistema), degradamos al bitmap font de
+# PIL: el banner se sigue generando, solo con tipografia fea, nunca rompe el endpoint.
+_FUENTES_BOLD = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "C:/Windows/Fonts/arialbd.ttf",
+]
+_FUENTES_REGULAR = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "C:/Windows/Fonts/arial.ttf",
+]
+
+
+def _fuente_letrero(size: int, negrita: bool = False):
+    from PIL import ImageFont
+    for path in (_FUENTES_BOLD if negrita else _FUENTES_REGULAR):
+        try:
+            return ImageFont.truetype(path, size)
+        except Exception:  # noqa: BLE001 — fuente no instalada en este entorno
+            continue
+    return ImageFont.load_default()
+
+
+def _envolver_texto(draw, texto: str, fuente, max_ancho: int) -> list[str]:
+    """Envuelve `texto` en lineas que no excedan max_ancho (en px) con `fuente`."""
+    palabras = (texto or "").split()
+    lineas: list[str] = []
+    actual = ""
+    for palabra in palabras:
+        candidata = f"{actual} {palabra}".strip()
+        if draw.textlength(candidata, font=fuente) <= max_ancho or not actual:
+            actual = candidata
+        else:
+            lineas.append(actual)
+            actual = palabra
+    if actual:
+        lineas.append(actual)
+    return lineas
+
+
+def _fmt_precio_letrero(precio: float | None, operacion: str | None) -> str | None:
+    if precio is None:
+        return None
+    txt = f"${precio:,.0f}".replace(",", ".")
+    return txt + ("/mes" if operacion == "arriendo" else "")
+
+
+async def _descargar_foto(url: str | None):
+    """Descarga la foto de portada para el banner. Degradable: cualquier fallo (URL rota,
+    bucket privado, timeout) devuelve None y el banner cae a un panel sin foto — nunca
+    revienta el endpoint por culpa de una imagen externa."""
+    if not url:
+        return None
+    try:
+        import httpx
+        from PIL import Image
+        verify = settings.ssl_verify.lower() != "false"
+        async with httpx.AsyncClient(verify=verify, timeout=8.0) as client:
+            r = await client.get(url)
+            r.raise_for_status()
+        return Image.open(io.BytesIO(r.content)).convert("RGB")
+    except Exception as e:  # noqa: BLE001
+        logging.getLogger(__name__).warning("letrero: no se pudo descargar la foto: %s: %s", type(e).__name__, e)
+        return None
+
+
+def _recortar_cubrir(img, ancho: int, alto: int):
+    """Recorta `img` (PIL Image) al centro para llenar ancho x alto sin deformar (mismo
+    comportamiento que object-fit:cover en CSS)."""
+    from PIL import Image
+    ratio_destino = ancho / alto
+    ratio_origen = img.width / img.height
+    if ratio_origen > ratio_destino:
+        nuevo_ancho = int(img.height * ratio_destino)
+        x0 = (img.width - nuevo_ancho) // 2
+        img = img.crop((x0, 0, x0 + nuevo_ancho, img.height))
+    else:
+        nuevo_alto = int(img.width / ratio_destino)
+        y0 = (img.height - nuevo_alto) // 2
+        img = img.crop((0, y0, img.width, y0 + nuevo_alto))
+    return img.resize((ancho, alto), Image.LANCZOS)
+
+
+async def _generar_letrero_png(
+    *, activo_id: uuid.UUID, direccion: str | None, tipo_activo: str | None,
+    operacion: str | None, precio: float | None, foto_url: str | None,
+) -> bytes:
+    from PIL import Image, ImageDraw
+
+    # H=1980 (no 1748/A4 "de libro") porque el contenido (foto + direccion en 2 lineas +
+    # sub + CTA + tarjeta QR de 520px + pie) mide ~1850px en el peor caso — con A4 el QR
+    # quedaba cortado abajo. Se verifico generando el banner y midiendo el resultado.
+    W, H = 1240, 1980
+    img = Image.new("RGB", (W, H), _INK)
+    draw = ImageDraw.Draw(img)
+
+    # Encabezado de marca
+    header_h = 150
+    draw.rectangle([0, 0, W, header_h], fill=_TEAL)
+    draw.text((60, 42), "CONTEXTO AI", font=_fuente_letrero(52, True), fill=_WHITE)
+    draw.text((60, 104), "Cada lugar tiene un aura", font=_fuente_letrero(24), fill=(230, 250, 247))
+
+    # Foto de portada (recortada a cubrir) — o un degradado si no hay/falló la descarga.
+    foto_h = 780
+    foto = await _descargar_foto(foto_url)
+    if foto:
+        img.paste(_recortar_cubrir(foto, W, foto_h), (0, header_h))
+    else:
+        for y in range(foto_h):
+            t = y / foto_h
+            color = tuple(int(_INK[i] + (30 - _INK[i]) * t) for i in range(3))
+            draw.line([(0, header_h + y), (W, header_h + y)], fill=color)
+
+    # Panel de datos del inmueble
+    y = header_h + foto_h + 50
+    if direccion:
+        for linea in _envolver_texto(draw, direccion, _fuente_letrero(46, True), W - 120)[:2]:
+            draw.text((60, y), linea, font=_fuente_letrero(46, True), fill=_WHITE)
+            y += 58
+    y += 10
+    sub = " · ".join(x for x in [
+        (tipo_activo or "").capitalize() or None,
+        (operacion or "").capitalize() or None,
+        _fmt_precio_letrero(precio, operacion),
+    ] if x)
+    if sub:
+        draw.text((60, y), sub, font=_fuente_letrero(34), fill=_TEAL_HI)
+        y += 70
+
+    # Llamado a la acción + QR grande sobre tarjeta blanca (contraste garantizado)
+    y += 30
+    draw.text((60, y), "Escanea para conocer este lugar", font=_fuente_letrero(38, True), fill=_WHITE)
+    y += 70
+
+    url = f"{settings.public_app_url.rstrip('/')}/a/{activo_id}"
+    qr = segno.make(url, error="h")
+    qr_buf = io.BytesIO()
+    qr.save(qr_buf, kind="png", scale=10, border=1, dark="#0E0D13", light="#ffffff")
+    qr_img = Image.open(qr_buf)
+    qr_lado = 520
+    qr_img = qr_img.resize((qr_lado, qr_lado), Image.LANCZOS)
+    tarjeta_pad = 28
+    tarjeta_x0 = (W - qr_lado) // 2 - tarjeta_pad
+    tarjeta_y0 = y
+    draw.rounded_rectangle(
+        [tarjeta_x0, tarjeta_y0, tarjeta_x0 + qr_lado + 2 * tarjeta_pad, tarjeta_y0 + qr_lado + 2 * tarjeta_pad],
+        radius=20, fill=_WHITE,
+    )
+    img.paste(qr_img, (tarjeta_x0 + tarjeta_pad, tarjeta_y0 + tarjeta_pad))
+
+    # Pie de página
+    pie_y = H - 60
+    draw.text((60, pie_y), "contexxto.com", font=_fuente_letrero(22), fill=_MUTED)
+
+    out = io.BytesIO()
+    img.save(out, format="PNG")
+    return out.getvalue()
+
+
+@router.get(
+    "/{activo_id}/letrero.png",
+    summary="Banner imprimible del letrero (foto + datos + QR)",
+    description=(
+        "Genera un banner PNG listo para imprimir: foto del inmueble, dirección/precio y "
+        "el QR de /a/{id} — mismo enlace que qr.svg, presentado como un banner atractivo "
+        "en vez de un QR pelado."
+    ),
+)
+async def asset_letrero(activo_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> Response:
+    row = (await db.execute(text(
+        "SELECT a.direccion_estandarizada AS direccion, a.tipo_activo, a.caracteristicas, "
+        "       a.imagen_url, t.tipo_operacion AS operacion, t.precio "
+        "FROM activos_inmutables a "
+        "LEFT JOIN LATERAL (SELECT tipo_operacion, precio FROM transacciones_temporales tt "
+        "  WHERE tt.activo_id = a.id ORDER BY fecha_publicacion DESC LIMIT 1) t ON true "
+        "WHERE a.id = :id"), {"id": str(activo_id)})).mappings().first()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inmueble no encontrado.")
+
+    car = row["caracteristicas"]
+    if isinstance(car, str):
+        car = json.loads(car or "{}")
+    car = car if isinstance(car, dict) else {}
+    # Misma prioridad que /anuncio y el chat: foto real del corredor antes que el stock.
+    fotos = car.get("fotos") or ([row["imagen_url"]] if row["imagen_url"] else [])
+    operacion = (row["operacion"] or "").lower() or None
+    precio = float(row["precio"]) if row["precio"] is not None else None
+
+    png = await _generar_letrero_png(
+        activo_id=activo_id, direccion=row["direccion"], tipo_activo=row["tipo_activo"],
+        operacion=operacion, precio=precio, foto_url=fotos[0] if fotos else None,
+    )
+    return Response(content=png, media_type="image/png")
+
+
 class MapaComandoRequest(BaseModel):
     pregunta: str = Field(..., min_length=1, max_length=300)
     lat: float = Field(..., ge=-90, le=90)

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import axios from 'axios'
-import { X, Plus, QrCode, Copy, Check, Share2, MapPin, ClipboardList, ListChecks, Pencil, RefreshCw, Store } from 'lucide-react'
+import { X, Plus, QrCode, Copy, Check, Share2, MapPin, ClipboardList, ListChecks, Pencil, RefreshCw, Store, Image as ImageIcon } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import PublishAsset from './PublishAsset'
 import FichaTecnica from './FichaTecnica'
@@ -140,6 +140,9 @@ export default function MisPublicaciones({ onClose }) {
                 </Btn>
                 <Btn onClick={() => compartir(it)}><Share2 size={14} /> Compartir</Btn>
                 <Btn onClick={() => setQrId(qrId === it.id ? null : it.id)}><QrCode size={14} /> QR</Btn>
+                <Btn onClick={() => window.open(`${API_BASE}/api/v1/assets/${it.id}/letrero.png`, '_blank')}>
+                  <ImageIcon size={14} /> Banner
+                </Btn>
                 <Btn onClick={() => setCaracAsset(it)}><ListChecks size={14} /> Características</Btn>
                 <Btn onClick={() => setFichaAsset(it)}><ClipboardList size={14} /> Ficha técnica</Btn>
                 <Btn onClick={() => setEntornoAsset(it)}><Store size={14} /> Entorno</Btn>
@@ -154,7 +157,10 @@ export default function MisPublicaciones({ onClose }) {
                   <div style={{ background: '#fff', borderRadius: 14, padding: 10, display: 'inline-block' }}>
                     <img src={`${API_BASE}/api/v1/assets/${it.id}/qr.svg`} alt="QR" width={160} height={160} style={{ display: 'block' }} />
                   </div>
-                  <div style={{ fontSize: '.7rem', color: C.muted, marginTop: 6 }}>Imprime y pégalo en el letrero.</div>
+                  <div style={{ fontSize: '.7rem', color: C.muted, marginTop: 6 }}>
+                    Imprime y pégalo en el letrero — o usa <strong style={{ color: C.tealHi }}>Banner</strong> para
+                    un letrero con foto y datos listo para imprimir.
+                  </div>
                 </div>
               )}
             </div>

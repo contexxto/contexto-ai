@@ -1,5 +1,5 @@
-import { useRef, useEffect } from 'react'
-import { MapPin, BedDouble, Bath, Ruler, Footprints, ChevronRight, ArrowLeftRight, Check } from 'lucide-react'
+import { useRef, useEffect, useState, useCallback } from 'react'
+import { MapPin, BedDouble, Bath, Ruler, Footprints, ChevronRight, ChevronLeft, ArrowLeftRight, Check } from 'lucide-react'
 import sphereLogo from './assets/sphere.svg'
 
 // Tarjetas de resultado en el chat — la salida VISUAL de una búsqueda conversacional.
@@ -214,6 +214,50 @@ function ResultCard({ r, onOpen, activeId, onActive, seleccionado, onToggleCompa
 export default function ResultCards({ results, onOpen, activeId, activeOrigin, onActive,
                                       seleccionComparar = [], onToggleComparar }) {
   const scrollerRef = useRef(null)
+  // Con mouse (sin trackpad/touch) el carrusel horizontal era INALCANZABLE más allá de lo
+  // visible: overflow-x:auto no reacciona a la rueda del mouse por defecto, y no había
+  // flechas ni scrollbar visible. La última tarjeta se veía "cortada" no por falta de
+  // espacio (apenas ~50px de una sola tarjeta) sino porque no había forma de llegar a ella.
+  // canLeft/canRight controlan las flechas + el degradado de "hay más" en cada borde.
+  const [canLeft, setCanLeft] = useState(false)
+  const [canRight, setCanRight] = useState(false)
+
+  const actualizarFlechas = useCallback(() => {
+    const el = scrollerRef.current
+    if (!el) return
+    setCanLeft(el.scrollLeft > 4)
+    setCanRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 4)
+  }, [])
+
+  useEffect(() => {
+    actualizarFlechas()
+    const el = scrollerRef.current
+    if (!el) return
+    // ResizeObserver: el ancho disponible cambia con la sidebar/ventana; recalcula si hay
+    // overflow real. ResultCard es memo-estable, así que esto no compite con el efecto de sync.
+    const ro = new ResizeObserver(actualizarFlechas)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [results, actualizarFlechas])
+
+  // Rueda del mouse (vertical, sin trackpad) → desplaza el carrusel horizontalmente mientras
+  // el cursor está sobre él. Solo si el movimiento es predominantemente vertical (no pisa el
+  // gesto horizontal nativo de trackpad) y hay a dónde desplazarse — si no, deja pasar el
+  // scroll de la página normalmente.
+  const onWheel = (e) => {
+    const el = scrollerRef.current
+    if (!el || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return
+    if (el.scrollWidth <= el.clientWidth) return
+    el.scrollLeft += e.deltaY
+    e.preventDefault()
+  }
+
+  const desplazar = (dir) => {
+    const el = scrollerRef.current
+    if (!el) return
+    el.scrollBy({ left: dir * el.clientWidth * 0.85, behavior: 'smooth' })
+  }
+
   // Sync lista⇄mapa: cuando el inmueble se activa DESDE EL MAPA, centra su tarjeta en el
   // carrusel. Solo scroll HORIZONTAL del propio contenedor (vía scrollLeft) — nunca toca
   // la página ni el chat (scrollIntoView sí recorría los ancestros y daba saltos verticales).
@@ -232,15 +276,45 @@ export default function ResultCards({ results, onOpen, activeId, activeOrigin, o
   if (!results?.length) return null
   return (
     <div style={{ marginTop: 12, marginBottom: 4 }}>
-      <div ref={scrollerRef} style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 8,
+      <div style={{ position: 'relative' }}>
+        <div ref={scrollerRef} onScroll={actualizarFlechas} onWheel={onWheel}
+             style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 8,
                     paddingRight: 12, scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}>
-        {/* paddingRight: sin esto la ÚLTIMA tarjeta queda pegada al borde del scroller — se
-            ve "cortada" aunque técnicamente esté completa (su borde coincide con el borde del
-            contenedor, sin el margen de respiro que sí tienen las demás). */}
-        {results.map((r) => (
-          <ResultCard key={r.id} r={r} onOpen={onOpen} activeId={activeId} onActive={onActive}
-                      seleccionado={seleccionComparar.includes(r.id)} onToggleComparar={onToggleComparar} />
-        ))}
+          {/* paddingRight: sin esto la ÚLTIMA tarjeta queda pegada al borde del scroller — se
+              ve "cortada" aunque técnicamente esté completa (su borde coincide con el borde del
+              contenedor, sin el margen de respiro que sí tienen las demás). */}
+          {results.map((r) => (
+            <ResultCard key={r.id} r={r} onOpen={onOpen} activeId={activeId} onActive={onActive}
+                        seleccionado={seleccionComparar.includes(r.id)} onToggleComparar={onToggleComparar} />
+          ))}
+        </div>
+        {/* Degradado + flecha en cada borde con contenido oculto: la señal honesta de "hay
+            más" para quien no tiene trackpad/touch. pointer-events:none en el fade para no
+            tapar el hover/click de la tarjeta de abajo; el botón sí es clickeable. */}
+        {canLeft && (
+          <>
+            <div style={{ position: 'absolute', left: 0, top: 0, bottom: 8, width: 40, pointerEvents: 'none',
+                          background: `linear-gradient(90deg, ${C.bg}, transparent)`, zIndex: 1 }} />
+            <button onClick={() => desplazar(-1)} aria-label="Ver inmuebles anteriores"
+              style={{ position: 'absolute', left: 4, top: '42%', transform: 'translateY(-50%)', zIndex: 2,
+                       width: 28, height: 28, borderRadius: 999, border: `1px solid ${C.line}`, cursor: 'pointer',
+                       background: 'rgba(14,13,19,.82)', color: C.tealHi, display: 'grid', placeItems: 'center' }}>
+              <ChevronLeft size={16} />
+            </button>
+          </>
+        )}
+        {canRight && (
+          <>
+            <div style={{ position: 'absolute', right: 0, top: 0, bottom: 8, width: 40, pointerEvents: 'none',
+                          background: `linear-gradient(270deg, ${C.bg}, transparent)`, zIndex: 1 }} />
+            <button onClick={() => desplazar(1)} aria-label="Ver más inmuebles"
+              style={{ position: 'absolute', right: 4, top: '42%', transform: 'translateY(-50%)', zIndex: 2,
+                       width: 28, height: 28, borderRadius: 999, border: `1px solid ${C.line}`, cursor: 'pointer',
+                       background: 'rgba(14,13,19,.82)', color: C.tealHi, display: 'grid', placeItems: 'center' }}>
+              <ChevronRight size={16} />
+            </button>
+          </>
+        )}
       </div>
       <div style={{ fontSize: '.7rem', color: C.muted, marginTop: 2, display: 'flex', alignItems: 'center', gap: 5 }}>
         <Footprints size={12} color={C.teal} />

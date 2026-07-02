@@ -139,6 +139,12 @@ export function LeadChat({ activo, lead, onBack }) {
   const [msgs, setMsgs] = useState(null)
   const [texto, setTexto] = useState('')
   const [enviando, setEnviando] = useState(false)
+  // Feedback en vivo (2026-07-02): el corredor escribia una respuesta, la veia
+  // aparecer como burbuja, pero el interesado nunca la recibia — sin ningun error
+  // visible. Causa: el POST fallaba en silencio (catch vacio) y la burbuja optimista
+  // desaparecia sola en el siguiente sondeo (6s despues), que reemplaza TODA la lista
+  // con lo que de verdad hay en el servidor. `error` hace visible ese fallo.
+  const [error, setError] = useState(null)
   const finRef = useRef(null)
 
   async function cargar() {
@@ -160,12 +166,28 @@ export function LeadChat({ activo, lead, onBack }) {
   async function responder() {
     const t = texto.trim()
     if (!t || enviando) return
-    setTexto(''); setEnviando(true)
-    setMsgs(prev => [...(prev || []), { autor: 'corredor', texto: t }])
+    setTexto(''); setEnviando(true); setError(null)
+    // Id local (no del servidor) para poder ubicar y quitar ESTA burbuja con precision
+    // si el envio falla — antes se usaba el indice del array, ambiguo si `cargar()`
+    // reemplaza la lista entre medio.
+    const localId = `local-${Date.now()}`
+    setMsgs(prev => [...(prev || []), { autor: 'corredor', texto: t, __localId: localId }])
     try {
       await axios.post(`${API_BASE}/api/v1/assets/${activo.id}/leads/${lead.session_id}/responder`,
         { texto: t }, { headers: apiHeaders() })
-    } catch { /* el sondeo reconciliará */ } finally { setEnviando(false) }
+      // Confirmar de inmediato contra el servidor (en vez de esperar hasta 6s el
+      // proximo sondeo) — reemplaza la burbuja optimista por la real ya persistida.
+      await cargar()
+    } catch {
+      // Fallo real: se quita la burbuja falsa (no dejar al corredor creyendo que se
+      // envio), se devuelve el texto al campo para reintentar sin retipear, y se
+      // avisa explicitamente — antes este catch quedaba vacio.
+      setMsgs(prev => (prev || []).filter(m => m.__localId !== localId))
+      setTexto(t)
+      setError('No se pudo enviar. Revisa tu conexión e intenta de nuevo.')
+    } finally {
+      setEnviando(false)
+    }
   }
 
   const bubble = (autor) => {
@@ -202,6 +224,12 @@ export function LeadChat({ activo, lead, onBack }) {
         })}
         <div ref={finRef} />
       </div>
+
+      {error && (
+        <div style={{ color: '#E0685A', fontSize: '.76rem', textAlign: 'center', marginTop: 8, flexShrink: 0 }}>
+          ⚠️ {error}
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginTop: 10, flexShrink: 0,
                     background: 'rgba(20,44,43,.5)', border: `1px solid ${C.line}`, borderRadius: 20, padding: 7 }}>

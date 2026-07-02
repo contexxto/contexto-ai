@@ -40,20 +40,24 @@ def _limpiar_servicios_en(row: dict) -> dict:
 async def tool_search_nearby_assets(
     latitude: float,
     longitude: float,
-    radius_meters: int = 800,
+    radius_meters: int = 1200,
 ) -> str:
     """
     Search for registered immutable assets within a geographic radius.
 
     Returns a JSON list of nearby properties with their habitability scores,
-    noise levels, walkability scores, and traffic volumes. Use this tool whenever
-    the user asks about a neighborhood, street, or area.
+    noise levels, walkability scores, traffic volumes, and price/operation when
+    available. Use this tool whenever the user asks about a neighborhood, street,
+    or area.
 
     Args:
         latitude: WGS84 latitude of the search center.
         longitude: WGS84 longitude of the search center.
-        radius_meters: Search radius in meters (default 1500m when coming from geocoded address,
-                       800m when the user provides exact coordinates).
+        radius_meters: Search radius in meters. LEAVE AT THE DEFAULT (1200m) unless
+                       the user explicitly asked for a different distance — a
+                       borderline property can silently appear or disappear between
+                       calls if this is picked inconsistently, since it changes
+                       which rows the SQL filter includes before ranking by distance.
     """
     query = """
         SELECT
@@ -68,6 +72,8 @@ async def tool_search_nearby_assets(
             a.porcentaje_cobertura_vegetal,
             a.conectividad,
             a.servicios_cercanos,
+            t.tipo_operacion AS operacion,
+            t.precio,
             ROUND(
                 ST_Distance(
                     a.geom::geography,
@@ -75,6 +81,10 @@ async def tool_search_nearby_assets(
                 )::numeric, 1
             ) AS distancia_metros
         FROM activos_inmutables a
+        LEFT JOIN LATERAL (
+            SELECT tipo_operacion, precio FROM transacciones_temporales tt
+            WHERE tt.activo_id = a.id ORDER BY tt.fecha_publicacion DESC LIMIT 1
+        ) t ON true
         WHERE ST_DWithin(
             a.geom::geography,
             ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography,

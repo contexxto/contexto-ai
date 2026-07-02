@@ -188,7 +188,12 @@ export default function MapSeed({ results, mapSeed, onOpen, onExpand, isLast, ac
       try {
         map.resize()
         // Cámara DESTINO del turno. Modo cálido (pocos/uno) → más cerca: el "arribo" del SPEC.
-        const PAD = { top: 40, right: 78, bottom: 30, left: 44 }  // badges se extienden a la derecha
+        // El padding debe cubrir no solo el punto sino su HALO VISUAL completo: el wrapper
+        // táctil es 30x30, pero el arco (inset -10px), el halo verificado (inset -7px) y el
+        // aura cálida (box-shadow 18px blur + 4px spread) pueden asomar ~28px desde el centro
+        // — más que el wrapper mismo. Un padding igual o menor a eso deja el pin cortado por
+        // el borde del contenedor cuando el punto queda cerca del límite del encuadre.
+        const PAD = { top: 46, right: 82, bottom: 50, left: 50 }  // badges se extienden a la derecha
         const allSame = pins.every((p) => p.lat === pins[0].lat && p.lon === pins[0].lon)
         let target = null
         if (pins.length === 1 || allSame) {

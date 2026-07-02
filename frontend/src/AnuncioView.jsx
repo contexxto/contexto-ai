@@ -71,11 +71,13 @@ export default function AnuncioView({ id, onChat, onBack }) {
   )
 
   const car = d.caracteristicas || {}
-  // d.fotos viene del endpoint /anuncio (imagen_url del catastro); car.fotos son
-  // fotos que el propietario subió desde la app. Primero propietario, luego catastro.
-  const fotos = (Array.isArray(d.fotos) && d.fotos.length ? d.fotos : null)
-             || car.fotos
-             || []
+  // El backend (assets.py, endpoint asset_anuncio) ya arma `d.fotos` con la prioridad
+  // correcta: fotos reales del corredor (car.fotos) primero, imagen_url de stock/catastro
+  // solo como ultimo recurso si nunca subieron nada. Por eso NO hay que re-priorizar aqui
+  // contra car.fotos (ese fallback era vestigial y su comentario original decia lo
+  // CONTRARIO de lo que el backend realmente hace -> riesgo de reintroducir a futuro el
+  // mismo bug de foto de stock que ya se arreglo en chat.py).
+  const fotos = Array.isArray(d.fotos) ? d.fotos : []
   const esVenta = d.operacion === 'venta'
   const precioTxt = d.precio != null
     ? fmtUSD(d.precio) + (esVenta ? '' : '/mes') + (d.precio_negociable ? ' · negociable' : '')

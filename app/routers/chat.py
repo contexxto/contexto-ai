@@ -1017,6 +1017,39 @@ async def _corredor_de_activo(db, activo_id: str | None) -> tuple[str | None, di
     return row.get("email"), row.get("subscription")
 
 
+_perfil_wsp_ready = False
+
+
+async def ensure_perfil_wsp(db) -> None:
+    """Agrega profiles.telefono_wsp si falta (idempotente, una vez por proceso).
+    profiles se crea via migracion 008; esta columna (016) se autocrea en runtime para
+    no exigir correr SQL a mano en el deploy."""
+    global _perfil_wsp_ready
+    if _perfil_wsp_ready:
+        return
+    await db.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS telefono_wsp text"))
+    await db.commit()
+    _perfil_wsp_ready = True
+
+
+async def _whatsapp_de_activo(db, activo_id: str | None) -> str | None:
+    """Numero de WhatsApp del corredor dueno del inmueble (formato wa.me: pais+numero
+    sin '+'), o None. Habilita el deep-link wa.me del handoff. Degradable: si la columna
+    aun no existe, no hay dueno, o el corredor no cargo numero, devuelve None y el boton
+    simplemente no se muestra — nunca rompe el handoff."""
+    if not activo_id:
+        return None
+    try:
+        await ensure_perfil_wsp(db)
+        return (await db.execute(text(
+            "SELECT p.telefono_wsp FROM activos_inmutables a "
+            "LEFT JOIN agencies ag ON ag.id = a.owner_agency_id "
+            "JOIN profiles p ON p.user_id = COALESCE(a.owner_user_id, ag.owner_user) "
+            "WHERE a.id = :id"), {"id": activo_id})).scalar()
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _notificar_corredor(activo_id: str | None, title: str, body: str) -> None:
     """Dispara (fire-and-forget) la notificación al corredor dueño del inmueble.
     Abre directo en el CRM. No bloquea la respuesta HTTP."""
@@ -1081,11 +1114,13 @@ async def registrar_handoff(
             "    lead_email = COALESCE(EXCLUDED.lead_email, handoff_sesion.lead_email)"),
             {"s": session_id, "a": activo_id, "u": lead_user_id, "e": lead_email})
         await db.commit()
+        # WhatsApp del corredor (si lo cargó) → habilita el botón "Continuar por WhatsApp".
+        wsp = await _whatsapp_de_activo(db, activo_id)
     # Avisa al corredor: un lead caliente quiere hablar (lo más valioso del embudo).
     _notificar_corredor(activo_id,
         "🔥 Un interesado quiere hablar contigo",
         f"{quien} pidió hablar con el corredor. Ábrelo en tu CRM para responderle.")
-    return {"ok": True, "estado": "solicitado", "activo_id": activo_id}
+    return {"ok": True, "estado": "solicitado", "activo_id": activo_id, "corredor_whatsapp": wsp}
 
 
 @router.post(
@@ -1104,7 +1139,8 @@ async def solicitar_handoff(
         lead_email=user.email if user else None,
         quien=quien,
     )
-    return {"ok": True, "estado": res["estado"], "identificado": bool(user)}
+    return {"ok": True, "estado": res["estado"], "identificado": bool(user),
+            "corredor_whatsapp": res.get("corredor_whatsapp")}
 
 
 class HandoffMsg(BaseModel):
@@ -1158,14 +1194,17 @@ async def estado_handoff(request: Request, session_id: str, desde: int = 0) -> d
                 "SELECT estado FROM handoff_sesion WHERE session_id = :s"),
                 {"s": session_id})).scalar()
             if est is None:
-                return {"activo": False, "estado": None, "mensajes": []}
+                return {"activo": False, "estado": None, "mensajes": [], "corredor_whatsapp": None}
             rows = (await db.execute(text(
                 "SELECT id, autor, texto FROM handoff_mensaje "
                 "WHERE session_id = :s AND id > :d ORDER BY id ASC"),
                 {"s": session_id, "d": desde})).mappings().all()
+            # Se resuelve en cada sondeo para que el botón de WhatsApp sobreviva a un
+            # reload del interesado (el POST /handoff no se re-dispara al recargar).
+            wsp = await _whatsapp_de_activo(db, activo_de_session(session_id))
         except Exception:  # noqa: BLE001 — tablas aún no existen
-            return {"activo": False, "estado": None, "mensajes": []}
-    return {"activo": True, "estado": est,
+            return {"activo": False, "estado": None, "mensajes": [], "corredor_whatsapp": None}
+    return {"activo": True, "estado": est, "corredor_whatsapp": wsp,
             "mensajes": [{"id": r["id"], "autor": r["autor"], "texto": r["texto"]} for r in rows]}
 
 

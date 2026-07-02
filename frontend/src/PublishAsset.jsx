@@ -18,6 +18,7 @@ export default function PublishAsset({ onClose, existing = null }) {
     operacion: (existing?.operacion || 'arriendo').toLowerCase(),
     precio: existing?.precio ?? '',
     piso_altura: existing?.piso_altura ?? 1,
+    telefono_wsp: existing?.telefono_wsp || '',
     latitude: null, longitude: null,
   })
   const [loading, setLoading] = useState(false)
@@ -58,6 +59,7 @@ export default function PublishAsset({ onClose, existing = null }) {
           operacion: f.operacion,
           precio: f.precio !== '' ? Number(f.precio) : null,
           piso_altura: Number(f.piso_altura) || 1,
+          telefono_wsp: f.telefono_wsp || null,
         }, { headers: { 'Content-Type': 'application/json', ...apiHeaders() } })
         onClose()   // MisPublicaciones recarga la lista al cerrar
         return
@@ -68,6 +70,7 @@ export default function PublishAsset({ onClose, existing = null }) {
         operacion: f.operacion,
         precio: f.precio ? Number(f.precio) : null,
         piso_altura: Number(f.piso_altura) || 1,
+        telefono_wsp: f.telefono_wsp || null,
         latitude: f.latitude, longitude: f.longitude,
       }, { headers: { 'Content-Type': 'application/json', ...apiHeaders() } })
       setResult(data)
@@ -169,6 +172,16 @@ export default function PublishAsset({ onClose, existing = null }) {
                 <div style={{ flex: 1 }}>
                   <label style={label}>Precio (USD)</label>
                   <input type="number" min={0} style={inputStyle} value={f.precio} onChange={e => set('precio', e.target.value)} placeholder="850" />
+                </div>
+              </div>
+
+              <div>
+                <label style={label}>WhatsApp de contacto (opcional)</label>
+                <input type="tel" style={inputStyle} value={f.telefono_wsp}
+                       onChange={e => set('telefono_wsp', e.target.value)}
+                       placeholder="Con código de país: 593999123456" />
+                <div style={{ fontSize: '.72rem', color: C.muted, marginTop: 4 }}>
+                  Habilita el botón “Continuar por WhatsApp” para los interesados. Se usa en todos tus inmuebles; déjalo vacío si ya lo configuraste.
                 </div>
               </div>
 

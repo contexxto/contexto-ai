@@ -2,16 +2,20 @@
 Captura de PREFERENCIAS declaradas del usuario — el INPUT del motor de encaje (app/encaje.py).
 
 LLM → schema FIJO y CERRADO. Lee lo que el usuario dijo en la conversación y extrae SOLO las
-necesidades que declaró explícitamente, en las 7 dimensiones de encaje.DIMENSIONES.
+necesidades que declaró explícitamente: las 7 dimensiones de encaje.DIMENSIONES + la OPERACIÓN
+(arriendo/venta) como campo aparte (no puntúa en el encaje; es un filtro duro aguas abajo que
+separa magnitudes incomparables — canon mensual de arriendo vs precio de venta).
 
 ── Fair Housing (innegociable, tarea #14) ──────────────────────────────────────────────
 Tres barreras, en capas:
-  1. El TOOL SCHEMA solo tiene las 7 dimensiones-necesidad → el LLM no puede emitir un
-     campo "familia/hijos/origen/…" porque no existe en el schema.
+  1. El TOOL SCHEMA solo tiene las 7 dimensiones-necesidad + `operacion` (enum arriendo|venta)
+     → el LLM no puede emitir un campo "familia/hijos/origen/…" porque no existe en el schema.
+     `operacion` es también una NECESIDAD (qué busca), jamás un rasgo de la persona.
   2. El PROMPT prohíbe inferir preferencias a partir de QUIÉN es la persona ("tengo hijos"
      NO se traduce a área verde ni a más dormitorios).
-  3. El SANITIZADOR (`_sanitizar`) descarta cualquier clave fuera de encaje.DIMENSIONES y
-     cualquier tipo inválido → aunque el LLM alucine, nada ajeno llega al motor.
+  3. El SANITIZADOR (`_sanitizar`) descarta cualquier clave fuera de encaje.DIMENSIONES (más
+     `operacion`, controlada a enum cerrado) y cualquier tipo inválido → aunque el LLM
+     alucine, nada ajeno llega al motor.
 
 Degrada a {} ante CUALQUIER fallo (sin API key, timeout, JSON malo): el chat nunca se rompe;
 simplemente no hay encaje ese turno (mejor sin dato que un dato inventado o un 500).
@@ -31,6 +35,7 @@ logger = logging.getLogger(__name__)
 
 _BOOL_DIMS = {"tranquilidad", "caminable", "transporte", "area_verde", "acepta_mascotas"}
 _NUM_DIMS = {"presupuesto_max", "min_dormitorios"}
+_OPERACIONES = {"arriendo", "venta"}  # enum cerrado; canal APARTE de encaje.DIMENSIONES
 
 _SYSTEM = (
     "Eres un extractor de PREFERENCIAS declaradas para una búsqueda inmobiliaria. Lee lo que "
@@ -42,6 +47,12 @@ _SYSTEM = (
     "completo: no lo traduzcas a ninguna preferencia (ej.: 'tengo hijos' NO implica área verde, "
     "ni más dormitorios, ni tranquilidad; 'me mudo con mi pareja' NO implica nada).\n"
     "3. presupuesto_max: el número que dijo como tope (misma moneda). min_dormitorios: entero.\n"
+    "4. operacion: 'arriendo' si declaró que busca ALQUILAR (señales de INTENCIÓN: 'al mes', "
+    "'mensual', 'canon', 'arrendar', 'rentar', 'alquilar') o 'venta' si declaró que busca COMPRAR "
+    "('comprar', 'adquirir', 'precio de compra'). SOLO si expresó esa INTENCIÓN. Igual que la "
+    "regla 2: JAMÁS la infieras de QUIÉN es la persona ni de un proxy (extranjero, intercambio, "
+    "estudiante, 'de paso', temporal, migración, edad, origen): estar de paso NO implica "
+    "arriendo. Si no declaró la intención, déjalo fuera.\n"
     "Llama SIEMPRE a la herramienta registrar_preferencias."
 )
 
@@ -58,6 +69,8 @@ _TOOL = {
             "presupuesto_max": {"type": "number", "description": "tope de precio que declaró (solo si lo dijo)"},
             "min_dormitorios": {"type": "integer", "description": "mínimo de dormitorios que pidió (solo si lo dijo)"},
             "acepta_mascotas": {"type": "boolean", "description": "necesita que acepten mascotas"},
+            "operacion": {"type": "string", "enum": ["arriendo", "venta"],
+                          "description": "la operación que busca: arriendo (alquilar) o venta (comprar), SOLO si lo declaró"},
         },
     },
 }
@@ -70,6 +83,11 @@ def _sanitizar(bruto) -> dict:
         return {}
     out: dict = {}
     for k, v in bruto.items():
+        if k == "operacion":                # canal APARTE del encaje: filtro duro, no puntúa.
+            # Enum CERRADO ({arriendo, venta}): no abre la whitelist a valores arbitrarios.
+            if isinstance(v, str) and v.strip().lower() in _OPERACIONES:
+                out["operacion"] = v.strip().lower()
+            continue
         if k not in DIMENSIONES:            # whitelist cerrada: nada ajeno pasa
             continue
         if k in _BOOL_DIMS:

@@ -101,6 +101,7 @@ def _langgraph_config(session_id: str) -> dict:
 # (foto, precio, specs, caminabilidad). Separa la capa de razonamiento (lo que
 # ve el LLM) de la capa visual (lo que renderiza el frontend).
 _SEARCH_TOOLS = {"tool_search_nearby_assets", "tool_find_assets_by_text"}
+_MAX_CARDS = 6  # tope de tarjetas visibles por turno (y de pines del Mapa Vivo)
 
 
 def _collect_asset_ids(messages, limit: int = 6) -> list[str]:
@@ -344,7 +345,9 @@ async def build_result_cards(messages, *, preferencias: dict | None = None) -> l
     `preferencias`: si se pasa explícito (ya extraídas por el caller), NO vuelve a llamar al
     LLM — las usa tal cual. Lo usa get_session_history para extraer las preferencias UNA sola
     vez por carga de historial (ver `_preferencias_de_historial`) en vez de una vez por turno."""
-    ids = _collect_asset_ids(messages)
+    # Recolectamos con holgura (2× el tope visible) para que el filtro de operación de abajo
+    # tenga material y no adelgace de más los resultados; luego se recorta a _MAX_CARDS.
+    ids = _collect_asset_ids(messages, limit=_MAX_CARDS * 2)
     if not ids:
         return []
     if preferencias is not None:
@@ -372,7 +375,26 @@ async def build_result_cards(messages, *, preferencias: dict | None = None) -> l
         r["servicios_cercanos"] = aplicar_curacion(r.get("servicios_cercanos"), cur)
         r["fresco"] = bool(cur)  # verificación (halo del pin); ver _card_from_row
         by_id[r["id"]] = r
-    return [_card_from_row(by_id[i], preferencias) for i in ids if i in by_id]
+
+    orden = [i for i in ids if i in by_id]
+    # Filtro de OPERACIÓN (arriendo/venta): solo si el usuario la DECLARÓ (intención concreta).
+    # Si NO la declaró → inventario mixto (exploración de zona: preserva el Mapa Vivo ZONA y su
+    # FSM del lente). Separa magnitudes incomparables: un precio de VENTA ($256k) no debe
+    # mezclarse con un canon de ARRIENDO ($800/mes).
+    op = (preferencias or {}).get("operacion")
+    if op:
+        op_norm = op.upper()
+        def _op_de(i: str) -> str:
+            return (by_id[i].get("operacion") or "").upper()
+        # MONITOREO_PASIVO es un activo VIGILADO, no ofertado: cuando el usuario declara una
+        # operación, nunca se ofrece — ni como coincidencia ni en la degradación de abajo.
+        ofertables = [i for i in orden if _op_de(i) != "MONITOREO_PASIVO"]
+        # Coinciden: la operación declarada, o sin operación registrada (dato faltante ≠ no
+        # encaja). Si NADA coincide, degrada a lo ofertable más cercano (nunca vacía el turno;
+        # el badge VENTA/ARRIENDO de la tarjeta mantiene la honestidad), sin re-colar MONITOREO.
+        coinciden = [i for i in ofertables if _op_de(i) in (op_norm, "")]
+        orden = coinciden or ofertables
+    return [_card_from_row(by_id[i], preferencias) for i in orden[:_MAX_CARDS]]
 
 
 # FSM del lente (SPEC_Mapa_Vivo "Estados y transiciones"): el modo lo decide la PRECISIÓN de
@@ -474,6 +496,19 @@ async def comparar_inmuebles(session_id: str, id_a: str, id_b: str) -> dict:
         by_id[rid] = r
     if id_a not in by_id or id_b not in by_id:
         return {"ok": False, "message": "No encontré uno de los inmuebles a comparar."}
+
+    # Mismo guardrail que build_result_cards: NO mezclar magnitudes incomparables. Un canon de
+    # ARRIENDO ($800/mes) y un precio de VENTA ($256.500) no se comparan contra un mismo
+    # presupuesto_max — el delta de encaje daría un veredicto de presupuesto sin sentido. Si
+    # ambas operaciones son conocidas y distintas, no calculamos el delta. (Si alguna es None
+    # —dato faltante— se permite: no penalizamos lo que no sabemos.)
+    op_a = (by_id[id_a].get("operacion") or "").upper()
+    op_b = (by_id[id_b].get("operacion") or "").upper()
+    if op_a and op_b and op_a != op_b:
+        return {"ok": False, "message": (
+            "No puedo comparar un arriendo con una venta: son magnitudes distintas "
+            "(canon mensual vs precio de compra). Elegí dos inmuebles de la misma operación."
+        )}
 
     def _senales(rid: str) -> dict:
         r = by_id[rid]

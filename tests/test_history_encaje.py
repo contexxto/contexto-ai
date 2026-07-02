@@ -55,7 +55,12 @@ def _patch(monkeypatch, messages, rows):
     # con textos, extrae SOLO lo que el texto realmente declara (como haría el LLM real) — un
     # mock que devolviera prefs con cualquier texto no-vacío ocultaría el bug real (el punto es
     # que la lista de textos esté poblada CON el mensaje correcto, no solo que no esté vacía).
+    # Cuenta las llamadas (llamadas[0]) para verificar la memoización: get_session_history debe
+    # llamar a esto UNA sola vez por carga, no una por turno.
+    llamadas = [0]
+
     async def fake_prefs(textos):
+        llamadas[0] += 1
         junto = " ".join(textos).lower()
         prefs = {}
         if "tranquilo" in junto:
@@ -72,6 +77,7 @@ def _patch(monkeypatch, messages, rows):
     async def fake_fetch(_ids):
         return (rows, {})
     monkeypatch.setattr(chat, "_fetch_cards_rows", fake_fetch)
+    return llamadas
 
 
 def test_history_preserva_el_encaje_tras_recargar(monkeypatch):
@@ -79,7 +85,7 @@ def test_history_preserva_el_encaje_tras_recargar(monkeypatch):
     texto = "Busco departamento en La Carolina, tranquilo, cerca de un parque, que acepte mascotas, hasta 800 al mes"
     rows = [_mk_row("A")]
     messages = _mensajes_de_un_turno(texto, ["A"])
-    _patch(monkeypatch, messages, rows)
+    llamadas = _patch(monkeypatch, messages, rows)
 
     hist = asyncio.run(chat.get_session_history("s"))
     turno = hist["messages"][-1]
@@ -94,6 +100,7 @@ def test_history_preserva_el_encaje_tras_recargar(monkeypatch):
     assert turno["map_seed"] is not None
     assert turno["map_seed"]["pines"][0]["encaje"] is not None
     assert "encaje" in turno["map_seed"]["capas"]
+    assert llamadas[0] == 1  # memoización: 1 sola llamada LLM para 1 turno
 
 
 def test_history_multiturno_acumula_preferencias_de_turnos_previos(monkeypatch):
@@ -105,7 +112,7 @@ def test_history_multiturno_acumula_preferencias_de_turnos_previos(monkeypatch):
     )
     t2 = _mensajes_de_un_turno("¿Y el segundo que me mostraste?", ["B"])
     rows = [_mk_row("A"), _mk_row("B")]
-    _patch(monkeypatch, t1 + t2, rows)
+    llamadas = _patch(monkeypatch, t1 + t2, rows)
 
     hist = asyncio.run(chat.get_session_history("s"))
     asistentes = [h for h in hist["messages"] if h["role"] == "assistant"]
@@ -114,6 +121,29 @@ def test_history_multiturno_acumula_preferencias_de_turnos_previos(monkeypatch):
     # propio texto, pero deben seguir presentes porque vienen de TODO el hilo acumulado.
     for turno in asistentes:
         assert turno["results"][0]["encaje"] is not None
+    assert llamadas[0] == 1  # memoización: 1 sola llamada LLM para 2 turnos
+
+
+def test_history_memoiza_una_sola_llamada_llm_en_hilo_largo(monkeypatch):
+    # El caso que motivó el fix de costo/latencia: un hilo de VARIOS turnos (5) no debe
+    # disparar una llamada LLM por turno al recargar — solo UNA por carga de /history,
+    # sin importar cuántos turnos tenga la conversación.
+    texto_pref = "Busco departamento tranquilo, cerca de un parque, que acepte mascotas, hasta 800 al mes"
+    turnos = [_mensajes_de_un_turno(texto_pref, ["A"])]
+    for i in range(4):
+        turnos.append(_mensajes_de_un_turno(f"¿Y el inmueble {i}?", [chr(ord('B') + i)]))
+    messages = [m for t in turnos for m in t]
+    rows = [_mk_row(rid) for rid in ["A", "B", "C", "D", "E"]]
+    llamadas = _patch(monkeypatch, messages, rows)
+
+    hist = asyncio.run(chat.get_session_history("s"))
+    asistentes = [h for h in hist["messages"] if h["role"] == "assistant"]
+    assert len(asistentes) == 5
+    # Las preferencias del primer turno siguen vigentes en TODOS los turnos posteriores.
+    for turno in asistentes:
+        assert turno["results"][0]["encaje"] is not None
+    # El punto central del fix: 1 llamada LLM, no 5 (una por turno como antes).
+    assert llamadas[0] == 1
 
 
 def test_history_sin_preferencias_declaradas_no_inventa_encaje(monkeypatch):

@@ -1158,6 +1158,7 @@ async def save_caracteristicas(
 )
 async def create_asset(
     payload: ActivoCreateRequest,
+    background: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ) -> ActivoResponse:
     point_wkt = WKTElement(
@@ -1179,6 +1180,15 @@ async def create_asset(
     db.add(asset)
     await db.flush()
     await db.refresh(asset)
+
+    # Causa raíz del hueco de entorno (2026-07-01): este endpoint es el único punto de
+    # alta que usan los scripts de carga masiva (p.ej. scripts/hidratar_activos.py), y
+    # antes de este fix NUNCA encolaba el enriquecimiento real (Overpass + Google
+    # Routes/Places) — solo /publish lo hacía. Resultado: 39/40 activos en producción
+    # nacían sin servicios_cercanos/conectividad hasta que alguien corría un backfill
+    # manual. Encolamos aquí, igual que /publish (línea ~1341), para que todo activo
+    # nuevo llegue completo sin depender de un backfill posterior.
+    background.add_task(_recompute_walk_score, str(asset.id), payload.latitude, payload.longitude)
 
     return ActivoResponse(
         id=asset.id,

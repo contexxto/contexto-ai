@@ -248,7 +248,14 @@ def _card_from_row(row: dict, preferencias: dict | None = None) -> dict:
     # `car` (rompería car.get(...) → AttributeError → 500). Solo un dict cuenta como specs.
     car = car if isinstance(car, dict) else {}
     fotos = car.get("fotos") or []
-    foto = row.get("imagen_url") or (fotos[0] if fotos else None)
+    # Fotos REALES (subidas por el corredor a `caracteristicas.fotos`) SIEMPRE le ganan al
+    # backfill de stock (`imagen_url`, poblado por seed_fill_all_fase1.sql con Unsplash para
+    # activos sin foto real). Antes era al revés (imagen_url primero) — un corredor podía subir
+    # la foto real del inmueble y el chat seguía mostrando el sofá de stock para siempre, porque
+    # nada limpia `imagen_url` al cargar fotos nuevas. Misma prioridad que ya usa la página
+    # pública /a/{id} (assets.py, endpoint asset_anuncio): fotos reales primero, imagen_url
+    # como último recurso solo si el corredor nunca subió nada.
+    foto = (fotos[0] if fotos else None) or row.get("imagen_url")
     precio = row.get("precio")
     card = {
         "id": row.get("id"),

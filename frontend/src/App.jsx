@@ -442,6 +442,13 @@ export default function App() {
   // QR (/a/{id}) → primero la página de anuncio (la "puerta"); el chat con el agente
   // (runtime propio) se abre solo al tocar el CTA. No arrancamos en el informe.
   const [anuncioMode, setAnuncioMode] = useState(!!deepLinkId)
+  // Feedback en vivo (2026-07-02): "ampliar" el mapa del anuncio NO debe abrir un modal
+  // aislado — debe llevar al mismo Mapa Vivo conversacional que ya existe en el chat
+  // ("Pregúntale al mapa", "Recorre esta zona", colores de encaje). MapView es agnóstico
+  // de sesión de chat (solo necesita seedIds), así que aquí no hace falta crear una
+  // conversación — solo mostrar MapView sembrado con ESTE inmueble mientras estamos en el
+  // flujo standalone de anuncioMode (que no pasa por el `view` state machine de abajo).
+  const [anuncioMapaOpen, setAnuncioMapaOpen] = useState(false)
   // Detalle de un inmueble abierto desde una tarjeta de resultado (overlay sin
   // perder el chat). Reutiliza AnuncioView; al cerrar volvemos a la conversación.
   const [openAnuncioId, setOpenAnuncioId] = useState(null)
@@ -1068,8 +1075,33 @@ export default function App() {
   // Página de anuncio del QR (/a/{id}) — landing pública del inmueble. El CTA abre
   // el chat con el agente (runtime propio) y dispara el informe.
   if (deepLinkId && anuncioMode) {
+    // "Ampliar" el mapa del anuncio → el Mapa Vivo completo, sembrado con ESTE inmueble
+    // (no un modal aislado). Volver regresa al anuncio, no al chat (este flujo standalone
+    // no tiene chat activo todavía — eso solo pasa al tocar el CTA "Chat").
+    if (anuncioMapaOpen) {
+      return (
+        <div style={{ height:'100dvh', display:'flex', flexDirection:'column' }}>
+          <div style={{ padding:'8px 16px' }}>
+            <button onClick={() => setAnuncioMapaOpen(false)} style={{
+              background:'none', border:'1px solid var(--border)', borderRadius:8,
+              cursor:'pointer', color:'var(--text-muted)', padding:'6px 12px', fontSize:'.85rem',
+            }}>← Volver al inmueble</button>
+          </div>
+          <div style={{ flex:1, minHeight:0 }}>
+            <Suspense fallback={
+              <div style={{ height:'100%', display:'grid', placeItems:'center', color:'var(--text-muted)' }}>
+                Cargando mapa…
+              </div>
+            }>
+              <MapView seedIds={[deepLinkId]} />
+            </Suspense>
+          </div>
+        </div>
+      )
+    }
     return <AnuncioView id={deepLinkId}
-      onChat={() => { setAnuncioMode(false); loadFromDeepLink(deepLinkId) }} />
+      onChat={() => { setAnuncioMode(false); loadFromDeepLink(deepLinkId) }}
+      onExpandMap={() => setAnuncioMapaOpen(true)} />
   }
 
   // Detalle abierto desde una tarjeta del chat: overlay sobre la conversación.
@@ -1084,6 +1116,14 @@ export default function App() {
           ? `Cuéntame más sobre el inmueble en ${info.direccion}`
           : 'Cuéntame más sobre este inmueble'
         setTimeout(() => sendMessage(txt), 150)
+      }}
+      onExpandMap={() => {
+        // Reusa el MISMO Mapa Vivo completo que ya usa el chat (view:'map' + mapSeed) —
+        // sembrado solo con este inmueble, en vez del modal aislado del anuncio.
+        const id = openAnuncioId
+        setOpenAnuncioId(null)
+        setMapSeed([id]); setMapEncaje(null)
+        setView('map')
       }} />
   }
 

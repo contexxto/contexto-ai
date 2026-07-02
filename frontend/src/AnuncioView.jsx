@@ -33,7 +33,7 @@ const AMB = [
   ['acepta_mascotas', '🐾 Acepta mascotas'],
 ]
 
-export default function AnuncioView({ id, onChat, onBack }) {
+export default function AnuncioView({ id, onChat, onBack, onExpandMap }) {
   const [d, setD] = useState(null)
   const [err, setErr] = useState(false)
   // Foto activa de la galeria (indice sobre `fotos`, mas abajo). Se resetea al cambiar
@@ -228,7 +228,7 @@ export default function AnuncioView({ id, onChat, onBack }) {
           {/* Mapa Vivo — AURA-SINGLE: el inmueble re-centrado en su entorno, cálido.
               Carga su propio /aura (no bloquea el primer paint del anuncio). */}
           <Suspense fallback={null}>
-            <AuraSingleMap activoId={id} tipoActivo={d.tipo_activo} />
+            <AuraSingleMap activoId={id} tipoActivo={d.tipo_activo} onExpandMap={onExpandMap} />
           </Suspense>
 
           {/* Características */}

@@ -464,6 +464,7 @@ export default function App() {
   const [modoCorredor, setModoCorredor] = useState(false)  // handoff en vivo: el lead habla con el corredor (no el AI)
   const handoffSeenRef = useRef(0)                          // último id de mensaje de handoff visto
   const [handoffPendiente, setHandoffPendiente] = useState(false)  // handoff esperando registro del lead
+  const [corredorWhatsapp, setCorredorWhatsapp] = useState(null)   // WhatsApp del corredor (si lo cargó) → botón wa.me en el handoff
   const [session, setSession] = useState(null)            // sesión de Supabase | null
   const [authOpen, setAuthOpen] = useState(false)         // modal de login/registro
   const [rol, setRol] = useState(null)                    // rol del usuario (cliente/corredor/inmobiliaria)
@@ -837,7 +838,8 @@ export default function App() {
       return
     }
     try {
-      await axios.post(`${API_BASE}/api/v1/chat/${sessionId}/handoff`, {}, { headers: apiHeaders() })
+      const { data } = await axios.post(`${API_BASE}/api/v1/chat/${sessionId}/handoff`, {}, { headers: apiHeaders() })
+      if (data?.corredor_whatsapp) setCorredorWhatsapp(data.corredor_whatsapp)
       setModoCorredor(true)
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(), role: 'ai',
@@ -865,6 +867,7 @@ export default function App() {
           { params: { desde: handoffSeenRef.current }, headers: apiHeaders() })
         if (!vivo || !data?.activo) return
         if (!modoCorredor) setModoCorredor(true)
+        if (data?.corredor_whatsapp) setCorredorWhatsapp(data.corredor_whatsapp)
         const nuevos = (data.mensajes || []).filter(m => m.autor === 'corredor')
         for (const m of (data.mensajes || [])) handoffSeenRef.current = Math.max(handoffSeenRef.current, m.id)
         if (nuevos.length) {
@@ -1481,11 +1484,26 @@ export default function App() {
       }}>
         {deepLinkId && (
           modoCorredor ? (
-            <div style={{ display:'flex', alignItems:'center', gap:8, margin:'0 0 8px', padding:'8px 14px',
-                          borderRadius:14, fontSize:'.78rem', color:'var(--teal)',
-                          background:'rgba(45,189,182,.10)', border:'1px solid rgba(45,189,182,.3)' }}>
-              🤝 Estás hablando con el corredor — te responde aquí mismo.
-            </div>
+            <>
+              <div style={{ display:'flex', alignItems:'center', gap:8, margin:'0 0 8px', padding:'8px 14px',
+                            borderRadius:14, fontSize:'.78rem', color:'var(--teal)',
+                            background:'rgba(45,189,182,.10)', border:'1px solid rgba(45,189,182,.3)' }}>
+                🤝 Estás hablando con el corredor — te responde aquí mismo.
+              </div>
+              {/* Canal donde la gente ya está: si el corredor cargó su WhatsApp, el
+                  interesado puede seguir la conversación ahí. Aditivo — el chat
+                  in-platform de arriba sigue funcionando. */}
+              {corredorWhatsapp && (
+                <a href={`https://wa.me/${corredorWhatsapp}?text=${encodeURIComponent(
+                     `Hola, vi tu inmueble en Contexto y me interesa: ${window.location.origin}/a/${deepLinkId}`)}`}
+                   target="_blank" rel="noopener noreferrer"
+                   style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:7, margin:'0 0 8px',
+                            padding:'10px 14px', borderRadius:14, textDecoration:'none', fontSize:'.82rem',
+                            fontWeight:800, background:'#25D366', color:'#0B141A' }}>
+                  💬 Continuar por WhatsApp
+                </a>
+              )}
+            </>
           ) : (
             <button onClick={iniciarHandoff}
               style={{ display:'flex', alignItems:'center', gap:7, margin:'0 auto 8px', padding:'7px 14px',

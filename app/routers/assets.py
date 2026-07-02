@@ -2,6 +2,7 @@ import asyncio
 import io
 import json
 import logging
+import re
 import uuid
 
 import segno
@@ -1417,6 +1418,36 @@ class PublishRequest(BaseModel):
     piso_altura: int = Field(default=1, ge=1, le=200)
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
+    # WhatsApp del corredor (opcional). Vive en el PERFIL (aplica a todos sus inmuebles),
+    # no en el activo. Habilita el botón "Continuar por WhatsApp" del handoff.
+    telefono_wsp: str | None = Field(default=None, max_length=32)
+
+
+def _normalizar_wsp(raw: str | None) -> str | None:
+    """Deja el número en formato wa.me: solo dígitos (código de país + número), sin '+',
+    sin '00' de prefijo internacional, sin espacios. Ej. '+593 99 912 3456' o
+    '00593999123456' -> '593999123456'. None si queda vacío (así NO pisa el número
+    existente del perfil cuando el campo se manda en blanco)."""
+    if not raw:
+        return None
+    digits = re.sub(r"\D", "", raw)
+    if digits.startswith("00"):
+        digits = digits[2:]
+    return digits or None
+
+
+async def _guardar_wsp_corredor(db, user_id: str, raw: str | None) -> None:
+    """Persiste el WhatsApp normalizado en profiles.telefono_wsp del corredor.
+    No hace nada si viene vacío (preserva el valor previo)."""
+    tel = _normalizar_wsp(raw)
+    if not tel:
+        return
+    from app.routers.chat import ensure_perfil_wsp
+    await ensure_perfil_wsp(db)
+    await db.execute(
+        text("UPDATE profiles SET telefono_wsp = :w WHERE user_id = :u"),
+        {"w": tel, "u": user_id},
+    )
 
 
 async def _geocode(direccion: str) -> tuple[float, float] | None:
@@ -1548,6 +1579,8 @@ async def publish_asset(
         ),
         {"tid": str(uuid.uuid4()), "aid": str(aid), "op": op_norm, "precio": payload.precio},
     )
+    # WhatsApp del corredor → su perfil (si lo mandó). Habilita el botón del handoff.
+    await _guardar_wsp_corredor(db, user.user_id, payload.telefono_wsp)
     await db.commit()
 
     # 4) Recalcular SIEMPRE en segundo plano (sin hacer esperar al usuario, que
@@ -1572,6 +1605,8 @@ class EditAssetRequest(BaseModel):
     operacion: str | None = Field(default=None, description="arriendo | venta")
     precio: float | None = Field(default=None, ge=0)
     piso_altura: int | None = Field(default=None, ge=1, le=200)
+    # Permite al corredor cargar/actualizar su WhatsApp editando un inmueble ya publicado.
+    telefono_wsp: str | None = Field(default=None, max_length=32)
 
 
 @router.patch(
@@ -1663,6 +1698,9 @@ async def edit_asset(
                 {"tid": str(uuid.uuid4()), "aid": str(activo_id),
                  "op": op_norm, "precio": payload.precio},
             )
+
+    # WhatsApp del corredor → su perfil (permite cargarlo editando un inmueble ya publicado).
+    await _guardar_wsp_corredor(db, user.user_id, payload.telefono_wsp)
 
     await db.commit()
 

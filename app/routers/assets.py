@@ -220,8 +220,10 @@ async def asset_qr(activo_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> 
 _TEAL = (45, 189, 182)
 _TEAL_HI = (94, 234, 212)
 _INK = (14, 13, 19)
+_INK_PANEL = (22, 21, 30)
 _MUTED = (156, 153, 172)
 _WHITE = (255, 255, 255)
+_GOLD = (232, 184, 75)
 # DejaVu Sans (instalada via apt en Dockerfile, fonts-dejavu-core) — TTF real para texto
 # nitido. Si no esta (dev local sin la fuente del sistema), degradamos al bitmap font de
 # PIL: el banner se sigue generando, solo con tipografia fea, nunca rompe el endpoint.
@@ -262,6 +264,20 @@ def _envolver_texto(draw, texto: str, fuente, max_ancho: int) -> list[str]:
     return lineas
 
 
+def _fuente_ajustada_a_ancho(draw, texto: str, max_ancho: int, tam_inicial: int, tam_min: int = 40):
+    """Fuente en negrita lo más grande posible (arrancando en `tam_inicial`) tal que
+    `texto` en una sola línea quepa en `max_ancho` px. Usado para el "SE ARRIENDA"/
+    "SE VENDE" del letrero — debe leerse grande y de lejos, pero sin desbordar el
+    banner con direcciones/tipos de inmueble más largos de lo esperado."""
+    tam = tam_inicial
+    while tam > tam_min:
+        fuente = _fuente_letrero(tam, True)
+        if draw.textlength(texto, font=fuente) <= max_ancho:
+            return fuente
+        tam -= 4
+    return _fuente_letrero(tam_min, True)
+
+
 def _fmt_precio_letrero(precio: float | None, operacion: str | None) -> str | None:
     if precio is None:
         return None
@@ -269,45 +285,9 @@ def _fmt_precio_letrero(precio: float | None, operacion: str | None) -> str | No
     return txt + ("/mes" if operacion == "arriendo" else "")
 
 
-async def _descargar_foto(url: str | None):
-    """Descarga la foto de portada para el banner. Degradable: cualquier fallo (URL rota,
-    bucket privado, timeout) devuelve None y el banner cae a un panel sin foto — nunca
-    revienta el endpoint por culpa de una imagen externa."""
-    if not url:
-        return None
-    try:
-        import httpx
-        from PIL import Image
-        verify = settings.ssl_verify.lower() != "false"
-        async with httpx.AsyncClient(verify=verify, timeout=8.0) as client:
-            r = await client.get(url)
-            r.raise_for_status()
-        return Image.open(io.BytesIO(r.content)).convert("RGB")
-    except Exception as e:  # noqa: BLE001
-        logging.getLogger(__name__).warning("letrero: no se pudo descargar la foto: %s: %s", type(e).__name__, e)
-        return None
-
-
-def _recortar_cubrir(img, ancho: int, alto: int):
-    """Recorta `img` (PIL Image) al centro para llenar ancho x alto sin deformar (mismo
-    comportamiento que object-fit:cover en CSS)."""
-    from PIL import Image
-    ratio_destino = ancho / alto
-    ratio_origen = img.width / img.height
-    if ratio_origen > ratio_destino:
-        nuevo_ancho = int(img.height * ratio_destino)
-        x0 = (img.width - nuevo_ancho) // 2
-        img = img.crop((x0, 0, x0 + nuevo_ancho, img.height))
-    else:
-        nuevo_alto = int(img.width / ratio_destino)
-        y0 = (img.height - nuevo_alto) // 2
-        img = img.crop((0, y0, img.width, y0 + nuevo_alto))
-    return img.resize((ancho, alto), Image.LANCZOS)
-
-
 async def _generar_letrero_png(
     *, activo_id: uuid.UUID, direccion: str | None, tipo_activo: str | None,
-    operacion: str | None, precio: float | None, foto_url: str | None,
+    operacion: str | None, precio: float | None,
 ) -> bytes:
     from PIL import Image, ImageDraw
 
@@ -324,16 +304,22 @@ async def _generar_letrero_png(
     draw.text((60, 42), "CONTEXTO AI", font=_fuente_letrero(52, True), fill=_WHITE)
     draw.text((60, 104), "Cada lugar tiene un aura", font=_fuente_letrero(24), fill=(230, 250, 247))
 
-    # Foto de portada (recortada a cubrir) — o un degradado si no hay/falló la descarga.
+    # Bloque "SE ARRIENDA" / "SE VENDE" — reemplaza la foto (feedback en vivo, 2026-07-02:
+    # la foto ya se ve al escanear el QR; en el letrero FÍSICO lo que hace falta leer de
+    # lejos, a la calle, es el tipo de operación en letras grandes, no una imagen chica).
     foto_h = 780
-    foto = await _descargar_foto(foto_url)
-    if foto:
-        img.paste(_recortar_cubrir(foto, W, foto_h), (0, header_h))
-    else:
-        for y in range(foto_h):
-            t = y / foto_h
-            color = tuple(int(_INK[i] + (30 - _INK[i]) * t) for i in range(3))
-            draw.line([(0, header_h + y), (W, header_h + y)], fill=color)
+    op_texto = {"arriendo": "SE ARRIENDA", "venta": "SE VENDE"}.get(operacion, "DISPONIBLE")
+    op_color = _TEAL_HI if operacion == "arriendo" else _GOLD
+    draw.rectangle([0, header_h, W, header_h + foto_h], fill=_INK_PANEL)
+    # Línea decorativa arriba/abajo del texto, en el color de la operación.
+    linea_y_arriba, linea_y_abajo = header_h + 90, header_h + foto_h - 90
+    draw.rectangle([90, linea_y_arriba, W - 90, linea_y_arriba + 4], fill=op_color)
+    draw.rectangle([90, linea_y_abajo, W - 90, linea_y_abajo + 4], fill=op_color)
+    fuente_op = _fuente_ajustada_a_ancho(draw, op_texto, W - 160, tam_inicial=150)
+    bbox = draw.textbbox((0, 0), op_texto, font=fuente_op)
+    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    draw.text(((W - tw) // 2 - bbox[0], header_h + (foto_h - th) // 2 - bbox[1]),
+              op_texto, font=fuente_op, fill=op_color)
 
     # Panel de datos del inmueble
     y = header_h + foto_h + 50
@@ -383,17 +369,18 @@ async def _generar_letrero_png(
 
 @router.get(
     "/{activo_id}/letrero.png",
-    summary="Banner imprimible del letrero (foto + datos + QR)",
+    summary="Banner imprimible del letrero (SE ARRIENDA/SE VENDE + datos + QR)",
     description=(
-        "Genera un banner PNG listo para imprimir: foto del inmueble, dirección/precio y "
-        "el QR de /a/{id} — mismo enlace que qr.svg, presentado como un banner atractivo "
-        "en vez de un QR pelado."
+        "Genera un banner PNG listo para imprimir: 'SE ARRIENDA'/'SE VENDE' en letras "
+        "grandes (legible de lejos, en el letrero físico), dirección/precio y el QR de "
+        "/a/{id} — mismo enlace que qr.svg, presentado como un banner atractivo en vez de "
+        "un QR pelado. La foto del inmueble NO va aquí: ya se ve al escanear el QR."
     ),
 )
 async def asset_letrero(activo_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> Response:
     row = (await db.execute(text(
-        "SELECT a.direccion_estandarizada AS direccion, a.tipo_activo, a.caracteristicas, "
-        "       a.imagen_url, t.tipo_operacion AS operacion, t.precio "
+        "SELECT a.direccion_estandarizada AS direccion, a.tipo_activo, "
+        "       t.tipo_operacion AS operacion, t.precio "
         "FROM activos_inmutables a "
         "LEFT JOIN LATERAL (SELECT tipo_operacion, precio FROM transacciones_temporales tt "
         "  WHERE tt.activo_id = a.id ORDER BY fecha_publicacion DESC LIMIT 1) t ON true "
@@ -401,18 +388,12 @@ async def asset_letrero(activo_id: uuid.UUID, db: AsyncSession = Depends(get_db)
     if not row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inmueble no encontrado.")
 
-    car = row["caracteristicas"]
-    if isinstance(car, str):
-        car = json.loads(car or "{}")
-    car = car if isinstance(car, dict) else {}
-    # Misma prioridad que /anuncio y el chat: foto real del corredor antes que el stock.
-    fotos = car.get("fotos") or ([row["imagen_url"]] if row["imagen_url"] else [])
     operacion = (row["operacion"] or "").lower() or None
     precio = float(row["precio"]) if row["precio"] is not None else None
 
     png = await _generar_letrero_png(
         activo_id=activo_id, direccion=row["direccion"], tipo_activo=row["tipo_activo"],
-        operacion=operacion, precio=precio, foto_url=fotos[0] if fotos else None,
+        operacion=operacion, precio=precio,
     )
     return Response(content=png, media_type="image/png")
 

@@ -336,23 +336,31 @@ async def _fetch_cards_rows(ids: list[str]) -> tuple[list, dict] | None:
         return None
 
 
-async def build_result_cards(messages) -> list[dict]:
+async def build_result_cards(messages, *, preferencias: dict | None = None) -> list[dict]:
     """Construye las tarjetas para los inmuebles que el agente surfaceó este turno.
     Preserva el orden en que aparecieron. Cada tarjeta lleva su ENCAJE (tarea #8) contra
-    las necesidades DECLARADAS del usuario, extraídas del hilo (LLM → schema fijo)."""
+    las necesidades DECLARADAS del usuario, extraídas del hilo (LLM → schema fijo).
+
+    `preferencias`: si se pasa explícito (ya extraídas por el caller), NO vuelve a llamar al
+    LLM — las usa tal cual. Lo usa get_session_history para extraer las preferencias UNA sola
+    vez por carga de historial (ver `_preferencias_de_historial`) en vez de una vez por turno."""
     ids = _collect_asset_ids(messages)
     if not ids:
         return []
-    # Extracción de preferencias (LLM) y fetch de tarjetas EN PARALELO: ninguna bloquea a
-    # la otra. Ambas degradan solas (prefs → {}, fetch → None) sin romper el turno.
-    prefs, fetched = await asyncio.gather(
-        extraer_preferencias(_user_texts(messages)),
-        _fetch_cards_rows(ids),
-        return_exceptions=True,
-    )
+    if preferencias is not None:
+        # Ya extraídas por el caller (p.ej. historial): solo falta el fetch de las filas.
+        fetched = await _fetch_cards_rows(ids)
+    else:
+        # Turno EN VIVO: extracción de preferencias (LLM) y fetch de tarjetas EN PARALELO;
+        # ninguna bloquea a la otra. Ambas degradan solas (prefs → {}, fetch → None).
+        prefs, fetched = await asyncio.gather(
+            extraer_preferencias(_user_texts(messages)),
+            _fetch_cards_rows(ids),
+            return_exceptions=True,
+        )
+        preferencias = prefs if isinstance(prefs, dict) else {}
     if isinstance(fetched, Exception) or fetched is None:
         return []
-    preferencias = prefs if isinstance(prefs, dict) else {}
     rows, curaciones = fetched
 
     by_id: dict[str, dict] = {}
@@ -843,23 +851,31 @@ async def get_session_history(session_id: str):
 
     messages = state.values.get("messages", [])
 
+    # UNA sola extracción de preferencias (LLM) para TODA la carga del historial, no una por
+    # turno. Bug real (encontrado por feedback en vivo, corregido antes): reconstruir cada
+    # turno con extraer_preferencias(_user_texts(...)) propio funciona, pero dispara N llamadas
+    # LLM por carga — caras, lentas y cada una puede fallar por su cuenta. Las preferencias son
+    # ACUMULATIVAS por diseño del extractor (declaradas una vez, siguen vigentes después): en
+    # el caso común (declaradas en el primer mensaje) da el MISMO resultado que extraer por
+    # turno; si se refinan más tarde en el hilo, extraer sobre el hilo COMPLETO una sola vez es
+    # estrictamente MEJOR (todas las tarjetas reflejan el cuadro completo, no una foto parcial
+    # de lo que se sabía en ese momento) — nunca peor. Degrada a {} ante cualquier fallo, igual
+    # que el turno en vivo (nunca rompe el historial).
+    try:
+        preferencias = await extraer_preferencias(_user_texts(messages))
+    except Exception:  # noqa: BLE001 — un fallo de extracción no debe tumbar el historial
+        preferencias = {}
+    if not isinstance(preferencias, dict):
+        preferencias = {}
+
     # Reconstruye el historial turno a turno, re-enriqueciendo las tarjetas
     # de cada respuesta del agente con los ToolMessages de ese mismo turno.
     history: list[dict] = []
     turn_tool_msgs: list[ToolMessage] = []
-    # Acumula TODOS los HumanMessage vistos hasta ahora (no solo los del turno actual):
-    # build_result_cards → extraer_preferencias(_user_texts(...)) necesita el hilo COMPLETO
-    # de mensajes del usuario para reconstruir las preferencias, igual que en el turno EN
-    # VIVO. Bug real (encontrado por feedback en vivo): pasar solo `turn_tool_msgs` (sin
-    # ningún HumanMessage) hacía que _user_texts SIEMPRE devolviera [] → preferencias={} en
-    # TODA recarga de historial → el encaje desaparecía al volver a una conversación, aunque
-    # el turno original SÍ lo hubiera calculado bien.
-    todos_humanos: list[HumanMessage] = []
 
     for m in messages:
         if isinstance(m, HumanMessage):
-            todos_humanos.append(m)
-            turn_tool_msgs = []          # nuevo turno → reset (los tool msgs, no los humanos)
+            turn_tool_msgs = []          # nuevo turno → reset
             history.append({
                 "role": "user",
                 "content": m.content if isinstance(m.content, str) else str(m.content),
@@ -868,7 +884,7 @@ async def get_session_history(session_id: str):
         elif isinstance(m, AIMessage) and getattr(m, "tool_calls", None):
             pass                         # paso intermedio de planificación — ignorar
         elif isinstance(m, AIMessage):
-            results = await build_result_cards(turn_tool_msgs + todos_humanos)
+            results = await build_result_cards(turn_tool_msgs, preferencias=preferencias)
             history.append({
                 "role": "assistant",
                 "content": m.content if isinstance(m.content, str) else str(m.content),

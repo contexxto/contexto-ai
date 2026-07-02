@@ -3,6 +3,7 @@ import axios from 'axios'
 import {
   MapPin, MessageCircle, ShieldCheck, Footprints, Trees, Volume2,
   BedDouble, Bath, Car, Ruler, Check, TrendingUp, AlertTriangle, ArrowLeft,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import sphereLogo from './assets/sphere.svg'
@@ -35,12 +36,17 @@ const AMB = [
 export default function AnuncioView({ id, onChat, onBack }) {
   const [d, setD] = useState(null)
   const [err, setErr] = useState(false)
+  // Foto activa de la galeria (indice sobre `fotos`, mas abajo). Se resetea al cambiar
+  // de inmueble para no arrastrar el indice de la foto anterior a un anuncio distinto.
+  const [activeIdx, setActiveIdx] = useState(0)
 
   useEffect(() => {
     axios.get(`${API_BASE}/api/v1/assets/${id}/anuncio`, { headers: apiHeaders() })
       .then(({ data }) => setD(data))
       .catch(() => setErr(true))
   }, [id])
+
+  useEffect(() => { setActiveIdx(0) }, [id])
 
   const root = {
     position: 'fixed', inset: 0, height: '100dvh', display: 'flex', flexDirection: 'column',
@@ -124,12 +130,41 @@ export default function AnuncioView({ id, onChat, onBack }) {
             {fotos.length > 0 && (
               // <img> con onError → si la URL no carga (p. ej. bucket no público),
               // se oculta y queda el degradado en vez de un bloque negro.
-              <img src={fotos[0]} alt="" onError={(e) => { e.currentTarget.style.display = 'none' }}
+              <img src={fotos[activeIdx] || fotos[0]} alt=""
+                onError={(e) => { e.currentTarget.style.display = 'none' }}
                 style={{ position: 'absolute', inset: 0, width: '100%', height: '100%',
                          objectFit: 'cover', objectPosition: 'center' }} />
             )}
+            {fotos.length > 1 && (
+              // Flechas atras/adelante sobre el hero — recorren TODAS las fotos, con
+              // wraparound (de la ultima vuelve a la primera y viceversa).
+              <>
+                <button aria-label="Foto anterior"
+                  onClick={() => setActiveIdx((i) => (i - 1 + fotos.length) % fotos.length)}
+                  style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)',
+                           width: 34, height: 34, borderRadius: '50%', border: 'none', cursor: 'pointer',
+                           background: 'rgba(14,13,19,.55)', color: C.text, display: 'flex',
+                           alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+                  <ChevronLeft size={20} />
+                </button>
+                <button aria-label="Foto siguiente"
+                  onClick={() => setActiveIdx((i) => (i + 1) % fotos.length)}
+                  style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+                           width: 34, height: 34, borderRadius: '50%', border: 'none', cursor: 'pointer',
+                           background: 'rgba(14,13,19,.55)', color: C.text, display: 'flex',
+                           alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+                  <ChevronRight size={20} />
+                </button>
+                <div style={{ position: 'absolute', top: 10, right: 10, padding: '3px 9px',
+                              borderRadius: 999, fontSize: '.68rem', fontWeight: 700,
+                              background: 'rgba(14,13,19,.55)', color: C.text, backdropFilter: 'blur(4px)' }}>
+                  {activeIdx + 1}/{fotos.length}
+                </div>
+              </>
+            )}
             <div style={{ position: 'absolute', inset: 0,
-                          background: 'linear-gradient(to top, rgba(14,13,19,.92) 0%, rgba(14,13,19,.1) 60%)' }} />
+                          background: 'linear-gradient(to top, rgba(14,13,19,.92) 0%, rgba(14,13,19,.1) 60%)',
+                          pointerEvents: 'none' }} />
             <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '0 16px 14px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, color: C.muted, fontSize: '.74rem', marginBottom: 4 }}>
                 <MapPin size={13} color={C.teal} /> {d.tipo_activo}{d.piso_altura ? ` · Piso ${d.piso_altura}` : ''}
@@ -144,13 +179,18 @@ export default function AnuncioView({ id, onChat, onBack }) {
         </div>
 
         <div style={{ maxWidth: 640, margin: '0 auto', padding: '4px 16px 16px' }}>
-          {/* Galería */}
+          {/* Galería — miniaturas de TODAS las fotos (antes se saltaba la primera porque
+              ya estaba en el hero fijo; ahora el hero sigue a `activeIdx`, asi que cada
+              miniatura, incluida la primera, es clickeable y resalta la que esta activa). */}
           {fotos.length > 1 && (
             <div style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '12px 0 2px' }}>
-              {fotos.slice(1).map((u, i) => (
+              {fotos.map((u, i) => (
                 <img key={i} src={u} alt="" width={92} height={70}
+                  onClick={() => setActiveIdx(i)}
                   onError={(e) => { e.currentTarget.style.display = 'none' }}
-                  style={{ objectFit: 'cover', borderRadius: 10, border: `1px solid ${C.line}`, flexShrink: 0 }} />
+                  style={{ objectFit: 'cover', borderRadius: 10, cursor: 'pointer', flexShrink: 0,
+                           border: `2px solid ${i === activeIdx ? C.teal : C.line}`,
+                           opacity: i === activeIdx ? 1 : .72 }} />
               ))}
             </div>
           )}

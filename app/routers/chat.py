@@ -324,7 +324,8 @@ async def _fetch_cards_rows(ids: list[str]) -> tuple[list, dict] | None:
         FROM activos_inmutables a
         LEFT JOIN LATERAL (
             SELECT tipo_operacion, precio FROM transacciones_temporales tt
-            WHERE tt.activo_id = a.id ORDER BY tt.fecha_publicacion DESC LIMIT 1
+            WHERE tt.activo_id = a.id AND COALESCE(tt.estado_anuncio, 'ACTIVO') = 'ACTIVO'
+            ORDER BY tt.fecha_publicacion DESC LIMIT 1
         ) t ON true
         WHERE a.id::text = ANY(:ids)
     """
@@ -907,6 +908,7 @@ async def get_session_history(session_id: str):
     # de cada respuesta del agente con los ToolMessages de ese mismo turno.
     history: list[dict] = []
     turn_tool_msgs: list[ToolMessage] = []
+    prev_mode: str | None = None         # continuidad del lente (histéresis), como en el vivo
 
     for m in messages:
         if isinstance(m, HumanMessage):
@@ -920,11 +922,18 @@ async def get_session_history(session_id: str):
             pass                         # paso intermedio de planificación — ignorar
         elif isinstance(m, AIMessage):
             results = await build_result_cards(turn_tool_msgs, preferencias=preferencias)
+            # Encadena el modo del turno anterior (histéresis del lente) igual que el turno EN
+            # VIVO (que lee spatial_context.focus_mode). Sin esto, la recarga recomputa cada
+            # turno SIN continuidad y el mapa puede caer de ZONA a AURAS, "saltando" respecto de
+            # lo que el usuario vio en vivo. Determinístico.
+            seed = _map_seed_from_cards(results, prev_mode)
+            if seed:
+                prev_mode = seed["modo"]
             history.append({
                 "role": "assistant",
                 "content": m.content if isinstance(m.content, str) else str(m.content),
                 "results": results,
-                "map_seed": _map_seed_from_cards(results),  # directiva de mapa del turno restaurado
+                "map_seed": seed,        # directiva de mapa del turno restaurado
             })
             turn_tool_msgs = []
         elif isinstance(m, ToolMessage):

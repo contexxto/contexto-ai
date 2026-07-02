@@ -83,7 +83,8 @@ async def tool_search_nearby_assets(
         FROM activos_inmutables a
         LEFT JOIN LATERAL (
             SELECT tipo_operacion, precio FROM transacciones_temporales tt
-            WHERE tt.activo_id = a.id ORDER BY tt.fecha_publicacion DESC LIMIT 1
+            WHERE tt.activo_id = a.id AND COALESCE(tt.estado_anuncio, 'ACTIVO') = 'ACTIVO'
+            ORDER BY tt.fecha_publicacion DESC LIMIT 1
         ) t ON true
         WHERE ST_DWithin(
             a.geom::geography,
@@ -176,7 +177,8 @@ async def tool_find_assets_by_text(query: str) -> str:
         FROM activos_inmutables a
         LEFT JOIN LATERAL (
             SELECT tipo_operacion, precio FROM transacciones_temporales tt
-            WHERE tt.activo_id = a.id ORDER BY tt.fecha_publicacion DESC LIMIT 1
+            WHERE tt.activo_id = a.id AND COALESCE(tt.estado_anuncio, 'ACTIVO') = 'ACTIVO'
+            ORDER BY tt.fecha_publicacion DESC LIMIT 1
         ) t ON true
         WHERE {direccion_match}
            OR a.conectividad ILIKE :phrase
@@ -250,7 +252,8 @@ async def tool_fetch_asset_lifecycle_specs(activo_id: str) -> str:
         LEFT JOIN ficha_tecnica_mantenimiento f ON f.activo_id = a.id
         LEFT JOIN LATERAL (
             SELECT tipo_operacion, precio FROM transacciones_temporales tt
-            WHERE tt.activo_id = a.id ORDER BY tt.fecha_publicacion DESC LIMIT 1
+            WHERE tt.activo_id = a.id AND COALESCE(tt.estado_anuncio, 'ACTIVO') = 'ACTIVO'
+            ORDER BY tt.fecha_publicacion DESC LIMIT 1
         ) t ON true
         WHERE a.id = :activo_id
     """
@@ -478,7 +481,8 @@ async def tool_analyze_investment(activo_id: str) -> str:
         LEFT JOIN ficha_tecnica_mantenimiento f ON f.activo_id = a.id
         LEFT JOIN LATERAL (
             SELECT precio, tipo_operacion FROM transacciones_temporales tt
-            WHERE tt.activo_id = a.id ORDER BY tt.fecha_publicacion DESC LIMIT 1
+            WHERE tt.activo_id = a.id AND COALESCE(tt.estado_anuncio, 'ACTIVO') = 'ACTIVO'
+            ORDER BY tt.fecha_publicacion DESC LIMIT 1
         ) t ON true
         WHERE a.id = :id
     """

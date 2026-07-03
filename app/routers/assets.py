@@ -501,6 +501,49 @@ async def asset_investment(
     )
 
 
+def _scores_fuente(walk_score_fuente: str | None) -> dict:
+    """Procedencia declarada POR score para el anuncio (foso de honestidad).
+
+    Solo la caminabilidad es variable: 'osm' cuando se contó sobre comercios REALES,
+    'heuristico'/None cuando quedó la estimación por zona (Overpass no respondió). El
+    front rotula cada dato con su verdad y deja de afirmar OSM para todos.
+
+    Ruido, vegetación y tráfico son heurísticos POR CONSTRUCCIÓN
+    (scores_heuristicos.scores_para): estimación por zona, nunca medición. Se declaran
+    'heuristico' fijos a propósito — el día que uno se mida de verdad, se cambia aquí,
+    pero jamás se reclama una medición que no existe."""
+    return {
+        "caminabilidad": walk_score_fuente,
+        "ruido": "heuristico",
+        "vegetacion": "heuristico",
+        "trafico": "heuristico",
+    }
+
+
+_walk_score_fuente_ready = False
+
+
+async def ensure_walk_score_fuente_column(db) -> None:
+    """Autocrea activos_inmutables.walk_score_fuente si falta (Migration 017),
+    idempotente y una sola vez por proceso. Persiste la PROCEDENCIA del walk_score
+    ('osm' = comercios reales | 'heuristico' = estimación por zona) para que el
+    anuncio rotule cada dato con su verdad en vez de afirmar OSM para todos.
+
+    Calca el patrón de los demás ensure_* del repo (ensure_handoff_tables,
+    ensure_aura_cache_table): ejecuta el DDL y deja que un fallo BURBUJEE. NO lo
+    silenciamos: el SELECT/INSERT que sigue asume la columna, así que tragarse el
+    error dejaría una promesa falsa y un 500 opaco más abajo. El rol de la app tiene
+    privilegio DDL (ya crea columnas en profiles/handoff en runtime), así que la
+    ADD COLUMN IF NOT EXISTS es segura e idempotente."""
+    global _walk_score_fuente_ready
+    if _walk_score_fuente_ready:
+        return
+    await db.execute(text(
+        "ALTER TABLE activos_inmutables ADD COLUMN IF NOT EXISTS walk_score_fuente text"))
+    await db.commit()
+    _walk_score_fuente_ready = True
+
+
 @router.get(
     "/{activo_id}/anuncio",
     summary="Detalle público del inmueble (página de anuncio del QR)",
@@ -518,9 +561,12 @@ async def asset_anuncio(
     activo_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
+    # Auto-sana la columna de procedencia antes de leerla (Migration 017 en runtime).
+    await ensure_walk_score_fuente_column(db)
     row = (await db.execute(text(
         "SELECT a.id::text AS id, a.direccion_estandarizada AS direccion, a.tipo_activo, "
-        "       a.piso_altura, a.walk_score, a.score_ruido_predictivo AS ruido, "
+        "       a.piso_altura, a.walk_score, a.walk_score_fuente, "
+        "       a.score_ruido_predictivo AS ruido, "
         "       a.porcentaje_cobertura_vegetal AS vegetacion, "
         "       a.volumen_trafico_historico AS trafico, a.conectividad, "
         "       a.servicios_cercanos, a.caracteristicas, a.imagen_url, "
@@ -593,6 +639,7 @@ async def asset_anuncio(
             "vegetacion": float(row["vegetacion"]) if row["vegetacion"] is not None else None,
             "trafico": row["trafico"],
         },
+        "scores_fuente": _scores_fuente(row["walk_score_fuente"]),
         "conectividad": row["conectividad"],
         "servicios_cercanos": _servicios,
         "caracteristicas": car,
@@ -1397,6 +1444,11 @@ async def create_asset(
         srid=4326,
     )
 
+    # El ORM mapea walk_score_fuente incondicionalmente → todo INSERT nombra la columna.
+    # Auto-sánala antes del flush para no reventar si este es el primer endpoint del proceso
+    # y la Migration 017 no corrió aún. La procedencia queda NULL (origen opaco del payload →
+    # el anuncio degrada a "estimación", el lado seguro); el job _recompute la sube a 'osm'.
+    await ensure_walk_score_fuente_column(db)
     asset = ActivoInmutable(
         id=uuid.uuid4(),
         geom=point_wkt,
@@ -1529,10 +1581,14 @@ async def _recompute_walk_score(asset_id: str, lat: float, lon: float) -> None:
         conect = az.get("conectividad") or (extraer_conectividad(pois, lat, lon) or {}).get("texto")
         ent = az.get("servicios_texto") or (await entorno_destacado(lat, lon, pois) or {}).get("texto")
         async with AsyncSessionLocal() as session:
+            # Recalcular con éxito == POIs reales de OSM → la procedencia pasa a 'osm'
+            # (ws["fuente"] es siempre "osm" aquí). Auto-sana la columna por si el proceso
+            # arrancó por este job antes de cualquier publish/anuncio.
+            await ensure_walk_score_fuente_column(session)
             await session.execute(
-                text("UPDATE activos_inmutables SET walk_score = :w, conectividad = :c, "
-                     "servicios_cercanos = :s WHERE id = :id"),
-                {"w": ws["walk_score"], "c": conect, "s": ent, "id": asset_id},
+                text("UPDATE activos_inmutables SET walk_score = :w, walk_score_fuente = :f, "
+                     "conectividad = :c, servicios_cercanos = :s WHERE id = :id"),
+                {"w": ws["walk_score"], "f": ws["fuente"], "c": conect, "s": ent, "id": asset_id},
             )
             await session.commit()
     except Exception:  # noqa: BLE001 — best-effort; nunca debe tumbar nada
@@ -1587,12 +1643,15 @@ async def publish_asset(
         conectividad_txt = (ws.get("conectividad") or {}).get("texto")
 
     aid = uuid.uuid4()
+    # Auto-sana la columna de procedencia antes de insertarla (Migration 017 en runtime).
+    await ensure_walk_score_fuente_column(db)
     asset = ActivoInmutable(
         id=aid,
         geom=WKTElement(f"POINT({lon} {lat})", srid=4326),
         direccion_estandarizada=payload.direccion.strip(),
         piso_altura=payload.piso_altura,
         walk_score=sc["walk_score"],
+        walk_score_fuente=sc["walk_score_fuente"],
         score_ruido_predictivo=sc["score_ruido_predictivo"],
         porcentaje_cobertura_vegetal=sc["porcentaje_cobertura_vegetal"],
         tipo_activo=payload.tipo_activo,
@@ -1669,8 +1728,9 @@ async def edit_asset(
     # Estado actual (para detectar si cambió la dirección).
     cur = (
         await db.execute(
-            text("SELECT direccion_estandarizada AS dir, ST_Y(geom::geometry) AS lat, "
-                 "ST_X(geom::geometry) AS lon FROM activos_inmutables WHERE id = :id"),
+            text("SELECT direccion_estandarizada AS dir, tipo_activo AS tipo, "
+                 "ST_Y(geom::geometry) AS lat, ST_X(geom::geometry) AS lon "
+                 "FROM activos_inmutables WHERE id = :id"),
             {"id": str(activo_id)},
         )
     ).mappings().first()
@@ -1690,16 +1750,29 @@ async def edit_asset(
         sets.append("piso_altura = :piso")
         params["piso"] = payload.piso_altura
 
-    # Si cambió la dirección → re-geocodificar (si falla, mantenemos coords previas).
     lat, lon = cur["lat"], cur["lon"]
     geom_reubicado = False
     if direccion_cambio:
+        # 1) Re-geocodificar (si falla, mantenemos coords previas).
         geo = await _geocode(nueva_dir)
         if geo:
             lat, lon = geo
             sets.append("geom = ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)")
             params["lat"], params["lon"] = lat, lon
             geom_reubicado = True
+        # 2) La capa base de la dirección VIEJA quedó obsoleta (posible otra zona).
+        #    Recalcular la heurística SÍNCRONA (scores_para es puro/determinístico, sin red)
+        #    y marcar walk_score_fuente='heuristico' deja el score Y su rótulo coherentes con
+        #    la NUEVA ubicación de inmediato. Sin esto, un 'osm' viejo mentiría "comercios
+        #    reales" sobre otra dirección hasta que el job de fondo confirme — o para siempre
+        #    si Overpass falla. El job luego SUBE la caminabilidad a 'osm' al contar POIs reales.
+        await ensure_walk_score_fuente_column(db)
+        base = scores_para(nueva_dir, payload.tipo_activo or cur["tipo"])
+        sets += ["walk_score = :ws", "walk_score_fuente = 'heuristico'",
+                 "score_ruido_predictivo = :ruido", "porcentaje_cobertura_vegetal = :veg"]
+        params["ws"] = base["walk_score"]
+        params["ruido"] = base["score_ruido_predictivo"]
+        params["veg"] = base["porcentaje_cobertura_vegetal"]
 
     if sets:
         await db.execute(

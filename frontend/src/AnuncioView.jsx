@@ -226,7 +226,11 @@ export default function AnuncioView({ id, onChat, onBack, onExpandMap }) {
               </span>
             )}
             <div style={{ fontSize: '.68rem', color: C.muted, lineHeight: 1.5 }}>
-              Caminabilidad: calculada sobre los comercios reales de la zona (OpenStreetMap).
+              {d.scores?.caminabilidad != null && (
+                d.scores_fuente?.caminabilidad === 'osm'
+                  ? 'Caminabilidad: calculada sobre los comercios reales de la zona (OpenStreetMap). '
+                  : 'Caminabilidad: estimación por zona (heurístico), todavía sin contrastar con los comercios reales del sector. '
+              )}
               Ruido y cobertura verde: estimación por zona (heurístico), no medición.
             </div>
           </div>

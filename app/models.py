@@ -30,6 +30,10 @@ class ActivoInmutable(Base):
     direccion_estandarizada: Mapped[str] = mapped_column(String(255), nullable=False)
     piso_altura: Mapped[int] = mapped_column(Integer, default=1)
     walk_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Procedencia del walk_score (Migration 017): 'osm' (comercios reales) | 'heuristico'
+    # (estimación por zona) | None (legado). Deja que el anuncio rotule cada dato con su
+    # verdad en vez de afirmar OSM para todos.
+    walk_score_fuente: Mapped[str | None] = mapped_column(String(20), nullable=True)
     score_ruido_predictivo: Mapped[str | None] = mapped_column(String(10), nullable=True)
     volumen_trafico_historico: Mapped[int] = mapped_column(Integer, default=0)
     densidad_poblacional_pico: Mapped[int] = mapped_column(Integer, default=0)

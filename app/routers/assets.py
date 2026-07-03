@@ -211,19 +211,24 @@ async def asset_qr(activo_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> 
     return Response(content=buff.getvalue(), media_type="image/svg+xml")
 
 
-# ── Banner "letrero" (foto + datos + QR), listo para imprimir ──────────────────────────
+# ── Banner "letrero" (operación + datos + QR + teléfono), listo para imprimir ───────────
 # Feedback en vivo (2026-07-02): el QR pelado con "Imprime y pégalo en el letrero" invita
-# poco a escanear. El usuario mostró un ejemplo (confirmación de evento Forbes: foto/
-# encabezado + texto + QR grande) y pidió algo asi. Se genera en el BACKEND con Pillow
-# (mismo criterio que qr.svg arriba: PDF/PNG server-side es mas confiable para imprimir
-# que componerlo en el navegador, y no exige agregar html2canvas/dom-to-image al frontend).
-_TEAL = (45, 189, 182)
-_TEAL_HI = (94, 234, 212)
-_INK = (14, 13, 19)
-_INK_PANEL = (22, 21, 30)
-_MUTED = (156, 153, 172)
-_WHITE = (255, 255, 255)
-_GOLD = (232, 184, 75)
+# poco a escanear. Se genera en el BACKEND con Pillow (PDF/PNG server-side es más confiable
+# para imprimir que componerlo en el navegador, y no exige agregar html2canvas al frontend).
+# Iteró en vivo: foto → "SE ARRIENDA/SE VENDE" grande; se quitó el precio; se sumó el
+# teléfono del corredor bien visible; y finalmente se rediseñó a print-first (ver paleta).
+# Paleta print-first: el banner es para IMPRIMIR y pegar en un letrero físico. El diseño
+# anterior (fondo casi-negro con paneles oscuros) salía manchado, chupaba tóner y perdía
+# todos los matices al fotocopiar (feedback en vivo 2026-07-02: "queda todo oscuro sin
+# matices"). Se rediseñó a FONDO BLANCO (papel = cero tinta), tinta oscura y color solo
+# como acento fuerte (banda de operación + caja del teléfono), que se lee de lejos y
+# sobrevive a una fotocopia en blanco y negro.
+_WHITE = (255, 255, 255)     # fondo (papel)
+_INK = (17, 16, 24)          # texto principal + encabezado (casi negro sobre blanco)
+_INK_SOFT = (90, 88, 104)    # texto secundario / muted
+_TEAL = (18, 122, 116)       # ARRIENDO: banda + caja (teal profundo → texto blanco a ~5:1, imprime mejor)
+_GOLD = (224, 168, 48)       # VENTA / DISPONIBLE: banda + caja (ámbar)
+_LINE = (222, 224, 230)      # marco fino del QR
 # DejaVu Sans (instalada via apt en Dockerfile, fonts-dejavu-core) — TTF real para texto
 # nitido. Si no esta (dev local sin la fuente del sistema), degradamos al bitmap font de
 # PIL: el banner se sigue generando, solo con tipografia fea, nunca rompe el endpoint.
@@ -299,107 +304,104 @@ async def _generar_letrero_png(
 ) -> bytes:
     from PIL import Image, ImageDraw
 
-    # H=2200: el precio salió del banner (feedback en vivo, 2026-07-02) y se sumó el
-    # teléfono del corredor MUY VISIBLE bajo el QR (para quien no sabe escanear) — el
-    # contenido (bloque de operación + dirección en 2 líneas + sub + CTA + tarjeta QR de
-    # 520px + bloque de teléfono + pie) mide ~2100px en el peor caso. Se verificó
-    # generando el banner y midiendo el resultado (mismo criterio que el ajuste de H
-    # anterior, de 1748 a 1980, cuando el QR quedaba cortado).
-    W, H = 1240, 2200
-    img = Image.new("RGB", (W, H), _INK)
+    # Diseño print-first "banda de color" (V2, elegido en vivo 2026-07-02): fondo BLANCO,
+    # la operación en una banda de color de borde a borde con texto de máximo contraste, y
+    # el teléfono del corredor en una caja del mismo color bajo el QR. El lienzo se dibuja
+    # generoso y se RECORTA al contenido + un margen inferior uniforme — así este diseño
+    # (más compacto que el anterior de 2200px) no deja media hoja en blanco ni corta el pie.
+    W = 1240
+    CANVAS_H = 2400
+    img = Image.new("RGB", (W, CANVAS_H), _WHITE)
     draw = ImageDraw.Draw(img)
 
-    # Encabezado de marca
-    header_h = 150
-    draw.rectangle([0, 0, W, header_h], fill=_TEAL)
-    draw.text((60, 42), "CONTEXTO AI", font=_fuente_letrero(52, True), fill=_WHITE)
-    draw.text((60, 104), "Cada lugar tiene un aura", font=_fuente_letrero(24), fill=(230, 250, 247))
+    def _centrar(texto: str, fuente, y: int, fill) -> None:
+        b = draw.textbbox((0, 0), texto, font=fuente)
+        draw.text(((W - (b[2] - b[0])) // 2 - b[0], y - b[1]), texto, font=fuente, fill=fill)
 
-    # Bloque "SE ARRIENDA" / "SE VENDE" — reemplaza la foto (feedback en vivo, 2026-07-02:
-    # la foto ya se ve al escanear el QR; en el letrero FÍSICO lo que hace falta leer de
-    # lejos, a la calle, es el tipo de operación en letras grandes, no una imagen chica).
-    foto_h = 780
+    # Color de operación (teal = arriendo, ámbar = venta/disponible) y el color de texto que
+    # contrasta contra esa banda: blanco sobre teal, tinta oscura sobre el ámbar más claro.
+    es_arriendo = operacion == "arriendo"
+    acc = _TEAL if es_arriendo else _GOLD
+    texto_sobre_acc = _WHITE if es_arriendo else _INK
     op_texto = {"arriendo": "SE ARRIENDA", "venta": "SE VENDE"}.get(operacion, "DISPONIBLE")
-    op_color = _TEAL_HI if operacion == "arriendo" else _GOLD
-    draw.rectangle([0, header_h, W, header_h + foto_h], fill=_INK_PANEL)
-    # Línea decorativa arriba/abajo del texto, en el color de la operación.
-    linea_y_arriba, linea_y_abajo = header_h + 90, header_h + foto_h - 90
-    draw.rectangle([90, linea_y_arriba, W - 90, linea_y_arriba + 4], fill=op_color)
-    draw.rectangle([90, linea_y_abajo, W - 90, linea_y_abajo + 4], fill=op_color)
-    fuente_op = _fuente_ajustada_a_ancho(draw, op_texto, W - 160, tam_inicial=150)
-    bbox = draw.textbbox((0, 0), op_texto, font=fuente_op)
-    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-    draw.text(((W - tw) // 2 - bbox[0], header_h + (foto_h - th) // 2 - bbox[1]),
-              op_texto, font=fuente_op, fill=op_color)
 
-    # Panel de datos del inmueble
-    y = header_h + foto_h + 50
+    # ── Encabezado de marca: barra en tinta con un acento de color a la derecha ──
+    header_h = 116
+    draw.rectangle([0, 0, W, header_h], fill=_INK)
+    draw.rectangle([W - 14, 0, W, header_h], fill=acc)
+    draw.text((60, 30), "CONTEXTO AI", font=_fuente_letrero(46, True), fill=_WHITE)
+    draw.text((62, 82), "Cada lugar tiene un aura", font=_fuente_letrero(22), fill=(180, 210, 206))
+
+    # ── Banda de operación: bloque de color full-width con "SE ARRIENDA"/"SE VENDE" auto-fit
+    # (reemplaza la foto — feedback en vivo: en el letrero FÍSICO lo que se lee de lejos es
+    # el tipo de operación en grande, no una foto chica que igual se ve al escanear el QR).
+    banda_y, banda_h = header_h + 70, 300
+    draw.rectangle([0, banda_y, W, banda_y + banda_h], fill=acc)
+    fuente_op = _fuente_ajustada_a_ancho(draw, op_texto, W - 140, tam_inicial=170)
+    b_op = draw.textbbox((0, 0), op_texto, font=fuente_op)
+    _centrar(op_texto, fuente_op, banda_y + (banda_h - (b_op[3] - b_op[1])) // 2, texto_sobre_acc)
+    y = banda_y + banda_h + 60
+
+    # ── Dirección (hasta 2 líneas) + tipo·operación en tinta sobre blanco ──
     if direccion:
         for linea in _envolver_texto(draw, direccion, _fuente_letrero(46, True), W - 120)[:2]:
-            draw.text((60, y), linea, font=_fuente_letrero(46, True), fill=_WHITE)
+            draw.text((60, y), linea, font=_fuente_letrero(46, True), fill=_INK)
             y += 58
-    y += 10
-    # El precio NO va en el banner (feedback en vivo, 2026-07-02) — el letrero es para
-    # atraer la llamada/escaneo, no para negociar; el precio se conversa con el corredor.
+    y += 6
+    # El precio NO va en el banner (feedback en vivo, 2026-07-02) — el letrero atrae la
+    # llamada/escaneo; el precio se conversa con el corredor, no se negocia desde el letrero.
     sub = " · ".join(x for x in [
         (tipo_activo or "").capitalize() or None,
         (operacion or "").capitalize() or None,
     ] if x)
     if sub:
-        draw.text((60, y), sub, font=_fuente_letrero(34), fill=_TEAL_HI)
-        y += 70
+        draw.text((60, y), sub, font=_fuente_letrero(32), fill=_INK_SOFT)
+        y += 78
 
-    # Llamado a la acción + QR grande sobre tarjeta blanca (contraste garantizado)
-    y += 30
-    draw.text((60, y), "Escanea para conocer este lugar", font=_fuente_letrero(38, True), fill=_WHITE)
-    y += 70
-
+    # ── Llamado a la acción + QR grande sobre blanco con marco fino ──
+    y += 8
+    draw.text((60, y), "Escanea para conocer este lugar", font=_fuente_letrero(38, True), fill=_INK)
+    y += 66
     url = f"{settings.public_app_url.rstrip('/')}/a/{activo_id}"
     qr = segno.make(url, error="h")
     qr_buf = io.BytesIO()
-    qr.save(qr_buf, kind="png", scale=10, border=1, dark="#0E0D13", light="#ffffff")
+    qr.save(qr_buf, kind="png", scale=10, border=1, dark="#111018", light="#ffffff")
     qr_img = Image.open(qr_buf)
     qr_lado = 520
     qr_img = qr_img.resize((qr_lado, qr_lado), Image.LANCZOS)
-    tarjeta_pad = 28
-    tarjeta_x0 = (W - qr_lado) // 2 - tarjeta_pad
-    tarjeta_y0 = y
-    draw.rounded_rectangle(
-        [tarjeta_x0, tarjeta_y0, tarjeta_x0 + qr_lado + 2 * tarjeta_pad, tarjeta_y0 + qr_lado + 2 * tarjeta_pad],
-        radius=20, fill=_WHITE,
-    )
-    img.paste(qr_img, (tarjeta_x0 + tarjeta_pad, tarjeta_y0 + tarjeta_pad))
-    y = tarjeta_y0 + qr_lado + 2 * tarjeta_pad
+    qr_x0 = (W - qr_lado) // 2
+    draw.rectangle([qr_x0 - 13, y - 13, qr_x0 + qr_lado + 13, y + qr_lado + 13], outline=_LINE, width=3)
+    img.paste(qr_img, (qr_x0, y))
+    y += qr_lado + 44
 
-    # Teléfono del corredor — LO MÁS VISIBLE bajo el QR (feedback en vivo, 2026-07-02: hay
-    # gente que no sabe usar el QR; el número para marcar a mano es el respaldo). Solo se
-    # dibuja si el corredor cargó su WhatsApp — degradable, el banner sigue siendo válido
-    # sin él (el QR solo también sirve).
+    # ── Teléfono del corredor — LO MÁS VISIBLE bajo el QR (feedback en vivo, 2026-07-02: hay
+    # gente que no sabe usar el QR; el número para marcar a mano es el respaldo). Caja del
+    # color de la operación, texto contrastado. Solo se dibuja si el corredor cargó su
+    # WhatsApp — degradable, el banner sigue siendo válido sin él (el QR solo también sirve).
     tel = _telefono_visible(telefono_wsp)
     if tel:
-        y += 44
-        etiqueta = "¿No puedes escanear? Llámanos:"
-        fuente_etiqueta = _fuente_letrero(30)
-        bbox_e = draw.textbbox((0, 0), etiqueta, font=fuente_etiqueta)
-        draw.text(((W - (bbox_e[2] - bbox_e[0])) // 2 - bbox_e[0], y), etiqueta,
-                   font=fuente_etiqueta, fill=_MUTED)
-        y += 50
-        # tam_inicial=150 (mismo peso visual que "SE ARRIENDA"/"SE VENDE"): el corredor
-        # pidió que este número sea LO MÁS VISIBLE del letrero, para quien no sabe usar
-        # el QR — no un dato chico al pie, sino el segundo elemento que salta a la vista.
+        _centrar("¿No puedes escanear? Llámanos:", _fuente_letrero(30), y, _INK_SOFT)
+        y += 52
+        # tam_inicial=150 (mismo peso visual que "SE ARRIENDA"/"SE VENDE"): el corredor pidió
+        # que este número sea LO MÁS VISIBLE del letrero, no un dato chico al pie.
         fuente_tel = _fuente_ajustada_a_ancho(draw, tel, W - 160, tam_inicial=150)
-        bbox_t = draw.textbbox((0, 0), tel, font=fuente_tel)
-        tw, th = bbox_t[2] - bbox_t[0], bbox_t[3] - bbox_t[1]
-        pad_x, pad_y = 50, 34
+        bt = draw.textbbox((0, 0), tel, font=fuente_tel)
+        tw, th = bt[2] - bt[0], bt[3] - bt[1]
+        pad_x, pad_y = 56, 34
         caja_w, caja_h = tw + 2 * pad_x, th + 2 * pad_y
         caja_x0 = (W - caja_w) // 2
-        draw.rounded_rectangle([caja_x0, y, caja_x0 + caja_w, y + caja_h], radius=20, fill=_TEAL)
-        draw.text((caja_x0 + pad_x - bbox_t[0], y + pad_y - bbox_t[1]), tel, font=fuente_tel, fill=_INK)
+        draw.rounded_rectangle([caja_x0, y, caja_x0 + caja_w, y + caja_h], radius=22, fill=acc)
+        draw.text((caja_x0 + pad_x - bt[0], y + pad_y - bt[1]), tel, font=fuente_tel, fill=texto_sobre_acc)
         y += caja_h
 
-    # Pie de página
-    pie_y = H - 60
-    draw.text((60, pie_y), "contexxto.com", font=_fuente_letrero(22), fill=_MUTED)
+    # ── Pie + recorte al contenido (deja un margen inferior uniforme, sin hoja en blanco) ──
+    y += 56
+    draw.text((60, y), "contexxto.com", font=_fuente_letrero(24), fill=_INK_SOFT)
+    y += 40
+    # min(...) como red de seguridad: recortar MÁS ALLÁ del lienzo haría que PIL extienda con
+    # negro (justo el defecto "todo oscuro" que este rediseño elimina). No ocurre en la
+    # práctica (contenido máx ~1850px << CANVAS_H), pero la guarda lo vuelve imposible.
+    img = img.crop((0, 0, W, min(y + 44, CANVAS_H)))
 
     out = io.BytesIO()
     img.save(out, format="PNG")

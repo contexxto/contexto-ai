@@ -66,6 +66,7 @@ async def tool_search_nearby_assets(
             a.tipo_activo,
             a.piso_altura,
             a.walk_score AS caminabilidad,
+            a.walk_score_fuente,
             a.score_ruido_predictivo,
             a.volumen_trafico_historico,
             a.densidad_poblacional_pico,
@@ -164,6 +165,7 @@ async def tool_find_assets_by_text(query: str) -> str:
             a.tipo_activo,
             a.piso_altura,
             a.walk_score AS caminabilidad,
+            a.walk_score_fuente,
             a.score_ruido_predictivo,
             a.volumen_trafico_historico,
             a.porcentaje_cobertura_vegetal,
@@ -228,6 +230,7 @@ async def tool_fetch_asset_lifecycle_specs(activo_id: str) -> str:
             a.tipo_activo,
             a.piso_altura,
             a.walk_score AS caminabilidad,
+            a.walk_score_fuente,
             a.score_ruido_predictivo,
             a.volumen_trafico_historico,
             a.porcentaje_cobertura_vegetal,
@@ -446,6 +449,10 @@ async def tool_analyze_location(latitude: float, longitude: float) -> str:
     return json.dumps({
         "lugar": a["lugar"],
         "caminabilidad": a["walk_score"],
+        # Este motor cuenta POIs REALES en vivo (el mismo del mapa): la caminabilidad de aquí SÍ es
+        # de comercios reales ('osm') cuando hubo POIs; sin POIs no afirmamos procedencia (None).
+        # Deja que el agente aplique la MISMA regla de proveniencia que a las tools de catastro.
+        "caminabilidad_fuente": "osm" if pois else None,
         "conectividad": a["conectividad"],
         "servicios_cercanos": a["servicios_texto"],
         "pois_analizados": pois,

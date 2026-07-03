@@ -402,7 +402,21 @@ async def build_result_cards(messages, *, preferencias: dict | None = None) -> l
         # el badge VENTA/ARRIENDO de la tarjeta mantiene la honestidad), sin re-colar MONITOREO.
         coinciden = [i for i in ofertables if _op_de(i) in (op_norm, "")]
         orden = coinciden or ofertables
-    return [_card_from_row(by_id[i], preferencias) for i in orden[:_MAX_CARDS]]
+    cards = [_card_from_row(by_id[i], preferencias) for i in orden]
+    # ORDENAR POR ENCAJE (bug real detectado en vivo, demo Mazatlán 2026-07-03): antes se
+    # devolvía en el orden crudo de la búsqueda espacial/similitud, NO por qué tan bien
+    # encajaba con lo que el usuario pidió — la peor opción (37% de encaje, fuera de
+    # presupuesto, zona ruidosa) aparecía PRIMERA en el carrusel del mapa, contradiciendo la
+    # curaduría que prometemos ("1-3 mejores opciones primero", nunca listas sin criterio).
+    # Reordena por encaje descendente SOLO si hay algo que ordenar (alguna tarjeta con
+    # encaje real); sin preferencias declaradas, todas son None y el sort es un no-op
+    # (estable) que preserva el orden espacial/similitud original tal cual — no se inventa
+    # un ranking donde no hay necesidad declarada que puntuar. Las tarjetas sin encaje
+    # puntuable (None: falta señal, no "no encaja") degradan al final, nunca desaparecen ni
+    # se muestran como 0% falso.
+    if any(c["encaje"] is not None for c in cards):
+        cards.sort(key=lambda c: c["encaje"] if c["encaje"] is not None else -1, reverse=True)
+    return cards[:_MAX_CARDS]
 
 
 # FSM del lente (SPEC_Mapa_Vivo "Estados y transiciones"): el modo lo decide la PRECISIÓN de

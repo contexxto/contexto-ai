@@ -608,6 +608,23 @@ export default function MapView({ seedIds, encajeById } = {}) {
           geojson.features.forEach(f => b.extend(f.geometry.coordinates))
           map.fitBounds(b, { padding: 80, maxZoom: 14, duration: 600 })
         }
+
+        // AUTO-CARGAR EL AURA del inmueble sembrado (bug real detectado en vivo, demo
+        // Mazatlán 2026-07-03): al "Ampliar" el mapa desde la página del inmueble (o desde
+        // una tarjeta del chat), MapView se siembra con UN solo id (seedIds=[id]) — pero
+        // antes aterrizaba en un pin mudo: el usuario tenía que volver a TOCARLO y luego
+        // tocar "Ver rutas a pie" para recuperar lo mismo que ya había visto en
+        // AuraSingleMap (POIs con nombre real + minutos reales, vía este mismo /rutas).
+        // Con un único sembrado, replicamos el flujo de un click real (abrir su popup +
+        // trazar sus rutas) para no perder el contexto que el usuario ya tenía en las
+        // manos — "Ampliar" debe CONTINUAR la conversación, no reiniciarla en blanco.
+        if (Array.isArray(seedIds) && seedIds.length === 1 && geojson.features?.length === 1) {
+          const f = geojson.features[0]
+          popup.setLngLat(f.geometry.coordinates).setHTML(popupHTML(f.properties)).addTo(map)
+          const btnAuto = popup.getElement()?.querySelector('.ctx-rutas-btn')
+          if (btnAuto) btnAuto.addEventListener('click', () => drawRutas(btnAuto.dataset.id, btnAuto))
+          drawRutas(f.properties.id)
+        }
       } catch (e) {
         setError('No se pudo cargar el catastro: ' + e.message)
       }

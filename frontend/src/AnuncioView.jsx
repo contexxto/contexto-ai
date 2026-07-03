@@ -210,6 +210,26 @@ export default function AnuncioView({ id, onChat, onBack, onExpandMap }) {
               <Stat icon={Volume2} val={d.scores.ruido} unit="" label="Índice de ruido" color={C.gold} />
             )}
           </div>
+          {/* PROVENIENCIA DEL ENTORNO — el mecanismo de honestidad hecho visible (el foso que un
+              mapa agéntico global genérico NO puede dar: fuente + fecha + quién verificó, y
+              "estimación, no medición" donde aplica). d.entorno_verificado ({verificado, fecha})
+              ya viaja en el JSON del anuncio (assets.py) y hasta ahora se ignoraba. */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 9 }}>
+            {d.entorno_verificado?.verificado && (
+              <span style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 6,
+                             padding: '3px 10px', borderRadius: 999, fontSize: '.72rem', fontWeight: 700,
+                             background: 'rgba(45,189,182,.12)', border: `1px solid ${C.teal}`, color: C.tealHi }}>
+                <ShieldCheck size={13} /> Entorno verificado por el corredor
+                {d.entorno_verificado.fecha && (
+                  <span style={{ color: C.muted, fontWeight: 500 }}>· {d.entorno_verificado.fecha}</span>
+                )}
+              </span>
+            )}
+            <div style={{ fontSize: '.68rem', color: C.muted, lineHeight: 1.5 }}>
+              Caminabilidad: calculada sobre los comercios reales de la zona (OpenStreetMap).
+              Ruido y cobertura verde: estimación por zona (heurístico), no medición.
+            </div>
+          </div>
           {fmtTrafico(d.scores?.trafico) ? (
             <div style={{ fontSize: '.72rem', color: C.muted, marginTop: 8 }}>
               🚗 Tráfico histórico estimado: {fmtTrafico(d.scores.trafico)}

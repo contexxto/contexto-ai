@@ -183,6 +183,17 @@ function ResultCard({ r, onOpen, activeId, onActive, seleccionado, onToggleCompa
           <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
                          overflow: 'hidden' }}>{r.direccion || r.tipo_activo}</span>
         </div>
+        {/* Sello de honestidad: el corredor verificó en terreno el entorno de este inmueble
+            (Catastro Vivo). r.fresco ya viaja en el payload de la tarjeta; el diferenciador que un
+            mapa global que "puede equivocarse" no puede ofrecer. Mismo eje que MapSeed.jsx. */}
+        {r.fresco && (
+          <span title="El corredor verificó en terreno los servicios de este entorno (Catastro Vivo)."
+            style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 4,
+                     padding: '2px 8px', borderRadius: 999, fontSize: '.62rem', fontWeight: 700,
+                     background: 'rgba(45,189,182,.12)', border: `1px solid ${C.teal}`, color: C.tealHi }}>
+            ✓ Verificado por el corredor
+          </span>
+        )}
         {/* ★ Encaje / intención: los POIs verificados más cercanos, con su tiempo a pie.
             El diferenciador que Redfin/Zillow/Realtor NO muestran. Envuelven (móvil primero);
             nombres largos se truncan con el nombre completo en el tooltip. Proveniencia OSM

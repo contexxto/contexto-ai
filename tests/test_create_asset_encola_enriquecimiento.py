@@ -28,7 +28,14 @@ class _FakeResult:
 
 
 class _FakeSession:
-    """Suficiente para satisfacer add/flush/refresh sin tocar una DB real."""
+    """Suficiente para satisfacer add/flush/refresh + el auto-sanado de la columna
+    de procedencia (ensure_walk_score_fuente_column: execute/commit no-op) sin DB real."""
+
+    async def execute(self, *a, **k):
+        return _FakeResult(None)
+
+    async def commit(self):
+        pass
 
     def add(self, obj):
         pass

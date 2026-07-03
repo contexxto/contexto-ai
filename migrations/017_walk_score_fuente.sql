@@ -1,0 +1,11 @@
+-- 017_walk_score_fuente.sql
+-- Procedencia del walk_score (foso de honestidad). La caminabilidad puede venir de
+-- OSM (comercios REALES contados alrededor del punto, el foso) o del heuristico por
+-- zona (fallback deterministico cuando Overpass no responde en publish ni en el job
+-- de recalculo). Persistimos la fuente para que la pagina de anuncio rotule CADA dato
+-- con su verdad: "comercios reales" vs "estimacion por zona". Sin esta columna el
+-- rotulo del front tendria que ADIVINAR y, hoy, afirma OSM para TODOS -> miente cuando
+-- el score quedo heuristico. Valores: 'osm' | 'heuristico'. NULL = legado/desconocida.
+-- El backend tambien la autocrea en runtime (assets.ensure_walk_score_fuente_column)
+-- para no exigir correr este SQL a mano en el deploy; este archivo es el registro canonico.
+ALTER TABLE activos_inmutables ADD COLUMN IF NOT EXISTS walk_score_fuente text;

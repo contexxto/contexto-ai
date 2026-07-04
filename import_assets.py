@@ -102,6 +102,9 @@ async def import_csv(filepath: Path, dry_run: bool = False) -> None:
                     direccion_estandarizada=r["direccion"],
                     piso_altura=r["piso"],
                     walk_score=r["walk"],
+                    # El walk del CSV es aportado por el operador (no verificado sobre OSM):
+                    # márcalo 'heuristico' cuando exista; NULL si no vino, para no sobre-reclamar.
+                    walk_score_fuente=("heuristico" if r["walk"] is not None else None),
                     score_ruido_predictivo=r["ruido"],
                     volumen_trafico_historico=r["trafico"],
                     densidad_poblacional_pico=r["densidad"],

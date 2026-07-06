@@ -18,6 +18,7 @@ import { API_BASE, apiHeaders, setAccessToken } from './api'
 import './App.css'
 import ReviewStation from './ReviewStation'
 import CRM from './CRM'
+import ErrorBoundary from './ErrorBoundary'
 import Sidebar from './Sidebar'
 import sphereLogo from './assets/sphere.svg'
 
@@ -1228,7 +1229,7 @@ export default function App() {
             cursor:'pointer', color:'var(--text-muted)', padding:'6px 12px', fontSize:'.85rem',
           }}>← Volver al chat</button>
         </div>
-        <div style={{ flex:1, minHeight:0 }}><CRM /></div>
+        <div style={{ flex:1, minHeight:0 }}><ErrorBoundary label="el CRM"><CRM /></ErrorBoundary></div>
       </div>
     )
   }

@@ -1007,22 +1007,29 @@ async def ensure_handoff_tables(db) -> None:
 # dimensión de TIEMPO del motor de reenganche (app/reenganche.py): sin esto no se
 # puede saber quién está 'dormido'. Tabla ligera, autocreada en runtime (como
 # handoff) para no exigir SQL a mano en el deploy.
-_LEAD_ACTIVIDAD_DDL = (
+_LEAD_ACTIVIDAD_DDL = [
     "CREATE TABLE IF NOT EXISTS lead_actividad ("
     "session_id text PRIMARY KEY, activo_id uuid, "
     "primera_actividad timestamptz DEFAULT now(), "
     "ultima_actividad timestamptz DEFAULT now(), "
-    "reenganche_enviado_en timestamptz)"
-)
+    "reenganche_enviado_en timestamptz)",
+    # Fase 3: canal de contacto del COMPRADOR (con consentimiento) para reengancharlo
+    # directo por email/push cuando se enfríe. NULL = no dejó canal → se avisa al corredor.
+    "ALTER TABLE lead_actividad ADD COLUMN IF NOT EXISTS lead_email text",
+    "ALTER TABLE lead_actividad ADD COLUMN IF NOT EXISTS lead_telefono text",
+    "ALTER TABLE lead_actividad ADD COLUMN IF NOT EXISTS lead_push jsonb",
+    "ALTER TABLE lead_actividad ADD COLUMN IF NOT EXISTS consent_reenganche_at timestamptz",
+]
 _lead_actividad_ready = False
 
 
 async def ensure_lead_actividad(db) -> None:
-    """Crea la tabla lead_actividad si no existe (idempotente, una vez por proceso)."""
+    """Crea/actualiza la tabla lead_actividad si falta (idempotente, una vez por proceso)."""
     global _lead_actividad_ready
     if _lead_actividad_ready:
         return
-    await db.execute(text(_LEAD_ACTIVIDAD_DDL))
+    for ddl in _LEAD_ACTIVIDAD_DDL:
+        await db.execute(text(ddl))
     await db.commit()
     _lead_actividad_ready = True
 
@@ -1047,6 +1054,55 @@ async def marcar_actividad_lead(session_id: str) -> None:
             await db.commit()
     except Exception:  # noqa: BLE001 — marcar actividad jamás debe romper el chat
         pass
+
+
+class LeadContacto(BaseModel):
+    session_id: str = Field(..., min_length=8, max_length=120)
+    email: str | None = Field(default=None, max_length=254)
+    telefono: str | None = Field(default=None, max_length=32)
+    push_subscription: dict | None = None
+    consent: bool = True
+
+
+@router.post(
+    "/lead-contacto",
+    summary="El comprador opta por recibir novedades verificadas (reenganche por valor)",
+    description="Guarda el canal de contacto del comprador (push del navegador y/o email/teléfono) "
+                "con su consentimiento, ligado a su sesión de QR. Público — es el propio comprador. "
+                "Habilita que el reenganche le llegue a ÉL directo, no solo al corredor.",
+)
+@limiter.limit("10/minute")
+async def lead_contacto(request: Request, payload: LeadContacto) -> dict:
+    if not payload.session_id.startswith("qr-"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Sesión inválida.")
+    activo = activo_de_session(payload.session_id)
+    push_json = json.dumps(payload.push_subscription) if payload.push_subscription else None
+    try:
+        async with AsyncSessionLocal() as db:
+            await ensure_lead_actividad(db)
+            await db.execute(
+                text(
+                    "INSERT INTO lead_actividad "
+                    "(session_id, activo_id, lead_email, lead_telefono, lead_push, consent_reenganche_at) "
+                    "VALUES (:s, :a, :e, :t, CAST(:p AS jsonb), "
+                    "        CASE WHEN :c THEN now() ELSE NULL END) "
+                    "ON CONFLICT (session_id) DO UPDATE SET "
+                    "  lead_email = COALESCE(EXCLUDED.lead_email, lead_actividad.lead_email), "
+                    "  lead_telefono = COALESCE(EXCLUDED.lead_telefono, lead_actividad.lead_telefono), "
+                    "  lead_push = COALESCE(EXCLUDED.lead_push, lead_actividad.lead_push), "
+                    "  consent_reenganche_at = CASE WHEN :c THEN now() "
+                    "                               ELSE lead_actividad.consent_reenganche_at END"
+                ),
+                {"s": payload.session_id, "a": activo, "e": payload.email,
+                 "t": payload.telefono, "p": push_json, "c": payload.consent},
+            )
+            await db.commit()
+    except HTTPException:
+        raise
+    except Exception:  # noqa: BLE001
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail="No se pudo guardar el contacto.")
+    return {"ok": True}
 
 
 def activo_de_session(session_id: str) -> str | None:

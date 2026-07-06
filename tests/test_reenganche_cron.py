@@ -19,6 +19,16 @@ def test_deshabilitado_con_valores_falsy(monkeypatch):
         assert cron.habilitado() is False
 
 
+def test_auto_lead_por_defecto(monkeypatch):
+    monkeypatch.delenv("REENGANCHE_AUTO_LEAD", raising=False)
+    assert cron.auto_lead() is True
+
+
+def test_auto_lead_deshabilitado(monkeypatch):
+    monkeypatch.setenv("REENGANCHE_AUTO_LEAD", "0")
+    assert cron.auto_lead() is False
+
+
 def test_intervalo_default(monkeypatch):
     monkeypatch.delenv("REENGANCHE_CRON_INTERVAL", raising=False)
     assert cron._intervalo() == 21600

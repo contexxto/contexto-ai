@@ -160,3 +160,16 @@ está empujando, no aportando).
     inocuo un doble-barrido si algún día se escala horizontalmente.
   - **Pendiente de decisión (piloto):** ¿auto-enviar el mensaje al comprador cuando SÍ tengamos su
     canal (contacto capturado), o mantener siempre el humano-envía? Calibrar intervalo (hoy 6 h).
+- **2026-07-06 — v0.4 — Fase 3 (alcanzar al COMPRADOR directo, con la app)** — captura del canal del
+  comprador **con consentimiento explícito**, usando lo que la app ya tiene (Web Push/VAPID + email/Resend).
+  - `lead_actividad` gana `lead_email`, `lead_telefono`, `lead_push` (jsonb), `consent_reenganche_at`.
+  - Endpoint público `POST /api/v1/chat/lead-contacto` (lo llama el comprador, sin auth): guarda su
+    canal + consentimiento ligado a su sesión de QR.
+  - Frontend: botón **"🔔 Avísame de novedades verificadas"** en el chat del comprador (reusa
+    `ensurePushSubscription` + el service worker existentes).
+  - Cron: si el comprador dejó canal + consentimiento y `REENGANCHE_AUTO_LEAD` (default on), el mensaje
+    de valor le llega **a ÉL directo** (email/push, deep-link a `/a/{id}`); si no, se avisa al corredor
+    (Fase 2). Sin WhatsApp: es el propio canal de la app.
+  - **Sigue honesto:** el comprador recibe SOLO lo que pidió recibir (opt-in), y solo cuando hay dato
+    verificado que le calza (motor Fase 1). WhatsApp/SMS queda como canal adicional futuro (el teléfono
+    capturado lo habilita, y de momento lo puede usar el corredor a mano).

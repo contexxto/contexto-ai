@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo } from 'react'
 import axios from 'axios'
-import { Users, RefreshCw, Flame, MapPin, Inbox, Sparkles,
+import { Users, RefreshCw, Flame, MapPin, Sparkles,
          TrendingUp, Clock, AlertTriangle, ChevronRight } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import { LeadChat } from './LeadsPanel'
+import CRMChat from './CRMChat'
 
 const C = {
   bg: '#16151E', panel: '#1E1D28', teal: '#2DBDB6', tealHi: '#5EEAD4',
@@ -188,12 +189,9 @@ export default function CRM() {
       <LeadChat activo={{ id: sel.activo_id, direccion: sel.direccion }} lead={sel} onBack={() => setSel(null)} />
     </div>
   ) : (
-    <div style={{ flex: 1, display: 'grid', placeItems: 'center', color: C.muted, border: `1px dashed ${C.line}`, borderRadius: 16 }}>
-      <div style={{ textAlign: 'center', padding: 20 }}>
-        <Inbox size={28} color={C.teal} style={{ marginBottom: 8 }} />
-        <div style={{ fontSize: '.88rem', color: C.text }}>Elige un interesado</div>
-        <div style={{ fontSize: '.76rem' }}>Verás su conversación destilada y podrás retomarla aquí mismo.</div>
-      </div>
+    <div style={{ flex: 1, minWidth: 0, border: `1px solid ${C.line}`, borderRadius: 16, padding: '16px 14px',
+                  background: `radial-gradient(120% 90% at 30% 0%, ${C.panel} 0%, ${C.bg} 70%)`, height: '100%' }}>
+      <CRMChat />
     </div>
   )
 

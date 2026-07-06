@@ -189,3 +189,19 @@ sería otra demo que no escala (el 17%-ve-impacto del que se queja el estudio).
   arquitectura + lente de mercado + barandas). Veredicto: construir como capa conversacional delgada
   sobre motores deterministas; steak-antes-que-sizzle; 3 barandas (honestidad de cifras, Fair Housing +
   scope-en-tool, evals como gate). Plan por fases con foco en el corredor del piloto. Nada construido aún.
+- **2026-07-06 — v0.2 · Fase 1 construida (piloto)** — `app/agent/crm_tools.py` (`tool_stats_embudo`,
+  `tool_timeline_de_lead`, `_match_lead` con preferencia por match exacto), `app/agent/crm_graph.py`
+  (2º grafo ReAct del corredor, `SYSTEM_PROMPT_CRM`, MemorySaver), `POST /assets/crm/chat` (rol
+  corredor/inmobiliaria), `frontend/CRMChat.jsx` en el drawer. Tests: matcher puro + smokes de montaje.
+  - **Baranda 3.3 (scope) — CUMPLIDA y verificada adversarialmente:** el owner sale *solo* del JWT →
+    `config.configurable` → `_owner()`; ambas tools filtran por `_leads_del_corredor(owner)`; el LLM
+    nunca controla el owner. Imposible por construcción devolver leads de otro corredor. *Matiz:* el
+    scope incluye a **la agencia** del corredor (heredado de `mine_leads`), no solo a él — correcto para
+    inmobiliarias, documentado en los docstrings.
+  - **Deuda declarada (gate antes de exponer más allá del piloto):** (1) **Baranda 3.4 (evals) NO
+    construida** — la honestidad de cifras hoy vive en el SYSTEM_PROMPT + el hecho de que las tools son
+    la única fuente de números; falta la suite determinista (`cifra_no_inventada`, `crm_no_segmenta`,
+    `crm_scope`). (2) **Baranda 3.2 (Fair Housing) sin reforzar para paráfrasis de resumen** —
+    `detectar_steering` corre sobre la salida pero es observabilidad (no bloquea) y está calibrado para
+    el chat del comprador; el resumen de historiales es superficie nueva. Ambas son el gate #1 antes de
+    abrir el CRM a corredores fuera del piloto de Carlos.

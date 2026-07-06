@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
-import { X, Users, RefreshCw, Flame, ArrowLeft, Send, MessageCircle } from 'lucide-react'
+import { X, Users, RefreshCw, Flame, ArrowLeft, Send, MessageCircle, Sparkles, Copy, Check } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 
 const C = {
@@ -9,6 +9,23 @@ const C = {
 }
 const NIVEL = {
   caliente: { c: '#E0685A', e: '🔥' }, tibio: { c: '#E8B84B', e: '🟡' }, frio: { c: '#5E9BE0', e: '🔵' },
+}
+const FRESCURA = {
+  activo: { c: '#2DBDB6', lbl: 'Activo' },
+  dormido: { c: '#E8B84B', lbl: '😴 Dormido' },
+  frio_profundo: { c: '#5E9BE0', lbl: '❄️ Muy frío' },
+}
+
+// "hace 3d" / "hace 5h" / "hace 12m" a partir de un ISO string.
+function haceCuanto(iso) {
+  if (!iso) return null
+  const t = new Date(iso).getTime()
+  if (Number.isNaN(t)) return null
+  const min = Math.max(0, Math.round((Date.now() - t) / 60000))
+  if (min < 60) return `hace ${min}m`
+  const h = Math.round(min / 60)
+  if (h < 24) return `hace ${h}h`
+  return `hace ${Math.round(h / 24)}d`
 }
 const ESTADO_LBL = {
   anonimo: 'Anónimo', identificado: 'Identificado', explorando: 'Explorando',
@@ -110,6 +127,23 @@ export default function LeadsPanel({ activo, onClose }) {
                           <div style={{ marginTop: 9, fontSize: '.74rem', color: C.muted }}>
                             {(l.razones || []).slice(0, 3).join(' · ')}
                           </div>
+                          {(FRESCURA[l.frescura] || l.reenganche) && (
+                            <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                              {FRESCURA[l.frescura] && (
+                                <span style={{ fontSize: '.6rem', fontWeight: 700, color: FRESCURA[l.frescura].c, padding: '2px 7px',
+                                               borderRadius: 999, background: FRESCURA[l.frescura].c + '1A',
+                                               border: `1px solid ${FRESCURA[l.frescura].c}44` }}>
+                                  {FRESCURA[l.frescura].lbl}
+                                </span>
+                              )}
+                              {l.reenganche && (
+                                <span style={{ fontSize: '.6rem', fontWeight: 700, color: '#E8B84B',
+                                               display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                  <Sparkles size={10} /> Reenganche sugerido
+                                </span>
+                              )}
+                            </div>
+                          )}
                           <button onClick={() => setConvo(l)}
                             style={{ marginTop: 10, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
                                      gap: 7, padding: '8px', borderRadius: 10, cursor: 'pointer', fontWeight: 700, fontSize: '.78rem',
@@ -145,7 +179,15 @@ export function LeadChat({ activo, lead, onBack }) {
   // desaparecia sola en el siguiente sondeo (6s despues), que reemplaza TODA la lista
   // con lo que de verdad hay en el servidor. `error` hace visible ese fallo.
   const [error, setError] = useState(null)
+  const [copiadoRe, setCopiadoRe] = useState(false)
   const finRef = useRef(null)
+
+  async function copiarRe() {
+    try {
+      await navigator.clipboard.writeText(lead.reenganche.mensaje)
+      setCopiadoRe(true); setTimeout(() => setCopiadoRe(false), 1600)
+    } catch { /* clipboard bloqueado por el navegador */ }
+  }
 
   async function cargar() {
     try {
@@ -196,17 +238,55 @@ export function LeadChat({ activo, lead, onBack }) {
     return { align: 'flex-start', bg: 'rgba(45,189,182,.10)', color: C.text, lbl: 'Interesado' }
   }
 
+  const fr = FRESCURA[lead.frescura]
+  const ult = haceCuanto(lead.ultima_actividad)
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 10, paddingRight: 26, flexShrink: 0 }}>
         <button onClick={onBack} style={{ background: 'none', border: 'none', color: C.tealHi, cursor: 'pointer', display: 'flex' }}>
           <ArrowLeft size={18} />
         </button>
-        <div>
-          <div style={{ fontWeight: 800, fontSize: '1rem' }}>{lead.lead}</div>
-          <div style={{ fontSize: '.72rem', color: C.muted }}>{NIVEL[lead.nivel]?.e} {ESTADO_LBL[lead.estado]} · {lead.score}/100</div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+            <span style={{ fontWeight: 800, fontSize: '1rem' }}>{lead.lead}</span>
+            {fr && (
+              <span style={{ fontSize: '.58rem', fontWeight: 700, color: fr.c, padding: '2px 7px', borderRadius: 999,
+                             background: fr.c + '18', border: `1px solid ${fr.c}44` }}>{fr.lbl}</span>
+            )}
+          </div>
+          <div style={{ fontSize: '.72rem', color: C.muted, marginTop: 2 }}>
+            {NIVEL[lead.nivel]?.e} {ESTADO_LBL[lead.estado]} · {lead.score}/100
+            {lead.mensajes != null ? ` · 💬 ${lead.mensajes}` : ''}{ult ? ` · ${ult}` : ''}
+          </div>
         </div>
       </div>
+
+      {lead.reenganche?.mensaje && (
+        <div style={{ flexShrink: 0, marginBottom: 10, padding: '10px 11px', borderRadius: 12,
+                      background: 'rgba(232,184,75,.07)', border: '1px solid rgba(232,184,75,.28)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '.6rem', fontWeight: 800,
+                        color: '#E8B84B', letterSpacing: .3, textTransform: 'uppercase', marginBottom: 5 }}>
+            <Sparkles size={11} /> Reenganche sugerido · aporta valor
+          </div>
+          <div style={{ fontSize: '.76rem', color: C.text, lineHeight: 1.45 }}>{lead.reenganche.mensaje}</div>
+          <div style={{ display: 'flex', gap: 7, marginTop: 8, flexWrap: 'wrap' }}>
+            <button onClick={() => setTexto(lead.reenganche.mensaje)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '.66rem', fontWeight: 700,
+                       padding: '5px 10px', borderRadius: 8, cursor: 'pointer', color: '#0E0D13', border: 'none',
+                       background: 'linear-gradient(90deg,#E8B84B,#F0CE7A)' }}>
+              <Sparkles size={12} /> Usar en la respuesta
+            </button>
+            <button onClick={copiarRe}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '.66rem', fontWeight: 700,
+                       padding: '5px 10px', borderRadius: 8, cursor: 'pointer',
+                       background: copiadoRe ? 'rgba(45,189,182,.16)' : 'rgba(255,255,255,.05)',
+                       border: `1px solid ${C.line}`, color: copiadoRe ? C.tealHi : C.text }}>
+              {copiadoRe ? <><Check size={12} /> Copiado</> : <><Copy size={12} /> Copiar</>}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0, padding: '4px 2px' }}>
         {!msgs && <div style={{ color: C.muted, textAlign: 'center', padding: '20px 0' }}>Cargando…</div>}

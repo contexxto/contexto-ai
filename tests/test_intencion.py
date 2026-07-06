@@ -1,5 +1,5 @@
 """Tests offline del motor de intención (app/intencion.py) — lógica pura."""
-from app.intencion import analizar_intencion, ESTADOS
+from app.intencion import analizar_intencion, ESTADOS, HORAS_DORMIDO
 
 
 def test_anonimo_sin_mensajes():
@@ -91,3 +91,37 @@ def test_resumen_es_explicable():
 
 def test_estados_constante():
     assert "intencion" in ESTADOS and "anonimo" in ESTADOS
+
+
+# ── Frescura: activación del estado 'dormido' (reenganche) ──────────────────
+def test_dormido_por_inactividad():
+    # Un lead que exploró el entorno y no vuelve hace tiempo → 'dormido'.
+    r = analizar_intencion(
+        mensajes_usuario=["¿Cómo es el ruido y la caminabilidad del barrio?"],
+        horas_inactividad=HORAS_DORMIDO + 10,
+    )
+    assert r["estado"] == "dormido"
+    assert r["estado"] in ESTADOS
+    assert "Reenganche" in r["accion_sugerida"]
+
+
+def test_caliente_no_pasa_a_dormido():
+    # Aunque esté inactivo, un lead caliente (pidió corredor) NO se marca dormido.
+    r = analizar_intencion(
+        mensajes_usuario=["¿Me das el contacto del corredor?"], es_qr=True,
+        horas_inactividad=HORAS_DORMIDO + 100,
+    )
+    assert r["nivel"] == "caliente"
+    assert r["estado"] == "intencion"
+
+
+def test_recien_llegado_no_pasa_a_dormido():
+    # Sin enganche real (solo saludó) no hay a qué reenganchar aunque esté inactivo.
+    r = analizar_intencion(mensajes_usuario=["Hola"], horas_inactividad=HORAS_DORMIDO + 100)
+    assert r["estado"] != "dormido"
+
+
+def test_sin_horas_es_retrocompatible():
+    # Sin el parámetro, el comportamiento previo se mantiene (nunca 'dormido').
+    r = analizar_intencion(mensajes_usuario=["¿Cómo es el ruido del barrio?"])
+    assert r["estado"] != "dormido"

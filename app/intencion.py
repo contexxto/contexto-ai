@@ -24,6 +24,11 @@ ESTADOS = [
     "intencion", "confirmado", "completado", "returning", "dormido",
 ]
 
+# Un lead que estuvo enganchado y no interactúa hace >= estas horas está "dormido"
+# (candidato a reenganche por VALOR). Umbral compartido con app/reenganche.py.
+# Placeholder a calibrar con el piloto.
+HORAS_DORMIDO = 48
+
 _ACCION = {
     "anonimo": "Saludar y hacer UNA pregunta calificadora (¿qué zona o qué buscas?).",
     "identificado": "Ofrecer 1–3 caminos en cápsula; dejar que el usuario tire del hilo.",
@@ -31,6 +36,7 @@ _ACCION = {
     "enganchado": "Profundizar en el inmueble/zona; resaltar el dato verificado.",
     "intencion": "Ofrecer agendar una visita o conectar con el corredor.",
     "intencion_handoff": "HANDOFF: notificar al corredor con el resumen de intención.",
+    "dormido": "Reenganche por VALOR: ofrecer el dato verificado que preguntó, sin presionar.",
 }
 
 _EMOJI = {"frio": "🔵", "tibio": "🟡", "caliente": "🔥"}
@@ -69,6 +75,7 @@ def analizar_intencion(
     es_qr: bool = False,
     uso_tool_inversion: bool = False,
     pidio_corredor: bool = False,
+    horas_inactividad: float | None = None,
 ) -> dict:
     """
     Analiza la intención de una sesión a partir de señales observables.
@@ -79,6 +86,10 @@ def analizar_intencion(
         turnos: nº de turnos del usuario (si None, se infiere de mensajes_usuario).
         es_qr: True si la sesión nació de escanear el QR de un inmueble.
         uso_tool_inversion: True si el agente corrió el análisis de inversión.
+        horas_inactividad: horas desde la última interacción del lead. Si supera
+            HORAS_DORMIDO y el lead ya se había enganchado (y no está caliente), el
+            estado se marca 'dormido' — candidato a reenganche por valor. None = se
+            ignora la dimensión temporal (comportamiento por defecto, retrocompatible).
 
     Returns:
         dict con: estado, nivel, score (0–100), razones, senales, handoff_sugerido,
@@ -160,6 +171,19 @@ def analizar_intencion(
         nivel = "tibio"
     else:
         nivel = "frio"
+
+    # ── Frescura: un lead que se enganchó y no vuelve hace rato está 'dormido' ─
+    # (candidato a reenganche por VALOR, no por tiempo — ver app/reenganche.py).
+    # Solo si NO está caliente (a esos ya los tiene el corredor) y llegó a mostrar
+    # exploración/intención real. Placeholder del embudo que aquí cobra vida.
+    if (
+        horas_inactividad is not None
+        and horas_inactividad >= HORAS_DORMIDO
+        and nivel != "caliente"
+        and estado in ("explorando", "enganchado", "intencion")
+    ):
+        estado = "dormido"
+        razones.append("Se enfrió: sin interactuar hace tiempo")
 
     accion = _ACCION["intencion_handoff"] if (estado == "intencion" and handoff) \
         else _ACCION.get(estado, _ACCION["anonimo"])

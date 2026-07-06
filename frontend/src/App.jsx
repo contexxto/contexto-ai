@@ -1394,8 +1394,9 @@ export default function App() {
             </h1>
             <p style={{ color:'var(--text-mid)', fontSize:isMobile ? '.92rem' : '1rem', lineHeight:1.7,
                         maxWidth:560, margin:'0 auto 26px' }}>
-              Entiende qué buscas para vivir, te dice la verdad de cada lugar, su ruido,
-              seguridad, transporte y vida de barrio, y te ayuda a elegir el que encaja contigo.
+              Entiende qué buscas, verifica en el terreno cómo es cada lugar de verdad
+              —caminabilidad, ruido, transporte, servicios— y te ayuda a decidir cuál encaja
+              contigo. Sin adjetivos de folleto.
             </p>
 
             {/* CTA destacado: analiza dónde estás (global, viral) */}
@@ -1426,6 +1427,17 @@ export default function App() {
                 </button>
               ))}
             </div>
+
+            {/* Camino al intermediario (a quien le vendemos): el hero le hablaba solo al
+                comprador; esto abre el flujo del corredor liderando con SU resultado. */}
+            <button onClick={() => setUpgradeOpen(true)}
+              style={{ marginTop:22, background:'none', border:'none', cursor:'pointer',
+                       color:'var(--text-muted)', fontSize:'.8rem' }}>
+              ¿Eres corredor o inmobiliaria?{' '}
+              <span style={{ color:'var(--teal-bright, #5EEAD4)', fontWeight:700 }}>
+                Que tu próximo lead llegue calificado →
+              </span>
+            </button>
           </div>
         )}
 

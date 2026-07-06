@@ -102,7 +102,8 @@ export default function PublishAsset({ onClose, existing = null }) {
             </div>
             <h2 style={{ margin: '0 0 6px', fontSize: '1.2rem' }}>¡Inmueble publicado! 🎉</h2>
             <p style={{ fontSize: '.85rem', color: C.muted, margin: '0 0 16px' }}>
-              Ya tiene su agente 24/7. Imprime el QR y pégalo en tu letrero — quien lo escanee hablará con tu agente.
+              Listo. Cada persona que escanee tu letrero llega con contexto verificado del lugar —y te llega como un
+              interesado calificado, no como un “alguien preguntó”. Imprime el QR y pégalo en tu letrero; el agente atiende 24/7.
             </p>
             <div style={{ background: '#fff', borderRadius: 16, padding: 12, display: 'inline-block',
                           boxShadow: '0 0 26px rgba(45,189,182,.2)' }}>
@@ -113,7 +114,7 @@ export default function PublishAsset({ onClose, existing = null }) {
               {result.deep_link}
             </div>
             <div style={{ marginTop: 10, fontSize: '.78rem', color: C.tealHi }}>
-              Capa base: ruido {result.scores?.score_ruido_predictivo} · walk {result.scores?.walk_score} · vegetación {result.scores?.porcentaje_cobertura_vegetal}%
+              Capa de contexto: ruido {result.scores?.score_ruido_predictivo} · caminabilidad {result.scores?.walk_score}/100 · cobertura verde {result.scores?.porcentaje_cobertura_vegetal}%
             </div>
             {result.conectividad && (
               <div style={{ marginTop: 10, padding: '9px 12px', borderRadius: 12,

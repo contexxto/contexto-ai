@@ -361,7 +361,7 @@ export default function AnuncioView({ id, onChat, onBack, onExpandMap }) {
           <MessageCircle size={18} /> Pregúntale al agente sobre este inmueble
         </button>
         <div style={{ textAlign: 'center', fontSize: '.66rem', color: C.muted, marginTop: 7 }}>
-          Caminabilidad, ruido, transporte, inversión — pregunta lo que quieras.
+          Descubre si este lugar de verdad encaja contigo — su entorno está verificado, sin folleto.
         </div>
       </div>
     </div>

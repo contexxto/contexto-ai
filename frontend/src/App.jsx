@@ -793,6 +793,20 @@ export default function App() {
     } catch (e) { console.warn('Lead push:', e) }
   }, [ensurePushSubscription])
 
+  // Fase 3: el COMPRADOR opta por recibir novedades verificadas del inmueble (reenganche
+  // por valor). Captura su canal (push del navegador) con consentimiento explícito — así
+  // el reenganche le llega a ÉL directo, no solo al corredor.
+  const [reengancheOptIn, setReengancheOptIn] = useState(false)
+  const subscribeLeadContacto = useCallback(async (sid) => {
+    const sub = await ensurePushSubscription()   // null si deniega — igual guardamos el consentimiento
+    try {
+      await axios.post(`${API_BASE}/api/v1/chat/lead-contacto`,
+        { session_id: sid, push_subscription: sub || null, consent: true },
+        { headers: apiHeaders() })
+      return true
+    } catch (e) { console.warn('Lead contacto:', e); return false }
+  }, [ensurePushSubscription])
+
   // Registra push + email del CORREDOR para avisarle de leads nuevos.
   //  - withPush=false → solo email (silencioso, sin pedir permiso). Al iniciar sesión.
   //  - withPush=true  → además pide permiso de notificación. Al abrir el CRM.
@@ -1517,12 +1531,23 @@ export default function App() {
               )}
             </>
           ) : (
-            <button onClick={iniciarHandoff}
-              style={{ display:'flex', alignItems:'center', gap:7, margin:'0 auto 8px', padding:'7px 14px',
-                       borderRadius:999, cursor:'pointer', fontSize:'.78rem', fontWeight:600,
-                       background:'rgba(45,189,182,.10)', border:'1px solid rgba(45,189,182,.3)', color:'var(--teal)' }}>
-              🤝 Hablar con el corredor
-            </button>
+            <div style={{ display:'flex', gap:8, justifyContent:'center', flexWrap:'wrap', margin:'0 0 8px' }}>
+              <button onClick={iniciarHandoff}
+                style={{ display:'flex', alignItems:'center', gap:7, padding:'7px 14px',
+                         borderRadius:999, cursor:'pointer', fontSize:'.78rem', fontWeight:600,
+                         background:'rgba(45,189,182,.10)', border:'1px solid rgba(45,189,182,.3)', color:'var(--teal)' }}>
+                🤝 Hablar con el corredor
+              </button>
+              <button onClick={async () => { if (await subscribeLeadContacto(sessionId)) setReengancheOptIn(true) }}
+                disabled={reengancheOptIn}
+                title="Te avisamos solo si aparece algo verificado que te calce — sin spam."
+                style={{ display:'flex', alignItems:'center', gap:7, padding:'7px 14px',
+                         borderRadius:999, cursor: reengancheOptIn ? 'default' : 'pointer', fontSize:'.78rem', fontWeight:600,
+                         background: reengancheOptIn ? 'rgba(232,184,75,.16)' : 'rgba(232,184,75,.10)',
+                         border:'1px solid rgba(232,184,75,.35)', color:'#E8B84B' }}>
+                {reengancheOptIn ? '✅ Te avisaremos' : '🔔 Avísame de novedades verificadas'}
+              </button>
+            </div>
           )
         )}
         <div style={{

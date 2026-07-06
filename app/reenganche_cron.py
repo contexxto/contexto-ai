@@ -47,6 +47,13 @@ def habilitado() -> bool:
     return os.getenv("REENGANCHE_CRON_ENABLED", "1").strip().lower() not in ("0", "false", "no", "")
 
 
+def auto_lead() -> bool:
+    """Fase 3: si True, cuando el comprador dejó canal + consentimiento el reenganche le
+    llega a ÉL directo (email/push); si no hay canal, siempre se avisa al corredor.
+    Default True."""
+    return os.getenv("REENGANCHE_AUTO_LEAD", "1").strip().lower() not in ("0", "false", "no", "")
+
+
 def _horas_inactividad(ua: datetime | None) -> float | None:
     if ua is None:
         return None
@@ -78,7 +85,8 @@ async def _escanear_reenganches(db) -> dict:
     try:
         filas = (await db.execute(
             text(
-                "SELECT session_id, activo_id::text AS activo_id, ultima_actividad "
+                "SELECT session_id, activo_id::text AS activo_id, ultima_actividad, "
+                "       lead_email, lead_push, consent_reenganche_at "
                 "FROM lead_actividad "
                 "WHERE ultima_actividad < now() - make_interval(hours => :dorm) "
                 "  AND (reenganche_enviado_en IS NULL "
@@ -129,6 +137,7 @@ async def _escanear_reenganches(db) -> dict:
 
     disparados: list[str] = []
     por_corredor: dict[str, dict] = {}
+    a_comprador: list[dict] = []
     for f in filas:
         sid = f["session_id"]
         activo_id = f["activo_id"]
@@ -147,14 +156,21 @@ async def _escanear_reenganches(db) -> dict:
         if not decision:
             continue
         disparados.append(sid)
-        # Agrupa por corredor (id del dueño; email/activo solo como respaldo) para
-        # un único aviso — así un corredor con push y sin email no recibe doble push.
-        clave = info["corredor_id"] or info["email"] or f"activo:{activo_id}"
-        grupo = por_corredor.setdefault(clave, {"email": info["email"], "sub": info["sub"], "n": 0})
-        grupo["n"] += 1
+        # Fase 3: ¿le escribimos al COMPRADOR directo? (opt-in con canal capturado).
+        if auto_lead() and f["consent_reenganche_at"] is not None and (f["lead_email"] or f["lead_push"]):
+            a_comprador.append({
+                "email": f["lead_email"], "push": f["lead_push"],
+                "mensaje": decision["mensaje"], "activo_id": activo_id,
+            })
+        else:
+            # Sin canal del comprador → avisamos al corredor. Agrupa por corredor (id del
+            # dueño; email/activo solo como respaldo) para un único aviso.
+            clave = info["corredor_id"] or info["email"] or f"activo:{activo_id}"
+            grupo = por_corredor.setdefault(clave, {"email": info["email"], "sub": info["sub"], "n": 0})
+            grupo["n"] += 1
 
     if not disparados:
-        return {"escaneados": len(filas), "disparados": 0, "corredores": 0}
+        return {"escaneados": len(filas), "disparados": 0, "comprador": 0, "corredores": 0}
 
     # Marcar anti-repetición ANTES de notificar: si un envío falla, no se reintenta
     # en bucle (mejor perder un aviso que spammear al corredor).
@@ -166,7 +182,25 @@ async def _escanear_reenganches(db) -> dict:
         await db.commit()
     except Exception:  # noqa: BLE001
         await db.rollback()
-        return {"escaneados": len(filas), "disparados": len(disparados), "corredores": 0}
+        return {"escaneados": len(filas), "disparados": len(disparados), "comprador": 0, "corredores": 0}
+
+    # Fase 3: al COMPRADOR directo (dejó canal + consentimiento) → le llega el mensaje de
+    # valor con deep-link al inmueble. Es el reenganche que él mismo pidió recibir.
+    enviados_comprador = 0
+    for c in a_comprador:
+        if not c["email"] and not c["push"]:
+            continue
+        try:
+            await send_notification(
+                email=c["email"], push_subscription=c["push"],
+                title="Novedad sobre el inmueble que viste",
+                body=c["mensaje"],
+                url=f"/a/{c['activo_id']}",
+                email_subject="Contexto AI · una novedad verificada para ti",
+            )
+            enviados_comprador += 1
+        except Exception as exc:  # noqa: BLE001
+            log.error("Reenganche cron: fallo avisando al comprador: %s", exc)
 
     notificados = 0
     for grupo in por_corredor.values():
@@ -187,9 +221,10 @@ async def _escanear_reenganches(db) -> dict:
         except Exception as exc:  # noqa: BLE001
             log.error("Reenganche cron: fallo notificando corredor: %s", exc)
 
-    log.info("Reenganche cron: %d escaneados, %d disparados, %d corredores notificados",
-             len(filas), len(disparados), notificados)
-    return {"escaneados": len(filas), "disparados": len(disparados), "corredores": notificados}
+    log.info("Reenganche cron: %d escaneados, %d disparados, %d a comprador, %d a corredor",
+             len(filas), len(disparados), enviados_comprador, notificados)
+    return {"escaneados": len(filas), "disparados": len(disparados),
+            "comprador": enviados_comprador, "corredores": notificados}
 
 
 # ── Bucle de fondo (el "cron" dentro de la app) ─────────────────────────────

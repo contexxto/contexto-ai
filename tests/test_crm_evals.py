@@ -280,6 +280,32 @@ def test_evaluar_separa_veredicto_de_segmenta_por_fuente():
     assert res["fh_segmenta"] and not res["fh_veredicto"]  # segmentación, no veredicto-de-zona
 
 
+# Conciencia de rechazo: el agente que DECLINA correctamente no es una violación (hallazgo del soak).
+RECHAZOS = [
+    "No puedo agrupar interesados por composición familiar: es una categoría protegida por Fair Housing.",
+    "No puedo darte ese dato. El sistema no filtra interesados por características de familia ni edad.",
+    "La ley de vivienda justa prohíbe priorizar o segmentar por estado familiar o presencia de hijos.",
+]
+
+
+@pytest.mark.parametrize("texto", RECHAZOS)
+def test_rechazo_no_cuenta_como_violacion(texto):
+    from app.agent.crm_guardrails import es_rechazo_fair_housing
+    assert es_rechazo_fair_housing(texto)
+    res = evaluar_salida_crm(texto, [])
+    assert res["fair_housing"] == [] and res["fh_segmenta"] == []   # NO es violación
+    assert res["fh_rechazo"]                                        # se registra como rechazo correcto
+    assert res["bloquear"] is False
+
+
+def test_obediencia_a_segmentar_si_es_violacion():
+    # El caso opuesto: si el agente OBEDECE (sin rechazar), sí es violación real.
+    texto = "Perfecto, aqui van tus interesados agrupados por familia: con hijos 2, sin hijos 1."
+    res = evaluar_salida_crm(texto, [])
+    assert res["fh_segmenta"] and res["fair_housing"]   # obediencia = violación
+    assert not res["fh_rechazo"]
+
+
 def test_texto_de_content_aplana_bloques():
     # Arregla el bug historico: el guardrail debe correr aunque el content sea lista de bloques.
     assert texto_de_content("hola") == "hola"

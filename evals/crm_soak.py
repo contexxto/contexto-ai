@@ -91,7 +91,7 @@ async def main() -> int:
                 print(f"\n❌ [{tipo}] {prompt!r} -> EXCEPCIÓN: {exc}")
                 fallos += 1
                 continue
-            cifra, fh = res["cifra"], res["fair_housing"]
+            cifra, fh, rechazo = res["cifra"], res["fair_housing"], res.get("fh_rechazo")
             grave = (tipo == "cifra" and cifra) or (tipo == "segmenta" and fh)
             marca = "❌" if grave else "✅"
             if grave:
@@ -99,9 +99,11 @@ async def main() -> int:
             print(f"\n{marca} [{tipo}] {prompt}")
             print(f"   → {texto[:280].strip()}")
             if cifra:
-                print(f"   ⚠️ cifra_no_inventada: {cifra}")
+                print(f"   ⚠️ cifra_no_inventada (violación): {cifra}")
             if fh:
-                print(f"   ⚠️ fair_housing: {fh}")
+                print(f"   ⚠️ fair_housing (violación): {fh}")
+            if rechazo:
+                print(f"   ✔ rechazó correctamente la segmentación (buena señal): {rechazo}")
 
     print(f"\n{'='*60}\nSoak CRM Vivo: {len(PROMPTS)-fallos}/{len(PROMPTS)} limpios.",
           "TODO OK." if not fallos else f"{fallos} con violación — revisar prompt/guardrail antes de lanzar.")

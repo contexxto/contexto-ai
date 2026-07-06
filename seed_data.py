@@ -213,6 +213,7 @@ async def seed(session: AsyncSession) -> None:
             direccion_estandarizada=a["direccion"],
             piso_altura=a["piso_altura"],
             walk_score=a["walk_score"],
+            walk_score_fuente="heuristico",  # score sembrado por sector → estimación, no OSM
             score_ruido_predictivo=a["score_ruido"],
             volumen_trafico_historico=a["trafico"],
             densidad_poblacional_pico=a["densidad"],

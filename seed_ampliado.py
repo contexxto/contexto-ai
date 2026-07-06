@@ -293,6 +293,7 @@ async def seed_ampliado() -> None:
                 direccion_estandarizada=a["direccion"],
                 piso_altura=a["piso"],
                 walk_score=a["walk"],
+                walk_score_fuente="heuristico",  # score sembrado por sector → estimación, no OSM
                 score_ruido_predictivo=a["ruido"],
                 volumen_trafico_historico=a["trafico"],
                 densidad_poblacional_pico=a["densidad"],

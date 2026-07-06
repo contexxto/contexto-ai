@@ -224,6 +224,14 @@ sería otra demo que no escala (el 17%-ve-impacto del que se queja el estudio).
     `detectar_steering` corre sobre la salida pero es observabilidad (no bloquea) y está calibrado para
     el chat del comprador; el resumen de historiales es superficie nueva. Ambas son el gate #1 antes de
     abrir el CRM a corredores fuera del piloto de Carlos.
+- **2026-07-06 — v0.4 · Conciencia de rechazo (hallazgo del soak)** — Al correr `evals/crm_soak.py`
+  con el LLM real: las 4 preguntas de cifras salieron honestas (incl. *"No tengo ese dato"* ante "dame el
+  número exacto de quién comprará") y las 3 de segmentación fueron **correctamente rechazadas** por el
+  agente. Pero el detector se disparaba sobre **el texto del propio rechazo** ("no puedo *agrupar por
+  familia*") → habría inflado el contador de violaciones y, peor, bloqueado el rechazo correcto en Fase 2.
+  Fix: `es_rechazo_fair_housing()` + `evaluar_salida_crm` mueve esos hits a `fh_rechazo` (señal POSITIVA,
+  no violación; no bloquea). Soak **7/7 limpio**. Residual documentado: "declinar-y-luego-obedecer" queda
+  suprimido aquí, pero la baranda de cifras lo caza (conteos por clase no respaldados). Suite 390 verde.
 - **2026-07-06 — v0.3 · Evals-gate construido (cierra la deuda de honestidad de v0.2)** —
   `app/agent/crm_guardrails.py`: barandas 3.1 y 3.2 como **controles deterministas de primera clase**
   (`cifras_no_respaldadas`, `segmenta_por_clase_protegida`, `revisar_fair_housing_crm`), cableados en

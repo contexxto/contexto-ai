@@ -33,7 +33,8 @@ log = logging.getLogger("crm.guardrails")
 
 # Observabilidad: los evals leen estos contadores para afirmar que un caso adversarial
 # fue detectado; en producción alimentan la métrica de violaciones del piloto.
-CONTADORES: dict[str, int] = {"cifra": 0, "fair_housing_veredicto": 0, "fair_housing_segmenta": 0}
+CONTADORES: dict[str, int] = {"cifra": 0, "fair_housing_veredicto": 0,
+                              "fair_housing_segmenta": 0, "fair_housing_rechazo_ok": 0}
 
 # Fase 1 = observar. Flip a True (Fase 2, evals verdes) para bloquear/regenerar.
 MODO_BLOQUEO = False
@@ -271,6 +272,26 @@ def segmenta_por_clase_protegida(texto: str | None) -> list[tuple[str, str]]:
     return hits
 
 
+# Marcadores de que el agente RECHAZA/declina (no obedece) un pedido de segmentación.
+# Sin esto, el detector se dispara sobre el texto del propio rechazo ("no puedo AGRUPAR por
+# FAMILIA") → inflaría el contador de violaciones y, en Fase 2, bloquearía el rechazo correcto.
+_RE_RECHAZO_FH = re.compile(
+    r"\bno (puedo|podria|voy a|debo|deberia|corresponde|es posible|es legal|es etico|"
+    r"segmento|agrupo|filtro|priorizo|clasifico|discrimino|tengo ese dato|"
+    r"puedo (darte|agrupar|segmentar|filtrar|priorizar|clasificar))\b"
+    r"|\b(fair housing|vivienda justa|clase[s]? protegida[s]?|categoria[s]? protegida[s]?|"
+    r"proteg\w+ por (la )?ley|no esta permitido|no discrimin\w*|prohib\w+)\b")
+
+
+def es_rechazo_fair_housing(texto: str | None) -> bool:
+    """True si el texto es un RECHAZO/declinación de un pedido de segmentación por clase
+    protegida (el comportamiento correcto), no una obediencia. Permite distinguir 'el agente
+    declinó bien' de 'el agente segmentó' — clave para no contar rechazos como violación ni
+    bloquearlos en Fase 2. Residual conocido: 'declinar-y-luego-obedecer' quedaría suprimido
+    aquí, pero la baranda de cifras lo caza (los conteos por clase no están respaldados)."""
+    return bool(_RE_RECHAZO_FH.search(_norm(texto)))
+
+
 def _dedup(hits: list[tuple[str, str]]) -> list[tuple[str, str]]:
     out: list[tuple[str, str]] = []
     vistos: set[str] = set()
@@ -292,16 +313,21 @@ def revisar_fair_housing_crm(texto: str | None) -> list[tuple[str, str]]:
 # Orquestación + observabilidad
 # ─────────────────────────────────────────────────────────────────────────────
 def evaluar_salida_crm(texto: str | None, tool_jsons: list[str]) -> dict:
-    """{'cifra', 'fair_housing' (combinado), 'fh_veredicto', 'fh_segmenta', 'bloquear'}.
-    fh_veredicto/fh_segmenta se separan por FUENTE del detector (no por el texto del
-    motivo) para que la observabilidad no se corrompa. bloquear respeta MODO_BLOQUEO
-    (Fase 1: siempre False → solo observar)."""
+    """{'cifra', 'fair_housing' (violaciones reales), 'fh_veredicto', 'fh_segmenta',
+    'fh_rechazo', 'bloquear'}. fh_veredicto/fh_segmenta se separan por FUENTE del detector.
+    Si el texto es un RECHAZO (el agente declinó correctamente), los hits se mueven a
+    fh_rechazo (buena señal) y NO cuentan como violación ni bloquean. bloquear respeta
+    MODO_BLOQUEO (Fase 1: siempre False → solo observar)."""
     cifra = cifras_no_respaldadas(texto, tool_jsons)
-    veredicto = detectar_steering(texto)                  # baranda de veredicto-de-zona (heredada)
-    segmenta = segmenta_por_clase_protegida(texto)        # baranda de segmentación (nueva)
+    veredicto_raw = detectar_steering(texto)              # baranda de veredicto-de-zona (heredada)
+    segmenta_raw = segmenta_por_clase_protegida(texto)    # baranda de segmentación (nueva)
+    rechazo = es_rechazo_fair_housing(texto) and bool(veredicto_raw or segmenta_raw)
+    veredicto = [] if rechazo else veredicto_raw
+    segmenta = [] if rechazo else segmenta_raw
     fh = _dedup(veredicto + segmenta)
-    return {"cifra": cifra, "fair_housing": fh, "fh_veredicto": veredicto,
-            "fh_segmenta": segmenta, "bloquear": bool(MODO_BLOQUEO and (cifra or fh))}
+    return {"cifra": cifra, "fair_housing": fh, "fh_veredicto": veredicto, "fh_segmenta": segmenta,
+            "fh_rechazo": _dedup(veredicto_raw + segmenta_raw) if rechazo else [],
+            "bloquear": bool(MODO_BLOQUEO and (cifra or fh))}
 
 
 def registrar_guardrail(resultado: dict, *, session: str | None = None) -> None:
@@ -319,3 +345,8 @@ def registrar_guardrail(resultado: dict, *, session: str | None = None) -> None:
         CONTADORES["fair_housing_segmenta"] += 1
         log.warning("crm_guardrail tipo=fair_housing_segmenta hits=%s session=%s",
                     resultado["fh_segmenta"], session)
+    if resultado.get("fh_rechazo"):
+        # El agente declinó correctamente un pedido de segmentación — señal POSITIVA, no violación.
+        CONTADORES["fair_housing_rechazo_ok"] += 1
+        log.info("crm_guardrail tipo=fair_housing_rechazo_ok (declinó bien) hits=%s session=%s",
+                 resultado["fh_rechazo"], session)

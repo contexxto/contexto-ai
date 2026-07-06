@@ -29,8 +29,10 @@ from langgraph.prebuilt import ToolNode, tools_condition
 # el ChatAnthropic de este módulo (mismo patrón de red corporativa).
 from app.agent.graph import _ssl_verify
 from app.agent.crm_tools import CRM_TOOLS
+from app.agent.crm_guardrails import (
+    evaluar_salida_crm, registrar_guardrail, texto_de_content, tool_jsons_del_turno,
+)
 from app.config import settings
-from app.fair_housing import detectar_steering
 
 
 class CRMState(TypedDict):
@@ -76,12 +78,16 @@ def _build_crm_graph() -> StateGraph:
 
     async def llm_node(state: CRMState) -> dict:
         response = await llm.ainvoke([SYSTEM_PROMPT_CRM] + state["messages"])
-        # Guardrail Fair Housing heredado (observabilidad), igual que el agente del comprador.
-        texto = getattr(response, "content", "")
-        if isinstance(texto, str):
-            hits = detectar_steering(texto)
-            if hits:
-                print(f"  [FAIR-HOUSING][CRM] posible steering en la salida: {hits}")
+        # Controles deterministas de honestidad (cifras + Fair Housing), primera clase.
+        # Fase 1: OBSERVAR (log + contadores), no bloquear. Ver crm_guardrails.MODO_BLOQUEO.
+        # Un fallo del guardrail NUNCA debe tumbar la respuesta.
+        try:
+            texto = texto_de_content(response.content)
+            resultado = evaluar_salida_crm(texto, tool_jsons_del_turno(state["messages"]))
+            registrar_guardrail(resultado)
+        except Exception as exc:  # noqa: BLE001
+            import logging
+            logging.getLogger("crm.guardrails").warning("guardrail falló (no bloqueante): %s", exc)
         return {"messages": [response]}
 
     tool_node = ToolNode(tools=CRM_TOOLS)

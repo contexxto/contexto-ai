@@ -776,6 +776,26 @@ def _funnel_y_orden(leads: list[dict]) -> dict:
     return {"total": len(leads), "funnel": funnel, "leads": leads}
 
 
+async def _leads_del_corredor(
+    db: AsyncSession, owner_user_id: str, owner_agency_id: str | None = None
+) -> list[dict]:
+    """Todos los interesados de TODOS los inmuebles del corredor (o su agencia).
+    Scoping SIEMPRE por owner (nunca por argumento del LLM) — reusable por el endpoint
+    del CRM y por las tools del agente del corredor (CRM Vivo). Ver docs/DISENO_CRM_Vivo.md."""
+    params: dict = {"u": owner_user_id}
+    where = "owner_user_id = :u"
+    if owner_agency_id:
+        where += " OR owner_agency_id = :a"
+        params["a"] = owner_agency_id
+    rows = (await db.execute(
+        text(f"SELECT id::text AS id, direccion_estandarizada AS direccion "
+             f"FROM activos_inmutables WHERE {where}"), params)).mappings().all()
+    all_leads: list[dict] = []
+    for r in rows:
+        all_leads.extend(await _leads_de_activo(db, r["id"], r["direccion"]))
+    return all_leads
+
+
 @router.get(
     "/mine/leads",
     summary="CRM del corredor — interesados de TODOS sus inmuebles",
@@ -788,18 +808,49 @@ async def mine_leads(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    params: dict = {"u": user.user_id}
-    where = "owner_user_id = :u"
-    if user.agency_id:
-        where += " OR owner_agency_id = :a"
-        params["a"] = user.agency_id
-    rows = (await db.execute(
-        text(f"SELECT id::text AS id, direccion_estandarizada AS direccion "
-             f"FROM activos_inmutables WHERE {where}"), params)).mappings().all()
-    all_leads: list[dict] = []
-    for r in rows:
-        all_leads.extend(await _leads_de_activo(db, r["id"], r["direccion"]))
-    return _funnel_y_orden(all_leads)
+    leads = await _leads_del_corredor(db, user.user_id, user.agency_id)
+    return _funnel_y_orden(leads)
+
+
+class CRMChatReq(BaseModel):
+    message: str = Field(..., min_length=1, max_length=2000)
+    session_id: str | None = Field(default=None, max_length=120)
+
+
+@router.post(
+    "/crm/chat",
+    summary="CRM Vivo — el corredor le habla a su CRM en lenguaje natural",
+    description="Agente conversacional del corredor sobre SUS propios interesados. Las cifras las "
+                "computa el motor (el LLM narra, no calcula). Solo corredores/inmobiliarias.",
+)
+@limiter.limit("20/minute")
+async def crm_chat(
+    request: Request,
+    payload: CRMChatReq,
+    user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    if user.rol not in ("corredor", "inmobiliaria"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="El CRM Vivo es para corredores/inmobiliarias.")
+    from langchain_core.messages import AIMessage, HumanMessage
+    from app.agent.crm_graph import compiled_crm_graph
+    sid = payload.session_id or f"crm-{user.user_id}"
+    # El owner sale del JWT y viaja en config → las tools scopean por él, nunca el LLM.
+    config = {"configurable": {"thread_id": sid,
+                               "owner_user_id": user.user_id, "owner_agency_id": user.agency_id}}
+    try:
+        final = await compiled_crm_graph.ainvoke(
+            {"messages": [HumanMessage(content=payload.message)]}, config=config)
+    except Exception:  # noqa: BLE001
+        import logging
+        logging.getLogger(__name__).exception("CRM Vivo: fallo invocando el agente del corredor")
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail="El asistente del CRM no está disponible en este momento.")
+    msgs = final.get("messages", [])
+    reply = next((m.content for m in reversed(msgs)
+                  if isinstance(m, AIMessage) and not getattr(m, "tool_calls", None)),
+                 "Sin respuesta del asistente.")
+    return {"reply": reply, "session_id": sid}
 
 
 @router.post(

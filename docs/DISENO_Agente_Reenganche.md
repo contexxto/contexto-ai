@@ -145,3 +145,18 @@ está empujando, no aportando).
 - **2026-07-06 — v0.1** — Doc ancla creado. Arranca Fase 1 (motor puro `reenganche.py`, activación de
   `dormido`, tabla `lead_actividad`, sugerencia en el CRM). Disparador por valor definido; autonomía
   y WhatsApp diferidos a Fase 2/3.
+- **2026-07-06 — v0.2** — Fase 1 mergeada (PR #75) + **rediseño visual del CRM** (KPIs, funnel rail,
+  conversación destilada inline).
+- **2026-07-06 — v0.3 — Fase 2 (cron DENTRO de la app, sin WhatsApp)** — `app/reenganche_cron.py`:
+  tarea de fondo en el `lifespan` (plan `starter` de Render no duerme) que barre leads dormidos, corre
+  el motor Fase 1 y **avisa al CORREDOR** por los canales que la app ya tiene (Web Push + email/Resend).
+  Endpoint manual `POST /assets/reenganche/scan` para piloto/demo. Config por entorno
+  (`REENGANCHE_CRON_ENABLED|INTERVAL|LIMITE`).
+  - **Hallazgo honesto de canal (importante):** los leads dormidos-no-calientes **no dejaron contacto
+    propio** (no pidieron corredor → sin email ni push del comprador). Por eso el cron avisa al
+    **corredor**, no al comprador. Alcanzar al comprador directo exige **capturar su contacto en el
+    chat** o **WhatsApp** — ese es el verdadero contenido de una futura Fase 3, no "otro canal".
+  - Supuesto operativo: una sola instancia web. El anti-repetición (`reenganche_enviado_en`) hace
+    inocuo un doble-barrido si algún día se escala horizontalmente.
+  - **Pendiente de decisión (piloto):** ¿auto-enviar el mensaje al comprador cuando SÍ tengamos su
+    canal (contacto capturado), o mantener siempre el humano-envía? Calibrar intervalo (hoy 6 h).

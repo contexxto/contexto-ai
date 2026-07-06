@@ -18,8 +18,13 @@ from app.routers import assets, auth, chat, ingest, match, review, vision
 async def lifespan(app: FastAPI):
     print("Contexto AI API iniciando...")
     await setup_checkpointer()
+    # Cron de reenganche: tarea de fondo DENTRO de la app (no un servicio aparte).
+    # Barre leads dormidos y avisa al corredor por push+email. Ver app/reenganche_cron.
+    from app.reenganche_cron import iniciar_cron, detener_cron
+    iniciar_cron()
     yield
     print("Contexto AI API apagando...")
+    await detener_cron()
     await shutdown_checkpointer()
 
 

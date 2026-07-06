@@ -802,6 +802,22 @@ async def mine_leads(
     return _funnel_y_orden(all_leads)
 
 
+@router.post(
+    "/reenganche/scan",
+    summary="Dispara un barrido de reenganche bajo demanda (piloto/ops)",
+    description="Ejecuta el cron de reenganche una vez: detecta leads dormidos con disparo "
+                "por valor y avisa a sus corredores por push+email. Idempotente (anti-repetición).",
+)
+@limiter.limit("6/hour")
+async def reenganche_scan(
+    request: Request,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    from app.reenganche_cron import escanear_reenganches
+    return await escanear_reenganches(db)
+
+
 @router.get(
     "/{activo_id}/leads",
     summary="Interesados del inmueble (CRM de intención por propiedad)",

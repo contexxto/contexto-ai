@@ -2,23 +2,33 @@
 
 **Fecha:** 2026-06-23 · Acompaña a `INTELIGENCIA_Sierra_Redfin_2026-06-23.md`
 
+> **Actualización — alineado a la regla "cero homer" de `TEARDOWN_y_PITCH_Linden_2026-06-24.md`:**
+> las cifras de terceros (Redfin 2×/+47% tours, Zoopla, ADT/Fortune 500) NO se usan como prueba
+> ni como meta de Contexto — solo como señal de tendencia del mercado, siempre citando la fuente.
+> La prueba del valor se mide SIEMPRE en los números del propio cliente (Linden). El entregable
+> del piloto es el lift medido en su flujo, no el espejo de una métrica ajena.
+
 ---
 
 ## A. Munición para el pitch de Linden
 
 Úsala cuando llegue su documentación y diseñes el alcance del piloto.
 
-**1. El argumento de autoridad (cabalga a Redfin):**
-> *"El portal #2 de EE.UU. acaba de probar que conversar le gana a filtrar: el doble de propiedades vistas, 47% más tours. No es teoría — es el mercado más maduro del mundo validando exactamente lo que les traemos a ustedes."*
+**1. El argumento del valor (la prueba va en TUS números):**
+> *"Lo que les traemos es simple: que su siguiente lead llegue calificado y su siguiente venta se sostenga en la verdad del lugar, no en la promesa. Y no les pido que me crean por una cifra ajena — se lo probamos en el piloto, con sus propios números: cuántos leads calientes rescatamos frente a su flujo de hoy."*
+
+*Contexto de tendencia (no cifra propia): la industria ya se mueve de filtrar a conversar. Si citas a un tercero (p. ej. Redfin), preséntalo como señal de mercado con su fuente —"el mercado más maduro ya va por ahí"—, nunca como un resultado que Contexto entregó.*
 
 **2. El argumento de por qué TÚ y no Redfin:**
-> *"Redfin empareja sobre su base de datos gringa. Aquí no hay un MLS limpio que copiar — y eso es justo donde ganamos: nosotros construimos el dato verificado de Puebla, casa por casa, con sus corredores. Lo que a ellos los hace fuertes allá, los hace inexistentes acá."*
+> *"Redfin empareja sobre su base de datos gringa. Aquí no hay un MLS limpio que copiar — y eso es justo donde ganamos: nosotros construimos el dato verificado de Puebla, casa por casa, con sus corredores. Lo que a ellos los hace fuertes allá, los hace inexistentes aquí."*
 
 **3. El argumento de honestidad (tu foso, lo que Redfin NO hace):**
 > *"Su buscador dice 'cocina moderna' porque está en el anuncio. El nuestro además te dice si la zona es ruidosa, qué tan caminable es de verdad, y marca qué dato está verificado y cuál no. Eso ningún portal lo da — porque no lo tienen."*
 
-**4. El argumento de precedente en TU caso de uso:**
-> *"ADT —seguridad, Fortune 500— ya usa esta clase de agente para calificar leads. La calificación conversacional de interesados no es experimento: es lo que las grandes ya hacen. Se lo traemos a Linden, a su medida y en su mercado."*
+**4. El argumento de categoría (validada por el mercado, no por nosotros):**
+> *"Calificar interesados con un agente conversacional ya es estándar entre operaciones grandes —ADT lo hace con Sierra, por ejemplo—. No es un experimento: es lo que ya funciona. Se lo traemos a Linden vertical, en su mercado y con el dato de entorno verificado de Puebla."*
+
+*Nunca sugerir que ADT usa a Contexto (es cliente de Sierra): la frase valida la CATEGORÍA, no presta tracción ajena.*
 
 ---
 
@@ -26,16 +36,17 @@
 
 Lo que Redfin hizo, tú ya tienes en germen. Esto es cerrar la brecha y, sobre todo, **PROBARLO**.
 
-### 🥇 1. La MÉTRICA de Redfin — tu prueba del piloto (máxima prioridad)
-Todo el pitch de Redfin es UN NÚMERO: 2× vistas, +47% tours. **Tú ya tienes el motor que lo mide** (`app/intencion.py` calcula la señal de alta intención: favorito/visita/handoff).
-- **Replicar:** instrumentar el piloto Linden para medir **lift de intención: conversacional vs. proceso actual**. Misma métrica que Redfin, en tu mercado.
-- **Por qué gana:** le entregas a Linden la prueba en SUS números — *"con nosotros, +X% de leads calientes vs. su flujo de hoy."* Eso cierra la renovación del piloto.
+### 🥇 1. La PRUEBA del piloto — lift de leads calientes en los números de Linden (máxima prioridad)
+El entregable que cierra la renovación no es copiar una cifra ajena: es medir, con el flujo real de Linden, cuántos leads calientes llegan calificados frente a su proceso de hoy. **Ya tienes el motor que lo calcula** (`app/intencion.py`: favorito/visita/handoff).
+- **Replicar:** instrumentar el piloto para medir el **lift de intención (conversacional vs. proceso actual de Linden)** — la prueba en SUS números.
+- **Por qué gana:** *"con nosotros, +X% de leads calientes vs. su flujo de hoy"* — medido, no prestado. Eso cierra la renovación del piloto.
 - **Esfuerzo:** bajo. El cálculo ya existe; falta registrar el evento y comparar contra base.
+- **Baranda:** el "2× / +47%" de Redfin es señal de tendencia de un tercero, jamás una meta ni un resultado de Contexto (regla "cero homer" del TEARDOWN).
 
-### 🥈 2. Conceptos de estilo de vida difusos → DATO VERIFICADO
-Redfin entiende "sensación de cabaña, buena luz". Tu agente entiende señales transaccionales (precio, visita, zona).
-- **Replicar:** que el agente mapee palabras difusas ("tranquilo", "para la familia", "céntrico") a tu **dato de entorno verificado** (ruido real, caminabilidad por Routes, marcas-ancla) — el giro que Redfin NO puede dar.
-- **Esfuerzo:** medio. El dato del entorno ya existe (`rutas.py`); falta el puente difuso→dato en el prompt/tools.
+### 🥈 2. Conceptos de estilo de vida difusos → DATO VERIFICADO ✅ HECHO (PR #70, `app/estilo_vida.py`)
+Redfin entiende "sensación de cabaña, buena luz". Tu agente ya traduce las palabras difusas a uno de cuatro destinos, sin improvisar.
+- **Hecho:** mapea "tranquilo", "caminable", "céntrico" a tu **dato de entorno verificado** (ruido, caminabilidad por Routes, servicios reales) — el giro que Redfin NO puede dar; y lo que no tiene dato ("vida nocturna") lo dice con honestidad.
+- **Baranda Fair Housing (clave):** "para la familia / para mis hijos" NO se traduce a un dato de zona — es clase protegida; el agente redirige a la necesidad objetiva (espacio, colegio cerca), nunca a un veredicto de "zona familiar". Ese era justo el error a evitar, y el diccionario lo bloquea por construcción.
 
 ### 🥉 3. El embudo fluido "500→5→100→10"
 Redfin amplía cuando no hay encaje ("relaja habitaciones, amplía radio"). Tu agente ya lo hizo a medias en el demo (amplió en González Suárez).

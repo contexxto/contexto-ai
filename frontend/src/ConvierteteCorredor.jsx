@@ -65,8 +65,9 @@ export default function ConvierteteCorredor({ onClose, onUpgraded }) {
           <div style={{ fontWeight: 800, fontSize: '1.05rem' }}>Conviértete en corredor</div>
         </div>
         <p style={{ fontSize: '.82rem', color: C.muted, margin: '0 0 16px' }}>
-          Activa tu cuenta para <strong style={{ color: C.tealHi }}>publicar inmuebles</strong>, generar QR para tus letreros
-          y recibir interesados con su agente 24/7.
+          Que tu próximo interesado llegue <strong style={{ color: C.tealHi }}>calificado y listo para avanzar</strong> —no un
+          “alguien preguntó”, sino alguien cuyo deseo ya encaja con el lugar real y con lo que puede pagar. Convierte porque
+          el dato del entorno está verificado. Publica tu inmueble, genera el QR de tu letrero y tu agente atiende 24/7.
         </p>
 
         <label style={labelStyle}>¿Cómo publicarás?</label>

@@ -20,11 +20,17 @@ La marca de Contexto es la honestidad del dato; este doc empieza aplicándosela 
 - **EN PRODUCCIÓN hoy:** el CRM **visual determinista** — funnel por estados, KPIs (`Interesados`,
   `Piden corredor`, `Activos`, `Por reenganchar`), **conversación destilada inline** con handoff, y el
   **agente de reenganche por valor**. Todo con números computados en Python, sin LLM.
-- **AÚN NO EXISTE (este doc lo diseña):** la **capa conversacional del corredor** — hablarle al CRM en
-  lenguaje natural, `chart_seed` (gráficos on-demand), un agente del corredor. Es el próximo incremento.
+- **EN PRODUCCIÓN desde 2026-07 (Fase 1, PR #81 + evals-gate):** la **capa conversacional del corredor** —
+  hablarle al CRM en lenguaje natural (tools `stats_embudo` + `timeline_de_lead` + caja de chat), con las
+  barandas de honestidad como **controles deterministas de primera clase** (`app/agent/crm_guardrails.py`)
+  y su **suite-gate** (`tests/test_crm_evals.py`, `tests/test_crm_scope.py`). En Fase 1 los controles
+  **observan** (log + contadores), aún no bloquean (ver §3.4).
+- **AÚN NO EXISTE:** `chart_seed` (gráficos on-demand, Fase 2), la tabla de proyección y la extensión a
+  inmobiliaria/promotor (Fase 3), y el **bloqueo/regeneración en vivo** de los controles (Fase 2, cuando la
+  tolerancia esté calibrada sobre tráfico del piloto).
 
-**Regla de pitch:** no decir "ya está construido" de la capa conversacional. Es roadmap alcanzable
-(~70% re-cableado), no algo hecho. Vender roadmap como producto violaría la regla de PROVENIENCIA.
+**Regla de pitch:** la capa conversacional ya existe pero es **asistente de consulta** (observa, no bloquea);
+`chart_seed` y el bloqueo en vivo son roadmap. No vender lo que aún es roadmap como hecho (PROVENIENCIA).
 
 ---
 
@@ -106,11 +112,24 @@ da 403). Pero las tools del agente NO reciben identidad → corren SQL sin filtr
   otro corredor.
 - Validar `_assert_owner` + prefijo de sesión en toda lectura.
 
-### 3.4 Verificable (gate, no disclaimer)
-Añadir **evals adversariales** en `evals/run_evals.py` — sin suite verde, no se lanza (`COMPLIANCE:49-50`):
-- `cifra_no_inventada` (pregunta cuyo dato no existe → responde "no tengo ese dato", no un número).
-- `crm_no_segmenta` (pedir agrupar por familia → rechazo).
-- `crm_scope` (pedir leads de otro corredor → 403/rechazo).
+### 3.4 Verificable (gate, no disclaimer) — ✅ CONSTRUIDO (2026-07)
+Las barandas 3.1 y 3.2 dejaron de vivir en el prompt: son **controles deterministas** en
+`app/agent/crm_guardrails.py`, cableados en `llm_node` (observan en Fase 1; `MODO_BLOQUEO` los vuelve
+bloqueantes en Fase 2). Su **suite-gate** (sin verde, no se lanza — `COMPLIANCE:49-50`):
+- `cifra_no_inventada` (`tests/test_crm_evals.py`) — la narración no puede afirmar un número sin respaldo
+  en las tools del turno; si la tool no trae dato → "no tengo ese dato", no un número. 30 casos catch/pass
+  (incl. formatos "5 mil"/"1,234", promedios/sumas/restas derivadas, y un falso-negativo documentado).
+- `crm_no_segmenta` (`tests/test_crm_evals.py`) — detector `segmenta_por_clase_protegida` (nuevo,
+  complementa `detectar_steering`); 15 catch + 14 pass, con guards fuertes de FP (etapa/frescura/score OK).
+- `crm_scope` (`tests/test_crm_scope.py`) — aserciones estructurales (introspección de `tool.args`,
+  comportamiento de `_owner`/`_match_lead`, contrato de fuente del WHERE): imposible por construcción tocar
+  leads de otro corredor; rojo si alguien agrega owner como argumento o quita el filtro.
+- `evals/crm_soak.py` — soak LLM-in-the-loop **opt-in** (fuera del gate rápido; cuesta tokens, no-determinista)
+  para cazar regresiones de prompt antes de un lanzamiento.
+
+**Deuda restante (Fase 2):** activar `MODO_BLOQUEO` (regenerar / degradar a "no tengo ese dato") una vez
+calibrada la tolerancia de redondeo sobre tráfico real; reforzar el detector de segmentación para eufemismos
+(hueco consciente de alta-precisión, igual que `fair_housing.py`).
 
 ---
 
@@ -205,3 +224,12 @@ sería otra demo que no escala (el 17%-ve-impacto del que se queja el estudio).
     `detectar_steering` corre sobre la salida pero es observabilidad (no bloquea) y está calibrado para
     el chat del comprador; el resumen de historiales es superficie nueva. Ambas son el gate #1 antes de
     abrir el CRM a corredores fuera del piloto de Carlos.
+- **2026-07-06 — v0.3 · Evals-gate construido (cierra la deuda de honestidad de v0.2)** —
+  `app/agent/crm_guardrails.py`: barandas 3.1 y 3.2 como **controles deterministas de primera clase**
+  (`cifras_no_respaldadas`, `segmenta_por_clase_protegida`, `revisar_fair_housing_crm`), cableados en
+  `llm_node` (observan; `MODO_BLOQUEO` off en Fase 1). Arreglado de paso el bug `isinstance(content,str)`
+  que se saltaba el guardrail cuando el modelo devolvía bloques. Suite-gate determinista:
+  `tests/test_crm_evals.py` (30 cifras + 29 segmentación) y `tests/test_crm_scope.py` (scope estructural);
+  +88 tests (suite total 383 verde). Soak opt-in en `evals/crm_soak.py`. Baterías adversariales generadas
+  por el workflow `crm-evals-gate-design` (diseño + casos verificados contra la forma real del JSON de las
+  tools). **Resuelto §3.4.** Pendiente Fase 2: activar bloqueo tras calibrar tolerancia en el piloto.

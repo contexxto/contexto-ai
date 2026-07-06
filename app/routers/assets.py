@@ -653,8 +653,14 @@ async def asset_anuncio(
 
 async def _leads_de_activo(db: AsyncSession, activo_id: str, direccion: str | None = None) -> list[dict]:
     """Interesados (deduplicados por dispositivo) de UN inmueble. Reutilizable por
-    el panel por-propiedad y por el CRM agregado del corredor."""
-    from app.routers.chat import intencion_de_sesion, ensure_handoff_tables
+    el panel por-propiedad y por el CRM agregado del corredor.
+
+    Anota cada lead con `frescura` (activo/dormido/frío) y, cuando un lead enfriado
+    tiene una señal transaccional a la que aportar valor, una `reenganche` sugerida
+    para que el CORREDOR la envíe (humano cierra). Ver docs/DISENO_Agente_Reenganche.md."""
+    from datetime import datetime, timezone
+    from app.routers.chat import intencion_de_sesion, ensure_handoff_tables, ensure_lead_actividad
+    from app.reenganche import clasificar_frescura, evaluar_reenganche
     # Fuente: checkpointer de LangGraph (thread_id == session_id, qr-{activo}-{device}-…).
     try:
         thread_ids = (await db.execute(
@@ -662,6 +668,7 @@ async def _leads_de_activo(db: AsyncSession, activo_id: str, direccion: str | No
             {"p": f"qr-{activo_id}-%"},
         )).scalars().all()
     except Exception:  # noqa: BLE001 — tabla aún no creada / checkpointer en memoria
+        await db.rollback()  # OBLIGATORIO: no dejar la sesión de request abortada (get_db commit → 500)
         thread_ids = []
     handoff_map: dict[str, dict] = {}
     try:
@@ -672,13 +679,57 @@ async def _leads_de_activo(db: AsyncSession, activo_id: str, direccion: str | No
         )).mappings().all()
         handoff_map = {r["session_id"]: {"estado": r["estado"], "email": r["lead_email"]} for r in h_rows}
     except Exception:  # noqa: BLE001
+        await db.rollback()  # OBLIGATORIO: no dejar la sesión de request abortada (get_db commit → 500)
         handoff_map = {}
+
+    # Marca de última interacción por lead → dimensión de TIEMPO del reenganche.
+    ahora = datetime.now(timezone.utc)
+    actividad_map: dict[str, datetime] = {}
+    try:
+        await ensure_lead_actividad(db)
+        a_rows = (await db.execute(
+            text("SELECT session_id, primera_actividad, ultima_actividad, reenganche_enviado_en "
+                 "FROM lead_actividad WHERE session_id LIKE :p"),
+            {"p": f"qr-{activo_id}-%"},
+        )).mappings().all()
+        actividad_map = {r["session_id"]: r for r in a_rows}
+    except Exception:  # noqa: BLE001 — tabla aún no creada / fallo transitorio
+        await db.rollback()  # OBLIGATORIO: no dejar la sesión de request abortada (get_db commit → 500)
+        actividad_map = {}
+
+    # Novedad verificada del inmueble (refuerza el ángulo del reenganche si aplica).
+    novedades: list[dict] = []
+    try:
+        fuente = (await db.execute(
+            text("SELECT walk_score_fuente FROM activos_inmutables WHERE id = :id"),
+            {"id": activo_id},
+        )).scalar()
+        if fuente == "osm":
+            novedades.append({
+                "tipo": "entorno",
+                "etiqueta": "la caminabilidad del entorno medida con comercios reales (no una estimación)",
+            })
+    except Exception:  # noqa: BLE001
+        await db.rollback()  # OBLIGATORIO: no dejar la sesión de request abortada (get_db commit → 500)
+        novedades = []
+
+    def _horas(ua: datetime | None) -> float | None:
+        if ua is None:
+            return None
+        if ua.tzinfo is None:
+            ua = ua.replace(tzinfo=timezone.utc)
+        return max(0.0, (ahora - ua).total_seconds() / 3600.0)
+
+    def _iso(v):
+        return v.isoformat() if v is not None else None
 
     prefix = f"qr-{activo_id}-"
     by_device: dict[str, dict] = {}
     for sid in thread_ids:
+        act = actividad_map.get(sid) or {}
+        horas = _horas(act.get("ultima_actividad"))
         try:
-            a = await intencion_de_sesion(sid)
+            a = await intencion_de_sesion(sid, horas_inactividad=horas)
         except Exception:  # noqa: BLE001
             continue
         if not a.get("turnos"):
@@ -686,14 +737,29 @@ async def _leads_de_activo(db: AsyncSession, activo_id: str, direccion: str | No
         device = sid[len(prefix):len(prefix) + 36] or sid
         ho = handoff_map.get(sid) or {}
         email = ho.get("email")
+        # Solo se sugiere reenganche a leads CONOCIDAMENTE dormidos (silencio por defecto:
+        # sin marca de tiempo no perseguimos). El motor puro igual excluye calientes/sin ángulo.
+        frescura = clasificar_frescura(horas)
+        reenganche = None
+        if frescura in ("dormido", "frio_profundo"):
+            h_reeng = _horas(act.get("reenganche_enviado_en"))  # anti-repetición
+            reenganche = evaluar_reenganche(
+                intencion=a, horas_inactividad=horas, direccion=direccion,
+                novedades=novedades, horas_desde_ultimo_reenganche=h_reeng,
+            )
         lead = {
             "session_id": sid, "activo_id": str(activo_id), "direccion": direccion,
             "lead": email or f"Lead #{device[:4]}",
-            "email": email,
+            "email": email, "fuente": "QR",
             "estado": a["estado"], "nivel": a["nivel"], "score": a["score"],
+            "mensajes": a.get("turnos") or 0,
             "resumen": a["resumen"], "razones": a["razones"],
             "handoff_sugerido": a["handoff_sugerido"], "accion_sugerida": a["accion_sugerida"],
             "handoff_estado": ho.get("estado"),
+            "frescura": frescura,
+            "primera_actividad": _iso(act.get("primera_actividad")),
+            "ultima_actividad": _iso(act.get("ultima_actividad")),
+            "reenganche": reenganche,
         }
         prev = by_device.get(device)
         if prev is None or (bool(lead["handoff_estado"]), lead["score"]) > (bool(prev["handoff_estado"]), prev["score"]):

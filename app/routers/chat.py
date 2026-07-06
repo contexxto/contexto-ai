@@ -607,6 +607,10 @@ async def chat(
 ):
     # Si el usuario está autenticado, la conversación queda ligada a él (privacidad).
     await _tag_session_owner(payload.session_id, user)
+    # Marca de última interacción del QR-lead (base del reenganche por valor). Fire-and-forget:
+    # no bloquea la respuesta y nunca rompe el chat. Cubre stream y no-stream (corre antes del branch).
+    import asyncio as _aio
+    _aio.create_task(marcar_actividad_lead(payload.session_id))
     if stream:
         return StreamingResponse(
             _stream_agent(payload.message, payload.session_id),
@@ -998,6 +1002,53 @@ async def ensure_handoff_tables(db) -> None:
     _handoff_ready = True
 
 
+# ── Actividad del lead (marca de última interacción → reenganche por valor) ──
+# Persiste el timestamp de última interacción de cada QR-lead. Es la base de la
+# dimensión de TIEMPO del motor de reenganche (app/reenganche.py): sin esto no se
+# puede saber quién está 'dormido'. Tabla ligera, autocreada en runtime (como
+# handoff) para no exigir SQL a mano en el deploy.
+_LEAD_ACTIVIDAD_DDL = (
+    "CREATE TABLE IF NOT EXISTS lead_actividad ("
+    "session_id text PRIMARY KEY, activo_id uuid, "
+    "primera_actividad timestamptz DEFAULT now(), "
+    "ultima_actividad timestamptz DEFAULT now(), "
+    "reenganche_enviado_en timestamptz)"
+)
+_lead_actividad_ready = False
+
+
+async def ensure_lead_actividad(db) -> None:
+    """Crea la tabla lead_actividad si no existe (idempotente, una vez por proceso)."""
+    global _lead_actividad_ready
+    if _lead_actividad_ready:
+        return
+    await db.execute(text(_LEAD_ACTIVIDAD_DDL))
+    await db.commit()
+    _lead_actividad_ready = True
+
+
+async def marcar_actividad_lead(session_id: str) -> None:
+    """Registra 'ahora' como última interacción de un QR-lead. Best-effort y no
+    bloqueante: si algo falla, el chat nunca se rompe. Solo aplica a sesiones QR
+    (las que nacen del inmueble = las que tienen un corredor dueño a quien reenganchar)."""
+    if not session_id.startswith("qr-"):
+        return
+    activo = activo_de_session(session_id)
+    try:
+        async with AsyncSessionLocal() as db:
+            await ensure_lead_actividad(db)
+            await db.execute(
+                text(
+                    "INSERT INTO lead_actividad (session_id, activo_id) VALUES (:s, :a) "
+                    "ON CONFLICT (session_id) DO UPDATE SET ultima_actividad = now()"
+                ),
+                {"s": session_id, "a": activo},
+            )
+            await db.commit()
+    except Exception:  # noqa: BLE001 — marcar actividad jamás debe romper el chat
+        pass
+
+
 def activo_de_session(session_id: str) -> str | None:
     """qr-{activo_uuid(36)}-{device_uuid} → activo_uuid (posición fija; el device también es uuid)."""
     if session_id.startswith("qr-") and len(session_id) >= 39:
@@ -1222,9 +1273,11 @@ async def estado_handoff(request: Request, session_id: str, desde: int = 0) -> d
             "mensajes": [{"id": r["id"], "autor": r["autor"], "texto": r["texto"]} for r in rows]}
 
 
-async def intencion_de_sesion(session_id: str) -> dict:
+async def intencion_de_sesion(session_id: str, horas_inactividad: float | None = None) -> dict:
     """Carga el estado de una sesión y corre el motor de intención. Reutilizable
-    por el endpoint de sesión y por el panel de interesados del inmueble."""
+    por el endpoint de sesión y por el panel de interesados del inmueble.
+
+    horas_inactividad: si se pasa, permite derivar el estado 'dormido' (reenganche)."""
     from app.intencion import analizar_intencion
 
     config = _langgraph_config(session_id)
@@ -1277,6 +1330,7 @@ async def intencion_de_sesion(session_id: str) -> dict:
         es_qr=session_id.startswith("qr-"),
         uso_tool_inversion=uso_inversion,
         pidio_corredor=pidio_corredor,
+        horas_inactividad=horas_inactividad,
     )
     analisis["session_id"] = session_id
     return analisis

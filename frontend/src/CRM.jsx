@@ -148,7 +148,7 @@ export default function CRM() {
   }
 
   const railRow = (e) => {
-    const count = d.funnel?.[e] || 0
+    const count = d?.funnel?.[e] || 0   // d puede ser null en el primer render (loading)
     const on = filtro === e
     return (
       <button key={e} onClick={() => setFiltro(on ? null : e)}

@@ -1,4 +1,4 @@
-# Contexto AI — El Claude Inmobiliario y de Inversión
+# Contexto AI — El motor que convierte la intención en una venta que se sostiene, sobre la verdad verificada del lugar
 ### North Star · Brújula de producto y narrativa
 
 **Fecha:** 2026-06-15
@@ -11,7 +11,12 @@
 
 No la que te vende (portales). No la enciclopedia que describe zonas (ChatGPT/Google). **La asesora honesta que verifica el activo en el terreno y razona si vivir, rentar o invertir tiene sentido — con la evidencia en la mano.**
 
-"El Claude de X" ≠ "el ChatGPT de X". Claude = **confianza, honestidad, razonamiento, seguridad.** Esa es la marca que heredamos: la IA inmobiliaria *en la que se puede confiar*.
+> **Nota interna (uso técnico / sala de inversión — NO para copy público):** la analogía "el
+> Claude inmobiliario" resume la marca que heredamos —confianza, honestidad, razonamiento,
+> seguridad ("el Claude de X" ≠ "el ChatGPT de X")—. Es un anclaje útil frente a un inversor
+> tech, pero JAMÁS el titular de cara a un corredor o comprador: ahí se lidera con el valor
+> (que su próximo lead llegue calificado y su venta se sostenga en la verdad del lugar). Por eso
+> salió del título de esta brújula.
 
 ---
 

@@ -19,6 +19,7 @@ from app.config import settings
 from app.database import AsyncSessionLocal
 from app.entorno import limpiar_texto_servicios
 from app.entorno_curacion import aplicar_curacion
+from app.estilo_vida import evaluar_concepto_estilo_vida
 
 
 async def _fetch_rows(query: str, params: dict) -> list[dict[str, Any]]:
@@ -570,6 +571,36 @@ async def tool_connect_with_broker(config: RunnableConfig) -> str:
     })
 
 
+@tool
+async def tool_traducir_estilo_de_vida(concepto: str) -> str:
+    """
+    Translate a FUZZY lifestyle concept the user expressed ("quiero algo con buena vida
+    nocturna", "un lugar tranquilo y familiar", "cerca de un colegio") into what you're
+    ALLOWED to say about it. Call this whenever the user describes what they want in
+    subjective/lifestyle terms rather than a literal spec (bedrooms, budget) — BEFORE you
+    respond, not after. Follow its result literally; do not invent your own mapping.
+
+    Returns JSON with up to four buckets (a compound phrase can land in more than one):
+      - "existentes": already-computed dimensions (tranquilidad/caminable/transporte/
+        area_verde) — cite the property's real value WITH its source (ATRIBUCIÓN NO
+        JUICIO: the adjective is the user's, the data is yours, the conclusion is theirs).
+      - "servicios": a real named service (mall/supermarket/health/pharmacy/school) that
+        may or may not be near THIS property — check servicios_cercanos and cite it if
+        present; say honestly if it's not, never invent one.
+      - "protegidos": the concept ties to a PROTECTED trait (family/kids, age, national
+        origin, religion, gender, disability) or to "seguridad" (a subjective verdict,
+        never a measurement — a decision already made in this product). NEVER translate
+        these to a zone judgment or a data dimension. Redirect: ask what they NEED from
+        the property, not who they are.
+      - "sin_dato": a legitimate lifestyle interest (nightlife, gastronomy, culture,
+        sports, cafés for remote work) that we do NOT have verified data for yet. Say so
+        honestly — never estimate or invent a number for these.
+    All four lists empty = nothing recognized; fall back to the general ATRIBUCIÓN NO
+    JUICIO principle in your instructions.
+    """
+    return json.dumps(evaluar_concepto_estilo_vida(concepto), ensure_ascii=False)
+
+
 AGENT_TOOLS = [
     tool_find_assets_by_text,
     tool_geocode_address,
@@ -578,4 +609,5 @@ AGENT_TOOLS = [
     tool_analyze_location,
     tool_analyze_investment,
     tool_connect_with_broker,
+    tool_traducir_estilo_de_vida,
 ]

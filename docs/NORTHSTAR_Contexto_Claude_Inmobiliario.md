@@ -7,9 +7,11 @@
 
 ## La visión en una frase
 
-> **La IA en la que confías para la decisión financiera más grande de tu vida.**
+> **Que la intención de una persona se vuelva una venta que se sostiene — encajando su deseo con el lugar real (verificado) y con lo que de verdad puede pagar.**
 
-No la que te vende (portales). No la enciclopedia que describe zonas (ChatGPT/Google). **La asesora honesta que verifica el activo en el terreno y razona si vivir, rentar o invertir tiene sentido — con la evidencia en la mano.**
+No la que te vende (portales). No la enciclopedia que describe zonas (ChatGPT/Google). **La asesora honesta que verifica el activo en el terreno y razona si vivir, rentar o invertir tiene sentido — con la evidencia en la mano.** Por eso el comprador confía; y por eso el corredor, la inmobiliaria o el desarrollador recibe un lead calificado, no un "alguien preguntó".
+
+*La IA en la que confías para la decisión financiera más grande de tu vida.*
 
 > **Nota interna (uso técnico / sala de inversión — NO para copy público):** la analogía "el
 > Claude inmobiliario" resume la marca que heredamos —confianza, honestidad, razonamiento,

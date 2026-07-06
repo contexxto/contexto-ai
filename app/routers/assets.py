@@ -870,6 +870,50 @@ async def reenganche_scan(
 
 
 @router.get(
+    "/metricas/lift",
+    summary="Métrica de lift de intención del corredor (North Star, dato propio)",
+    description="Números propios del piloto anclados a EVENTO (no a un Δscore circular): tasa de handoff "
+                "(pidió corredor), reactivación tocado-vs-holdout (contrafactual del reenganche), funnel "
+                "crudo y cohortes maduros/en-vuelo. Si N<umbral devuelve conteo + 'acumulando', nunca un "
+                "ratio sobre N minúsculo. Solo corredores/inmobiliarias. Ver docs/DISENO_Metrica_Lift_Intencion.md.",
+)
+@limiter.limit("20/minute")
+async def metricas_lift(
+    request: Request,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    if user.rol not in ("corredor", "inmobiliaria"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Las métricas del piloto son para corredores/inmobiliarias.")
+    from datetime import datetime, timezone
+    from app.lift import resumen_lift
+    from app.routers.chat import ensure_lead_actividad
+
+    leads = await _leads_del_corredor(db, user.user_id, user.agency_id)
+    # Unidad de la métrica = session_id. _leads_del_corredor deduplica por device (1 lead por dispositivo);
+    # asume 1 sid = 1 device (cierto hoy: el sid es determinista por (activo, device)). Si un device
+    # generara >1 sid, un lead marcado con grupo podría no entrar en 'sids'. Deuda latente documentada.
+    sids = [l["session_id"] for l in leads if l.get("session_id")]
+    actividad_por_sid: dict[str, dict] = {}
+    if sids:
+        try:
+            await ensure_lead_actividad(db)
+            filas = (await db.execute(
+                text("SELECT session_id, primera_actividad, ultima_actividad, "
+                     "       reenganche_grupo, reenganche_elegible_en "
+                     "FROM lead_actividad WHERE session_id = ANY(:ids)"),
+                {"ids": sids})).mappings().all()
+            actividad_por_sid = {r["session_id"]: dict(r) for r in filas}
+        except Exception:  # noqa: BLE001 — sin actividad aún no debe romper la métrica
+            await db.rollback()
+    # Unidad = LEAD; handoff es EVENTO (pidió corredor), no un score.
+    leads_u = [{"session_id": l.get("session_id"), "estado": l.get("estado"),
+                "handoff": bool(l.get("handoff_estado"))} for l in leads]
+    return resumen_lift(leads_u, actividad_por_sid, datetime.now(timezone.utc))
+
+
+@router.get(
     "/{activo_id}/leads",
     summary="Interesados del inmueble (CRM de intención por propiedad)",
 )

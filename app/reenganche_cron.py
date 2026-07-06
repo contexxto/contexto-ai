@@ -43,6 +43,16 @@ def _limite() -> int:
         return 200
 
 
+def _holdout_pct() -> int:
+    """% de dormidos elegibles que se RETIENE como control (no se les manda el touch automático),
+    el contrafactual de la métrica de lift. Default 20 (aprobado para el piloto). 0 = desactivado.
+    Ver docs/DISENO_Metrica_Lift_Intencion.md §3."""
+    try:
+        return min(100, max(0, int(os.getenv("REENGANCHE_HOLDOUT_PCT", "20"))))
+    except ValueError:
+        return 20
+
+
 def habilitado() -> bool:
     return os.getenv("REENGANCHE_CRON_ENABLED", "1").strip().lower() not in ("0", "false", "no", "")
 
@@ -77,23 +87,29 @@ async def _escanear_reenganches(db) -> dict:
     """Un barrido: detecta leads dormidos con disparo por valor y avisa al corredor.
     Idempotente vía reenganche_enviado_en (anti-repetición). Devuelve un resumen
     {escaneados, disparados, corredores}."""
-    from app.reenganche import evaluar_reenganche, HORAS_DORMIDO, HORAS_ANTI_REPETICION
+    from app.reenganche import evaluar_reenganche, HORAS_DORMIDO
     from app.routers.chat import intencion_de_sesion, _corredor_de_activo, ensure_lead_actividad
     from app.notifications import send_notification
+    from app.lift import grupo_holdout
 
+    pct = _holdout_pct()
     await ensure_lead_actividad(db)
     try:
+        # UNA dosis automática por lead de por vida: se escanea hasta que dispara una vez; luego queda
+        # 'tocado' (enviado) o 'holdout' (retenido) y no vuelve a entrar. Exposición SIMÉTRICA entre brazos
+        # → el contrafactual tocado-vs-holdout es válido (1 vs 0, no dosis-variable vs 0). Además alinea con
+        # "aportar valor sin presionar": el corredor humano retoma a mano; el cron no pinguea en bucle.
         filas = (await db.execute(
             text(
                 "SELECT session_id, activo_id::text AS activo_id, ultima_actividad, "
                 "       lead_email, lead_push, consent_reenganche_at "
                 "FROM lead_actividad "
                 "WHERE ultima_actividad < now() - make_interval(hours => :dorm) "
-                "  AND (reenganche_enviado_en IS NULL "
-                "       OR reenganche_enviado_en < now() - make_interval(hours => :rep)) "
+                "  AND reenganche_enviado_en IS NULL "   # nunca tocado
+                "  AND reenganche_grupo IS NULL "        # ni asignado a un grupo (tocado/holdout)
                 "ORDER BY ultima_actividad ASC LIMIT :lim"
             ),
-            {"dorm": HORAS_DORMIDO, "rep": HORAS_ANTI_REPETICION, "lim": _limite()},
+            {"dorm": HORAS_DORMIDO, "lim": _limite()},
         )).mappings().all()
     except Exception:  # noqa: BLE001 — tabla aún no creada / fallo transitorio
         await db.rollback()
@@ -136,6 +152,7 @@ async def _escanear_reenganches(db) -> dict:
         return info
 
     disparados: list[str] = []
+    holdouts: list[str] = []
     por_corredor: dict[str, dict] = {}
     a_comprador: list[dict] = []
     for f in filas:
@@ -155,6 +172,12 @@ async def _escanear_reenganches(db) -> dict:
         )
         if not decision:
             continue
+        # Holdout (contrafactual de la métrica de lift): a un % de los elegibles NO se les manda el
+        # touch automático — quedan marcados como control desde su momento de elegibilidad. El corredor
+        # humano igual puede retomarlos a mano desde el CRM. Ver docs/DISENO_Metrica_Lift_Intencion.md §3.
+        if grupo_holdout(sid, pct) == "holdout":
+            holdouts.append(sid)
+            continue
         disparados.append(sid)
         # Fase 3: ¿le escribimos al COMPRADOR directo? (opt-in con canal capturado).
         if auto_lead() and f["consent_reenganche_at"] is not None and (f["lead_email"] or f["lead_push"]):
@@ -169,20 +192,38 @@ async def _escanear_reenganches(db) -> dict:
             grupo = por_corredor.setdefault(clave, {"email": info["email"], "sub": info["sub"], "n": 0})
             grupo["n"] += 1
 
-    if not disparados:
-        return {"escaneados": len(filas), "disparados": 0, "comprador": 0, "corredores": 0}
+    # Marcar el HOLDOUT (contrafactual): grupo + momento de elegibilidad, SIN envío. elegible_en se fija
+    # una sola vez (COALESCE) para anclar la primera elegibilidad. No re-entra al barrido (SELECT lo excluye).
+    if holdouts:
+        try:
+            await db.execute(
+                text("UPDATE lead_actividad SET reenganche_grupo = 'holdout', "
+                     "reenganche_elegible_en = COALESCE(reenganche_elegible_en, now()) "
+                     "WHERE session_id = ANY(:ids)"),
+                {"ids": holdouts},
+            )
+            await db.commit()
+        except Exception:  # noqa: BLE001
+            await db.rollback()
 
-    # Marcar anti-repetición ANTES de notificar: si un envío falla, no se reintenta
-    # en bucle (mejor perder un aviso que spammear al corredor).
+    if not disparados:
+        return {"escaneados": len(filas), "disparados": 0, "holdout": len(holdouts),
+                "comprador": 0, "corredores": 0}
+
+    # Marcar anti-repetición + grupo 'tocado' + elegibilidad ANTES de notificar: si un envío falla, no se
+    # reintenta en bucle (mejor perder un aviso que spammear al corredor).
     try:
         await db.execute(
-            text("UPDATE lead_actividad SET reenganche_enviado_en = now() WHERE session_id = ANY(:ids)"),
+            text("UPDATE lead_actividad SET reenganche_enviado_en = now(), reenganche_grupo = 'tocado', "
+                 "reenganche_elegible_en = COALESCE(reenganche_elegible_en, now()) "
+                 "WHERE session_id = ANY(:ids)"),
             {"ids": disparados},
         )
         await db.commit()
     except Exception:  # noqa: BLE001
         await db.rollback()
-        return {"escaneados": len(filas), "disparados": len(disparados), "comprador": 0, "corredores": 0}
+        return {"escaneados": len(filas), "disparados": len(disparados), "holdout": len(holdouts),
+                "comprador": 0, "corredores": 0}
 
     # Fase 3: al COMPRADOR directo (dejó canal + consentimiento) → le llega el mensaje de
     # valor con deep-link al inmueble. Es el reenganche que él mismo pidió recibir.
@@ -221,9 +262,9 @@ async def _escanear_reenganches(db) -> dict:
         except Exception as exc:  # noqa: BLE001
             log.error("Reenganche cron: fallo notificando corredor: %s", exc)
 
-    log.info("Reenganche cron: %d escaneados, %d disparados, %d a comprador, %d a corredor",
-             len(filas), len(disparados), enviados_comprador, notificados)
-    return {"escaneados": len(filas), "disparados": len(disparados),
+    log.info("Reenganche cron: %d escaneados, %d disparados, %d holdout, %d a comprador, %d a corredor",
+             len(filas), len(disparados), len(holdouts), enviados_comprador, notificados)
+    return {"escaneados": len(filas), "disparados": len(disparados), "holdout": len(holdouts),
             "comprador": enviados_comprador, "corredores": notificados}
 
 

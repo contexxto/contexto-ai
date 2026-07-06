@@ -1019,6 +1019,10 @@ _LEAD_ACTIVIDAD_DDL = [
     "ALTER TABLE lead_actividad ADD COLUMN IF NOT EXISTS lead_telefono text",
     "ALTER TABLE lead_actividad ADD COLUMN IF NOT EXISTS lead_push jsonb",
     "ALTER TABLE lead_actividad ADD COLUMN IF NOT EXISTS consent_reenganche_at timestamptz",
+    # Métrica de lift: holdout del reenganche (contrafactual). 'tocado'|'holdout' asignado por hash
+    # estable del session_id en el momento de volverse elegible. Ver docs/DISENO_Metrica_Lift_Intencion.md.
+    "ALTER TABLE lead_actividad ADD COLUMN IF NOT EXISTS reenganche_grupo text",
+    "ALTER TABLE lead_actividad ADD COLUMN IF NOT EXISTS reenganche_elegible_en timestamptz",
 ]
 _lead_actividad_ready = False
 

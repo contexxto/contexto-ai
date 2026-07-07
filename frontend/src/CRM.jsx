@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import axios from 'axios'
-import { Users, RefreshCw, Flame, MapPin, Sparkles, X,
+import { Users, RefreshCw, Flame, MapPin, Sparkles,
          TrendingUp, Clock, AlertTriangle, ChevronRight } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import { LeadChat } from './LeadsPanel'
@@ -217,8 +217,14 @@ export default function CRM() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 2px 12px', flexShrink: 0 }}>
         <Users size={20} color={C.teal} />
         <h1 style={{ margin: 0, fontSize: '1.15rem' }}>CRM · Interesados</h1>
+        <button onClick={() => setAsistente(a => !a)} title="Pregúntale a tu CRM"
+          style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, fontSize: '.8rem',
+                   fontWeight: 600, padding: '6px 13px', borderRadius: 999, cursor: 'pointer', color: '#0E0D13',
+                   border: 'none', background: `linear-gradient(135deg, ${C.teal}, ${C.tealHi})` }}>
+          <Sparkles size={15} /> Asistente
+        </button>
         <button onClick={cargar} title="Actualizar"
-          style={{ marginLeft: 'auto', background: 'none', border: 'none', color: C.muted, cursor: 'pointer',
+          style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer',
                    transform: loading ? 'rotate(180deg)' : 'none', transition: 'transform .4s' }}>
           <RefreshCw size={16} />
         </button>
@@ -275,20 +281,11 @@ export default function CRM() {
         </div>
       )}
 
-      {/* Widget flotante del ASISTENTE del CRM — siempre accesible, SEPARADO de las
-          conversaciones de clientes (el panel derecho). Así nunca se confunden. */}
-      <button onClick={() => setAsistente(a => !a)}
-        title={asistente ? 'Cerrar asistente' : 'Pregúntale a tu CRM'}
-        style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 1200, width: 56, height: 56,
-                 borderRadius: 999, border: 'none', cursor: 'pointer', display: 'flex',
-                 alignItems: 'center', justifyContent: 'center', color: '#0E0D13',
-                 background: `linear-gradient(135deg, ${C.teal}, ${C.tealHi})`,
-                 boxShadow: '0 8px 24px rgba(45,189,182,.45)' }}>
-        {asistente ? <X size={22} /> : <Sparkles size={26} />}
-      </button>
+      {/* Ventana flotante del ASISTENTE del CRM (se abre desde el botón "Asistente" del header).
+          Anclada arriba-derecha para no pisar el input de la conversación del cliente (abajo). */}
       {asistente && (
-        <div style={{ position: 'fixed', bottom: 92, right: 24, zIndex: 1200,
-                      width: 'min(400px, calc(100vw - 32px))', height: 'min(600px, 72vh)',
+        <div style={{ position: 'fixed', top: 62, right: 24, zIndex: 1200,
+                      width: 'min(400px, calc(100vw - 32px))', height: 'min(600px, calc(100vh - 96px))',
                       display: 'flex', flexDirection: 'column', overflow: 'hidden',
                       background: C.panel, border: `1px solid ${C.line}`, borderRadius: 18,
                       padding: '14px 12px', boxShadow: '0 16px 48px rgba(0,0,0,.55)' }}>

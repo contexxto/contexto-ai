@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import axios from 'axios'
-import { Users, RefreshCw, Flame, MapPin, Sparkles, X,
+import { Users, RefreshCw, Flame, MapPin, Sparkles,
          TrendingUp, Clock, AlertTriangle, ChevronRight } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import { LeadChat } from './LeadsPanel'
@@ -52,12 +52,18 @@ export default function CRM() {
   const [asistente, setAsistente] = useState(false) // widget flotante del asistente del CRM
   const [filtro, setFiltro] = useState(null) // filtro por etapa del embudo
   const [wide, setWide] = useState(() => window.matchMedia('(min-width: 900px)').matches)
+  // ¿Hay espacio para ACOPLAR el copiloto como 3ª columna sin apretar la conversación?
+  // Abajo de este ancho, el copiloto abre como overlay a la derecha en vez de columna.
+  const [puedeAcoplar, setPuedeAcoplar] = useState(() => window.matchMedia('(min-width: 1180px)').matches)
 
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 900px)')
     const h = (e) => setWide(e.matches)
     mq.addEventListener('change', h)
-    return () => mq.removeEventListener('change', h)
+    const mq2 = window.matchMedia('(min-width: 1180px)')
+    const h2 = (e) => setPuedeAcoplar(e.matches)
+    mq2.addEventListener('change', h2)
+    return () => { mq.removeEventListener('change', h); mq2.removeEventListener('change', h2) }
   }, [])
 
   async function cargar() {
@@ -206,7 +212,7 @@ export default function CRM() {
         Selecciona a alguien de la lista para <span style={{ color: C.tealHi }}>ver y retomar su conversación</span> con el agente.
       </div>
       <div style={{ color: C.muted, fontSize: '.78rem', marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-        <Sparkles size={14} color={C.teal} /> ¿Preguntas sobre tu cartera? Usa el asistente, abajo a la derecha.
+        <Sparkles size={14} color={C.teal} /> ¿Preguntas sobre tu cartera? Abre el <span style={{ color: C.tealHi }}>Copiloto</span> (arriba a la derecha).
       </div>
     </div>
   )
@@ -217,8 +223,15 @@ export default function CRM() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 2px 12px', flexShrink: 0 }}>
         <Users size={20} color={C.teal} />
         <h1 style={{ margin: 0, fontSize: '1.15rem' }}>CRM · Interesados</h1>
+        <button onClick={() => setAsistente(a => !a)} title="Tu copiloto de cartera"
+          style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, fontSize: '.8rem',
+                   fontWeight: 600, padding: '6px 13px', borderRadius: 999, cursor: 'pointer', color: '#0E0D13',
+                   border: 'none', background: asistente ? 'rgba(45,189,182,.15)' : `linear-gradient(135deg, ${C.teal}, ${C.tealHi})`,
+                   ...(asistente ? { color: C.tealHi, border: `1px solid ${C.line}` } : {}) }}>
+          <Sparkles size={15} /> Copiloto
+        </button>
         <button onClick={cargar} title="Actualizar"
-          style={{ marginLeft: 'auto', background: 'none', border: 'none', color: C.muted, cursor: 'pointer',
+          style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer',
                    transform: loading ? 'rotate(180deg)' : 'none', transition: 'transform .4s' }}>
           <RefreshCw size={16} />
         </button>
@@ -249,7 +262,7 @@ export default function CRM() {
 
       {d && d.total > 0 && (
         <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 14 }}>
-          {wide && railPanel}
+          {wide && !(asistente && puedeAcoplar) && railPanel}
           {(wide || !sel) && (
             <div style={{ width: wide ? 358 : '100%', flexShrink: 0, overflowY: 'auto',
                           display: 'flex', flexDirection: 'column', gap: 9 }}>
@@ -272,27 +285,20 @@ export default function CRM() {
             </div>
           )}
           {(wide || sel) && drawer}
-        </div>
-      )}
-
-      {/* Widget flotante del ASISTENTE del CRM — siempre accesible, SEPARADO de las
-          conversaciones de clientes (el panel derecho). Así nunca se confunden. */}
-      <button onClick={() => setAsistente(a => !a)}
-        title={asistente ? 'Cerrar asistente' : 'Pregúntale a tu CRM'}
-        style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 1200, width: 56, height: 56,
-                 borderRadius: 999, border: 'none', cursor: 'pointer', display: 'flex',
-                 alignItems: 'center', justifyContent: 'center', color: '#0E0D13',
-                 background: `linear-gradient(135deg, ${C.teal}, ${C.tealHi})`,
-                 boxShadow: '0 8px 24px rgba(45,189,182,.45)' }}>
-        {asistente ? <X size={22} /> : <Sparkles size={26} />}
-      </button>
-      {asistente && (
-        <div style={{ position: 'fixed', bottom: 92, right: 24, zIndex: 1200,
-                      width: 'min(400px, calc(100vw - 32px))', height: 'min(600px, 72vh)',
-                      display: 'flex', flexDirection: 'column', overflow: 'hidden',
-                      background: C.panel, border: `1px solid ${C.line}`, borderRadius: 18,
-                      padding: '14px 12px', boxShadow: '0 16px 48px rgba(0,0,0,.55)' }}>
-          <CRMChat onClose={() => setAsistente(false)} />
+          {/* EL COPILOTO — riel acoplado (columna dedicada en ancho; overlay a la derecha en angosto).
+              Context-aware: recibe el lead abierto (sel) para adaptar sus sugerencias. Nunca pisa el
+              input de la conversación del cliente porque es su propia columna. */}
+          {asistente && (
+            <div style={puedeAcoplar
+              ? { width: 372, flexShrink: 0, minHeight: 0, display: 'flex', flexDirection: 'column',
+                  border: `1px solid ${C.line}`, borderRadius: 16, padding: '14px 12px',
+                  background: `linear-gradient(180deg, rgba(45,189,182,.08) 0%, ${C.bg} 55%)` }
+              : { position: 'fixed', top: 0, right: 0, bottom: 0, width: 'min(430px, 100vw)', zIndex: 1200,
+                  display: 'flex', flexDirection: 'column', padding: '16px 14px',
+                  borderLeft: `1px solid ${C.line}`, background: C.panel, boxShadow: '-8px 0 44px rgba(0,0,0,.55)' }}>
+              <CRMChat lead={sel} onClose={() => setAsistente(false)} />
+            </div>
+          )}
         </div>
       )}
     </div>

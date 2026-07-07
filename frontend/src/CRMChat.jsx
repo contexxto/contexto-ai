@@ -18,13 +18,23 @@ const SUGERENCIAS = [
 // CRM Vivo: el corredor le habla a su CRM. Las cifras las computa el motor, el LLM narra.
 // El hilo es PERSISTENTE (backend crm-{user_id}, checkpointer Postgres): al recargar se retoma
 // la conversación. session_id: null → el servidor deriva el hilo estable del JWT.
-export default function CRMChat({ onClose } = {}) {
+export default function CRMChat({ onClose, lead } = {}) {
   const [msgs, setMsgs] = useState([])   // { autor: 'corredor'|'crm', texto }
   const [texto, setTexto] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [cargando, setCargando] = useState(true)   // recuperando el historial al montar
   const [error, setError] = useState(null)
   const finRef = useRef(null)
+
+  // Context-awareness (lo que lo vuelve COPILOTO, no chatbot): si el corredor tiene un interesado
+  // abierto, el copiloto se enfoca en él y adapta sus sugerencias. El agente resuelve la referencia
+  // solo (por email / "Lead #xxxx") con su tool de timeline.
+  const nom = lead?.lead ? (lead.lead.includes('@') ? lead.lead.split('@')[0] : lead.lead) : null
+  const sugerencias = nom ? [
+    `Resúmeme la conversación de ${nom}`,
+    `¿Por qué ${nom} está en ${lead.estado || 'esa etapa'}?`,
+    `Prepárame un mensaje para retomar a ${nom}`,
+  ] : SUGERENCIAS
 
   useEffect(() => { finRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [msgs, enviando])
 
@@ -67,13 +77,13 @@ export default function CRMChat({ onClose } = {}) {
 
   const bubble = (autor) => autor === 'corredor'
     ? { align: 'flex-end', bg: 'linear-gradient(90deg,#2DBDB6,#5EEAD4)', color: '#0E0D13', lbl: 'Tú' }
-    : { align: 'flex-start', bg: 'rgba(255,255,255,.05)', color: C.text, lbl: 'Tu CRM' }
+    : { align: 'flex-start', bg: 'rgba(255,255,255,.05)', color: C.text, lbl: 'Copiloto' }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexShrink: 0 }}>
         <Sparkles size={18} color={C.teal} />
-        <div style={{ fontWeight: 800, fontSize: '1rem' }}>Pregúntale a tu CRM</div>
+        <div style={{ fontWeight: 800, fontSize: '1rem' }}>Copiloto</div>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
           {msgs.length > 0 && (
             <button onClick={nuevaConversacion} title="Nueva conversación"
@@ -84,7 +94,7 @@ export default function CRMChat({ onClose } = {}) {
             </button>
           )}
           {onClose && (
-            <button onClick={onClose} title="Cerrar asistente"
+            <button onClick={onClose} title="Cerrar copiloto"
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none',
                        border: 'none', color: C.muted, cursor: 'pointer', padding: 2 }}>
               <X size={18} />
@@ -93,22 +103,47 @@ export default function CRMChat({ onClose } = {}) {
         </div>
       </div>
 
+      {/* Barra de CONTEXTO: cuando hay un interesado abierto, el copiloto se enfoca en él y ofrece
+          acciones específicas de un clic. Persiste durante toda la conversación. */}
+      {nom && (
+        <div style={{ flexShrink: 0, marginBottom: 9, padding: '8px 10px', borderRadius: 12,
+                      background: 'rgba(45,189,182,.08)', border: `1px solid ${C.line}` }}>
+          <div style={{ fontSize: '.72rem', color: C.muted, display: 'flex', alignItems: 'center', gap: 5, marginBottom: 7 }}>
+            <span style={{ color: C.tealHi }}>◎ Enfocado en</span> <strong style={{ color: C.text }}>{nom}</strong>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {sugerencias.map(s => (
+              <button key={s} onClick={() => enviar(s)}
+                style={{ fontSize: '.7rem', padding: '4px 9px', borderRadius: 999, cursor: 'pointer',
+                         background: 'rgba(45,189,182,.1)', border: `1px solid ${C.line}`, color: C.tealHi }}>
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0, padding: '4px 2px' }}>
         {cargando && (
           <div style={{ color: C.muted, fontSize: '.8rem', padding: '8px 2px' }}>Recuperando tu conversación…</div>
         )}
         {!cargando && msgs.length === 0 && (
           <div style={{ color: C.muted, fontSize: '.82rem', lineHeight: 1.5, padding: '8px 2px' }}>
-            Pregúntame por tu cartera — con datos reales, sin inventar. Por ejemplo:
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 10 }}>
-              {SUGERENCIAS.map(s => (
-                <button key={s} onClick={() => enviar(s)}
-                  style={{ fontSize: '.72rem', padding: '6px 11px', borderRadius: 999, cursor: 'pointer',
-                           background: 'rgba(45,189,182,.08)', border: `1px solid ${C.line}`, color: C.tealHi }}>
-                  {s}
-                </button>
-              ))}
-            </div>
+            {nom ? (
+              <>Estoy enfocado en <strong style={{ color: C.tealHi }}>{nom}</strong>. Usa las acciones de arriba, o pregúntame lo que quieras — con datos reales, sin inventar.</>
+            ) : (
+              <>Pregúntame por tu cartera — con datos reales, sin inventar. Por ejemplo:
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 10 }}>
+                  {SUGERENCIAS.map(s => (
+                    <button key={s} onClick={() => enviar(s)}
+                      style={{ fontSize: '.72rem', padding: '6px 11px', borderRadius: 999, cursor: 'pointer',
+                               background: 'rgba(45,189,182,.08)', border: `1px solid ${C.line}`, color: C.tealHi }}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         )}
         {msgs.map((m, i) => {
@@ -135,7 +170,7 @@ export default function CRMChat({ onClose } = {}) {
                     background: 'rgba(20,44,43,.5)', border: `1px solid ${C.line}`, borderRadius: 20, padding: 7 }}>
         <textarea value={texto} onChange={e => setTexto(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviar() } }}
-          placeholder="Pregúntale a tu CRM…" rows={1}
+          placeholder={nom ? `Pregúntame sobre ${nom}…` : 'Pregúntale a tu Copiloto…'} rows={1}
           style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: C.text, fontSize: '.88rem',
                    resize: 'none', maxHeight: 100, fontFamily: 'inherit', padding: '6px 8px' }} />
         <button onClick={() => enviar()} disabled={!texto.trim() || enviando}

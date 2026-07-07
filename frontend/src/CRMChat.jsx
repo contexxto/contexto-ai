@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import axios from 'axios'
 import { Send, Sparkles } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
+import { renderMarkdown } from './markdown'
 
 const C = {
   bg: '#16151E', panel: '#1E1D28', teal: '#2DBDB6', tealHi: '#5EEAD4',
@@ -73,9 +74,12 @@ export default function CRMChat() {
           return (
             <div key={i} style={{ alignSelf: b.align, maxWidth: '86%' }}>
               <div style={{ fontSize: '.6rem', color: C.muted, marginBottom: 2, textAlign: b.align === 'flex-end' ? 'right' : 'left' }}>{b.lbl}</div>
-              <div style={{ background: b.bg, color: b.color, padding: '8px 12px', borderRadius: 14, fontSize: '.84rem', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>
-                {m.texto}
-              </div>
+              {m.autor === 'crm'
+                ? <div className="crm-md" style={{ background: b.bg, color: b.color, padding: '8px 12px', borderRadius: 14, fontSize: '.84rem', lineHeight: 1.45 }}
+                    dangerouslySetInnerHTML={{ __html: renderMarkdown(m.texto) }} />
+                : <div style={{ background: b.bg, color: b.color, padding: '8px 12px', borderRadius: 14, fontSize: '.84rem', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>
+                    {m.texto}
+                  </div>}
             </div>
           )
         })}

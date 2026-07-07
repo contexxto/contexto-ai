@@ -30,7 +30,7 @@ from langgraph.prebuilt import ToolNode, tools_condition
 # Importar graph.py garantiza que el monkey-patch SSL ya esté aplicado antes de crear
 # el ChatAnthropic de este módulo (mismo patrón de red corporativa).
 from app.agent.graph import _ssl_verify
-from app.agent.crm_tools import CRM_TOOLS
+from app.agent.crm_tools import CRM_TOOLS, ESTRATEGA_TOOLS
 from app.agent.crm_guardrails import (
     evaluar_salida_crm, registrar_guardrail, texto_de_content, tool_jsons_del_turno,
 )
@@ -87,9 +87,12 @@ sus cierres, qué patrón ves, cuál es su mejor movimiento. Hablas español neu
 CÓMO TRABAJAS:
 - Usa tool_stats_embudo para leer su cartera completa (total, por etapa, calientes, dormidos, por
   reenganchar). Con eso INTERPRETAS y priorizas — no listas datos crudos, das una recomendación.
-- Tu foco es la CARTERA COMPLETA, no una conversación suelta. Diseccionar el chat de UN interesado es
-  trabajo del COPILOTO — no necesitas el texto crudo de las charlas para dar la jugada de cartera; si el
-  corredor quiere bucear en un interesado puntual, dile que abra el Copiloto en ese interesado.
+- SOLO ves el PANORAMA de cartera (agregados). NO tienes acceso al chat, al presupuesto declarado ni a
+  las objeciones de un interesado puntual — ese detalle es del COPILOTO. Si el corredor pide el presupuesto
+  exacto, la conversación completa o qué frena a UN interesado, dile que abra el Copiloto en ese interesado;
+  NO ofrezcas traerlo tú (no tienes esa herramienta).
+- PRECISIÓN DE PALABRA: "total" es cuántos interesados hay en su cartera; NO los llames "activos" (eso es
+  frescura — interacción reciente — un dato DISTINTO que no tienes). Di "N interesados en tu cartera".
 
 CUANDO ABRES (proactivo): da de una la jugada de la semana — 2 a 4 movidas priorizadas, cada una con el
 PORQUÉ (la señal de intención). Ej. ILUSTRATIVO (usa SIEMPRE las cifras REALES de la herramienta, jamás
@@ -140,13 +143,19 @@ def _build_crm_graph() -> StateGraph:
     )
     base_llm = ChatAnthropic(model=settings.llm_model, temperature=0.2, max_tokens=1500)
     base_llm.__dict__["_async_client"] = _client
+    # Herramientas POR AGENTE: el Copiloto (táctico) ve la cartera + el timeline por-lead; el Estratega
+    # SOLO ve la cartera agregada — sin tool_timeline_de_lead → no puede jalar el chat crudo de un interesado
+    # (elimina por construcción la fuga de clase protegida al contexto y respeta la frontera con el Copiloto).
     llm = base_llm.bind_tools(CRM_TOOLS)
+    llm_cartera = base_llm.bind_tools(ESTRATEGA_TOOLS)
 
     async def llm_node(state: CRMState, config=None) -> dict:
         cfg = (config or {}).get("configurable") or {}
         modo = cfg.get("modo")
-        # Dos agentes, un solo grafo: el prompt se elige por 'modo' (copiloto táctico / estratega de cartera).
-        prompt = SYSTEM_PROMPT_ESTRATEGA if modo == "estratega" else SYSTEM_PROMPT_CRM
+        es_estratega = modo == "estratega"
+        # Dos agentes, un solo grafo: prompt Y herramientas se eligen por 'modo'.
+        prompt = SYSTEM_PROMPT_ESTRATEGA if es_estratega else SYSTEM_PROMPT_CRM
+        active_llm = llm_cartera if es_estratega else llm
         # Nombre del corredor (del JWT/perfil, vía config) para que firme los mensajes que redacte.
         # Se inyecta como instrucción POR-LLAMADA (no se persiste en el hilo del checkpointer).
         extra = []
@@ -154,7 +163,7 @@ def _build_crm_graph() -> StateGraph:
         if nombre:
             extra = [SystemMessage(content=f"El corredor se llama «{nombre}». Cuando redactes un mensaje "
                                            f"para un interesado, fírmalo con «{nombre}» — nunca con «[Tu nombre]».")]
-        response = await llm.ainvoke([prompt] + extra + state["messages"])
+        response = await active_llm.ainvoke([prompt] + extra + state["messages"])
         # Controles deterministas de honestidad (cifras + Fair Housing), primera clase.
         # La baranda de CIFRAS sigue en OBSERVAR (log + contadores; se calibra en Fase 2, más falsos
         # positivos). Pero el ESTRATEGA es PROACTIVO — su primer mensaje sale SIN humano en el loop y
@@ -166,7 +175,7 @@ def _build_crm_graph() -> StateGraph:
             texto = texto_de_content(response.content)
             resultado = evaluar_salida_crm(texto, tool_jsons_del_turno(state["messages"]))
             registrar_guardrail(resultado, session=cfg.get("thread_id"))
-            if (modo == "estratega" and resultado.get("fair_housing")
+            if (es_estratega and resultado.get("fair_housing")
                     and not getattr(response, "tool_calls", None)):
                 logging.getLogger("crm.guardrails").warning(
                     "estratega FH fail-closed: reencuadrando salida con segmentación por clase protegida hits=%s",

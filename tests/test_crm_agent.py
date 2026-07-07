@@ -1,5 +1,5 @@
 """Tests del CRM Vivo (agente del corredor) — matcher puro + smokes de montaje."""
-from app.agent.crm_tools import _match_lead, CRM_TOOLS
+from app.agent.crm_tools import _match_lead, CRM_TOOLS, ESTRATEGA_TOOLS
 
 
 LEADS = [
@@ -50,6 +50,15 @@ def test_crm_tools_registradas():
     assert len(CRM_TOOLS) == 2
     nombres = {t.name for t in CRM_TOOLS}
     assert "tool_stats_embudo" in nombres and "tool_timeline_de_lead" in nombres
+
+
+def test_estratega_no_ve_timeline_por_lead():
+    # Frontera por-agente: el Estratega SOLO ve la cartera agregada. Sin tool_timeline_de_lead no
+    # puede jalar el chat crudo de un interesado → no hay fuga de clase protegida a su contexto, y
+    # el detalle por-lead queda del lado del Copiloto (por construcción, no solo por prompt).
+    nombres = {t.name for t in ESTRATEGA_TOOLS}
+    assert nombres == {"tool_stats_embudo"}
+    assert "tool_timeline_de_lead" not in nombres
 
 
 def test_grafo_crm_compila():

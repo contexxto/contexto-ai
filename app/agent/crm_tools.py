@@ -125,4 +125,5 @@ async def tool_timeline_de_lead(referencia: str, config: RunnableConfig) -> str:
     }, ensure_ascii=False)
 
 
-CRM_TOOLS = [tool_stats_embudo, tool_timeline_de_lead]
+CRM_TOOLS = [tool_stats_embudo, tool_timeline_de_lead]           # Copiloto (táctico): cartera + timeline por-lead
+ESTRATEGA_TOOLS = [tool_stats_embudo]                            # Estratega (cartera): SOLO agregados, sin chat crudo

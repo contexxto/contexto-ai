@@ -34,7 +34,8 @@ log = logging.getLogger("crm.guardrails")
 # Observabilidad: los evals leen estos contadores para afirmar que un caso adversarial
 # fue detectado; en producción alimentan la métrica de violaciones del piloto.
 CONTADORES: dict[str, int] = {"cifra": 0, "fair_housing_veredicto": 0,
-                              "fair_housing_segmenta": 0, "fair_housing_rechazo_ok": 0}
+                              "fair_housing_segmenta": 0, "fair_housing_rechazo_ok": 0,
+                              "promesa_inflada": 0}
 
 # Fase 1 = observar. Flip a True (Fase 2, evals verdes) para bloquear/regenerar.
 MODO_BLOQUEO = False
@@ -176,6 +177,11 @@ def _numeros_respaldados(tool_jsons: list[str]) -> list[float]:
         crudo = tj
         try:
             obj = json.loads(tj)
+            # El playbook de venta (tool_playbook_venta) es COACHING, no dato de cartera: sus cifras
+            # (de los moguls: 33-Touch, "6.4%+10%", "2000≈$1M"…) NUNCA deben respaldar una cifra narrada
+            # sobre la cartera del corredor. Se marca con "_no_respaldo" y se SALTA entero (ni tipado ni blando).
+            if isinstance(obj, dict) and obj.get("_no_respaldo"):
+                continue
             _walk_nums(obj, resp)
             # el transcript es palabra del comprador, no dato de cartera → fuera del respaldo blando
             if isinstance(obj, dict) and "transcript" in obj:
@@ -303,6 +309,48 @@ def _dedup(hits: list[tuple[str, str]]) -> list[tuple[str, str]]:
     return out
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Baranda 3.5 — no SOBRE-PROMESA (futuro-garantizado / resultado inflado)
+# ─────────────────────────────────────────────────────────────────────────────
+# El playbook de venta (tool_playbook_venta) rutea tácticas 🟡 ("vender el outcome") cuyo candado
+# PROHÍBE inflar el resultado. Este detector es ese candado hecho control determinista: caza la
+# sobre-promesa si el LLM aplica la táctica SIN su candado — afirmar un futuro/resultado como CERTEZA
+# ("seguro sube", "garantizado se revaloriza", "vas a ser feliz", "inversión segura"). Alta precisión:
+# la afirmación honesta con dato + rótulo de estimación ("el tráfico ronda ~5 mil/día") NO cae.
+_RE_PROMESA: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"\b(seguro|sin duda|fijo|de todas formas|100%|cien por ciento)\b"
+                r"(?:(?![.!?]).){0,40}\b(sube\w*|va a subir|se revaloriz\w+|se apreci\w+|"
+                r"gana\w* valor|no baja|no puede bajar)\b"),
+     "afirmar como CERTEZA que el inmueble sube/se revaloriza"),
+    (re.compile(r"\b(se revaloriz\w+|revalorizaci\w+|plusval\w+|se apreci\w+)\b"
+                r"(?:(?![.!?]).){0,25}\b(seguro|garantiz\w+|fijo|sin duda|si o si)\b"),
+     "prometer revalorización/plusvalía garantizada"),
+    (re.compile(r"\b(te )?garantiz\w+\b(?:(?![.!?]).){0,40}\b(gana\w*|cierr\w*|vend\w*|"
+                r"resultado|revaloriz\w+|feliz|inversi\w+)\b"),
+     "garantizar un resultado (cierre/ganancia/revalorización)"),
+    (re.compile(r"\b(vas? a ser|ser[aá]s?|te vas a sentir)\b(?:(?![.!?]).){0,20}"
+                r"\b(feliz|felic\w+|pleno|realizad[oa])\b"),
+     "prometer felicidad como consecuencia de la compra"),
+    (re.compile(r"\b(inversi[oó]n|negocio|compra)\b(?:(?![.!?]).){0,15}"
+                r"\b(segura|garantizada|sin riesgo|infalible|no falla)\b"),
+     "vender como inversión segura / sin riesgo"),
+]
+
+
+def detectar_promesa_inflada(texto: str | None) -> list[tuple[str, str]]:
+    """(fragmento, motivo) si el texto PROMETE un resultado/futuro como CERTEZA (sube seguro, se
+    revaloriza garantizado, 'vas a ser feliz', inversión segura). Es el candado de las tácticas 🟡
+    del playbook vuelto control determinista. Alta precisión: la afirmación con dato verificado y
+    rótulo de estimación no cae; caza la CERTEZA sobre el futuro que el agente no puede sostener."""
+    n = _norm(texto)
+    hits: list[tuple[str, str]] = []
+    for rx, motivo in _RE_PROMESA:
+        m = rx.search(n)
+        if m:
+            hits.append((m.group(0).strip(), motivo))
+    return _dedup(hits)
+
+
 def revisar_fair_housing_crm(texto: str | None) -> list[tuple[str, str]]:
     """Compone el detector de veredicto-de-zona (detectar_steering) + el de segmentación
     del CRM, deduplicando solapes por fragmento."""
@@ -321,12 +369,13 @@ def evaluar_salida_crm(texto: str | None, tool_jsons: list[str]) -> dict:
     cifra = cifras_no_respaldadas(texto, tool_jsons)
     veredicto_raw = detectar_steering(texto)              # baranda de veredicto-de-zona (heredada)
     segmenta_raw = segmenta_por_clase_protegida(texto)    # baranda de segmentación (nueva)
+    promesa = detectar_promesa_inflada(texto)             # baranda de sobre-promesa (playbook 🟡 sin candado)
     rechazo = es_rechazo_fair_housing(texto) and bool(veredicto_raw or segmenta_raw)
     veredicto = [] if rechazo else veredicto_raw
     segmenta = [] if rechazo else segmenta_raw
     fh = _dedup(veredicto + segmenta)
     return {"cifra": cifra, "fair_housing": fh, "fh_veredicto": veredicto, "fh_segmenta": segmenta,
-            "fh_rechazo": _dedup(veredicto_raw + segmenta_raw) if rechazo else [],
+            "fh_rechazo": _dedup(veredicto_raw + segmenta_raw) if rechazo else [], "promesa": promesa,
             "bloquear": bool(MODO_BLOQUEO and (cifra or fh))}
 
 
@@ -350,3 +399,7 @@ def registrar_guardrail(resultado: dict, *, session: str | None = None) -> None:
         CONTADORES["fair_housing_rechazo_ok"] += 1
         log.info("crm_guardrail tipo=fair_housing_rechazo_ok (declinó bien) hits=%s session=%s",
                  resultado["fh_rechazo"], session)
+    if resultado.get("promesa"):
+        CONTADORES["promesa_inflada"] += 1
+        log.warning("crm_guardrail tipo=promesa_inflada hits=%s session=%s",
+                    resultado["promesa"], session)

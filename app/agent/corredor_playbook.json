@@ -1,0 +1,1985 @@
+{
+ "_meta": "Corredor-Brain destilado — tácticas de venta HONESTA (foso + ruteo por agente). NO es verdad Whaber: cada táctica es 'per <Mogul>' con su candado. Regenerar con scripts/export_corredor_playbook.py tras cambiar la bóveda.",
+ "n_tacticas": 79,
+ "n_evitar": 12,
+ "tacticas": [
+  {
+   "titulo": "33-Touch (nurture de la base)",
+   "tipo": "tactic",
+   "mogul": "Gary Keller",
+   "agente": "estratega",
+   "foso": "verde",
+   "candado": "\"Cadencia anual de valor sobre la esfera de influencia (base de datos que ya te conoce). Es nurture de relación, no presión de venta. Pasa G1/G2/G3 limpio: aporta valor real, no fabrica urgencia (G3), no segmenta por clase protegida (G2). El ratio ~12:2 es dato de MREA atribuido a Keller, no promesa Whaber (G1).\"",
+   "que_es": "per Gary Keller (MREA), un programa de 33 toques al año a cada contacto de tu esfera de influencia (base de datos de gente que ya te conoce: clientes pasados, referidos, conocidos). La idea es mantenerte presente con valor de forma constante durante el año — u…",
+   "como_aplica": "Es puro Estratega / cartera: no es un mensaje suelto (eso sería Copiloto), es una cadencia anual planificada sobre toda la base. El Estratega ayuda al corredor a: - Mantener y segmentar la base (esfera de influencia vs. leads fríos) sin que se enfríe. - Programar el mix de 33 toques repartidos en el año, cada uno con un motivo de valor (no \"¿ya vas a comprar?\"). - Priorizar a quién tocar cuándo, y medir el retorno de…",
+   "tags": [
+    "nurture",
+    "cartera",
+    "esfera-de-influencia",
+    "cadencia",
+    "base-de-datos"
+   ],
+   "aliases": [
+    "33 Touch",
+    "33-Touch Program",
+    "programa de 33 toques"
+   ]
+  },
+  {
+   "titulo": "8x8 (onboarding de un contacto nuevo)",
+   "tipo": "tactic",
+   "mogul": "Gary Keller",
+   "agente": "estratega",
+   "foso": "verde",
+   "candado": "\"Secuencia de onboarding: un toque por semana durante 8 semanas para 'sembrar' un contacto nuevo (recién conocido o recién cerrado) en la esfera de influencia. Es nurture de relación, no presión. Pasa G1/G2/G3 limpio: valor por toque, sin urgencia fabricada (G3), pareja para todos (G2), sin cifras inventadas (G1).\"",
+   "que_es": "per Gary Keller (MREA), el 8x8 es una secuencia de onboarding intensiva: un toque por semana durante 8 semanas (8 contactos en 8 semanas) para grabarte en la memoria de un contacto nuevo — alguien que acabas de conocer, un referido fresco o un cliente recién c…",
+   "como_aplica": "Material del Estratega / cartera: define cuándo y con qué mix se ejecuta la ráfaga de arranque, no la redacción concreta de un mensaje (eso, si acaso, lo baja el Copiloto). El Estratega ayuda al corredor a: - Disparar el 8x8 automáticamente cuando entra un contacto nuevo (referido, conocido, cierre reciente) → onboarding a la base. - Secuenciar los 8 toques en 8 semanas con motivos de valor distintos, sin repetir ni…",
+   "tags": [
+    "nurture",
+    "onboarding",
+    "cartera",
+    "esfera-de-influencia",
+    "cadencia"
+   ],
+   "aliases": [
+    "8 by 8",
+    "8x8 program",
+    "programa 8x8"
+   ]
+  },
+  {
+   "titulo": "ACA (calentar un contacto - Acknowledge, Compliment, Ask)",
+   "tipo": "tactic",
+   "mogul": "Alex Hormozi",
+   "agente": "copiloto",
+   "foso": "amarillo",
+   "candado": "\"CANDADO: ACA es un molde honesto de contacto en caliente SOLO si el reconocimiento y el cumplido son GENUINOS (algo real que sabes del contacto, con su consentimiento a que le escribas) y la pregunta enlaza a una necesidad real, no a un guion de manipulación. Resbala a 🔴 si el cumplido es adulación calculada para baja…",
+   "que_es": "(per Alex Hormozi) — molde de tres pasos para calentar un contacto cuando responde a tu mensaje: Acknowledge (reconocer algo real de la persona: \"veo que cambiaste de trabajo / tuviste un bebé\"), Compliment (un cumplido genuino ligado a eso), Ask (una pregunta…",
+   "como_aplica": "Molde para el Copiloto al redactar un primer mensaje o un reenganche (par natural del Agente de Reenganche del CRM): - El Copiloto usa lo que ya sabe legítimamente del contacto (una interacción previa, un cambio que el propio contacto compartió) para abrir con calidez, no con un pitch frío. - El Ask enlaza a la intención declarada: \"¿sigues buscando algo cerca del trabajo?\" — no a un supuesto sobre la persona. - Es l…",
+   "tags": [
+    "copiloto",
+    "outreach",
+    "mensaje",
+    "rapport",
+    "reenganche"
+   ],
+   "aliases": [
+    "ACA",
+    "acknowledge compliment ask",
+    "warm outreach",
+    "calentar contacto"
+   ]
+  },
+  {
+   "titulo": "Afiliados que duelen de buenos (peel-a-corner)",
+   "tipo": "tactic",
+   "mogul": "Alex Hormozi",
+   "agente": "estratega",
+   "foso": "amarillo",
+   "candado": "\"CANDADO: la estructura (dar a un aliado el 100% de una 'esquina' de tu servicio para que te mande leads pre-calificados, en vez de una comisión simbólica) es un modelo de alianza limpio y afín al 'allied resources' de Keller. Candado G3: el aliado y el corredor deben ser transparentes sobre la relación (el comprador s…",
+   "que_es": "(per Alex Hormozi) — si quieres que un afiliado/aliado de verdad te mande clientes, la oferta tiene que ser tan buena que duela. En vez de darle un 20% de comisión (que nadie mueve), \"pelas una esquina\" de tu producto y le das el 100% de esa esquina: él la ven…",
+   "como_aplica": "Material del Estratega / cartera — es el mecanismo detrás de los \"allied resources\" de Keller, pero con incentivo fuerte: - El corredor estructura una alianza con un negocio que ya tiene a su comprador ideal (constructora, administrador de edificios, contador, abogado, mueblería) y le da el 100% de una \"esquina\" real de valor (p. ej. un paquete de acompañamiento/reporte de zona) para que refiera compradores calificad…",
+   "tags": [
+    "estratega",
+    "alianzas",
+    "afiliados",
+    "referidos",
+    "lead-gen"
+   ],
+   "aliases": [
+    "affiliate model",
+    "peel a corner",
+    "afiliados que duelen",
+    "100% de una esquina",
+    "alianzas de referidos"
+   ]
+  },
+  {
+   "titulo": "Arrancar con trabajo gratis para ganar tracción (primeros clientes)",
+   "tipo": "tactic",
+   "mogul": "Alex Hormozi",
+   "agente": "corredor",
+   "foso": "amarillo",
+   "candado": "\"CANDADO: útil como mindset de arranque para un corredor NUEVO (dar valor real primero, pedir reseña honesta y feedback, subir precio con la tracción). Candado G1: la reseña se pide 'si la merece' — jamás comprada, inflada ni guionada (reseña falsa es fraude). Candado G3: la 'escasez real al llenar cupos' que Hormozi c…",
+   "que_es": "(per Alex Hormozi) — para conseguir los primeros clientes cuando aún no tienes experiencia ni reputación, ofrece tu servicio gratis a cambio de tres cosas honestas: que lo usen, que den feedback y que dejen una reseña si la merece. La lógica: bajas la barrera…",
+   "como_aplica": "Materia de coaching del corredor (agente: corredor) — es táctica de arranque, no de operación establecida: - Para un corredor nuevo (o entrando a un nicho/zona nueva): ofrecer acompañamiento honesto a bajo o nulo costo a los primeros clientes, con transparencia (\"estoy construyendo mi cartera en esta zona\"), a cambio de reseña honesta + testimonio + referidos. - Alimenta directamente Marca personal del corredor (la p…",
+   "tags": [
+    "corredor",
+    "tracción",
+    "primeros-clientes",
+    "reseñas",
+    "mindset"
+   ],
+   "aliases": [
+    "work for free",
+    "trabajar gratis",
+    "free training project",
+    "primeros clientes",
+    "reps de venta"
+   ]
+  },
+  {
+   "titulo": "Atajo del novato: pegarse a un top producer",
+   "tipo": "tactic",
+   "mogul": "Barbara Corcoran, Ryan Serhant",
+   "agente": "corredor",
+   "foso": "verde",
+   "candado": "\"🟢 Pasa limpio: es coaching de carrera para el agente novato (aprende por ósmosis junto a un superstar y hereda su overflow de negocio). No toca dato inventado (G1), no orienta al cliente por clase protegida (G2), no manipula al comprador (G3). Es consejo de trayectoria humana, no una jugada de venta.\"",
+   "que_es": "(per Barbara Corcoran) Para el agente que empieza, el atajo a la competencia es trabajar para un broker fenomenal o unirse a un equipo top-producing —\"beg, steal, or borrow to get that position\"— porque estar junto a un superstar comprime años de aprendizaje:…",
+   "como_aplica": "Es coaching de carrera (agente: corredor) para el corredor LATAM que empieza o que pivota: - Prioriza la ubicación de aprendizaje sobre el título/comisión inicial. Un puesto junto a un top producer local vale más al inicio que un porcentaje mayor solo; el aprendizaje por ósmosis + el overflow de negocio construyen la cartera sola. - La rampa es real — no la subestimes. Planea ~18 meses de construcción antes de un ing…",
+   "tags": [
+    "carrera",
+    "coaching",
+    "mentoria",
+    "novato",
+    "osmosis"
+   ],
+   "aliases": [
+    "Pegarse a un top producer",
+    "Atajo del novato",
+    "Aprender por ósmosis",
+    "Unirse a un equipo top",
+    "Beg steal or borrow the position"
+   ]
+  },
+  {
+   "titulo": "Calificar el lead por fricción (pasos y aplicación)",
+   "tipo": "tactic",
+   "mogul": "Alex Hormozi",
+   "agente": "estratega",
+   "foso": "amarillo",
+   "candado": "\"CANDADO: la fricción (más pasos, una aplicación, preguntas abiertas) filtra por INTENCIÓN, seriedad y encaje declarados — NUNCA por clase protegida ni su proxy (G2). Las preguntas de la aplicación piden meta, presupuesto y no-negociables del comprador (dato que él aporta), no 'perfil' inferido. Prohibido usarla para o…",
+   "que_es": "(per Alex Hormozi) — de sus cinco palancas de calidad de lead, las honestas: subir la fricción del embudo sube la calidad (baja el volumen). Más pasos para llegar al contacto = leads que ya tomaron acción = más serios. Una aplicación (con preguntas de párrafo…",
+   "como_aplica": "Materia del Estratega (diseño del embudo del corredor / de Whaber), no un guion por-lead: - Fricción por intención, no por barrera arbitraria: un formulario breve donde el comprador declara su intención real (para qué busca, presupuesto, no-negociables, timing) califica mucho mejor que \"llámame\". Eso alimenta directo el encaje relativo a intención de Whaber — el mismo dato que califica es el que sirve al match. - Pre…",
+   "tags": [
+    "leads",
+    "calificacion",
+    "embudo",
+    "estratega",
+    "friccion"
+   ],
+   "aliases": [
+    "calificar lead",
+    "friccion como filtro",
+    "aplicación de calificación",
+    "lead quality",
+    "número de pasos"
+   ]
+  },
+  {
+   "titulo": "Calificar por timing (when do you need it for)",
+   "tipo": "tactic",
+   "mogul": "Barbara Corcoran",
+   "agente": "copiloto",
+   "foso": "amarillo",
+   "candado": "\"🟡 El núcleo es honesto y útil: calificar a un interesado por su TIMELINE DECLARADO (¿para cuándo lo necesitas?) prioriza el esfuerzo del corredor sin tocar dato inventado (G1) ni clase protegida (G2). Pero Corcoran lo enmarca como 'urgencia = 90% de la venta', lo que resbala hacia explotar/fabricar presión (G3). Canda…",
+   "que_es": "(per Barbara Corcoran) Su \"golden question\" de calificación: antes que presupuesto o gustos, preguntar \"¿para cuándo lo necesitas?\" (\"when do you need it for\"). Su tesis: la necesidad con timeline declarado predice quién de verdad va a transaccionar. Corcoran…",
+   "como_aplica": "El Copiloto (táctico, por-interesado) la usa para enfocar el esfuerzo del corredor: - Pregunta el timeline temprano (\"¿para cuándo necesitas mudarte?\") y úsalo para priorizar a quién dar seguimiento primero — no todos los leads pesan igual, y el que tiene un plazo real y declarado merece atención antes. - Alimenta la cadencia: un lead A (plazo cercano) entra a un follow-up más frecuente; un lead C (sin plazo) a un nu…",
+   "tags": [
+    "calificacion",
+    "timing",
+    "descubrimiento",
+    "priorizacion",
+    "copiloto"
+   ],
+   "aliases": [
+    "When do you need it for",
+    "Golden question",
+    "Calificación por timeline",
+    "Calificar por necesidad"
+   ]
+  },
+  {
+   "titulo": "Camina en los zapatos del comprador (lectura empática)",
+   "tipo": "tactic",
+   "mogul": "Barbara Corcoran",
+   "agente": "copiloto",
+   "foso": "verde",
+   "candado": "\"Pasa limpio: escuchar y entender la vida del cliente para encajar mejor el inmueble no toca ningún dato inventado (G1 ✓), no orienta por clase protegida siempre que el 'encaje' se ancle en necesidades declaradas por el propio cliente y NO en proxies del agente (G2 ✓ — ver candado), y no manipula: es descubrimiento, no…",
+   "que_es": "(per Barbara Corcoran) No vendes la casa que a ti te gusta; vendes la casa que resuelve la vida del comprador. Corcoran entrenaba a sus agentes a escuchar de verdad — no la ficha técnica que el cliente pide, sino la vida detrás del pedido (por qué se mudan, qu…",
+   "como_aplica": "El Copiloto usa esto en el descubrimiento y en la redacción por-interesado: - Pregunta y escucha 80% / habla 20% (converge con estratega-de-negociacion: los Siete Huesos → Comunicación). El Copiloto sugiere preguntas abiertas que sacan la necesidad declarada por el cliente, no supuesta por el agente. - Encaja por necesidad declarada, no por perfil. Presenta el inmueble contra lo que el cliente dijo que le importa (\"m…",
+   "tags": [
+    "empatia",
+    "descubrimiento",
+    "escucha",
+    "cierre-honesto"
+   ],
+   "aliases": [
+    "Walk in the buyer's shoes",
+    "Lectura empática del comprador",
+    "Escuchar de verdad"
+   ]
+  },
+  {
+   "titulo": "Co-broking como transparencia de inventario",
+   "tipo": "tactic",
+   "mogul": "Barbara Corcoran",
+   "agente": "estratega",
+   "foso": "verde",
+   "candado": "\"Pasa limpio: compartir el listado y colaborar entre corredores AMPLÍA el pool de compradores reales y hace el inventario transparente (G1 ✓ — más información, no menos), no segmenta por clase protegida (G2 ✓ — el listado se ofrece a todos los corredores por igual), y no manipula (G3 ✓ — lo contrario de retener inventa…",
+   "que_es": "(per Barbara Corcoran) En vez de guardarse los listados para cobrar la comisión completa, Corcoran empujó una cultura de co-broking — corredores que comparten el listado y cooperan, partiendo la comisión, para que la casa llegue a todos los compradores del mer…",
+   "como_aplica": "El Estratega lo usa a nivel de cartera e inventario: - Transparencia de inventario como default. Compartir el listado (con otros corredores de la red) para maximizar el pool de compradores reales y calificados, en lugar de retenerlo como \"pocket listing\" para forzar que el comprador pase por un solo canal. - Lo opuesto a la escasez fabricada. Donde el anti-patrón esconde inventario para crear urgencia falsa, el co-br…",
+   "tags": [
+    "co-broking",
+    "transparencia",
+    "inventario",
+    "MLS",
+    "cooperacion"
+   ],
+   "aliases": [
+    "Co-broke",
+    "Cooperación entre corredores",
+    "Compartir el listado"
+   ]
+  },
+  {
+   "titulo": "Constancia y seguimiento (la venta está en el follow-up)",
+   "tipo": "tactic",
+   "mogul": "Barbara Corcoran",
+   "agente": "ambos",
+   "foso": "verde",
+   "candado": "\"Pasa limpio: el seguimiento disciplinado no toca datos inventados (G1 ✓), no segmenta por clase protegida (G2 ✓), y es constancia con valor — NO presión ni urgencia fabricada (G3 ✓, con candado: cada toque aporta algo útil y respeta el 'no'). El límite entre follow-up honesto y acoso es el candado.\"",
+   "que_es": "(per Barbara Corcoran) Corcoran atribuía buena parte de su éxito a no rendirse y dar seguimiento cuando los demás soltaban. La mayoría de las ventas no pasa en el primer contacto; pasa en el quinto, en el décimo, cuando el cliente por fin está listo — y el age…",
+   "como_aplica": "Sirve a ambos agentes: - Copiloto (por-interesado): redacta el siguiente toque de reenganche — con un motivo real cada vez (un listado nuevo que encaja lo que el cliente pidió, un dato de mercado del Corcoran Report (dato de mercado que arma al agente), una respuesta a algo que quedó abierto). Nunca un \"¿ya decidiste?\" vacío. - Estratega (de cartera): define la cadencia de contacto sin dejar leads fríos, prioriza a q…",
+   "tags": [
+    "follow-up",
+    "constancia",
+    "cadencia",
+    "disciplina"
+   ],
+   "aliases": [
+    "Follow-up",
+    "Seguimiento disciplinado",
+    "La constancia vende"
+   ]
+  },
+  {
+   "titulo": "Contratar por hambre y 'algo que probar'",
+   "tipo": "tactic",
+   "mogul": "Barbara Corcoran",
+   "agente": "corredor",
+   "foso": "verde",
+   "candado": "\"🟢 Pasa limpio: es coaching de reclutamiento humano (a quién contratar / cómo entrevistar), no una táctica de venta ni algo que ejecute un agente de IA. No toca dato inventado (G1), no orienta al cliente por clase protegida (G2 — es sobre a quién sumas al equipo, no sobre a quién le vendes), y no manipula al comprador…",
+   "que_es": "(per Barbara Corcoran) El predictor de un top agent no es el pulido ni la seguridad, sino una inseguridad con algo que probar + hambre. Corcoran dice que el 1% de sus ~8,000 agentes top compartía un denominador: eran \"nut jobs\" inseguros. Alguien picado por de…",
+   "como_aplica": "Es coaching humano para el corredor (agente: corredor) — a quién sumar a su equipo y qué rasgo predice al que produce: - En la entrevista, conoce a la persona antes que el currículum (\"shut them up and find out about them as an individual\") — especialmente al candidato sin track record, que es la mayoría. Busca el hambre genuina y el \"algo que probar\", no el pedigrí. - Contrata por work ethic + hambre, no solo por co…",
+   "tags": [
+    "reclutamiento",
+    "coaching",
+    "mindset",
+    "contratacion",
+    "hambre"
+   ],
+   "aliases": [
+    "Algo que probar",
+    "Contratar por hambre",
+    "Power of insult",
+    "Something to prove",
+    "Inseguridad con hambre"
+   ]
+  },
+  {
+   "titulo": "Discovery por 3 P (pain, price, point person)",
+   "tipo": "tactic",
+   "mogul": "Ryan Serhant",
+   "agente": "copiloto",
+   "foso": "verde",
+   "candado": "\"🟢 Pasa limpio: preguntar por el problema real, el presupuesto y quién decide es descubrimiento honesto (servir mejor), no manipulación. Cuidado de límite: el 'pain point' se descubre preguntando, NUNCA infiriéndolo de clase protegida o proxies (G2); y 'price point' se maneja con dato, sin presionar por presupuesto que…",
+   "que_es": "per Ryan Serhant — el paso \"Light the Spark\" del Sell It Sales Cycle (ciclo de venta de 6 pasos): descubrir las necesidades reales del prospecto con tres preguntas: (1) Pain point — ¿cuál es el problema #1 que enfrenta y cómo lo resuelves? (2) Price point — ¿p…",
+   "como_aplica": "- El Copiloto ayuda al corredor a formular las 3 P en lenguaje natural: descubrir el dolor real (\"necesito espacio para trabajar en casa\", \"quiero acortar el traslado\"), calibrar el presupuesto con honestidad, e identificar quién decide en la pareja/familia. - El \"pain point\" alimenta directamente Vender la experiencia y el outcome: el outcome que se articula es la solución al dolor #1 declarado. - Reencuadra el mane…",
+   "tags": [
+    "discovery",
+    "descubrimiento",
+    "objeciones",
+    "copiloto"
+   ],
+   "aliases": [
+    "3 P",
+    "pain price point person",
+    "discovery de Serhant",
+    "light the spark"
+   ]
+  },
+  {
+   "titulo": "Esfera de influencia (warm sphere + cold sphere)",
+   "tipo": "tactic",
+   "mogul": "Ryan Serhant",
+   "agente": "estratega",
+   "foso": "verde",
+   "candado": "\"🟢 Pasa limpio: activar a los que ya te conocen (warm) y ampliar con gente nueva (cold) es prospección honesta de red. No inventa dato (G1), no manipula (G3). Cuidado G2: la cold sphere se construye por OPORTUNIDAD/afinidad de necesidad (alguien que necesita más espacio), NUNCA seleccionando a quién abordar por clase p…",
+   "que_es": "per Ryan Serhant — el agente construye su base de negocio en dos esferas. La warm sphere es todo el que YA te conoce (familia, gente del colegio, Facebook, Instagram): les avisas que eres agente y les ofreces ayudarlos a comprar/vender — \"tus primeros clientes…",
+   "como_aplica": "- Ruteo a estratega — es gestión de cartera de relaciones: el Estratega ayuda a segmentar y secuenciar el contacto con la base (a quién avisar primero, con qué cadencia), conectando con la Matemática de la base de datos (6.4% + 10% referidos) de Keller y las cadencias 8x8 / 33-Touch. - La warm sphere es el activo de mayor ROI del novato: el Estratega prioriza reactivarla antes de gastar en leads fríos. - La cold sphe…",
+   "tags": [
+    "prospeccion",
+    "base-de-datos",
+    "estratega",
+    "esfera",
+    "novato"
+   ],
+   "aliases": [
+    "sphere of influence",
+    "esfera de influencia",
+    "warm sphere",
+    "cold sphere",
+    "esfera caliente y fría",
+    "base de contactos"
+   ]
+  },
+  {
+   "titulo": "Espejo y reconocimiento (mirroring en negociación)",
+   "tipo": "tactic",
+   "mogul": "Ryan Serhant",
+   "agente": "copiloto",
+   "foso": "amarillo",
+   "candado": "\"🟡 CANDADO: repetir los puntos del otro para que se sienta ESCUCHADO y responder en vez de reaccionar es honesto y de servicio. Pero 'emular al otro para bajar su guardia / que se sienta cómodo' roza la manipulación si el fin es explotar la confianza (G3). Candado: el espejo se usa para ENTENDER y validar, nunca como t…",
+   "que_es": "per Ryan Serhant — en vez de reaccionar (contraponer de inmediato), responde repitiendo de vuelta lo que el otro dijo: \"para que te oiga bien, lo que me dices es esto, esto y esto — ¿estamos en la misma página?\". Así encuentras no solo terreno común sino enten…",
+   "como_aplica": "- El Copiloto ayuda a redactar respuestas que primero reconocen la posición del otro (\"entiendo que para tu comprador el precio X es el tope porque…\") antes de contraproponer — se siente escuchado, la conversación baja de temperatura. - Evita la reacción-reflejo: el Copiloto sugiere pausar y reflejar en vez de disparar una contraoferta que delate ansiedad. - Conecta con Manejo de objeciones por servicio: reconocer la…",
+   "tags": [
+    "negociacion",
+    "comunicacion",
+    "escucha",
+    "copiloto"
+   ],
+   "aliases": [
+    "mirroring",
+    "reconocer puntos",
+    "responder no reaccionar",
+    "espejo"
+   ]
+  },
+  {
+   "titulo": "FORD (rapport por Family-Occupation-Recreation-Dreams)",
+   "tipo": "tactic",
+   "mogul": "Gary Keller",
+   "agente": "copiloto",
+   "foso": "verde",
+   "candado": "\"Marco de conversación de rapport: pregunta por Familia, Ocupación, Recreación y Sueños para cultivar la relación de forma humana y genuina. Pasa G1/G2/G3 limpio: es interés real, no interrogatorio ni guion de cierre. Candado G2: FORD explora intereses/vida de la persona para servir mejor, JAMÁS para inferir clase prot…",
+   "que_es": "per Gary Keller (MREA) —enseñado en IGNITE 2.0 Session 2 - Lead Generation como \"FORD sandwich\"— un marco simple para conversar y construir relación con un contacto: preguntar por su Familia, Ocupación, Recreación y Sueños (Dreams). La idea es que la conversac…",
+   "como_aplica": "Material del Copiloto (redactar un mensaje/DM concreto) con valor de corredor (habilidad humana). El Copiloto puede: - Redactar un mensaje de reenganche o un DM en clave FORD: retomar por un detalle real de la persona (un hijo, un ascenso, un viaje) antes de cualquier tema inmobiliario — encaja de lleno con el Agente de Reenganche de Whaber (ancla iterable, contacto humano por sobre el pitch). - Sugerir la próxima pr…",
+   "tags": [
+    "tactic",
+    "rapport",
+    "relacion",
+    "copiloto",
+    "prospeccion",
+    "nurture",
+    "conversacion"
+   ],
+   "aliases": [
+    "FORD",
+    "Ford sandwich",
+    "family occupation recreation dreams",
+    "guion FORD"
+   ]
+  },
+  {
+   "titulo": "Follow-up persistente de valor (the ball is in your court)",
+   "tipo": "tactic",
+   "mogul": "Ryan Serhant",
+   "agente": "ambos",
+   "foso": "verde",
+   "candado": "\"pasa limpio: persistir aportando VALOR (info, un paso claro, disponibilidad) no es presión. El candado es que cada toque lleve algo útil y deje la decisión en el cliente — nunca urgencia fabricada ni culpa.\"",
+   "que_es": "per Ryan Serhant — la mayoría de los corredores hace un follow-up y se rinde; el negocio",
+   "como_aplica": "- El Copiloto redacta cada toque de seguimiento con una razón de valor (un dato del inmueble, una respuesta a algo que quedó abierto, una opción nueva) y un siguiente paso concreto (\"¿te agendo la visita el jueves o prefieres el sábado?\"). Nunca un \"¿ya decidiste?\" a secas. - El Estratega define la cadencia: cuántos toques, con qué separación, y cuándo soltar con dignidad — persistente no es acosar. Se secuencia el f…",
+   "tags": [
+    "follow-up",
+    "reenganche",
+    "servicio",
+    "copiloto",
+    "estratega"
+   ],
+   "aliases": [
+    "the ball is in your court",
+    "seguimiento persistente",
+    "follow-up de Serhant"
+   ]
+  },
+  {
+   "titulo": "Ghost products (mandar al comprador a la mejor opción, aunque no sea tuya)",
+   "tipo": "tactic",
+   "mogul": "Alex Hormozi",
+   "agente": "corredor",
+   "foso": "verde",
+   "candado": "\"Pasa limpio: recomendar honestamente la mejor opción para el comprador —aunque no te deje comisión— construye confianza real y es 100% on-brand (es el foso hecho gesto). Candado suave G1: la recomendación de la 'mejor opción' debe basarse en dato/encaje real, no ser un señuelo calculado; si se vuelve una concesión fal…",
+   "que_es": "(per Alex Hormozi) — enviar deliberadamente al comprador a conseguir algo más barato o mejor en otro lado (los \"ghost products\" / \"sacrificial lambs\") para demostrar que actúas en su interés y no en el tuyo. Al hacer la concesión, ganas confianza y el comprado…",
+   "como_aplica": "Materia de coaching del corredor (agente: corredor) — es una postura, no un guion del CRM: - El corredor honesto ya opera así: decir \"ese trámite lo haces directo con el municipio, no me pagues a mí por eso\", \"para ese barrio, otro colega tiene mejor inventario que yo\", \"esta casa NO te encaja, aunque sería mi comisión\". La concesión genuina es lo que construye la relación de largo plazo. - Es la versión-gesto del ej…",
+   "tags": [
+    "confianza",
+    "servicio",
+    "corredor",
+    "transparencia",
+    "honestidad"
+   ],
+   "aliases": [
+    "ghost products",
+    "sacrificial lambs",
+    "moverse al lado de la mesa",
+    "mandar a Costco",
+    "same side of the table"
+   ]
+  },
+  {
+   "titulo": "Home staging para la primera impresión (regla de los 30 segundos)",
+   "tipo": "tactic",
+   "mogul": "Barbara Corcoran",
+   "agente": "corredor",
+   "foso": "verde",
+   "candado": "\"Pasa limpio con candado. Preparar físicamente el inmueble (pintar, limpiar, iluminar, ordenar) no inventa ningún dato de proveniencia (G1 ✓), no segmenta ni orienta por clase protegida (G2 ✓), y no presiona la decisión del comprador — mejora lo que se muestra, no fuerza el sí (G3 ✓). Candado: el staging realza la pres…",
+   "que_es": "(per Barbara Corcoran) El comprador juzga la casa en los primeros 30 segundos y ahí decide si la compra o no. Por eso, antes de mostrar, se prepara el inmueble para que brille en las habitaciones que más pesan. Corcoran nombra tres focos: entrada/fachada (repi…",
+   "como_aplica": "Es coaching para el corredor y para el vendedor — no lo ejecuta un agente del CRM, pero es un checklist de preparación de listado que el corredor le entrega al propietario: - Prioriza el esfuerzo en tres zonas de alto impacto: fachada/entrada, sala y cocina. Ahí es donde se gana o se pierde la primera impresión, no en repartir presupuesto parejo por toda la casa. - Barato antes que caro: pintar remodelar. Corcoran in…",
+   "tags": [
+    "staging",
+    "primera-impresion",
+    "preparar-inmueble",
+    "venta-rapida",
+    "listado"
+   ],
+   "aliases": [
+    "Staging",
+    "Home staging",
+    "Regla de los 30 segundos",
+    "Preparar la casa para vender",
+    "Primera impresión del inmueble",
+    "Curb appeal"
+   ]
+  },
+  {
+   "titulo": "Imán de leads (mini-oferta que revela el problema)",
+   "tipo": "tactic",
+   "mogul": "Alex Hormozi",
+   "agente": "estratega",
+   "foso": "amarillo",
+   "candado": "\"CANDADO: el imán honesto es dar VALOR REAL gratis (un dato/reporte/herramienta de entorno verificado) que ayuda al interesado y revela dónde el corredor aporta — captura de lead CON consentimiento. Resbala a 🔴 si (a) el 'problema revelado' se fabrica o exagera para crear miedo (G1/G3), (b) el CTA usa escasez/urgencia…",
+   "que_es": "(per Alex Hormozi) — en vez de pedir \"compra ya / pide cotización\" (que solo convierte a los ya listos), ofreces un imán de leads: una mini-oferta que resuelve gratis un problema estrecho y, al resolverlo, revela el problema que resuelve tu oferta central. \"Qu…",
+   "como_aplica": "Material del Estratega / cartera (cómo llenar el embudo con leads calientes sin más gasto): - El imán honesto de Whaber es regalar dato de entorno verificado: un \"reporte de la zona X\" (isócronas peatonales, POIs propios, badges de frescura), un \"chequeo de qué encaja con tu prioridad declarada\", una guía de \"qué mirar antes de comprar en Quito\". Da valor real y revela dónde el foso del corredor ayuda (el encaje con…",
+   "tags": [
+    "lead-gen",
+    "conversion",
+    "captura-de-lead",
+    "estratega",
+    "contenido"
+   ],
+   "aliases": [
+    "lead magnet",
+    "iman de leads",
+    "mini-oferta",
+    "reveal a problem",
+    "free case study"
+   ]
+  },
+  {
+   "titulo": "La creencia como palanca de venta (conviction)",
+   "tipo": "tactic",
+   "mogul": "Alex Hormozi",
+   "agente": "corredor",
+   "foso": "amarillo",
+   "candado": "\"CANDADO: la convicción del corredor debe descansar en el ENCAJE REAL y el dato verificado — no en auto-hipnosis para vender lo que no encaja. Convicción honesta = 'creo esto porque el dato de entorno lo sostiene'. Convicción manipulada = 'me convenzo para transferir creencia aunque no encaje' → eso viola G1/G3. La con…",
+   "que_es": "(per Alex Hormozi) — la creencia del vendedor no es binaria sino un continuo (0-100). La venta es \"una transferencia de creencia\": no puedes transferir una taza vacía. Tesis: subir la convicción rinde más que subir la habilidad (% cierre = habilidad × convicci…",
+   "como_aplica": "Materia de coaching del corredor humano (agente: corredor) — no lo ejecuta un agente del CRM, pero sostiene la persona. La versión honesta y aplicable: - La convicción legítima del corredor se construye sobre el foso de dato verificado: cree en el encaje porque la isócrona peatonal, los POIs propios y los badges de frescura lo sostienen — no porque se auto-convenció. - \"Entender al prospecto, no el producto\" es el nú…",
+   "tags": [
+    "mindset",
+    "conviccion",
+    "corredor",
+    "coaching"
+   ],
+   "aliases": [
+    "belief continuum",
+    "conviction framework",
+    "creer en lo que vendes",
+    "transferencia de creencia"
+   ]
+  },
+  {
+   "titulo": "La verdad como mejor táctica (admisión dañina)",
+   "tipo": "tactic",
+   "mogul": "Alex Hormozi",
+   "agente": "ambos",
+   "foso": "verde",
+   "candado": "\"Pasa limpio y es CANÓNICO del foso: 'nada vende como la verdad'; declarar el defecto tú mismo (admisión dañina) desarma objeciones y genera confianza. Es honestidad pura. Candado suave G2: la 'admisión dañina' se refiere a defectos del INMUEBLE/servicio (estacionamiento, tamaño, antigüedad) — nunca a características d…",
+   "que_es": "(per Alex Hormozi) — \"nada vende como la verdad\". Si vas a decir la verdad y la gente lo va a descubrir igual, reclama tú el defecto primero (la \"admisión dañina\"): al nombrar tu punto débil antes que el prospecto, lo desarmas y ganas credibilidad para lo buen…",
+   "como_aplica": "Sirve a ambos agentes y es de las tácticas más on-brand del vault — es el foso hecho argumento comercial: - El Copiloto nombra el defecto real del inmueble primero, con dato: \"esta unidad da a una avenida (X dB de ruido medido), y por eso está bajo el precio de la zona y tiene la mejor luz del piso\". La transparencia vende además de ser correcta. - Es la prueba de que honestidad y conversión no se oponen — el eje cen…",
+   "tags": [
+    "honestidad",
+    "confianza",
+    "marketing",
+    "objeciones",
+    "copiloto",
+    "estratega"
+   ],
+   "aliases": [
+    "truth sells",
+    "nada vende como la verdad",
+    "damaging admission",
+    "admision dañina",
+    "reclamar el defecto",
+    "bad but good"
+   ]
+  },
+  {
+   "titulo": "Las 3 P de la negociación (price, pressure, persistence)",
+   "tipo": "tactic",
+   "mogul": "Ryan Serhant",
+   "agente": "estratega",
+   "foso": "amarillo",
+   "candado": "\"🟡 CANDADO: la técnica honesta es anclar en NÚMEROS REALES (el precio-objetivo + el precio legacy que el vendedor pagó) y dejar que el TIEMPO sature la emoción con repetición del dato verdadero. Eso pasa G1/G3 limpio. El borde 🔴 es la 'pressure': Serhant también la describe como usar 'el miedo a un mercado a la baja y…",
+   "que_es": "per Ryan Serhant — en toda negociación hay tres P: Price, Pressure, Persistence, y estás vendiendo siempre a dos personas (comprador y vendedor). Su método sobre un trato real ($10M pedido, $8M ofertado): (1) Price — ten claros dos números: tu precio-objetivo…",
+   "como_aplica": "- El Estratega prepara la negociación anclando en dato verificado: el precio-objetivo sale de comps/valor real, y el \"precio legacy\" (lo que el vendedor pagó) es un hecho con proveniencia que recontextualiza una oferta baja sin inventar nada — \"según el registro, usted adquirió en X; incluso a este precio hay ganancia\". - \"Dejar que el tiempo sature la emoción\" se traduce en cadencia paciente, no en presión: el Estra…",
+   "tags": [
+    "negociacion",
+    "precio",
+    "estratega",
+    "cierre"
+   ],
+   "aliases": [
+    "3 P",
+    "tres P",
+    "price pressure persistence",
+    "precio presión persistencia",
+    "precio legacy"
+   ]
+  },
+  {
+   "titulo": "Las tres F (follow up, follow through, follow back)",
+   "tipo": "tactic",
+   "mogul": "Ryan Serhant",
+   "agente": "ambos",
+   "foso": "verde",
+   "candado": "\"🟢 Pasa limpio: es la mecánica honesta del seguimiento. El único borde es 'follow through' — cumplir lo prometido incluye ser honesto cuando NO se cumplirá el plazo ('no te llamo hoy a las 5, te llamo mañana'), lo cual refuerza G1 (honestidad) en vez de romperlo. Sin urgencia fabricada.\"",
+   "que_es": "per Ryan Serhant — su sistema nombrado de seguimiento en tres verbos: Follow up (dar seguimiento / hacer check-in), Follow through (cumplir lo que dijiste que harías, en la fecha que dijiste), Follow back (retomar a quienes perdiste la primera vez y a clientes…",
+   "como_aplica": "- Follow up (Copiloto): cada check-in lleva un motivo de valor (dato, opción, respuesta), nunca un \"¿ya decidiste?\". - Follow through (Copiloto + honestidad): per Serhant, \"si dijiste que llamas a las 5, llama a las 4:59 — o sé honesto y di 'no te llamo hoy, te llamo mañana' y hazlo.\" El Copiloto redacta el compromiso de tiempo honesto (encaja con Responsividad como servicio). - Follow back (Estratega): el Agente de…",
+   "tags": [
+    "follow-up",
+    "seguimiento",
+    "copiloto",
+    "estratega",
+    "servicio"
+   ],
+   "aliases": [
+    "3 F",
+    "three F's",
+    "follow up follow through follow back",
+    "las tres efes"
+   ]
+  },
+  {
+   "titulo": "Los avanzados nunca dejan de hacer lo básico",
+   "tipo": "tactic",
+   "mogul": "Alex Hormozi",
+   "agente": "corredor",
+   "foso": "verde",
+   "candado": "\"Pasa limpio: es coaching de mindset/consistencia. No toca al comprador, no infla nada, no manipula. Lo único a cuidar es que 'los básicos' que el corredor ejecuta con constancia sean los HONESTOS (seguimiento de valor, dato verificado), no las tácticas de presión — pero eso ya lo garantiza el resto del foso.\"",
+   "que_es": "(per Alex Hormozi) — \"a los avanzados los define su outcome, no tácticas distintas\". Un vendedor (o atleta) avanzado no usa técnicas exóticas: ejecuta lo básico con más consistencia. \"Los levantadores avanzados no hacen ejercicios distintos de los novatos — so…",
+   "como_aplica": "Materia de coaching del corredor humano (agente: corredor) — el antídoto contra buscar el \"truco\" en vez de la disciplina: - Para el corredor, \"lo básico\" es lo que Whaber ya sostiene como principio de alta confianza: seguimiento disciplinado (Follow-up disciplinado), responder rápido (Responsividad como servicio), entregar dato verificado siempre, constancia (Constancia y seguimiento (la venta está en el follow-up))…",
+   "tags": [
+    "mindset",
+    "consistencia",
+    "basics",
+    "corredor",
+    "coaching",
+    "disciplina"
+   ],
+   "aliases": [
+    "never don't do the basics",
+    "los avanzados hacen lo básico",
+    "consistencia en lo básico",
+    "advanced = basics consistently"
+   ]
+  },
+  {
+   "titulo": "Manejo de objeciones en 4 pasos (acknowledge-isolate-address-close)",
+   "tipo": "tactic",
+   "mogul": "Gary Keller",
+   "agente": "copiloto",
+   "foso": "amarillo",
+   "candado": "\"🟡 El esqueleto (acusar recibo → aislar → responder con info → cerrar con pregunta) es honesto SI 'responder' es educar con dato verificado y 'cerrar' es una pregunta que DEVUELVE la decisión al cliente. CANDADO: prohibido usar 'aislar + cerrar' como guion para arrancar un sí por presión, y prohibido que 'address' cite…",
+   "que_es": "per Gary Keller (MREA) —practicado en el roleplay de IGNITE 2.0 Session 2 - Lead Generation— una secuencia de cuatro pasos para trabajar una objeción:",
+   "como_aplica": "Material del Copiloto (táctico, por-interesado, maneja una objeción). El Copiloto puede: - Estructurar la respuesta a una objeción entrante siguiendo los 4 pasos, pero rellenando el paso Address con dato verificado del Place Graph / mercado de Whaber (tiempos, entorno, precios), nunca con una cifra improvisada. - Redactar el \"close\" como pregunta de servicio (\"¿te mando el reporte?\", \"¿quieres que veamos otras opcion…",
+   "tags": [
+    "tactic",
+    "objeciones",
+    "cierre",
+    "copiloto",
+    "scripts",
+    "servicio"
+   ],
+   "aliases": [
+    "manejo de objeciones 4 pasos",
+    "acknowledge isolate address close",
+    "acusar aislar responder cerrar",
+    "objeciones IGNITE"
+   ]
+  },
+  {
+   "titulo": "Manejo de objeciones por servicio",
+   "tipo": "tactic",
+   "mogul": "Ryan Serhant",
+   "agente": "copiloto",
+   "foso": "amarillo",
+   "candado": "\"🟡 CANDADO: la objeción se resuelve APORTANDO (info, opción, dato verificado) — no rebatiendo para 'ganar' ni con un guion para arrancar un sí. Prohibido tratar la objeción como pretexto a vencer con presión o con una cifra sin proveniencia. La objeción de precio se reencuadra a valor REAL, nunca con escasez fabricada.…",
+   "que_es": "per Ryan Serhant — una objeción no es un muro que romper, es información sobre lo que al",
+   "como_aplica": "- El Copiloto ayuda a descifrar la objeción real (\"está caro\" a menudo es \"no veo el valor\" o \"me preocupa un costo oculto\") y redacta una respuesta que aporta el dato o la opción que la disuelve. - Reencuadra la objeción de precio → valor usando Vender la experiencia y el outcome y el dato verificado de Whaber (entorno, tiempos, m2), no con \"cómpralo ya que se lo llevan\". - Cuando la objeción es legítima y el inmueb…",
+   "tags": [
+    "objeciones",
+    "servicio",
+    "cierre",
+    "copiloto"
+   ],
+   "aliases": [
+    "manejo de objeciones",
+    "objeción de precio",
+    "objection handling"
+   ]
+  },
+  {
+   "titulo": "Marca personal del corredor",
+   "tipo": "tactic",
+   "mogul": "Ryan Serhant",
+   "agente": "corredor",
+   "foso": "amarillo",
+   "candado": "\"🟡 CANDADO: construir marca = ser conocido por CONFIABLE y por un servicio real, no por optics vacío ni por inflar logros. Prohibido fabricar credenciales, cifras de ventas sin respaldo o testimonios falsos (G1). Aquí se poda el ASTERISCO de Serhant (showmanship/ego): se conserva la disciplina de estar presente y aport…",
+   "que_es": "per Ryan Serhant — en un mercado de commodities, el corredor ES la marca. Serhant",
+   "como_aplica": "- Ruteo a corredor — esto es coaching humano, no algo que ejecute el Copiloto ni el Estratega. Le sirve a la persona detrás del CRM. - Anima al corredor a hacerse conocido por lo que Whaber premia: dato honesto, entorno verificado con proveniencia, servicio y responsividad — su marca es su confiabilidad, no su brillo. - La consistencia de presencia (contenido útil, seguimiento, estar) se traduce en reputación; el Cop…",
+   "tags": [
+    "marca-personal",
+    "mindset",
+    "coaching",
+    "corredor"
+   ],
+   "aliases": [
+    "personal branding",
+    "marca del agente",
+    "big money energy"
+   ]
+  },
+  {
+   "titulo": "Matemática de la base de datos (6.4% + 10% referidos)",
+   "tipo": "tactic",
+   "mogul": "Gary Keller",
+   "agente": "estratega",
+   "foso": "verde",
+   "candado": "\"Es dimensionamiento de cartera: cuánto negocio rinde una base bien tocada. Pasa G1/G2/G3 limpio. Candado G1 FUERTE: 6.4% / 10% / 2,000≈$1M son cifras de MREA atribuidas a Keller, órdenes de magnitud para PLANEAR, jamás cifras que se prometan al cliente ni proyecciones sin proveniencia — el corredor calibra con SUS núm…",
+   "que_es": "per Gary Keller (MREA) —enseñado en IGNITE 2.0 Session 2 - Lead Generation— la base de datos tiene un retorno modelable:",
+   "como_aplica": "Material del Estratega / cartera. Es el caso de negocio del CRM Vivo de Whaber: por qué vale la pena capturar y nutrir a toda la base, no solo a los \"calientes\". El Estratega ayuda al corredor a: - Dimensionar su meta al revés: dada su meta de ingreso y su ticket, ¿cuántos contactos nutridos necesita? (enlaza con el Modelo Económico de MREA - Los 4 Modelos y el 12:2 del Bullseye de generación de leads (de adentro hac…",
+   "tags": [
+    "tactic",
+    "cartera",
+    "base-de-datos",
+    "roi",
+    "referidos",
+    "esfera-de-influencia",
+    "mrea"
+   ],
+   "aliases": [
+    "6.4 por ciento",
+    "10 por ciento referidos",
+    "2000 contactos un millon",
+    "database math",
+    "leads vs contactos"
+   ]
+  },
+  {
+   "titulo": "Minimizar los need-to-believe (menos que creer, más ventas)",
+   "tipo": "tactic",
+   "mogul": "Alex Hormozi",
+   "agente": "ambos",
+   "foso": "verde",
+   "candado": "\"Pasa limpio: reducir cuántas cosas debe creer alguien para decidir es honestidad de comunicación (menos fricción cognitiva), no manipulación. El foso lo REFUERZA: el 'need-to-believe' del corredor se conquista con DATO VERIFICADO y proveniencia, no removiendo información. Candado G1: se reduce la CANTIDAD de saltos de…",
+   "que_es": "(per Alex Hormozi) — para que alguien compre debe creer ciertas cosas; cuantos más \"saltos de fe\" le pidas, menos gente convierte. Amazon y Uber ganan porque casi no hay que creer nada (\"sube tu producto y ganas dinero\"; \"cuando suene el teléfono, te pagan\").…",
+   "como_aplica": "Sirve a ambos agentes: al Copiloto (cómo articular el encaje con el mínimo de saltos de fe) y al Estratega (cómo posicionar al corredor para que su propuesta no exija creer diez cosas): - El Copiloto reduce los saltos de fe con dato: el comprador no tiene que \"creer\" que la zona es tranquila — ve la isócrona, los POIs propios, el badge de frescura con proveniencia (El dato arma al agente). El dato verificado es la re…",
+   "tags": [
+    "comunicacion",
+    "conversion",
+    "confianza",
+    "copiloto",
+    "estratega"
+   ],
+   "aliases": [
+    "need to believe",
+    "need-to-believes",
+    "menos que creer",
+    "saltos de fe",
+    "una sola creencia"
+   ]
+  },
+  {
+   "titulo": "No presentes hasta creer que dirá que sí",
+   "tipo": "tactic",
+   "mogul": "Alex Hormozi",
+   "agente": "copiloto",
+   "foso": "amarillo",
+   "candado": "\"CANDADO: la regla honesta es 'no muestres el inmueble/propuesta hasta entender el encaje real por preguntas' — descubrimiento antes de presentar. Resbala a 🔴 si 'no pitchees hasta creer que dirá sí' se vuelve retener información / retomar el frame para presionar, o si 'romper creencias' y 'preguntas difíciles' derivan…",
+   "que_es": "(per Alex Hormozi) — regla que le repite a su equipo: no pitcheas el programa hasta que crees que la persona dirá que sí. Analogías: \"los abogados no hacen preguntas cuya respuesta no conocen; nadie propone matrimonio sin saber que dirán sí\". Mientras no lo si…",
+   "como_aplica": "Es secuencia para el Copiloto: primero descubrir, después presentar. La versión honesta: - El Copiloto no ayuda a \"lanzar\" un inmueble/propuesta hasta que el encaje con la intención declarada está claro por preguntas (es el par de acción del descubrimiento CLO de CLOSER (descubrimiento por preguntas)). - Las preguntas + reformulaciones son el 80% honesto: descubrir la motivación real y reflejarla (\"entonces lo no-neg…",
+   "tags": [
+    "descubrimiento",
+    "cierre",
+    "preguntas",
+    "copiloto",
+    "secuencia"
+   ],
+   "aliases": [
+    "don't pitch until you believe they'll say yes",
+    "no pitchees hasta el sí",
+    "descubrir antes de presentar",
+    "closers ask hard questions"
+   ]
+  },
+  {
+   "titulo": "Outwork como única palanca (controla lo que controlas)",
+   "tipo": "tactic",
+   "mogul": "Ryan Serhant",
+   "agente": "corredor",
+   "foso": "verde",
+   "candado": "\"🟢 Pasa limpio: es mindset de disciplina personal (dedicar más horas de prospección que la competencia, controlar lo único que controlas — tus 24h). No toca dato inventado (G1), no segmenta por clase protegida (G2), no manipula al cliente (G3). Coaching humano; NO lo ejecuta un agente del CRM. Único matiz Whaber: 'trab…",
+   "que_es": "per Ryan Serhant — cuando empezó (2008) sin autoconfianza, contactos ni ventaja, decidió que lo único que controlaba eran sus 24 horas, y que su estrategia sería superar en trabajo a todos. Empezó a despertar a las 4:30am: si el promedio despierta a las 7, gan…",
+   "como_aplica": "- Ruteo a corredor — es coaching humano de disciplina, no algo que ejecute el Copiloto ni el Estratega. Le sirve a la persona detrás del CRM. - Da al corredor un marco de agencia: en un negocio a comisión con rampa larga (Atajo del novato - pegarse a un top producer), la variable que sí controla es cuántas horas de prospección de calidad mete — no el mercado ni la suerte. - Se acopla al bloque Finder de Finder-Keeper…",
+   "tags": [
+    "mindset",
+    "disciplina",
+    "prospeccion",
+    "corredor",
+    "coaching"
+   ],
+   "aliases": [
+    "outwork everybody",
+    "control what you control",
+    "controla tu destino",
+    "despertar dos horas antes",
+    "+20 días al año",
+    "secret sauce"
+   ]
+  },
+  {
+   "titulo": "PR con hook (stunt de prensa que instala marca)",
+   "tipo": "tactic",
+   "mogul": "Barbara Corcoran",
+   "agente": "corredor",
+   "foso": "amarillo",
+   "candado": "\"🟡 El núcleo es honesto (armar una historia con gancho que la prensa quiera repetir, para instalar marca sin pagar publicidad) pero resbala fácil: el 'hook' NO debe fabricar una cifra ni un valor que el dato no sostenga (G1), ni insinuar escasez/urgencia (G3). Candado: el hook cuenta una verdad interesante (un dato rea…",
+   "que_es": "(per Barbara Corcoran) Diseñar una historia con un \"hook\" —un ángulo que la gente quiera contar y la prensa quiera repetir— para instalar marca frente a un mercado complaciente, sin pagar publicidad. Corcoran: \"I always just think what hook could I use… it alw…",
+   "como_aplica": "Es coaching de marca para el corredor (agente: corredor) — no lo ejecuta un agente de IA, le sirve a la persona para diferenciarse: - Encuentra el ángulo verdadero e interesante de un listado o del propio corredor (un dato de entorno sorprendente del Corcoran Report (dato de mercado que arma al agente), una historia real del inmueble) y conviértelo en el gancho de un post o una nota. - Velocidad como ventaja del pequ…",
+   "tags": [
+    "pr",
+    "marca",
+    "storytelling",
+    "hook",
+    "prensa"
+   ],
+   "aliases": [
+    "PR stunt",
+    "Hook de prensa",
+    "Storytelling con gancho",
+    "Marca por historia"
+   ]
+  },
+  {
+   "titulo": "Pedir referidos en el momento correcto",
+   "tipo": "tactic",
+   "mogul": "Alex Hormozi",
+   "agente": "ambos",
+   "foso": "amarillo",
+   "candado": "\"CANDADO: pedir referidos es limpio y es el lead más barato/leal; el candado está en QUÉ se ofrece a cambio y CÓMO. Honesto: '¿a quién MÁS conoces?' (pregunta abierta), pedir en el momento de éxito genuino, con rapport real y consentimiento para el texto/foto. Resbala a 🔴 si el incentivo es un descuento agresivo tempor…",
+   "que_es": "(per Alex Hormozi) — los referidos cierran a mayor %, pagan más, compran más veces y refieren más; ~30% del negocio puede venir de ahí a cualquier escala, gratis. La palanca base: preguntar \"¿a quién MÁS conoces que…?\" (pregunta abierta que hace pensar) en vez…",
+   "como_aplica": "Sirve a ambos agentes: al Copiloto (redactar la pregunta de referido en el momento, el texto de intro) y al Estratega (cuándo pedir en la cadencia, medir el % de negocio que viene de referidos): - \"¿A quién más conoces que esté pensando en mudarse/comprar?\" tras un cierre o un hito (entrega de llaves, cierre de contrato) — momento de máxima buena voluntad. - Bonus descuento honesto: en vez de bajar comisión, ofrecer…",
+   "tags": [
+    "referidos",
+    "word-of-mouth",
+    "momentos",
+    "copiloto",
+    "estratega"
+   ],
+   "aliases": [
+    "referral at success",
+    "a quién más conoces",
+    "bonus en vez de descuento",
+    "trae a un amigo",
+    "who else do you know"
+   ]
+  },
+  {
+   "titulo": "Piensa cuantitativa y cualitativamente",
+   "tipo": "tactic",
+   "mogul": "Gary Keller",
+   "agente": "corredor",
+   "foso": "verde",
+   "candado": "\"Lente de gestión (número + propósito) para el corredor. No es venta al comprador → pasa G1/G2/G3 limpio. Candado G1: el lado 'cuantitativo' se corre sobre los números REALES del corredor, no cifras inventadas. La advertencia Wells Fargo/Enron es, de hecho, pro-honestidad: obsesionarse solo con el número lleva al fraud…",
+   "que_es": "per Gary Keller, gestiona el negocio con dos lentes que no son lo mismo. Lo cuantitativo es medible en números (¿pegué mis números?, ¿tengo la gente/leads/dinero suficientes?). Lo cualitativo pregunta si te diviertes, si cumples un llamado más alto, si tu gent…",
+   "como_aplica": "Coaching para el corredor (humano). Es el contrapeso de La combinación del millón (business by the number) y de toda la ingeniería de cartera de MREA - Los 4 Modelos: sí, corre tu negocio por el número — y revisa lo cualitativo (¿esto tiene sentido?, ¿mi equipo/mis clientes están bien?). La anécdota Wells Fargo/Enron es un anclaje directo al foso: la obsesión con la métrica sin propósito es justo lo que empuja a infl…",
+   "tags": [
+    "tactic",
+    "corredor",
+    "mindset",
+    "gestión",
+    "propósito",
+    "honestidad"
+   ],
+   "aliases": [
+    "cuantitativo y cualitativo",
+    "quantitative and qualitative",
+    "número y propósito",
+    "wells fargo enron"
+   ]
+  },
+  {
+   "titulo": "Ponerse del lado del comprador (anti commission-breath)",
+   "tipo": "tactic",
+   "mogul": "Alex Hormozi",
+   "agente": "corredor",
+   "foso": "amarillo",
+   "candado": "\"CANDADO: 'cuidar más que el propio comprador' es la mentalidad correcta SOLO cuando descansa en el encaje real y en el interés genuino del comprador. Se vuelve manipulación si (a) se usa para presionar hacia un cierre que no encaja, o (b) 'confrontar las creencias limitantes' se convierte en un guion para arrancar un…",
+   "que_es": "(per Alex Hormozi) — \"el que hace la venta es el que más se preocupa por el interés del comprador\". Introduce el término \"commission breath\": la gente huele si estás por tu agenda (tu comisión) o por la de ella. La palanca no es más habilidad sino un reframe d…",
+   "como_aplica": "Materia de coaching del corredor humano (agente: corredor) — no lo ejecuta un agente del CRM, pero es la mentalidad que lo sostiene: - \"Anti commission-breath\" es el espíritu del foso hecho mindset: el corredor honesto ya opera del lado del comprador (dato de entorno verificado con proveniencia, decir cuándo un inmueble NO encaja). Este reframe le da el lenguaje de por qué eso además vende. - Coincide con la lectura…",
+   "tags": [
+    "mindset",
+    "servicio",
+    "cuidado",
+    "corredor",
+    "coaching",
+    "conviccion"
+   ],
+   "aliases": [
+    "care most about the buyer",
+    "commission breath",
+    "estar del mismo lado de la mesa",
+    "cuidar al comprador",
+    "agenda del cliente"
+   ]
+  },
+  {
+   "titulo": "Practica como un atleta (95% entrenar, 5% jugar)",
+   "tipo": "tactic",
+   "mogul": "Ryan Serhant",
+   "agente": "corredor",
+   "foso": "verde",
+   "candado": "\"🟢 Pasa limpio: es disciplina de mejora deliberada (dedicar tiempo a estudiar/practicar la venta en vez de solo 'estar en juego'). No toca dato (G1), cliente (G2) ni manipulación (G3). Coaching humano de desarrollo profesional.\"",
+   "que_es": "per Ryan Serhant — su paso \"bonus\": los atletas profesionales pasan ~95% del tiempo practicando y solo ~5% jugando los partidos que vemos; los vendedores lo hacen al revés — 95% \"en juego\" (con clientes, al teléfono) y apenas 5% estudiando, confiados en que \"y…",
+   "como_aplica": "- Ruteo a corredor — es coaching humano de desarrollo, no algo que ejecute un agente del CRM. - Da permiso (y estructura) para bloquear tiempo de práctica deliberada: ensayar el manejo de una objeción, revisar cómo salió una negociación, estudiar el mercado antes de mostrar (encaja con Confianza por sobrepreparacion (memorizar el mercado)). - Se acopla al bloque Finder de Finder-Keeper-Doer (estructura del dia del ve…",
+   "tags": [
+    "mindset",
+    "practica",
+    "coaching",
+    "corredor",
+    "desarrollo"
+   ],
+   "aliases": [
+    "practice like an athlete",
+    "95% práctica 5% juego",
+    "entrenar como atleta",
+    "práctica deliberada",
+    "train study focus"
+   ]
+  },
+  {
+   "titulo": "Precio y términos van juntos (nunca bajes precio a secas)",
+   "tipo": "tactic",
+   "mogul": "Alex Hormozi",
+   "agente": "ambos",
+   "foso": "amarillo",
+   "candado": "\"CANDADO: cambiar términos por precio es honesto SOLO si el recorte es transparente y no toca el deber fiduciario ni la información de entorno. En vivienda el corredor no fija el precio del inmueble (lo fija el vendedor), así que la táctica se traslada al ALCANCE DEL SERVICIO / condiciones del trato, no a 'quitar compo…",
+   "que_es": "(per Alex Hormozi) — ante una objeción de precio, nunca bajes el precio a secas: \"en cuanto negocias una vez, todos tus precios pasan a ser negociables\". Si vas a cambiar el precio, cambia también los términos — quita un componente (en su ejemplo: remover la g…",
+   "como_aplica": "En vivienda el corredor no fija el precio del inmueble (lo fija el vendedor / el mercado), así que la táctica NO es \"quitar componentes de la casa\". Se traslada a dos planos honestos: - Alcance del servicio / condiciones del trato: si se ajusta la comisión o el paquete de servicio, ese ajuste corresponde a un alcance distinto y explícito (menos servicios, otro plazo) — nunca \"te lo dejo más barato\" sin más. El Estrat…",
+   "tags": [
+    "precio",
+    "objeciones",
+    "negociacion",
+    "ambos",
+    "terminos"
+   ],
+   "aliases": [
+    "precio y términos",
+    "price and terms",
+    "nunca bajes el precio",
+    "cambiar términos no precio",
+    "quitar un componente"
+   ]
+  },
+  {
+   "titulo": "Prospecta para tu yo futuro (referidos fuera del gremio)",
+   "tipo": "tactic",
+   "mogul": "Ryan Serhant",
+   "agente": "estratega",
+   "foso": "amarillo",
+   "candado": "\"🟡 CANDADO: prospectar hoy para el negocio de mañana y cultivar fuentes de referido fuera del gremio (wealth managers, etc.) con INFORMACIÓN PÚBLICA es lícito y honesto. El borde es el contacto en frío: pasa G3 solo si es TRANSPARENTE (te identificas, ofreces valor real de doble vía, respetas el no) y no fabrica una re…",
+   "que_es": "per Ryan Serhant — trabajas hoy porque \"necesitas comer hoy\", pero además prospectas para tu yo futuro, tu único jefe: esa versión mayor de ti \"más vale que tenga una vida increíble\", y depende del trabajo constante de hoy. En 2018 lo aterrizó buscando fuentes…",
+   "como_aplica": "- Ruteo a estratega — es gestión de cartera de fuentes de referido: el Estratega ayuda a identificar, priorizar y secuenciar a quién cultivar (profesionales adyacentes: gestores patrimoniales, abogados, contadores, administradores) y con qué cadencia (encaja con 33-Touch (nurture de la base)). - El ángulo honesto es el valor de doble vía: \"servimos al mismo tipo de cliente, cada uno en lo suyo\" — una alianza, no una…",
+   "tags": [
+    "prospeccion",
+    "referidos",
+    "estratega",
+    "cold-outreach",
+    "cartera"
+   ],
+   "aliases": [
+    "prospect for tomorrow",
+    "prospecta para mañana",
+    "yo futuro como jefe",
+    "future me is your boss",
+    "referral sources",
+    "fuentes de referido",
+    "wealth managers"
+   ]
+  },
+  {
+   "titulo": "Responsividad como servicio",
+   "tipo": "tactic",
+   "mogul": "Ryan Serhant",
+   "agente": "copiloto",
+   "foso": "verde",
+   "candado": "\"pasa limpio: responder rápido y bien es servicio puro, no manipulación. Único cuidado (G1): la velocidad no puede volverse pretexto para responder con una cifra sin verificar — mejor un 'te confirmo el dato en X' honesto que un número inventado al vuelo.\"",
+   "que_es": "per Ryan Serhant — la velocidad y calidad de la respuesta ES el producto. Serhant",
+   "como_aplica": "- El Copiloto ataca directo el punto de dolor del corredor: reduce el tiempo de respuesta. Redacta al instante un primer mensaje útil (responde lo preguntado + un siguiente paso), para que ninguna consulta quede fría por horas. - Cuando el corredor no puede responder al momento, el Copiloto genera un acuse honesto con compromiso de tiempo (\"veo tu mensaje, te confirmo el dato de la alícuota antes de las 6pm\") — mejor…",
+   "tags": [
+    "servicio",
+    "velocidad",
+    "copiloto",
+    "follow-up"
+   ],
+   "aliases": [
+    "velocidad de respuesta",
+    "responsiveness",
+    "el agente que contesta"
+   ]
+  },
+  {
+   "titulo": "Script como jazz (internalizar, no recitar)",
+   "tipo": "tactic",
+   "mogul": "Gary Keller",
+   "agente": "copiloto",
+   "foso": "amarillo",
+   "candado": "\"🟡 El núcleo (preparar/internalizar el guion para decir lo correcto en el momento correcto, sin sonar robótico) es honesto y sube la calidad del servicio. Riesgo a sellar: un 'script' puede volverse guion de presión/manipulación para 'arrancar un sí' (G3). Candado: el script solo ayuda al interesado a DECIDIR mejor con…",
+   "que_es": "per Gary Keller, \"success by the skill\": presentamos nuestro camino al éxito, y una presentación es una serie de scripts encadenados — un script es \"una forma de decir algo de manera poderosa y con propósito\". El real estate es \"una industria de palabras / de…",
+   "como_aplica": "Material del Copiloto (redactar el mensaje / manejar una objeción / dar el siguiente paso) y coaching al corredor. El Copiloto es, en cierto sentido, la biblioteca de scripts internalizados del corredor: sugiere cómo decir algo con propósito en el punto de decisión (una objeción, una explicación de precio, un siguiente paso) pero adaptado al caso, no un molde rígido. Empata con Manejo de objeciones en 4 pasos (acknow…",
+   "tags": [
+    "tactic",
+    "copiloto",
+    "comunicación",
+    "preparación",
+    "guion",
+    "servicio"
+   ],
+   "aliases": [
+    "success by the skill",
+    "scripts como jazz",
+    "internalizar el script",
+    "no scripted",
+    "preparación y roleplay",
+    "industria de palabras"
+   ]
+  },
+  {
+   "titulo": "Ser el rol antes de tener el rol (big money energy)",
+   "tipo": "tactic",
+   "mogul": "Ryan Serhant",
+   "agente": "corredor",
+   "foso": "amarillo",
+   "candado": "\"🟡 CANDADO: es coaching de mindset/carrera para el corredor novato (ofrécete para el trabajo y el cliente que nadie quiere antes de que te lo pidan). Pasa limpio en G1/G2/G3 — no toca dato de mercado, no orienta al cliente por clase protegida, no manipula al comprador. El amarillo es por el ASTERISCO de Serhant: 'big m…",
+   "que_es": "(per Ryan Serhant) Para el agente novato en un team/brokerage, el atajo a la promoción es actuar el rol que quieres antes de que te lo den: haz el trabajo humilde que te asignaron (contratos, escaneos, café) porque para eso te contrataron, pero además da el pa…",
+   "como_aplica": "Es coaching de carrera/mindset (agente: corredor) para el corredor LATAM que empieza dentro de una inmobiliaria o al lado de un senior: - Toma el cliente \"de $10\" que nadie quiere. Cuando no tienes cartera, cada cliente es entrenamiento pagado en reputación; el volumen y la experiencia se construyen aceptando lo que los top producers descartan. - Haz el trabajo humilde Y da el paso extra — no una cosa u otra. Serhant…",
+   "tags": [
+    "carrera",
+    "mindset",
+    "coaching",
+    "novato",
+    "iniciativa"
+   ],
+   "aliases": [
+    "be the role before you are the role",
+    "sé el rol antes de serlo",
+    "big money energy",
+    "step up early"
+   ]
+  },
+  {
+   "titulo": "Servir primero: contenido sobre el cliente, no sobre ti",
+   "tipo": "tactic",
+   "mogul": "Ryan Serhant",
+   "agente": "corredor",
+   "foso": "verde",
+   "candado": "\"🟢 Pasa limpio: 'sales is service' — orientar el contenido y el trato hacia lo útil para el cliente (no el 'yo, yo, yo') es honesto y refuerza el foso (pone al cliente antes que el ego del vendedor). No inventa dato (G1), no segmenta por clase protegida (G2), no manipula (G3). Es coaching de marca/contenido para la per…",
+   "que_es": "per Ryan Serhant — \"sales is service at the end of the day\". El marketing viejo era \"yo, yo, yo\" (mira qué grande soy, mira mi deal) — hoy eso es \"el swipe más rápido de todos\", nadie lo aguanta. El contenido y el trato deben girar sobre el cliente: cómo lo ay…",
+   "como_aplica": "- Ruteo a corredor — es coaching de marca/contenido para la persona; la producción de contenido concreto vive del lado LinkedIn/AEO de Whaber, no en el Copiloto ni el Estratega. - Reencuadra el contenido del corredor de \"vitrina de logros\" a utilidad para el comprador/vendedor (explicar el mercado, resolver una duda, mostrar el dato de entorno con proveniencia) — lo que Whaber ya premia con El dato arma al agente. -…",
+   "tags": [
+    "servicio",
+    "contenido",
+    "marca-personal",
+    "corredor",
+    "cliente"
+   ],
+   "aliases": [
+    "serve someone today",
+    "sirve a alguien hoy",
+    "sales is service",
+    "contenido sobre el cliente",
+    "no me me me",
+    "servir primero"
+   ]
+  },
+  {
+   "titulo": "Sistema de organización del inbox (no-reply de 48h)",
+   "tipo": "tactic",
+   "mogul": "Ryan Serhant",
+   "agente": "estratega",
+   "foso": "verde",
+   "candado": "\"🟢 Pasa limpio: es infraestructura de organización personal para que ningún seguimiento se caiga por olvido. No toca dato del cliente de forma engañosa, no segmenta por clase protegida, no manipula. Es el andamio operativo del follow-up honesto.\"",
+   "que_es": "per Ryan Serhant — el andamio operativo detrás de su follow-up. Serhant tiene un inbox obsesivamente organizado por carpetas (compradores activos, pitches de listado, por mercado) y, sobre todo, una carpeta \"no-reply\" que captura automáticamente cada email que…",
+   "como_aplica": "- El Estratega / el CRM es la versión Whaber de este sistema: ningún lead se cae por olvido. El \"estado dormido\" + cron de reenganche del Agente de Reenganche cumplen la función de la carpeta no-reply — detectan el silencio y avisan al corredor cuándo toca el siguiente toque. - Convierte el follow-up de un acto de voluntad heroica (recordar a mano) en un sistema: la disciplina la sostiene la infraestructura, no la me…",
+   "tags": [
+    "organizacion",
+    "follow-up",
+    "sistema",
+    "estratega",
+    "productividad"
+   ],
+   "aliases": [
+    "carpeta no-reply",
+    "48 hour folder",
+    "sistema de carpetas",
+    "inbox organizado"
+   ]
+  },
+  {
+   "titulo": "The ONE Number (el número donde haces tu stand)",
+   "tipo": "tactic",
+   "mogul": "Gary Keller",
+   "agente": "estratega",
+   "foso": "verde",
+   "candado": "\"Priorización: identificar el UN número del embudo en el que concentrarte para que el resto se alinee. Pasa G1/G2/G3 limpio. Candado G1: el número es una métrica REAL del corredor (sus conversaciones, sus citas), no una cifra prometida al cliente; el LLM narra sobre el dato propio y no inventa el ratio de conversión.\"",
+   "que_es": "per Gary Keller (aplicando la lógica de su libro The ONE Thing), dentro de la fórmula del negocio hay un número en el que conviene concentrar el esfuerzo — donde \"haces tu stand\" — porque, si lo mueves, el resto tiende a alinearse. En real estate suele ser el…",
+   "como_aplica": "Material del Estratega / cartera. Frente a un embudo que se rompe en varios sitios a la vez (menos leads, menos citas atendidas, más acuerdos rotos), el Estratega ayuda al corredor a no dispersarse: ubicar su ONE number (¿es volumen de conversaciones al tope? ¿tasa de citas atendidas? ¿retención de acuerdos?) y hacer ahí su stand, en lugar de tocar diez palancas a la vez. Se cruza con los KPIs de Leverage en shift -…",
+   "tags": [
+    "tactic",
+    "cartera",
+    "foco",
+    "embudo",
+    "kpi",
+    "math"
+   ],
+   "aliases": [
+    "the one number",
+    "one thing aplicado al embudo",
+    "el número stand"
+   ]
+  },
+  {
+   "titulo": "Tres precios (list, target, walk-away)",
+   "tipo": "tactic",
+   "mogul": "Ryan Serhant",
+   "agente": "estratega",
+   "foso": "verde",
+   "candado": "\"🟢 Pasa limpio: preparar tu pedido, tu objetivo y tu mínimo antes de negociar es disciplina honesta, no manipulación. El walk-away protege al corredor Y da poder real (no fabricado). Cuidado G1: los tres números deben anclarse en valor/comps reales, no inventados.\"",
+   "que_es": "per Ryan Serhant — antes de negociar, llega con tres precios: list price (tu pedido inicial / lo que pides), target price (a dónde crees realmente que llegarás) y walk-away price (el mínimo sin el cual no haces el trato). Serhant lo extrae de la escena de Just…",
+   "como_aplica": "- El Estratega ayuda al corredor a preparar la negociación: fijar el pedido, el objetivo realista (anclado en comps/valor verificado) y el punto de retirada — antes de sentarse. - El walk-away conecta con el poder real: quien puede levantarse tiene la mano alta (ver Poder de negociacion = necesidad vs deseo (need vs want)). - Es preparación de cartera/estrategia, no un guion por-mensaje — por eso rutea a estratega.",
+   "tags": [
+    "negociacion",
+    "preparacion",
+    "estratega",
+    "precio"
+   ],
+   "aliases": [
+    "list target walk-away",
+    "walk-away price",
+    "tres números de la negociación",
+    "precio de retirada"
+   ]
+  },
+  {
+   "titulo": "Trim and stack (diseño de la oferta por problemas)",
+   "tipo": "tactic",
+   "mogul": "Alex Hormozi",
+   "agente": "estratega",
+   "foso": "verde",
+   "candado": "\"Pasa limpio en su uso interno: es un método de DISEÑO DE SERVICIO (listar todos los problemas del cliente en su journey, resolver los de alto-valor/bajo-costo, cortar el resto). No toca al comprador ni infla nada. Candado suave: los 'problemas' que se resuelven se definen por la intención declarada del comprador y por…",
+   "que_es": "(per Alex Hormozi) — para hacer una oferta más valiosa: (1) lista cada micro-problema que el cliente encuentra en todo su journey (los mejores alumnos suyos generan 100+); (2) escribe la solución \"blue ocean\" de cada uno; (3) el trim & stack: quédate con los d…",
+   "como_aplica": "Es un método de diseño del servicio del corredor / de Whaber (agente: estratega), no una técnica de venta a comprador. Se aplica al journey real del comprador de vivienda: - Listar los problemas reales del comprador en su recorrido (verificar el entorno, saber si llega caminando al trabajo, entender la zona, comparar opciones, la logística del proceso) — muchos ya los resuelve el foso de Whaber. - Priorizar los de al…",
+   "tags": [
+    "oferta",
+    "diseno-de-servicio",
+    "estratega",
+    "valor"
+   ],
+   "aliases": [
+    "trim and stack",
+    "trim & stack",
+    "diseño de oferta por problemas"
+   ]
+  },
+  {
+   "titulo": "Vender contra la inacción, no contra el competidor",
+   "tipo": "tactic",
+   "mogul": "Alex Hormozi",
+   "agente": "ambos",
+   "foso": "verde",
+   "candado": "\"Pasa limpio: el rival real del comprador es su propia duda/comodidad de no decidir, no otro inmueble ni otro corredor. La versión honesta BAJA la fricción y el riesgo con dato verificado (menos vueltas, info de una vez, proveniencia) — no fabrica urgencia. Candado: 'bajar el umbral de acción' se hace removiendo fricci…",
+   "que_es": "(per Alex Hormozi) — \"la mayoría cree que vende contra su competencia; yo no. Vendes contra la inacción, contra la duda, contra el riesgo\". La comodidad de NO decidir es tan alta que el trabajo es bajar el umbral de acción hasta que dar el paso tenga tan poca…",
+   "como_aplica": "Reencuadra el objetivo del corredor de forma sana: el rival no es otro inmueble ni otro corredor, es la duda del comprador. Y la palanca honesta para bajarla es remover fricción y riesgo reales con dato: - Menos vueltas: entregar la info de entorno verificada de una vez (isócronas, POIs propios, badges de frescura) en lugar de mandar al comprador a investigar. - Bajar el riesgo percibido con proveniencia (mostrar de…",
+   "tags": [
+    "encaje",
+    "friccion",
+    "riesgo",
+    "ambos"
+   ],
+   "aliases": [
+    "selling against inaction",
+    "vender contra la duda",
+    "bajar el umbral de acción"
+   ]
+  },
+  {
+   "titulo": "Vender el resultado, no el mecanismo (sell the vacation)",
+   "tipo": "tactic",
+   "mogul": "Alex Hormozi",
+   "agente": "copiloto",
+   "foso": "amarillo",
+   "candado": "\"CANDADO: articular el OUTCOME que el comprador YA declaró querer (llegar caminando al trabajo, patio para el perro), no los tecnicismos del proceso — pero SIN inflar el sueño ni prometer un futuro. Toda afirmación de resultado va con dato verificado y proveniencia (G1). Prohibido alimentar el 'sueño' por proxy de perf…",
+   "que_es": "(per Alex Hormozi) — \"sell the vacation, not the plane flight\": el comprador no quiere oír los módulos, los macros, los pasos del proceso (todo eso \"suena a trabajo\"); quiere el resultado/destino (Maui). El vendedor articula el outcome con una anécdota corta,…",
+   "como_aplica": "Es un lente de articulación para el Copiloto, no un gatillo de deseo. Whaber lo usa para redactar el por qué encaja de un inmueble en términos del outcome que el comprador declaró, no en jerga del proceso: - El comprador dijo \"quiero que mi hijo no cambie de escuela\" → el Copiloto articula el encaje con ESE resultado (la escuela X queda a N minutos caminando, dato verificado con proveniencia), no una lista de feature…",
+   "tags": [
+    "articulacion",
+    "outcome",
+    "discovery",
+    "copiloto"
+   ],
+   "aliases": [
+    "sell the vacation not the plane flight",
+    "vender el destino",
+    "vender Maui"
+   ]
+  },
+  {
+   "titulo": "Vender la experiencia y el outcome",
+   "tipo": "tactic",
+   "mogul": "Ryan Serhant",
+   "agente": "copiloto",
+   "foso": "amarillo",
+   "candado": "\"🟡 CANDADO: se vende el OUTCOME real (cómo se vivirá el espacio, qué resuelve) apoyado SIEMPRE en dato verificado (m2, entorno, tiempos reales de Whaber). Roza optics/lujo-vacío: prohibido pintar un resultado no respaldado ('vas a ser feliz aquí', 'esta zona es la mejor') o usar proxies de Fair Housing ('barrio familia…",
+   "que_es": "per Ryan Serhant (tesis central de Sell It Like Serhant (libro)) — la gente no",
+   "como_aplica": "- El Copiloto ayuda a redactar la descripción y el pitch en clave de outcome real: en vez de \"3 hab, 120 m2\", articula \"espacio para el escritorio en casa que buscabas + el cuarto extra para cuando venga tu familia\" — anclado en lo que el cliente dijo que necesita y en el dato verificado de Whaber (m2, tiempos de traslado reales, entorno con proveniencia). - Convierte la ficha técnica en narrativa sin dejar de ser ci…",
+   "tags": [
+    "venta-por-valor",
+    "storytelling",
+    "copiloto",
+    "objeciones"
+   ],
+   "aliases": [
+    "sell the experience",
+    "vender el outcome",
+    "sell it like serhant",
+    "no vendas el m2"
+   ]
+  },
+  {
+   "titulo": "Vender premium a un nicho que resuelves del todo",
+   "tipo": "tactic",
+   "mogul": "Alex Hormozi",
+   "agente": "estratega",
+   "foso": "amarillo",
+   "candado": "\"CANDADO CRÍTICO (G2 Fair Housing): 'especializarse en un nicho premium' es válido SOLO cuando el nicho se define por TIPO DE NECESIDAD o TIPO DE INMUEBLE (p.ej. 'compradores de primera vivienda', 'inversión en renta corta', 'reubicación corporativa'), JAMÁS por clase protegida ni proxy (raza, origen, religión, estatus…",
+   "que_es": "(per Alex Hormozi) — verdad #1: \"vende a ricos hasta tener dinero para venderle a todos; el medio te mata\". Su tesis de negocio: o construyes para volumen (masas, ganas por eficiencia, requiere infraestructura y capital enorme) o construyes premium/nicho (resu…",
+   "como_aplica": "Material del Estratega / posicionamiento — cómo el corredor elige su especialidad: - El \"nicho premium\" honesto de Whaber se define por tipo de necesidad o de inmueble, no por personas: compradores de primera vivienda, inversión en renta corta, reubicación corporativa, un rango/tipo de propiedad. Ahí el corredor resuelve el problema del todo (dato de zona, acompañamiento) y puede cobrar/servir premium. - El valor rea…",
+   "tags": [
+    "estratega",
+    "posicionamiento",
+    "nicho",
+    "especializacion",
+    "fair-housing"
+   ],
+   "aliases": [
+    "sell to rich not poor",
+    "vender premium",
+    "nicho premium",
+    "especializarse",
+    "solve rich people problems",
+    "premium vs volumen"
+   ]
+  },
+  {
+   "titulo": "Bullseye de generación de leads (de adentro hacia afuera)",
+   "tipo": "framework",
+   "mogul": "Gary Keller",
+   "agente": "estratega",
+   "foso": "verde",
+   "candado": "\"Es priorización de FUENTES de lead por retorno/costo: trabajar de adentro (relación) hacia afuera (frío). Pasa G1/G2/G3 limpio. Candado G1: los ratios (5-7/año, 12:2, 50:1, 100:1) son de MREA atribuidos a Keller, órdenes de magnitud, no promesa Whaber — el corredor calibra con sus números. Candado G2: los círculos se…",
+   "que_es": "per Gary Keller (MREA), una diana (bullseye) que ordena las fuentes de leads por retorno vs. costo. Regla central: trabajas de adentro hacia afuera y \"no sales del círculo hasta dominarlo\" — el centro es mayor retorno / menor costo (relación) y a medida que te…",
+   "como_aplica": "Material puro del Estratega / cartera. Es el mapa para dónde poner el esfuerzo de lead-gen primero. El Estratega ayuda al corredor a: - Diagnosticar en qué círculo vive hoy: ¿está gastando en portales/anuncios (100:1) mientras su base Met (12:2) está desatendida? → mover el esfuerzo hacia adentro. - Construir aliados de verdad: identificar 3-5 negocios recíprocos y sostener la reunión semanal — no confundir \"proveedo…",
+   "tags": [
+    "framework",
+    "cartera",
+    "lead-gen",
+    "base-de-datos",
+    "esfera-de-influencia",
+    "priorizacion",
+    "mrea"
+   ],
+   "aliases": [
+    "bullseye",
+    "diana de lead gen",
+    "lead generation bullseye",
+    "circulos de generacion de leads",
+    "inside-out lead gen"
+   ]
+  },
+  {
+   "titulo": "CLOSER (descubrimiento por preguntas)",
+   "tipo": "framework",
+   "mogul": "Alex Hormozi",
+   "agente": "copiloto",
+   "foso": "amarillo",
+   "candado": "\"CANDADO: quedarse SÓLO con Clarify / Label / Overview (descubrir la motivación real por PREGUNTAS y reflejarla). DESCARTAR Sell / Explain / Reinforce cuando derive en presión, urgencia o cierre forzado (viola G3 no-manipulación). Se permite CIERRE NULO: si no hay encaje o el interesado no está listo, no se cierra — si…",
+   "que_es": "(per Alex Hormozi) — un acrónimo de 6 pasos para conversaciones de venta. Los seis son:",
+   "como_aplica": "Whaber toma sólo la mitad de descubrimiento — la que hace bueno a un corredor: preguntar y escuchar el 80% (coincide con la lógica de estratega-de-negociacion y con la lectura empática de Barbara Corcoran). LO QUE SE QUEDA (🟢 dentro del framework 🟡): - Clarify — abrir con preguntas: \"¿qué te hizo empezar a buscar ahora?\", \"¿qué tiene que pasar para que digas que fue la casa correcta?\". Descubrir la intención real dec…",
+   "tags": [
+    "descubrimiento",
+    "discovery",
+    "preguntas",
+    "escucha",
+    "objeciones"
+   ],
+   "aliases": [
+    "CLOSER",
+    "framework CLOSER",
+    "descubrimiento por preguntas"
+   ]
+  },
+  {
+   "titulo": "Camino de 7 pasos del agente nuevo (Serhant)",
+   "tipo": "framework",
+   "mogul": "Ryan Serhant",
+   "agente": "corredor",
+   "foso": "verde",
+   "candado": "\"🟢 Pasa limpio: es una secuencia de onboarding de carrera (interno → licencia → team → esfera → estructura del día → seguimiento → people-finder). No toca dato de mercado (G1), no orienta al cliente por clase protegida (G2), no manipula (G3). Coaching humano de trayectoria; NO lo ejecuta un agente del CRM. Cada paso re…",
+   "que_es": "per Ryan Serhant — su secuencia ordenada para pasar de agente nuevo a productor consolidado. No es una táctica suelta sino el mapa de onboarding que enlaza varias piezas del vault en un orden:",
+   "como_aplica": "- Ruteo a corredor — es el mapa de carrera para el corredor LATAM que empieza o pivota; no lo ejecuta un agente del CRM, orienta a la persona. - Sirve de índice: cada paso ya tiene su página atómica con foso y ruteo propios; este framework es el orden en que se aterrizan. - El valor Whaber es la secuencia, no la novedad de cada pieza: primero piso (interno/licencia/team), luego flujo (esfera + estructura del día), lu…",
+   "tags": [
+    "framework",
+    "carrera",
+    "novato",
+    "onboarding",
+    "corredor"
+   ],
+   "aliases": [
+    "7 steps",
+    "7 pasos",
+    "siete pasos del agente",
+    "how to be a successful real estate agent"
+   ]
+  },
+  {
+   "titulo": "Charge the Storm — mentalidad del búfalo en recesión",
+   "tipo": "framework",
+   "mogul": "Gary Keller",
+   "agente": "corredor",
+   "foso": "verde",
+   "candado": "\"Coaching de mentalidad para el corredor humano, no táctica de venta al cliente. Pasa G1/G2/G3 limpio: no toca datos del cliente, no segmenta por clase protegida, no manipula a nadie — es actitud del profesional ante la crisis. Sin candado especial.\"",
+   "que_es": "per Gary Keller, la actitud correcta ante una recesión/shift es la del búfalo: el único animal que, ante la tormenta, corre hacia ella para atravesarla más rápido, en vez de huir (imposible) o hibernar (te vuelve indefenso). El opuesto es \"ponerse el traje de…",
+   "como_aplica": "Es coaching humano (agente: corredor), no algo que ejecute el Copiloto o el Estratega. Sirve al corredor LATAM en mercados de tasas altas o desaceleración: en vez de paralizarse (\"¿quién va a comprar/vender ahora?\"), sale a buscar a quien igual va a transaccionar. Keller cuenta que empezó a los 21 en la recesión de ~1979 con tasas 18% (cifra atribuida a él, no verdad Whaber) y cumplió sus metas porque razonó \"alguien…",
+   "tags": [
+    "framework",
+    "mindset",
+    "recesion",
+    "shift",
+    "corredor"
+   ],
+   "aliases": [
+    "Buffalo mindset",
+    "cargar la tormenta",
+    "be the buffalo"
+   ]
+  },
+  {
+   "titulo": "Corcoran Report (dato de mercado que arma al agente)",
+   "tipo": "framework",
+   "mogul": "Barbara Corcoran",
+   "agente": "estratega",
+   "foso": "verde",
+   "candado": "\"Pasa limpio en las tres compuertas: es dato de mercado agregado con proveniencia (G1 ✓ — narra números reales, no inventados), no segmenta por clase protegida ni proxies (G2 ✓ — habla de precios/pies-cuadrados/absorción, no de 'tipo de gente'), y no manipula (G3 ✓ — informa, no presiona). CANDADO general de dato: cada…",
+   "que_es": "(per Barbara Corcoran) A finales de los 80 Corcoran tomó los datos crudos de sus propias ventas de departamentos en Manhattan y los publicó como un reporte de mercado con su nombre — precios promedio, tendencias, absorción. Antes de eso el mercado de NYC era o…",
+   "como_aplica": "Esta es, conceptualmente, la misma jugada que Whaber hace con la inteligencia geoespacial. El corredor LATAM no tiene un MLS que le regale autoridad; su ventaja es el dato de terreno con proveniencia. El Estratega usa este framework para: 1. Convertir el Place Graph en el \"Corcoran Report\" del corredor — inteligencia de zona (precios reales de cierre, tiempos en mercado, dinámica de barrio en términos neutrales) que…",
+   "tags": [
+    "dato-de-mercado",
+    "autoridad",
+    "PR",
+    "place-graph",
+    "inteligencia-geoespacial"
+   ],
+   "aliases": [
+    "The Corcoran Report",
+    "Reporte de mercado propio"
+   ]
+  },
+  {
+   "titulo": "El journey of value (promover, proveer, probar) y los 6 pilares",
+   "tipo": "framework",
+   "mogul": "Gary Keller",
+   "agente": "estratega",
+   "foso": "verde",
+   "candado": "\"Estrategia de valor del agente: sube de nivel en 6 pilares (info, educación, consejo, servicio, conexión, afinidad) para no ser commoditizado por los portales. Pasa G1/G2/G3 limpio. Candado G1: 'información/educación de alto nivel' = dato con proveniencia (fuente + fecha), el LLM narra el dato, no lo inventa. Candado…",
+   "que_es": "per Gary Keller, el valor del agente recorre tres momentos — promover → proveer → probar:",
+   "como_aplica": "Este es, casi literalmente, el argumento estratégico de Whaber puesto en boca de Keller. Material del Estratega (con coaching al corredor). El corredor LATAM no tiene un MLS que le regale la información, así que su foso ES subir de nivel en los pilares con dato de terreno con proveniencia: - Información + educación + consejo de alto nivel = el Place Graph de Whaber: POIs propios (Overture + OSM conflados), isócronas…",
+   "tags": [
+    "framework",
+    "cartera",
+    "valor",
+    "dato",
+    "hyperlocal",
+    "portales",
+    "place-graph",
+    "autoridad"
+   ],
+   "aliases": [
+    "journey of value",
+    "promote provide prove",
+    "promover proveer probar",
+    "seis pilares de valor",
+    "6 pillars of value",
+    "value proposition",
+    "commoditización del agente"
+   ]
+  },
+  {
+   "titulo": "Evergreen vs. Situacional — las dos mentalidades del CEO",
+   "tipo": "framework",
+   "mogul": "Gary Keller",
+   "agente": "corredor",
+   "foso": "verde",
+   "candado": "\"Coaching de mentalidad y disciplina personal/profesional del corredor, no táctica de venta. Pasa G1/G2/G3 limpio. Punto de atención G3: el punto 6 ('vivir con certeza') y el punto 1 ('ser positivo') son actitud del corredor, no guiones para presionar al cliente ni para minimizar riesgos reales frente a él.\"",
+   "que_es": "per Gary Keller, ante un mercado que sube y baja hay dos mentalidades que un líder debe cultivar:",
+   "como_aplica": "Es coaching humano (agente: corredor) para la persona detrás del CRM. El Evergreen mindset le dice al corredor que su mejor seguro contra el ciclo es su disciplina base (finanzas personales sanas, base de datos ya cultivada, relaciones con equity) — lo que conecta con por qué el nurture honesto de la esfera de influencia (33-Touch (nurture de la base), 8x8 (onboarding de un contacto nuevo)) es una inversión Evergreen…",
+   "tags": [
+    "framework",
+    "mindset",
+    "recesion",
+    "disciplina",
+    "corredor"
+   ],
+   "aliases": [
+    "Evergreen mindset",
+    "mentalidad perenne",
+    "situational mindset",
+    "seis puntos de la mentalidad situacional"
+   ]
+  },
+  {
+   "titulo": "Finder-Keeper-Doer (estructura del día del vendedor)",
+   "tipo": "framework",
+   "mogul": "Ryan Serhant",
+   "agente": "corredor",
+   "foso": "verde",
+   "candado": "\"🟢 Pasa limpio: es disciplina de gestión del tiempo del corredor (bloquear el día en finder/keeper/doer). No toca dato, no segmenta por clase protegida, no manipula. Es coaching humano — lo ejecuta la persona, no un agente del CRM.\"",
+   "que_es": "per Ryan Serhant — el vendedor independiente es su propio CEO, CFO y COO, así que divide el día en tres bloques: Finder (tiempo de CEO: prospectar, construir relaciones, pensar el negocio), Keeper (tiempo de CFO: cuidar el dinero y el negocio actual), Doer (ti…",
+   "como_aplica": "- Ruteo a corredor — es coaching humano de gestión del tiempo, no algo que ejecute el Copiloto ni el Estratega. - Da al corredor un marco para no vivir trato-a-trato: reserva tiempo diario de prospección (Finder) aunque no haya citas, para que el embudo nunca se seque. - Complementa la disciplina que ya sostiene el CRM: mientras el corredor prospecta en su bloque Finder, el Sistema de organización del inbox (no-reply…",
+   "tags": [
+    "framework",
+    "productividad",
+    "mindset",
+    "corredor",
+    "gestion-del-tiempo"
+   ],
+   "aliases": [
+    "Finder Keeper Doer",
+    "FKD",
+    "Get FKD",
+    "bloqueo de tiempo del vendedor"
+   ]
+  },
+  {
+   "titulo": "La combinación del millón (business by the number)",
+   "tipo": "framework",
+   "mogul": "Gary Keller",
+   "agente": "estratega",
+   "foso": "amarillo",
+   "candado": "\"🟡 El núcleo (colapsar el negocio en UN número de actividad diaria) es honesto y potente. Candado: los números de la combinación (350 cierres, $7,500 comisión, 311 citas → 7/semana) son EJEMPLOS US/MREA, no metas de Whaber ni promesas; el corredor corre SU propia combinación con SUS ratios reales. Riesgo a sellar: 'ir…",
+   "que_es": "per Gary Keller (es MREA, dicho de otra forma), todo negocio tiene una meta de profit; toda meta es una combinación de números; y cada combinación tiene UN número clave que la dispara. De ahí \"business by the number\" (singular), no \"by the numbers\". La million…",
+   "como_aplica": "Material del Estratega / cartera. Es la contraparte \"de actividad\" del The ONE Number (el número donde haces tu stand): mientras The ONE Number identifica el cuello de botella del embudo en un shift, la combinación del millón fija el número de actividad diaria hacia adelante que hace correr todo el modelo. El Estratega ayuda al corredor a: 1. Correr SU propia combinación con sus ratios reales (su comisión promedio lo…",
+   "tags": [
+    "framework",
+    "cartera",
+    "math",
+    "meta",
+    "actividad",
+    "embudo",
+    "mrea"
+   ],
+   "aliases": [
+    "millionaire combination",
+    "combinación del millón",
+    "business by the number",
+    "7 appointments a week",
+    "7 citas por semana",
+    "el número que dispara la combinación"
+   ]
+  },
+  {
+   "titulo": "Las 5 actividades diarias del agente (MREA)",
+   "tipo": "framework",
+   "mogul": "Gary Keller",
+   "agente": "estratega",
+   "foso": "verde",
+   "candado": "\"Disciplina operativa: las cinco cosas que hace un agente productivo cada día. Pasa G1/G2/G3 limpio: es rutina personal, no venta ni manipulación. Nota: la 5ª (scripts/roleplay) es sana si el guion se practica para SERVIR mejor (memorizar y hacer natural), no para arrancar un sí por presión — ver el candado de Manejo d…",
+   "que_es": "per Gary Keller (MREA) —según se enseña en IGNITE 2.0 Session 2 - Lead Generation— hay cinco actividades que todo agente productivo debe hacer cada día. Son el \"core\" de la disciplina diaria (time-blocked); todo lo demás es ruido:",
+   "como_aplica": "Material del Estratega / cartera (diagnóstico de disciplina), con un pie en el corredor (coaching de hábito). Sirve para auditar el día del corredor: ¿está haciendo las cinco, o solo \"se ve ocupado\" con email? El Estratega puede: - Ordenar el time-block: proteger un bloque diario de lead-gen y otro de follow-up (son cosas distintas). - Separar generar de seguir: en el CRM, \"generar\" = trabajar leads nuevos; \"seguir\"…",
+   "tags": [
+    "framework",
+    "cartera",
+    "disciplina",
+    "rutina",
+    "lead-gen",
+    "mrea"
+   ],
+   "aliases": [
+    "5 actividades diarias",
+    "cinco actividades del agente",
+    "five daily activities",
+    "daily activities agente"
+   ]
+  },
+  {
+   "titulo": "Leverage en shift — org chart, wealth determiners y KPIs",
+   "tipo": "framework",
+   "mogul": "Gary Keller",
+   "agente": "estratega",
+   "foso": "verde",
+   "candado": "\"Estrategia de gestión de personas/equipo en un mercado que se enfría (org chart derivado del modelo, posiciones clave, skills, eficiencias, KPIs, cautela con despidos). Es coaching de negocio para el corredor/dueño de equipo, no venta al cliente. Pasa G1/G2/G3 limpio. Candado G2: 'top-grade / recruit / promote' se dec…",
+   "que_es": "per Gary Keller, en un mercado en shift el leverage (apalancamiento en personas) es la pieza más importante — pero solo se aborda después de tener el modelo, las metas, el plan y el presupuesto en sincronía. La secuencia dura es: modelo → metas → plan → presup…",
+   "como_aplica": "Material del Estratega / cartera, útil sobre todo para el corredor que lidera un equipo o una operación (no el agente solo). El Estratega ayuda a: - Derivar el org chart del modelo (no cortar personas \"a ciegas\"): primero ¿cuál es el modelo a 3-5 años?, luego ¿qué equipo lo sostiene? - Identificar los \"wealth determiners\" del negocio del corredor (¿qué roles/actividades realmente mueven el ingreso?) y asegurarlos. -…",
+   "tags": [
+    "framework",
+    "cartera",
+    "leverage",
+    "equipo",
+    "org-chart",
+    "kpis",
+    "shift"
+   ],
+   "aliases": [
+    "Leverage en shift",
+    "get purposeful with your people",
+    "wealth determiners",
+    "talent share",
+    "org chart en shift",
+    "KPIs en shift"
+   ]
+  },
+  {
+   "titulo": "MREA — Los 3 L (Leads, Listings, Leverage)",
+   "tipo": "framework",
+   "mogul": "Gary Keller",
+   "agente": "estratega",
+   "foso": "verde",
+   "candado": "\"Motor de crecimiento del negocio: conseguir demanda (Leads), acumular inventario/mandatos (Listings) y escalar vía sistemas+personas (Leverage). Pasa G1/G2/G3 limpio. Candado G2: 'Listings' es priorizar POR TIPO DE MANDATO/INVENTARIO, jamás por características del cliente ni por zona usada como proxy de clase protegid…",
+   "que_es": "per Gary Keller (MREA), el crecimiento de un negocio inmobiliario se apalanca en tres L que se refuerzan entre sí:",
+   "como_aplica": "Material del Estratega. Sirve para diagnosticar de qué L cojea la cartera del corredor: ¿le faltan leads (embudo seco)?, ¿tiene leads pero poco inventario/mandatos captados?, ¿está saturado y necesita apalancarse en sistemas/personas? El Estratega usa las 3 L como mapa de cuello de botella y prioriza la palanca correcta en cada etapa. En LATAM, \"Listings\" se lee como captación de mandatos / inventario propio: el Estr…",
+   "tags": [
+    "framework",
+    "cartera",
+    "crecimiento",
+    "mrea"
+   ],
+   "aliases": [
+    "Three L's",
+    "3 L de MREA",
+    "Leads Listings Leverage"
+   ]
+  },
+  {
+   "titulo": "MREA — Los 4 Modelos",
+   "tipo": "framework",
+   "mogul": "Gary Keller",
+   "agente": "estratega",
+   "foso": "verde",
+   "candado": "\"Es ingeniería de negocio (modelar números, generación de leads, presupuesto y estructura), no venta ni manipulación. Pasa G1/G2/G3 limpio: no empuja a inventar cifras (el corredor mide las suyas), no segmenta por clase protegida, no presiona a nadie. Candado suave G1: los números del modelo son METAS/proyecciones del…",
+   "que_es": "per Gary Keller (MREA), el negocio de un agente/equipo de alto rendimiento se construye sobre cuatro modelos que se implementan en orden. Es una arquitectura del negocio, no un guion de venta: primero decides los números, luego cómo generar demanda, luego qué…",
+   "como_aplica": "Este es el material del Estratega, no del Copiloto. El Estratega usa los 4 Modelos para diagnosticar la cartera del corredor: dado su ingreso-meta, ¿cuántos leads y citas necesita?, ¿su generación de leads es sistemática o improvisada?, ¿está gastando donde hay retorno?, ¿qué debería delegar primero? Convierte un negocio reactivo en uno modelado. Whaber lo aporta narrando desde los datos que el corredor sí tiene (sus…",
+   "tags": [
+    "framework",
+    "cartera",
+    "modelado",
+    "mrea"
+   ],
+   "aliases": [
+    "4 Modelos MREA",
+    "Four Models"
+   ]
+  },
+  {
+   "titulo": "Master Your Model and Math (M&M en shift)",
+   "tipo": "framework",
+   "mogul": "Gary Keller",
+   "agente": "estratega",
+   "foso": "verde",
+   "candado": "\"Ingeniería de negocio: realinear P&L y correr la fórmula (moments of truth) para diagnosticar dónde se rompe el embudo en un shift. Pasa G1/G2/G3 limpio. Candado G1: los números del embudo son los RATIOS REALES del corredor (o metas internas), nunca cifras prometidas al cliente ni inventadas. El LLM narra sobre dato p…",
+   "que_es": "per Gary Keller, cuando el mercado se vuelve tienes un \"M&M problem\": Math (matemática) y Model (modelo). Se trabajan en dos niveles.",
+   "como_aplica": "Material del Estratega / cartera. El Estratega usa M&M para diagnosticar el negocio del corredor en un mercado que se enfría: ¿su P&L está alineado?, ¿qué gasto es esencial y cuál es \"darling\"?, ¿en qué moment of truth se le está rompiendo el embudo (menos citas atendidas, más acuerdos rotos)?, ¿cuál es su ONE number? Es el complemento operativo del MREA - Los 4 Modelos (Modelo Económico + Presupuesto) enfocado a shi…",
+   "tags": [
+    "framework",
+    "cartera",
+    "modelado",
+    "math",
+    "pnl",
+    "embudo",
+    "shift"
+   ],
+   "aliases": [
+    "M&M problem",
+    "Math and Model",
+    "problema de matemática y modelo",
+    "moments of truth"
+   ]
+  },
+  {
+   "titulo": "Relentless Rule of Three (prospecta-sirve-construye)",
+   "tipo": "framework",
+   "mogul": "Ryan Serhant",
+   "agente": "ambos",
+   "foso": "verde",
+   "candado": "\"🟢 Pasa limpio como framework: (1) prospectar para el futuro, (2) servir a alguien hoy, (3) construir marca a largo plazo son disciplinas honestas de negocio. No inventa dato (G1), no segmenta por clase protegida (G2), no manipula (G3). El único sub-elemento con matiz vive en su táctica hija (prospección de referidos,…",
+   "que_es": "per Ryan Serhant — su sistema contra el \"miedo a lo desconocido\", tres hábitos diarios en tensión productiva:",
+   "como_aplica": "- Ruteo a ambos — el eje 1 (prospectar/secuenciar la cartera de referidos) es del Estratega; el eje 2 (servir hoy, redactar contenido/mensajes centrados en el cliente) es del Copiloto; el eje 3 (marca) es coaching del corredor. El framework como todo alimenta a ambos agentes. - La tensión \"futuro vs hoy\" es el valor de diseño: el corredor no debe elegir entre cultivar mañana o servir hoy — hace ambos cada día. Encaja…",
+   "tags": [
+    "framework",
+    "prospeccion",
+    "servicio",
+    "marca-personal",
+    "consistencia",
+    "ambos"
+   ],
+   "aliases": [
+    "relentless rule of three",
+    "regla implacable del tres",
+    "prospect for tomorrow serve today build forever",
+    "3 steps to be successful"
+   ]
+  },
+  {
+   "titulo": "Sell It Sales Cycle (ciclo de venta de 6 pasos)",
+   "tipo": "framework",
+   "mogul": "Ryan Serhant",
+   "agente": "ambos",
+   "foso": "amarillo",
+   "candado": "\"🟡 CANDADO: el esqueleto (prospectar → relación → descubrir → demostrar → cerrar → seguir) pasa limpio como PROCESO, pero dos pasos rozan el foso: (a) 'The Alliance / transferencia de entusiasmo' puede resbalar a fantasía inflada → todo entusiasmo cuelga de dato verificado (G1/G3); (b) el ICP por 'demografía' se ejecut…",
+   "que_es": "per Ryan Serhant — un sistema repetible de seis pasos para vender cualquier cosa: (1) The Pursuit (prospección: identificar el ICP), (2) The Alliance (construir relación/confianza), (3) Light the Spark (discovery de necesidades), (4) Make Your Move (el demo),…",
+   "como_aplica": "- El Estratega usa los pasos 1 y 6 como cartera: define el perfil de interesado por necesidad declarada (no demografía protegida) y secuencia el follow-up. - El Copiloto ejecuta los pasos 2–5 por-interesado: redacta el primer mensaje (Alliance), formula las preguntas de discovery (Discovery por 3 P (pain, price, point person)), arma el \"demo\" (la ficha del inmueble en clave de outcome verificado, ver Vender la experi…",
+   "tags": [
+    "framework",
+    "ciclo-de-venta",
+    "copiloto",
+    "estratega",
+    "follow-up"
+   ],
+   "aliases": [
+    "Sell It Sales Cycle",
+    "ciclo de venta Serhant",
+    "6 pasos para vender"
+   ]
+  },
+  {
+   "titulo": "Think Like a CEO — crear energía, enganchar talento, dueñar resultados",
+   "tipo": "framework",
+   "mogul": "Gary Keller",
+   "agente": "corredor",
+   "foso": "verde",
+   "candado": "\"Coaching de liderazgo para el corredor (create energy / engage talent / own results). No es una táctica de venta al comprador → pasa G1/G2/G3 limpio. Candado G1: 'own the results / entender tu pro forma' se corre sobre los NÚMEROS REALES del corredor (su P&L, su embudo), no sobre cifras prometidas ni proyecciones al a…",
+   "que_es": "per Gary Keller (con Jay Papasan), un CEO piensa de tres formas, y las tres aplican a cualquier rol de liderazgo (padre, cónyuge, mega-agente — \"todos lideramos nuestra propia vida\"):",
+   "como_aplica": "Material de coaching para el corredor (humano), no un agente que ejecuta. El corredor solo/de equipo suele fallar justo aquí: (1) no crea energía en su negocio (no tiene propósito ni plan que lo levante), (2) no engancha de forma conectada a la gente alrededor (aliados, proveedores, referidores) que sostiene el negocio, y (3) no entiende los ins & outs de cómo entra el ingreso y salen los gastos → no puede dueñar el…",
+   "tags": [
+    "framework",
+    "liderazgo",
+    "mindset",
+    "equipo",
+    "pro-forma",
+    "coaching"
+   ],
+   "aliases": [
+    "create energy engage talent own results",
+    "las 3 formas de pensar del CEO",
+    "3 CEO",
+    "propósito plan gente profit filantropía",
+    "don't settle"
+   ]
+  },
+  {
+   "titulo": "Think Moats — los tres fosos del negocio (marca, base, experiencia)",
+   "tipo": "framework",
+   "mogul": "Gary Keller",
+   "agente": "estratega",
+   "foso": "verde",
+   "candado": "\"Estrategia defensiva de negocio: proteger tres vulnerabilidades (marca, base de datos, promesa de experiencia) ante un competidor que ataca. Pasa G1/G2/G3 limpio. Candado G2: 'conectar más hondo con tu base' se hace con nurture de valor pareja, NUNCA priorizando/segmentando la base por clase protegida ni por zona-como…",
+   "que_es": "per Gary Keller, en un shift los competidores buscan su \"unfair share\" de clientes ofreciendo un producto nuevo o mejorado. Para defenderte, piensa en moats (fosos alrededor del castillo). Keller nombra tres vulnerabilidades a proteger:",
+   "como_aplica": "Material del Estratega. Ayuda al corredor a auditar sus tres fosos frente a nueva competencia (portales, iBuyers, corredores digitales): ¿mi marca personal se ve fresca o vieja?, ¿estoy en relación real con mi base o me olvidan?, ¿qué promesa de experiencia ofrezco y alguien puede darla mejor/distinto? El foso #2 (base de datos) es el más accionable en Whaber y engancha directo con el nurture honesto (33-Touch (nurtu…",
+   "tags": [
+    "framework",
+    "cartera",
+    "moat",
+    "marca",
+    "base-de-datos",
+    "experiencia",
+    "shift"
+   ],
+   "aliases": [
+    "think moats",
+    "los tres moats",
+    "fosos del negocio",
+    "brand database experience moat"
+   ]
+  },
+  {
+   "titulo": "Two M's — Message y Method (generación de leads en shift)",
+   "tipo": "framework",
+   "mogul": "Gary Keller",
+   "agente": "estratega",
+   "foso": "amarillo",
+   "candado": "\"El marco de lead-gen (Message + Method) es honesto: definir a quién le hablas y cómo lo alcanzas. Pero Keller cierra con 'make offers for immediate response', que roza urgencia (G3) — CANDADO: la 'oferta de respuesta inmediata' de Whaber es una propuesta de VALOR clara (un dato útil, una respuesta rápida), nunca urgen…",
+   "que_es": "per Gary Keller, en un mercado en shift —donde escasean los compradores/vendedores motivados— la generación de leads se ordena con dos M: el Message (mensaje) y el Method (método).",
+   "como_aplica": "Material del Estratega / cartera. En un mercado LATAM de tasas altas o desaceleración, el Estratega ayuda al corredor a: - Diagnosticar su balance M↔M: ¿está esperando que el marketing traiga leads (modelo de boom) cuando el mercado ya se enfrió? → recalibrar hacia prospección proactiva (nurture de la base, referidos, contacto directo) reforzada con marketing. - Afinar el Message definiendo a quién se dirige y en qué…",
+   "tags": [
+    "framework",
+    "cartera",
+    "lead-gen",
+    "prospeccion",
+    "marketing",
+    "shift"
+   ],
+   "aliases": [
+    "Two M's",
+    "las dos M",
+    "Message and Method",
+    "Finding the Motivated",
+    "prospecting-based marketing-enhanced",
+    "upshifting lead generation"
+   ]
+  },
+  {
+   "titulo": "Unit economics honesto (LTGP a CAC)",
+   "tipo": "framework",
+   "mogul": "Alex Hormozi",
+   "agente": "estratega",
+   "foso": "verde",
+   "candado": "\"Pasa limpio: es matemática de salud del NEGOCIO del corredor / de Whaber (cuánto vale un cliente vs cuánto cuesta conseguirlo), no una técnica de venta a comprador ni toca dato de vivienda. Candado: son las CIFRAS reales del corredor con su proveniencia — NO proyecciones infladas a inversionistas (eso sería el anti-pa…",
+   "que_es": "(per Alex Hormozi, en Million Dollar Equations) — el set de ecuaciones para evaluar la salud de un negocio, con sólo suma/resta/multiplicación/división. El eje: LTGP:CAC = lifetime gross profit (cuánto margen bruto deja un cliente en toda su vida) sobre el cos…",
+   "como_aplica": "No es una técnica de venta a comprador — es materia de Estratega a nivel de la salud del negocio del corredor / de la empresa Whaber: - ¿Cuánto vale un cliente del corredor a lo largo de la relación vs. cuánto cuesta conseguirlo? Si el ratio es sano, hay espacio para invertir en más leads. - El payback period ayuda a decidir cadencia de inversión en captación sin descapitalizarse. - Es el lente para que Whaber (o el…",
+   "tags": [
+    "negocio",
+    "metricas",
+    "estratega",
+    "salud-del-negocio"
+   ],
+   "aliases": [
+    "LTGP:CAC",
+    "LTV CAC",
+    "unit economics",
+    "payback period",
+    "ROIC"
+   ]
+  },
+  {
+   "titulo": "Value Equation",
+   "tipo": "framework",
+   "mogul": "Alex Hormozi",
+   "agente": "ambos",
+   "foso": "amarillo",
+   "candado": "\"CANDADO: úsala para ARTICULAR por qué un inmueble encaja con la intención DECLARADA del comprador, siempre con dato verificado y con proveniencia. JAMÁS para inflar la 'probabilidad percibida' sin respaldo (viola G1 honestidad-del-dato), ni para subir el 'sueño' por proxy de perfil / clase protegida (viola G2 Fair Hou…",
+   "que_es": "(per Alex Hormozi, en 100M Offers (libro)) — el valor percibido de una oferta sube o baja según cuatro variables:",
+   "como_aplica": "La Value Equation es un lente de articulación, no un motor de persuasión. Sirve a Whaber para explicar, con dato verificado, por qué un inmueble encaja con lo que el comprador YA declaró querer: - Sueño / resultado deseado = la intención declarada del comprador (lo que él mismo dijo: \"quiero llegar caminando a mi trabajo\", \"que mi hijo no cambie de escuela\", \"un patio para el perro\"). Se articula el encaje contra ESA…",
+   "tags": [
+    "valor",
+    "encaje",
+    "oferta",
+    "articulacion"
+   ],
+   "aliases": [
+    "Ecuación de Valor",
+    "Value Eq"
+   ]
+  },
+  {
+   "titulo": "Contrato de Redacción",
+   "tipo": "principle",
+   "mogul": "varios",
+   "agente": "ambos",
+   "foso": "verde",
+   "candado": "\"El candado COMÚN que hereda toda táctica 🟡 del vault. No es de un mogul: es la codificación de las tres compuertas del foso aplicadas a la REDACCIÓN de un mensaje/recomendación. Sin este contrato, cada táctica reintroduce por el texto libre lo que los guardrails ya cerraron.\"",
+   "que_es": "el candado común que hereda toda táctica 🟡 del vault (y que el Copiloto/Estratega aplican al",
+   "como_aplica": "",
+   "tags": [
+    "foso",
+    "redaccion",
+    "guardrail",
+    "canonico"
+   ],
+   "aliases": [
+    "candado común",
+    "candado de redacción",
+    "las tres compuertas",
+    "drafting contract"
+   ]
+  },
+  {
+   "titulo": "El dato arma al agente",
+   "tipo": "principle",
+   "mogul": "Barbara Corcoran",
+   "agente": "estratega",
+   "foso": "verde",
+   "candado": "\"Pasa limpio y es CASI la tesis del foso: el dato honesto con proveniencia es lo que da autoridad al agente. Candado inherente: el dato debe tener fuente y fecha (G1, el LLM narra el dato, nunca lo calcula ni lo infla), y jamás se usa para segmentar por clase protegida (G2 — un dato de mercado es lícito; un 'dato' de c…",
+   "que_es": "El agente que llega con DATO propio y verificable de mercado tiene una autoridad que el",
+   "como_aplica": "- El Estratega es el \"Corcoran Report\" automatizado: entrega al corredor inteligencia de mercado y de entorno con proveniencia (POIs propios conflados Overture + OSM, isócronas peatonales reales del motor Valhalla, tráfico/densidad en RANGO redondeado). El dato arma al corredor frente a portales que solo listan. - Se apoya en las piezas de Whaber ya construidas: capa de POIs propia, Mapa Vivo con isócronas, foso de e…",
+   "tags": [
+    "dato",
+    "inteligencia-geoespacial",
+    "proveniencia",
+    "principio-alta-confianza"
+   ],
+   "aliases": [
+    "El dato como arma",
+    "Inteligencia de mercado",
+    "Data-first"
+   ]
+  },
+  {
+   "titulo": "Fair Housing anti-proxy",
+   "tipo": "principle",
+   "mogul": "varios",
+   "agente": "ambos",
+   "foso": "verde",
+   "candado": "\"Esta página ES la compuerta G2 del foso — no una táctica de un mogul, sino la ley que Whaber superpone a TODO el vault. Ningún corpus de gurú la trae; la pone Whaber.\"",
+   "que_es": "la compuerta G2 del foso (ver CLAUDE.md §4). La regla que Whaber superpone a cada táctica,",
+   "como_aplica": "",
+   "tags": [
+    "foso",
+    "fair-housing",
+    "guardrail",
+    "canonico"
+   ],
+   "aliases": [
+    "G2",
+    "anti-proxy",
+    "Fair Housing",
+    "clase protegida",
+    "steering"
+   ]
+  },
+  {
+   "titulo": "Follow-up disciplinado",
+   "tipo": "principle",
+   "mogul": "Gary Keller, Ryan Serhant, Barbara Corcoran",
+   "agente": "ambos",
+   "foso": "verde",
+   "candado": "\"Pasa limpio las tres compuertas: la constancia del contacto no inventa datos (G1), no segmenta por clase protegida ni sus proxies (G2), y la disciplina de seguimiento honesta NO es presión ni urgencia fabricada (G3). El candado: cadencia de VALOR, no de acoso — cada toque aporta algo (un dato de mercado, una respuesta…",
+   "que_es": "El seguimiento sistemático y constante — no el talento ni el cierre agresivo — es lo que",
+   "como_aplica": "- El Estratega define la cadencia por lead (estilo 8x8 para nuevos, 33-Touch para la base viva) y avisa al corredor cuándo toca el siguiente contacto — sin dejar que nadie se caiga por olvido. - El Copiloto redacta cada toque concreto, siempre con un motivo de valor (un dato del entorno con proveniencia, una respuesta a algo que el comprador preguntó, un cambio de mercado real). - Cruza con el Agente de Reenganche de…",
+   "tags": [
+    "follow-up",
+    "cadencia",
+    "principio-alta-confianza"
+   ],
+   "aliases": [
+    "Seguimiento constante",
+    "Cadencia de contacto"
+   ]
+  },
+  {
+   "titulo": "Lectura del comprador / escuchar de verdad",
+   "tipo": "principle",
+   "mogul": "Barbara Corcoran, Ryan Serhant",
+   "agente": "copiloto",
+   "foso": "verde",
+   "candado": "\"Pasa limpio SIEMPRE que escuchar signifique entender la necesidad declarada del cliente — NUNCA inferir o segmentar por clase protegida ni sus proxies (G2). Candado duro: 'leer al comprador' jamás autoriza deducir religión, origen, familia o 'gente como tú' para orientar la búsqueda; solo lee lo que el comprador dice…",
+   "que_es": "El mejor vendedor habla poco y escucha mucho: entiende qué necesita realmente el comprador",
+   "como_aplica": "- El Copiloto convierte lo que el comprador DICE (en lenguaje natural) en la intención estructurada que mueve la búsqueda — enlaza con intención en lenguaje natural y mapear conceptos de estilo de vida difusos a dato verificado de Whaber. Escucha el \"quiero algo tranquilo cerca del trabajo\" y lo traduce a dato de entorno verificado, NUNCA a un proxy de clase protegida. - El Copiloto resume UNA charla y extrae la nece…",
+   "tags": [
+    "escucha",
+    "descubrimiento",
+    "empatia",
+    "principio-alta-confianza"
+   ],
+   "aliases": [
+    "Escuchar de verdad",
+    "Escucha activa",
+    "Descubrimiento"
+   ]
+  },
+  {
+   "titulo": "Presenta la casa como la vivirá el comprador",
+   "tipo": "principle",
+   "mogul": "Barbara Corcoran, Ryan Serhant",
+   "agente": "ambos",
+   "foso": "verde",
+   "candado": "\"Pasa limpio: realzar la PRESENTACIÓN (verbal y física) para que el comprador se proyecte viviendo el lugar es servicio honesto — mientras no oculte defectos materiales (eso sería fraude por omisión, 🔴) ni fabrique urgencia. El candado: mejorar lo REAL y ayudar a proyectarse; nunca falsear el estado del inmueble ni man…",
+   "que_es": "la venta se gana cuando el comprador se proyecta viviendo el lugar — y esa proyección se",
+   "como_aplica": "- Copiloto — al redactar, abre con el outcome que ESE comprador pidió (con dato verificado que lo sostenga), en vez de specs; ayuda a proyectarse sin insinuar nada sin respaldo (hereda el Contrato de Redacción). - Producto Whaber — la \"regla de los 30 segundos\" tiene su equivalente DIGITAL en la página de anuncio /a/{id} y las fotos: fachada, sala y cocina nítidas SON los primeros 30 segundos hoy. El Corcoran Report…",
+   "tags": [
+    "presentacion",
+    "staging",
+    "empatia",
+    "principio-alta-confianza"
+   ],
+   "aliases": [
+    "presentación",
+    "staging",
+    "proyección del comprador",
+    "primera impresión"
+   ]
+  },
+  {
+   "titulo": "Venta por valor, no por presión",
+   "tipo": "principle",
+   "mogul": "Barbara Corcoran, Alex Hormozi, Ryan Serhant",
+   "agente": "ambos",
+   "foso": "verde",
+   "candado": "\"Pasa limpio: vender por valor real (no por presión) es el corazón mismo del foso G3 (no-manipulación). El candado: la 'oferta tan buena' de Hormozi se ingiere SOLO como valor honesto verificable, descartando su ADN de escasez/upsell del legado Gym Launch (asterisco §6). Ninguna afirmación de valor sin dato que la resp…",
+   "que_es": "El cliente compra cuando el VALOR percibido supera claramente al precio — no cuando lo",
+   "como_aplica": "- El Estratega usa la lógica de la Value Equation como diagnóstico de ENCAJE: ¿este inmueble maximiza el resultado que el comprador realmente busca? Si no encaja, lo dice — no fuerza el encaje. Conecta con el encaje relativo a intención de Whaber (\"X% de encaje contigo\"). - El Copiloto redacta desde el valor: expone el dato del entorno verificado (con proveniencia) que hace buena la oferta, en vez de adjetivos de urg…",
+   "tags": [
+    "valor",
+    "cierre",
+    "largo-plazo",
+    "principio-alta-confianza"
+   ],
+   "aliases": [
+    "Vender por valor",
+    "Value-first"
+   ]
+  }
+ ],
+ "evitar": [
+  {
+   "titulo": "Buyers are liars (aforismo old-school)",
+   "mogul": "Barbara Corcoran",
+   "por_que": "(aforismo old-school atribuido a la vieja escuela de ventas de piso, parte del asterisco de Barbara Corcoran) La máxima \"buyers are liars\" dice que los compradores \"mienten\" sobre lo que quieren y lo que pueden pagar — que dicen A y compran…",
+   "tags": [
+    "anti-patron",
+    "mala-fe",
+    "escucha",
+    "reencuadre"
+   ]
+  },
+  {
+   "titulo": "Escasez / urgencia fabricada",
+   "mogul": "—",
+   "por_que": "\"🔴 Choca de raíz con G3 (no-manipulación): fabricar escasez o urgencia que no existe es presión disfrazada. Si la escasez es REAL y verificable (queda un solo inmueble con esa característica, con dato), eso es informar — no es este anti-pat…",
+   "tags": [
+    "anti-patron",
+    "manipulacion",
+    "G3"
+   ]
+  },
+  {
+   "titulo": "Escasez y urgencia fabricadas (Hormozi)",
+   "mogul": "Alex Hormozi",
+   "por_que": "\"Choca de raíz con G3 (no-manipulación): presión por escasez/urgencia inventada para forzar el sí. NO se rutea a ningún agente.\"",
+   "tags": [
+    "anti-patron",
+    "escasez",
+    "urgencia",
+    "presion",
+    "no-manipulacion"
+   ]
+  },
+  {
+   "titulo": "Foot-in-the-door / arrancar un sí",
+   "mogul": "—",
+   "por_que": "\"🔴 Choca con G3 (no-manipulación): las técnicas de compromiso-y-consistencia que encadenan pequeños 'síes' para fabricar un sí final NO son descubrimiento honesto, son ingeniería de la conformidad. Distinto de Lectura del comprador: pregunt…",
+   "tags": [
+    "anti-patron",
+    "manipulacion",
+    "G3"
+   ]
+  },
+  {
+   "titulo": "Garantía de resultado / retornos inflados",
+   "mogul": "—",
+   "por_que": "\"🔴 Choca con G1 (honestidad del dato) y G3 (no-manipulación): prometer un resultado o retorno que no se puede sostener con dato verificable es engaño. Incluye 'esta zona SIEMPRE sube', 'te garantizo que vendes en X días', 'retorno del N%'.…",
+   "tags": [
+    "anti-patron",
+    "honestidad-del-dato",
+    "manipulacion",
+    "G1",
+    "G3"
+   ]
+  },
+  {
+   "titulo": "Garantía inflada como cierre (Hormozi)",
+   "mogul": "Alex Hormozi",
+   "por_que": "\"Choca con G1 (honestidad del dato) y G3 (no-manipulación): promesa de resultado exagerada / 'garantía' usada para vencer la objeción y forzar el sí. NO se rutea.\"",
+   "tags": [
+    "anti-patron",
+    "garantia",
+    "promesa",
+    "honestidad-del-dato",
+    "no-manipulacion"
+   ]
+  },
+  {
+   "titulo": "Gift card play (descuento agresivo temporizado)",
+   "mogul": "Alex Hormozi",
+   "por_que": "\"Choca con G3 (no-manipulación) y con G1: un 'descuento' del 90% sobre un precio-ancla inflado, límite artificial (2 por cliente), expiración corta (30 días) y captura del lead — fabrica frenesí y urgencia y usa un ancla de precio engañoso.…",
+   "tags": [
+    "anti-patron",
+    "descuento",
+    "urgencia",
+    "escasez",
+    "presion",
+    "no-manipulacion"
+   ]
+  },
+  {
+   "titulo": "Grant Cardone (EXCLUIDO)",
+   "mogul": "Grant Cardone",
+   "por_que": "El caso emblema de por qué el foso existe. Cardone construyó un imperio inmobiliario REAL",
+   "tags": [
+    "anti-patron",
+    "excluido",
+    "mogul-excluido",
+    "G1",
+    "G2",
+    "G3"
+   ]
+  },
+  {
+   "titulo": "Pricing agresivo para fabricar frenesí",
+   "mogul": "Barbara Corcoran",
+   "por_que": "(táctica old-school del asterisco de Barbara Corcoran y de la escuela de venta agresiva) Poner el inmueble a un precio deliberadamente por debajo del mercado para atraer una avalancha de interesados y desatar una guerra de ofertas (bidding…",
+   "tags": [
+    "anti-patron",
+    "escasez-fabricada",
+    "urgencia",
+    "pricing",
+    "manipulacion"
+   ]
+  },
+  {
+   "titulo": "Reframing 3A - responder pregunta con pregunta (Hormozi)",
+   "mogul": "Alex Hormozi",
+   "por_que": "\"Choca con G3 (no-manipulación) y roza G1/G2: técnica de cierre que EVADE la pregunta del prospecto ('be like smoke'), lo ETIQUETA para conducirlo ('esa pregunta la hacen los mejores clientes → deberías comprar'), y usa 'straw men' para rom…",
+   "tags": [
+    "anti-patron",
+    "reframing",
+    "evasion",
+    "etiquetado",
+    "no-manipulacion"
+   ]
+  },
+  {
+   "titulo": "Targeting demografico de leads (zip, ingreso, perfil)",
+   "mogul": "Alex Hormozi",
+   "por_que": "\"Choca de raíz con G2 (Fair Housing anti-proxy): segmentar la publicidad/captación de leads inmobiliarios por zip code, nivel de ingreso o profesión es orientación por proxy de clase protegida. NO se rutea a ningún agente.\"",
+   "tags": [
+    "anti-patron",
+    "fair-housing",
+    "targeting",
+    "proxy",
+    "discriminacion",
+    "leads"
+   ]
+  },
+  {
+   "titulo": "Upsell y downsell forzados (Hormozi)",
+   "mogul": "Alex Hormozi",
+   "por_que": "\"Choca con G3 (no-manipulación): secuencia de upsell/downsell diseñada para extraer más gasto, no para servir la intención declarada. NO se rutea.\"",
+   "tags": [
+    "anti-patron",
+    "upsell",
+    "downsell",
+    "presion",
+    "no-manipulacion"
+   ]
+  }
+ ]
+}

@@ -102,16 +102,20 @@ def test_ninguna_tool_expone_owner(tool):
     contener un campo owner/agency. Si alguien lo agrega, este test se pone rojo."""
     fn = tool.coroutine or tool.func
     params = set(inspect.signature(fn).parameters)
-    assert params <= {"referencia", "config"}, f"firma inesperada en {tool.name}: {params}"
+    # allowlist de args legítimos: 'referencia' (lead), 'tema' (playbook), 'config' (owner inyectado).
+    assert params <= {"referencia", "tema", "config"}, f"firma inesperada en {tool.name}: {params}"
     args = set(tool.args.keys())
-    assert args <= {"referencia"}, f"la tool {tool.name} expone args inesperados al LLM: {args}"
+    assert args <= {"referencia", "tema"}, f"la tool {tool.name} expone args inesperados al LLM: {args}"
+    # LA INVARIANTE DURA: owner/agency NUNCA es superficie del LLM ni parámetro de la firma.
     assert not (params & _OWNER_PROHIBIDO) and not (args & _OWNER_PROHIBIDO)
 
 
 def test_superficie_llm_esperada():
-    # Guard de falso positivo: 'referencia' y 'config' son superficie legítima, no owner.
+    # Guard de falso positivo: 'referencia'/'tema' y 'config' son superficie legítima, no owner.
+    from app.agent.crm_tools import tool_playbook_venta
     assert set(tool_stats_embudo.args.keys()) == set()
     assert set(tool_timeline_de_lead.args.keys()) == {"referencia"}
+    assert set(tool_playbook_venta.args.keys()) == {"tema"}   # solo el tema; sin owner, sin dato de lead
 
 
 # ── Contratos de fuente (red de seguridad ante refactors que rompan la invariante) ───────

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import axios from 'axios'
-import { Send, Sparkles, RotateCcw } from 'lucide-react'
+import { Send, Sparkles, RotateCcw, X } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import { renderMarkdown } from './markdown'
 
@@ -18,7 +18,7 @@ const SUGERENCIAS = [
 // CRM Vivo: el corredor le habla a su CRM. Las cifras las computa el motor, el LLM narra.
 // El hilo es PERSISTENTE (backend crm-{user_id}, checkpointer Postgres): al recargar se retoma
 // la conversación. session_id: null → el servidor deriva el hilo estable del JWT.
-export default function CRMChat() {
+export default function CRMChat({ onClose } = {}) {
   const [msgs, setMsgs] = useState([])   // { autor: 'corredor'|'crm', texto }
   const [texto, setTexto] = useState('')
   const [enviando, setEnviando] = useState(false)
@@ -74,14 +74,23 @@ export default function CRMChat() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexShrink: 0 }}>
         <Sparkles size={18} color={C.teal} />
         <div style={{ fontWeight: 800, fontSize: '1rem' }}>Pregúntale a tu CRM</div>
-        {msgs.length > 0 && (
-          <button onClick={nuevaConversacion} title="Nueva conversación"
-            style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5, fontSize: '.72rem',
-                     background: 'none', border: `1px solid ${C.line}`, borderRadius: 999, padding: '4px 10px',
-                     color: C.muted, cursor: 'pointer' }}>
-            <RotateCcw size={13} /> Nueva
-          </button>
-        )}
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+          {msgs.length > 0 && (
+            <button onClick={nuevaConversacion} title="Nueva conversación"
+              style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '.72rem',
+                       background: 'none', border: `1px solid ${C.line}`, borderRadius: 999, padding: '4px 10px',
+                       color: C.muted, cursor: 'pointer' }}>
+              <RotateCcw size={13} /> Nueva
+            </button>
+          )}
+          {onClose && (
+            <button onClick={onClose} title="Cerrar asistente"
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none',
+                       border: 'none', color: C.muted, cursor: 'pointer', padding: 2 }}>
+              <X size={18} />
+            </button>
+          )}
+        </div>
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0, padding: '4px 2px' }}>

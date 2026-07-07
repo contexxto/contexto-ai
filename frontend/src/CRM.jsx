@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import axios from 'axios'
-import { Users, RefreshCw, Flame, MapPin, Sparkles,
+import { Users, RefreshCw, Flame, MapPin, Sparkles, X,
          TrendingUp, Clock, AlertTriangle, ChevronRight } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import { LeadChat } from './LeadsPanel'
@@ -49,6 +49,7 @@ export default function CRM() {
   const [err, setErr] = useState(false)
   const [loading, setLoading] = useState(false)
   const [sel, setSel] = useState(null)      // lead seleccionado (abre conversación)
+  const [asistente, setAsistente] = useState(false) // widget flotante del asistente del CRM
   const [filtro, setFiltro] = useState(null) // filtro por etapa del embudo
   const [wide, setWide] = useState(() => window.matchMedia('(min-width: 900px)').matches)
 
@@ -183,15 +184,30 @@ export default function CRM() {
     </div>
   )
 
+  const panelStyle = {
+    flex: 1, minWidth: 0, border: `1px solid ${C.line}`, borderRadius: 16, padding: '16px 14px',
+    background: `radial-gradient(120% 90% at 30% 0%, ${C.panel} 0%, ${C.bg} 70%)`, height: '100%',
+  }
+  // El panel derecho es SOLO para conversaciones de clientes. El asistente del CRM vive en un
+  // widget flotante (botón ✨ abajo-derecha) para que nunca se confunda con la charla de un lead.
   const drawer = sel ? (
-    <div style={{ flex: 1, minWidth: 0, border: `1px solid ${C.line}`, borderRadius: 16, padding: '16px 14px',
-                  background: `radial-gradient(120% 90% at 30% 0%, ${C.panel} 0%, ${C.bg} 70%)`, height: '100%' }}>
+    <div style={panelStyle}>
       <LeadChat activo={{ id: sel.activo_id, direccion: sel.direccion }} lead={sel} onBack={() => setSel(null)} />
     </div>
   ) : (
-    <div style={{ flex: 1, minWidth: 0, border: `1px solid ${C.line}`, borderRadius: 16, padding: '16px 14px',
-                  background: `radial-gradient(120% 90% at 30% 0%, ${C.panel} 0%, ${C.bg} 70%)`, height: '100%' }}>
-      <CRMChat />
+    <div style={{ ...panelStyle, display: 'flex', flexDirection: 'column', alignItems: 'center',
+                  justifyContent: 'center', textAlign: 'center', gap: 12 }}>
+      <div style={{ width: 54, height: 54, borderRadius: 999, display: 'flex', alignItems: 'center',
+                    justifyContent: 'center', background: 'rgba(45,189,182,.10)', border: `1px solid ${C.line}` }}>
+        <Users size={26} color={C.teal} />
+      </div>
+      <div style={{ fontWeight: 700, color: C.text, fontSize: '1.05rem' }}>Elige un interesado</div>
+      <div style={{ color: C.muted, fontSize: '.88rem', lineHeight: 1.6, maxWidth: 320 }}>
+        Selecciona a alguien de la lista para <span style={{ color: C.tealHi }}>ver y retomar su conversación</span> con el agente.
+      </div>
+      <div style={{ color: C.muted, fontSize: '.78rem', marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <Sparkles size={14} color={C.teal} /> ¿Preguntas sobre tu cartera? Usa el asistente, abajo a la derecha.
+      </div>
     </div>
   )
 
@@ -256,6 +272,27 @@ export default function CRM() {
             </div>
           )}
           {(wide || sel) && drawer}
+        </div>
+      )}
+
+      {/* Widget flotante del ASISTENTE del CRM — siempre accesible, SEPARADO de las
+          conversaciones de clientes (el panel derecho). Así nunca se confunden. */}
+      <button onClick={() => setAsistente(a => !a)}
+        title={asistente ? 'Cerrar asistente' : 'Pregúntale a tu CRM'}
+        style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 1200, width: 56, height: 56,
+                 borderRadius: 999, border: 'none', cursor: 'pointer', display: 'flex',
+                 alignItems: 'center', justifyContent: 'center', color: '#0E0D13',
+                 background: `linear-gradient(135deg, ${C.teal}, ${C.tealHi})`,
+                 boxShadow: '0 8px 24px rgba(45,189,182,.45)' }}>
+        {asistente ? <X size={22} /> : <Sparkles size={26} />}
+      </button>
+      {asistente && (
+        <div style={{ position: 'fixed', bottom: 92, right: 24, zIndex: 1200,
+                      width: 'min(400px, calc(100vw - 32px))', height: 'min(600px, 72vh)',
+                      display: 'flex', flexDirection: 'column', overflow: 'hidden',
+                      background: C.panel, border: `1px solid ${C.line}`, borderRadius: 18,
+                      padding: '14px 12px', boxShadow: '0 16px 48px rgba(0,0,0,.55)' }}>
+          <CRMChat onClose={() => setAsistente(false)} />
         </div>
       )}
     </div>

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import axios from 'axios'
-import { Send, Sparkles, RotateCcw, X } from 'lucide-react'
+import { Send, Sparkles, RotateCcw, X, Compass } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import { renderMarkdown } from './markdown'
 
@@ -14,54 +14,76 @@ const SUGERENCIAS = [
   '¿A quién debería retomar?',
   '¿Cómo va mi embudo?',
 ]
+const SUG_ESTRATEGA = [
+  '¿En quién me enfoco esta semana?',
+  '¿Qué está frenando mis cierres?',
+  '¿A quién debería reenganchar primero?',
+]
+const KICKOFF_ESTRATEGA = 'Dame la jugada de mi cartera esta semana: en quién enfocarme, qué frena mis cierres, y mi mejor movida.'
+// Idempotencia del kickoff proactivo: una vez disparado para un hilo en esta sesión, no lo re-dispares
+// al reabrir aunque el GET lea vacío (p. ej. si el POST del kickoff falló). 'Nueva' limpia su clave.
+const _kickoffHecho = new Set()
 
-// Etiquetas legibles de la etapa (para no mostrar el estado interno crudo como "intencion").
 const ESTADO_LBL = {
   anonimo: 'Anónimo', identificado: 'Identificado', explorando: 'Explorando',
   enganchado: 'Enganchado', intencion: 'Intención', confirmado: 'Confirmado',
   completado: 'Completado', returning: 'Returning', dormido: 'Dormido',
 }
 
-// CRM Vivo: el corredor le habla a su CRM. Las cifras las computa el motor, el LLM narra.
-// El hilo es PERSISTENTE (backend crm-{user_id}, checkpointer Postgres): al recargar se retoma
-// la conversación. session_id: null → el servidor deriva el hilo estable del JWT.
-export default function CRMChat({ onClose, lead } = {}) {
+// Un componente, DOS agentes (modo): 'copiloto' (táctico, por interesado) y 'estratega' (cartera,
+// proactivo — al abrir da la jugada). Persistente por hilo (el backend lo deriva del JWT).
+// Ver docs/DISENO_CRM_Vivo.md (arquitectura de dos agentes).
+export default function CRMChat({ onClose, lead, modo = 'copiloto' } = {}) {
+  const esEstratega = modo === 'estratega'
   const [msgs, setMsgs] = useState([])   // { autor: 'corredor'|'crm', texto }
   const [texto, setTexto] = useState('')
   const [enviando, setEnviando] = useState(false)
-  const [cargando, setCargando] = useState(true)   // recuperando el historial al montar
+  const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(null)
   const finRef = useRef(null)
+  const reiniciando = useRef(false)   // candado síncrono anti-doble-click en 'Nueva' (cubre el await)
 
-  // Context-awareness (lo que lo vuelve COPILOTO, no chatbot): si el corredor tiene un interesado
-  // abierto, el copiloto se enfoca en él y adapta sus sugerencias. El agente resuelve la referencia
-  // solo (por email / "Lead #xxxx") con su tool de timeline.
-  const nom = lead?.lead ? (lead.lead.includes('@') ? lead.lead.split('@')[0] : lead.lead) : null
-  // El FOCO: un hilo por interesado (o de cartera si no hay lead). El backend lo prefija con el JWT.
-  const leadRef = lead?.session_id || null
-  const sugerencias = nom ? [
+  // El copiloto se enfoca en un interesado; el estratega lee la cartera (sin lead).
+  const nom = !esEstratega && lead?.lead ? (lead.lead.includes('@') ? lead.lead.split('@')[0] : lead.lead) : null
+  const leadRef = !esEstratega ? (lead?.session_id || null) : null
+  const kkey = `${modo}:${leadRef || ''}`   // clave del kickoff por hilo (agente + foco)
+  const titulo = esEstratega ? 'Estratega' : 'Copiloto'
+  const Icono = esEstratega ? Compass : Sparkles
+  const sugerencias = esEstratega ? SUG_ESTRATEGA : (nom ? [
     `Resúmeme la conversación de ${nom}`,
     `¿Por qué ${nom} está en ${ESTADO_LBL[lead.estado] || lead.estado || 'esa etapa'}?`,
     `Prepárame un mensaje para retomar a ${nom}`,
-  ] : SUGERENCIAS
+  ] : SUGERENCIAS)
 
   useEffect(() => { finRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [msgs, enviando])
 
-  // Recupera la conversación del hilo enfocado. El estado se resetea al cambiar de foco porque
-  // CRM.jsx remonta este componente con key={leadRef} (patrón idiomático de React) → cada interesado
-  // muestra su propia charla (o vacía), no la del anterior — coherente con "Enfocado en X".
+  // Recupera el hilo del foco/agente. El estratega, si el hilo está vacío, arranca PROACTIVO
+  // (auto-pregunta la jugada). El remount por key (CRM.jsx) da estado fresco al cambiar de agente/lead.
   useEffect(() => {
     let vivo = true
     ;(async () => {
+      let historial = []
       try {
         const { data } = await axios.get(`${API_BASE}/api/v1/assets/crm/thread`,
-          { params: leadRef ? { lead: leadRef } : {}, headers: apiHeaders() })
-        if (vivo && Array.isArray(data?.mensajes)) setMsgs(data.mensajes)
+          { params: { ...(leadRef ? { lead: leadRef } : {}), modo }, headers: apiHeaders() })
+        historial = Array.isArray(data?.mensajes) ? data.mensajes : []
+        if (vivo) setMsgs(historial)
       } catch { /* sin historial aún: arranca vacío */ }
-      finally { if (vivo) setCargando(false) }
+      finally {
+        if (vivo) {
+          setCargando(false)
+          // Kickoff proactivo del estratega: solo en hilo vacío y UNA vez por hilo/sesión (idempotente,
+          // así un reabrir con GET vacío por error no re-dispara). El check-and-add es síncrono → sin race.
+          if (esEstratega && historial.length === 0 && !_kickoffHecho.has(kkey)) {
+            _kickoffHecho.add(kkey)
+            enviar(KICKOFF_ESTRATEGA)
+          }
+        }
+      }
     })()
     return () => { vivo = false }
-  }, [leadRef])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leadRef, modo])
 
   async function enviar(t0) {
     const t = (t0 ?? texto).trim()
@@ -70,33 +92,41 @@ export default function CRMChat({ onClose, lead } = {}) {
     setMsgs(prev => [...prev, { autor: 'corredor', texto: t }])
     try {
       const { data } = await axios.post(`${API_BASE}/api/v1/assets/crm/chat`,
-        { message: t, lead: leadRef }, { headers: apiHeaders() })
+        { message: t, lead: leadRef, modo }, { headers: apiHeaders() })
       setMsgs(prev => [...prev, { autor: 'crm', texto: data.reply || 'Sin respuesta.' }])
     } catch {
-      setError('No se pudo consultar el CRM. Intenta de nuevo.')
+      setError('No se pudo consultar. Intenta de nuevo.')
     } finally {
       setEnviando(false)
     }
   }
 
   async function nuevaConversacion() {
-    if (enviando) return
+    // Candado síncrono: 'enviando' se lee stale a través del await del DELETE; el ref cierra la ventana
+    // de doble-click (que si no re-postearía dos kickoffs al hilo recién reseteado).
+    if (enviando || reiniciando.current) return
+    reiniciando.current = true
     setMsgs([]); setError(null); setTexto('')
     try {
       await axios.delete(`${API_BASE}/api/v1/assets/crm/thread`,
-        { params: leadRef ? { lead: leadRef } : {}, headers: apiHeaders() })
+        { params: { ...(leadRef ? { lead: leadRef } : {}), modo }, headers: apiHeaders() })
     } catch { /* best-effort: la UI ya se limpió */ }
+    finally {
+      _kickoffHecho.delete(kkey)   // reset deliberado → permite re-armar el kickoff
+      if (esEstratega) { _kickoffHecho.add(kkey); await enviar(KICKOFF_ESTRATEGA) }  // re-arranca proactivo
+      reiniciando.current = false
+    }
   }
 
   const bubble = (autor) => autor === 'corredor'
     ? { align: 'flex-end', bg: 'linear-gradient(90deg,#2DBDB6,#5EEAD4)', color: '#0E0D13', lbl: 'Tú' }
-    : { align: 'flex-start', bg: 'rgba(255,255,255,.05)', color: C.text, lbl: 'Copiloto' }
+    : { align: 'flex-start', bg: 'rgba(255,255,255,.05)', color: C.text, lbl: titulo }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexShrink: 0 }}>
-        <Sparkles size={18} color={C.teal} />
-        <div style={{ fontWeight: 800, fontSize: '1rem' }}>Copiloto</div>
+        <Icono size={18} color={C.teal} />
+        <div style={{ fontWeight: 800, fontSize: '1rem' }}>{titulo}</div>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
           {msgs.length > 0 && (
             <button onClick={nuevaConversacion} title="Nueva conversación"
@@ -107,7 +137,7 @@ export default function CRMChat({ onClose, lead } = {}) {
             </button>
           )}
           {onClose && (
-            <button onClick={onClose} title="Cerrar copiloto"
+            <button onClick={onClose} title={`Cerrar ${titulo}`}
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none',
                        border: 'none', color: C.muted, cursor: 'pointer', padding: 2 }}>
               <X size={18} />
@@ -116,8 +146,7 @@ export default function CRMChat({ onClose, lead } = {}) {
         </div>
       </div>
 
-      {/* Barra de CONTEXTO: cuando hay un interesado abierto, el copiloto se enfoca en él y ofrece
-          acciones específicas de un clic. Persiste durante toda la conversación. */}
+      {/* Barra de contexto: SOLO el copiloto con un interesado abierto. */}
       {nom && (
         <div style={{ flexShrink: 0, marginBottom: 9, padding: '8px 10px', borderRadius: 12,
                       background: 'rgba(45,189,182,.08)', border: `1px solid ${C.line}` }}>
@@ -138,11 +167,23 @@ export default function CRMChat({ onClose, lead } = {}) {
 
       <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0, padding: '4px 2px' }}>
         {cargando && (
-          <div style={{ color: C.muted, fontSize: '.8rem', padding: '8px 2px' }}>Recuperando tu conversación…</div>
+          <div style={{ color: C.muted, fontSize: '.8rem', padding: '8px 2px' }}>
+            {esEstratega ? 'Analizando tu cartera…' : 'Recuperando tu conversación…'}
+          </div>
         )}
-        {!cargando && msgs.length === 0 && (
+        {!cargando && !enviando && msgs.length === 0 && (
           <div style={{ color: C.muted, fontSize: '.82rem', lineHeight: 1.5, padding: '8px 2px' }}>
-            {nom ? (
+            {esEstratega ? (
+              <>Soy tu estratega de cartera — te doy la jugada, con datos reales, sin inventar.
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 10 }}>
+                  {SUG_ESTRATEGA.map(s => (
+                    <button key={s} onClick={() => enviar(s)}
+                      style={{ fontSize: '.72rem', padding: '6px 11px', borderRadius: 999, cursor: 'pointer',
+                               background: 'rgba(45,189,182,.08)', border: `1px solid ${C.line}`, color: C.tealHi }}>{s}</button>
+                  ))}
+                </div>
+              </>
+            ) : nom ? (
               <>Estoy enfocado en <strong style={{ color: C.tealHi }}>{nom}</strong>. Usa las acciones de arriba, o pregúntame lo que quieras — con datos reales, sin inventar.</>
             ) : (
               <>Pregúntame por tu cartera — con datos reales, sin inventar. Por ejemplo:
@@ -150,9 +191,7 @@ export default function CRMChat({ onClose, lead } = {}) {
                   {SUGERENCIAS.map(s => (
                     <button key={s} onClick={() => enviar(s)}
                       style={{ fontSize: '.72rem', padding: '6px 11px', borderRadius: 999, cursor: 'pointer',
-                               background: 'rgba(45,189,182,.08)', border: `1px solid ${C.line}`, color: C.tealHi }}>
-                      {s}
-                    </button>
+                               background: 'rgba(45,189,182,.08)', border: `1px solid ${C.line}`, color: C.tealHi }}>{s}</button>
                   ))}
                 </div>
               </>
@@ -173,7 +212,7 @@ export default function CRMChat({ onClose, lead } = {}) {
             </div>
           )
         })}
-        {enviando && <div style={{ alignSelf: 'flex-start', color: C.muted, fontSize: '.78rem', padding: '2px 4px' }}>Pensando…</div>}
+        {enviando && <div style={{ alignSelf: 'flex-start', color: C.muted, fontSize: '.78rem', padding: '2px 4px' }}>{esEstratega ? 'Analizando…' : 'Pensando…'}</div>}
         <div ref={finRef} />
       </div>
 
@@ -183,7 +222,7 @@ export default function CRMChat({ onClose, lead } = {}) {
                     background: 'rgba(20,44,43,.5)', border: `1px solid ${C.line}`, borderRadius: 20, padding: 7 }}>
         <textarea value={texto} onChange={e => setTexto(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviar() } }}
-          placeholder={nom ? `Pregúntame sobre ${nom}…` : 'Pregúntale a tu Copiloto…'} rows={1}
+          placeholder={esEstratega ? 'Pregúntale a tu Estratega…' : (nom ? `Pregúntame sobre ${nom}…` : 'Pregúntale a tu Copiloto…')} rows={1}
           style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: C.text, fontSize: '.88rem',
                    resize: 'none', maxHeight: 100, fontFamily: 'inherit', padding: '6px 8px' }} />
         <button onClick={() => enviar()} disabled={!texto.trim() || enviando}

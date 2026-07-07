@@ -15,12 +15,13 @@ retoma tras recargar. Arranca con MemorySaver hasta que el lifespan monte el che
 """
 from __future__ import annotations
 
+import logging
 from typing import Annotated, TypedDict
 
 import anthropic
 import httpx
 from langchain_anthropic import ChatAnthropic
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import AIMessage, SystemMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import START, StateGraph
 from langgraph.graph.message import add_messages
@@ -74,6 +75,63 @@ listas leads, pocos y con por qué. Cuando haya reenganche sugerido, ofrécelo t
 """)
 
 
+# Segundo agente: el ESTRATEGA (MODO ESTRATEGA). Lee TODA la cartera y recomienda la JUGADA.
+# Comparte las mismas tools y las MISMAS barandas (honestidad + Fair Housing + scope), pero su rol
+# es estratégico/proactivo, no táctico. Ver docs/DISENO_CRM_Vivo.md (arquitectura de dos agentes).
+SYSTEM_PROMPT_ESTRATEGA = SystemMessage(content="""
+Eres el ESTRATEGA del CRM Vivo de Contexto AI — el copiloto de CARTERA del corredor (o inmobiliaria).
+Lees TODA su cartera de interesados y le recomiendas LA JUGADA: en quién enfocarse, qué está frenando
+sus cierres, qué patrón ves, cuál es su mejor movimiento. Hablas español neutro latinoamericano (TUTEO:
+"tú tienes/deberías/enfócate"; NUNCA voseo argentino), cálido, directo y ACCIONABLE.
+
+CÓMO TRABAJAS:
+- Usa tool_stats_embudo para leer su cartera completa (total, por etapa, calientes, dormidos, por
+  reenganchar). Con eso INTERPRETAS y priorizas — no listas datos crudos, das una recomendación.
+- Tu foco es la CARTERA COMPLETA, no una conversación suelta. Diseccionar el chat de UN interesado es
+  trabajo del COPILOTO — no necesitas el texto crudo de las charlas para dar la jugada de cartera; si el
+  corredor quiere bucear en un interesado puntual, dile que abra el Copiloto en ese interesado.
+
+CUANDO ABRES (proactivo): da de una la jugada de la semana — 2 a 4 movidas priorizadas, cada una con el
+PORQUÉ (la señal de intención). Ej. ILUSTRATIVO (usa SIEMPRE las cifras REALES de la herramienta, jamás
+las de este ejemplo): "Tu urgencia #1: los calientes que pidieron corredor y siguen esperando —
+contáctalos hoy. Luego: los dormidos con reenganche listo. Tu embudo se atasca en Enganchado — dales el
+dato que preguntaron para moverlos a Intención." Luego, si te preguntan más, profundizas.
+
+PISO DE CARTERA (obligatorio): si tool_stats_embudo devuelve total 0 o muy pocos interesados, DILO CLARO
+y PARA — "Tu cartera está vacía todavía" / "Solo tienes N interesados, aún no hay patrón para una jugada".
+NO fuerces 2-4 movidas ni inventes cifras para llenar el molde. Sin datos no hay jugada; eso es honestidad.
+
+REGLAS INNEGOCIABLES (el foso — la honestidad):
+1. NUNCA inventes ni calcules cifras. TODO número (cuántos interesados, en qué etapa, scores) sale de la
+   herramienta. Si no la llamaste, no des un número; sin dato → "No tengo ese dato", jamás un número plausible.
+2. VERIFICADO vs ESTIMADO: distingue lo VERIFICADO (pidió corredor, etapa del embudo) de lo ESTIMADO (el
+   'score' es una heurística). Cuando priorices o menciones un score, rotúlalo SIEMPRE como estimación
+   ("score estimado ~80"), nunca como hecho duro.
+3. FAIR HOUSING — LÍNEA ROJA: priorizas y recomiendas SOLO por SEÑAL DE INTENCIÓN (score, etapa, pidió
+   corredor, frescura/actividad, presupuesto declarado) — JAMÁS por clase protegida (familia, hijos,
+   edad, nacionalidad, religión, género, estado civil, discapacidad). Si te piden "prioriza a las
+   familias" o similar, declina con tacto y reencuadra a la señal transaccional. Tu criterio es la
+   intención del interesado, nunca quién es. Ni siquiera "de pasada": jamás cierres un rechazo con la
+   recomendación que acabas de declinar.
+4. Solo SU cartera (las herramientas lo garantizan). No inventes leads.
+
+ESTILO: interpretación estratégica, no reporte. Pocas movidas, priorizadas, con el porqué. Sin
+anglicismos. Prioriza el OUTCOME (handoffs que cierran), no la actividad bonita.
+""")
+
+
+# Reencuadre honesto para el FAIL-CLOSED de Fair Housing del ESTRATEGA (ver llm_node). El Estratega es
+# PROACTIVO (su primer mensaje sale sin humano en el loop y dirige TODA la cartera) → si detectamos
+# segmentación/steering REAL por clase protegida (no un rechazo), reemplazamos la salida por esto.
+REFRAME_FAIR_HOUSING = (
+    "No puedo priorizar ni segmentar a tus interesados por características personales "
+    "(familia, hijos, edad, nacionalidad, religión, género y similares) — sería una violación "
+    "de Fair Housing. Sí puedo darte la jugada priorizando por SEÑAL DE INTENCIÓN: quién pidió "
+    "corredor, la etapa del embudo, la frescura de la actividad y el presupuesto declarado. "
+    "¿Sigo por ahí?"
+)
+
+
 def _build_crm_graph() -> StateGraph:
     # Mismo patrón que graph.py: cliente Anthropic con SSL explícito inyectado antes de bind_tools.
     _client = anthropic.AsyncAnthropic(
@@ -85,23 +143,36 @@ def _build_crm_graph() -> StateGraph:
     llm = base_llm.bind_tools(CRM_TOOLS)
 
     async def llm_node(state: CRMState, config=None) -> dict:
+        cfg = (config or {}).get("configurable") or {}
+        modo = cfg.get("modo")
+        # Dos agentes, un solo grafo: el prompt se elige por 'modo' (copiloto táctico / estratega de cartera).
+        prompt = SYSTEM_PROMPT_ESTRATEGA if modo == "estratega" else SYSTEM_PROMPT_CRM
         # Nombre del corredor (del JWT/perfil, vía config) para que firme los mensajes que redacte.
         # Se inyecta como instrucción POR-LLAMADA (no se persiste en el hilo del checkpointer).
         extra = []
-        nombre = ((config or {}).get("configurable") or {}).get("corredor_nombre")
+        nombre = cfg.get("corredor_nombre")
         if nombre:
             extra = [SystemMessage(content=f"El corredor se llama «{nombre}». Cuando redactes un mensaje "
                                            f"para un interesado, fírmalo con «{nombre}» — nunca con «[Tu nombre]».")]
-        response = await llm.ainvoke([SYSTEM_PROMPT_CRM] + extra + state["messages"])
+        response = await llm.ainvoke([prompt] + extra + state["messages"])
         # Controles deterministas de honestidad (cifras + Fair Housing), primera clase.
-        # Fase 1: OBSERVAR (log + contadores), no bloquear. Ver crm_guardrails.MODO_BLOQUEO.
-        # Un fallo del guardrail NUNCA debe tumbar la respuesta.
+        # La baranda de CIFRAS sigue en OBSERVAR (log + contadores; se calibra en Fase 2, más falsos
+        # positivos). Pero el ESTRATEGA es PROACTIVO — su primer mensaje sale SIN humano en el loop y
+        # dirige TODA la cartera → para él, Fair Housing es FAIL-CLOSED: si detectamos segmentación/
+        # steering REAL por clase protegida (violación, no un rechazo bien hecho), reemplazamos la
+        # salida por un reencuadre honesto antes de entregarla. Un fallo del guardrail NUNCA tumba la
+        # respuesta (el except la deja pasar como estaba).
         try:
             texto = texto_de_content(response.content)
             resultado = evaluar_salida_crm(texto, tool_jsons_del_turno(state["messages"]))
-            registrar_guardrail(resultado)
+            registrar_guardrail(resultado, session=cfg.get("thread_id"))
+            if (modo == "estratega" and resultado.get("fair_housing")
+                    and not getattr(response, "tool_calls", None)):
+                logging.getLogger("crm.guardrails").warning(
+                    "estratega FH fail-closed: reencuadrando salida con segmentación por clase protegida hits=%s",
+                    resultado["fair_housing"])
+                response = AIMessage(content=REFRAME_FAIR_HOUSING)
         except Exception as exc:  # noqa: BLE001
-            import logging
             logging.getLogger("crm.guardrails").warning("guardrail falló (no bloqueante): %s", exc)
         return {"messages": [response]}
 

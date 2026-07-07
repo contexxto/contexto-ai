@@ -4,6 +4,7 @@ import json
 import logging
 import re
 import uuid
+from typing import Literal
 
 import segno
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
@@ -816,13 +817,16 @@ class CRMChatReq(BaseModel):
     message: str = Field(..., min_length=1, max_length=2000)
     session_id: str | None = Field(default=None, max_length=120)  # deprecado (el hilo se deriva del JWT)
     lead: str | None = Field(default=None, max_length=140)         # foco: id del interesado (hilo por-lead)
+    modo: Literal["copiloto", "estratega"] = "copiloto"            # copiloto (táctico) | estratega (cartera)
 
 
-def _crm_thread(user_id: str, lead_ref: str | None = None) -> str:
-    """Hilo del Copiloto DERIVADO DEL JWT (nunca del cliente) → un corredor no puede leer el hilo de
-    otro. Sin lead = hilo de cartera (crm-{user}); con lead = hilo enfocado en ese interesado
-    (crm-{user}-lead-{ref}) → cada lead tiene su propia conversación, coherente con 'Enfocado en X'."""
+def _crm_thread(user_id: str, lead_ref: str | None = None, modo: str = "copiloto") -> str:
+    """Hilo DERIVADO DEL JWT (nunca del cliente) → un corredor no puede leer el hilo de otro. Dos agentes,
+    hilos distintos: ESTRATEGA = un hilo de cartera (crm-estratega-{user}); COPILOTO = por interesado
+    (crm-{user}-lead-{ref}) o de cartera (crm-{user}) si no hay lead. Coherente con 'Enfocado en X'."""
     import re
+    if modo == "estratega":
+        return f"crm-estratega-{user_id}"
     base = f"crm-{user_id}"
     if lead_ref:
         suf = re.sub(r"[^A-Za-z0-9_-]", "", str(lead_ref))[:100]
@@ -848,10 +852,10 @@ async def crm_chat(
                             detail="El CRM Vivo es para corredores/inmobiliarias.")
     from langchain_core.messages import AIMessage, HumanMessage
     from app.agent.crm_graph import compiled_crm_graph
-    sid = _crm_thread(user.user_id, payload.lead)   # hilo por-lead (o cartera), derivado del JWT
+    sid = _crm_thread(user.user_id, payload.lead, payload.modo)   # hilo por agente/lead, derivado del JWT
     # El owner sale del JWT y viaja en config → las tools scopean por él, nunca el LLM.
-    # corredor_nombre: para que el copiloto firme los mensajes que redacte con el nombre real.
-    config = {"configurable": {"thread_id": sid,
+    # modo: elige el agente (copiloto táctico / estratega de cartera). corredor_nombre: para firmar.
+    config = {"configurable": {"thread_id": sid, "modo": payload.modo,
                                "owner_user_id": user.user_id, "owner_agency_id": user.agency_id,
                                "corredor_nombre": user.nombre}}
     try:
@@ -879,6 +883,7 @@ async def crm_chat(
 async def crm_thread(
     request: Request,
     lead: str | None = None,
+    modo: Literal["copiloto", "estratega"] = "copiloto",
     user: CurrentUser = Depends(get_current_user),
 ) -> dict:
     if user.rol not in ("corredor", "inmobiliaria"):
@@ -887,7 +892,7 @@ async def crm_thread(
     from langchain_core.messages import AIMessage, HumanMessage
     from app.agent.crm_graph import compiled_crm_graph
     from app.agent.crm_guardrails import texto_de_content
-    sid = _crm_thread(user.user_id, lead)
+    sid = _crm_thread(user.user_id, lead, modo)
     try:
         state = await compiled_crm_graph.aget_state({"configurable": {"thread_id": sid}})
     except Exception:  # noqa: BLE001 — sin hilo aún / checkpointer no montado
@@ -916,13 +921,14 @@ async def crm_thread(
 async def crm_thread_reset(
     request: Request,
     lead: str | None = None,
+    modo: Literal["copiloto", "estratega"] = "copiloto",
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     if user.rol not in ("corredor", "inmobiliaria"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                             detail="El CRM Vivo es para corredores/inmobiliarias.")
-    sid = _crm_thread(user.user_id, lead)
+    sid = _crm_thread(user.user_id, lead, modo)
     try:
         for tbl in ("checkpoint_blobs", "checkpoint_writes", "checkpoints"):
             await db.execute(text(f"DELETE FROM {tbl} WHERE thread_id = :t"), {"t": sid})

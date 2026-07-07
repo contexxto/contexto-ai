@@ -836,8 +836,10 @@ async def crm_chat(
     from app.agent.crm_graph import compiled_crm_graph
     sid = payload.session_id or f"crm-{user.user_id}"
     # El owner sale del JWT y viaja en config → las tools scopean por él, nunca el LLM.
+    # corredor_nombre: para que el copiloto firme los mensajes que redacte con el nombre real.
     config = {"configurable": {"thread_id": sid,
-                               "owner_user_id": user.user_id, "owner_agency_id": user.agency_id}}
+                               "owner_user_id": user.user_id, "owner_agency_id": user.agency_id,
+                               "corredor_nombre": user.nombre}}
     try:
         final = await compiled_crm_graph.ainvoke(
             {"messages": [HumanMessage(content=payload.message)]}, config=config)

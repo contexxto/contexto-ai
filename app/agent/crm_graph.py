@@ -84,8 +84,15 @@ def _build_crm_graph() -> StateGraph:
     base_llm.__dict__["_async_client"] = _client
     llm = base_llm.bind_tools(CRM_TOOLS)
 
-    async def llm_node(state: CRMState) -> dict:
-        response = await llm.ainvoke([SYSTEM_PROMPT_CRM] + state["messages"])
+    async def llm_node(state: CRMState, config=None) -> dict:
+        # Nombre del corredor (del JWT/perfil, vía config) para que firme los mensajes que redacte.
+        # Se inyecta como instrucción POR-LLAMADA (no se persiste en el hilo del checkpointer).
+        extra = []
+        nombre = ((config or {}).get("configurable") or {}).get("corredor_nombre")
+        if nombre:
+            extra = [SystemMessage(content=f"El corredor se llama «{nombre}». Cuando redactes un mensaje "
+                                           f"para un interesado, fírmalo con «{nombre}» — nunca con «[Tu nombre]».")]
+        response = await llm.ainvoke([SYSTEM_PROMPT_CRM] + extra + state["messages"])
         # Controles deterministas de honestidad (cifras + Fair Housing), primera clase.
         # Fase 1: OBSERVAR (log + contadores), no bloquear. Ver crm_guardrails.MODO_BLOQUEO.
         # Un fallo del guardrail NUNCA debe tumbar la respuesta.

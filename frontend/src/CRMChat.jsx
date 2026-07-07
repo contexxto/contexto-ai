@@ -15,6 +15,13 @@ const SUGERENCIAS = [
   '¿Cómo va mi embudo?',
 ]
 
+// Etiquetas legibles de la etapa (para no mostrar el estado interno crudo como "intencion").
+const ESTADO_LBL = {
+  anonimo: 'Anónimo', identificado: 'Identificado', explorando: 'Explorando',
+  enganchado: 'Enganchado', intencion: 'Intención', confirmado: 'Confirmado',
+  completado: 'Completado', returning: 'Returning', dormido: 'Dormido',
+}
+
 // CRM Vivo: el corredor le habla a su CRM. Las cifras las computa el motor, el LLM narra.
 // El hilo es PERSISTENTE (backend crm-{user_id}, checkpointer Postgres): al recargar se retoma
 // la conversación. session_id: null → el servidor deriva el hilo estable del JWT.
@@ -32,7 +39,7 @@ export default function CRMChat({ onClose, lead } = {}) {
   const nom = lead?.lead ? (lead.lead.includes('@') ? lead.lead.split('@')[0] : lead.lead) : null
   const sugerencias = nom ? [
     `Resúmeme la conversación de ${nom}`,
-    `¿Por qué ${nom} está en ${lead.estado || 'esa etapa'}?`,
+    `¿Por qué ${nom} está en ${ESTADO_LBL[lead.estado] || lead.estado || 'esa etapa'}?`,
     `Prepárame un mensaje para retomar a ${nom}`,
   ] : SUGERENCIAS
 

@@ -853,6 +853,67 @@ async def crm_chat(
     return {"reply": reply, "session_id": sid}
 
 
+@router.get(
+    "/crm/thread",
+    summary="CRM Vivo — historial del hilo del corredor (para retomar al recargar)",
+    description="Devuelve los mensajes de la conversación persistida del corredor (hilo "
+                "estable crm-{user_id}). Solo corredores/inmobiliarias.",
+)
+@limiter.limit("30/minute")
+async def crm_thread(
+    request: Request,
+    user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    if user.rol not in ("corredor", "inmobiliaria"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="El CRM Vivo es para corredores/inmobiliarias.")
+    from langchain_core.messages import AIMessage, HumanMessage
+    from app.agent.crm_graph import compiled_crm_graph
+    from app.agent.crm_guardrails import texto_de_content
+    sid = f"crm-{user.user_id}"
+    try:
+        state = await compiled_crm_graph.aget_state({"configurable": {"thread_id": sid}})
+    except Exception:  # noqa: BLE001 — sin hilo aún / checkpointer no montado
+        return {"session_id": sid, "mensajes": []}
+    msgs = (state.values or {}).get("messages", []) if (state and state.values) else []
+    out: list[dict] = []
+    for m in msgs:
+        if isinstance(m, HumanMessage):
+            c = m.content if isinstance(m.content, str) else texto_de_content(m.content)
+            if c and c.strip():
+                out.append({"autor": "corredor", "texto": c})
+        elif isinstance(m, AIMessage) and not getattr(m, "tool_calls", None):
+            c = texto_de_content(m.content)
+            if c and c.strip():
+                out.append({"autor": "crm", "texto": c})
+    return {"session_id": sid, "mensajes": out}
+
+
+@router.delete(
+    "/crm/thread",
+    summary="CRM Vivo — nueva conversación (limpia el hilo del corredor)",
+    description="Borra el hilo persistido del corredor para empezar de cero. Solo el "
+                "propio corredor (hilo crm-{user_id}). Solo corredores/inmobiliarias.",
+)
+@limiter.limit("10/minute")
+async def crm_thread_reset(
+    request: Request,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    if user.rol not in ("corredor", "inmobiliaria"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="El CRM Vivo es para corredores/inmobiliarias.")
+    sid = f"crm-{user.user_id}"
+    try:
+        for tbl in ("checkpoint_blobs", "checkpoint_writes", "checkpoints"):
+            await db.execute(text(f"DELETE FROM {tbl} WHERE thread_id = :t"), {"t": sid})
+        await db.commit()
+    except Exception:  # noqa: BLE001 — tablas aún no creadas / fallo transitorio
+        await db.rollback()
+    return {"session_id": sid, "ok": True}
+
+
 @router.post(
     "/reenganche/scan",
     summary="Dispara un barrido de reenganche bajo demanda (piloto/ops)",

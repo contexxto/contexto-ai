@@ -7,7 +7,7 @@ from sqlalchemy import text
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from app.agent.graph import setup_checkpointer, shutdown_checkpointer
+from app.agent.graph import setup_checkpointer, shutdown_checkpointer, get_checkpointer
 from app.config import settings
 from app.database import AsyncSessionLocal
 from app.limiter import limiter
@@ -18,6 +18,9 @@ from app.routers import assets, auth, chat, ingest, match, review, vision
 async def lifespan(app: FastAPI):
     print("Contexto AI API iniciando...")
     await setup_checkpointer()
+    # CRM Vivo: comparte el mismo checkpointer Postgres → el hilo del corredor persiste.
+    from app.agent.crm_graph import setup_crm_checkpointer
+    setup_crm_checkpointer(get_checkpointer())
     # Cron de reenganche: tarea de fondo DENTRO de la app (no un servicio aparte).
     # Barre leads dormidos y avisa al corredor por push+email. Ver app/reenganche_cron.
     from app.reenganche_cron import iniciar_cron, detener_cron

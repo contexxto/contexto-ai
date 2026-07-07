@@ -61,3 +61,11 @@ def test_endpoint_crm_registrado():
     import main
     paths = {getattr(r, "path", "") for r in main.app.routes}
     assert "/api/v1/assets/crm/chat" in paths
+    assert "/api/v1/assets/crm/thread" in paths   # historial + reset (persistencia)
+
+
+def test_setup_crm_checkpointer_no_crashea_con_none():
+    # Con None (Postgres no disponible) conserva el MemorySaver, sin romper.
+    from app.agent.crm_graph import setup_crm_checkpointer, compiled_crm_graph
+    setup_crm_checkpointer(None)
+    assert compiled_crm_graph is not None

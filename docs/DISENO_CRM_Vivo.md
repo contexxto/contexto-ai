@@ -224,6 +224,13 @@ sería otra demo que no escala (el 17%-ve-impacto del que se queja el estudio).
     `detectar_steering` corre sobre la salida pero es observabilidad (no bloquea) y está calibrado para
     el chat del comprador; el resumen de historiales es superficie nueva. Ambas son el gate #1 antes de
     abrir el CRM a corredores fuera del piloto de Carlos.
+- **2026-07-06 — v0.5 · Persistencia del hilo del corredor (Fase 2 parcial)** — El chat del CRM
+  dejó de ser efímero: comparte el `AsyncPostgresSaver` del agente del comprador
+  (`graph.get_checkpointer()` → `crm_graph.setup_crm_checkpointer()` en el lifespan), con hilo
+  ESTABLE `crm-{user_id}` (derivado del JWT, no aleatorio). Nuevos endpoints `GET /crm/thread`
+  (restaura la conversación al recargar) y `DELETE /crm/thread` ("Nueva conversación"). El front
+  carga el historial al montar y envía `session_id: null` (el servidor deriva el hilo). Resuelve el
+  dolor "no sé dónde retomar la conversación" que Carlos vio en el soak en vivo. Suite 408 verde.
 - **2026-07-06 — v0.4 · Conciencia de rechazo (hallazgo del soak)** — Al correr `evals/crm_soak.py`
   con el LLM real: las 4 preguntas de cifras salieron honestas (incl. *"No tengo ese dato"* ante "dame el
   número exacto de quién comprará") y las 3 de segmentación fueron **correctamente rechazadas** por el

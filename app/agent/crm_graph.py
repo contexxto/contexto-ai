@@ -9,8 +9,9 @@ llm_node con guardrail Fair Housing) pero con SYSTEM_PROMPT y tools del corredor
 Barandas (docs/DISENO_CRM_Vivo.md): el LLM NARRA, nunca calcula; sin dato → "no tengo ese
 dato"; jamás segmenta/perfila por clase protegida; solo los leads del propio corredor.
 
-Fase 1 usa MemorySaver (memoria por-proceso): suficiente para un asistente de consulta.
-La persistencia del hilo del corredor es una mejora futura.
+Persistencia: comparte el AsyncPostgresSaver del agente del comprador (setup_crm_checkpointer,
+llamado en el lifespan). El hilo del corredor es estable (crm-{user_id}) → la conversación se
+retoma tras recargar. Arranca con MemorySaver hasta que el lifespan monte el checkpointer.
 """
 from __future__ import annotations
 
@@ -60,9 +61,11 @@ REGLAS INNEGOCIABLES (son el foso de Contexto — la honestidad):
    objetiva (etapa/interés/actividad).
 4. Solo hablas de SUS interesados (las herramientas ya lo garantizan). No inventes leads que no aparezcan.
 
-ESTILO: español rioplatense-neutro sin anglicismos, directo y accionable. Prioriza el OUTCOME del
-corredor (a quién contactar/retomar, qué lead está caliente), no la actividad bonita. Respuestas
-cortas; si listas leads, pocos y con por qué. Cuando haya reenganche sugerido, ofrécelo tal cual.
+ESTILO: español neutro latinoamericano, SIN anglicismos, directo y accionable. Usa TUTEO estándar
+("tú tienes", "quieres", "contáctalo", "puedes", "deberías") — NUNCA voseo rioplatense/argentino
+(nada de "vos tenés", "querés", "contactá", "podés", "arrancamos"). Prioriza el OUTCOME del corredor
+(a quién contactar/retomar, qué lead está caliente), no la actividad bonita. Respuestas cortas; si
+listas leads, pocos y con por qué. Cuando haya reenganche sugerido, ofrécelo tal cual.
 """)
 
 
@@ -100,5 +103,18 @@ def _build_crm_graph() -> StateGraph:
     return graph
 
 
-# Memoria por-proceso (Fase 1). Ver nota del módulo.
-compiled_crm_graph = _build_crm_graph().compile(checkpointer=MemorySaver())
+_crm_builder = _build_crm_graph()
+# Compilación por defecto: memoria volátil (para que la app arranque siempre).
+# setup_crm_checkpointer() la reemplaza por el AsyncPostgresSaver COMPARTIDO con el agente
+# del comprador durante el lifespan → el hilo del corredor (crm-{user_id}) persiste y se retoma.
+compiled_crm_graph = _crm_builder.compile(checkpointer=MemorySaver())
+
+
+def setup_crm_checkpointer(checkpointer) -> None:
+    """Re-compila el grafo del CRM con el checkpointer Postgres compartido (mismo pool que el
+    agente del comprador, ver graph.get_checkpointer()). Los thread_id no colisionan
+    (crm-{user} vs qr-{session}). Si es None (Postgres no disponible), conserva el MemorySaver."""
+    global compiled_crm_graph
+    if checkpointer is not None:
+        compiled_crm_graph = _crm_builder.compile(checkpointer=checkpointer)
+        print("  CRM Vivo: checkpointer Postgres compartido ACTIVO — hilo del corredor persistente")

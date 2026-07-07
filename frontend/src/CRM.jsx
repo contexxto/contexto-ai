@@ -260,7 +260,7 @@ export default function CRM() {
       {!d && !err && <div style={{ color: C.muted, padding: '24px 0', textAlign: 'center' }}>Cargando…</div>}
 
       {/* Modo ANÁLISIS: reportería/dashboard de la cartera (chip "Análisis" del header). */}
-      {d && analisis && <AnalisisPanel />}
+      {d && analisis && <AnalisisPanel onVolver={() => setAnalisis(false)} />}
 
       {d && !analisis && d.total === 0 && (
         <div style={{ flex: 1, display: 'grid', placeItems: 'center', color: C.muted }}>

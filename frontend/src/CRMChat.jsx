@@ -14,10 +14,11 @@ const SUGERENCIAS = [
   '¿A quién debería retomar?',
   '¿Cómo va mi embudo?',
 ]
+// Sugerencias del Estratega: COMPLEMENTAN el kickoff (no lo repiten). La 3ª dispara el playbook de venta.
 const SUG_ESTRATEGA = [
-  '¿En quién me enfoco esta semana?',
-  '¿Qué está frenando mis cierres?',
-  '¿A quién debería reenganchar primero?',
+  '¿A quién reenganchar primero?',
+  '¿Dónde se atasca mi embudo?',
+  '¿Cuál es mi mejor sistema de cartera?',
 ]
 const KICKOFF_ESTRATEGA = 'Dame la jugada de mi cartera esta semana: en quién enfocarme, qué frena mis cierres, y mi mejor movida.'
 // Idempotencia del kickoff proactivo: una vez disparado para un hilo en esta sesión, no lo re-dispares
@@ -157,6 +158,27 @@ export default function CRMChat({ onClose, lead, modo = 'copiloto' } = {}) {
             {sugerencias.map(s => (
               <button key={s} onClick={() => enviar(s)}
                 style={{ fontSize: '.7rem', padding: '4px 9px', borderRadius: 999, cursor: 'pointer',
+                         background: 'rgba(45,189,182,.1)', border: `1px solid ${C.line}`, color: C.tealHi }}>
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Barra de consultas rápidas del Estratega (cartera): persistente, como la del Copiloto. Como el
+          Estratega arranca con el kickoff, el empty-state no se ve → estas chips son su acceso rápido. */}
+      {esEstratega && (
+        <div style={{ flexShrink: 0, marginBottom: 9, padding: '8px 10px', borderRadius: 12,
+                      background: 'rgba(45,189,182,.08)', border: `1px solid ${C.line}` }}>
+          <div style={{ fontSize: '.72rem', color: C.muted, display: 'flex', alignItems: 'center', gap: 5, marginBottom: 7 }}>
+            <span style={{ color: C.tealHi }}>🧭 Consultas de cartera</span>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {SUG_ESTRATEGA.map(s => (
+              <button key={s} onClick={() => enviar(s)} disabled={enviando}
+                style={{ fontSize: '.7rem', padding: '4px 9px', borderRadius: 999,
+                         cursor: enviando ? 'default' : 'pointer', opacity: enviando ? 0.5 : 1,
                          background: 'rgba(45,189,182,.1)', border: `1px solid ${C.line}`, color: C.tealHi }}>
                 {s}
               </button>

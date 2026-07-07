@@ -204,6 +204,12 @@ sería otra demo que no escala (el 17%-ve-impacto del que se queja el estudio).
 
 ## Changelog (iterar aquí)
 
+- **2026-07-07 — v0.9 · Diseño de SUPERPODERES (documentado, no construido)** — De "darles superpoderes a los
+  agentes": workflow de investigación (cerebro de Nate-Herk + canon Whaber) + diseño + crítica de marca → **11
+  superpoderes** (6 Copiloto tácticos + 5 Estratega de cartera) + 6 rechazados por marca, todos colgados de un
+  **candado de redacción común** (proveniencia + Fair Housing anti-proxy + no-presión). Hallazgo lateral: el
+  fail-close del Estratega no cubre `cifra` en la jugada proactiva. Decisión de Carlos: **documentar primero.**
+  Anchor doc completo → **`docs/DISENO_Superpoderes_Agentes_CRM.md`**. Nada de código tocado.
 - **2026-07-07 — v0.8 · Pulidas del Estratega (soak en vivo 3/3 de Carlos)** — El soak con la cartera real
   (10 interesados) salió **3/3**: cifras cuadraron, scores rotulados como estimación, Fair Housing declinó
   limpio ("incluso a favor"), y no inventó el presupuesto ("no tengo ese dato"). Dos pulidas de precisión:

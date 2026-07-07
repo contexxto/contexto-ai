@@ -34,7 +34,7 @@ const ESTADO_LBL = {
 // Un componente, DOS agentes (modo): 'copiloto' (táctico, por interesado) y 'estratega' (cartera,
 // proactivo — al abrir da la jugada). Persistente por hilo (el backend lo deriva del JWT).
 // Ver docs/DISENO_CRM_Vivo.md (arquitectura de dos agentes).
-export default function CRMChat({ onClose, lead, modo = 'copiloto' } = {}) {
+export default function CRMChat({ onClose, lead, modo = 'copiloto', onPanelSeed } = {}) {
   const esEstratega = modo === 'estratega'
   const [msgs, setMsgs] = useState([])   // { autor: 'corredor'|'crm', texto }
   const [texto, setTexto] = useState('')
@@ -77,7 +77,7 @@ export default function CRMChat({ onClose, lead, modo = 'copiloto' } = {}) {
           // así un reabrir con GET vacío por error no re-dispara). El check-and-add es síncrono → sin race.
           if (esEstratega && historial.length === 0 && !_kickoffHecho.has(kkey)) {
             _kickoffHecho.add(kkey)
-            enviar(KICKOFF_ESTRATEGA)
+            enviar(KICKOFF_ESTRATEGA, { esKickoff: true })
           }
         }
       }
@@ -86,7 +86,7 @@ export default function CRMChat({ onClose, lead, modo = 'copiloto' } = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leadRef, modo])
 
-  async function enviar(t0) {
+  async function enviar(t0, { esKickoff = false } = {}) {
     const t = (t0 ?? texto).trim()
     if (!t || enviando) return
     setTexto(''); setError(null); setEnviando(true)
@@ -95,6 +95,9 @@ export default function CRMChat({ onClose, lead, modo = 'copiloto' } = {}) {
       const { data } = await axios.post(`${API_BASE}/api/v1/assets/crm/chat`,
         { message: t, lead: leadRef, modo }, { headers: apiHeaders() })
       setMsgs(prev => [...prev, { autor: 'crm', texto: data.reply || 'Sin respuesta.' }])
+      // Directiva de panel (dashboard vivo, SPEC_Analisis_Vivo): el Estratega re-enfoca el AnalisisPanel.
+      // El kickoff NO re-enfoca (el dashboard ya abre en la North Star por defecto); las preguntas sí.
+      if (!esKickoff && data.panel_seed && onPanelSeed) onPanelSeed(data.panel_seed)
     } catch {
       setError('No se pudo consultar. Intenta de nuevo.')
     } finally {
@@ -114,7 +117,7 @@ export default function CRMChat({ onClose, lead, modo = 'copiloto' } = {}) {
     } catch { /* best-effort: la UI ya se limpió */ }
     finally {
       _kickoffHecho.delete(kkey)   // reset deliberado → permite re-armar el kickoff
-      if (esEstratega) { _kickoffHecho.add(kkey); await enviar(KICKOFF_ESTRATEGA) }  // re-arranca proactivo
+      if (esEstratega) { _kickoffHecho.add(kkey); await enviar(KICKOFF_ESTRATEGA, { esKickoff: true }) }  // re-arranca proactivo
       reiniciando.current = false
     }
   }

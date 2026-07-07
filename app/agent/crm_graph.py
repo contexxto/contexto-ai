@@ -53,6 +53,11 @@ QUÉ PUEDES HACER (con tus herramientas):
   razones; redacta un mensaje CÁLIDO y breve que aporte VALOR (un dato verificado del entorno que le
   importaba), listo para copiar y pegar. Nunca de presión ni transaccional, nunca inventes datos. Si no
   hay timeline suficiente, dilo y ofrece un borrador genérico de valor en vez de inventar detalles.
+- tool_playbook_venta: tu PLAYBOOK de venta HONESTA (tácticas de cierre, objeción, follow-up y negociación
+  de los grandes del corretaje —Serhant, Corcoran, etc.—, YA filtradas por el foso y Fair Housing). Cuando
+  redactes un mensaje, manejes una objeción, o el corredor pregunte "¿cómo lo abordo?", CONSÚLTALO por tema,
+  aplica la táctica CON SU CANDADO y atribúyela ("per <Mogul>"). Nunca uses una táctica sin su candado; el
+  playbook complementa el dato verificado, no lo reemplaza (las cifras siguen saliendo SOLO de las tools).
 
 REGLAS INNEGOCIABLES (son el foso de Contexto — la honestidad):
 1. NUNCA inventes ni calcules cifras. TODO número (cuántos leads, en qué etapa, scores) sale de las
@@ -93,6 +98,11 @@ CÓMO TRABAJAS:
   NO ofrezcas traerlo tú (no tienes esa herramienta).
 - PRECISIÓN DE PALABRA: "total" es cuántos interesados hay en su cartera; NO los llames "activos" (eso es
   frescura — interacción reciente — un dato DISTINTO que no tienes). Di "N interesados en tu cartera".
+- tool_playbook_venta: tu PLAYBOOK de ESTRATEGIA de venta honesta (secuenciar la cartera por señal de
+  intención, cadencia de contacto de VALOR, cuándo soltar un lead, sistemas de cartera de Keller/MREA,
+  cuándo y cómo pedir un referido) — ya filtrado por el foso. Cuando des la jugada o el corredor pregunte
+  "¿cómo trabajo mi cartera / cuál es mi mejor sistema?", CONSÚLTALO por tema, aplica la táctica CON SU
+  CANDADO y atribúyela ("per <Mogul>"). No reemplaza el dato: las cifras siguen saliendo SOLO de tool_stats_embudo.
 
 CUANDO ABRES (proactivo): da de una la jugada de la semana — 2 a 4 movidas priorizadas, cada una con el
 PORQUÉ (la señal de intención). Ej. ILUSTRATIVO (usa SIEMPRE las cifras REALES de la herramienta, jamás
@@ -175,11 +185,15 @@ def _build_crm_graph() -> StateGraph:
             texto = texto_de_content(response.content)
             resultado = evaluar_salida_crm(texto, tool_jsons_del_turno(state["messages"]))
             registrar_guardrail(resultado, session=cfg.get("thread_id"))
-            if (es_estratega and resultado.get("fair_housing")
-                    and not getattr(response, "tool_calls", None)):
+            # FH FAIL-CLOSED para AMBOS agentes: una salida FINAL (sin tool_calls) que segmenta/steerea por
+            # clase protegida (violación real, no un rechazo bien hecho) se reemplaza por un reencuadre honesto.
+            # Antes solo el Estratega proactivo; el playbook de venta subió la superficie del Copiloto → se
+            # simetriza (Fair Housing es línea roja legal en cualquier agente). La baranda de CIFRAS sigue
+            # observe-only (más falsos positivos; calibración Fase 2).
+            if resultado.get("fair_housing") and not getattr(response, "tool_calls", None):
                 logging.getLogger("crm.guardrails").warning(
-                    "estratega FH fail-closed: reencuadrando salida con segmentación por clase protegida hits=%s",
-                    resultado["fair_housing"])
+                    "CRM FH fail-closed (%s): reencuadrando salida con segmentación por clase protegida hits=%s",
+                    modo or "copiloto", resultado["fair_housing"])
                 response = AIMessage(content=REFRAME_FAIR_HOUSING)
         except Exception as exc:  # noqa: BLE001
             logging.getLogger("crm.guardrails").warning("guardrail falló (no bloqueante): %s", exc)

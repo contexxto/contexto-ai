@@ -204,6 +204,22 @@ sería otra demo que no escala (el 17%-ve-impacto del que se queja el estudio).
 
 ## Changelog (iterar aquí)
 
+- **2026-07-07 — v0.10 · Retrieval del PLAYBOOK de venta al CRM (el payoff del Corredor-Brain)** — El Copiloto y
+  el Estratega ahora consultan a demanda un **playbook de venta HONESTA** destilado del LLM-wiki `Corredor-Brain`
+  (Serhant/Keller/Corcoran/Hormozi, ya filtrado por foso + Fair Housing). Arquitectura deployable: el vault es LOCAL
+  (Obsidian) → `scripts/export_corredor_playbook.py` lo destila a `app/agent/corredor_playbook.json` (bundleado,
+  viaja a Render); `tool_playbook_venta(tema)` lo consulta filtrando por AGENTE (Copiloto: copiloto|ambos · Estratega:
+  estratega|ambos|corredor), devuelve tácticas con su **candado** + atribución **per <Mogul>** y qué **EVITAR**
+  (anti-patrones). El scope sigue hermético (la tool no toca DB ni PII; solo tácticas públicas).
+  - **Endurecido tras revisión adversarial (13 hallazgos):** (1) el JSON del playbook se marca `_no_respaldo` → sus
+    cifras de moguls **NUNCA respaldan** una cifra de cartera narrada (cerraba el guardrail 3.1); (2) nuevo detector
+    determinista **`detectar_promesa_inflada`** — el candado "no infles el outcome" ("seguro sube", "garantizado se
+    revaloriza", "vas a ser feliz", "inversión segura") vuelto control (observe-only, Fase 1); (3) el **FH fail-close
+    se simetriza a AMBOS agentes** (el playbook subió la superficie del Copiloto); (4) export **fail-CLOSED**
+    (whitelist de foso {verde,amarillo}) + aborta si falta el vault o queda vacío (no clobberea el JSON bueno);
+    (5) `tema` con cap de longitud; anti-patrones etiquetados `NO_USAR`; log en carga fallida.
+  - **Freshness:** el JSON se regenera con `export_corredor_playbook.py` tras la hidratación semanal del vault.
+  - Verificado: grafo compila + retrieval probado (routing + aislamiento) + suite **423/423** (9 tests nuevos).
 - **2026-07-07 — v0.9 · Diseño de SUPERPODERES (documentado, no construido)** — De "darles superpoderes a los
   agentes": workflow de investigación (cerebro de Nate-Herk + canon Whaber) + diseño + crítica de marca → **11
   superpoderes** (6 Copiloto tácticos + 5 Estratega de cartera) + 6 rechazados por marca, todos colgados de un

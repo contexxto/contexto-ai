@@ -14,9 +14,14 @@ Barandas (ver docs/DISENO_CRM_Vivo.md):
 from __future__ import annotations
 
 import json
+import logging
+import os
+import unicodedata
 
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
+
+log = logging.getLogger("crm.tools")
 
 
 def _owner(config: RunnableConfig | None) -> tuple[str | None, str | None]:
@@ -125,5 +130,74 @@ async def tool_timeline_de_lead(referencia: str, config: RunnableConfig) -> str:
     }, ensure_ascii=False)
 
 
-CRM_TOOLS = [tool_stats_embudo, tool_timeline_de_lead]           # Copiloto (táctico): cartera + timeline por-lead
-ESTRATEGA_TOOLS = [tool_stats_embudo]                            # Estratega (cartera): SOLO agregados, sin chat crudo
+# ── Playbook de venta honesta (retrieval del Corredor-Brain, bundleado en el repo) ──────────────
+# El LLM-wiki "Corredor-Brain" (Serhant/Keller/Corcoran/Hormozi, ya filtrado por foso + Fair Housing)
+# se destila a corredor_playbook.json con scripts/export_corredor_playbook.py. La tool lo consulta a
+# demanda por AGENTE (modo) + tema — así el prompt no engorda y las tácticas viajan a producción.
+_PLAYBOOK_PATH = os.path.join(os.path.dirname(__file__), "corredor_playbook.json")
+_PLAYBOOK: dict | None = None
+
+
+def _load_playbook() -> dict:
+    global _PLAYBOOK
+    if _PLAYBOOK is None:
+        try:
+            with open(_PLAYBOOK_PATH, encoding="utf-8") as f:
+                _PLAYBOOK = json.load(f)
+        except Exception as exc:  # noqa: BLE001 — sin playbook, degrada a vacío (nunca tumba el agente)
+            log.warning("playbook no cargó (%s): %s → el CRM sigue sin tácticas de venta",
+                        _PLAYBOOK_PATH, exc)
+            _PLAYBOOK = {"tacticas": [], "evitar": []}
+    return _PLAYBOOK
+
+
+def _norm(s: str) -> str:
+    """minúsculas sin acentos, para match tolerante."""
+    s = unicodedata.normalize("NFD", (s or "").lower())
+    return "".join(c for c in s if unicodedata.category(c) != "Mn")
+
+
+def _score(entry: dict, qwords: list[str]) -> int:
+    hay = _norm(" ".join([entry.get("titulo", ""), " ".join(entry.get("tags", [])),
+                          " ".join(entry.get("aliases", [])), entry.get("que_es", ""),
+                          entry.get("por_que", "")]))
+    return sum(1 for w in qwords if w in hay)
+
+
+@tool
+async def tool_playbook_venta(tema: str, config: RunnableConfig) -> str:
+    """Consulta el PLAYBOOK de venta HONESTA del corredor: tácticas de cierre, manejo de objeción,
+    follow-up/reenganche, negociación, priorización de cartera y redacción — destiladas de constructores
+    REALES de imperios inmobiliarios (Serhant, Keller, Corcoran, Hormozi) y YA filtradas por Fair Housing
+    + honestidad. Pásale un 'tema' en lenguaje natural (ej.: 'objeción de precio', 'reenganchar a un
+    dormido', 'cómo priorizo mi cartera', 'redactar el primer mensaje', 'pedir un referido'). Devuelve
+    tácticas aplicables CON SU CANDADO y atribución 'per <Mogul>', más qué EVITAR (anti-patrones). Aplica
+    el candado y cita al mogul; NUNCA uses una táctica sin su candado."""
+    pb = _load_playbook()
+    cfg = (config or {}).get("configurable") or {}
+    tema = (tema or "")[:500]   # cap de longitud (defensa: 'tema' es texto libre del LLM)
+    # Ruteo por agente: el Copiloto ve lo TÁCTICO por-lead; el Estratega, lo de CARTERA + coaching.
+    permit = {"estratega", "ambos", "corredor"} if cfg.get("modo") == "estratega" else {"copiloto", "ambos"}
+    qwords = [w for w in _norm(tema).split() if len(w) > 2]
+
+    cand = [t for t in pb.get("tacticas", []) if t.get("agente") in permit]
+    tac = sorted((t for t in cand if _score(t, qwords) > 0), key=lambda t: _score(t, qwords), reverse=True)[:4]
+    evi = sorted((e for e in pb.get("evitar", []) if _score(e, qwords) > 0), key=lambda e: _score(e, qwords), reverse=True)[:2]
+
+    return json.dumps({
+        "_no_respaldo": True,  # COACHING, no dato de cartera → el guardrail de cifras NO respalda con esto
+        "tema": tema,
+        "tacticas": [{"titulo": t["titulo"], "per": t.get("mogul", ""), "foso": t.get("foso", ""),
+                      "candado": t.get("candado", ""), "que_es": t.get("que_es", ""),
+                      "como_aplica": t.get("como_aplica", "")} for t in tac],
+        # 'evitar' = ANTI-PATRONES: qué NO hacer. Cada item se marca explícito para que el LLM jamás los aplique.
+        "evitar": [{"NO_USAR": e["titulo"], "es_anti_patron": True, "por_que": e.get("por_que", "")} for e in evi],
+        "_nota": ("Ninguna táctica específica para ese tema; procede con tu criterio y las barandas."
+                  if not tac else
+                  "Aplica el 'candado' de cada táctica y atribuye 'per'. Ya pasaron el foso; aun así, "
+                  "nunca inventes cifras ni segmentes por clase protegida al aplicarlas."),
+    }, ensure_ascii=False)
+
+
+CRM_TOOLS = [tool_stats_embudo, tool_timeline_de_lead, tool_playbook_venta]   # Copiloto: cartera + timeline + playbook
+ESTRATEGA_TOOLS = [tool_stats_embudo, tool_playbook_venta]                    # Estratega: cartera agregada + playbook

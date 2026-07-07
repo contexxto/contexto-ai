@@ -47,9 +47,9 @@ def test_match_id_exacto_gana_a_substring():
 
 # ── smokes de montaje ───────────────────────────────────────────────────────
 def test_crm_tools_registradas():
-    assert len(CRM_TOOLS) == 2
+    assert len(CRM_TOOLS) == 3
     nombres = {t.name for t in CRM_TOOLS}
-    assert "tool_stats_embudo" in nombres and "tool_timeline_de_lead" in nombres
+    assert nombres == {"tool_stats_embudo", "tool_timeline_de_lead", "tool_playbook_venta"}
 
 
 def test_estratega_no_ve_timeline_por_lead():
@@ -57,7 +57,7 @@ def test_estratega_no_ve_timeline_por_lead():
     # puede jalar el chat crudo de un interesado → no hay fuga de clase protegida a su contexto, y
     # el detalle por-lead queda del lado del Copiloto (por construcción, no solo por prompt).
     nombres = {t.name for t in ESTRATEGA_TOOLS}
-    assert nombres == {"tool_stats_embudo"}
+    assert nombres == {"tool_stats_embudo", "tool_playbook_venta"}   # cartera + playbook, SIN timeline por-lead
     assert "tool_timeline_de_lead" not in nombres
 
 
@@ -125,3 +125,83 @@ def test_crmchatreq_modo_rechaza_valor_invalido():
     assert CRMChatReq(message="hola", modo="estratega").modo == "estratega"
     with pytest.raises(ValidationError):
         CRMChatReq(message="hola", modo="x" * 1000)
+
+
+# ── Playbook de venta (retrieval del Corredor-Brain, bundleado) ──────────────
+# tool_playbook_venta consulta el JSON destilado del LLM-wiki, filtrando por AGENTE (modo). Estos tests
+# fijan: el playbook carga, ninguna táctica usable es 🔴, el ruteo por agente NO filtra de más, y los
+# anti-patrones se ofrecen como 'evitar'.
+def _pb(tema, modo):
+    import asyncio, json
+    from app.agent.crm_tools import tool_playbook_venta
+    return json.loads(asyncio.run(tool_playbook_venta.ainvoke({"tema": tema}, config={"configurable": {"modo": modo}})))
+
+
+def test_playbook_carga_y_sin_rojos():
+    from app.agent.crm_tools import _load_playbook
+    pb = _load_playbook()
+    assert pb["n_tacticas"] > 20 and pb["n_evitar"] > 0
+    # ninguna táctica USABLE es 🔴 (esas van solo en 'evitar')
+    assert all(t["foso"] != "rojo" for t in pb["tacticas"])
+    # cada táctica tiene los campos clave para aplicarla honestamente
+    for t in pb["tacticas"][:8]:
+        assert t["titulo"] and t["agente"] and t["foso"]
+
+
+def test_playbook_en_ambos_toolsets():
+    from app.agent.crm_tools import CRM_TOOLS, ESTRATEGA_TOOLS
+    assert "tool_playbook_venta" in {t.name for t in CRM_TOOLS}
+    assert "tool_playbook_venta" in {t.name for t in ESTRATEGA_TOOLS}
+
+
+def test_playbook_ruteo_copiloto_no_ve_estratega():
+    # El Copiloto SOLO ve tácticas con agente copiloto|ambos (nunca las de solo-estratega, p.ej. 33-Touch).
+    from app.agent.crm_tools import _load_playbook
+    por_titulo = {t["titulo"]: t["agente"] for t in _load_playbook()["tacticas"]}
+    d = _pb("cadencia de contacto nurture 33-touch de la base", "copiloto")
+    for t in d["tacticas"]:
+        assert por_titulo[t["titulo"]] in ("copiloto", "ambos")
+
+
+def test_playbook_ruteo_estratega():
+    from app.agent.crm_tools import _load_playbook
+    por_titulo = {t["titulo"]: t["agente"] for t in _load_playbook()["tacticas"]}
+    d = _pb("priorizar la cartera y su cadencia", "estratega")
+    for t in d["tacticas"]:
+        assert por_titulo[t["titulo"]] in ("estratega", "ambos", "corredor")
+
+
+def test_playbook_ofrece_antipatrones():
+    # Sobre un tema de manipulación, debe surgir el anti-patrón a EVITAR.
+    d = _pb("escasez y urgencia para forzar el cierre", "copiloto")
+    assert any("scasez" in e["NO_USAR"].lower() or "urgencia" in e["NO_USAR"].lower() for e in d["evitar"])
+
+
+# ── Fixes de la revisión adversarial del playbook ───────────────────────────
+def test_playbook_no_respalda_cifras_de_cartera():
+    # Hallazgo #1: el JSON del playbook (marcado _no_respaldo) NUNCA respalda una cifra narrada sobre
+    # la cartera, aunque contenga números de los moguls (33-touch, "~30% referidos", 2000).
+    import json
+    from app.agent.crm_guardrails import cifras_no_respaldadas
+    playbook_out = json.dumps({"_no_respaldo": True, "tacticas": [
+        {"que_es": "33 toques al año; cerca del 30% del negocio son referidos; 2000 contactos ≈ 1M"}]})
+    hits = cifras_no_respaldadas("Cerca del 30% de tu cartera son referidos y tienes 33 dormidos", [playbook_out])
+    assert hits, "el playbook es coaching: no debe respaldar cifras de cartera"
+
+
+def test_detector_promesa_inflada():
+    # Hallazgo #2: el candado 'no infles el outcome' vuelto control determinista.
+    from app.agent.crm_guardrails import detectar_promesa_inflada
+    assert detectar_promesa_inflada("Compra ya, seguro sube de precio el próximo año")
+    assert detectar_promesa_inflada("Te garantizo que esta casa se revaloriza")
+    assert detectar_promesa_inflada("Vas a ser muy feliz en esta zona")
+    assert detectar_promesa_inflada("Es una inversión segura, sin riesgo")
+    # Alta precisión: la afirmación honesta con dato/rótulo NO cae.
+    assert not detectar_promesa_inflada("El tráfico ronda ~5 mil vehículos/día (dato verificado)")
+    assert not detectar_promesa_inflada("Pidió corredor y está en Intención; su score estimado es alto")
+
+
+def test_evaluar_salida_expone_promesa():
+    from app.agent.crm_guardrails import evaluar_salida_crm
+    assert evaluar_salida_crm("Garantizado que esta propiedad se revaloriza", [])["promesa"]
+    assert not evaluar_salida_crm("Contacta a los que pidieron corredor; prioriza por etapa", [])["promesa"]

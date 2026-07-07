@@ -205,3 +205,124 @@ def test_evaluar_salida_expone_promesa():
     from app.agent.crm_guardrails import evaluar_salida_crm
     assert evaluar_salida_crm("Garantizado que esta propiedad se revaloriza", [])["promesa"]
     assert not evaluar_salida_crm("Contacta a los que pidieron corredor; prioriza por etapa", [])["promesa"]
+
+
+# ── §5 anchor doc — CIFRA DE CARTERA fail-close del ESTRATEGA proactivo ───────
+# El Estratega abre sin humano en el loop y dirige TODA la cartera (máxima exposición). Si narra una cifra
+# DE CARTERA que el turno NO respalda con NINGÚN dato (invención pura), la salida se reemplaza por un
+# reencuadre honesto. El gatillo se ANCLA al sustantivo: dispara solo cuando el número inventado está pegado
+# a un sustantivo de inventario de cartera (leads/dormidos/calientes/…), NO a una metodología (33-Touch, 8x8).
+# Eso distingue "tienes 23 dormidos" (invención de cartera) de "aplica el 33-Touch" (coaching legítimo), sin
+# importar si citó el playbook. ACOTADO: NO toca al Copiloto (cifra observe-only, Fase 2) ni MODO_BLOQUEO.
+# La decisión vive en la función pura _reframe_fail_close → estos tests la fijan sin depender del LLM.
+def _playbook_json(que_es="33 toques al año; 8x8 en las primeras 8 semanas"):
+    import json
+    return json.dumps({"_no_respaldo": True, "tacticas": [{"que_es": que_es}]})
+
+
+def test_numeros_de_cartera_ancla_a_inventario_no_metodologia():
+    from app.agent.crm_guardrails import _numeros_de_cartera
+    assert _numeros_de_cartera("tienes 23 dormidos") == {"23"}
+    assert _numeros_de_cartera("otros 18 leads en intención") == {"18"}
+    assert _numeros_de_cartera("15 calientes y 4 tibios") == {"15", "4"}
+    # metodología: los números NO están anclados a inventario de cartera → set vacío
+    assert _numeros_de_cartera("aplica el 33-Touch: 33 toques al año") == set()
+    assert _numeros_de_cartera("un 8x8: 8 contactos en 8 semanas") == set()
+    assert _numeros_de_cartera("los 4 modelos de MREA") == set()
+    # 'cartera'/'sistema' genéricos NO anclan (evita el falso positivo de "sistema de cartera es el 33-Touch")
+    assert _numeros_de_cartera("tu mejor sistema de cartera es el 33-Touch") == set()
+
+
+def test_reframe_cifra_estratega_texto_declina_y_reancla():
+    from app.agent.crm_graph import REFRAME_CIFRA_ESTRATEGA
+    t = REFRAME_CIFRA_ESTRATEGA.lower()
+    assert len(REFRAME_CIFRA_ESTRATEGA) > 80
+    assert "embudo" in t or "cartera" in t          # reancla al dato real
+    assert "respald" in t                            # nombra la falta de respaldo
+
+
+def test_fail_close_cifra_estratega_invencion_pura():
+    # Estratega proactivo, salida FINAL, cifra DE CARTERA sin NINGÚN respaldo → reencuadre de cifra.
+    from app.agent.crm_graph import _reframe_fail_close, REFRAME_CIFRA_ESTRATEGA
+    from app.agent.crm_guardrails import evaluar_salida_crm
+    r = evaluar_salida_crm("La jugada: tienes 23 leads dormidos, recupera el 40% esta semana", [])
+    assert any(m == "numero_sin_dato" for _, m in r["cifra_cartera"])   # '23' anclado a leads/dormidos, sin dato
+    out = _reframe_fail_close(r, es_estratega=True, es_final=True)
+    assert out is not None and out[0] == REFRAME_CIFRA_ESTRATEGA
+
+
+def test_fail_close_cifra_NO_toca_copiloto():
+    # Mismo texto inventado, pero modo Copiloto → NO se reencuadra (su baranda de cifras sigue observe-only).
+    from app.agent.crm_graph import _reframe_fail_close
+    from app.agent.crm_guardrails import evaluar_salida_crm
+    r = evaluar_salida_crm("Tienes 23 dormidos, recupera el 40%", [])
+    assert _reframe_fail_close(r, es_estratega=False, es_final=True) is None
+
+
+def test_fail_close_no_reencuadra_metodologia_del_playbook():
+    # Hallazgo #2 del review: citar una metodología (33-Touch, 8x8, 4 modelos MREA) NO debe reencuadrarse —
+    # ni citando el playbook NI de memoria (sin tool). El anclaje al sustantivo la exime, porque el número no
+    # está pegado a inventario de cartera. (Antes, con la exención por-turno, la variante sin-tool caía en FP.)
+    from app.agent.crm_graph import _reframe_fail_close
+    from app.agent.crm_guardrails import evaluar_salida_crm
+    for texto, tj in [
+        ("Tu mejor sistema de cartera es el 33-Touch: 33 toques de valor al año", [_playbook_json()]),
+        ("Trabaja el 33-Touch: 33 toques al año", []),          # metodología de memoria, SIN tool
+        ("Arma un 8x8: 8 contactos en las primeras 8 semanas", []),
+        ("Aplica los 4 modelos de MREA", []),
+    ]:
+        r = evaluar_salida_crm(texto, tj)
+        assert _reframe_fail_close(r, es_estratega=True, es_final=True) is None, texto
+
+
+def test_fail_close_cifra_fuga_mixta_playbook_mas_cartera():
+    # Hallazgo #1 del review (REGRESIÓN): respuesta MIXTA — cifra de cartera inventada ('23 dormidos') junto a
+    # un número-metodología ('33-Touch'), citando el playbook. La exención por-turno anterior dejaba pasar el
+    # '23'; el anclaje al sustantivo lo caza (23 pegado a 'dormidos') aunque exima al '33'.
+    from app.agent.crm_graph import _reframe_fail_close, REFRAME_CIFRA_ESTRATEGA
+    from app.agent.crm_guardrails import evaluar_salida_crm
+    pb = _playbook_json()
+    r = evaluar_salida_crm("Tienes 23 dormidos listos; aplica el 33-Touch para reactivarlos", [pb])
+    assert {f for f, _ in r["cifra_cartera"]} == {"23"}          # solo el '23' (cartera); el '33' NO ancla
+    out = _reframe_fail_close(r, es_estratega=True, es_final=True)
+    assert out is not None and out[0] == REFRAME_CIFRA_ESTRATEGA
+
+
+def test_fail_close_cifra_solo_numero_sin_dato_no_cifra_sin_respaldo():
+    # Carve-out de calibración: si el turno SÍ trajo dato (stats) y el número de cartera no calza, el motivo es
+    # 'cifra_sin_respaldo' (no 'numero_sin_dato') → queda FUERA del fail-close (espera calibración Fase 2).
+    from app.agent.crm_graph import _reframe_fail_close
+    from app.agent.crm_guardrails import evaluar_salida_crm
+    stats = '{"calientes": 5, "total": 10}'
+    # '5' respaldado por stats; '18 leads' está anclado a cartera PERO su motivo es 'cifra_sin_respaldo'
+    # (respaldo no vacío) → el fail-close (solo 'numero_sin_dato') NO dispara.
+    r = evaluar_salida_crm("Tienes 5 calientes y otros 18 leads en intención", [stats])
+    motivos = {m for _, m in r["cifra_cartera"]}
+    assert "cifra_sin_respaldo" in motivos and "numero_sin_dato" not in motivos
+    assert _reframe_fail_close(r, es_estratega=True, es_final=True) is None
+
+
+def test_fail_close_no_actua_si_hay_tool_call_pendiente():
+    # Si el LLM va a llamar una tool (es_final=False), aún no hay nada que entregar → no se reencuadra.
+    from app.agent.crm_graph import _reframe_fail_close
+    from app.agent.crm_guardrails import evaluar_salida_crm
+    r = evaluar_salida_crm("Tienes 23 dormidos, recupera el 40%", [])
+    assert _reframe_fail_close(r, es_estratega=True, es_final=False) is None
+
+
+def test_fail_close_fair_housing_gana_y_cubre_ambos_agentes():
+    # FH es línea roja legal: gana sobre el gatillo de cifra y aplica a AMBOS agentes (incluso al Copiloto).
+    from app.agent.crm_graph import _reframe_fail_close, REFRAME_FAIR_HOUSING
+    from app.agent.crm_guardrails import evaluar_salida_crm
+    r = evaluar_salida_crm("Enfócate en las familias con hijos, son tus mejores cierres", [])
+    assert r["fair_housing"]
+    assert _reframe_fail_close(r, es_estratega=True, es_final=True)[0] == REFRAME_FAIR_HOUSING
+    assert _reframe_fail_close(r, es_estratega=False, es_final=True)[0] == REFRAME_FAIR_HOUSING
+
+
+def test_fail_close_salida_limpia_pasa_tal_cual():
+    from app.agent.crm_graph import _reframe_fail_close
+    from app.agent.crm_guardrails import evaluar_salida_crm
+    stats = '{"calientes": 5}'
+    r = evaluar_salida_crm("Tienes 5 calientes; contacta primero a los que pidieron corredor", [stats])
+    assert _reframe_fail_close(r, es_estratega=True, es_final=True) is None

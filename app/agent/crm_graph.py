@@ -144,6 +144,45 @@ REFRAME_FAIR_HOUSING = (
     "¿Sigo por ahí?"
 )
 
+# Reencuadre honesto para el FAIL-CLOSED de CIFRA del ESTRATEGA proactivo (§5 del anchor doc de
+# superpoderes). En la jugada de la semana —máxima exposición, sin humano en el loop— si el Estratega
+# narra un número que el turno NO respalda con NINGÚN dato (invención pura), en vez de entregar la cifra
+# inventada le pedimos anclar la jugada en su embudo real.
+REFRAME_CIFRA_ESTRATEGA = (
+    "Antes de darte la jugada de la semana quiero apoyarme en tu embudo real, no en un número que no "
+    "puedo respaldar. Déjame revisar el estado de tu cartera —cuántos pidieron corredor, en qué etapa "
+    "están, qué tan fresca es la actividad— y con eso te armo la prioridad con cifras que sí salen de tu "
+    "dato. ¿Le damos?"
+)
+
+
+def _reframe_fail_close(resultado: dict, *, es_estratega: bool, es_final: bool) -> tuple[str, str] | None:
+    """Decide si una salida FINAL debe reemplazarse por un reencuadre honesto (fail-close), y con cuál.
+    Puro y determinista → unit-testable sin el LLM. Devuelve (texto_reencuadre, motivo_para_log) o None
+    si la salida pasa tal cual. Dos gatillos, en orden de prioridad:
+
+      1. Fair Housing (AMBOS agentes) — segmentación/steering REAL por clase protegida (violación, no un
+         rechazo bien hecho). Línea roja legal → gana sobre cualquier otro gatillo.
+      2. Cifra DE CARTERA inventada (SOLO Estratega proactivo, §5 del anchor doc) — un hit de
+         `cifra_cartera` con motivo 'numero_sin_dato': un número SIN respaldo alguno (invención pura)
+         ANCLADO a un sustantivo de inventario de cartera (leads/dormidos/calientes/…). El anclaje es lo
+         que distingue "tienes 23 dormidos" (invención de cartera → reencuadra) de "aplica el 33-Touch: 33
+         toques" (número de metodología → NO reencuadra), sin importar si citó el playbook. El Copiloto
+         queda FUERA (su baranda de cifras sigue observe-only, Fase 2). No toca MODO_BLOQUEO global. El
+         motivo 'cifra_sin_respaldo' (había dato pero ese número no calza) queda FUERA (caso a calibrar).
+
+    Solo actúa sobre salidas FINALES (sin tool_calls): si el LLM va a llamar una tool, aún no hay nada que
+    entregar al corredor."""
+    if not es_final:
+        return None
+    if resultado.get("fair_housing"):
+        return (REFRAME_FAIR_HOUSING, f"FH — segmentación por clase protegida hits={resultado['fair_housing']}")
+    if es_estratega and any(motivo == "numero_sin_dato"
+                            for _, motivo in resultado.get("cifra_cartera") or []):
+        return (REFRAME_CIFRA_ESTRATEGA,
+                f"cifra de cartera inventada (estratega proactivo) hits={resultado['cifra_cartera']}")
+    return None
+
 
 def _build_crm_graph() -> StateGraph:
     # Mismo patrón que graph.py: cliente Anthropic con SSL explícito inyectado antes de bind_tools.
@@ -183,18 +222,18 @@ def _build_crm_graph() -> StateGraph:
         # respuesta (el except la deja pasar como estaba).
         try:
             texto = texto_de_content(response.content)
-            resultado = evaluar_salida_crm(texto, tool_jsons_del_turno(state["messages"]))
+            tool_jsons = tool_jsons_del_turno(state["messages"])
+            resultado = evaluar_salida_crm(texto, tool_jsons)
             registrar_guardrail(resultado, session=cfg.get("thread_id"))
-            # FH FAIL-CLOSED para AMBOS agentes: una salida FINAL (sin tool_calls) que segmenta/steerea por
-            # clase protegida (violación real, no un rechazo bien hecho) se reemplaza por un reencuadre honesto.
-            # Antes solo el Estratega proactivo; el playbook de venta subió la superficie del Copiloto → se
-            # simetriza (Fair Housing es línea roja legal en cualquier agente). La baranda de CIFRAS sigue
-            # observe-only (más falsos positivos; calibración Fase 2).
-            if resultado.get("fair_housing") and not getattr(response, "tool_calls", None):
+            es_final = not getattr(response, "tool_calls", None)   # salida FINAL, no una llamada a tool
+            # Decisión de fail-close (pura, unit-testable): FH para AMBOS agentes; cifra inventada SOLO
+            # para el Estratega proactivo. Si aplica, se reemplaza la salida por un reencuadre honesto.
+            reframe = _reframe_fail_close(resultado, es_estratega=es_estratega, es_final=es_final)
+            if reframe:
+                texto_reframe, motivo_log = reframe
                 logging.getLogger("crm.guardrails").warning(
-                    "CRM FH fail-closed (%s): reencuadrando salida con segmentación por clase protegida hits=%s",
-                    modo or "copiloto", resultado["fair_housing"])
-                response = AIMessage(content=REFRAME_FAIR_HOUSING)
+                    "CRM fail-closed (%s): %s", modo or "copiloto", motivo_log)
+                response = AIMessage(content=texto_reframe)
         except Exception as exc:  # noqa: BLE001
             logging.getLogger("crm.guardrails").warning("guardrail falló (no bloqueante): %s", exc)
         return {"messages": [response]}

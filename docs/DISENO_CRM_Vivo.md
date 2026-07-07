@@ -204,6 +204,15 @@ sería otra demo que no escala (el 17%-ve-impacto del que se queja el estudio).
 
 ## Changelog (iterar aquí)
 
+- **2026-07-07 — v0.11 · Fail-close de CIFRA DE CARTERA del Estratega proactivo (cierra el hueco §5)** — En la
+  jugada proactiva (sin humano en el loop, máxima exposición) el Estratega ya no puede narrar una cifra de cartera
+  inventada: si un número SIN respaldo alguno está anclado a un sustantivo de inventario (leads/dormidos/calientes/…)
+  la salida se reencuadra ("apoyémonos en tu embudo real"). Función pura `_reframe_fail_close` + campo `cifra_cartera`
+  (guardrail) con `_numeros_de_cartera` (anclaje al sustantivo → distingue "23 dormidos" de "33-Touch"). SOLO Estratega
+  (el Copiloto sigue observe-only), no toca `MODO_BLOQUEO`; FH mantiene prioridad y cubre a ambos. Una **revisión
+  adversarial** cazó 2 hallazgos MED del primer intento (`_uso_playbook` por-turno: fuga mixta + FP de metodología),
+  ambos cerrados por el anclaje. +10 tests con regresiones (suite **433** verde). Detalle en
+  `docs/DISENO_Superpoderes_Agentes_CRM.md` §5. (PR del doc de superpoderes, reconciliado.)
 - **2026-07-07 — v0.10 · Retrieval del PLAYBOOK de venta al CRM (el payoff del Corredor-Brain)** — El Copiloto y
   el Estratega ahora consultan a demanda un **playbook de venta HONESTA** destilado del LLM-wiki `Corredor-Brain`
   (Serhant/Keller/Corcoran/Hormozi, ya filtrado por foso + Fair Housing). Arquitectura deployable: el vault es LOCAL

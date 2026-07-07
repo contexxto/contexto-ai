@@ -2,7 +2,7 @@
 
 ### Documento ancla · se itera EN ESTE MISMO doc con cada aprendizaje
 
-**Creado:** 2026-07-07 · **Estado:** diseño (NADA construido — decisión: documentar primero) · **Dueño:** Carlos + Contexto
+**Creado:** 2026-07-07 · **Estado:** PARCIALMENTE CONSTRUIDO (reconciliado 2026-07-07 — ver §0.5) · **Dueño:** Carlos + Contexto
 
 > **Idea en una línea.** Dar "superpoderes" (capacidades tácticas de cierre honesto + técnicas de agente) al
 > **Copiloto** (táctico, por-interesado) y al **Estratega** (estratégico, de cartera) — SIN romper el foso
@@ -26,6 +26,38 @@ El pedido original apuntaba al **cerebro de Nate-Herk** (LLM-wiki en Obsidian). 
   Comunicación 80/20, face-saving, Compromiso).
 
 **Regla de cita:** todo lo de Nate-Herk se atribuye *"per Nate Herk"* (POV opinado, no verdad establecida).
+
+---
+
+## 0.5. Estado REAL de implementación (reconciliado 2026-07-07)
+
+> Este doc nació como *"documentar primero, construir después"* — pero el producto avanzó. Esta sección
+> reconcilia el diseño con lo que **ya está en `main`**, para que el ancla no mienta sobre el código.
+
+**Lo que YA se construyó (divergiendo del plan original en dos puntos honestos):**
+
+- 🏗️ **La fuente del cierre se volvió un cerebro propio, no solo el canon Whaber (§0).** Se construyó el
+  **`Corredor-Brain`** — un LLM-wiki multi-mogul (Serhant · Keller/MREA · Corcoran · Hormozi-filtrado), cada
+  táctica clasificada por **foso** (🟢/🟡/🔴) y **ruteada por agente**. Es un vault Obsidian **independiente**
+  del de Nate-Herk. Se auto-hidrata semanal (lunes).
+- 🏗️ **El retrieval se hizo con un TOOL nuevo, no "cero tools / solo prompt" (contradice §6).** `tool_playbook_venta(tema)`
+  (PR #97) destila el vault a `app/agent/corredor_playbook.json` (bundleado → Render) y lo consulta filtrando por
+  agente, con candado + atribución *per <Mogul>* + qué **EVITAR**. La decisión de sumar un tool (vs. módulos de
+  prompt) fue deliberada: mantiene el coaching fuera del prompt base y actualizable con la hidratación.
+- 🏗️ **El candado §1.3 "sin sobre-promesa" se volvió control determinista.** `detectar_promesa_inflada`
+  (observe-only, Fase 1): caza "seguro sube", "garantizado se revaloriza", "vas a ser feliz", "inversión segura".
+- 🏗️ **El FH fail-close se simetrizó a AMBOS agentes** (antes solo el Estratega; el playbook subió la superficie
+  del Copiloto → Fair Housing es línea roja en cualquiera).
+- ✅ **El hueco §5 (cifra en la jugada proactiva) — CERRADO en este PR.** Ver §5, ahora marcado RESUELTO.
+- 🏗️ **Chips de consulta del Estratega** (PR #98): la barra "🧭 Consultas de cartera" (uno dispara el playbook).
+
+**Lo que SIGUE siendo diseño (backlog, no construido):** los 11 superpoderes como **módulos de prompt** formales
+(C1–C6, E1–E5) y el **candado común §1** como módulo reusable único. Hoy el foso vive repartido en guardrails
+deterministas + prompts; el candado-como-módulo y los superpoderes redactados siguen pendientes (§6 marca el MVP).
+
+**El playbook NO es lo mismo que los superpoderes.** El playbook es *retrieval de tácticas* (qué decir); los
+superpoderes son *contratos de redacción* (cómo decirlo, atado al candado). El playbook alimenta a los superpoderes
+cuando se construyan; no los reemplaza.
 
 ---
 
@@ -102,21 +134,52 @@ Todos = **módulos de prompt** en `SYSTEM_PROMPT_ESTRATEGA`, sobre `tool_stats_e
 
 ---
 
-## 5. Hueco REAL de código (verificado contra el repo por el crítico)
+## 5. Hueco REAL de código — ✅ RESUELTO (este PR)
 
-El fail-close del Estratega (`crm_graph.py` `llm_node`) engancha en `resultado['fair_housing']` pero **NO** en
-`resultado['cifra']`. En la **jugada proactiva** (sin humano en el loop, dirigiendo TODA la cartera — máxima
-exposición), una cifra inventada se **loguea pero se ENTREGA igual** (`MODO_BLOQUEO=False`, observe-only).
+**El hueco (verificado contra el repo por el crítico):** el fail-close del Estratega (`crm_graph.py` `llm_node`)
+enganchaba en `resultado['fair_housing']` pero **NO** en `resultado['cifra']`. En la **jugada proactiva** (sin
+humano en el loop, dirigiendo TODA la cartera — máxima exposición), una cifra inventada se **logueaba pero se
+ENTREGABA igual**.
 
-**Fix propuesto (mismo patrón que el FH fail-close):** extender la condición para el Estratega a
-`if (es_estratega and (resultado.get('fair_housing') or resultado.get('cifra')) and not response.tool_calls)`; en
-el caso solo-cifra, reemplazar la salida por un reencuadre honesto ("Déjame confirmar esas cifras con tu embudo
-antes de darte la jugada") en vez de entregar el número sin respaldo. Cierra la única grieta numérica del bucle
-proactivo **sin** tocar `MODO_BLOQUEO` global (la baranda de cifras del Copiloto sigue observe-only, calibración Fase 2).
+**Lo que se construyó (con anclaje al sustantivo — más robusto que el fix propuesto):** la decisión de fail-close se
+extrajo a una función pura `_reframe_fail_close(resultado, es_estratega, es_final)` (unit-testable sin el LLM). El
+gatillo de cifra dispara **SOLO** cuando:
+
+1. `es_estratega` (el Copiloto NO entra — su baranda de cifras sigue **observe-only**, calibración Fase 2), **y**
+2. es una salida **final** (sin `tool_calls`), **y**
+3. hay un hit de **`cifra_cartera`** con motivo **`numero_sin_dato`**. `cifra_cartera` (nuevo campo de
+   `evaluar_salida_crm`) es el subconjunto de cifras sin respaldo **ANCLADAS a un sustantivo de inventario de
+   cartera** (`leads`/`dormidos`/`calientes`/`tibios`/`interesados`, vía `_numeros_de_cartera`). El anclaje es la
+   clave: *"tienes **23 dormidos**"* (número pegado a inventario → invención de cartera → reencuadra) vs. *"aplica el
+   **33-Touch**: 33 toques"* (número pegado a metodología → NO reencuadra). `numero_sin_dato` = sin respaldo alguno
+   (invención pura); el caso sutil `cifra_sin_respaldo` (había dato pero no calza) queda FUERA (calibración Fase 2).
+
+**Por qué el anclaje reemplazó al `_uso_playbook` inicial (revisión adversarial, 2 hallazgos MED):** la primera
+versión eximía el turno entero si citaba el playbook. Eso tenía dos grietas: **(#1)** una respuesta MIXTA (*"tienes
+23 dormidos; aplica el 33-Touch"*) dejaba pasar el `23` inventado; **(#2)** citar una metodología de memoria SIN el
+tool (*"trabaja el 33-Touch: 33 toques"*) daba un **falso positivo** que tumbaba coaching honesto. El anclaje al
+sustantivo cierra ambas con un solo mecanismo: caza `23`-junto-a-`dormidos` y exime `33`-junto-a-`Touch`, sin
+importar si citó el playbook o no.
+
+Si dispara, la salida se reemplaza por `REFRAME_CIFRA_ESTRATEGA` ("…quiero apoyarme en tu embudo real, no en un
+número que no puedo respaldar…"). FH mantiene prioridad (línea roja legal, gana sobre el gatillo de cifra) y sigue
+cubriendo a **ambos** agentes. **NO** toca `MODO_BLOQUEO` global. Cubierto por 10 tests (`tests/test_crm_agent.py`),
+incluidas regresiones explícitas de los hallazgos #1 y #2.
+
+**Residual conocido y aceptado (alta precisión > cobertura):** un conteo inventado fraseado SIN uno de los
+sustantivos anclados (p.ej. *"tienes 23 en tu cartera"* — se excluye `cartera`/`embudo`/`sistema` genéricos para no
+reintroducir el FP de *"sistema de cartera es el 33-Touch"*) NO dispara. Es un **falso negativo** (más conservador,
+no daña), no un falso positivo; ampliar el léxico de anclaje es trabajo de la calibración Fase 2.
 
 ---
 
 ## 6. Recomendación de MVP (cuando se decida construir)
+
+> **Reconciliación (2026-07-07):** el MVP real **divergió** de este plan en un punto — se priorizó el **retrieval
+> del playbook como TOOL** (PR #97) por encima de los superpoderes-como-prompt, porque el `Corredor-Brain` dio un
+> atajo de alto valor (tácticas honestas ya filtradas por foso). El "cero tools nuevos" de abajo ya **no aplica**:
+> hay un tool (`tool_playbook_venta`) + dos controles nuevos (`detectar_promesa_inflada`, cifra fail-close §5). Lo
+> que sigue pendiente son los superpoderes **redactados** (C1–C6, E1–E5) y el **candado común (§1) como módulo único**.
 
 Arrancar con **el candado común (§1) + 3-4 superpoderes de alto valor / bajo riesgo**, todos módulos de prompt sobre
 datos y plug-points que YA existen (cero tools nuevos, cero cambio de enforcement salvo el fix de §5):
@@ -132,6 +195,17 @@ datos y plug-points que YA existen (cero tools nuevos, cero cambio de enforcemen
 
 ## Changelog (iterar aquí)
 
+- **2026-07-07 — v0.2 · Reconciliado con `main` + hueco §5 CERRADO** — El doc dejó de decir "nada construido":
+  se agregó **§0.5 (estado real)** mapeando qué shippeó (Corredor-Brain, `tool_playbook_venta` PR #97,
+  `detectar_promesa_inflada`, FH fail-close simétrico, chips PR #98) vs. qué sigue siendo diseño (los 11
+  superpoderes redactados + el candado §1 como módulo). Se corrigieron §0 (fuente real = cerebro propio) y §6
+  (el MVP divergió: retrieval-como-tool, no "cero tools"). **§5 construido y marcado RESUELTO:** cifra-de-cartera
+  fail-close del Estratega proactivo vía la función pura `_reframe_fail_close`, con **anclaje al sustantivo**
+  (`cifra_cartera` + `_numeros_de_cartera`: dispara si el número inventado está pegado a inventario de cartera —
+  leads/dormidos/…— no a metodología). Una **revisión adversarial** (14 agentes) cazó 2 hallazgos MED en el primer
+  intento (`_uso_playbook` por-turno): fuga en respuesta mixta + FP al citar metodología sin tool; ambos cerrados
+  por el anclaje. SOLO Estratega, no toca `MODO_BLOQUEO`; +10 tests con regresiones de ambos hallazgos (suite 433
+  verde). Merge de `main` a la rama del doc.
 - **2026-07-07 — v0.1** — Doc creado desde el workflow `superpoderes-agentes-crm` (16 agentes: 4 vetas de
   investigación → síntesis → crítica de marca por-capacidad). 25 candidatas → 11 superpoderes (6 Copiloto + 5
   Estratega) + 6 rechazados. Veredicto del crítico: 0 rechazados / 11 a-modificar / 0 aprobados-limpio → todos

@@ -227,6 +227,36 @@ def cifras_no_respaldadas(narracion: str | None, tool_jsons: list[str],
     return hits
 
 
+# Sustantivos de INVENTARIO de cartera (conteos del embudo del corredor). Se usan para ANCLAR el
+# fail-close de cifra del Estratega (crm_graph._reframe_fail_close) a una cifra DE CARTERA inventada,
+# distinguiéndola de un número de METODOLOGÍA. Deliberadamente NO incluye 'cartera'/'embudo'/'sistema'
+# (genéricos → "sistema de cartera es el 33-Touch" daría falso positivo) ni 'contactos'/'toques'
+# (ambiguos: la metodología 8x8 = "8 contactos", 33-Touch = "33 toques"). Solo estados de lead unívocos.
+_CARTERA_NOUN = r"(?:leads?|interesad[oa]s?|dormid[oa]s?|calientes?|tibi[oa]s?)"
+_RE_NUM_CARTERA = re.compile(
+    rf"(\d[\d.,]*)\s+(?:\w+\s+){{0,2}}?{_CARTERA_NOUN}"                 # "23 dormidos", "23 de tus leads"
+    rf"|{_CARTERA_NOUN}\s*(?:\w+\s+){{0,2}}?[:=]?\s*(\d[\d.,]*)",       # "dormidos: 23", "leads son 23"
+    re.I)
+
+
+def _numeros_de_cartera(texto: str | None) -> set[str]:
+    """Fragmentos numéricos que el texto ata a un sustantivo de INVENTARIO de cartera (leads, dormidos,
+    calientes, tibios, interesados) = un CONTEO del embudo del corredor. Distingue 'tienes 23 dormidos'
+    (cifra de cartera) de '33-Touch / 33 toques' o '8x8: 8 contactos' (números de METODOLOGÍA, no cartera).
+    Devuelve los fragmentos normalizados como los formatea el guardrail (_fmt: entero sin separadores) para
+    poder intersectarlos con los hits de cifras_no_respaldadas."""
+    n = _norm(texto)
+    out: set[str] = set()
+    for m in _RE_NUM_CARTERA.finditer(n):
+        tok = m.group(1) or m.group(2)
+        if tok:
+            try:
+                out.add(str(_grupo_a_int(tok)))       # "1.234" -> "1234", "23" -> "23"
+            except Exception:  # noqa: BLE001 — token raro no debe tumbar el guardrail
+                pass
+    return out
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Baranda 3.2 — crm_no_segmenta (Fair Housing del CRM: perfilado por clase protegida)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -361,12 +391,16 @@ def revisar_fair_housing_crm(texto: str | None) -> list[tuple[str, str]]:
 # Orquestación + observabilidad
 # ─────────────────────────────────────────────────────────────────────────────
 def evaluar_salida_crm(texto: str | None, tool_jsons: list[str]) -> dict:
-    """{'cifra', 'fair_housing' (violaciones reales), 'fh_veredicto', 'fh_segmenta',
-    'fh_rechazo', 'bloquear'}. fh_veredicto/fh_segmenta se separan por FUENTE del detector.
-    Si el texto es un RECHAZO (el agente declinó correctamente), los hits se mueven a
-    fh_rechazo (buena señal) y NO cuentan como violación ni bloquean. bloquear respeta
-    MODO_BLOQUEO (Fase 1: siempre False → solo observar)."""
+    """{'cifra', 'cifra_cartera', 'fair_housing' (violaciones reales), 'fh_veredicto', 'fh_segmenta',
+    'fh_rechazo', 'promesa', 'bloquear'}. fh_veredicto/fh_segmenta se separan por FUENTE del detector.
+    Si el texto es un RECHAZO (el agente declinó correctamente), los hits se mueven a fh_rechazo (buena
+    señal) y NO cuentan como violación ni bloquean. bloquear respeta MODO_BLOQUEO (Fase 1: siempre
+    False → solo observar). 'cifra_cartera' es el subconjunto de 'cifra' ANCLADO a un sustantivo de
+    inventario de cartera (leads/dormidos/…) → cifra DE CARTERA inventada, no un número de metodología;
+    lo consume el fail-close del Estratega proactivo (crm_graph._reframe_fail_close)."""
     cifra = cifras_no_respaldadas(texto, tool_jsons)
+    cartera_nums = _numeros_de_cartera(texto)
+    cifra_cartera = [(f, m) for f, m in cifra if f in cartera_nums]
     veredicto_raw = detectar_steering(texto)              # baranda de veredicto-de-zona (heredada)
     segmenta_raw = segmenta_por_clase_protegida(texto)    # baranda de segmentación (nueva)
     promesa = detectar_promesa_inflada(texto)             # baranda de sobre-promesa (playbook 🟡 sin candado)
@@ -374,7 +408,8 @@ def evaluar_salida_crm(texto: str | None, tool_jsons: list[str]) -> dict:
     veredicto = [] if rechazo else veredicto_raw
     segmenta = [] if rechazo else segmenta_raw
     fh = _dedup(veredicto + segmenta)
-    return {"cifra": cifra, "fair_housing": fh, "fh_veredicto": veredicto, "fh_segmenta": segmenta,
+    return {"cifra": cifra, "cifra_cartera": cifra_cartera, "fair_housing": fh,
+            "fh_veredicto": veredicto, "fh_segmenta": segmenta,
             "fh_rechazo": _dedup(veredicto_raw + segmenta_raw) if rechazo else [], "promesa": promesa,
             "bloquear": bool(MODO_BLOQUEO and (cifra or fh))}
 

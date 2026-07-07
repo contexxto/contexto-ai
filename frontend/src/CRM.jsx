@@ -308,7 +308,7 @@ export default function CRM() {
               : { position: 'fixed', top: 0, right: 0, bottom: 0, width: 'min(430px, 100vw)', zIndex: 1200,
                   display: 'flex', flexDirection: 'column', padding: '16px 14px',
                   borderLeft: `1px solid ${C.line}`, background: C.panel, boxShadow: '-8px 0 44px rgba(0,0,0,.55)' }}>
-              <CRMChat lead={sel} onClose={() => setAsistente(false)} />
+              <CRMChat key={sel?.session_id || 'cartera'} lead={sel} onClose={() => setAsistente(false)} />
             </div>
           )}
         </div>

@@ -37,6 +37,8 @@ export default function CRMChat({ onClose, lead } = {}) {
   // abierto, el copiloto se enfoca en él y adapta sus sugerencias. El agente resuelve la referencia
   // solo (por email / "Lead #xxxx") con su tool de timeline.
   const nom = lead?.lead ? (lead.lead.includes('@') ? lead.lead.split('@')[0] : lead.lead) : null
+  // El FOCO: un hilo por interesado (o de cartera si no hay lead). El backend lo prefija con el JWT.
+  const leadRef = lead?.session_id || null
   const sugerencias = nom ? [
     `Resúmeme la conversación de ${nom}`,
     `¿Por qué ${nom} está en ${ESTADO_LBL[lead.estado] || lead.estado || 'esa etapa'}?`,
@@ -45,18 +47,21 @@ export default function CRMChat({ onClose, lead } = {}) {
 
   useEffect(() => { finRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [msgs, enviando])
 
-  // Al montar: recuperar la conversación persistida del corredor (para retomarla).
+  // Recupera la conversación del hilo enfocado. El estado se resetea al cambiar de foco porque
+  // CRM.jsx remonta este componente con key={leadRef} (patrón idiomático de React) → cada interesado
+  // muestra su propia charla (o vacía), no la del anterior — coherente con "Enfocado en X".
   useEffect(() => {
     let vivo = true
     ;(async () => {
       try {
-        const { data } = await axios.get(`${API_BASE}/api/v1/assets/crm/thread`, { headers: apiHeaders() })
+        const { data } = await axios.get(`${API_BASE}/api/v1/assets/crm/thread`,
+          { params: leadRef ? { lead: leadRef } : {}, headers: apiHeaders() })
         if (vivo && Array.isArray(data?.mensajes)) setMsgs(data.mensajes)
       } catch { /* sin historial aún: arranca vacío */ }
       finally { if (vivo) setCargando(false) }
     })()
     return () => { vivo = false }
-  }, [])
+  }, [leadRef])
 
   async function enviar(t0) {
     const t = (t0 ?? texto).trim()
@@ -65,7 +70,7 @@ export default function CRMChat({ onClose, lead } = {}) {
     setMsgs(prev => [...prev, { autor: 'corredor', texto: t }])
     try {
       const { data } = await axios.post(`${API_BASE}/api/v1/assets/crm/chat`,
-        { message: t, session_id: null }, { headers: apiHeaders() })
+        { message: t, lead: leadRef }, { headers: apiHeaders() })
       setMsgs(prev => [...prev, { autor: 'crm', texto: data.reply || 'Sin respuesta.' }])
     } catch {
       setError('No se pudo consultar el CRM. Intenta de nuevo.')
@@ -78,7 +83,8 @@ export default function CRMChat({ onClose, lead } = {}) {
     if (enviando) return
     setMsgs([]); setError(null); setTexto('')
     try {
-      await axios.delete(`${API_BASE}/api/v1/assets/crm/thread`, { headers: apiHeaders() })
+      await axios.delete(`${API_BASE}/api/v1/assets/crm/thread`,
+        { params: leadRef ? { lead: leadRef } : {}, headers: apiHeaders() })
     } catch { /* best-effort: la UI ya se limpió */ }
   }
 

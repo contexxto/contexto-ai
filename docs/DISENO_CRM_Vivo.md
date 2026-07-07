@@ -204,6 +204,19 @@ sería otra demo que no escala (el 17%-ve-impacto del que se queja el estudio).
 
 ## Changelog (iterar aquí)
 
+- **2026-07-07 — v0.8 · Pulidas del Estratega (soak en vivo 3/3 de Carlos)** — El soak con la cartera real
+  (10 interesados) salió **3/3**: cifras cuadraron, scores rotulados como estimación, Fair Housing declinó
+  limpio ("incluso a favor"), y no inventó el presupuesto ("no tengo ese dato"). Dos pulidas de precisión:
+  - **Frontera por-agente REAL (finding #2 del review, ahora arquitectural):** el Estratega ya NO comparte
+    `CRM_TOOLS` — se le da `ESTRATEGA_TOOLS = [tool_stats_embudo]` (sin `tool_timeline_de_lead`). No puede
+    jalar el chat crudo de un interesado → **elimina por construcción** la fuga de clase protegida a su
+    contexto Y respeta la frontera con el Copiloto (antes solo por prompt; en el soak el modelo ofreció el
+    timeline). `llm_node` elige binding por `modo` (`llm_cartera` vs `llm`); el ToolNode queda como superset.
+  - **Precisión de palabra:** el Estratega dijo "10 interesados **activos**" pero el KPI marca 0 Activos
+    (frescura). El 10 es correcto (total); "activos" no. Prompt endurecido: "di 'N interesados en tu cartera',
+    NO 'activos' (eso es frescura, un dato distinto que no tienes)".
+  - Verificado: grafo compila (copiloto 2 tools / estratega 1) + suite **414/414** (test de frontera nuevo) +
+    lint baseline + build ok.
 - **2026-07-06 — v0.7 · DOS AGENTES separados (Copiloto táctico + Estratega de cartera)** — El chat del CRM
   se sentía "enredado" porque UN solo chat mezclaba dos trabajos distintos. Se separan en **dos agentes,
   dos chips en el header**, un solo grafo ReAct (`crm_graph.py`) que **elige el prompt por `modo`** en

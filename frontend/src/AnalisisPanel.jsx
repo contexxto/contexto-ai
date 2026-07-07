@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
 import { API_BASE, apiHeaders } from './api'
-import { TrendingUp, RotateCcw, Layers, Info } from 'lucide-react'
+import { TrendingUp, RotateCcw, Layers, Info, ArrowLeft } from 'lucide-react'
 
 // Panel de ANÁLISIS / reportería de la cartera del corredor (Fase 2 del CRM Vivo, ver
 // docs/DISENO_CRM_Vivo.md §5). Consume /metricas/lift (funnel + handoff + lift + cohortes)
@@ -33,7 +33,7 @@ function Tasa({ o, sufijo = '' }) {
     <span style={{ color: C.muted, fontSize: '.72rem', marginLeft: 6 }}>({o.n} de {o.de}{sufijo})</span></span>
 }
 
-export default function AnalisisPanel() {
+export default function AnalisisPanel({ onVolver } = {}) {
   const [data, setData] = useState(null)
   const [err, setErr] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -50,17 +50,25 @@ export default function AnalisisPanel() {
     return () => { vivo = false }
   }, [])
 
-  if (loading) return <div style={{ color: C.muted, padding: '30px 4px', textAlign: 'center' }}>Cargando análisis…</div>
-  if (err || !data) return <div style={{ color: '#E0685A', padding: '30px 4px', textAlign: 'center' }}>⚠️ No se pudo cargar el análisis.</div>
-
-  const funnel = data.funnel || {}
+  const funnel = data?.funnel || {}
   const filas = ORDEN.filter(e => (funnel[e] || 0) > 0)
   const maxF = Math.max(1, ...filas.map(e => funnel[e]))
-  const reeng = data.reenganche || {}
-  const coh = data.cohortes || {}
+  const reeng = data?.reenganche || {}
+  const coh = data?.cohortes || {}
 
   return (
-    <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14, padding: '2px' }}>
+    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      {onVolver && (
+        <button onClick={onVolver} title="Volver a interesados"
+          style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: 6, background: 'none',
+                   border: 'none', color: C.tealHi, cursor: 'pointer', fontSize: '.82rem', padding: '0 2px 10px', flexShrink: 0 }}>
+          <ArrowLeft size={16} /> Volver a interesados
+        </button>
+      )}
+      {loading && <div style={{ color: C.muted, padding: '30px 4px', textAlign: 'center' }}>Cargando análisis…</div>}
+      {!loading && (err || !data) && <div style={{ color: '#E0685A', padding: '30px 4px', textAlign: 'center' }}>⚠️ No se pudo cargar el análisis.</div>}
+      {!loading && data && (
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14, padding: '2px' }}>
       {/* Embudo — el gráfico estrella */}
       <div style={card}>
         <div style={titulo}><TrendingUp size={13} color={C.teal} /> Embudo de intención · {data.total_leads} interesados</div>
@@ -118,6 +126,8 @@ export default function AnalisisPanel() {
         <div style={{ display: 'flex', gap: 7, alignItems: 'flex-start', color: C.muted, fontSize: '.7rem', lineHeight: 1.5, padding: '0 2px' }}>
           <Info size={13} style={{ flexShrink: 0, marginTop: 1 }} /> <span>{data._proveniencia}</span>
         </div>
+      )}
+      </div>
       )}
     </div>
   )

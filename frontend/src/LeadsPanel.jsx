@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
 import { X, Users, RefreshCw, Flame, ArrowLeft, Send, MessageCircle, Sparkles, Copy, Check } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
+import { renderMarkdown } from './markdown'
 
 const C = {
   bg: '#16151E', panel: '#1E1D28', teal: '#2DBDB6', tealHi: '#5EEAD4',
@@ -296,9 +297,12 @@ export function LeadChat({ activo, lead, onBack }) {
           return (
             <div key={i} style={{ alignSelf: b.align, maxWidth: '82%' }}>
               <div style={{ fontSize: '.6rem', color: C.muted, marginBottom: 2, textAlign: b.align === 'flex-end' ? 'right' : 'left' }}>{b.lbl}</div>
-              <div style={{ background: b.bg, color: b.color, padding: '8px 12px', borderRadius: 14, fontSize: '.84rem', lineHeight: 1.4 }}>
-                {m.texto}
-              </div>
+              {m.autor === 'agente'
+                ? <div className="crm-md" style={{ background: b.bg, color: b.color, padding: '8px 12px', borderRadius: 14, fontSize: '.84rem', lineHeight: 1.4 }}
+                    dangerouslySetInnerHTML={{ __html: renderMarkdown(m.texto) }} />
+                : <div style={{ background: b.bg, color: b.color, padding: '8px 12px', borderRadius: 14, fontSize: '.84rem', lineHeight: 1.4, whiteSpace: 'pre-wrap' }}>
+                    {m.texto}
+                  </div>}
             </div>
           )
         })}

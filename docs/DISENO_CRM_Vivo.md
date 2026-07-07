@@ -224,6 +224,14 @@ sería otra demo que no escala (el 17%-ve-impacto del que se queja el estudio).
     `detectar_steering` corre sobre la salida pero es observabilidad (no bloquea) y está calibrado para
     el chat del comprador; el resumen de historiales es superficie nueva. Ambas son el gate #1 antes de
     abrir el CRM a corredores fuera del piloto de Carlos.
+- **2026-07-06 — v0.6 · Chip "Análisis" — reportería de cartera (Fase 2, MVP)** — El "agente de
+  análisis" que veníamos puliendo: un chip **"📊 Análisis"** junto a Copiloto en el header del CRM que
+  abre un **dashboard de reportería** (`frontend/src/AnalisisPanel.jsx`) — embudo en gráfico + North Star
+  (tasa de handoff) + lift de reenganche (tocado-vs-holdout) + cohortes, **dibujado con barras CSS propias**
+  (patrón map_seed→render, sin librería pesada). Consume el `/metricas/lift` que ya construimos (v0.2 del
+  doc de Métrica), con la honestidad de N/"acumulando" intacta. **Copiloto = preguntar · Análisis = ver/
+  reportar.** Pendiente: `chart_seed` emitido por el agente inline (que el copiloto "dibuje" a pedido) +
+  `resumen_semana` en texto + comparativos.
 - **2026-07-06 — v0.5 · Persistencia del hilo del corredor (Fase 2 parcial)** — El chat del CRM
   dejó de ser efímero: comparte el `AsyncPostgresSaver` del agente del comprador
   (`graph.get_checkpointer()` → `crm_graph.setup_crm_checkpointer()` en el lifespan), con hilo

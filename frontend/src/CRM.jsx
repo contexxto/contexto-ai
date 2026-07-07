@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo } from 'react'
 import axios from 'axios'
-import { Users, RefreshCw, Flame, MapPin, Sparkles,
+import { Users, RefreshCw, Flame, MapPin, Sparkles, BarChart3,
          TrendingUp, Clock, AlertTriangle, ChevronRight } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import { LeadChat } from './LeadsPanel'
 import CRMChat from './CRMChat'
+import AnalisisPanel from './AnalisisPanel'
 
 const C = {
   bg: '#16151E', panel: '#1E1D28', teal: '#2DBDB6', tealHi: '#5EEAD4',
@@ -49,7 +50,8 @@ export default function CRM() {
   const [err, setErr] = useState(false)
   const [loading, setLoading] = useState(false)
   const [sel, setSel] = useState(null)      // lead seleccionado (abre conversación)
-  const [asistente, setAsistente] = useState(false) // widget flotante del asistente del CRM
+  const [asistente, setAsistente] = useState(false) // Copiloto (riel conversacional)
+  const [analisis, setAnalisis] = useState(false)   // modo Análisis (reportería/dashboard)
   const [filtro, setFiltro] = useState(null) // filtro por etapa del embudo
   const [wide, setWide] = useState(() => window.matchMedia('(min-width: 900px)').matches)
   // ¿Hay espacio para ACOPLAR el copiloto como 3ª columna sin apretar la conversación?
@@ -223,8 +225,15 @@ export default function CRM() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 2px 12px', flexShrink: 0 }}>
         <Users size={20} color={C.teal} />
         <h1 style={{ margin: 0, fontSize: '1.15rem' }}>CRM · Interesados</h1>
-        <button onClick={() => setAsistente(a => !a)} title="Tu copiloto de cartera"
+        <button onClick={() => setAnalisis(a => !a)} title="Análisis y reportería de tu cartera"
           style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, fontSize: '.8rem',
+                   fontWeight: 600, padding: '6px 13px', borderRadius: 999, cursor: 'pointer',
+                   background: analisis ? 'rgba(45,189,182,.15)' : 'rgba(255,255,255,.05)',
+                   color: analisis ? C.tealHi : C.text, border: `1px solid ${C.line}` }}>
+          <BarChart3 size={15} color={C.teal} /> Análisis
+        </button>
+        <button onClick={() => setAsistente(a => !a)} title="Tu copiloto de cartera"
+          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '.8rem',
                    fontWeight: 600, padding: '6px 13px', borderRadius: 999, cursor: 'pointer', color: '#0E0D13',
                    border: 'none', background: asistente ? 'rgba(45,189,182,.15)' : `linear-gradient(135deg, ${C.teal}, ${C.tealHi})`,
                    ...(asistente ? { color: C.tealHi, border: `1px solid ${C.line}` } : {}) }}>
@@ -250,7 +259,10 @@ export default function CRM() {
       {err && <div style={{ color: '#E0685A', fontSize: '.85rem' }}>⚠️ No se pudieron cargar los interesados.</div>}
       {!d && !err && <div style={{ color: C.muted, padding: '24px 0', textAlign: 'center' }}>Cargando…</div>}
 
-      {d && d.total === 0 && (
+      {/* Modo ANÁLISIS: reportería/dashboard de la cartera (chip "Análisis" del header). */}
+      {d && analisis && <AnalisisPanel />}
+
+      {d && !analisis && d.total === 0 && (
         <div style={{ flex: 1, display: 'grid', placeItems: 'center', color: C.muted }}>
           <div style={{ textAlign: 'center' }}>
             <Users size={30} color={C.teal} style={{ marginBottom: 10 }} />
@@ -260,7 +272,7 @@ export default function CRM() {
         </div>
       )}
 
-      {d && d.total > 0 && (
+      {d && !analisis && d.total > 0 && (
         <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 14 }}>
           {wide && !(asistente && puedeAcoplar) && railPanel}
           {(wide || !sel) && (

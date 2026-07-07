@@ -204,6 +204,45 @@ sería otra demo que no escala (el 17%-ve-impacto del que se queja el estudio).
 
 ## Changelog (iterar aquí)
 
+- **2026-07-06 — v0.7 · DOS AGENTES separados (Copiloto táctico + Estratega de cartera)** — El chat del CRM
+  se sentía "enredado" porque UN solo chat mezclaba dos trabajos distintos. Se separan en **dos agentes,
+  dos chips en el header**, un solo grafo ReAct (`crm_graph.py`) que **elige el prompt por `modo`** en
+  `llm_node` (`config.configurable.modo`), compartiendo tools + barandas + checkpointer:
+  - **✨ Copiloto (`modo='copiloto'`, `SYSTEM_PROMPT_CRM`)** — **táctico, por interesado**. Recibe el lead
+    abierto (`sel`), enfoca su hilo (`crm-{user}-lead-{ref}`), redacta mensajes de reenganche, resume UNA
+    conversación. Es el que ya teníamos, ahora explícitamente el helper de-la-charla.
+  - **🧭 Estratega (`modo='estratega'`, `SYSTEM_PROMPT_ESTRATEGA`)** — **estratégico, de cartera, PROACTIVO**.
+    Lee TODA la cartera (`tool_stats_embudo`), y **al abrir da de una la "jugada de la semana"** (2–4 movidas
+    priorizadas, cada una con el PORQUÉ = la señal de intención); luego se sigue afinando por conversación.
+    Hilo propio y único (`crm-estratega-{user}`), sin lead. El frontend dispara un **kickoff auto** en hilo
+    vacío (`CRMChat.jsx`, prop `modo`).
+  - **Barandas: idénticas para ambos** — `evaluar_salida_crm` (cifras + Fair Housing) corre en `llm_node`
+    sin importar el modo. **Fair Housing es el riesgo agudo del Estratega** (prioriza cartera): su prompt
+    prioriza **SOLO por señal de intención** (score, etapa, pidió corredor, frescura, presupuesto declarado),
+    **JAMÁS por clase protegida**; si le piden "prioriza a las familias", declina y reencuadra.
+  - **Aislamiento de hilo:** `_crm_thread(user_id, lead, modo)` deriva SIEMPRE del JWT (`user_id`); `modo`
+    solo elige entre `crm-estratega-{user}` y `crm-{user}[-lead-{ref}]` — nunca cruza corredores. **Copiloto
+    = la charla de UNO · Estratega = la jugada de TODA la cartera · Análisis = ver/reportar.**
+  - **Endurecido tras revisión adversarial (15 hallazgos, workflow):**
+    - **FH FAIL-CLOSED para el Estratega** (el hallazgo #1, HIGH): como su output sale SIN humano en el
+      loop, `llm_node` ya NO solo observa para él — si `evaluar_salida_crm` marca `fair_housing` (segmentación/
+      steering REAL por clase protegida, ya sin los rechazos legítimos que van a `fh_rechazo`), REEMPLAZA la
+      salida por `REFRAME_FAIR_HOUSING` (declina + reancla a señal de intención) antes de entregarla. La
+      baranda de CIFRAS sigue observe-only (más falsos positivos; se calibra en Fase 2). El Copiloto (reactivo)
+      queda como estaba. Tests deterministas del contrato en `test_crm_agent.py`.
+    - **Prompt del Estratega**: piso de cartera-vacía ("sin datos no hay jugada"), ejemplo marcado ILUSTRATIVO
+      (usa SIEMPRE cifras reales), regla VERIFICADO/ESTIMADO propia (rotula el score como estimación), y foco
+      cartera (no bucea el chat crudo de un lead — eso es del Copiloto → reduce fuga de clase protegida al contexto).
+    - **`modo` = `Literal['copiloto','estratega']`** en body + query params (422 en junk).
+    - **Frontend**: candado síncrono (ref) anti-doble-click en 'Nueva' + kickoff idempotente por hilo/sesión.
+    - **Verificado**: grafo compila + gate FH probado (reencuadra segmentación, respeta rechazos) + suite CRM
+      16/16 + lint baseline (47, cero nuevos) + build ok.
+  - **Gaps de RECALL del motor de guardrails (pre-existentes, compartidos con el Copiloto, observe-only)** —
+    la revisión los confirmó; se cierran en un PR dedicado con batería de evals ANTES de `MODO_BLOQUEO=True`:
+    (a) segmentación con fraseo proactivo evade `_SEGMENTA` (determinante no-adyacente / verbo al final);
+    (b) el supresor de rechazo permite "declinar-y-luego-obedecer" (lo marca como señal positiva);
+    (c) el respaldo de cifras es inerte para enteros chicos (multiset denso) y no modela rangos de conteo.
+    El FH fail-close bloquea lo que SÍ detecta hoy — estrictamente mejor que observe-only; (a)/(b) mejoran su recall.
 - **2026-07-06 — v0.1** — Doc ancla creado a partir del análisis multi-ángulo (encaje con canon +
   arquitectura + lente de mercado + barandas). Veredicto: construir como capa conversacional delgada
   sobre motores deterministas; steak-antes-que-sizzle; 3 barandas (honestidad de cifras, Fair Housing +

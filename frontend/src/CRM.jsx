@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import axios from 'axios'
-import { Users, RefreshCw, Flame, MapPin, Sparkles, BarChart3,
+import { Users, RefreshCw, Flame, MapPin, Sparkles, BarChart3, Compass,
          TrendingUp, Clock, AlertTriangle, ChevronRight } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import { LeadChat } from './LeadsPanel'
@@ -50,7 +50,9 @@ export default function CRM() {
   const [err, setErr] = useState(false)
   const [loading, setLoading] = useState(false)
   const [sel, setSel] = useState(null)      // lead seleccionado (abre conversación)
-  const [asistente, setAsistente] = useState(false) // Copiloto (riel conversacional)
+  // Riel de agentes: null | 'copiloto' (táctico, por interesado) | 'estratega' (cartera, proactivo).
+  // Se comparte UNA columna: abrir un agente cierra el otro (usas uno a la vez).
+  const [asistente, setAsistente] = useState(null)
   const [analisis, setAnalisis] = useState(false)   // modo Análisis (reportería/dashboard)
   const [filtro, setFiltro] = useState(null) // filtro por etapa del embudo
   const [wide, setWide] = useState(() => window.matchMedia('(min-width: 900px)').matches)
@@ -214,7 +216,7 @@ export default function CRM() {
         Selecciona a alguien de la lista para <span style={{ color: C.tealHi }}>ver y retomar su conversación</span> con el agente.
       </div>
       <div style={{ color: C.muted, fontSize: '.78rem', marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-        <Sparkles size={14} color={C.teal} /> ¿Preguntas sobre tu cartera? Abre el <span style={{ color: C.tealHi }}>Copiloto</span> (arriba a la derecha).
+        <Compass size={14} color={C.teal} /> ¿Estrategia de toda tu cartera? Abre el <span style={{ color: C.tealHi }}>Estratega</span> (arriba a la derecha).
       </div>
     </div>
   )
@@ -232,12 +234,21 @@ export default function CRM() {
                    color: analisis ? C.tealHi : C.text, border: `1px solid ${C.line}` }}>
           <BarChart3 size={15} color={C.teal} /> Análisis
         </button>
-        <button onClick={() => setAsistente(a => !a)} title="Tu copiloto de cartera"
+        <button onClick={() => setAsistente(a => a === 'estratega' ? null : 'estratega')}
+          title="El Estratega lee TODA tu cartera y te recomienda la jugada (proactivo)"
           style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '.8rem',
-                   fontWeight: 600, padding: '6px 13px', borderRadius: 999, cursor: 'pointer', color: '#0E0D13',
-                   border: 'none', background: asistente ? 'rgba(45,189,182,.15)' : `linear-gradient(135deg, ${C.teal}, ${C.tealHi})`,
-                   ...(asistente ? { color: C.tealHi, border: `1px solid ${C.line}` } : {}) }}>
-          <Sparkles size={15} /> Copiloto
+                   fontWeight: 600, padding: '6px 13px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${C.line}`,
+                   background: asistente === 'estratega' ? 'rgba(45,189,182,.15)' : 'rgba(255,255,255,.05)',
+                   color: asistente === 'estratega' ? C.tealHi : C.text }}>
+          <Compass size={15} color={C.teal} /> Estratega
+        </button>
+        <button onClick={() => setAsistente(a => a === 'copiloto' ? null : 'copiloto')}
+          title="El Copiloto te ayuda con la conversación de cada interesado (táctico)"
+          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '.8rem',
+                   fontWeight: 600, padding: '6px 13px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${C.line}`,
+                   background: asistente === 'copiloto' ? 'rgba(45,189,182,.15)' : 'rgba(255,255,255,.05)',
+                   color: asistente === 'copiloto' ? C.tealHi : C.text }}>
+          <Sparkles size={15} color={C.teal} /> Copiloto
         </button>
         <button onClick={cargar} title="Actualizar"
           style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer',
@@ -297,9 +308,10 @@ export default function CRM() {
             </div>
           )}
           {(wide || sel) && drawer}
-          {/* EL COPILOTO — riel acoplado (columna dedicada en ancho; overlay a la derecha en angosto).
-              Context-aware: recibe el lead abierto (sel) para adaptar sus sugerencias. Nunca pisa el
-              input de la conversación del cliente porque es su propia columna. */}
+          {/* RIEL DE AGENTES — columna dedicada (acoplada en ancho; overlay a la derecha en angosto).
+              Copiloto: táctico, recibe el lead abierto (sel) y adapta sus sugerencias. Estratega: de
+              cartera, proactivo, sin lead. El key incluye el modo → cambiar de agente/lead da hilo fresco.
+              Nunca pisa el input de la conversación del cliente porque es su propia columna. */}
           {asistente && (
             <div style={puedeAcoplar
               ? { width: 372, flexShrink: 0, minHeight: 0, display: 'flex', flexDirection: 'column',
@@ -308,7 +320,11 @@ export default function CRM() {
               : { position: 'fixed', top: 0, right: 0, bottom: 0, width: 'min(430px, 100vw)', zIndex: 1200,
                   display: 'flex', flexDirection: 'column', padding: '16px 14px',
                   borderLeft: `1px solid ${C.line}`, background: C.panel, boxShadow: '-8px 0 44px rgba(0,0,0,.55)' }}>
-              <CRMChat key={sel?.session_id || 'cartera'} lead={sel} onClose={() => setAsistente(false)} />
+              <CRMChat
+                key={asistente === 'copiloto' ? `copiloto-${sel?.session_id || 'cartera'}` : 'estratega'}
+                modo={asistente}
+                lead={asistente === 'copiloto' ? sel : null}
+                onClose={() => setAsistente(null)} />
             </div>
           )}
         </div>

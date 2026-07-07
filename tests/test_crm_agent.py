@@ -69,3 +69,50 @@ def test_setup_crm_checkpointer_no_crashea_con_none():
     from app.agent.crm_graph import setup_crm_checkpointer, compiled_crm_graph
     setup_crm_checkpointer(None)
     assert compiled_crm_graph is not None
+
+
+# ── Fail-closed de Fair Housing del ESTRATEGA (proactivo) ────────────────────
+# El Estratega es PROACTIVO (su 1er mensaje sale sin humano en el loop y dirige TODA la cartera).
+# Para él, llm_node NO observa-y-entrega: si detecta segmentación/steering REAL por clase protegida
+# reemplaza la salida por REFRAME_FAIR_HOUSING. El gate keys EXACTAMENTE en resultado["fair_housing"]
+# (violación real, ya SIN los rechazos legítimos). Estos tests fijan ese contrato.
+def test_reframe_fair_housing_declina_y_reancla_a_intencion():
+    from app.agent.crm_graph import REFRAME_FAIR_HOUSING
+    t = REFRAME_FAIR_HOUSING.lower()
+    assert len(REFRAME_FAIR_HOUSING) > 80
+    assert "fair housing" in t                              # nombra la línea roja
+    assert "intención" in t or "pidió corredor" in t        # reancla a señal transaccional
+    assert "no puedo" in t                                  # declina
+
+
+def test_gate_fh_reencuadra_segmentacion_real():
+    # La condición que dispara el fail-close en llm_node: fair_housing NO vacío.
+    from app.agent.crm_guardrails import evaluar_salida_crm
+    r = evaluar_salida_crm("Enfócate en las familias con hijos, son tus mejores cierres", [])
+    assert r["fair_housing"]        # → el estratega lo reencuadra
+
+
+def test_gate_fh_respeta_rechazo_legitimo():
+    # Un rechazo bien hecho NO es violación (va a fh_rechazo) → NO se reencuadra.
+    from app.agent.crm_guardrails import evaluar_salida_crm
+    r = evaluar_salida_crm("No puedo priorizar por familia; me baso en quién pidió corredor y la etapa", [])
+    assert not r["fair_housing"]
+    assert r["fh_rechazo"]
+
+
+def test_gate_fh_no_reencuadra_recomendacion_por_intencion():
+    # Recomendación limpia por señal de intención → sin violación, se entrega tal cual.
+    from app.agent.crm_guardrails import evaluar_salida_crm
+    r = evaluar_salida_crm("Contacta hoy a los que pidieron corredor; prioriza por etapa del embudo", [])
+    assert not r["fair_housing"]
+
+
+def test_crmchatreq_modo_rechaza_valor_invalido():
+    # modo es Literal['copiloto','estratega'] → un valor arbitrario es 422 en el borde de validación.
+    import pytest
+    from pydantic import ValidationError
+    from app.routers.assets import CRMChatReq
+    assert CRMChatReq(message="hola").modo == "copiloto"          # default
+    assert CRMChatReq(message="hola", modo="estratega").modo == "estratega"
+    with pytest.raises(ValidationError):
+        CRMChatReq(message="hola", modo="x" * 1000)

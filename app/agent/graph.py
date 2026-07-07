@@ -636,9 +636,16 @@ def _build_graph() -> StateGraph:
 # crea las tablas (.setup()) y RE-COMPILA el grafo con el checkpointer Postgres.
 _graph_builder = _build_graph()
 _pool: AsyncConnectionPool | None = None
+_checkpointer = None  # el AsyncPostgresSaver activo (lo comparte el grafo del CRM Vivo)
 
 # Compilación por defecto: memoria volátil. Se reemplaza en setup_checkpointer().
 compiled_graph = _graph_builder.compile(checkpointer=MemorySaver())
+
+
+def get_checkpointer():
+    """El checkpointer Postgres activo (o None si aún no se montó / degradó a memoria).
+    Lo reusa el grafo del CRM Vivo para compartir el mismo pool (ver crm_graph.py)."""
+    return _checkpointer
 
 
 def _checkpointer_conn_str() -> str:
@@ -656,7 +663,7 @@ async def setup_checkpointer() -> None:
     existen, y re-compila el grafo global con el AsyncPostgresSaver.
     Si Postgres no está disponible, conserva el MemorySaver (degradación segura).
     """
-    global compiled_graph, _pool
+    global compiled_graph, _pool, _checkpointer
 
     conn_str = _checkpointer_conn_str()
     try:
@@ -675,6 +682,7 @@ async def setup_checkpointer() -> None:
         checkpointer = AsyncPostgresSaver(_pool)
         await checkpointer.setup()  # CREATE TABLE checkpoints/checkpoint_writes/...
 
+        _checkpointer = checkpointer
         compiled_graph = _graph_builder.compile(checkpointer=checkpointer)
         print("  Checkpointer Postgres (Supabase) ACTIVO — sesiones persistentes")
     except Exception as exc:  # noqa: BLE001

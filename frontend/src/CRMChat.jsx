@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import axios from 'axios'
-import { Send, Sparkles } from 'lucide-react'
+import { Send, Sparkles, RotateCcw } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import { renderMarkdown } from './markdown'
 
@@ -15,17 +15,31 @@ const SUGERENCIAS = [
   '¿Cómo va mi embudo?',
 ]
 
-// CRM Vivo (Fase 1): el corredor le habla a su CRM. Request/response contra el agente
-// del corredor (/assets/crm/chat) — las cifras las computa el motor, el LLM narra.
+// CRM Vivo: el corredor le habla a su CRM. Las cifras las computa el motor, el LLM narra.
+// El hilo es PERSISTENTE (backend crm-{user_id}, checkpointer Postgres): al recargar se retoma
+// la conversación. session_id: null → el servidor deriva el hilo estable del JWT.
 export default function CRMChat() {
   const [msgs, setMsgs] = useState([])   // { autor: 'corredor'|'crm', texto }
   const [texto, setTexto] = useState('')
   const [enviando, setEnviando] = useState(false)
+  const [cargando, setCargando] = useState(true)   // recuperando el historial al montar
   const [error, setError] = useState(null)
-  const [sid] = useState(() => `crm-${crypto?.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`}`)
   const finRef = useRef(null)
 
   useEffect(() => { finRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [msgs, enviando])
+
+  // Al montar: recuperar la conversación persistida del corredor (para retomarla).
+  useEffect(() => {
+    let vivo = true
+    ;(async () => {
+      try {
+        const { data } = await axios.get(`${API_BASE}/api/v1/assets/crm/thread`, { headers: apiHeaders() })
+        if (vivo && Array.isArray(data?.mensajes)) setMsgs(data.mensajes)
+      } catch { /* sin historial aún: arranca vacío */ }
+      finally { if (vivo) setCargando(false) }
+    })()
+    return () => { vivo = false }
+  }, [])
 
   async function enviar(t0) {
     const t = (t0 ?? texto).trim()
@@ -34,13 +48,21 @@ export default function CRMChat() {
     setMsgs(prev => [...prev, { autor: 'corredor', texto: t }])
     try {
       const { data } = await axios.post(`${API_BASE}/api/v1/assets/crm/chat`,
-        { message: t, session_id: sid }, { headers: apiHeaders() })
+        { message: t, session_id: null }, { headers: apiHeaders() })
       setMsgs(prev => [...prev, { autor: 'crm', texto: data.reply || 'Sin respuesta.' }])
     } catch {
       setError('No se pudo consultar el CRM. Intenta de nuevo.')
     } finally {
       setEnviando(false)
     }
+  }
+
+  async function nuevaConversacion() {
+    if (enviando) return
+    setMsgs([]); setError(null); setTexto('')
+    try {
+      await axios.delete(`${API_BASE}/api/v1/assets/crm/thread`, { headers: apiHeaders() })
+    } catch { /* best-effort: la UI ya se limpió */ }
   }
 
   const bubble = (autor) => autor === 'corredor'
@@ -52,10 +74,21 @@ export default function CRMChat() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexShrink: 0 }}>
         <Sparkles size={18} color={C.teal} />
         <div style={{ fontWeight: 800, fontSize: '1rem' }}>Pregúntale a tu CRM</div>
+        {msgs.length > 0 && (
+          <button onClick={nuevaConversacion} title="Nueva conversación"
+            style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5, fontSize: '.72rem',
+                     background: 'none', border: `1px solid ${C.line}`, borderRadius: 999, padding: '4px 10px',
+                     color: C.muted, cursor: 'pointer' }}>
+            <RotateCcw size={13} /> Nueva
+          </button>
+        )}
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0, padding: '4px 2px' }}>
-        {msgs.length === 0 && (
+        {cargando && (
+          <div style={{ color: C.muted, fontSize: '.8rem', padding: '8px 2px' }}>Recuperando tu conversación…</div>
+        )}
+        {!cargando && msgs.length === 0 && (
           <div style={{ color: C.muted, fontSize: '.82rem', lineHeight: 1.5, padding: '8px 2px' }}>
             Pregúntame por tu cartera — con datos reales, sin inventar. Por ejemplo:
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 10 }}>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import axios from 'axios'
-import { Plus, Pin, PinOff, Pencil, Trash2, MoreHorizontal, MessageSquare, LogOut, Home, Map, Shield, Users, Briefcase, Sun, Moon, PanelLeft } from 'lucide-react'
+import { Plus, Pin, PinOff, Pencil, Trash2, MoreHorizontal, MessageSquare, LogOut, Home, Map, Shield, Users, Briefcase, Sun, Moon, PanelLeft, Download } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import sphereLogo from './assets/sphere.svg'
 import { getTheme, toggleTheme } from './theme'
@@ -20,7 +20,7 @@ function tituloLimpio(t) {
   return (i === -1 ? t : t.slice(0, i)).trim() || 'Conversación'
 }
 
-export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, onLogin, onLogout, onPublish, onMap, onReview, onCRM, onUpgrade, mobile, onClose }) {
+export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, onLogin, onLogout, onPublish, onMap, onReview, onCRM, onUpgrade, mobile, onClose, puedeInstalar, onInstalar }) {
   const [sessions, setSessions] = useState([])
   const [menuId, setMenuId] = useState(null)
   const [editingId, setEditingId] = useState(null)
@@ -244,6 +244,21 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, o
               Registrarse
             </button>
           </div>
+        )}
+
+        {/* Instalar como app (PWA): Android dispara el prompt nativo; iOS muestra instrucciones */}
+        {puedeInstalar && (
+          <button onClick={onInstalar}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '10px 12px',
+              borderRadius: 10, cursor: 'pointer', marginBottom: 4, fontFamily: 'inherit', textAlign: 'left',
+              background: 'rgba(45,189,182,.12)', border: `1px solid ${C.border}`,
+              color: C.accent, fontSize: '.84rem', fontWeight: 700,
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(45,189,182,.20)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'rgba(45,189,182,.12)'}>
+            <Download size={16} /> Instalar app
+          </button>
         )}
 
         {/* Toggle de tema oscuro/claro (design system) */}

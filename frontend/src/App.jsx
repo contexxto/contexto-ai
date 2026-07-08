@@ -675,12 +675,40 @@ export default function App() {
     }
   }, [input, loading, sessionId, geo, modoCorredor])
 
-  // Registra el Service Worker (notificaciones push nativas) una vez al montar.
+  // Registra el Service Worker (PWA instalable + notificaciones push) una vez al montar.
   useEffect(() => {
-    if ('serviceWorker' in navigator && 'PushManager' in window) {
+    if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(e => console.warn('SW:', e))
     }
   }, [])
+
+  // ── PWA "Instalar app" ────────────────────────────────────────────────────
+  // Android / desktop Chrome emiten beforeinstallprompt → lo diferimos para nuestro botón.
+  // iOS Safari NO lo emite → detectamos iOS para mostrar la instrucción manual (Compartir → Añadir a inicio).
+  const [deferredInstall, setDeferredInstall] = useState(null)
+  const esIOS = /iphone|ipad|ipod/i.test(navigator.userAgent)
+  const yaInstalada = window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true
+  useEffect(() => {
+    const onPrompt = (e) => { e.preventDefault(); setDeferredInstall(e) }
+    const onInstalled = () => setDeferredInstall(null)   // instalada → oculta el botón sin recargar
+    window.addEventListener('beforeinstallprompt', onPrompt)
+    window.addEventListener('appinstalled', onInstalled)
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onPrompt)
+      window.removeEventListener('appinstalled', onInstalled)
+    }
+  }, [])
+  const instalarApp = useCallback(async () => {
+    if (deferredInstall) {
+      deferredInstall.prompt()
+      try { await deferredInstall.userChoice } catch { /* ignore */ }
+      setDeferredInstall(null)
+    } else if (esIOS) {
+      alert('Para instalar Contexto en tu iPhone:\n\n1.  Toca el botón Compartir (el cuadrito con la flecha ↑) en la barra de Safari.\n2.  Elige “Añadir a inicio”.\n\n¡Listo! Tendrás el ícono de Contexto en tu pantalla, abre directo al agente.')
+    }
+  }, [deferredInstall, esIOS])
+  // Ofrecemos "Instalar" si: no está ya instalada, y hay prompt diferido (Android) o es iOS.
+  const puedeInstalar = !yaInstalada && (!!deferredInstall || esIOS)
 
   // Obtiene (o crea) la PushSubscription del navegador. Devuelve el JSON o null
   // si no hay soporte / el usuario denegó el permiso. Pide permiso explícitamente.
@@ -1229,6 +1257,8 @@ export default function App() {
           onReview={() => setView('review')}
           onCRM={abrirCRM}
           onUpgrade={() => setUpgradeOpen(true)}
+          puedeInstalar={puedeInstalar}
+          onInstalar={instalarApp}
           mobile={false}
         />
       )}
@@ -1250,6 +1280,8 @@ export default function App() {
               onReview={() => { setView('review'); setSidebarOpen(false) }}
               onCRM={abrirCRM}
               onUpgrade={() => { setUpgradeOpen(true); setSidebarOpen(false) }}
+              puedeInstalar={puedeInstalar}
+              onInstalar={instalarApp}
               mobile={true}
               onClose={() => setSidebarOpen(false)}
             />

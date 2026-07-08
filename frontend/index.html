@@ -4,9 +4,13 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/sphere-favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0E0D13" />
+    <meta name="theme-color" content="#1C1C1C" />
     <meta name="description" content="Contexto AI — Cada lugar tiene un aura. Inteligencia geoespacial inmobiliaria en Quito." />
     <title>Contexto AI · Cada lugar tiene un aura</title>
+    <!-- Tema anti-flash: aplica dark/light antes de renderizar -->
+    <script>
+      try { document.documentElement.setAttribute('data-theme', localStorage.getItem('contexto_theme') === 'light' ? 'light' : 'dark'); } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -5,8 +5,8 @@ import { API_BASE, apiHeaders } from './api'
 import sphereLogo from './assets/sphere.svg'
 
 const C = {
-  bg: '#16151E', panel: '#1E1D28', teal: '#2DBDB6', tealHi: '#5EEAD4',
-  coral: '#E0685A', text: '#EDEBF2', muted: '#9C99AC', line: 'rgba(45,189,182,.25)',
+  bg: 'var(--bg)', panel: 'var(--surface-1)', teal: 'var(--teal)', tealHi: 'var(--teal-bright)',
+  coral: 'var(--coral)', text: 'var(--text)', muted: 'var(--text-mid)', line: 'var(--border)',
 }
 
 const ROLES = [
@@ -24,8 +24,8 @@ export default function ConvierteteCorredor({ onClose, onUpgraded }) {
   const [error, setError] = useState(null)
 
   const inputStyle = {
-    width: '100%', padding: '11px 13px', borderRadius: 12, marginTop: 6,
-    background: 'rgba(255,255,255,.04)', border: `1px solid ${C.line}`,
+    width: '100%', padding: '11px 13px', borderRadius: 10, marginTop: 6,
+    background: 'var(--surface-2)', border: `1px solid ${C.line}`,
     color: C.text, fontSize: '.92rem', outline: 'none', boxSizing: 'border-box',
   }
   const labelStyle = { fontSize: '.78rem', color: C.muted, fontWeight: 600 }
@@ -49,23 +49,22 @@ export default function ConvierteteCorredor({ onClose, onUpgraded }) {
   return (
     <div onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}
       style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', alignItems: 'center',
-               justifyContent: 'center', padding: 16, background: 'rgba(10,9,16,.78)', backdropFilter: 'blur(6px)' }}>
+               justifyContent: 'center', padding: 16, background: 'rgba(0,0,0,.5)', backdropFilter: 'blur(6px)' }}>
       <div onClick={(e) => e.stopPropagation()}
         style={{ width: '100%', maxWidth: 420, maxHeight: '92vh', overflowY: 'auto', position: 'relative',
-                 background: `radial-gradient(120% 90% at 30% 0%, ${C.panel} 0%, ${C.bg} 70%)`,
-                 border: `1px solid ${C.line}`, borderRadius: 22, padding: '26px 24px', color: C.text }}>
+                 background: C.panel, boxShadow: '0 20px 50px rgba(0,0,0,.28)',
+                 border: `1px solid ${C.line}`, borderRadius: 20, padding: '26px 24px', color: C.text }}>
         <button onClick={onClose} aria-label="Cerrar"
           style={{ position: 'absolute', top: 14, right: 14, background: 'none', border: 'none', color: C.muted, cursor: 'pointer' }}>
           <X size={18} />
         </button>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-          <img src={sphereLogo} width={30} height={30} alt="Contexto AI"
-               style={{ filter: 'drop-shadow(0 0 8px rgba(45,189,182,.4))' }} />
+          <img src={sphereLogo} width={28} height={28} alt="Contexto" />
           <div style={{ fontWeight: 800, fontSize: '1.05rem' }}>Conviértete en corredor</div>
         </div>
         <p style={{ fontSize: '.82rem', color: C.muted, margin: '0 0 16px' }}>
-          Que tu próximo interesado llegue <strong style={{ color: C.tealHi }}>calificado y listo para avanzar</strong> —no un
+          Que tu próximo interesado llegue <strong style={{ color: 'var(--accent)' }}>calificado y listo para avanzar</strong> —no un
           “alguien preguntó”, sino alguien cuyo deseo ya encaja con el lugar real y con lo que puede pagar. Convierte porque
           el dato del entorno está verificado. Publica tu inmueble, genera el QR de tu letrero y tu agente atiende 24/7.
         </p>
@@ -75,8 +74,8 @@ export default function ConvierteteCorredor({ onClose, onUpgraded }) {
           {ROLES.map((r) => (
             <button type="button" key={r.id} onClick={() => setRol(r.id)}
               style={{
-                textAlign: 'left', padding: '11px 13px', borderRadius: 12, cursor: 'pointer',
-                background: rol === r.id ? 'rgba(45,189,182,.14)' : 'rgba(255,255,255,.03)',
+                textAlign: 'left', padding: '11px 13px', borderRadius: 10, cursor: 'pointer',
+                background: rol === r.id ? 'rgba(45,189,182,.14)' : 'var(--surface-2)',
                 border: `1px solid ${rol === r.id ? C.teal : C.line}`, color: C.text,
               }}>
               <div style={{ fontWeight: 700, fontSize: '.9rem' }}>{r.label}</div>

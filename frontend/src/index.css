@@ -24,11 +24,11 @@
   /* ---- Superficies ---- */
   /* Superficies gris-neutro (estilo ASI:One) — sin el tinte morado anterior */
   --bg:          #0E0E10;
-  --surface:     #17171A;   /* alias compat app (= surface-1) */
-  --surface-1:   #17171A;
-  --surface-2:   #202024;
-  --surface-3:   #2A2A2F;
-  --border:      #2C2C31;
+  --surface:     #1A1A1E;   /* alias compat app (= surface-1) */
+  --surface-1:   #1A1A1E;
+  --surface-2:   #27272C;   /* chips — gris claro tipo ASI:One */
+  --surface-3:   #323238;
+  --border:      #2E2E34;
 
   /* ---- Texto ---- */
   --text:        #F0ECE6;

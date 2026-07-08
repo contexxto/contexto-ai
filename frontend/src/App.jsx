@@ -25,12 +25,34 @@ import ErrorBoundary from './ErrorBoundary'
 import Sidebar from './Sidebar'
 import sphereLogo from './assets/sphere.svg'
 
+// Carga diferida ROBUSTA ante deploys. Si el chunk falla al descargarse (típico cuando un
+// deploy purgó el hash viejo mientras el usuario tenía la app abierta → "Failed to fetch
+// dynamically imported module"), recargamos la página UNA sola vez para bajar los chunks
+// frescos, sin que el usuario vea el error. Si tras recargar sigue fallando (error real),
+// propaga al ErrorBoundary. El flag en sessionStorage evita bucles de recarga.
+function lazyWithReload(factory) {
+  return lazy(() =>
+    factory()
+      .then((mod) => { try { sessionStorage.removeItem('ctx_chunk_reload') } catch { /* ignore */ } return mod })
+      .catch((err) => {
+        try {
+          if (!sessionStorage.getItem('ctx_chunk_reload')) {
+            sessionStorage.setItem('ctx_chunk_reload', '1')
+            window.location.reload()
+            return new Promise(() => {})   // la página se recarga; esta promesa nunca resuelve
+          }
+        } catch { /* sessionStorage no disponible → cae al throw de abajo */ }
+        throw err
+      })
+  )
+}
+
 // Carga diferida: MapLibre (pesado) solo se descarga al abrir el Mapa.
-const MapView = lazy(() => import('./MapView'))
+const MapView = lazyWithReload(() => import('./MapView'))
 // Mapa Vivo (modo ZONA): la semilla de mapa que nace inline bajo la respuesta del
 // agente. Lazy → MapLibre solo se carga cuando aparece una semilla, no en el bundle base.
-const MapSeed = lazy(() => import('./MapSeed'))
-const CompararMap = lazy(() => import('./CompararMap'))
+const MapSeed = lazyWithReload(() => import('./MapSeed'))
+const CompararMap = lazyWithReload(() => import('./CompararMap'))
 
 // ── Helpers ────────────────────────────────────────────────
 const SESSION_KEY = 'contexto_ai_session_id'

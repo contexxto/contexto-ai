@@ -3,7 +3,7 @@ import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import {
   MapPin, RefreshCw, LocateFixed, AudioLines, ArrowUp, HelpCircle, Plus, Minus,
-  Footprints, TrainFront, Cross, Pill, ShoppingCart, Trees, GraduationCap, Film, Lightbulb, MessageCircle, Palette, ChevronRight,
+  Footprints, TrainFront, Cross, Pill, ShoppingCart, Trees, GraduationCap, Film, Lightbulb, MessageCircle, Palette, ChevronRight, ChevronLeft,
 } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 
@@ -808,7 +808,7 @@ export default function MapView({ seedIds, encajeById } = {}) {
             </div>
           )}
 
-          {/* Fila 2: chips de categoría (ocultos durante el tour) — con pista de scroll (degradado + chevron) */}
+          {/* Fila 2: chips de categoría (ocultos durante el tour) — con flechas de navegación funcionales */}
           {!tour && (
             <div style={{ position: 'relative', marginBottom: 2 }}>
               <div ref={chipsRef} onScroll={onChipScroll}
@@ -823,18 +823,35 @@ export default function MapView({ seedIds, encajeById } = {}) {
                   </button>
                 ))}
               </div>
-              {/* Degradado izquierdo: hay chips atrás (aparece al scrollear) */}
+              {/* Flecha IZQUIERDA (hay chips atrás): degradado de pista + botón real que scrollea */}
               {!chipEdges.start && (
-                <div style={{ position: 'absolute', left: 0, top: 0, bottom: 8, width: 26, pointerEvents: 'none',
-                              background: 'linear-gradient(90deg, var(--map-panel), transparent)' }} />
+                <>
+                  <div style={{ position: 'absolute', left: 0, top: 0, bottom: 8, width: 46, pointerEvents: 'none',
+                                background: 'linear-gradient(90deg, var(--map-panel), transparent)' }} />
+                  <button type="button" aria-label="Categorías anteriores"
+                    onClick={() => chipsRef.current?.scrollBy({ left: -170, behavior: 'smooth' })}
+                    style={{ position: 'absolute', left: 0, top: 'calc(50% - 4px)', transform: 'translateY(-50%)',
+                             width: 28, height: 28, borderRadius: 999, cursor: 'pointer', display: 'grid', placeItems: 'center',
+                             background: 'var(--map-solid)', border: '1px solid var(--map-border)', color: 'var(--map-text)',
+                             boxShadow: '0 1px 5px rgba(0,0,0,.4)' }}>
+                    <ChevronLeft size={16} />
+                  </button>
+                </>
               )}
-              {/* Degradado derecho + chevron: hay más chips adelante */}
+              {/* Flecha DERECHA (hay más chips adelante): degradado de pista + botón real que scrollea */}
               {!chipEdges.end && (
-                <div style={{ position: 'absolute', right: 0, top: 0, bottom: 8, width: 38, pointerEvents: 'none',
-                              display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: 2,
-                              background: 'linear-gradient(90deg, transparent, var(--map-panel) 55%)' }}>
-                  <ChevronRight size={16} style={{ color: 'var(--map-dim)' }} />
-                </div>
+                <>
+                  <div style={{ position: 'absolute', right: 0, top: 0, bottom: 8, width: 46, pointerEvents: 'none',
+                                background: 'linear-gradient(90deg, transparent, var(--map-panel) 60%)' }} />
+                  <button type="button" aria-label="Más categorías"
+                    onClick={() => chipsRef.current?.scrollBy({ left: 170, behavior: 'smooth' })}
+                    style={{ position: 'absolute', right: 0, top: 'calc(50% - 4px)', transform: 'translateY(-50%)',
+                             width: 28, height: 28, borderRadius: 999, cursor: 'pointer', display: 'grid', placeItems: 'center',
+                             background: 'var(--map-solid)', border: '1px solid var(--map-border)', color: 'var(--map-text)',
+                             boxShadow: '0 1px 5px rgba(0,0,0,.4)' }}>
+                    <ChevronRight size={16} />
+                  </button>
+                </>
               )}
             </div>
           )}

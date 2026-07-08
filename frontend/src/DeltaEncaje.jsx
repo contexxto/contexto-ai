@@ -7,9 +7,10 @@ import { X, ArrowLeftRight, Check } from 'lucide-react'
 // ZONA: el teal marca al ganador de cada dimensión; el color no infla nada (guardrail
 // de honestidad / Fair Housing, tarea #14).
 
+// Paleta vía tokens del design system → adapta a tema oscuro/claro.
 const C = {
-  panel: '#1E1D28', teal: '#2DBDB6', tealHi: '#5EEAD4',
-  text: '#EDEBF2', muted: '#9C99AC', line: 'rgba(45,189,182,.22)',
+  panel: 'var(--surface-1)', teal: 'var(--teal)', tealHi: 'var(--teal-bright)',
+  text: 'var(--text)', muted: 'var(--text-mid)', line: 'var(--border)',
 }
 
 // Etiquetas humanas de las 7 dimensiones-necesidad (whitelist cerrada del motor).

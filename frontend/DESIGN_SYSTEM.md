@@ -70,7 +70,7 @@ el default es **dark**. Init anti-flash en `index.html`; toggle en `src/theme.js
 | Dock / header (`App.jsx`) | ✅ tokens |
 | Hoja Adjuntar (`AttachSheet.jsx`) | ✅ tokens |
 | Menú (`Sidebar.jsx`) | ✅ tokens |
-| Chat / mensajes | ⏳ hardcodea colores — migrar |
+| Chat / mensajes (bubbles · ResultCards · DeltaEncaje) | ✅ tokens (dark+light) |
 | CRM / Análisis | ⏳ migrar |
 | Mapa Vivo | ⏳ migrar |
 | Anuncio `/a/{id}` · Auth · Publicar | ⏳ migrar |

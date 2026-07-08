@@ -12,8 +12,8 @@ const ROLES = [
 ]
 
 const C = {
-  bg: '#16151E', panel: '#1E1D28', teal: '#2DBDB6', tealHi: '#5EEAD4',
-  coral: '#E0685A', text: '#EDEBF2', muted: '#9C99AC', line: 'rgba(45,189,182,.25)',
+  bg: 'var(--bg)', panel: 'var(--surface-1)', teal: 'var(--teal)', tealHi: 'var(--teal-bright)',
+  coral: 'var(--coral)', text: 'var(--text)', muted: 'var(--text-mid)', line: 'var(--border)',
 }
 
 export default function Auth({ onClose, onAuthed, motivo = null }) {
@@ -29,8 +29,8 @@ export default function Auth({ onClose, onAuthed, motivo = null }) {
   const [info, setInfo] = useState(null)
 
   const inputStyle = {
-    width: '100%', padding: '11px 13px', borderRadius: 12, marginTop: 6,
-    background: 'rgba(255,255,255,.04)', border: `1px solid ${C.line}`,
+    width: '100%', padding: '11px 13px', borderRadius: 10, marginTop: 6,
+    background: 'var(--surface-2)', border: `1px solid ${C.line}`,
     color: C.text, fontSize: '.92rem', outline: 'none', boxSizing: 'border-box',
   }
   const labelStyle = { fontSize: '.78rem', color: C.muted, fontWeight: 600 }
@@ -76,7 +76,7 @@ export default function Auth({ onClose, onAuthed, motivo = null }) {
       if (mode === 'signup') {
         try { localStorage.setItem('pendingProfile', JSON.stringify(profileBody())) } catch { /* ignore */ }
       }
-    } catch (err) {
+    } catch {
       setError('Google no está disponible aún (habilítalo en Supabase). Usa tu correo por ahora.')
     }
   }
@@ -121,16 +121,16 @@ export default function Auth({ onClose, onAuthed, motivo = null }) {
       style={{
         position: 'fixed', inset: 0, zIndex: 1000, display: 'flex',
         alignItems: 'center', justifyContent: 'center', padding: 16,
-        background: 'rgba(10,9,16,.72)', backdropFilter: 'blur(6px)',
+        background: 'rgba(0,0,0,.5)', backdropFilter: 'blur(6px)',
       }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
           width: '100%', maxWidth: 420,
-          background: `radial-gradient(120% 90% at 30% 0%, ${C.panel} 0%, ${C.bg} 70%)`,
-          border: `1px solid ${C.line}`, borderRadius: 22, padding: '26px 24px',
-          boxShadow: '0 24px 60px rgba(0,0,0,.55), 0 0 40px rgba(45,189,182,.12)',
+          background: C.panel,
+          border: `1px solid ${C.line}`, borderRadius: 20, padding: '26px 24px',
+          boxShadow: '0 20px 50px rgba(0,0,0,.28)',
           color: C.text, position: 'relative', maxHeight: '92vh', overflowY: 'auto',
         }}
       >
@@ -141,11 +141,8 @@ export default function Auth({ onClose, onAuthed, motivo = null }) {
         </button>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-          <img src={sphereLogo} width={34} height={34} alt="Contexto AI"
-               style={{ filter: 'drop-shadow(0 0 8px rgba(45,189,182,.4))' }} />
-          <div style={{ fontWeight: 800, fontSize: '1.1rem' }}>
-            Contexto <span style={{ color: C.teal }}>AI</span>
-          </div>
+          <img src={sphereLogo} width={30} height={30} alt="Contexto" />
+          <div style={{ fontWeight: 800, fontSize: '1.1rem' }}>Contexto</div>
         </div>
         <p style={{ fontSize: '.82rem', color: C.muted, margin: '0 0 14px' }}>
           {motivo || (mode === 'login' ? 'Inicia sesión para guardar tus conversaciones.' : 'Crea tu cuenta en segundos.')}
@@ -155,7 +152,7 @@ export default function Auth({ onClose, onAuthed, motivo = null }) {
         <button type="button" onClick={google}
           style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9, width: '100%',
                    padding: '11px', borderRadius: 12, cursor: 'pointer', marginBottom: 12,
-                   background: '#fff', border: 'none', color: '#1f1f1f', fontWeight: 700, fontSize: '.9rem' }}>
+                   background: '#fff', border: `1px solid ${C.line}`, color: '#1f1f1f', fontWeight: 700, fontSize: '.9rem' }}>
           <svg width="17" height="17" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.4 29.3 35 24 35c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 5.1 29.6 3 24 3 12.9 3 4 11.9 4 23s8.9 20 20 20c11 0 19.7-8 19.7-20 0-1.3-.1-2.3-.1-2.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 16 19 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 5.1 29.6 3 24 3 16.3 3 9.7 7.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 43c5.2 0 10-2 13.6-5.2l-6.3-5.2C29.2 34.3 26.7 35 24 35c-5.3 0-9.7-2.6-11.3-7l-6.5 5C9.6 38.6 16.2 43 24 43z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4 5.6l6.3 5.2C41.8 35.7 44 30.3 44 23c0-1.3-.1-2.3-.4-2.5z"/></svg>
           Continuar con Google
         </button>
@@ -166,8 +163,8 @@ export default function Auth({ onClose, onAuthed, motivo = null }) {
         </div>
 
         {/* Tabs */}
-        <div style={{ display: 'flex', gap: 6, marginBottom: 18, background: 'rgba(255,255,255,.04)',
-                      borderRadius: 12, padding: 4 }}>
+        <div style={{ display: 'flex', gap: 6, marginBottom: 18, background: 'var(--surface-2)',
+                      borderRadius: 10, padding: 4 }}>
           {['login', 'signup'].map((m) => (
             <button key={m} onClick={() => { setMode(m); setError(null); setInfo(null) }}
               style={{
@@ -207,8 +204,8 @@ export default function Auth({ onClose, onAuthed, motivo = null }) {
                 {ROLES.map((r) => (
                   <button type="button" key={r.id} onClick={() => setRol(r.id)}
                     style={{
-                      textAlign: 'left', padding: '10px 12px', borderRadius: 12, cursor: 'pointer',
-                      background: rol === r.id ? 'rgba(45,189,182,.14)' : 'rgba(255,255,255,.03)',
+                      textAlign: 'left', padding: '10px 12px', borderRadius: 10, cursor: 'pointer',
+                      background: rol === r.id ? 'rgba(45,189,182,.14)' : 'var(--surface-2)',
                       border: `1px solid ${rol === r.id ? C.teal : C.line}`, color: C.text,
                     }}>
                     <div style={{ fontWeight: 700, fontSize: '.9rem' }}>{r.label}</div>
@@ -238,7 +235,7 @@ export default function Auth({ onClose, onAuthed, motivo = null }) {
           )}
 
           {error && <div style={{ color: C.coral, fontSize: '.82rem' }}>⚠️ {error}</div>}
-          {info && <div style={{ color: C.tealHi, fontSize: '.82rem' }}>✅ {info}</div>}
+          {info && <div style={{ color: 'var(--accent)', fontSize: '.82rem' }}>✅ {info}</div>}
 
           <button type="submit" disabled={loading}
             style={{

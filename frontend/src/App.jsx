@@ -697,12 +697,43 @@ export default function App() {
     }
   }, [input, loading, sessionId, geo, modoCorredor])
 
-  // Registra el Service Worker (PWA instalable + notificaciones push) una vez al montar.
+  // ── Registro del Service Worker + auto-update de la PWA ─────────────────────
+  // Registra el SW (PWA instalable + push) y detecta cuando hay una versión nueva
+  // esperando: en vez de recargar por sorpresa, avisamos con un toast ("Actualizar").
+  // Al aceptar, el SW nuevo toma control (SKIP_WAITING) y recargamos UNA vez en
+  // 'controllerchange'. El ref evita recargar en la primera toma de control (usuario nuevo).
+  const [swUpdate, setSwUpdate] = useState(null)   // registration con un worker en 'waiting'
+  const swUpdatingRef = useRef(false)
   useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(e => console.warn('SW:', e))
+    if (!('serviceWorker' in navigator)) return
+    let reg = null
+    // Solo avisamos si YA hay un controller (i.e. es una ACTUALIZACIÓN, no la 1ª instalación).
+    const marcar = (r) => { if (r?.waiting && navigator.serviceWorker.controller) setSwUpdate(r) }
+    navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
+      .then((r) => {
+        reg = r
+        marcar(r)  // versión nueva ya lista de una visita anterior
+        r.addEventListener('updatefound', () => {
+          const nw = r.installing
+          nw?.addEventListener('statechange', () => { if (nw.state === 'installed') marcar(r) })
+        })
+      })
+      .catch(e => console.warn('SW:', e))
+    // Recarga una sola vez cuando el SW nuevo toma control, pero SOLO si el usuario aceptó.
+    const onControllerChange = () => { if (swUpdatingRef.current) window.location.reload() }
+    navigator.serviceWorker.addEventListener('controllerchange', onControllerChange)
+    // Al volver a la pestaña, re-chequea updates (además del ciclo automático del navegador).
+    const onFocus = () => { reg?.update?.().catch(() => {}) }
+    window.addEventListener('focus', onFocus)
+    return () => {
+      navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange)
+      window.removeEventListener('focus', onFocus)
     }
   }, [])
+  const aplicarUpdate = useCallback(() => {
+    swUpdatingRef.current = true
+    swUpdate?.waiting?.postMessage({ type: 'SKIP_WAITING' })
+  }, [swUpdate])
 
   // ── PWA "Instalar app" ────────────────────────────────────────────────────
   // Android / desktop Chrome emiten beforeinstallprompt → lo diferimos para nuestro botón.
@@ -1264,6 +1295,23 @@ export default function App() {
 
   return (
     <div style={{ display:'flex', height:'100dvh' }}>
+      {/* Aviso de versión nueva (auto-update de la PWA): flota sobre todo hasta que el usuario actualiza. */}
+      {swUpdate && (
+        <div style={{ position:'fixed', left:'50%', bottom:'calc(env(safe-area-inset-bottom, 0px) + 18px)',
+                      transform:'translateX(-50%)', zIndex:2000, display:'flex', alignItems:'center', gap:12,
+                      background:'var(--surface-1)', border:'1px solid var(--border)', borderRadius:12,
+                      padding:'11px 14px', boxShadow:'var(--shadow-lg)', maxWidth:'min(92vw, 420px)' }}>
+          <RefreshCw size={17} color="var(--accent)" style={{ flexShrink:0 }} />
+          <span style={{ fontSize:'.86rem', color:'var(--text)', fontWeight:500, lineHeight:1.35 }}>
+            Hay una versión nueva de Contexto.
+          </span>
+          <button onClick={aplicarUpdate}
+            style={{ marginLeft:2, flexShrink:0, padding:'7px 14px', borderRadius:8, border:'none', cursor:'pointer',
+                     background:'var(--teal-bright)', color:'#06201C', fontWeight:700, fontSize:'.82rem' }}>
+            Actualizar
+          </button>
+        </div>
+      )}
       {/* Desktop: barra lateral fija (colapsable). Móvil: cajón con backdrop. */}
       {!isMobile && !sidebarCollapsed && (
         <Sidebar

@@ -221,6 +221,22 @@ export default function MapView({ seedIds, encajeById } = {}) {
     if (!el) return
     setChipEdges({ start: el.scrollLeft <= 2, end: el.scrollLeft + el.clientWidth >= el.scrollWidth - 2 })
   }
+  // Scroll de los chips al tocar las flechas. El scroll nativo behavior:'smooth' NO funciona
+  // sobre este contenedor dentro del overlay del mapa (no-op), pero asignar scrollLeft sí:
+  // animamos a mano con rAF (easeOutCubic) para conservar la sensación suave.
+  const scrollChips = (dir) => {
+    const el = chipsRef.current
+    if (!el) return
+    const start = el.scrollLeft
+    const target = start + dir * 180
+    const t0 = performance.now()
+    const step = (now) => {
+      const p = Math.min(1, (now - t0) / 260)
+      el.scrollLeft = start + (target - start) * (1 - Math.pow(1 - p, 3))
+      if (p < 1) requestAnimationFrame(step)
+    }
+    requestAnimationFrame(step)
+  }
   const [mapaInput, setMapaInput] = useState('')
   const [mapaMsg, setMapaMsg] = useState(null)
   const [mapaLoading, setMapaLoading] = useState(false)
@@ -829,7 +845,7 @@ export default function MapView({ seedIds, encajeById } = {}) {
                   <div style={{ position: 'absolute', left: 0, top: 0, bottom: 8, width: 46, pointerEvents: 'none',
                                 background: 'linear-gradient(90deg, var(--map-panel), transparent)' }} />
                   <button type="button" aria-label="Categorías anteriores"
-                    onClick={() => chipsRef.current?.scrollBy({ left: -170, behavior: 'smooth' })}
+                    onClick={() => scrollChips(-1)}
                     style={{ position: 'absolute', left: 0, top: 'calc(50% - 4px)', transform: 'translateY(-50%)',
                              width: 28, height: 28, borderRadius: 999, cursor: 'pointer', display: 'grid', placeItems: 'center',
                              background: 'var(--map-solid)', border: '1px solid var(--map-border)', color: 'var(--map-text)',
@@ -844,7 +860,7 @@ export default function MapView({ seedIds, encajeById } = {}) {
                   <div style={{ position: 'absolute', right: 0, top: 0, bottom: 8, width: 46, pointerEvents: 'none',
                                 background: 'linear-gradient(90deg, transparent, var(--map-panel) 60%)' }} />
                   <button type="button" aria-label="Más categorías"
-                    onClick={() => chipsRef.current?.scrollBy({ left: 170, behavior: 'smooth' })}
+                    onClick={() => scrollChips(1)}
                     style={{ position: 'absolute', right: 0, top: 'calc(50% - 4px)', transform: 'translateY(-50%)',
                              width: 28, height: 28, borderRadius: 999, cursor: 'pointer', display: 'grid', placeItems: 'center',
                              background: 'var(--map-solid)', border: '1px solid var(--map-border)', color: 'var(--map-text)',

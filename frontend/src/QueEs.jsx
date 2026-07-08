@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   MapPin, Target, ShieldCheck, Compass, Footprints, BadgeCheck, Users,
   RefreshCw, Layers, Camera, Building2, Volume2, Clock, ArrowRight, Sun, Moon,
@@ -10,8 +10,8 @@ import './QueEs.css'
 const Mark = ({ size = 21 }) => (
   <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden>
     <rect x="3" y="3" width="7" height="7" rx="1.6" fill="var(--teal-bright)" />
-    <rect x="14" y="3" width="7" height="7" rx="1.6" fill="var(--surface-3)" />
-    <rect x="3" y="14" width="7" height="7" rx="1.6" fill="var(--surface-3)" />
+    <rect x="14" y="3" width="7" height="7" rx="1.6" fill="#3A3D44" />
+    <rect x="3" y="14" width="7" height="7" rx="1.6" fill="#3A3D44" />
     <circle cx="17.5" cy="17.5" r="4" fill="var(--teal-bright)" />
   </svg>
 )
@@ -35,6 +35,15 @@ const DOLORES = [
 export default function QueEs({ onStart, onBroker, onLogin }) {
   const [theme, setThemeState] = useState(getTheme())
   const cambiaTema = () => { toggleTheme(); setThemeState(getTheme()) }
+
+  // El body de la app es height:100dvh; overflow:hidden (layout fijo tipo app). La web SÍ
+  // scrollea → liberamos el clip mientras esta página está montada y lo restauramos al salir.
+  useEffect(() => {
+    const b = document.body.style
+    const prevOverflow = b.overflow, prevHeight = b.height
+    b.overflow = 'auto'; b.height = 'auto'
+    return () => { b.overflow = prevOverflow; b.height = prevHeight }
+  }, [])
 
   return (
     <div className="qe">
@@ -108,6 +117,7 @@ export default function QueEs({ onStart, onBroker, onLogin }) {
         <h2>Ve el aura. Habla con el lugar.</h2>
         <p className="lead" style={{ marginBottom: 50 }}>Tres piezas que ningún portal tiene.</p>
 
+        <div className="feats">
         <div className="feat">
           <div className="copy">
             <div className="tag">Mapa Vivo</div>
@@ -144,6 +154,7 @@ export default function QueEs({ onStart, onBroker, onLogin }) {
             <button className="more" onClick={onBroker}>Empezar como corredor <ArrowRight className="lu" size={15} /></button>
           </div>
           <div className="art"><div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center' }}><div className="qr">QR</div></div></div>
+        </div>
         </div>
       </div></section>
 

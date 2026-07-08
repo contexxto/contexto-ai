@@ -764,6 +764,15 @@ export default function App() {
     if (p.get('login') === '1' || p.get('corredor') === '1') window.history.replaceState({}, '', '/')
   }, [])
 
+  // El modal de auth se auto-abre por initializer (síncrono, antes de hidratar la sesión de
+  // Supabase). Si resulta que el usuario YA está logueado (llegó a /?login=1 o /?corredor=1 ya
+  // con sesión — p.ej. un link compartido), ciérralo: no tiene sentido re-autenticar. El handoff
+  // (registro para hablar con un corredor) se respeta y se deja abierto.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (session && authOpen && !handoffPendiente) setAuthOpen(false)
+  }, [session, authOpen, handoffPendiente])
+
   // Abre el CRM y aprovecha para pedir permiso de notificaciones nativas (contextual).
   const abrirCRM = useCallback(() => {
     setView('crm')

@@ -66,7 +66,8 @@
 
 /* FEATURE BLOCKS */
 .qe .feat { display: flex; align-items: center; gap: 44px; margin-bottom: 30px; }
-.qe .feat:nth-child(even) { flex-direction: row-reverse; }
+/* alternancia contada SOLO entre .feat (el wrapper .feats aísla el conteo del kicker/h2/lead) */
+.qe .feats .feat:nth-child(even) { flex-direction: row-reverse; }
 .qe .feat .copy { flex: 1; }
 .qe .feat .copy .tag { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .09em; color: var(--teal-bright); margin-bottom: 9px; }
 .qe .feat .copy h3 { font-size: 1.5rem; font-weight: 800; letter-spacing: -.02em; margin-bottom: 11px; line-height: 1.12; }

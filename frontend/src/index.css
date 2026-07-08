@@ -60,10 +60,13 @@
   --user-bg:     #1A7A76;
   --ai-bg:       #232323;
 
-  /* Mapa Vivo — overlays SIEMPRE oscuros (sobre teselas CARTO dark); NO se overridean en tema claro */
-  --map-panel:   rgba(28,28,28,.82);
-  --map-solid:   rgba(20,20,24,.95);
-  --map-chip:    rgba(46,46,46,.92);
+  /* Mapa Vivo — overlays SIEMPRE oscuros (sobre teselas CARTO dark); NO se overridean en tema claro.
+     Superficies del design system: --surface-1 (#282828 = rgb 40,40,40) para paneles/tarjetas,
+     --surface-2 (#2E2E2E = rgb 46,46,46) para chips/inputs. Solo se les da translucidez para el efecto
+     sobre el mapa (blur), NO un near-black aparte. */
+  --map-panel:   rgba(40,40,40,.84);   /* dock + controles (surface-1 translúcido) */
+  --map-solid:   rgba(40,40,40,.97);   /* tarjetas de texto (surface-1 casi opaco, legible) */
+  --map-chip:    rgba(46,46,46,.92);   /* chips + input (surface-2) */
   --map-border:  rgba(255,255,255,.12);
   --map-text:    #FFFFFF;
   --map-dim:     #A8A3B3;

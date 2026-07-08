@@ -32,15 +32,15 @@ function Chip({ icon: Icon, label, onClick }) {
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
-        display: 'inline-flex', alignItems: 'center', gap: 9, whiteSpace: 'nowrap',
-        padding: '11px 16px', borderRadius: 10, cursor: 'pointer',
+        display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap',
+        padding: '8px 14px', borderRadius: 10, cursor: 'pointer',
         background: hover ? 'var(--surface-3)' : 'var(--surface-2)',
         border: '1px solid var(--border)', color: 'var(--text)',
-        fontSize: '.9rem', fontWeight: 500, fontFamily: 'inherit',
+        fontSize: '.83rem', fontWeight: 500, fontFamily: 'inherit',
         transition: 'background .15s',
       }}
     >
-      <Icon size={17} style={{ color: 'var(--text-mid)', flexShrink: 0 }} />
+      <Icon size={16} style={{ color: 'var(--text-mid)', flexShrink: 0 }} />
       {label}
     </button>
   )
@@ -57,12 +57,12 @@ export default function Launcher({ onSend, onAnalyzeLocation, onOpenMap, onBroke
   return (
     <div style={{
       display: 'flex', flexDirection: 'column', alignItems: 'center',
-      paddingTop: isMobile ? 90 : 110, textAlign: 'center',
+      paddingTop: isMobile ? 124 : 120, textAlign: 'center',
     }}>
       <h1 style={{
-        fontFamily: 'var(--font-display)', fontWeight: 800,
-        fontSize: isMobile ? '1.85rem' : '2.4rem', letterSpacing: '-.03em',
-        color: 'var(--text)', lineHeight: 1.12, margin: '0 0 26px',
+        fontFamily: 'var(--font-display)', fontWeight: 700,
+        fontSize: isMobile ? '1.55rem' : '2rem', letterSpacing: '-.02em',
+        color: 'var(--text)', lineHeight: 1.15, margin: '0 0 28px',
       }}>
         ¿Con qué te ayudo hoy?
       </h1>

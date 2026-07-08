@@ -6,12 +6,25 @@
  */
 
 // ── PWA ────────────────────────────────────────────────────────────────────
-const SHELL_CACHE = 'contexto-shell-v1'
+// BUILD_ID sellado por Vite (plugin stamp-sw-build-id) en cada deploy: versiona la caché
+// del shell E (crucial) hace que ESTE archivo cambie byte-a-byte entre deploys, gatillando
+// la detección de un SW nuevo en el navegador. Sin esto, sw.js sería idéntico y nunca se
+// actualizaría. En dev queda el literal '__BUILD_ID__' (no se despliega, es inocuo).
+const BUILD_ID = '__BUILD_ID__'
+const SHELL_CACHE = `contexto-shell-${BUILD_ID}`
 
 self.addEventListener('install', (event) => {
-  self.skipWaiting()
+  // NO llamamos skipWaiting() aquí a propósito: dejamos el SW nuevo en estado 'waiting'
+  // para que el cliente muestre el aviso "hay versión nueva" y el usuario elija cuándo
+  // actualizar (sin recargas sorpresa a mitad de una acción). skipWaiting se dispara con
+  // el mensaje SKIP_WAITING (abajo) cuando el usuario toca "Actualizar".
   // Cachea el shell (index en /) para el respaldo offline. Si falla, no bloquea la instalación.
   event.waitUntil(caches.open(SHELL_CACHE).then((c) => c.add('/')).catch(() => {}))
+})
+
+// El cliente (App.jsx) pide activar el SW nuevo YA cuando el usuario acepta el update.
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting()
 })
 
 self.addEventListener('activate', (event) => {

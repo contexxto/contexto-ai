@@ -253,7 +253,7 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, o
               display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '10px 12px',
               borderRadius: 10, cursor: 'pointer', marginBottom: 4, fontFamily: 'inherit', textAlign: 'left',
               background: 'rgba(45,189,182,.12)', border: `1px solid ${C.border}`,
-              color: C.accent, fontSize: '.84rem', fontWeight: 700,
+              color: 'var(--accent)', fontSize: '.84rem', fontWeight: 700,
             }}
             onMouseEnter={e => e.currentTarget.style.background = 'rgba(45,189,182,.20)'}
             onMouseLeave={e => e.currentTarget.style.background = 'rgba(45,189,182,.12)'}>

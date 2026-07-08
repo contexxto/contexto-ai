@@ -1297,7 +1297,7 @@ export default function App() {
     <div style={{ display:'flex', height:'100dvh' }}>
       {/* Aviso de versión nueva (auto-update de la PWA): flota sobre todo hasta que el usuario actualiza. */}
       {swUpdate && (
-        <div style={{ position:'fixed', left:'50%', bottom:'calc(env(safe-area-inset-bottom, 0px) + 18px)',
+        <div style={{ position:'fixed', left:'50%', top:'calc(env(safe-area-inset-top, 0px) + 64px)',
                       transform:'translateX(-50%)', zIndex:2000, display:'flex', alignItems:'center', gap:12,
                       background:'var(--surface-1)', border:'1px solid var(--border)', borderRadius:12,
                       padding:'11px 14px', boxShadow:'var(--shadow-lg)', maxWidth:'min(92vw, 420px)' }}>

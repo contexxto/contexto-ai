@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from 'react'
 import axios from 'axios'
 import {
-  Send, MapPin, RefreshCw, Trash2, Copy, CheckCheck, ChevronDown, Menu, PanelLeft,
+  Send, MapPin, RefreshCw, Trash2, Copy, CheckCheck, ChevronDown, PanelLeft,
   Share2, Volume2, ThumbsUp, ThumbsDown, ArrowUpToLine, Plus, ArrowUp, AudioLines
 } from 'lucide-react'
 import { supabase, authEnabled } from './supabaseClient'
@@ -1266,7 +1266,7 @@ export default function App() {
             <button onClick={() => setSidebarOpen(true)} title="Conversaciones"
               style={{ background:'none', border:'none', cursor:'pointer',
                        color:'var(--text)', padding:4, display:'flex', flexShrink:0 }}>
-              <Menu size={22} />
+              <PanelLeft size={22} />
             </button>
           ) : (
             <button onClick={() => setSidebarCollapsed(c => !c)}

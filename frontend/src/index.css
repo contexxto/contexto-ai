@@ -191,3 +191,9 @@ div:focus, div:focus-visible { outline: none; }
   background: var(--surface-2); padding: 1px 5px; border-radius: 4px;
   font-size: .84em; color: var(--teal); font-family: var(--font-mono);
 }
+
+/* Tarjeta de ENCAJE (markdown.js): anotaciones ✅/⚠️ legibles en ambos temas.
+   El teal usa --accent (consciente del tema); el ámbar se oscurece en claro para no lavarse. */
+.enc-ok   { color: var(--accent); }
+.enc-warn { color: #E8B04B; }
+html[data-theme="light"] .enc-warn { color: #B47F1E; }

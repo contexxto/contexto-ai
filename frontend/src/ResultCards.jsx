@@ -9,7 +9,7 @@ import sphereLogo from './assets/sphere.svg'
 // Paleta vía tokens del design system → adapta a tema oscuro/claro.
 const C = {
   bg: 'var(--bg)', panel: 'var(--surface-1)', teal: 'var(--teal)', tealHi: 'var(--teal-bright)',
-  coral: 'var(--coral)', gold: 'var(--warning)', text: 'var(--text)', muted: 'var(--text-mid)',
+  coral: 'var(--coral)', gold: 'var(--warning)', accent: 'var(--accent)', text: 'var(--text)', muted: 'var(--text-mid)',
   line: 'var(--border)',
 }
 
@@ -25,16 +25,19 @@ function precioTexto(r) {
 // MOTOR determinístico del backend (app/encaje.py) sobre lo que el usuario PIDIÓ — nunca
 // sobre quién es (Fair Housing por construcción). Aquí solo lo pintamos; el color es del
 // grado de encaje, no un veredicto de idoneidad.
+// Tonos del design system (planos, sin glow), alineados con el coloreo por encaje del mapa:
+// fuerte → teal de marca, parcial → ámbar (--warning), bajo → coral. `fg` usa --accent
+// (teal consciente del tema) para leerse en claro y oscuro.
 const encajeTono = (s) =>
   s == null ? null
-    : s >= 80 ? { dot: '#3FD99B', fg: '#8BF0C4' }
-    : s >= 55 ? { dot: '#E8B84B', fg: '#F2D27E' }
-    : { dot: '#E0685A', fg: '#F0A99E' }
+    : s >= 80 ? { dot: 'var(--teal)', fg: 'var(--accent)' }
+    : s >= 55 ? { dot: 'var(--warning)', fg: 'var(--warning)' }
+    : { dot: 'var(--coral)', fg: 'var(--coral)' }
 
 const cumpleTint = (c) =>
-  c === 'alto' ? { bg: 'rgba(63,217,155,.10)', bd: 'rgba(63,217,155,.30)', fg: '#8BF0C4' }
-    : c === 'parcial' ? { bg: 'rgba(232,184,75,.10)', bd: 'rgba(232,184,75,.30)', fg: '#F2D27E' }
-    : { bg: 'rgba(224,104,90,.10)', bd: 'rgba(224,104,90,.28)', fg: '#F0A99E' }
+  c === 'alto' ? { bg: 'rgba(45,189,182,.12)', bd: 'rgba(45,189,182,.32)', fg: 'var(--accent)' }
+    : c === 'parcial' ? { bg: 'rgba(229,192,106,.12)', bd: 'rgba(229,192,106,.34)', fg: 'var(--warning)' }
+    : { bg: 'rgba(224,104,90,.12)', bd: 'rgba(224,104,90,.32)', fg: 'var(--coral)' }
 
 function Spec({ icon: Icon, val, unit }) {
   if (val == null || val === '') return null
@@ -78,7 +81,7 @@ function ResultCard({ r, onOpen, activeId, onActive, seleccionado, onToggleCompa
         overflow: 'hidden', cursor: 'pointer', padding: 0, color: C.text,
         display: 'flex', flexDirection: 'column',
         transform: activa ? 'translateY(-2px)' : 'none',
-        boxShadow: activa ? '0 6px 20px rgba(45,189,182,.25)' : 'none',
+        boxShadow: activa ? 'var(--shadow-md)' : 'none',
         transition: 'border-color .14s, transform .14s, box-shadow .14s',
       }}
     >
@@ -144,7 +147,7 @@ function ResultCard({ r, onOpen, activeId, onActive, seleccionado, onToggleCompa
       {/* Cuerpo */}
       <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
         {precio && (
-          <div style={{ fontSize: '1.02rem', fontWeight: 800, color: C.tealHi, lineHeight: 1 }}>{precio}</div>
+          <div style={{ fontSize: '1.02rem', fontWeight: 800, color: C.accent, lineHeight: 1 }}>{precio}</div>
         )}
         {/* ★ Encaje contigo — el diferenciador de la tarea #8: el score + POR QUÉ (razones
             dato+fuente del motor, jamás veredictos sobre la persona). Solo aparece si el
@@ -191,7 +194,7 @@ function ResultCard({ r, onOpen, activeId, onActive, seleccionado, onToggleCompa
           <span title="El corredor verificó en terreno los servicios de este entorno (Catastro Vivo)."
             style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 4,
                      padding: '2px 8px', borderRadius: 999, fontSize: '.62rem', fontWeight: 700,
-                     background: 'rgba(45,189,182,.12)', border: `1px solid ${C.teal}`, color: C.tealHi }}>
+                     background: 'rgba(45,189,182,.12)', border: `1px solid ${C.teal}`, color: C.accent }}>
             ✓ Verificado por el corredor
           </span>
         )}
@@ -206,7 +209,7 @@ function ResultCard({ r, onOpen, activeId, onActive, seleccionado, onToggleCompa
                 title={`${p.texto} · a ~${p.distancia_m} m (según el mapa — OpenStreetMap)`}
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 4, maxWidth: '100%',
                          padding: '3px 8px', borderRadius: 999, fontSize: '.66rem', fontWeight: 600,
-                         background: 'rgba(45,189,182,.10)', border: `1px solid ${C.line}`, color: C.tealHi }}>
+                         background: 'rgba(45,189,182,.10)', border: `1px solid ${C.line}`, color: C.accent }}>
                 <span style={{ flexShrink: 0 }}>{p.emoji}</span>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 116 }}>{p.texto}</span>
                 <span style={{ color: C.muted, fontWeight: 500, flexShrink: 0, whiteSpace: 'nowrap' }}>· {p.minutos} min</span>

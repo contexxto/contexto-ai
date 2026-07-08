@@ -56,7 +56,7 @@ export function renderMarkdown(text) {
         const mm = lines[i].trim().match(/^[-*]?\s*(✅|⚠)️?\s*(.+)$/)
         if (!mm) break
         const ok = mm[1] === '✅'
-        rows.push(`<div style="display:flex;gap:8px;align-items:flex-start;padding:5px 0;font-size:.9rem;line-height:1.45;"><span style="flex-shrink:0;">${ok ? '✅' : '⚠️'}</span><span style="color:${ok ? '#5EEAD4' : '#E8B04B'};">${inline(mm[2])}</span></div>`)
+        rows.push(`<div style="display:flex;gap:8px;align-items:flex-start;padding:5px 0;font-size:.9rem;line-height:1.45;"><span style="flex-shrink:0;">${ok ? '✅' : '⚠️'}</span><span class="${ok ? 'enc-ok' : 'enc-warn'}">${inline(mm[2])}</span></div>`)
         i++
       }
       out.push(`<div style="margin:12px 0;border:1px solid rgba(45,189,182,.25);border-radius:14px;padding:8px 14px;background:rgba(45,189,182,.06);">${rows.join('')}</div>`)

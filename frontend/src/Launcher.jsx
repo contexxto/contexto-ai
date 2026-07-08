@@ -57,7 +57,7 @@ export default function Launcher({ onSend, onAnalyzeLocation, onOpenMap, onBroke
   return (
     <div style={{
       display: 'flex', flexDirection: 'column', alignItems: 'center',
-      paddingTop: isMobile ? 124 : 120, textAlign: 'center',
+      paddingTop: isMobile ? 150 : 130, textAlign: 'center',
     }}>
       <h1 style={{
         fontFamily: 'var(--font-display)', fontWeight: 700,
@@ -99,14 +99,11 @@ export default function Launcher({ onSend, onAnalyzeLocation, onOpenMap, onBroke
       <button
         onClick={onBroker}
         style={{
-          marginTop: 26, background: 'none', border: 'none', cursor: 'pointer',
-          color: 'var(--text-muted)', fontSize: '.82rem', fontFamily: 'inherit',
+          marginTop: 24, background: 'none', border: 'none', cursor: 'pointer',
+          color: 'var(--text-dim)', fontSize: '.76rem', fontFamily: 'inherit', whiteSpace: 'nowrap',
         }}
       >
-        ¿Eres corredor o inmobiliaria?{' '}
-        <span style={{ color: 'var(--teal-bright)', fontWeight: 700 }}>
-          Que tu próximo lead llegue calificado →
-        </span>
+        ¿Corredor o inmobiliaria? Recibe leads calificados →
       </button>
     </div>
   )

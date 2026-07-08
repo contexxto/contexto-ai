@@ -1281,7 +1281,7 @@ export default function App() {
           <img src={sphereLogo} alt="Contexto AI" width={isMobile ? 26 : 30} height={isMobile ? 26 : 30}
                style={{ display:'block', flexShrink:0 }} />
           <div style={{ fontWeight:800, fontSize:isMobile ? '1rem' : '1.05rem', letterSpacing:'-.3px' }}>
-            Contexto <span style={{ color:'var(--teal)' }}>AI</span>
+            Contexto <span style={{ color:'var(--text-dim)' }}>AI</span>
           </div>
         </div>
       </header>

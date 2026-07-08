@@ -32,19 +32,19 @@
               background: var(--surface-2); display: grid; place-items: center; color: var(--text-mid); cursor: pointer; }
 
 /* HERO */
-.qe .hero { text-align: center; padding: 76px 0 60px; }
+.qe .hero { text-align: center; padding: 44px 0 40px; }
 .qe .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: .76rem; font-weight: 600;
                color: var(--text-mid); background: var(--surface-2); border: 1px solid var(--border);
-               border-radius: 999px; padding: 6px 14px; margin-bottom: 24px; }
+               border-radius: 999px; padding: 6px 14px; margin-bottom: 16px; }
 .qe .eyebrow .dot { width: 7px; height: 7px; border-radius: 999px; background: var(--teal-bright); }
-.qe h1.big { font-size: clamp(2.3rem, 6vw, 4rem); font-weight: 800; letter-spacing: -.03em; line-height: 1.02; margin-bottom: 20px; }
+.qe h1.big { font-size: clamp(2.3rem, 6vw, 3.7rem); font-weight: 800; letter-spacing: -.03em; line-height: 1.02; margin-bottom: 16px; }
 .qe h1.big em { font-style: normal; color: var(--teal-bright); }
-.qe .sub { font-size: clamp(1rem, 2.2vw, 1.28rem); color: var(--text-mid); max-width: 620px; margin: 0 auto 30px; line-height: 1.5; }
+.qe .sub { font-size: clamp(1rem, 2.2vw, 1.24rem); color: var(--text-mid); max-width: 620px; margin: 0 auto 22px; line-height: 1.5; }
 .qe .sub b { color: var(--text); font-weight: 600; }
 .qe .hero-cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
 .qe .btn.lg { font-size: .95rem; padding: 13px 24px; }
 
-.qe .story { max-width: 720px; margin: 40px auto 0; background: var(--surface-1); border: 1px solid var(--border);
+.qe .story { max-width: 720px; margin: 26px auto 0; background: var(--surface-1); border: 1px solid var(--border);
              border-radius: var(--radius-lg, 16px); padding: 22px 24px; text-align: left; }
 .qe .story .pain { font-size: 1.05rem; font-weight: 700; margin-bottom: 7px; }
 .qe .story .fix { font-size: .95rem; color: var(--text-mid); line-height: 1.55; }

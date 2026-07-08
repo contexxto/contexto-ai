@@ -14,6 +14,7 @@ import ResultCards from './ResultCards'
 import DeltaEncaje from './DeltaEncaje'
 import Launcher from './Launcher'
 import AttachSheet from './AttachSheet'
+import QueEs from './QueEs'
 
 // Headers (backend key + Bearer del usuario) centralizados en api.js
 import { API_BASE, apiHeaders, setAccessToken } from './api'
@@ -331,6 +332,9 @@ export default function App() {
   // Deep link de QR: /a/{uuid} → sesión determinística qr-{id}
   const deepLinkId = (window.location.pathname.match(/^\/a\/([0-9a-fA-F-]{36})$/) || [])[1] || null
   const shareToken = (window.location.pathname.match(/^\/s\/([A-Za-z0-9_-]+)$/) || [])[1] || null
+  const isQueEs = /^\/que-es\/?$/.test(window.location.pathname)   // web de marketing (el launcher en / queda intacto)
+  // CTAs de la web: /?login=1 abre auth (login); /?corredor=1 abre auth en registro (el form ya trae selector de rol).
+  const authInitialMode = new URLSearchParams(window.location.search).get('corredor') === '1' ? 'signup' : 'login'
   const initialQ = new URLSearchParams(window.location.search).get('q')   // pregunta que llega desde un link compartido
   // Al abrir: chat nuevo y limpio (estilo Claude). Las conversaciones previas
   // quedan accesibles en el sidebar. Excepción: deep-link por QR (carga ese activo).
@@ -380,7 +384,10 @@ export default function App() {
   const [handoffPendiente, setHandoffPendiente] = useState(false)  // handoff esperando registro del lead
   const [corredorWhatsapp, setCorredorWhatsapp] = useState(null)   // WhatsApp del corredor (si lo cargó) → botón wa.me en el handoff
   const [session, setSession] = useState(null)            // sesión de Supabase | null
-  const [authOpen, setAuthOpen] = useState(false)         // modal de login/registro
+  const [authOpen, setAuthOpen] = useState(() => {        // modal login/registro (auto-abre desde la web: /?login=1 · /?corredor=1)
+    const p = new URLSearchParams(window.location.search)
+    return p.get('login') === '1' || p.get('corredor') === '1'
+  })
   const [rol, setRol] = useState(null)                    // rol del usuario (cliente/corredor/inmobiliaria)
   const [publishOpen, setPublishOpen] = useState(false)   // modal "Mis publicaciones"
   const [upgradeOpen, setUpgradeOpen] = useState(false)   // modal "Conviértete en corredor"
@@ -750,6 +757,13 @@ export default function App() {
     }
   }, [session, rol])
 
+  // Limpia los params de las CTAs de la web (/?login=1 · /?corredor=1) tras abrir el modal,
+  // para que un refresh no lo reabra. Solo toca la URL (sin setState) → sin re-render extra.
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search)
+    if (p.get('login') === '1' || p.get('corredor') === '1') window.history.replaceState({}, '', '/')
+  }, [])
+
   // Abre el CRM y aprovecha para pedir permiso de notificaciones nativas (contextual).
   const abrirCRM = useCallback(() => {
     setView('crm')
@@ -1003,6 +1017,14 @@ export default function App() {
   }, [sessionId])
 
   const isEmpty = messages.length === 0 && !loading
+
+  // Web de marketing (/que-es): página aparte; el launcher en / queda intacto (conversión sin-fricción).
+  if (isQueEs) {
+    return <QueEs
+      onStart={() => window.location.assign('/')}
+      onLogin={() => window.location.assign('/?login=1')}
+      onBroker={() => window.location.assign('/?corredor=1')} />
+  }
 
   // Página de anuncio del QR (/a/{id}) — landing pública del inmueble. El CTA abre
   // el chat con el agente (runtime propio) y dispara el informe.
@@ -1291,6 +1313,7 @@ export default function App() {
 
       {authOpen && (
         <Auth motivo={handoffPendiente ? 'Regístrate para hablar con un corredor — así puede responderte y avisarte.' : null}
+          initialMode={authInitialMode}
           onClose={() => { setAuthOpen(false); setHandoffPendiente(false) }}
           onAuthed={(s) => { setSession(s); setAccessToken(s?.access_token) }} />
       )}

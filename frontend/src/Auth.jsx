@@ -16,8 +16,8 @@ const C = {
   coral: 'var(--coral)', text: 'var(--text)', muted: 'var(--text-mid)', line: 'var(--border)',
 }
 
-export default function Auth({ onClose, onAuthed, motivo = null }) {
-  const [mode, setMode] = useState('login')      // 'login' | 'signup'
+export default function Auth({ onClose, onAuthed, motivo = null, initialMode = 'login' }) {
+  const [mode, setMode] = useState(initialMode)  // 'login' | 'signup' (la web /?corredor=1 abre en 'signup')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [nombre, setNombre] = useState('')

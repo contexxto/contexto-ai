@@ -452,7 +452,23 @@ class MapaComandoRequest(BaseModel):
 @limiter.limit("40/minute")
 async def mapa_comando(request: Request, payload: MapaComandoRequest) -> dict:
     from app.rutas import comando_mapa
-    return await comando_mapa(payload.pregunta, payload.lat, payload.lon)
+
+    # Robustez: el path depende de Google (Places + Directions, secuenciales) y puede
+    # tardar/fallar de forma intermitente. Una excepción o timeout NO debe salir como un
+    # 500 texto-plano (el front lo interpreta como "No pude procesar"): respondemos SIEMPRE
+    # con JSON graceful para que el mapa degrade con un mensaje accionable, nunca se rompa.
+    try:
+        return await asyncio.wait_for(
+            comando_mapa(payload.pregunta, payload.lat, payload.lon), timeout=13.0
+        )
+    except asyncio.TimeoutError:
+        return {"texto": "El mapa tardó en responder. Reintenta en un momento.", "acciones": []}
+    except Exception:  # noqa: BLE001
+        logging.getLogger(__name__).exception("mapa/comando falló para: %r", payload.pregunta)
+        return {
+            "texto": "No pude procesar eso ahora. Reintenta o pídeme algo como “ruta al Metro”.",
+            "acciones": [],
+        }
 
 
 @router.get("/mapa/aura", summary="Tarjeta de aura proactiva: barrio + Walk Score + titular")

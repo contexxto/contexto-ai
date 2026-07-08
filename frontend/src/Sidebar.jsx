@@ -134,8 +134,8 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, o
 
   return (
     <div style={{
-      width: mobile ? 'min(88vw, 380px)' : 300, flexShrink: 0, height: '100%', background: C.bg,
-      borderRight: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column',
+      width: mobile ? '100vw' : 300, flexShrink: 0, height: '100%', background: C.bg,
+      borderRight: mobile ? 'none' : `1px solid ${C.border}`, display: 'flex', flexDirection: 'column',
     }}>
       {/* Header con logo (como ASI:One) */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '16px 18px 14px', borderBottom: `1px solid ${C.border}` }}>

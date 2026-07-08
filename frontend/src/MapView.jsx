@@ -3,7 +3,7 @@ import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import {
   MapPin, RefreshCw, LocateFixed, AudioLines, ArrowUp, HelpCircle, Plus, Minus,
-  Footprints, TrainFront, Cross, Pill, ShoppingCart, Trees, GraduationCap, Film, Lightbulb, MessageCircle, Palette,
+  Footprints, TrainFront, Cross, Pill, ShoppingCart, Trees, GraduationCap, Film, Lightbulb, MessageCircle, Palette, ChevronRight,
 } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 
@@ -213,6 +213,21 @@ export default function MapView({ seedIds, encajeById } = {}) {
   const [radiusM, setRadiusM] = useState(500)
   // Onboarding de una vez: se muestra al primer uso y se recuerda (como los flags de geo).
   const [showHints, setShowHints] = useState(() => { try { return !localStorage.getItem('ctx_hints_seen') } catch { return true } })
+  // Afford de scroll de los chips: pista visual (degradado + chevron) de que hay más a los lados.
+  const chipsRef = useRef(null)
+  const [chipEdges, setChipEdges] = useState({ start: true, end: false })
+  const onChipScroll = () => {
+    const el = chipsRef.current
+    if (!el) return
+    setChipEdges({ start: el.scrollLeft <= 2, end: el.scrollLeft + el.clientWidth >= el.scrollWidth - 2 })
+  }
+  // Estado inicial de bordes (¿hay overflow?) al montar y cuando reaparecen los chips (fin del tour).
+  useEffect(() => {
+    const el = chipsRef.current
+    if (!el) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setChipEdges({ start: el.scrollLeft <= 2, end: el.scrollLeft + el.clientWidth >= el.scrollWidth - 2 })
+  }, [tour])
   const [mapaInput, setMapaInput] = useState('')
   const [mapaMsg, setMapaMsg] = useState(null)
   const [mapaLoading, setMapaLoading] = useState(false)
@@ -790,18 +805,34 @@ export default function MapView({ seedIds, encajeById } = {}) {
             </div>
           )}
 
-          {/* Fila 2: chips de categoría (ocultos durante el tour) */}
+          {/* Fila 2: chips de categoría (ocultos durante el tour) — con pista de scroll (degradado + chevron) */}
           {!tour && (
-            <div style={{ display: 'flex', gap: 7, overflowX: 'auto', paddingBottom: 8, marginBottom: 2, scrollbarWidth: 'none' }}>
-              {CHIPS.map(([Icon, label, q]) => (
-                <button key={label} type="button" onClick={() => enviarComando(q)} disabled={mapaLoading}
-                  style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, cursor: 'pointer',
-                           background: 'var(--map-chip)', border: '1px solid var(--map-border)', borderRadius: 8,
-                           padding: '7px 12px', color: 'var(--map-text)', fontSize: 12.5, fontWeight: 600,
-                           whiteSpace: 'nowrap', opacity: mapaLoading ? 0.6 : 1 }}>
-                  <Icon size={14} style={{ flexShrink: 0 }} />{label}
-                </button>
-              ))}
+            <div style={{ position: 'relative', marginBottom: 2 }}>
+              <div ref={chipsRef} onScroll={onChipScroll}
+                style={{ display: 'flex', gap: 7, overflowX: 'auto', paddingBottom: 8, scrollbarWidth: 'none' }}>
+                {CHIPS.map(([Icon, label, q]) => (
+                  <button key={label} type="button" onClick={() => enviarComando(q)} disabled={mapaLoading}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, cursor: 'pointer',
+                             background: 'var(--map-chip)', border: '1px solid var(--map-border)', borderRadius: 8,
+                             padding: '7px 12px', color: 'var(--map-text)', fontSize: 12.5, fontWeight: 600,
+                             whiteSpace: 'nowrap', opacity: mapaLoading ? 0.6 : 1 }}>
+                    <Icon size={14} style={{ flexShrink: 0 }} />{label}
+                  </button>
+                ))}
+              </div>
+              {/* Degradado izquierdo: hay chips atrás (aparece al scrollear) */}
+              {!chipEdges.start && (
+                <div style={{ position: 'absolute', left: 0, top: 0, bottom: 8, width: 26, pointerEvents: 'none',
+                              background: 'linear-gradient(90deg, var(--map-panel), transparent)' }} />
+              )}
+              {/* Degradado derecho + chevron: hay más chips adelante */}
+              {!chipEdges.end && (
+                <div style={{ position: 'absolute', right: 0, top: 0, bottom: 8, width: 38, pointerEvents: 'none',
+                              display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: 2,
+                              background: 'linear-gradient(90deg, transparent, var(--map-panel) 55%)' }}>
+                  <ChevronRight size={16} style={{ color: 'var(--map-dim)' }} />
+                </div>
+              )}
             </div>
           )}
 

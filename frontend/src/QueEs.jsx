@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import {
   MapPin, Target, ShieldCheck, Compass, Footprints, BadgeCheck, Users,
   RefreshCw, Layers, Camera, Building2, Volume2, Clock, ArrowRight, Sun, Moon,
@@ -35,15 +35,6 @@ const DOLORES = [
 export default function QueEs({ onStart, onBroker, onLogin }) {
   const [theme, setThemeState] = useState(getTheme())
   const cambiaTema = () => { toggleTheme(); setThemeState(getTheme()) }
-
-  // El body de la app es height:100dvh; overflow:hidden (layout fijo tipo app). La web SÍ
-  // scrollea → liberamos el clip mientras esta página está montada y lo restauramos al salir.
-  useEffect(() => {
-    const b = document.body.style
-    const prevOverflow = b.overflow, prevHeight = b.height
-    b.overflow = 'auto'; b.height = 'auto'
-    return () => { b.overflow = prevOverflow; b.height = prevHeight }
-  }, [])
 
   return (
     <div className="qe">

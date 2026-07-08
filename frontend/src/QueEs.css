@@ -3,7 +3,11 @@
    concentrado, fondos planos, íconos lucide). Todo scopeado bajo .qe para
    no colisionar con los estilos de la app. Hereda claro/oscuro por tokens. */
 
-.qe { background: var(--bg); color: var(--text); min-height: 100dvh; overflow-x: hidden; }
+/* Contenedor de scroll PROPIO: como el body de la app es height:100dvh; overflow:hidden
+   (layout fijo), la web se scrollea dentro de .qe (fixed + overflow-y:auto), sin depender
+   de que body/html/#root colaboren. Bulletproof: el footer siempre es alcanzable. */
+.qe { background: var(--bg); color: var(--text); position: fixed; inset: 0;
+      overflow-y: auto; overflow-x: hidden; scroll-behavior: smooth; }
 .qe .wrap { max-width: 1080px; margin: 0 auto; padding: 0 26px; }
 .qe a { color: inherit; text-decoration: none; }
 .qe .lu { stroke-width: 2; }

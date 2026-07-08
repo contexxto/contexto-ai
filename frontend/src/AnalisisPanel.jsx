@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
 import { API_BASE, apiHeaders } from './api'
-import { TrendingUp, RotateCcw, Layers, Info, ArrowLeft } from 'lucide-react'
+import { TrendingUp, RotateCcw, Layers, Info, ArrowLeft, Compass } from 'lucide-react'
 
 // Panel de ANÁLISIS / reportería de la cartera del corredor (Fase 2 del CRM Vivo, ver
 // docs/DISENO_CRM_Vivo.md §5). Consume /metricas/lift (funnel + handoff + lift + cohortes)
@@ -33,7 +33,12 @@ function Tasa({ o, sufijo = '' }) {
     <span style={{ color: C.muted, fontSize: '.72rem', marginLeft: 6 }}>({o.n} de {o.de}{sufijo})</span></span>
 }
 
-export default function AnalisisPanel({ onVolver } = {}) {
+// Foco del dashboard vivo (SPEC_Analisis_Vivo): cada tarjeta se ENFATIZA o RECEDE según la directiva
+// del Estratega. Por defecto la North Star lidera (el dashboard "abre" en el handoff).
+const FOCO_CARD = { handoff: 'handoff', embudo: 'funnel', reenganche: 'lift', cohortes: 'cohortes' }
+const FOCO_LBL = { handoff: 'North Star · handoff', embudo: 'Embudo', reenganche: 'Reenganche', cohortes: 'Cohortes' }
+
+export default function AnalisisPanel({ onVolver, panelSeed } = {}) {
   const [data, setData] = useState(null)
   const [err, setErr] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -56,6 +61,18 @@ export default function AnalisisPanel({ onVolver } = {}) {
   const reeng = data?.reenganche || {}
   const coh = data?.cohortes || {}
 
+  // El foco viene de la directiva del Estratega; sin ella, el default es 'handoff' (la North Star lidera).
+  const foco = panelSeed?.foco || 'handoff'
+  const cardFoco = FOCO_CARD[foco]
+  // fx(key): enfatiza la tarjeta enfocada (halo teal + micro-escala), atenúa las demás. Transición suave
+  // → el panel MORPHA entre focos según la conversación, no salta. Nunca oculta nada (el dato sigue ahí).
+  const fx = (key) => ({
+    transition: 'opacity .5s ease, transform .5s ease, box-shadow .5s ease',
+    opacity: cardFoco && cardFoco !== key ? 0.5 : 1,
+    transform: cardFoco === key ? 'scale(1.012)' : 'none',
+    boxShadow: cardFoco === key ? `0 0 0 1px ${C.teal}, 0 10px 34px rgba(45,189,182,.16)` : 'none',
+  })
+
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       {onVolver && (
@@ -69,8 +86,14 @@ export default function AnalisisPanel({ onVolver } = {}) {
       {!loading && (err || !data) && <div style={{ color: '#E0685A', padding: '30px 4px', textAlign: 'center' }}>⚠️ No se pudo cargar el análisis.</div>}
       {!loading && data && (
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14, padding: '2px' }}>
+      {/* Lente vivo: en qué foco está el dashboard según la conversación del Estratega (SPEC_Analisis_Vivo). */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: '.7rem', color: C.muted, padding: '0 2px', flexShrink: 0 }}>
+        <Compass size={12} color={C.tealHi} />
+        <span>En foco: <strong style={{ color: C.tealHi }}>{FOCO_LBL[foco] || foco}</strong></span>
+        {panelSeed?.caption && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>· {panelSeed.caption}</span>}
+      </div>
       {/* Embudo — el gráfico estrella */}
-      <div style={card}>
+      <div style={{ ...card, ...fx('funnel') }}>
         <div style={titulo}><TrendingUp size={13} color={C.teal} /> Embudo de intención · {data.total_leads} interesados</div>
         {filas.length === 0 && <div style={{ color: C.muted, fontSize: '.85rem' }}>Aún sin interesados con etapa.</div>}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
@@ -89,14 +112,14 @@ export default function AnalisisPanel({ onVolver } = {}) {
 
       {/* North Star + Lift de reenganche */}
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-        <div style={{ ...card, flex: 1 }}>
+        <div style={{ ...card, flex: 1, ...fx('handoff') }}>
           <div style={titulo}>★ North Star · tasa de handoff</div>
           <div style={{ fontSize: '.95rem' }}><Tasa o={data.handoff} /></div>
           <div style={{ color: C.muted, fontSize: '.72rem', marginTop: 8, lineHeight: 1.5 }}>
             Interesados que <span style={{ color: C.tealHi }}>pidieron corredor</span> — evento real, no un score.
           </div>
         </div>
-        <div style={{ ...card, flex: 1 }}>
+        <div style={{ ...card, flex: 1, ...fx('lift') }}>
           <div style={titulo}><RotateCcw size={13} color={C.teal} /> Lift de reenganche</div>
           {(reeng.tocado?.n || 0) + (reeng.holdout?.n || 0) === 0 ? (
             <div style={{ color: C.muted, fontSize: '.8rem', lineHeight: 1.5 }}>
@@ -112,7 +135,7 @@ export default function AnalisisPanel({ onVolver } = {}) {
       </div>
 
       {/* Cohortes */}
-      <div style={card}>
+      <div style={{ ...card, ...fx('cohortes') }}>
         <div style={titulo}><Layers size={13} color={C.teal} /> Cohortes</div>
         <div style={{ display: 'flex', gap: 20, fontSize: '.85rem' }}>
           <div><strong style={{ color: C.text, fontSize: '1.2rem' }}>{coh.maduros ?? 0}</strong> <span style={{ color: C.muted }}>maduros</span></div>

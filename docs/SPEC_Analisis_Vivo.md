@@ -23,13 +23,13 @@ Nuestro Análisis es un **lector de la conversación del corredor**: el Estrateg
 
 El lente sigue la **pregunta estratégica** del corredor, de la salud global de la cartera al detalle de un interesado. Es el espinazo visual del embudo, del lado de quien vende.
 
-| Foco | Cuándo nace | Qué enciende | `resalta` |
-|------|-------------|--------------|-----------|
-| **HANDOFF** (North Star) | "¿cómo voy con los que piden corredor?" · apertura del Estratega | La North Star lidera: `handoff` (tasa o conteo). El resto recede. Es la métrica que importa — **evento real, no un score**. | `null` |
-| **EMBUDO** | "¿dónde se atasca mi cartera?" | El embudo pasa al frente; la etapa-cuello pulsa (más leads estancados sin avanzar). | etapa (`intencion`, `enganchado`, …) |
-| **REENGANCHE** | "¿a quién reenganchar primero?" | El panel de Lift/reenganche se agranda; los dormidos elegibles se resaltan. Conecta con el cron de reenganche que ya corre. | `dormido` |
-| **COHORTES** | "¿qué tan maduros están mis resultados?" | Cohortes al frente; separa maduros (desenlace interpretable) de 'en vuelo' (censurados). | `maduros` / `en_vuelo` |
-| **LEAD** | "y de [interesado]?" | Baja al detalle de UN interesado (handoff hará el puente al Copiloto — ver "Amarres"). | `<lead_id>` |
+| Foco                     | Cuándo nace                                                      | Qué enciende                                                                                                                | `resalta`                            |
+| ------------------------ | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| **HANDOFF** (North Star) | "¿cómo voy con los que piden corredor?" · apertura del Estratega | La North Star lidera: `handoff` (tasa o conteo). El resto recede. Es la métrica que importa — **evento real, no un score**. | `null`                               |
+| **EMBUDO**               | "¿dónde se atasca mi cartera?"                                   | El embudo pasa al frente; la etapa-cuello pulsa (más leads estancados sin avanzar).                                         | etapa (`intencion`, `enganchado`, …) |
+| **REENGANCHE**           | "¿a quién reenganchar primero?"                                  | El panel de Lift/reenganche se agranda; los dormidos elegibles se resaltan. Conecta con el cron de reenganche que ya corre. | `dormido`                            |
+| **COHORTES**             | "¿qué tan maduros están mis resultados?"                         | Cohortes al frente; separa maduros (desenlace interpretable) de 'en vuelo' (censurados).                                    | `maduros` / `en_vuelo`               |
+| **LEAD**                 | "y de [interesado]?"                                             | Baja al detalle de UN interesado (handoff hará el puente al Copiloto — ver "Amarres").                                      | `<lead_id>`                          |
 
 > El continuo va de **global → específico** (HANDOFF/EMBUDO/COHORTES son de cartera; LEAD es el zoom). Espeja la temperatura del mapa (ZONA→AURA), pero aquí el eje es **altitud analítica**, no calidez emocional.
 
@@ -52,7 +52,7 @@ Lo que hace que esto sea **UN sistema y no un tab más**. Cada turno del Estrate
 
 **Vocabulario CERRADO (no free-form).** `foco` y `resalta` son enums acotados. El backend los deriva de la pregunta + la tool que corrió (`tool_stats_embudo`), NO los inventa el LLM en texto libre — el mismo patrón "el backend decide el modo" del **FSM del lente** (tarea #25). Esto es lo que mantiene la directiva honesta: el Estratega no puede "pedirle al panel" que muestre algo que el dato no tiene.
 
-> El `caption` es **prosa narrada**, pero **toda cifra dentro de él debe salir del payload de `/metricas/lift`** — NUNCA un número inventado. Este candado NO es nuevo: es exactamente la baranda `cifra_cartera` + fail-close del Estratega (§5 de `DISENO_Superpoderes_Agentes_CRM.md`). Si el Estratega intentara meter un conteo de cartera sin respaldo en el caption, el fail-close ya lo caza. **La honestidad del dashboard vivo es el mismo foso que ya construimos.**
+> El `caption` es **prosa narrada**, pero **toda cifra dentro de él debe salir del payload de `/metricas/lift`** — NUNCA un número inventado. **En Fase A el `caption` es siempre `null`** (el panel ya narra el `_ancla` honesto del payload) → sin riesgo hoy. **REQUISITO al crecer:** cuando un futuro fase genere el caption NARRADO POR EL LLM, DEBE enrutarse por `evaluar_salida_crm` (la baranda `cifra_cartera` + fail-close del Estratega, §5 de `DISENO_Superpoderes_Agentes_CRM.md`) **antes de emitirse** — ese cableado **aún no existe**, así que el LLM no debe emitir un caption no-`null` hasta que se construya. El foso es el mismo que ya tenemos; solo falta conectarlo cuando el caption deje de ser `null`.
 
 ---
 
@@ -73,14 +73,14 @@ Lo que hace que esto sea **UN sistema y no un tab más**. Cada turno del Estrate
 
 El dashboard **re-enfoca y anota; NUNCA inventa**. Igual que `map_seed` re-siembra pines que *son* los resultados del turno (dato real), `panel_seed` re-enfoca widgets cuyos números **siempre salen de `/metricas/lift`** (`app/lift.py::resumen_lift`). El Estratega *narra y apunta*; el panel *resalta*; **ninguno de los dos fabrica una cifra.**
 
-| Campo de la directiva | Fuente real HOY | Estado |
-|-----------------------|-----------------|--------|
-| `foco` | Derivado por el backend de la pregunta + `tool_stats_embudo` (FSM del foco) | Falta el derivador; `tool_stats_embudo` ya corre en `crm_graph` |
-| `resalta: <etapa>` | `resumen_lift → funnel{estado: count}` (`lift.py:128`) | Listo (el panel ya dibuja el funnel) |
-| `resalta: dormido` | `mine/leads → l.frescura/l.reenganche` (`assets.py:744-763`) + `resumen_lift → reenganche` | Listo |
-| `resalta: maduros` | `resumen_lift → cohortes{maduros, en_vuelo}` (`lift.py:129`) | Listo |
-| `caption` (números) | El MISMO payload de `/metricas/lift`; el Estratega solo lo narra | Listo; el candado §5 impide inventar |
-| `resalta: <lead_id>` | `mine/leads → leads[].session_id` | Listo (para el puente al Copiloto) |
+| Campo de la directiva | Fuente real HOY                                                                            | Estado                                                          |
+| --------------------- | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| `foco`                | Derivado por el backend de la pregunta + `tool_stats_embudo` (FSM del foco)                | Falta el derivador; `tool_stats_embudo` ya corre en `crm_graph` |
+| `resalta: <etapa>`    | `resumen_lift → funnel{estado: count}` (`lift.py:128`)                                     | Listo (el panel ya dibuja el funnel)                            |
+| `resalta: dormido`    | `mine/leads → l.frescura/l.reenganche` (`assets.py:744-763`) + `resumen_lift → reenganche` | Listo                                                           |
+| `resalta: maduros`    | `resumen_lift → cohortes{maduros, en_vuelo}` (`lift.py:129`)                               | Listo                                                           |
+| `caption` (números)   | El MISMO payload de `/metricas/lift`; el Estratega solo lo narra                           | Listo; el candado §5 impide inventar                            |
+| `resalta: <lead_id>`  | `mine/leads → leads[].session_id`                                                          | Listo (para el puente al Copiloto)                              |
 
 > **Proveniencia honesta (innegociable, ya en el dato):** `resumen_lift` YA es fail-closed a honestidad — si `N < UMBRAL_N` (5) devuelve el CONTEO + `status: "acumulando"`, **jamás un ratio** (`lift.py:67-72`). La directiva DEBE respetarlo: en foco HANDOFF con N chico, el panel muestra "3 de 10 · acumulando", no un "30%" falso. El `_proveniencia` (`lift.py:134`) y los `_ancla` viajan al caption. **El dashboard vivo hereda el foso del lift, no lo relaja.**
 

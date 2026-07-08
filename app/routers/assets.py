@@ -852,6 +852,7 @@ async def crm_chat(
                             detail="El CRM Vivo es para corredores/inmobiliarias.")
     from langchain_core.messages import AIMessage, HumanMessage
     from app.agent.crm_graph import compiled_crm_graph
+    from app.agent.panel_seed import derivar_panel_seed
     sid = _crm_thread(user.user_id, payload.lead, payload.modo)   # hilo por agente/lead, derivado del JWT
     # El owner sale del JWT y viaja en config → las tools scopean por él, nunca el LLM.
     # modo: elige el agente (copiloto táctico / estratega de cartera). corredor_nombre: para firmar.
@@ -870,7 +871,11 @@ async def crm_chat(
     reply = next((m.content for m in reversed(msgs)
                   if isinstance(m, AIMessage) and not getattr(m, "tool_calls", None)),
                  "Sin respuesta del asistente.")
-    return {"reply": reply, "session_id": sid}
+    # Directiva de PANEL (dashboard vivo, SPEC_Analisis_Vivo): el backend deriva el foco de la pregunta
+    # (FSM del lente). Solo el Estratega la emite; None para el Copiloto o sin señal clara. El frontend
+    # re-enfoca el AnalisisPanel con ella (números SIEMPRE de /metricas/lift; la directiva no inventa).
+    panel_seed = derivar_panel_seed(payload.message, modo=payload.modo)
+    return {"reply": reply, "session_id": sid, "panel_seed": panel_seed}
 
 
 @router.get(

@@ -53,7 +53,10 @@ export default function CRM() {
   // Riel de agentes: null | 'copiloto' (táctico, por interesado) | 'estratega' (cartera, proactivo).
   // Se comparte UNA columna: abrir un agente cierra el otro (usas uno a la vez).
   const [asistente, setAsistente] = useState(null)
-  const [analisis, setAnalisis] = useState(false)   // modo Análisis (reportería/dashboard)
+  const [analisis, setAnalisis] = useState(false)   // modo Análisis (dashboard vivo, split con el Estratega)
+  // Directiva de panel del Estratega (SPEC_Analisis_Vivo): re-enfoca el dashboard según la conversación.
+  // Default 'handoff' → el dashboard "abre" en la North Star. El chat del split lo actualiza vía onPanelSeed.
+  const [panelSeed, setPanelSeed] = useState({ foco: 'handoff', resalta: null, caption: null })
   const [filtro, setFiltro] = useState(null) // filtro por etapa del embudo
   const [wide, setWide] = useState(() => window.matchMedia('(min-width: 900px)').matches)
   // ¿Hay espacio para ACOPLAR el copiloto como 3ª columna sin apretar la conversación?
@@ -227,14 +230,14 @@ export default function CRM() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 2px 12px', flexShrink: 0 }}>
         <Users size={20} color={C.teal} />
         <h1 style={{ margin: 0, fontSize: '1.15rem' }}>CRM · Interesados</h1>
-        <button onClick={() => setAnalisis(a => !a)} title="Análisis y reportería de tu cartera"
+        <button onClick={() => { setAnalisis(a => !a); setAsistente(null) }} title="Análisis y reportería de tu cartera"
           style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, fontSize: '.8rem',
                    fontWeight: 600, padding: '6px 13px', borderRadius: 999, cursor: 'pointer',
                    background: analisis ? 'rgba(45,189,182,.15)' : 'rgba(255,255,255,.05)',
                    color: analisis ? C.tealHi : C.text, border: `1px solid ${C.line}` }}>
           <BarChart3 size={15} color={C.teal} /> Análisis
         </button>
-        <button onClick={() => setAsistente(a => a === 'estratega' ? null : 'estratega')}
+        <button onClick={() => { setAsistente(a => a === 'estratega' ? null : 'estratega'); setAnalisis(false) }}
           title="El Estratega lee TODA tu cartera y te recomienda la jugada (proactivo)"
           style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '.8rem',
                    fontWeight: 600, padding: '6px 13px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${C.line}`,
@@ -242,7 +245,7 @@ export default function CRM() {
                    color: asistente === 'estratega' ? C.tealHi : C.text }}>
           <Compass size={15} color={C.teal} /> Estratega
         </button>
-        <button onClick={() => setAsistente(a => a === 'copiloto' ? null : 'copiloto')}
+        <button onClick={() => { setAsistente(a => a === 'copiloto' ? null : 'copiloto'); setAnalisis(false) }}
           title="El Copiloto te ayuda con la conversación de cada interesado (táctico)"
           style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '.8rem',
                    fontWeight: 600, padding: '6px 13px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${C.line}`,
@@ -270,8 +273,21 @@ export default function CRM() {
       {err && <div style={{ color: '#E0685A', fontSize: '.85rem' }}>⚠️ No se pudieron cargar los interesados.</div>}
       {!d && !err && <div style={{ color: C.muted, padding: '24px 0', textAlign: 'center' }}>Cargando…</div>}
 
-      {/* Modo ANÁLISIS: reportería/dashboard de la cartera (chip "Análisis" del header). */}
-      {d && analisis && <AnalisisPanel onVolver={() => setAnalisis(false)} />}
+      {/* Modo ANÁLISIS VIVO (chip "Análisis"): SPLIT — el Estratega a la izquierda re-enfoca el dashboard
+          a la derecha según la conversación (SPEC_Analisis_Vivo). En angosto se apilan (chat arriba). */}
+      {d && analisis && (
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: wide ? 'row' : 'column', gap: 14 }}>
+          <div style={{ ...(wide ? { width: 380, flexShrink: 0 } : { height: '44%', flexShrink: 0 }),
+                        minHeight: 0, display: 'flex', flexDirection: 'column',
+                        border: `1px solid ${C.line}`, borderRadius: 16, padding: '14px 12px',
+                        background: `linear-gradient(180deg, rgba(45,189,182,.08) 0%, ${C.bg} 55%)` }}>
+            <CRMChat key="estratega-analisis" modo="estratega" onPanelSeed={setPanelSeed} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+            <AnalisisPanel panelSeed={panelSeed} onVolver={() => setAnalisis(false)} />
+          </div>
+        </div>
+      )}
 
       {d && !analisis && d.total === 0 && (
         <div style={{ flex: 1, display: 'grid', placeItems: 'center', color: C.muted }}>

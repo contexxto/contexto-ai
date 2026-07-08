@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import axios from 'axios'
-import { X, Plus, QrCode, Copy, Check, Share2, MapPin, ClipboardList, ListChecks, Pencil, RefreshCw, Store, Image as ImageIcon } from 'lucide-react'
+import { X, Plus, QrCode, Copy, Check, Share2, MapPin, ClipboardList, ListChecks, Pencil, RefreshCw, Store, Image as ImageIcon, TrainFront, AlertTriangle } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import PublishAsset from './PublishAsset'
 import FichaTecnica from './FichaTecnica'
@@ -8,8 +8,8 @@ import Caracteristicas from './Caracteristicas'
 import ActualizarEntorno from './ActualizarEntorno'
 
 const C = {
-  bg: '#16151E', panel: '#1E1D28', teal: '#2DBDB6', tealHi: '#5EEAD4',
-  text: '#EDEBF2', muted: '#9C99AC', line: 'rgba(45,189,182,.22)',
+  bg: 'var(--bg)', panel: 'var(--surface-1)', teal: 'var(--teal)', tealHi: 'var(--teal-bright)',
+  text: 'var(--text)', muted: 'var(--text-mid)', line: 'var(--border)',
 }
 
 // Caché en memoria de la última lista → aperturas repetidas abren al instante.
@@ -105,10 +105,10 @@ export default function MisPublicaciones({ onClose }) {
   return (
     <div onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}
       style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center',
-               justifyContent: 'center', padding: 16, background: 'rgba(10,9,16,.72)', backdropFilter: 'blur(6px)' }}>
+               justifyContent: 'center', padding: 16, background: 'rgba(0,0,0,.5)', backdropFilter: 'blur(6px)' }}>
       <div onClick={(e) => e.stopPropagation()}
         style={{ width: '100%', maxWidth: 560, maxHeight: '92vh', overflowY: 'auto', position: 'relative',
-                 background: `radial-gradient(120% 90% at 30% 0%, ${C.panel} 0%, ${C.bg} 70%)`,
+                 background: C.panel,
                  border: `1px solid ${C.line}`, borderRadius: 22, padding: '24px 22px', color: C.text,
                  boxShadow: '0 24px 60px rgba(0,0,0,.55)' }}>
         <button onClick={onClose} aria-label="Cerrar"
@@ -126,7 +126,7 @@ export default function MisPublicaciones({ onClose }) {
           </button>
         </div>
 
-        {error && <div style={{ color: '#E0685A', fontSize: '.85rem', marginBottom: 10 }}>⚠️ {error}</div>}
+        {error && <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: C.coral, fontSize: '.85rem', marginBottom: 10 }}><AlertTriangle size={14} /> {error}</div>}
         {items === null && <div style={{ color: C.muted, padding: '30px 0', textAlign: 'center' }}>Cargando…</div>}
 
         {items !== null && items.length === 0 && !error && (
@@ -141,7 +141,7 @@ export default function MisPublicaciones({ onClose }) {
           {items?.map((it) => (
             <div key={it.id}
               style={{ border: `1px solid ${C.line}`, borderRadius: 14, padding: '13px 14px',
-                       background: 'rgba(255,255,255,.03)' }}>
+                       background: 'var(--surface-2)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
                 {it.portada && (
                   <img src={it.portada} alt="" width={54} height={54}
@@ -165,7 +165,7 @@ export default function MisPublicaciones({ onClose }) {
               </div>
 
               {it.conectividad && (
-                <div style={{ fontSize: '.74rem', color: C.muted, marginTop: 8 }}>🚇 {it.conectividad}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '.74rem', color: C.muted, marginTop: 8 }}><TrainFront size={14} /> {it.conectividad}</div>
               )}
 
               <div style={{ display: 'flex', gap: 7, marginTop: 11, flexWrap: 'wrap' }}>
@@ -216,9 +216,9 @@ export default function MisPublicaciones({ onClose }) {
 function Btn({ onClick, children }) {
   return (
     <button onClick={onClick}
-      style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 11px', borderRadius: 9,
-               background: 'rgba(255,255,255,.05)', border: '1px solid rgba(45,189,182,.25)',
-               color: '#5EEAD4', cursor: 'pointer', fontSize: '.76rem', fontWeight: 600 }}>
+      style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 11px', borderRadius: 8,
+               background: 'var(--surface-2)', border: '1px solid var(--border)',
+               color: 'var(--teal-bright)', cursor: 'pointer', fontSize: '.76rem', fontWeight: 600 }}>
       {children}
     </button>
   )

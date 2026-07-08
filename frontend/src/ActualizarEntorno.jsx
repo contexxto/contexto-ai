@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
 import axios from 'axios'
-import { X, Plus, Trash2, Store, Check, Loader, MapPin, Camera } from 'lucide-react'
+import { X, Plus, Trash2, Store, Check, Loader, MapPin, Camera, Ban, AlertTriangle } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import { supabase } from './supabaseClient'
 
 const C = {
-  bg: '#16151E', panel: '#1E1D28', teal: '#2DBDB6', tealHi: '#5EEAD4',
-  coral: '#E0685A', text: '#EDEBF2', muted: '#9C99AC', line: 'rgba(45,189,182,.22)',
+  bg: 'var(--bg)', panel: 'var(--surface-1)', teal: 'var(--teal)', tealHi: 'var(--teal-bright)',
+  coral: 'var(--coral)', text: 'var(--text)', muted: 'var(--text-mid)', line: 'var(--border)',
 }
 
 // Taxonomía CURADA de habitabilidad — el corredor elige de aquí (no texto libre,
@@ -48,7 +48,7 @@ export default function ActualizarEntorno({ activo, onClose }) {
       setCuraciones(data.curaciones || [])
       setVerificado(data.verificado || { verificado: false, fecha: null })
     } catch {
-      setError('No pudimos cargar el entorno. Reintenta en un momento 🔄')
+      setError('No pudimos cargar el entorno. Reintenta en un momento')
     } finally { setLoading(false) }
   }, [activo.id])
 
@@ -70,7 +70,7 @@ export default function ActualizarEntorno({ activo, onClose }) {
       setCuraciones(data.curaciones || [])
       setVerificado(data.verificado || { verificado: false, fecha: null })
     } catch (err) {
-      setError(err?.response?.data?.detail || 'No se pudo guardar. Reintenta 🔄')
+      setError(err?.response?.data?.detail || 'No se pudo guardar. Reintenta')
     } finally { setBusy(false) }
   }
 
@@ -81,7 +81,7 @@ export default function ActualizarEntorno({ activo, onClose }) {
       setCuraciones(data.curaciones || [])
       setVerificado(data.verificado || { verificado: false, fecha: null })
     } catch {
-      setError('No se pudo deshacer. Reintenta 🔄')
+      setError('No se pudo deshacer. Reintenta')
     } finally { setBusy(false) }
   }
 
@@ -108,7 +108,7 @@ export default function ActualizarEntorno({ activo, onClose }) {
       const { data } = supabase.storage.from('evidencias').getPublicUrl(path)
       setNuevo(p => ({ ...p, foto: data.publicUrl }))
     } catch {
-      setError('No se pudo subir la foto. Reintenta 🔄')
+      setError('No se pudo subir la foto. Reintenta')
     } finally { setUploading(false) }
   }
 
@@ -134,7 +134,7 @@ export default function ActualizarEntorno({ activo, onClose }) {
   }
 
   const inp = { width: '100%', padding: '9px 11px', borderRadius: 10, marginTop: 4, boxSizing: 'border-box',
-    background: 'rgba(255,255,255,.04)', border: `1px solid ${C.line}`, color: C.text, fontSize: '.88rem', outline: 'none' }
+    background: 'var(--surface-2)', border: `1px solid ${C.line}`, color: C.text, fontSize: '.88rem', outline: 'none' }
   const lbl = { fontSize: '.74rem', color: C.muted, fontWeight: 600 }
   const sec = { fontSize: '.72rem', color: C.tealHi, letterSpacing: '.5px', fontWeight: 700, margin: '20px 0 8px' }
   const chipBtn = (color) => ({ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px',
@@ -144,10 +144,10 @@ export default function ActualizarEntorno({ activo, onClose }) {
   return (
     <div onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}
       style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', alignItems: 'center',
-               justifyContent: 'center', padding: 16, background: 'rgba(10,9,16,.78)', backdropFilter: 'blur(6px)' }}>
+               justifyContent: 'center', padding: 16, background: 'rgba(0,0,0,.5)', backdropFilter: 'blur(6px)' }}>
       <div onClick={(e) => e.stopPropagation()}
         style={{ width: '100%', maxWidth: 520, maxHeight: '92vh', overflowY: 'auto', position: 'relative',
-                 background: `radial-gradient(120% 90% at 30% 0%, ${C.panel} 0%, ${C.bg} 70%)`,
+                 background: C.panel,
                  border: `1px solid ${C.line}`, borderRadius: 22, padding: '24px 22px', color: C.text }}>
         <button onClick={onClose} aria-label="Cerrar"
           style={{ position: 'absolute', top: 14, right: 14, background: 'none', border: 'none', color: C.muted, cursor: 'pointer' }}>
@@ -163,12 +163,12 @@ export default function ActualizarEntorno({ activo, onClose }) {
           tu inmueble queda <strong style={{ color: C.tealHi }}>verificado</strong> y el agente responde con datos frescos.
         </p>
         {verificado.verificado && (
-          <div style={{ fontSize: '.76rem', color: C.tealHi, marginBottom: 4 }}>
-            ✓ Entorno verificado por ti{verificado.fecha ? ` · ${verificado.fecha}` : ''}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '.76rem', color: C.tealHi, marginBottom: 4 }}>
+            <Check size={14} /> Entorno verificado por ti{verificado.fecha ? ` · ${verificado.fecha}` : ''}
           </div>
         )}
 
-        {error && <div style={{ color: C.coral, fontSize: '.82rem', marginTop: 8 }}>⚠️ {error}</div>}
+        {error && <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: C.coral, fontSize: '.82rem', marginTop: 8 }}><AlertTriangle size={14} /> {error}</div>}
 
         {loading ? (
           <div style={{ display: 'flex', justifyContent: 'center', padding: 30 }}>
@@ -196,7 +196,7 @@ export default function ActualizarEntorno({ activo, onClose }) {
                       <span style={{ fontSize: '.72rem', color: C.coral }}>cerrado</span>
                     ) : (
                       <button disabled={busy} onClick={() => aplicar({ accion: 'cerrado', nombre: s.visible })}
-                        style={chipBtn(C.coral)}>❌ Cerró</button>
+                        style={chipBtn(C.coral)}><Ban size={13} /> Cerró</button>
                     )}
                   </div>
                 )
@@ -227,7 +227,7 @@ export default function ActualizarEntorno({ activo, onClose }) {
                            background: geo === 'ok' ? 'rgba(45,189,182,.14)' : 'rgba(255,255,255,.04)',
                            border: `1px solid ${geo === 'ok' ? C.teal : C.line}`, color: geo === 'ok' ? C.tealHi : C.text }}>
                   <MapPin size={15} />
-                  {geo === 'ok' ? 'Ubicación capturada ✓' : geo === 'capturando' ? 'Capturando…' : 'Estoy aquí — usar mi ubicación'}
+                  {geo === 'ok' ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>Ubicación capturada <Check size={14} /></span> : geo === 'capturando' ? 'Capturando…' : 'Estoy aquí — usar mi ubicación'}
                 </button>
                 <div style={{ fontSize: '.72rem', color: geo === 'error' ? C.coral : C.muted, marginTop: 5 }}>
                   {geo === 'ok' ? 'Calcularemos la distancia exacta desde el inmueble.'
@@ -271,7 +271,7 @@ export default function ActualizarEntorno({ activo, onClose }) {
                       <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '.82rem', color: C.text, minWidth: 0 }}>
                         {c.foto && <img src={c.foto} alt="" style={{ width: 34, height: 34, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />}
                         <span style={{ minWidth: 0 }}>
-                          {c.accion === 'cerrado' ? '🚫' : '➕'} {c.nombre}
+                          {c.accion === 'cerrado' ? <Ban size={13} style={{ verticalAlign: 'middle' }} /> : <Plus size={13} style={{ verticalAlign: 'middle' }} />} {c.nombre}
                           {c.distancia_m ? ` · ~${c.distancia_m} m` : ''}
                           <span style={{ color: C.muted, fontSize: '.72rem' }}>
                             {c.accion === 'cerrado' ? ' (cerrado)' : ' (agregado)'}

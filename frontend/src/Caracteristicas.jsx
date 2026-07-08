@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
-import { X, Check, Upload, Loader, Trash2 } from 'lucide-react'
+import { X, Check, Upload, Loader, Trash2, Info, Pencil, AlertTriangle } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import { supabase } from './supabaseClient'
 
 const C = {
-  bg: '#16151E', panel: '#1E1D28', teal: '#2DBDB6', tealHi: '#5EEAD4',
-  coral: '#E0685A', text: '#EDEBF2', muted: '#9C99AC', line: 'rgba(45,189,182,.22)',
+  bg: 'var(--bg)', panel: 'var(--surface-1)', teal: 'var(--teal)', tealHi: 'var(--teal-bright)',
+  coral: 'var(--coral)', text: 'var(--text)', muted: 'var(--text-mid)', line: 'var(--border)',
 }
 const NUMS = [
   ['num_dormitorios', 'Dormitorios'], ['num_banos', 'Baños'],
@@ -16,7 +16,7 @@ const NUMS = [
 const CHECKS = [
   ['amoblado', 'Amoblado'], ['sala', 'Sala'], ['comedor', 'Comedor'],
   ['estudio', 'Estudio'], ['cuarto_servicio', 'Cuarto de servicio'],
-  ['balcon', 'Balcón'], ['terraza', 'Terraza'], ['acepta_mascotas', '🐾 Acepta mascotas'],
+  ['balcon', 'Balcón'], ['terraza', 'Terraza'], ['acepta_mascotas', 'Acepta mascotas'],
 ]
 const AMENIDADES = ['Piscina', 'Sauna', 'Turco', 'Gimnasio', 'Seguridad 24/7', 'CCTV',
   'Ascensor', 'Áreas comunales', 'Generador', 'BBQ / Social']
@@ -116,17 +116,17 @@ export default function Caracteristicas({ activo, onClose }) {
 
   const esVenta = (activo.operacion || '').toLowerCase() === 'venta'
   const inp = { width: '100%', padding: '10px 12px', borderRadius: 10, marginTop: 5, boxSizing: 'border-box',
-    background: 'rgba(255,255,255,.04)', border: `1px solid ${C.line}`, color: C.text, fontSize: '.9rem', outline: 'none' }
+    background: 'var(--surface-2)', border: `1px solid ${C.line}`, color: C.text, fontSize: '.9rem', outline: 'none' }
   const lbl = { fontSize: '.76rem', color: C.muted, fontWeight: 600 }
   const sec = { fontSize: '.72rem', color: C.tealHi, letterSpacing: '.5px', fontWeight: 700, margin: '18px 0 6px' }
 
   return (
     <div onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}
       style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', alignItems: 'center',
-               justifyContent: 'center', padding: 16, background: 'rgba(10,9,16,.78)', backdropFilter: 'blur(6px)' }}>
+               justifyContent: 'center', padding: 16, background: 'rgba(0,0,0,.5)', backdropFilter: 'blur(6px)' }}>
       <div onClick={(e) => e.stopPropagation()}
         style={{ width: '100%', maxWidth: 540, maxHeight: '92vh', overflowY: 'auto', position: 'relative',
-                 background: `radial-gradient(120% 90% at 30% 0%, ${C.panel} 0%, ${C.bg} 70%)`,
+                 background: C.panel,
                  border: `1px solid ${C.line}`, borderRadius: 22, padding: '24px 22px', color: C.text,
                  boxShadow: '0 24px 60px rgba(0,0,0,.6)' }}>
         <button onClick={onClose} aria-label="Cerrar"
@@ -194,10 +194,10 @@ export default function Caracteristicas({ activo, onClose }) {
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {CHECKS.map(([k, label]) => (
                 <button type="button" key={k} onClick={() => set(k, !f[k])}
-                  style={{ padding: '7px 13px', borderRadius: 999, cursor: 'pointer', fontSize: '.8rem', fontWeight: 600,
-                           background: f[k] ? 'rgba(45,189,182,.18)' : 'rgba(255,255,255,.04)',
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 13px', borderRadius: 8, cursor: 'pointer', fontSize: '.8rem', fontWeight: 600,
+                           background: f[k] ? 'rgba(45,189,182,.18)' : 'var(--surface-2)',
                            border: `1px solid ${f[k] ? C.teal : C.line}`, color: f[k] ? C.tealHi : C.muted }}>
-                  {f[k] ? '✓ ' : ''}{label}
+                  {f[k] ? <Check size={13} /> : null}{label}
                 </button>
               ))}
             </div>
@@ -208,10 +208,10 @@ export default function Caracteristicas({ activo, onClose }) {
                 const on = (f.amenidades_edificio || []).includes(a)
                 return (
                   <button type="button" key={a} onClick={() => toggleArr('amenidades_edificio', a)}
-                    style={{ padding: '7px 13px', borderRadius: 999, cursor: 'pointer', fontSize: '.8rem', fontWeight: 600,
-                             background: on ? 'rgba(45,189,182,.18)' : 'rgba(255,255,255,.04)',
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 13px', borderRadius: 8, cursor: 'pointer', fontSize: '.8rem', fontWeight: 600,
+                             background: on ? 'rgba(45,189,182,.18)' : 'var(--surface-2)',
                              border: `1px solid ${on ? C.teal : C.line}`, color: on ? C.tealHi : C.muted }}>
-                    {on ? '✓ ' : ''}{a}
+                    {on && <Check size={13} />}{a}
                   </button>
                 )
               })}
@@ -223,10 +223,10 @@ export default function Caracteristicas({ activo, onClose }) {
                 const on = (f.incluye || []).includes(a)
                 return (
                   <button type="button" key={a} onClick={() => toggleArr('incluye', a)}
-                    style={{ padding: '7px 13px', borderRadius: 999, cursor: 'pointer', fontSize: '.8rem', fontWeight: 600,
-                             background: on ? 'rgba(45,189,182,.18)' : 'rgba(255,255,255,.04)',
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 13px', borderRadius: 8, cursor: 'pointer', fontSize: '.8rem', fontWeight: 600,
+                             background: on ? 'rgba(45,189,182,.18)' : 'var(--surface-2)',
                              border: `1px solid ${on ? C.teal : C.line}`, color: on ? C.tealHi : C.muted }}>
-                    {on ? '✓ ' : ''}{a}
+                    {on && <Check size={13} />}{a}
                   </button>
                 )
               })}
@@ -239,10 +239,11 @@ export default function Caracteristicas({ activo, onClose }) {
             </div>
 
             <div style={sec}>PRECIO Y GASTOS</div>
-            <div style={{ fontSize: '.72rem', color: C.muted, marginBottom: 8 }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '.72rem', color: C.muted, marginBottom: 8 }}>
+              <Info size={13} />
               {esVenta
-                ? '📌 Operación: VENTA — el precio es el valor total de venta del inmueble.'
-                : '📌 Operación: ARRIENDO — el precio es el canon mensual (lo que cobras al mes).'}
+                ? 'Operación: VENTA — el precio es el valor total de venta del inmueble.'
+                : 'Operación: ARRIENDO — el precio es el canon mensual (lo que cobras al mes).'}
             </div>
             <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
               <div style={{ flex: 1 }}>
@@ -256,10 +257,10 @@ export default function Caracteristicas({ activo, onClose }) {
               </div>
             </div>
             <button type="button" onClick={() => set('precio_negociable', !f.precio_negociable)}
-              style={{ marginTop: 10, padding: '7px 13px', borderRadius: 999, cursor: 'pointer', fontSize: '.8rem', fontWeight: 600,
-                       background: f.precio_negociable ? 'rgba(45,189,182,.18)' : 'rgba(255,255,255,.04)',
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 10, padding: '7px 13px', borderRadius: 8, cursor: 'pointer', fontSize: '.8rem', fontWeight: 600,
+                       background: f.precio_negociable ? 'rgba(45,189,182,.18)' : 'var(--surface-2)',
                        border: `1px solid ${f.precio_negociable ? C.teal : C.line}`, color: f.precio_negociable ? C.tealHi : C.muted }}>
-              {f.precio_negociable ? '✓ ' : ''}Precio negociable
+              {f.precio_negociable ? <Check size={13} /> : null}Precio negociable
             </button>
 
             {esVenta && (
@@ -278,7 +279,7 @@ export default function Caracteristicas({ activo, onClose }) {
 
             </fieldset>
 
-            {error && <div style={{ color: C.coral, fontSize: '.82rem', marginTop: 14 }}>⚠️ {error}</div>}
+            {error && <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: C.coral, fontSize: '.82rem', marginTop: 14 }}><AlertTriangle size={14} /> {error}</div>}
 
             {editando ? (
               <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
@@ -299,10 +300,10 @@ export default function Caracteristicas({ activo, onClose }) {
               </div>
             ) : (
               <button type="button" onClick={() => setEditando(true)}
-                style={{ width: '100%', marginTop: 20, padding: '13px', borderRadius: 12, cursor: 'pointer',
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', marginTop: 20, padding: '13px', borderRadius: 12, cursor: 'pointer',
                          border: `1px solid ${C.teal}`, background: 'rgba(45,189,182,.10)', color: C.tealHi,
                          fontWeight: 800, fontSize: '.92rem' }}>
-                ✏️ Editar
+                <Pencil size={15} /> Editar
               </button>
             )}
           </form>

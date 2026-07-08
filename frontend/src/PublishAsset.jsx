@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import axios from 'axios'
-import { X, MapPin, Check } from 'lucide-react'
+import { X, MapPin, Check, AlertTriangle } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import sphereLogo from './assets/sphere.svg'
 
 const C = {
-  bg: '#16151E', panel: '#1E1D28', teal: '#2DBDB6', tealHi: '#5EEAD4',
-  coral: '#E0685A', text: '#EDEBF2', muted: '#9C99AC', line: 'rgba(45,189,182,.25)',
+  bg: 'var(--bg)', panel: 'var(--surface-1)', teal: 'var(--teal)', tealHi: 'var(--teal-bright)',
+  coral: 'var(--coral)', text: 'var(--text)', muted: 'var(--text-mid)', line: 'var(--border)',
 }
 const TIPOS = ['Departamento', 'Casa', 'Local Comercial', 'Oficina', 'Quinta']
 
@@ -30,7 +30,7 @@ export default function PublishAsset({ onClose, existing = null }) {
 
   const inputStyle = {
     width: '100%', padding: '11px 13px', borderRadius: 12, marginTop: 6, boxSizing: 'border-box',
-    background: 'rgba(255,255,255,.04)', border: `1px solid ${C.line}`, color: C.text, fontSize: '.92rem', outline: 'none',
+    background: 'var(--surface-2)', border: `1px solid ${C.line}`, color: C.text, fontSize: '.92rem', outline: 'none',
   }
   const label = { fontSize: '.78rem', color: C.muted, fontWeight: 600 }
 
@@ -41,7 +41,7 @@ export default function PublishAsset({ onClose, existing = null }) {
       (pos) => {
         set('latitude', +pos.coords.latitude.toFixed(6))
         set('longitude', +pos.coords.longitude.toFixed(6))
-        setGeoMsg('📍 Ubicación capturada (estás en el inmueble)')
+        setGeoMsg('Ubicación capturada (estás en el inmueble)')
       },
       () => setGeoMsg('No se pudo obtener la ubicación (permiso denegado).'),
       { enableHighAccuracy: true, timeout: 10000 },
@@ -82,10 +82,10 @@ export default function PublishAsset({ onClose, existing = null }) {
   return (
     <div onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}
       style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center',
-               justifyContent: 'center', padding: 16, background: 'rgba(10,9,16,.72)', backdropFilter: 'blur(6px)' }}>
+               justifyContent: 'center', padding: 16, background: 'rgba(0,0,0,.5)', backdropFilter: 'blur(6px)' }}>
       <div onClick={(e) => e.stopPropagation()}
         style={{ width: '100%', maxWidth: 460, maxHeight: '92vh', overflowY: 'auto', position: 'relative',
-                 background: `radial-gradient(120% 90% at 30% 0%, ${C.panel} 0%, ${C.bg} 70%)`,
+                 background: C.panel,
                  border: `1px solid ${C.line}`, borderRadius: 22, padding: '26px 24px', color: C.text,
                  boxShadow: '0 24px 60px rgba(0,0,0,.55), 0 0 40px rgba(45,189,182,.12)' }}>
         <button onClick={onClose} aria-label="Cerrar"
@@ -100,7 +100,7 @@ export default function PublishAsset({ onClose, existing = null }) {
                           display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Check size={22} color={C.tealHi} />
             </div>
-            <h2 style={{ margin: '0 0 6px', fontSize: '1.2rem' }}>¡Inmueble publicado! 🎉</h2>
+            <h2 style={{ margin: '0 0 6px', fontSize: '1.2rem' }}>¡Inmueble publicado!</h2>
             <p style={{ fontSize: '.85rem', color: C.muted, margin: '0 0 16px' }}>
               Listo. Cada persona que escanee tu letrero llega con contexto verificado del lugar —y te llega como un
               interesado calificado, no como un “alguien preguntó”. Imprime el QR y pégalo en tu letrero; el agente atiende 24/7.
@@ -191,9 +191,9 @@ export default function PublishAsset({ onClose, existing = null }) {
                   <button type="button" onClick={usarUbicacion}
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '9px',
                              borderRadius: 12, cursor: 'pointer', fontSize: '.84rem',
-                             background: f.latitude ? 'rgba(45,189,182,.16)' : 'rgba(255,255,255,.04)',
+                             background: f.latitude ? 'rgba(45,189,182,.16)' : 'var(--surface-2)',
                              border: `1px solid ${f.latitude ? C.teal : C.line}`, color: f.latitude ? C.tealHi : C.text }}>
-                    <MapPin size={15} /> {f.latitude ? 'Ubicación capturada ✓' : 'Estoy en el inmueble — usar mi ubicación'}
+                    <MapPin size={15} /> {f.latitude ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>Ubicación capturada <Check size={14} /></span> : 'Estoy en el inmueble — usar mi ubicación'}
                   </button>
                   {geoMsg && <div style={{ fontSize: '.74rem', color: C.muted }}>{geoMsg}</div>}
                   <div style={{ fontSize: '.72rem', color: C.muted, marginTop: -4 }}>
@@ -207,7 +207,7 @@ export default function PublishAsset({ onClose, existing = null }) {
                 </div>
               )}
 
-              {error && <div style={{ color: C.coral, fontSize: '.82rem' }}>⚠️ {error}</div>}
+              {error && <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: C.coral, fontSize: '.82rem' }}><AlertTriangle size={14} /> {error}</div>}
 
               <button type="submit" disabled={loading}
                 style={{ marginTop: 4, padding: '12px', borderRadius: 12, border: 'none',

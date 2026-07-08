@@ -18,6 +18,10 @@ const ESTADO_LBL = {
 }
 const ORDEN = ['anonimo', 'identificado', 'explorando', 'enganchado', 'intencion',
   'confirmado', 'completado', 'returning', 'dormido']
+// Etapas EN CURSO del embudo: donde un interesado puede quedarse ATASCADO antes de pedir corredor.
+// El 'cuello' (foco embudo) se busca SOLO aquí — NO en resultados/terminales (confirmado/completado/
+// returning/dormido): responder "¿dónde se atasca?" con "en Completado" seria engañoso.
+const EN_CURSO = ['identificado', 'explorando', 'enganchado', 'intencion']
 
 const card = { border: `1px solid ${C.line}`, borderRadius: 14, padding: '14px 16px', background: C.panel, minWidth: 0 }
 const titulo = { fontSize: '.72rem', fontWeight: 700, letterSpacing: .4, textTransform: 'uppercase', color: C.muted, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }
@@ -73,6 +77,30 @@ export default function AnalisisPanel({ onVolver, panelSeed } = {}) {
     boxShadow: cardFoco === key ? `0 0 0 1px ${C.teal}, 0 10px 34px rgba(45,189,182,.16)` : 'none',
   })
 
+  // Resalte DENTRO del foco (Fase B): derivado del payload de /metricas/lift que el panel YA tiene →
+  // HONESTO por construcción (el resalte y el caption SIEMPRE cuadran con el número mostrado; sin LLM,
+  // sin inventar, sin fail-close necesario). El 'cuello' es la etapa EN CURSO (no terminal) donde se
+  // CONCENTRAN más interesados — descriptivo y honesto a la pregunta "¿dónde se atasca?" (jamás resalta
+  // un resultado como Completado). Sin etapas en curso con datos → null (no hay cuello que mostrar).
+  const filasCuello = filas.filter(e => EN_CURSO.includes(e))
+  const cuello = filasCuello.length ? filasCuello.reduce((a, e) => (funnel[e] > funnel[a] ? e : a), filasCuello[0]) : null
+  const resaltaEtapa = foco === 'embudo' ? cuello : null
+  const h = data?.handoff
+  const focoCaption = (() => {
+    if (foco === 'handoff' && h) {
+      return (h.status === 'acumulando' || h.tasa == null)
+        ? `${h.n} de ${h.de} pidieron corredor · acumulando`          // N chico → conteo, NUNCA un %
+        : `${Math.round(h.tasa * 100)}% pidió corredor (${h.n} de ${h.de})`
+    }
+    if (foco === 'embudo' && cuello) return `el grueso está en ${ESTADO_LBL[cuello] || cuello} (${funnel[cuello]})`
+    if (foco === 'cohortes') return `${coh.maduros ?? 0} maduros · ${coh.en_vuelo ?? 0} en vuelo`
+    if (foco === 'reenganche') {
+      const n = (reeng.tocado?.n || 0) + (reeng.holdout?.n || 0)
+      return n === 0 ? 'aún sin dormidos elegibles' : `${n} en el experimento de lift`
+    }
+    return null
+  })()
+
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       {onVolver && (
@@ -90,23 +118,32 @@ export default function AnalisisPanel({ onVolver, panelSeed } = {}) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: '.7rem', color: C.muted, padding: '0 2px', flexShrink: 0 }}>
         <Compass size={12} color={C.tealHi} />
         <span>En foco: <strong style={{ color: C.tealHi }}>{FOCO_LBL[foco] || foco}</strong></span>
-        {panelSeed?.caption && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>· {panelSeed.caption}</span>}
+        {(panelSeed?.caption || focoCaption) && (
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>· {panelSeed?.caption || focoCaption}</span>
+        )}
       </div>
       {/* Embudo — el gráfico estrella */}
       <div style={{ ...card, ...fx('funnel') }}>
         <div style={titulo}><TrendingUp size={13} color={C.teal} /> Embudo de intención · {data.total_leads} interesados</div>
         {filas.length === 0 && <div style={{ color: C.muted, fontSize: '.85rem' }}>Aún sin interesados con etapa.</div>}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-          {filas.map(e => (
-            <div key={e} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 96, flexShrink: 0, fontSize: '.78rem', color: C.text }}>{ESTADO_LBL[e] || e}</div>
-              <div style={{ flex: 1, height: 22, borderRadius: 6, background: 'rgba(255,255,255,.04)', overflow: 'hidden' }}>
-                <div style={{ width: `${Math.max(6, (funnel[e] / maxF) * 100)}%`, height: '100%',
-                              background: `linear-gradient(90deg, ${C.teal}, ${C.tealHi})`, borderRadius: 6 }} />
+          {filas.map(e => {
+            const on = e === resaltaEtapa   // la etapa-cuello, cuando el foco es 'embudo'
+            return (
+              <div key={e} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 96, flexShrink: 0, fontSize: '.78rem', transition: 'color .4s ease',
+                              color: on ? C.tealHi : C.text, fontWeight: on ? 700 : 400 }}>{ESTADO_LBL[e] || e}</div>
+                <div style={{ flex: 1, height: 22, borderRadius: 6, background: 'rgba(255,255,255,.04)', overflow: 'hidden',
+                              boxShadow: on ? `0 0 0 1px ${C.tealHi}` : 'none', transition: 'box-shadow .4s ease' }}>
+                  <div style={{ width: `${Math.max(6, (funnel[e] / maxF) * 100)}%`, height: '100%', borderRadius: 6,
+                                transition: 'background .4s ease',
+                                background: on ? `linear-gradient(90deg, ${C.tealHi}, #8FF5E9)` : `linear-gradient(90deg, ${C.teal}, ${C.tealHi})` }} />
+                </div>
+                <div style={{ width: 26, textAlign: 'right', fontWeight: 700, fontSize: '.82rem',
+                              color: on ? C.tealHi : C.text }}>{funnel[e]}</div>
               </div>
-              <div style={{ width: 26, textAlign: 'right', fontWeight: 700, fontSize: '.82rem' }}>{funnel[e]}</div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
 
@@ -138,7 +175,7 @@ export default function AnalisisPanel({ onVolver, panelSeed } = {}) {
       <div style={{ ...card, ...fx('cohortes') }}>
         <div style={titulo}><Layers size={13} color={C.teal} /> Cohortes</div>
         <div style={{ display: 'flex', gap: 20, fontSize: '.85rem' }}>
-          <div><strong style={{ color: C.text, fontSize: '1.2rem' }}>{coh.maduros ?? 0}</strong> <span style={{ color: C.muted }}>maduros</span></div>
+          <div><strong style={{ color: foco === 'cohortes' ? C.tealHi : C.text, fontSize: '1.2rem', transition: 'color .4s ease' }}>{coh.maduros ?? 0}</strong> <span style={{ color: C.muted }}>maduros</span></div>
           <div><strong style={{ color: C.text, fontSize: '1.2rem' }}>{coh.en_vuelo ?? 0}</strong> <span style={{ color: C.muted }}>en vuelo</span></div>
         </div>
         {coh._nota && <div style={{ color: C.muted, fontSize: '.7rem', marginTop: 8 }}>{coh._nota}</div>}

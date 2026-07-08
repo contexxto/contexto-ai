@@ -22,7 +22,7 @@ export default function AttachSheet({ onClose, onPickPhoto }) {
   }
 
   const card = {
-    background: 'var(--surface-3)', border: '1px solid var(--border)', borderRadius: 16,
+    background: 'var(--surface-3)', border: '1px solid var(--border)', borderRadius: 13,
     height: 122, display: 'flex', flexDirection: 'column', alignItems: 'center',
     justifyContent: 'center', gap: 13, cursor: 'pointer', color: 'var(--text)',
   }
@@ -46,7 +46,7 @@ export default function AttachSheet({ onClose, onPickPhoto }) {
         position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 61,
         maxWidth: 560, margin: '0 auto',
         background: 'var(--surface-1)', borderTop: '1px solid var(--border)',
-        borderRadius: '24px 24px 0 0', padding: '22px 20px 30px',
+        borderRadius: '18px 18px 0 0', padding: '22px 20px 30px',
         boxShadow: '0 -22px 50px rgba(0,0,0,.55)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>

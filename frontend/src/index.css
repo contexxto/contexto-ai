@@ -1,14 +1,14 @@
 /* ==========================================================================
    CONTEXTO AI · DESIGN TOKENS · Aura Direction (identidad oficial aprobada)
    ========================================================================== */
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
   /* ---- Tipografía ---- */
-  --font-display: 'Plus Jakarta Sans', system-ui, sans-serif;
-  --font-body:    'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-display: 'Inter', system-ui, sans-serif;
+  --font-body:    'Inter', system-ui, sans-serif;
   --font-mono:    'IBM Plex Mono', ui-monospace, monospace;
 
   /* ---- Marca: Teal ---- */
@@ -22,12 +22,13 @@
   --coral-deep:  #B84A3E;
 
   /* ---- Superficies ---- */
-  --bg:          #0E0D13;
-  --surface:     #16151E;   /* alias compat app (= surface-1) */
-  --surface-1:   #16151E;
-  --surface-2:   #1E1D28;
-  --surface-3:   #262533;
-  --border:      #2E2D3A;
+  /* Superficies gris-neutro (estilo ASI:One) — sin el tinte morado anterior */
+  --bg:          #0E0E10;
+  --surface:     #17171A;   /* alias compat app (= surface-1) */
+  --surface-1:   #17171A;
+  --surface-2:   #202024;
+  --surface-3:   #2A2A2F;
+  --border:      #2C2C31;
 
   /* ---- Texto ---- */
   --text:        #F0ECE6;

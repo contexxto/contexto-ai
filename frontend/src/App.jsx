@@ -1425,7 +1425,7 @@ export default function App() {
         <div style={{
           display:'flex', gap:8, alignItems:'center',
           background:'var(--surface-1)',
-          border:`1px solid ${listening ? 'var(--teal)' : 'var(--border)'}`, borderRadius:22, padding:'8px 8px 8px 10px',
+          border:`1px solid ${listening ? 'var(--teal)' : 'var(--border)'}`, borderRadius:16, padding:'8px 8px 8px 10px',
           transition:'border-color .2s',
         }}>
           {/* Ubicación: compartir / quitar (se conserva el toggle de geo) */}

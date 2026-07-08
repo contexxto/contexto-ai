@@ -33,7 +33,7 @@ function Chip({ icon: Icon, label, onClick }) {
       onMouseLeave={() => setHover(false)}
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 9, whiteSpace: 'nowrap',
-        padding: '11px 16px', borderRadius: 13, cursor: 'pointer',
+        padding: '11px 16px', borderRadius: 10, cursor: 'pointer',
         background: hover ? 'var(--surface-3)' : 'var(--surface-2)',
         border: '1px solid var(--border)', color: 'var(--text)',
         fontSize: '.9rem', fontWeight: 500, fontFamily: 'inherit',
@@ -87,7 +87,7 @@ export default function Launcher({ onSend, onAnalyzeLocation, onOpenMap, onBroke
         disabled={geoLoading}
         style={{
           display: 'inline-flex', alignItems: 'center', gap: 10,
-          padding: '14px 26px', borderRadius: 15, border: 'none',
+          padding: '14px 26px', borderRadius: 12, border: 'none',
           cursor: geoLoading ? 'default' : 'pointer',
           background: 'var(--teal-bright)', color: '#06201C',
           fontWeight: 700, fontSize: '1rem', fontFamily: 'inherit',

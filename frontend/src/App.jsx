@@ -1423,37 +1423,22 @@ export default function App() {
           )
         )}
         <div style={{
-          display:'flex', gap:8, alignItems:'center',
           background:'var(--surface-1)',
-          border:`1px solid ${listening ? 'var(--teal)' : 'var(--border)'}`, borderRadius:16, padding:'8px 8px 8px 10px',
+          border:`1px solid ${listening ? 'var(--teal)' : 'var(--border)'}`, borderRadius:16, padding:'12px 14px',
           transition:'border-color .2s',
         }}>
-          {/* Ubicación: compartir / quitar (se conserva el toggle de geo) */}
-          <button
-            onClick={toggleGeo}
-            disabled={geoLoading}
-            title={geo ? 'Ubicación activa — toca para quitar' : 'Compartir mi ubicación'}
-            style={{
-              background:'none', border:'none', borderRadius:999, width:34, height:34, flexShrink:0, cursor:'pointer',
-              display:'flex', alignItems:'center', justifyContent:'center',
-              color: geo ? 'var(--teal-bright)' : 'var(--text-muted)', transition:'color .15s',
-            }}
-          >
-            {geoLoading
-              ? <RefreshCw size={18} style={{ animation:'spin 1s linear infinite' }}/>
-              : <MapPin size={18}/>}
-          </button>
-          {/* "+" Adjuntar → hoja Cámara/Fotos/Subir → búsqueda visual del inventario */}
-          <button
-            onClick={() => setAttachOpen(true)}
-            title="Adjuntar — busca en el inventario por foto"
-            style={{
-              background:'none', border:'none', borderRadius:999, width:34, height:34, flexShrink:0, cursor:'pointer',
-              display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text-muted)',
-            }}
-          >
-            <Plus size={20}/>
-          </button>
+          {/* Fila "Para:" — selector de destino, estilo ASI:One */}
+          <div style={{ display:'flex', alignItems:'center', gap:9, marginBottom:11 }}>
+            <span style={{ fontSize:'.78rem', color:'var(--text-dim)' }}>Para:</span>
+            <span style={{ display:'inline-flex', alignItems:'center', gap:7, padding:'5px 11px', borderRadius:999,
+                           border:'1px solid var(--border)', background:'var(--surface-2)' }}>
+              <img src={sphereLogo} alt="" width={14} height={14} style={{ display:'block' }} />
+              <span style={{ fontSize:'.8rem', fontWeight:600, color:'var(--text)' }}>Contexto</span>
+              <span style={{ fontSize:'.74rem', color:'var(--text-dim)' }}>AI</span>
+            </span>
+          </div>
+          <div style={{ height:1, background:'var(--border)', margin:'0 -14px 12px' }} />
+          {/* Campo en su propia línea (como "Ask anything") */}
           <textarea
             ref={inputRef}
             value={input}
@@ -1465,47 +1450,76 @@ export default function App() {
             disabled={loading}
             rows={1}
             style={{
-              flex:1, background:'none', border:'none', outline:'none',
-              color:'var(--text)', fontSize:'.95rem', resize:'none',
-              lineHeight:1.6, maxHeight:120, overflowY:'auto',
-              fontFamily:'inherit', padding:'6px 0',
+              display:'block', width:'100%', background:'none', border:'none', outline:'none',
+              color:'var(--text)', fontSize:'.98rem', resize:'none',
+              lineHeight:1.5, maxHeight:120, overflowY:'auto',
+              fontFamily:'inherit', marginBottom:12,
             }}
             onInput={e => {
               e.target.style.height = 'auto'
               e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'
             }}
           />
-          {/* Voz (vacío) ↔ Enviar (con texto), como ASI:One */}
-          {input.trim() ? (
-            <button
-              onClick={() => sendMessage()}
-              disabled={loading}
-              title="Enviar"
-              style={{
-                background:'var(--teal-bright)', border:'none', borderRadius:999,
-                width:44, height:44, flexShrink:0, cursor: loading ? 'default' : 'pointer',
-                display:'flex', alignItems:'center', justifyContent:'center', color:'#06201C',
-              }}
-            >
-              {loading
-                ? <RefreshCw size={18} style={{ animation:'spin 1s linear infinite' }}/>
-                : <ArrowUp size={20}/>}
-            </button>
-          ) : (
-            <button
-              onClick={startVoice}
-              title={listening ? 'Escuchando… toca para detener' : 'Hablar (dictado por voz)'}
-              style={{
-                display:'inline-flex', alignItems:'center', gap:8, flexShrink:0,
-                padding:'10px 16px', borderRadius:999, border:'none', cursor:'pointer',
-                background: listening ? 'var(--teal)' : 'var(--teal-bright)', color:'#06201C',
-                fontWeight:600, fontSize:'.9rem', fontFamily:'inherit',
-                animation: listening ? 'pulseGlow 1.2s ease-in-out infinite' : 'none',
-              }}
-            >
-              <AudioLines size={17}/> Voz
-            </button>
-          )}
+          {/* Fila inferior: ubicación + "+" (izq) · Voz/Enviar (der) */}
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+              <button
+                onClick={toggleGeo}
+                disabled={geoLoading}
+                title={geo ? 'Ubicación activa — toca para quitar' : 'Compartir mi ubicación'}
+                style={{
+                  background:'none', border:'none', borderRadius:999, width:34, height:34, flexShrink:0, cursor:'pointer',
+                  display:'flex', alignItems:'center', justifyContent:'center',
+                  color: geo ? 'var(--teal-bright)' : 'var(--text-muted)', transition:'color .15s',
+                }}
+              >
+                {geoLoading
+                  ? <RefreshCw size={18} style={{ animation:'spin 1s linear infinite' }}/>
+                  : <MapPin size={18}/>}
+              </button>
+              <button
+                onClick={() => setAttachOpen(true)}
+                title="Adjuntar — busca en el inventario por foto"
+                style={{
+                  background:'none', border:'none', borderRadius:999, width:34, height:34, flexShrink:0, cursor:'pointer',
+                  display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text-muted)',
+                }}
+              >
+                <Plus size={20}/>
+              </button>
+            </div>
+            {/* Voz (vacío) ↔ Enviar (con texto), como ASI:One */}
+            {input.trim() ? (
+              <button
+                onClick={() => sendMessage()}
+                disabled={loading}
+                title="Enviar"
+                style={{
+                  background:'var(--teal-bright)', border:'none', borderRadius:999,
+                  width:44, height:44, flexShrink:0, cursor: loading ? 'default' : 'pointer',
+                  display:'flex', alignItems:'center', justifyContent:'center', color:'#06201C',
+                }}
+              >
+                {loading
+                  ? <RefreshCw size={18} style={{ animation:'spin 1s linear infinite' }}/>
+                  : <ArrowUp size={20}/>}
+              </button>
+            ) : (
+              <button
+                onClick={startVoice}
+                title={listening ? 'Escuchando… toca para detener' : 'Hablar (dictado por voz)'}
+                style={{
+                  display:'inline-flex', alignItems:'center', gap:8, flexShrink:0,
+                  padding:'10px 16px', borderRadius:999, border:'none', cursor:'pointer',
+                  background: listening ? 'var(--teal)' : 'var(--teal-bright)', color:'#06201C',
+                  fontWeight:600, fontSize:'.9rem', fontFamily:'inherit',
+                  animation: listening ? 'pulseGlow 1.2s ease-in-out infinite' : 'none',
+                }}
+              >
+                <AudioLines size={17}/> Voz
+              </button>
+            )}
+          </div>
         </div>
         {listening && (
           <div style={{ marginTop:8, fontSize:'.72rem', color:'var(--teal)',

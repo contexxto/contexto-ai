@@ -57,7 +57,7 @@ export default function Launcher({ onSend, onAnalyzeLocation, onOpenMap, onBroke
   return (
     <div style={{
       display: 'flex', flexDirection: 'column', alignItems: 'center',
-      paddingTop: isMobile ? 34 : 70, textAlign: 'center',
+      paddingTop: isMobile ? 90 : 110, textAlign: 'center',
     }}>
       <h1 style={{
         fontFamily: 'var(--font-display)', fontWeight: 800,

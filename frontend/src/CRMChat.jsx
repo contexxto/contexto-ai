@@ -135,7 +135,7 @@ function CRMChat({ onClose, lead, modo = 'copiloto', onPanelSeed } = {}, ref) {
 
   const bubble = (autor) => autor === 'corredor'
     ? { align: 'flex-end', bg: 'linear-gradient(90deg,#2DBDB6,#5EEAD4)', color: '#0E0D13', lbl: 'Tú' }
-    : { align: 'flex-start', bg: 'rgba(255,255,255,.05)', color: C.text, lbl: titulo }
+    : { align: 'flex-start', bg: 'var(--ai-bg)', color: C.text, lbl: titulo }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
@@ -255,7 +255,7 @@ function CRMChat({ onClose, lead, modo = 'copiloto', onPanelSeed } = {}, ref) {
       {error && <div style={{ color: '#E0685A', fontSize: '.76rem', textAlign: 'center', marginTop: 8, flexShrink: 0 }}>⚠️ {error}</div>}
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginTop: 10, flexShrink: 0,
-                    background: 'rgba(20,44,43,.5)', border: `1px solid ${C.line}`, borderRadius: 20, padding: 7 }}>
+                    background: 'var(--surface-2)', border: `1px solid ${C.line}`, borderRadius: 20, padding: 7 }}>
         <textarea value={texto} onChange={e => setTexto(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviar() } }}
           placeholder={esEstratega ? 'Pregúntale a tu Estratega…' : (nom ? `Pregúntame sobre ${nom}…` : 'Pregúntale a tu Copiloto…')} rows={1}

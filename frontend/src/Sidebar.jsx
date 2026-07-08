@@ -1,10 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import axios from 'axios'
-import { Plus, Pin, PinOff, Pencil, Trash2, MoreHorizontal, MessageSquare, LogIn, LogOut, Home, Map, Shield, Users, Briefcase } from 'lucide-react'
+import { Plus, Pin, PinOff, Pencil, Trash2, MoreHorizontal, MessageSquare, LogOut, Home, Map, Shield, Users, Briefcase, Sun, PanelLeft } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
+import sphereLogo from './assets/sphere.svg'
 
+// Paleta EXACTA de ASI:One (inspeccionada en asi1.ai) — misma que el launcher.
 const C = {
-  bg: '#0B0A10', border: '#2E2D3A', text: '#F0ECE6', dim: '#A8A3B3', accent: '#2DBDB6', active: '#1E1D28',
+  bg: '#1C1C1C', surface: '#282828', surface2: '#2E2E2E', border: '#404040',
+  text: '#FFFFFF', dim: '#C9C9C9', faint: '#8C8C8C', accent: '#5EEAD4', danger: '#E0685A',
+  active: '#2E2E2E',
 }
 
 // Quita el bloque interno "[Contexto del sistema: …]" que pudo colarse al
@@ -15,7 +19,7 @@ function tituloLimpio(t) {
   return (i === -1 ? t : t.slice(0, i)).trim() || 'Conversación'
 }
 
-export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, onLogin, onLogout, onPublish, onMap, onReview, onCRM, onUpgrade }) {
+export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, onLogin, onLogout, onPublish, onMap, onReview, onCRM, onUpgrade, mobile, onClose }) {
   const [sessions, setSessions] = useState([])
   const [menuId, setMenuId] = useState(null)
   const [editingId, setEditingId] = useState(null)
@@ -87,7 +91,7 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, o
           padding: '8px 10px', borderRadius: 8, cursor: 'pointer', marginBottom: 2,
           background: active ? C.active : 'transparent',
         }}
-        onMouseEnter={e => { if (!active) e.currentTarget.style.background = '#1E1D28' }}
+        onMouseEnter={e => { if (!active) e.currentTarget.style.background = C.surface2 }}
         onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent' }}>
         <MessageSquare size={14} color={C.dim} style={{ flexShrink: 0 }} />
         {editing ? (
@@ -96,7 +100,7 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, o
             onBlur={() => commitRename(s.session_id)}
             onKeyDown={e => { if (e.key === 'Enter') commitRename(s.session_id); if (e.key === 'Escape') setEditingId(null) }}
             onClick={e => e.stopPropagation()}
-            style={{ flex: 1, background: '#16151E', color: C.text, border: `1px solid ${C.accent}`, borderRadius: 5, padding: '3px 6px', fontSize: '.84rem' }} />
+            style={{ flex: 1, background: C.surface, color: C.text, border: `1px solid ${C.accent}`, borderRadius: 5, padding: '3px 6px', fontSize: '.84rem', fontFamily: 'inherit' }} />
         ) : (
           <span style={{ flex: 1, fontSize: '.84rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: C.text }}>
             {s.pinned && <Pin size={11} color={C.accent} style={{ marginRight: 4, verticalAlign: 'middle' }} />}
@@ -114,7 +118,7 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, o
           <div onClick={e => e.stopPropagation()}
             style={{
               position: 'absolute', right: 6, top: '100%', zIndex: 30, width: 160,
-              background: '#1E1D28', border: `1px solid ${C.border}`, borderRadius: 8,
+              background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 8,
               boxShadow: '0 8px 24px rgba(0,0,0,.5)', overflow: 'hidden',
             }}>
             <MenuItem icon={<Pencil size={14} />} label="Renombrar"
@@ -130,88 +134,132 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, o
 
   return (
     <div style={{
-      width: 264, flexShrink: 0, height: '100%', background: C.bg,
-      borderRight: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', padding: 10,
+      width: mobile ? '100vw' : 300, flexShrink: 0, height: '100%', background: C.bg,
+      borderRight: mobile ? 'none' : `1px solid ${C.border}`, display: 'flex', flexDirection: 'column',
     }}>
-      <button onClick={onNew}
-        style={{
-          display: 'flex', alignItems: 'center', gap: 8, width: '100%', justifyContent: 'center',
-          padding: '9px 12px', borderRadius: 8, cursor: 'pointer', marginBottom: 12,
-          background: C.accent, color: '#fff', border: 'none', fontSize: '.85rem', fontWeight: 600,
-        }}>
-        <Plus size={16} /> Nuevo chat
-      </button>
-
-      {/* Acciones (estilo Claude: arriba a la izquierda) */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 10 }}>
-        <NavItem icon={<Home size={16} />} label="Mis publicaciones" onClick={onPublish} />
-        <NavItem icon={<Map size={16} />} label="Mapa" onClick={onMap} />
-        {(user?.rol === 'corredor' || user?.rol === 'inmobiliaria') && (
-          <>
-            <NavItem icon={<Users size={16} />} label="CRM" onClick={onCRM} />
-            <NavItem icon={<Shield size={16} />} label="Revisión" onClick={onReview} />
-          </>
-        )}
-        {user && user.rol !== 'corredor' && user.rol !== 'inmobiliaria' && onUpgrade && (
-          <NavItem icon={<Briefcase size={16} />} label="Conviértete en corredor" onClick={onUpgrade} />
+      {/* Header con logo (como ASI:One) */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '16px 18px 14px', borderBottom: `1px solid ${C.border}` }}>
+        <img src={sphereLogo} alt="" width={22} height={22} style={{ display: 'block' }} />
+        <span style={{ fontSize: '1.05rem', fontWeight: 800, color: C.text, letterSpacing: '-.02em' }}>Contexto</span>
+        {mobile && onClose && (
+          <button onClick={onClose} title="Cerrar menú"
+            style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: C.dim, display: 'flex', padding: 4 }}>
+            <PanelLeft size={20} />
+          </button>
         )}
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto' }}>
-        {sessions.length === 0 && (
-          <div style={{ color: C.dim, fontSize: '.8rem', padding: '8px 4px' }}>Sin conversaciones aún.</div>
-        )}
-        {pinned.length > 0 && (
-          <>
-            <div style={sectionLabel}>Fijadas</div>
-            {pinned.map(Row)}
-            <div style={{ height: 10 }} />
-          </>
-        )}
-        {recientes.length > 0 && <div style={sectionLabel}>Recientes</div>}
-        {recientes.map(Row)}
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, padding: '12px 12px 0' }}>
+        {/* Nuevo chat — botón discreto (ASI no lo pone en verde; el teal se reserva para acciones) */}
+        <button onClick={onNew}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 9, width: '100%',
+            padding: '11px 14px', borderRadius: 10, cursor: 'pointer', marginBottom: 8,
+            background: C.surface, color: C.text, border: `1px solid ${C.border}`, fontSize: '.9rem', fontWeight: 600, fontFamily: 'inherit',
+          }}
+          onMouseEnter={e => e.currentTarget.style.background = C.surface2}
+          onMouseLeave={e => e.currentTarget.style.background = C.surface}>
+          <Plus size={17} /> Nuevo chat
+        </button>
+
+        {/* Nav aireada */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 8 }}>
+          <NavItem icon={<Home size={17} />} label="Mis inmuebles" onClick={onPublish} />
+          <NavItem icon={<Map size={17} />} label="Mapa Vivo" onClick={onMap} />
+          {(user?.rol === 'corredor' || user?.rol === 'inmobiliaria') && (
+            <>
+              <NavItem icon={<Users size={17} />} label="CRM" onClick={onCRM} />
+              <NavItem icon={<Shield size={17} />} label="Revisión" onClick={onReview} />
+            </>
+          )}
+          {user && user.rol !== 'corredor' && user.rol !== 'inmobiliaria' && onUpgrade && (
+            <NavItem icon={<Briefcase size={17} />} label="Conviértete en corredor" onClick={onUpgrade} />
+          )}
+        </div>
+
+        {/* Conversaciones */}
+        <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+          {sessions.length === 0 && (
+            <div style={{ color: C.faint, fontSize: '.8rem', padding: '8px 4px' }}>Sin conversaciones aún.</div>
+          )}
+          {pinned.length > 0 && (
+            <>
+              <div style={sectionLabel}>Fijadas</div>
+              {pinned.map(Row)}
+              <div style={{ height: 10 }} />
+            </>
+          )}
+          {recientes.length > 0 && <div style={sectionLabel}>Recientes</div>}
+          {recientes.map(Row)}
+        </div>
       </div>
 
-      {/* Cuenta (al fondo, estilo Claude) */}
-      <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 10, marginTop: 6 }}>
+      {/* Footer: cuenta + Modo claro + legal (como ASI) */}
+      <div style={{ borderTop: `1px solid ${C.border}`, padding: '10px 12px 12px' }}>
         {user ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 8 }}>
             <div style={{
               width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
-              background: 'linear-gradient(135deg,#2DBDB6,#E0685A)', color: '#0B0A10',
+              background: C.accent, color: '#06201C',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontWeight: 800, fontSize: '.85rem',
             }}>
               {(user.email || '?').trim()[0]?.toUpperCase()}
             </div>
             <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ fontSize: '.78rem', color: C.text, overflow: 'hidden',
+              <div style={{ fontSize: '.8rem', color: C.text, overflow: 'hidden',
                             textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email}</div>
               {user.rol && (
-                <div style={{ fontSize: '.68rem', color: C.dim, textTransform: 'capitalize' }}>{user.rol}</div>
+                <div style={{ fontSize: '.7rem', color: C.dim, textTransform: 'capitalize' }}>{user.rol}</div>
               )}
             </div>
             <button onClick={onLogout} title="Cerrar sesión"
               style={{
-                background: 'rgba(224,104,90,.10)', border: '1px solid rgba(224,104,90,.25)',
-                borderRadius: 8, cursor: 'pointer', color: '#E0685A',
-                display: 'flex', alignItems: 'center', gap: 5,
-                padding: '6px 10px', fontSize: '.75rem', fontWeight: 600, flexShrink: 0,
+                background: 'none', border: 'none', borderRadius: 8, cursor: 'pointer', color: C.dim,
+                display: 'flex', alignItems: 'center', padding: 7, flexShrink: 0,
               }}>
-              <LogOut size={13} /> Salir
+              <LogOut size={16} />
             </button>
           </div>
         ) : (
-          <button onClick={onLogin}
-            style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, width: '100%',
-              padding: '9px 12px', borderRadius: 8, cursor: 'pointer',
-              background: 'transparent', border: `1px solid ${C.accent}`, color: C.accent,
-              fontSize: '.85rem', fontWeight: 600,
-            }}>
-            <LogIn size={15} /> Entrar
-          </button>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+            <button onClick={onLogin}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                padding: '11px 12px', borderRadius: 10, cursor: 'pointer',
+                background: 'transparent', border: `1px solid ${C.border}`, color: C.text,
+                fontSize: '.86rem', fontWeight: 600, fontFamily: 'inherit',
+              }}>
+              Ingresar
+            </button>
+            <button onClick={onLogin}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                padding: '11px 12px', borderRadius: 10, cursor: 'pointer',
+                background: C.accent, border: 'none', color: '#06201C',
+                fontSize: '.86rem', fontWeight: 700, fontFamily: 'inherit',
+              }}>
+              Registrarse
+            </button>
+          </div>
         )}
+
+        {/* Modo claro (visual; el tema claro llega en una fase aparte) */}
+        <button title="Modo claro — próximamente"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 8px',
+            borderRadius: 8, cursor: 'default', background: 'none', border: 'none',
+            color: C.faint, fontSize: '.82rem', textAlign: 'left', fontFamily: 'inherit',
+          }}>
+          <Sun size={16} /> Modo claro
+          <span style={{ marginLeft: 'auto', fontSize: '.64rem', color: C.faint,
+                         border: `1px solid ${C.border}`, borderRadius: 999, padding: '2px 7px' }}>Pronto</span>
+        </button>
+
+        {/* Footer legal / marca */}
+        <div style={{ fontSize: '.68rem', color: C.faint, lineHeight: 1.6, padding: '8px 8px 0' }}>
+          Cada lugar tiene un aura · <span style={{ color: C.dim }}>Términos</span> · <span style={{ color: C.dim }}>Privacidad</span>
+        </div>
       </div>
 
       {/* Confirmación propia de borrado (en lugar del confirm() nativo del navegador) */}
@@ -220,20 +268,20 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, o
           style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,.55)',
                    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div onClick={e => e.stopPropagation()}
-            style={{ width: 'min(360px, 100%)', background: '#16151E', border: `1px solid ${C.border}`,
+            style={{ width: 'min(360px, 100%)', background: C.surface, border: `1px solid ${C.border}`,
                      borderRadius: 14, padding: '18px', boxShadow: '0 12px 40px rgba(0,0,0,.6)',
-                     fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+                     fontFamily: 'inherit' }}>
             <div style={{ color: C.text, fontWeight: 700, fontSize: '.95rem', marginBottom: 6 }}>Eliminar conversación</div>
             <div style={{ color: C.dim, fontSize: '.84rem', lineHeight: 1.5, marginBottom: 16 }}>
               Se quitará <b style={{ color: C.text }}>"{tituloLimpio(porEliminar.titulo)}"</b> de tu lista.
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button onClick={() => setPorEliminar(null)}
-                style={{ padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: '.84rem',
+                style={{ padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: '.84rem', fontFamily: 'inherit',
                          background: 'transparent', border: `1px solid ${C.border}`, color: C.text }}>Cancelar</button>
               <button onClick={confirmarEliminar}
-                style={{ padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: '.84rem', fontWeight: 600,
-                         background: '#E0685A', border: 'none', color: '#0E0D13' }}>Eliminar</button>
+                style={{ padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: '.84rem', fontWeight: 600, fontFamily: 'inherit',
+                         background: C.danger, border: 'none', color: '#0E0D13' }}>Eliminar</button>
             </div>
           </div>
         </div>
@@ -246,12 +294,12 @@ function NavItem({ icon, label, onClick }) {
   return (
     <button onClick={onClick}
       style={{
-        display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 10px',
+        display: 'flex', alignItems: 'center', gap: 11, width: '100%', padding: '10px 10px',
         borderRadius: 8, cursor: 'pointer', background: 'none', border: 'none',
-        color: '#A8A3B3', fontSize: '.85rem', textAlign: 'left', transition: 'all .12s',
+        color: C.dim, fontSize: '.88rem', textAlign: 'left', transition: 'all .12s', fontFamily: 'inherit',
       }}
-      onMouseEnter={e => { e.currentTarget.style.background = '#1E1D28'; e.currentTarget.style.color = '#F0ECE6' }}
-      onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = '#A8A3B3' }}>
+      onMouseEnter={e => { e.currentTarget.style.background = C.surface2; e.currentTarget.style.color = C.text }}
+      onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = C.dim }}>
       {icon} {label}
     </button>
   )
@@ -262,10 +310,10 @@ function MenuItem({ icon, label, onClick, danger }) {
     <button onClick={onClick}
       style={{
         display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 12px',
-        background: 'none', border: 'none', cursor: 'pointer', fontSize: '.82rem',
-        color: danger ? '#E0685A' : '#F0ECE6', textAlign: 'left',
+        background: 'none', border: 'none', cursor: 'pointer', fontSize: '.82rem', fontFamily: 'inherit',
+        color: danger ? C.danger : C.text, textAlign: 'left',
       }}
-      onMouseEnter={e => e.currentTarget.style.background = '#262533'}
+      onMouseEnter={e => e.currentTarget.style.background = C.border}
       onMouseLeave={e => e.currentTarget.style.background = 'none'}>
       {icon} {label}
     </button>
@@ -274,5 +322,5 @@ function MenuItem({ icon, label, onClick, danger }) {
 
 const sectionLabel = {
   fontSize: '.68rem', textTransform: 'uppercase', letterSpacing: '.5px',
-  color: '#6B6778', padding: '4px 6px', marginBottom: 2,
+  color: C.faint, padding: '4px 6px', marginBottom: 2,
 }

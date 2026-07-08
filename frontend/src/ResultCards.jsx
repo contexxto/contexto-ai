@@ -25,16 +25,19 @@ function precioTexto(r) {
 // MOTOR determinístico del backend (app/encaje.py) sobre lo que el usuario PIDIÓ — nunca
 // sobre quién es (Fair Housing por construcción). Aquí solo lo pintamos; el color es del
 // grado de encaje, no un veredicto de idoneidad.
+// Tonos del design system (planos, sin glow), alineados con el coloreo por encaje del mapa:
+// fuerte → teal de marca, parcial → ámbar (--warning), bajo → coral. `fg` usa --accent
+// (teal consciente del tema) para leerse en claro y oscuro.
 const encajeTono = (s) =>
   s == null ? null
-    : s >= 80 ? { dot: '#3FD99B', fg: '#8BF0C4' }
-    : s >= 55 ? { dot: '#E8B84B', fg: '#F2D27E' }
-    : { dot: '#E0685A', fg: '#F0A99E' }
+    : s >= 80 ? { dot: 'var(--teal)', fg: 'var(--accent)' }
+    : s >= 55 ? { dot: 'var(--warning)', fg: 'var(--warning)' }
+    : { dot: 'var(--coral)', fg: 'var(--coral)' }
 
 const cumpleTint = (c) =>
-  c === 'alto' ? { bg: 'rgba(63,217,155,.10)', bd: 'rgba(63,217,155,.30)', fg: '#8BF0C4' }
-    : c === 'parcial' ? { bg: 'rgba(232,184,75,.10)', bd: 'rgba(232,184,75,.30)', fg: '#F2D27E' }
-    : { bg: 'rgba(224,104,90,.10)', bd: 'rgba(224,104,90,.28)', fg: '#F0A99E' }
+  c === 'alto' ? { bg: 'rgba(45,189,182,.12)', bd: 'rgba(45,189,182,.32)', fg: 'var(--accent)' }
+    : c === 'parcial' ? { bg: 'rgba(229,192,106,.12)', bd: 'rgba(229,192,106,.34)', fg: 'var(--warning)' }
+    : { bg: 'rgba(224,104,90,.12)', bd: 'rgba(224,104,90,.32)', fg: 'var(--coral)' }
 
 function Spec({ icon: Icon, val, unit }) {
   if (val == null || val === '') return null
@@ -78,7 +81,7 @@ function ResultCard({ r, onOpen, activeId, onActive, seleccionado, onToggleCompa
         overflow: 'hidden', cursor: 'pointer', padding: 0, color: C.text,
         display: 'flex', flexDirection: 'column',
         transform: activa ? 'translateY(-2px)' : 'none',
-        boxShadow: activa ? '0 6px 20px rgba(45,189,182,.25)' : 'none',
+        boxShadow: activa ? 'var(--shadow-md)' : 'none',
         transition: 'border-color .14s, transform .14s, box-shadow .14s',
       }}
     >

@@ -1206,6 +1206,7 @@ export default function App() {
           onReview={() => setView('review')}
           onCRM={abrirCRM}
           onUpgrade={() => setUpgradeOpen(true)}
+          mobile={false}
         />
       )}
       {isMobile && sidebarOpen && (
@@ -1226,6 +1227,7 @@ export default function App() {
               onReview={() => { setView('review'); setSidebarOpen(false) }}
               onCRM={abrirCRM}
               onUpgrade={() => { setUpgradeOpen(true); setSidebarOpen(false) }}
+              mobile={true}
             />
           </div>
         </>

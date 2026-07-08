@@ -221,13 +221,6 @@ export default function MapView({ seedIds, encajeById } = {}) {
     if (!el) return
     setChipEdges({ start: el.scrollLeft <= 2, end: el.scrollLeft + el.clientWidth >= el.scrollWidth - 2 })
   }
-  // Estado inicial de bordes (¿hay overflow?) al montar y cuando reaparecen los chips (fin del tour).
-  useEffect(() => {
-    const el = chipsRef.current
-    if (!el) return
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setChipEdges({ start: el.scrollLeft <= 2, end: el.scrollLeft + el.clientWidth >= el.scrollWidth - 2 })
-  }, [tour])
   const [mapaInput, setMapaInput] = useState('')
   const [mapaMsg, setMapaMsg] = useState(null)
   const [mapaLoading, setMapaLoading] = useState(false)
@@ -241,6 +234,16 @@ export default function MapView({ seedIds, encajeById } = {}) {
   const tourTimer = useRef(null)  // timeout de auto-avance del recorrido
   const recRef = useRef(null)     // SpeechRecognition
   const watchIdRef = useRef(null) // id de watchPosition (ubicación en segundo plano)
+
+  // Afford de scroll de los chips: estado inicial de bordes (¿hay overflow?) al montar y
+  // cuando reaparecen los chips (fin del tour). DEBE ir DESPUÉS de declarar `tour`: tenerlo
+  // en el dep array antes de su useState era un TDZ ("Cannot access 'tour' before initialization")
+  // que crasheaba MapView entero en cada render → ErrorBoundary, el mapa nunca cargaba.
+  useEffect(() => {
+    const el = chipsRef.current
+    if (!el) return
+    setChipEdges({ start: el.scrollLeft <= 2, end: el.scrollLeft + el.clientWidth >= el.scrollWidth - 2 })
+  }, [tour])
 
   // Persiste la ubicación para no volver a pedirla en cada recarga.
   function guardarPos(g) {

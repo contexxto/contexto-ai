@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { MapPin, RefreshCw, LocateFixed, AudioLines, ArrowUp, HelpCircle, Plus, Minus } from 'lucide-react'
+import {
+  MapPin, RefreshCw, LocateFixed, AudioLines, ArrowUp, HelpCircle, Plus, Minus,
+  Footprints, TrainFront, Cross, Pill, ShoppingCart, Trees, GraduationCap, Film, Lightbulb, MessageCircle, Palette,
+} from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 
 // Estilo de mapa oscuro premium (CARTO dark-matter, gratuito, sin token).
@@ -32,16 +35,16 @@ const ENCAJE_COLOR = [
   100, '#5EEAD4',  // alto → teal brillante
 ]
 
-// Chips de categoría (un toque = ilumina esa capa), estilo Google Maps.
+// Chips de categoría (un toque = ilumina esa capa). Íconos lucide del design system.
 const CHIPS = [
-  ['🚶', '15 min a pie', 'qué alcanzo a 15 minutos a pie'],
-  ['🚶', '30 min a pie', 'qué alcanzo a 30 minutos a pie'],
-  ['🚇', 'Transporte', 'ruta al metro'],
-  ['🏥', 'Salud', 'hospital más cercano'],
-  ['💊', 'Farmacia', 'farmacia más cercana'],
-  ['🛒', 'Súper', 'supermercado más cercano'],
-  ['🌳', 'Parques', 'parque más cercano'],
-  ['🏫', 'Colegios', 'colegio más cercano'],
+  [Footprints, '15 min a pie', 'qué alcanzo a 15 minutos a pie'],
+  [Footprints, '30 min a pie', 'qué alcanzo a 30 minutos a pie'],
+  [TrainFront, 'Transporte', 'ruta al metro'],
+  [Cross, 'Salud', 'hospital más cercano'],
+  [Pill, 'Farmacia', 'farmacia más cercana'],
+  [ShoppingCart, 'Súper', 'supermercado más cercano'],
+  [Trees, 'Parques', 'parque más cercano'],
+  [GraduationCap, 'Colegios', 'colegio más cercano'],
 ]
 
 // Escapa HTML. El popup se pinta con setHTML() (= innerHTML), y estos campos son TEXTO LIBRE
@@ -650,7 +653,8 @@ export default function MapView({ seedIds, encajeById } = {}) {
             style={{ position: 'absolute', top: 8, right: 10, background: 'none', border: 'none',
                      color: 'var(--map-dim)', cursor: 'pointer', fontSize: 15, lineHeight: 1 }}>×</button>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap', paddingRight: 14 }}>
-            <span style={{ fontWeight: 800, fontSize: 14 }}>📍 {aura.barrio}{aura.ciudad && aura.ciudad !== aura.barrio ? `, ${aura.ciudad}` : ''}</span>
+            <span style={{ fontWeight: 800, fontSize: 14, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <MapPin size={14} style={{ color: 'var(--teal-bright)', flexShrink: 0 }} /> {aura.barrio}{aura.ciudad && aura.ciudad !== aura.barrio ? `, ${aura.ciudad}` : ''}</span>
             {aura.walk_score != null && (
               <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, padding: '1px 8px', borderRadius: 999,
                              background: 'rgba(45,189,182,.14)', color: 'var(--teal-bright)', border: '1px solid rgba(45,189,182,.4)' }}>
@@ -695,13 +699,22 @@ export default function MapView({ seedIds, encajeById } = {}) {
             aria-label="Cerrar"
             style={{ position: 'absolute', top: 8, right: 10, background: 'none', border: 'none',
                      color: 'var(--map-dim)', cursor: 'pointer', fontSize: 15, lineHeight: 1 }}>×</button>
-          <div style={{ fontWeight: 800, color: 'var(--teal-bright)', marginBottom: 6 }}>💡 Qué puedes hacer aquí</div>
-          <div>🟢 <b>Toca un inmueble</b> → sus datos + <b>🚶 rutas a pie</b> reales al Metro y servicios</div>
-          <div style={{ marginTop: 5 }}>💬 <b>Háblale al mapa</b> (abajo): <i>"ruta al Metro"</i>, <i>"qué hay cerca"</i> → responde desde tu ubicación</div>
-          <div style={{ marginTop: 5 }}>🎬 <b>"Recorre esta zona"</b> → un tour narrado de la zona donde estás</div>
-          <div style={{ marginTop: 5 }}>🎨 <b>Colores</b> = {modoEncaje
-            ? 'encaje con tu búsqueda (más brillante = mejor)'
-            : 'ruido estimado por zona (verde = tranquilo)'}</div>
+          <div style={{ fontWeight: 800, color: 'var(--teal-bright)', marginBottom: 9, display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+            <Lightbulb size={15} /> Qué puedes hacer aquí</div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 7 }}>
+            <MapPin size={15} style={{ flexShrink: 0, marginTop: 1, color: 'var(--teal-bright)' }} />
+            <span><b>Toca un inmueble</b> → sus datos + rutas a pie reales al Metro y servicios</span></div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 7 }}>
+            <MessageCircle size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span><b>Háblale al mapa</b> (abajo): <i>"ruta al Metro"</i>, <i>"qué hay cerca"</i> → responde desde tu ubicación</span></div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 7 }}>
+            <Film size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span><b>"Recorre esta zona"</b> → un tour narrado de la zona donde estás</span></div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Palette size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span><b>Colores</b> = {modoEncaje
+              ? 'encaje con tu búsqueda (más brillante = mejor)'
+              : 'ruido estimado por zona (verde = tranquilo)'}</span></div>
         </div>
       )}
 
@@ -720,7 +733,7 @@ export default function MapView({ seedIds, encajeById } = {}) {
           <div style={{ background: 'var(--map-solid)', backdropFilter: 'blur(10px)', border: '1px solid var(--map-border)',
                         borderRadius: 14, padding: '10px 14px', color: 'var(--map-text)', fontSize: 13, marginBottom: 9,
                         lineHeight: 1.5, display: 'flex', gap: 9, alignItems: 'flex-start', boxShadow: '0 10px 30px rgba(0,0,0,.5)' }}>
-            <span style={{ flexShrink: 0 }}>{tour ? '🎬' : '🗺️'}</span>
+            <span style={{ flexShrink: 0, display: 'flex', marginTop: 1, color: 'var(--teal-bright)' }}>{tour ? <Film size={16} /> : <MapPin size={16} />}</span>
             <span dangerouslySetInnerHTML={{ __html: mapaMsg.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\*(.+?)\*/g, '<i>$1</i>') }} />
           </div>
         )}
@@ -772,7 +785,7 @@ export default function MapView({ seedIds, encajeById } = {}) {
                 style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0,
                          background: 'linear-gradient(90deg, var(--teal-deep), var(--teal))', border: 'none', borderRadius: 999,
                          padding: '6px 13px', cursor: 'pointer', color: '#06201C', fontWeight: 700, fontSize: 12, opacity: mapaLoading ? 0.6 : 1 }}>
-                🎬 Recorre esta zona
+                <Film size={13} /> Recorre esta zona
               </button>
             </div>
           )}
@@ -780,13 +793,13 @@ export default function MapView({ seedIds, encajeById } = {}) {
           {/* Fila 2: chips de categoría (ocultos durante el tour) */}
           {!tour && (
             <div style={{ display: 'flex', gap: 7, overflowX: 'auto', paddingBottom: 8, marginBottom: 2, scrollbarWidth: 'none' }}>
-              {CHIPS.map(([emoji, label, q]) => (
+              {CHIPS.map(([Icon, label, q]) => (
                 <button key={label} type="button" onClick={() => enviarComando(q)} disabled={mapaLoading}
-                  style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0, cursor: 'pointer',
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, cursor: 'pointer',
                            background: 'var(--map-chip)', border: '1px solid var(--map-border)', borderRadius: 8,
                            padding: '7px 12px', color: 'var(--map-text)', fontSize: 12.5, fontWeight: 600,
                            whiteSpace: 'nowrap', opacity: mapaLoading ? 0.6 : 1 }}>
-                  <span>{emoji}</span>{label}
+                  <Icon size={14} style={{ flexShrink: 0 }} />{label}
                 </button>
               ))}
             </div>
@@ -820,8 +833,8 @@ export default function MapView({ seedIds, encajeById } = {}) {
             )}
           </form>
           {escuchando && (
-            <div style={{ marginTop: 8, fontSize: 11.5, color: 'var(--teal-bright)', textAlign: 'center' }}>
-              🎤 Escuchando… habla ahora
+            <div style={{ marginTop: 8, fontSize: 11.5, color: 'var(--teal-bright)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+              <AudioLines size={13} /> Escuchando… habla ahora
             </div>
           )}
         </div>

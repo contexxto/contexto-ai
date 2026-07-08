@@ -1,14 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import axios from 'axios'
-import { Plus, Pin, PinOff, Pencil, Trash2, MoreHorizontal, MessageSquare, LogOut, Home, Map, Shield, Users, Briefcase, Sun, PanelLeft } from 'lucide-react'
+import { Plus, Pin, PinOff, Pencil, Trash2, MoreHorizontal, MessageSquare, LogOut, Home, Map, Shield, Users, Briefcase, Sun, Moon, PanelLeft } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import sphereLogo from './assets/sphere.svg'
+import { getTheme, toggleTheme } from './theme'
 
-// Paleta EXACTA de ASI:One (inspeccionada en asi1.ai) — misma que el launcher.
+// Paleta vía tokens del design system → adapta a tema oscuro/claro.
 const C = {
-  bg: '#1C1C1C', surface: '#282828', surface2: '#2E2E2E', border: '#404040',
-  text: '#FFFFFF', dim: '#C9C9C9', faint: '#8C8C8C', accent: '#5EEAD4', danger: '#E0685A',
-  active: '#2E2E2E',
+  bg: 'var(--bg)', surface: 'var(--surface-1)', surface2: 'var(--surface-2)', border: 'var(--border)',
+  text: 'var(--text)', dim: 'var(--text-mid)', faint: 'var(--text-dim)', accent: 'var(--teal-bright)', danger: 'var(--danger)',
+  active: 'var(--surface-2)',
 }
 
 // Quita el bloque interno "[Contexto del sistema: …]" que pudo colarse al
@@ -25,6 +26,7 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, o
   const [editingId, setEditingId] = useState(null)
   const [editValue, setEditValue] = useState('')
   const [porEliminar, setPorEliminar] = useState(null)  // confirmación propia (no confirm() nativo)
+  const [theme, setThemeState] = useState(getTheme())   // tema oscuro/claro (design system)
   const editRef = useRef(null)
 
   const load = useCallback(async () => {
@@ -244,16 +246,17 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, o
           </div>
         )}
 
-        {/* Modo claro (visual; el tema claro llega en una fase aparte) */}
-        <button title="Modo claro — próximamente"
+        {/* Toggle de tema oscuro/claro (design system) */}
+        <button onClick={() => setThemeState(toggleTheme())} title="Cambiar tema"
           style={{
             display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 8px',
-            borderRadius: 8, cursor: 'default', background: 'none', border: 'none',
-            color: C.faint, fontSize: '.82rem', textAlign: 'left', fontFamily: 'inherit',
-          }}>
-          <Sun size={16} /> Modo claro
-          <span style={{ marginLeft: 'auto', fontSize: '.64rem', color: C.faint,
-                         border: `1px solid ${C.border}`, borderRadius: 999, padding: '2px 7px' }}>Pronto</span>
+            borderRadius: 8, cursor: 'pointer', background: 'none', border: 'none',
+            color: C.dim, fontSize: '.82rem', textAlign: 'left', fontFamily: 'inherit',
+          }}
+          onMouseEnter={e => e.currentTarget.style.background = C.surface2}
+          onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+          {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
+          {theme === 'light' ? 'Modo oscuro' : 'Modo claro'}
         </button>
 
         {/* Footer legal / marca */}

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { Send, MapPin, Mic, RefreshCw, LocateFixed } from 'lucide-react'
+import { MapPin, RefreshCw, LocateFixed, AudioLines, ArrowUp, HelpCircle, Plus, Minus } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 
 // Estilo de mapa oscuro premium (CARTO dark-matter, gratuito, sin token).
@@ -208,7 +208,8 @@ export default function MapView({ seedIds, encajeById } = {}) {
   const [nearMsg, setNearMsg] = useState(null)
   const [locating, setLocating] = useState(false)
   const [radiusM, setRadiusM] = useState(500)
-  const [showHints, setShowHints] = useState(true)
+  // Onboarding de una vez: se muestra al primer uso y se recuerda (como los flags de geo).
+  const [showHints, setShowHints] = useState(() => { try { return !localStorage.getItem('ctx_hints_seen') } catch { return true } })
   const [mapaInput, setMapaInput] = useState('')
   const [mapaMsg, setMapaMsg] = useState(null)
   const [mapaLoading, setMapaLoading] = useState(false)
@@ -512,7 +513,7 @@ export default function MapView({ seedIds, encajeById } = {}) {
       attributionControl: { compact: true },
     })
     mapRef.current = map
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
+    // Zoom propio (en la columna de controles arriba-derecha) → look consistente con el sistema.
 
     map.on('load', async () => {
       try {
@@ -637,59 +638,66 @@ export default function MapView({ seedIds, encajeById } = {}) {
     <div style={{ position: 'relative', height: '100%', width: '100%' }}>
       <div ref={ref} style={{ position: 'absolute', inset: 0 }} />
 
-      {/* Tarjeta de aura proactiva (estilo Google: "estás en X · condición de zona") */}
+      {/* ── Tarjeta de aura proactiva (al ubicarte): dónde estás + caminabilidad ── */}
       {aura && (
         <div style={{
-          position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 6,
-          width: 'min(420px, calc(100% - 32px))', background: 'rgba(14,13,19,.96)',
-          border: '1px solid rgba(94,234,212,.45)', borderRadius: 14, padding: '12px 14px',
-          color: '#F0ECE6', fontFamily: "'Plus Jakarta Sans',sans-serif", boxShadow: '0 8px 26px rgba(0,0,0,.5)',
+          position: 'absolute', top: 14, left: '50%', transform: 'translateX(-50%)', zIndex: 8,
+          width: 'min(420px, calc(100% - 110px))', background: 'var(--map-solid)', backdropFilter: 'blur(10px)',
+          border: '1px solid var(--map-border)', borderRadius: 14, padding: '12px 14px 13px',
+          color: 'var(--map-text)', boxShadow: '0 10px 30px rgba(0,0,0,.5)',
         }}>
-          <button onClick={() => setAura(null)}
+          <button onClick={() => setAura(null)} aria-label="Cerrar"
             style={{ position: 'absolute', top: 8, right: 10, background: 'none', border: 'none',
-                     color: '#A8A3B3', cursor: 'pointer', fontSize: 15, lineHeight: 1 }}>×</button>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                     color: 'var(--map-dim)', cursor: 'pointer', fontSize: 15, lineHeight: 1 }}>×</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap', paddingRight: 14 }}>
             <span style={{ fontWeight: 800, fontSize: 14 }}>📍 {aura.barrio}{aura.ciudad && aura.ciudad !== aura.barrio ? `, ${aura.ciudad}` : ''}</span>
             {aura.walk_score != null && (
               <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, padding: '1px 8px', borderRadius: 999,
-                             background: 'rgba(45,189,182,.14)', color: '#5EEAD4', border: '1px solid rgba(45,189,182,.4)' }}>
+                             background: 'rgba(45,189,182,.14)', color: 'var(--teal-bright)', border: '1px solid rgba(45,189,182,.4)' }}>
                 Caminabilidad {aura.walk_score}/100
               </span>
             )}
           </div>
-          <div style={{ fontSize: 12.5, color: '#C9C6D6', lineHeight: 1.5, marginBottom: 9 }}>{aura.titular}</div>
-          <button onClick={iniciarRecorrido} disabled={mapaLoading}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'linear-gradient(90deg,#1A7A76,#2DBDB6)',
-                     border: 'none', borderRadius: 999, padding: '6px 13px', cursor: 'pointer', color: '#0E0D13',
-                     fontWeight: 800, fontSize: 12, opacity: mapaLoading ? 0.6 : 1 }}>
-            🎬 Recorre esta zona
-          </button>
+          <div style={{ fontSize: 12.5, color: 'var(--map-dim)', lineHeight: 1.5 }}>{aura.titular}</div>
         </div>
       )}
 
-      {/* Botón flotante "ubícame" (control estándar de mapa, estilo Google) */}
-      <button onClick={ubicarme} disabled={ubicando} title="Ir a mi ubicación"
-        style={{ position: 'absolute', bottom: 120, right: 14, zIndex: 6, width: 42, height: 42, borderRadius: 12,
-                 background: 'rgba(14,13,19,.92)', border: `1px solid ${ubicado ? '#2DBDB6' : 'rgba(45,189,182,.4)'}`,
-                 cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                 color: ubicado ? '#5EEAD4' : '#A8A3B3', boxShadow: '0 4px 14px rgba(0,0,0,.45)' }}>
-        {ubicando ? <RefreshCw size={18} style={{ animation: 'spin 1s linear infinite' }} /> : <LocateFixed size={18} />}
-      </button>
+      {/* ── Controles arriba-derecha: ubicación · zoom · ayuda ── */}
+      <div style={{ position: 'absolute', top: 14, right: 14, zIndex: 8, display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
+        <button onClick={ubicarme} disabled={ubicando} title="Ir a mi ubicación"
+          style={{ width: 40, height: 40, borderRadius: 12, background: 'var(--map-panel)', backdropFilter: 'blur(10px)',
+                   border: `1px solid ${ubicado ? 'var(--teal)' : 'var(--map-border)'}`, cursor: 'pointer', display: 'grid',
+                   placeItems: 'center', color: ubicado ? 'var(--teal-bright)' : 'var(--map-dim)', boxShadow: '0 4px 14px rgba(0,0,0,.4)' }}>
+          {ubicando ? <RefreshCw size={18} style={{ animation: 'spin 1s linear infinite' }} /> : <LocateFixed size={18} />}
+        </button>
+        <div style={{ display: 'flex', flexDirection: 'column', background: 'var(--map-panel)', backdropFilter: 'blur(10px)',
+                      border: '1px solid var(--map-border)', borderRadius: 12, overflow: 'hidden', boxShadow: '0 4px 14px rgba(0,0,0,.4)' }}>
+          <button onClick={() => mapRef.current?.zoomIn()} title="Acercar"
+            style={{ width: 40, height: 34, background: 'none', border: 'none', cursor: 'pointer', display: 'grid', placeItems: 'center', color: 'var(--map-dim)' }}><Plus size={17} /></button>
+          <button onClick={() => mapRef.current?.zoomOut()} title="Alejar"
+            style={{ width: 40, height: 34, background: 'none', border: 'none', borderTop: '1px solid var(--map-border)', cursor: 'pointer', display: 'grid', placeItems: 'center', color: 'var(--map-dim)' }}><Minus size={17} /></button>
+        </div>
+        <button onClick={() => setShowHints(true)} title="¿Qué puedes hacer aquí?"
+          style={{ width: 40, height: 40, borderRadius: 12, background: 'var(--map-panel)', backdropFilter: 'blur(10px)',
+                   border: '1px solid var(--map-border)', cursor: 'pointer', display: 'grid', placeItems: 'center', color: 'var(--map-dim)', boxShadow: '0 4px 14px rgba(0,0,0,.4)' }}>
+          <HelpCircle size={18} />
+        </button>
+      </div>
 
-      {/* Pistas de uso (qué puedes hacer en el mapa) */}
+      {/* ── Ayuda (a demanda desde "?" · onboarding de una vez) ── */}
       {showHints && (
         <div style={{
-          position: 'absolute', top: 16, right: 16, zIndex: 6, maxWidth: 260,
-          background: 'rgba(22,21,30,.95)', border: '1px solid rgba(45,189,182,.3)', borderRadius: 12,
-          padding: '13px 15px', color: '#F0ECE6', fontSize: 12.5, lineHeight: 1.6,
-          fontFamily: "'Plus Jakarta Sans',sans-serif", boxShadow: '0 6px 22px rgba(0,0,0,.45)',
+          position: 'absolute', top: 62, right: 14, zIndex: 9, maxWidth: 268,
+          background: 'var(--map-solid)', backdropFilter: 'blur(10px)', border: '1px solid var(--map-border)', borderRadius: 14,
+          padding: '13px 15px', color: 'var(--map-text)', fontSize: 12.5, lineHeight: 1.6, boxShadow: '0 10px 30px rgba(0,0,0,.5)',
         }}>
-          <button onClick={() => setShowHints(false)}
+          <button onClick={() => { setShowHints(false); try { localStorage.setItem('ctx_hints_seen', '1') } catch { /* ignore */ } }}
+            aria-label="Cerrar"
             style={{ position: 'absolute', top: 8, right: 10, background: 'none', border: 'none',
-                     color: '#A8A3B3', cursor: 'pointer', fontSize: 15, lineHeight: 1 }}>×</button>
-          <div style={{ fontWeight: 800, color: '#5EEAD4', marginBottom: 6 }}>💡 Qué puedes hacer aquí</div>
+                     color: 'var(--map-dim)', cursor: 'pointer', fontSize: 15, lineHeight: 1 }}>×</button>
+          <div style={{ fontWeight: 800, color: 'var(--teal-bright)', marginBottom: 6 }}>💡 Qué puedes hacer aquí</div>
           <div>🟢 <b>Toca un inmueble</b> → sus datos + <b>🚶 rutas a pie</b> reales al Metro y servicios</div>
-          <div style={{ marginTop: 5 }}>💬 <b>Háblale al mapa</b> (abajo): <i>"ruta al Metro"</i>, <i>"qué hay cerca"</i>, <i>"colegio más cercano"</i> → responde desde tu ubicación</div>
+          <div style={{ marginTop: 5 }}>💬 <b>Háblale al mapa</b> (abajo): <i>"ruta al Metro"</i>, <i>"qué hay cerca"</i> → responde desde tu ubicación</div>
           <div style={{ marginTop: 5 }}>🎬 <b>"Recorre esta zona"</b> → un tour narrado de la zona donde estás</div>
           <div style={{ marginTop: 5 }}>🎨 <b>Colores</b> = {modoEncaje
             ? 'encaje con tu búsqueda (más brillante = mejor)'
@@ -697,170 +705,126 @@ export default function MapView({ seedIds, encajeById } = {}) {
         </div>
       )}
 
-      {/* Leyenda */}
-      <div style={{
-        position: 'absolute', bottom: 24, left: 16, zIndex: 5,
-        background: 'rgba(22,21,30,.92)', border: '1px solid #2E2D3A', borderRadius: 10,
-        padding: '10px 14px', color: '#F0ECE6', fontSize: 12, fontFamily: "'Plus Jakarta Sans',sans-serif",
-      }}>
-        <div style={{ fontWeight: 700, marginBottom: 6 }}>
-          {seedIds?.length ? 'Tu búsqueda' : 'Catastro'}
-          {count != null && <span style={{ color: '#A8A3B3', fontWeight: 400 }}>
-            {' · '}{count} {seedIds?.length ? (count === 1 ? 'inmueble' : 'inmuebles') : 'activos'}
-          </span>}
-        </div>
-        {modoEncaje
-          ? [['Encaje alto', '#5EEAD4'], ['Medio', '#2DBDB6'], ['Bajo', '#1C5450'], ['Sin dato', '#4A4956']].map(([k, c]) => (
-              <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 7, margin: '3px 0' }}>
-                <span style={{ width: 10, height: 10, borderRadius: '50%', background: c }} />
-                <span style={{ color: '#A8A3B3' }}>{k}</span>
-              </div>
-            ))
-          : [['BAJO', '#2DBDB6'], ['MEDIO', '#E5C06A'], ['ALTO', '#E0685A']].map(([k, c]) => (
-              <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 7, margin: '3px 0' }}>
-                <span style={{ width: 10, height: 10, borderRadius: '50%', background: c }} />
-                <span style={{ color: '#A8A3B3' }}>Ruido {k}</span>
-              </div>
-            ))}
-        {!modoEncaje && (
-          <div style={{ fontSize: 10, color: '#6E6A7A', marginTop: 2 }}>estimación por zona (heurístico)</div>
-        )}
-        <div style={{ marginTop: 8, paddingTop: 7, borderTop: '1px solid #2E2D3A',
-                      fontSize: 10, color: '#6E6A7A', lineHeight: 1.4 }}>
-          Isócronas a pie: <b style={{ color: '#8A8694' }}>Valhalla (propio)</b> · Servicios/rutas: <b style={{ color: '#8A8694' }}>Google</b> · Caminabilidad: <b style={{ color: '#8A8694' }}>OpenStreetMap</b>
-        </div>
-      </div>
       {error && (
         <div style={{
-          position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 5,
-          background: 'rgba(224,104,90,.15)', border: '1px solid #E0685A', color: '#F0ECE6',
-          padding: '8px 14px', borderRadius: 8, fontSize: 13,
+          position: 'absolute', top: 14, left: '50%', transform: 'translateX(-50%)', zIndex: 9,
+          background: 'rgba(224,104,90,.16)', border: '1px solid var(--coral)', color: 'var(--map-text)',
+          padding: '8px 14px', borderRadius: 10, fontSize: 13, backdropFilter: 'blur(8px)',
         }}>{error}</div>
       )}
 
-      {/* Chat conversacional sobre el mapa — el mapa reacciona a tus preguntas */}
-      <div style={{
-        position: 'absolute', bottom: 22, left: '50%', transform: 'translateX(-50%)', zIndex: 7,
-        width: 'min(540px, calc(100% - 32px))', fontFamily: "'Plus Jakarta Sans',sans-serif",
-      }}>
+      {/* ── DOCK inferior único: mensaje + (estado·leyenda·recorre | tour) + chips + input ── */}
+      <div style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 7,
+                    width: 'min(560px, calc(100% - 24px))' }}>
         {mapaMsg && (
-          <div style={{
-            background: 'rgba(14,13,19,.95)', border: '1px solid rgba(45,189,182,.4)', borderRadius: 14,
-            padding: '10px 14px', color: '#F0ECE6', fontSize: 13, marginBottom: 9, lineHeight: 1.5,
-            display: 'flex', gap: 9, alignItems: 'flex-start', boxShadow: '0 8px 26px rgba(0,0,0,.5)',
-          }}>
+          <div style={{ background: 'var(--map-solid)', backdropFilter: 'blur(10px)', border: '1px solid var(--map-border)',
+                        borderRadius: 14, padding: '10px 14px', color: 'var(--map-text)', fontSize: 13, marginBottom: 9,
+                        lineHeight: 1.5, display: 'flex', gap: 9, alignItems: 'flex-start', boxShadow: '0 10px 30px rgba(0,0,0,.5)' }}>
             <span style={{ flexShrink: 0 }}>{tour ? '🎬' : '🗺️'}</span>
             <span dangerouslySetInnerHTML={{ __html: mapaMsg.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\*(.+?)\*/g, '<i>$1</i>') }} />
           </div>
         )}
 
-        {/* Controles del Recorrido con Aura */}
-        {tour && (
-          <div style={{
-            display: 'flex', gap: 8, alignItems: 'center', marginBottom: 9,
-            background: 'rgba(14,13,19,.95)', border: '1px solid rgba(94,234,212,.45)', borderRadius: 26,
-            padding: '6px 8px 6px 14px', boxShadow: '0 8px 26px rgba(0,0,0,.5)',
-          }}>
-            {/* Progreso por escenas */}
-            <div style={{ display: 'flex', gap: 5, flex: 1 }}>
-              {tour.escenas.map((_, idx) => (
-                <span key={idx} style={{
-                  height: 4, flex: 1, borderRadius: 999,
-                  background: idx <= tour.i ? '#5EEAD4' : 'rgba(255,255,255,.18)',
-                  transition: 'background .3s',
-                }} />
+        <div style={{ background: 'var(--map-panel)', backdropFilter: 'blur(14px)', border: '1px solid var(--map-border)',
+                      borderRadius: 20, padding: '11px 12px 12px', boxShadow: '0 12px 40px rgba(0,0,0,.5)' }}>
+          {/* Fila 1: durante el tour = controles del recorrido; si no = estado + leyenda + recorre */}
+          {tour ? (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
+              <div style={{ display: 'flex', gap: 5, flex: 1 }}>
+                {tour.escenas.map((_, idx) => (
+                  <span key={idx} style={{ height: 4, flex: 1, borderRadius: 999,
+                    background: idx <= tour.i ? 'var(--teal-bright)' : 'rgba(255,255,255,.18)', transition: 'background .3s' }} />
+                ))}
+              </div>
+              <span style={{ color: 'var(--map-dim)', fontSize: 11, fontFamily: "'IBM Plex Mono',monospace", whiteSpace: 'nowrap' }}>
+                {tour.i + 1}/{tour.escenas.length}
+              </span>
+              {tour.i < tour.escenas.length - 1 ? (
+                <button onClick={() => irAEscena(tour.escenas, tour.i + 1)} title="Siguiente escena"
+                  style={{ background: 'var(--teal)', border: 'none', borderRadius: 999, padding: '5px 12px', cursor: 'pointer',
+                           color: '#06201C', fontWeight: 700, fontSize: 12, whiteSpace: 'nowrap' }}>Siguiente ⏭</button>
+              ) : (
+                <button onClick={() => irAEscena(tour.escenas, 0)} title="Repetir"
+                  style={{ background: 'var(--teal-bright)', border: 'none', borderRadius: 999, padding: '5px 12px', cursor: 'pointer',
+                           color: '#06201C', fontWeight: 700, fontSize: 12, whiteSpace: 'nowrap' }}>↻ Repetir</button>
+              )}
+              <button onClick={salirTour} title="Salir del recorrido"
+                style={{ background: 'none', border: '1px solid var(--map-border)', borderRadius: 999, width: 30, height: 30,
+                         cursor: 'pointer', color: 'var(--map-dim)', fontSize: 14, flexShrink: 0 }}>×</button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 12.5, color: 'var(--map-dim)', fontWeight: 600 }}>
+                <b style={{ color: 'var(--map-text)', fontWeight: 700 }}>{seedIds?.length ? 'Tu búsqueda' : 'Catastro'}</b>
+                {count != null ? ` · ${count} ${seedIds?.length ? (count === 1 ? 'inmueble' : 'inmuebles') : 'activos'}` : ''}
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 11, color: 'var(--map-faint)' }}>
+                {(modoEncaje
+                  ? [['Alto', '#5EEAD4'], ['Medio', '#2DBDB6'], ['Bajo', '#3A8F89']]
+                  : [['Bajo', '#2DBDB6'], ['Medio', '#E5C06A'], ['Alto', '#E0685A']]
+                ).map(([k, c]) => (
+                  <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ width: 9, height: 9, borderRadius: 999, background: c }} />{k}
+                  </span>
+                ))}
+              </span>
+              <button onClick={iniciarRecorrido} disabled={mapaLoading} title="Tour narrado de la zona"
+                style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0,
+                         background: 'linear-gradient(90deg, var(--teal-deep), var(--teal))', border: 'none', borderRadius: 999,
+                         padding: '6px 13px', cursor: 'pointer', color: '#06201C', fontWeight: 700, fontSize: 12, opacity: mapaLoading ? 0.6 : 1 }}>
+                🎬 Recorre esta zona
+              </button>
+            </div>
+          )}
+
+          {/* Fila 2: chips de categoría (ocultos durante el tour) */}
+          {!tour && (
+            <div style={{ display: 'flex', gap: 7, overflowX: 'auto', paddingBottom: 8, marginBottom: 2, scrollbarWidth: 'none' }}>
+              {CHIPS.map(([emoji, label, q]) => (
+                <button key={label} type="button" onClick={() => enviarComando(q)} disabled={mapaLoading}
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0, cursor: 'pointer',
+                           background: 'var(--map-chip)', border: '1px solid var(--map-border)', borderRadius: 8,
+                           padding: '7px 12px', color: 'var(--map-text)', fontSize: 12.5, fontWeight: 600,
+                           whiteSpace: 'nowrap', opacity: mapaLoading ? 0.6 : 1 }}>
+                  <span>{emoji}</span>{label}
+                </button>
               ))}
             </div>
-            <span style={{ color: '#A8A3B3', fontSize: 11, fontFamily: "'IBM Plex Mono',monospace", whiteSpace: 'nowrap' }}>
-              {tour.i + 1}/{tour.escenas.length}
-            </span>
-            {tour.i < tour.escenas.length - 1 ? (
-              <button onClick={() => irAEscena(tour.escenas, tour.i + 1)} title="Siguiente escena"
-                style={{ background: '#2DBDB6', border: 'none', borderRadius: 999, padding: '5px 12px', cursor: 'pointer',
-                         color: '#0E0D13', fontWeight: 800, fontSize: 12, whiteSpace: 'nowrap' }}>
-                Siguiente ⏭
+          )}
+
+          {/* Fila 3: input con pin geo + chip "Voz" (Voz vacío ↔ Enviar con texto, como el launcher) */}
+          <form onSubmit={preguntarAlMapa} style={{ display: 'flex', gap: 8, alignItems: 'center',
+            background: 'var(--map-chip)', border: `1px solid ${escuchando ? 'var(--teal)' : 'var(--map-border)'}`,
+            borderRadius: 14, padding: '6px 8px', transition: 'border-color .2s' }}>
+            <button type="button" onClick={ubicarme} disabled={ubicando} title={ubicado ? 'Ubicación activa' : 'Usar mi ubicación'}
+              style={{ background: 'none', border: 'none', width: 34, height: 34, flexShrink: 0, cursor: 'pointer',
+                       display: 'grid', placeItems: 'center', color: ubicado ? 'var(--teal-bright)' : 'var(--teal)' }}>
+              {ubicando ? <RefreshCw size={17} style={{ animation: 'spin 1s linear infinite' }} /> : <MapPin size={17} />}
+            </button>
+            <input value={mapaInput} onChange={e => setMapaInput(e.target.value)}
+              placeholder='Pregúntale al mapa: "ruta al Metro"…'
+              style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: 'var(--map-text)', fontSize: 14, padding: '4px 4px', fontFamily: 'inherit' }} />
+            {mapaInput.trim() ? (
+              <button type="submit" disabled={mapaLoading} title="Preguntar"
+                style={{ background: 'var(--teal-bright)', border: 'none', borderRadius: 999, width: 40, height: 40, flexShrink: 0,
+                         display: 'grid', placeItems: 'center', cursor: mapaLoading ? 'default' : 'pointer', color: '#06201C', opacity: mapaLoading ? 0.6 : 1 }}>
+                {mapaLoading ? <RefreshCw size={17} style={{ animation: 'spin 1s linear infinite' }} /> : <ArrowUp size={19} />}
               </button>
             ) : (
-              <button onClick={() => irAEscena(tour.escenas, 0)} title="Repetir"
-                style={{ background: '#5EEAD4', border: 'none', borderRadius: 999, padding: '5px 12px', cursor: 'pointer',
-                         color: '#0E0D13', fontWeight: 800, fontSize: 12, whiteSpace: 'nowrap' }}>
-                ↻ Repetir
+              <button type="button" onClick={dictarVoz} title={escuchando ? 'Escuchando… toca para detener' : 'Hablar (dictado por voz)'}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 7, flexShrink: 0, padding: '9px 15px', borderRadius: 999,
+                         border: 'none', cursor: 'pointer', background: escuchando ? 'var(--teal)' : 'var(--teal-bright)', color: '#06201C',
+                         fontWeight: 700, fontSize: '.86rem', fontFamily: 'inherit', animation: escuchando ? 'pulseGlow 1.2s ease-in-out infinite' : 'none' }}>
+                <AudioLines size={16} /> Voz
               </button>
             )}
-            <button onClick={salirTour} title="Salir del recorrido"
-              style={{ background: 'none', border: '1px solid rgba(255,255,255,.2)', borderRadius: 999, width: 30, height: 30,
-                       cursor: 'pointer', color: '#A8A3B3', fontSize: 14, flexShrink: 0 }}>×</button>
-          </div>
-        )}
-
-        {/* Botón: recorre esta zona (oculto durante el recorrido) */}
-        {!tour && (
-          <button onClick={iniciarRecorrido} disabled={mapaLoading} title="Tour narrado de la zona"
-            style={{ display: 'flex', alignItems: 'center', gap: 7, margin: '0 auto 9px',
-                     background: 'linear-gradient(90deg,#1A7A76,#2DBDB6)', border: 'none', borderRadius: 26,
-                     padding: '8px 16px', cursor: 'pointer', color: '#0E0D13', fontWeight: 800, fontSize: 12.5,
-                     boxShadow: '0 6px 20px rgba(45,189,182,.32)', opacity: mapaLoading ? 0.6 : 1 }}>
-            🎬 Recorre esta zona
-          </button>
-        )}
-
-        {/* Chips de categoría — un toque ilumina esa capa */}
-        {!tour && (
-          <div style={{ display: 'flex', gap: 7, overflowX: 'auto', paddingBottom: 9, scrollbarWidth: 'none' }}>
-            {CHIPS.map(([emoji, label, q]) => (
-              <button key={label} type="button" onClick={() => enviarComando(q)} disabled={mapaLoading}
-                style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0, cursor: 'pointer',
-                         background: 'rgba(14,13,19,.9)', border: '1px solid rgba(45,189,182,.35)', borderRadius: 999,
-                         padding: '6px 13px', color: '#F0ECE6', fontSize: 12.5, fontWeight: 600,
-                         fontFamily: "'Plus Jakarta Sans',sans-serif", whiteSpace: 'nowrap', opacity: mapaLoading ? 0.6 : 1 }}>
-                <span>{emoji}</span>{label}
-              </button>
-            ))}
-          </div>
-        )}
-
-        <form onSubmit={preguntarAlMapa} style={{
-          display: 'flex', gap: 8, alignItems: 'center',
-          background: escuchando ? 'rgba(45,189,182,.16)' : 'rgba(20,44,43,.65)',
-          border: `1px solid ${escuchando ? '#2DBDB6' : 'rgba(45,189,182,.4)'}`, borderRadius: 26,
-          padding: 7, backdropFilter: 'blur(8px)', boxShadow: '0 0 30px rgba(45,189,182,.22)',
-          transition: 'border-color .2s, background .2s',
-        }}>
-          {/* Ubicación */}
-          <button type="button" onClick={ubicarme} disabled={ubicando}
-            title={ubicado ? 'Ubicación activa' : 'Usar mi ubicación'}
-            style={{ background: 'rgba(45,189,182,.12)', border: '1px solid rgba(45,189,182,.3)', borderRadius: 999,
-                     width: 38, height: 38, flexShrink: 0, cursor: 'pointer', display: 'flex', alignItems: 'center',
-                     justifyContent: 'center', color: '#2DBDB6', boxShadow: ubicado ? '0 0 12px rgba(45,189,182,.4)' : 'none' }}>
-            {ubicando ? <RefreshCw size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <MapPin size={16} />}
-          </button>
-          <input value={mapaInput} onChange={e => setMapaInput(e.target.value)}
-            placeholder='Pregúntale al mapa: "ruta al Metro", "qué hay cerca", "colegio más cercano"…'
-            style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#F0ECE6',
-                     fontSize: 13.5, padding: '6px 12px' }} />
-          {/* Dictado por voz */}
-          <button type="button" onClick={dictarVoz}
-            title={escuchando ? 'Escuchando… toca para detener' : 'Hablar (dictado por voz)'}
-            style={{ background: escuchando ? '#2DBDB6' : 'rgba(45,189,182,.12)',
-                     border: `1px solid ${escuchando ? '#2DBDB6' : 'rgba(45,189,182,.3)'}`, borderRadius: 999,
-                     width: 38, height: 38, flexShrink: 0, cursor: 'pointer', display: 'flex', alignItems: 'center',
-                     justifyContent: 'center', color: escuchando ? '#0E0D13' : '#2DBDB6',
-                     animation: escuchando ? 'pulseGlow 1.2s ease-in-out infinite' : 'none' }}>
-            <Mic size={16} />
-          </button>
-          {/* Enviar */}
-          <button type="submit" disabled={mapaLoading} title="Preguntar"
-            style={{ background: '#2DBDB6', border: 'none', borderRadius: 999, width: 38, height: 38,
-                     display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                     color: '#0E0D13', opacity: mapaLoading ? 0.6 : 1, flexShrink: 0 }}>
-            {mapaLoading ? <RefreshCw size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Send size={16} />}
-          </button>
-        </form>
-        {escuchando && (
-          <div style={{ marginTop: 8, fontSize: 11.5, color: '#5EEAD4', textAlign: 'center' }}>
-            🎤 Escuchando… habla ahora
-          </div>
-        )}
+          </form>
+          {escuchando && (
+            <div style={{ marginTop: 8, fontSize: 11.5, color: 'var(--teal-bright)', textAlign: 'center' }}>
+              🎤 Escuchando… habla ahora
+            </div>
+          )}
+        </div>
       </div>
 
       <style>{`

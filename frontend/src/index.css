@@ -60,6 +60,15 @@
   --user-bg:     #1A7A76;
   --ai-bg:       #232323;
 
+  /* Mapa Vivo — overlays SIEMPRE oscuros (sobre teselas CARTO dark); NO se overridean en tema claro */
+  --map-panel:   rgba(28,28,28,.82);
+  --map-solid:   rgba(20,20,24,.95);
+  --map-chip:    rgba(46,46,46,.92);
+  --map-border:  rgba(255,255,255,.12);
+  --map-text:    #FFFFFF;
+  --map-dim:     #A8A3B3;
+  --map-faint:   #7A7A84;
+
   --grad-brand:  linear-gradient(135deg, #2DBDB6, #E0685A);
   --grad-hero:   linear-gradient(180deg, #1C1C1C, #1A7A76);
 

@@ -70,3 +70,50 @@ def test_panel_seed_no_perfila_por_clase_protegida():
     for m in ["enfócate en las familias", "prioriza a los jóvenes", "los extranjeros de mi cartera"]:
         ps = derivar_panel_seed(m, modo="estratega")
         assert ps is None or ps["foco"] in FOCOS
+
+
+# ── Fase C — foco 'lead' (per-interesado → puente al Copiloto) ────────────────
+# 'lead' es el ÚLTIMO recurso: los focos de cartera tienen prioridad. La referencia va en 'resalta' cruda;
+# el frontend la resuelve contra /mine/leads y solo muestra el puente si resuelve (sobre-extracción inofensiva).
+@pytest.mark.parametrize("mensaje,ref", [
+    ("cuéntame de mayra", "mayra"),
+    ("y de #ba0a?", "ba0a"),                        # id corto tiene prioridad sobre la cola de texto
+    ("el interesado ana@correo.com", "ana@correo.com"),  # email tiene prioridad
+    ("qué pasa con Juan", "juan"),
+    ("háblame de la señora Pérez", "la senora perez"),
+])
+def test_foco_lead_detecta_y_extrae_referencia(mensaje, ref):
+    assert derivar_foco(mensaje) == "lead"
+    ps = derivar_panel_seed(mensaje, modo="estratega")
+    assert ps["foco"] == "lead" and ps["resalta"] == ref and ps["caption"] is None
+
+
+def test_cartera_gana_a_lead():
+    # Una pregunta de CARTERA nunca se lee como 'lead' aunque tenga 'de X': el foco de cartera matchea antes.
+    assert derivar_foco("¿cómo va la tasa de handoff?") == "handoff"
+    assert derivar_foco("¿dónde se atasca mi embudo?") == "embudo"
+    # Y el playbook (sin foco de dashboard) sigue devolviendo None, no 'lead'.
+    assert derivar_foco("¿cuál es mi mejor sistema de cartera?") is None
+
+
+def test_lead_ref_de_clase_protegida_no_segmenta():
+    # 'cuéntame de las familias' dispara foco 'lead' (transaccional: un puente), NO un foco demográfico.
+    # La ref 'las familias' NO resuelve a ningún interesado en el frontend → sin puente. Sin segmentación.
+    ps = derivar_panel_seed("cuéntame de las familias", modo="estratega")
+    assert ps["foco"] == "lead" and ps["foco"] in FOCOS      # es el puente, no un 'foco' de clase
+
+
+def test_foco_lead_conserva_nombre_multipalabra():
+    # Hallazgo #2 (regresión): el greedy soltaba el nombre. Ahora la cola arranca en el PRIMER conector y
+    # CONSERVA el nombre real (el frontend lo tokeniza y descarta las palabras de agregado).
+    ps = derivar_panel_seed("cuéntame de juan pérez de mi cartera", modo="estratega")
+    assert ps["foco"] == "lead" and "juan perez" in ps["resalta"]
+    ps2 = derivar_panel_seed("háblame de pedro con calma", modo="estratega")
+    assert ps2["foco"] == "lead" and ps2["resalta"].startswith("pedro")
+
+
+def test_cartera_sin_keyword_no_es_lead():
+    # Hallazgo #6: una pregunta de cartera SIN keyword no debe caer a foco 'lead' (la cola son puras
+    # palabras de agregado). derivar_foco → None → el frontend conserva el foco actual del dashboard.
+    for m in ["cuéntame de la cartera", "cuéntame del pipeline", "qué hay de nuevo en la cartera"]:
+        assert derivar_foco(m) is None

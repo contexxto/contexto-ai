@@ -40,7 +40,7 @@ function Tasa({ o, sufijo = '' }) {
 // Foco del dashboard vivo (SPEC_Analisis_Vivo): cada tarjeta se ENFATIZA o RECEDE según la directiva
 // del Estratega. Por defecto la North Star lidera (el dashboard "abre" en el handoff).
 const FOCO_CARD = { handoff: 'handoff', embudo: 'funnel', reenganche: 'lift', cohortes: 'cohortes' }
-const FOCO_LBL = { handoff: 'North Star · handoff', embudo: 'Embudo', reenganche: 'Reenganche', cohortes: 'Cohortes' }
+const FOCO_LBL = { handoff: 'North Star · handoff', embudo: 'Embudo', reenganche: 'Reenganche', cohortes: 'Cohortes', lead: 'Interesado' }
 
 export default function AnalisisPanel({ onVolver, panelSeed } = {}) {
   const [data, setData] = useState(null)
@@ -98,6 +98,7 @@ export default function AnalisisPanel({ onVolver, panelSeed } = {}) {
       const n = (reeng.tocado?.n || 0) + (reeng.holdout?.n || 0)
       return n === 0 ? 'aún sin dormidos elegibles' : `${n} en el experimento de lift`
     }
+    if (foco === 'lead') return 'el detalle por-interesado vive en el Copiloto'  // frontera FH: el Estratega no lo trae
     return null
   })()
 

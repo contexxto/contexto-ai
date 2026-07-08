@@ -17,8 +17,8 @@ from __future__ import annotations
 import re
 import unicodedata
 
-# Vocabulario CERRADO de focos (Fase A: los 4 de cartera; 'lead' llega en Fase C).
-FOCOS = ("handoff", "embudo", "reenganche", "cohortes")
+# Vocabulario CERRADO de focos: 4 de cartera + 'lead' (Fase C — puente al Copiloto).
+FOCOS = ("handoff", "embudo", "reenganche", "cohortes", "lead")
 
 
 def _norm(s: str | None) -> str:
@@ -41,13 +41,59 @@ _REGLAS: list[tuple[str, re.Pattern[str]]] = [
 ]
 
 
+# Referencia a UN interesado (foco 'lead', Fase C): email, id corto (#xxxx), o el patrón de una pregunta
+# POR-PERSONA ("cuentame de X", "y de X", "el interesado X"). Se detecta DESPUÉS de los focos de cartera
+# (si la pregunta es de cartera ya matcheó antes) → 'lead' es el último recurso.
+_RE_LEAD_EMAIL = re.compile(r"[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}")
+_RE_LEAD_ID = re.compile(r"#\s*([a-z0-9]{3,})")
+_RE_LEAD_TRIGGER = re.compile(
+    r"\b(?:cuenta?me|hablame|dime|muestrame|que (?:hay|pasa|sabemos|onda) (?:de|con)|"
+    r"y (?:de|con)|el (?:interesado|lead|cliente|prospecto)|sobre|acerca de)\b")
+# Extrae la cola tras el PRIMER conector (re.search escanea izq→der) → CONSERVA el nombre real:
+# "cuentame de juan perez de mi cartera" -> "juan perez de mi cartera" (incluye el nombre; el frontend
+# lo tokeniza y descarta las palabras de agregado). El greedy anterior soltaba el nombre.
+_RE_LEAD_TAIL = re.compile(r"\b(?:de|con|del|interesado|lead|cliente|prospecto)\s+(.+)$")
+# Palabras de AGREGADO/cartera y conectores: si la cola es SOLO esto (ningún token parece nombre), NO es
+# un lead → el derivador no lo clasifica como 'lead' (evita que 'cuéntame de la cartera' caiga a foco lead).
+_STOP_LEAD = frozenset({
+    "cartera", "carteras", "pipeline", "embudo", "funnel", "numeros", "metricas", "metrica", "leads",
+    "interesados", "clientes", "prospectos", "todo", "todos", "toda", "todas", "nada", "nuevo", "nueva",
+    "mis", "tus", "sus", "los", "las", "una", "del", "con", "que", "por", "para", "esto", "eso",
+})
+
+
+def _referencia_lead(n: str) -> str | None:
+    """Extrae (best-effort, sobre texto YA normalizado) la referencia a UN interesado: email > #id > la
+    cola de una pregunta por-persona. None si no parece per-lead. La resolución REAL la hace el frontend
+    contra /mine/leads (owner-scoped): una sobre-extracción es INOFENSIVA (sin match → sin puente). El
+    Estratega NUNCA recibe dato del lead → respeta la frontera FH (el detalle por-interesado es del Copiloto)."""
+    m = _RE_LEAD_EMAIL.search(n)
+    if m:
+        return m.group(0)
+    m = _RE_LEAD_ID.search(n)
+    if m:
+        return m.group(1)
+    if _RE_LEAD_TRIGGER.search(n):
+        m = _RE_LEAD_TAIL.search(n)
+        ref = (m.group(1) if m else "").strip(" ?.!,;:").strip()
+        # ¿la cola tiene ALGÚN token que parezca nombre (>=3, no palabra de agregado)? Si no → no es un lead
+        # ("cuéntame de la cartera" / "del pipeline" → None, conserva el foco actual del dashboard).
+        if not any(len(t) >= 3 and t not in _STOP_LEAD for t in ref.split()):
+            return None
+        return ref[:60] or None
+    return None
+
+
 def derivar_foco(mensaje: str | None) -> str | None:
     """Foco del dashboard a partir de la pregunta del corredor, o None si no hay señal clara (→ el
-    frontend CONSERVA el foco actual: 'no salta sin señal'). Acento-insensible, primera regla que matchea."""
+    frontend CONSERVA el foco actual: 'no salta sin señal'). Acento-insensible, primera regla que matchea.
+    Los focos de CARTERA tienen prioridad; 'lead' (per-interesado → puente al Copiloto) es el último recurso."""
     n = _norm(mensaje)
     for foco, rx in _REGLAS:
         if rx.search(n):
             return foco
+    if _referencia_lead(n):
+        return "lead"
     return None
 
 
@@ -63,4 +109,8 @@ def derivar_panel_seed(mensaje: str | None, *, modo: str) -> dict | None:
     foco = derivar_foco(mensaje)
     if foco is None:
         return None
-    return {"foco": foco, "resalta": None, "caption": None}
+    # foco 'lead' → resalta lleva la REFERENCIA cruda (best-effort) para que el frontend la resuelva contra
+    # /mine/leads y ofrezca el PUENTE al Copiloto. Los demás focos: resalta=None (el resalte fino se deriva
+    # en el panel, Fase B). caption sigue None (ver docstring del módulo).
+    resalta = _referencia_lead(_norm(mensaje)) if foco == "lead" else None
+    return {"foco": foco, "resalta": resalta, "caption": None}

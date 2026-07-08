@@ -175,8 +175,9 @@ Hereda TODO el foso del CRM Vivo, sin relajarlo:
 - `foco: embudo` (resalta la etapa-cuello) + `foco: reenganche` (dormidos) + `foco: cohortes`.
 - Morph de continuidad (`focoRef`) — el widget que entra crece, el que sale encoge.
 
-**C — foco LEAD + puente al Copiloto**
-- `foco: lead` baja al detalle de un interesado; ofrece abrir el Copiloto con ese lead (cierra cartera→interesado).
+**C — foco LEAD + puente al Copiloto** ✅ construido
+- `foco: lead` NO baja al detalle en el Estratega (**respeta la frontera FH**: el Estratega no tiene `tool_timeline_de_lead`) — ofrece un **puente clickeable** para abrir el Copiloto (táctico, con timeline) en ese interesado. Cierra el continuo cartera→interesado.
+- **Resolución honesta:** el backend (`panel_seed.py::_referencia_lead`) extrae la referencia cruda (email/#id/nombre) **best-effort**; el **frontend la resuelve contra `/mine/leads`** (owner-scoped) y solo muestra el puente si **resuelve a un interesado real** → una sobre-extracción es INOFENSIVA (sin match → sin puente, se conserva el foco actual). El Estratega **nunca recibe dato del lead**.
 
 **D — el dashboard como ENTRADA**
 - Tocar una etapa del embudo / un cohorte **alimenta la intención de vuelta al Estratega** ("cuéntame de estos 6 en Intención"). Cierra el bucle: el dashboard deja de ser solo salida y se vuelve input estructurado a la conversación (espeja la Fase 2D del Mapa Vivo).

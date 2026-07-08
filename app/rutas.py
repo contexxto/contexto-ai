@@ -22,7 +22,9 @@ from app.entorno import _CATEGORIAS, _nombre_valido
 from app.isocronas import isocrona
 from app.walk_score import _haversine_m, walk_score_para
 
-_TIMEOUT = 8.0
+# Timeout por llamada a Google (Places/Directions). El path del mapa hace 2 secuenciales;
+# 5s mantiene el peor caso en ~10s, holgado bajo el wait_for(13s) del endpoint.
+_TIMEOUT = 5.0
 _RADIO_M = 1500
 
 

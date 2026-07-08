@@ -424,10 +424,19 @@ export default function MapView({ seedIds, encajeById } = {}) {
     if (!centro) { const c = map.getCenter(); centro = { lat: c.lat, lon: c.lng } }
 
     try {
-      const res = await fetch(`${API_BASE}/api/v1/assets/mapa/comando`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', ...apiHeaders() },
-        body: JSON.stringify({ pregunta: q, lat: centro.lat, lon: centro.lon }),
-      })
+      // El backend depende de Google (latencia intermitente); corta si cuelga más que su
+      // propio wait_for (13s) para no dejar al usuario esperando indefinidamente.
+      const ctrl = new AbortController()
+      const to = setTimeout(() => ctrl.abort(), 16000)
+      let res
+      try {
+        res = await fetch(`${API_BASE}/api/v1/assets/mapa/comando`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json', ...apiHeaders() },
+          body: JSON.stringify({ pregunta: q, lat: centro.lat, lon: centro.lon }),
+          signal: ctrl.signal,
+        })
+      } finally { clearTimeout(to) }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       const esTour = (data.acciones || []).some(a => a.tipo === 'tour')
       ejecutarAcciones(data.acciones || [])  // si es tour, arranca el reproductor (maneja el mensaje)
@@ -435,7 +444,11 @@ export default function MapView({ seedIds, encajeById } = {}) {
         setMapaMsg(data.texto || '')
         if ((data.acciones || []).length) marcadorPulso([centro.lon, centro.lat])  // "tú estás aquí"
       }
-    } catch { setMapaMsg('No pude procesar tu pregunta.') }
+    } catch (e) {
+      setMapaMsg(e?.name === 'AbortError'
+        ? 'El mapa tardó en responder. Reintenta en un momento.'
+        : 'No pude procesar eso. Reintenta o pídeme algo como “ruta al Metro”.')
+    }
     finally { setMapaLoading(false) }
   }
   function preguntarAlMapa(e) {

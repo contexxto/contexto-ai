@@ -326,3 +326,38 @@ def test_fail_close_salida_limpia_pasa_tal_cual():
     stats = '{"calientes": 5}'
     r = evaluar_salida_crm("Tienes 5 calientes; contacta primero a los que pidieron corredor", [stats])
     assert _reframe_fail_close(r, es_estratega=True, es_final=True) is None
+
+
+# ── Fix del LOOP: respaldo de cifra por CONVERSACIÓN, no por turno ────────────
+def test_tool_jsons_de_conversacion_vs_turno():
+    # tool_jsons_del_turno = solo tras el último Human (turno actual); de_conversacion = TODO el hilo.
+    from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+    from app.agent.crm_guardrails import tool_jsons_de_conversacion, tool_jsons_del_turno
+    msgs = [
+        HumanMessage(content="dame la jugada"),
+        AIMessage(content="", tool_calls=[{"name": "tool_stats_embudo", "args": {}, "id": "t1"}]),
+        ToolMessage(content='{"total": 11, "por_etapa": {"intencion": 7}}', tool_call_id="t1"),
+        AIMessage(content="tienes 11 interesados, 7 en Intención"),
+        HumanMessage(content="¿dónde se atasca?"),   # nuevo turno SIN re-llamar la tool
+        AIMessage(content="el grueso está en Intención con 7 interesados"),
+    ]
+    assert tool_jsons_del_turno(msgs) == []                    # el turno actual no re-llamó la tool
+    conv = tool_jsons_de_conversacion(msgs)
+    assert len(conv) == 1 and "intencion" in conv[0]           # pero el hilo SÍ trajo el embudo
+
+
+def test_fail_close_NO_loop_con_dato_ya_traido_en_el_hilo():
+    # REGRESIÓN del loop en producción: el Estratega trae el embudo (kickoff) y en un turno posterior
+    # referencia "7 interesados" SIN re-llamar la tool. Con respaldo por-turno se marcaba numero_sin_dato →
+    # fail-close → reencuadro en bucle. Con respaldo de CONVERSACIÓN, el 7 está respaldado → NO reencuadra.
+    from app.agent.crm_graph import _reframe_fail_close
+    from app.agent.crm_guardrails import evaluar_salida_crm
+    conv = ['{"total": 11, "por_etapa": {"intencion": 7, "enganchado": 2}}']   # traído antes en el hilo
+    r = evaluar_salida_crm("El grueso está en Intención con 7 interesados; enfócate ahí", conv)
+    assert _reframe_fail_close(r, es_estratega=True, es_final=True) is None    # ya no loopea
+
+    # Contraste: alucinación PURA (nunca se trajo dato en el hilo) SÍ sigue disparando.
+    r2 = evaluar_salida_crm("El grueso está en Intención con 7 interesados", [])
+    out = _reframe_fail_close(r2, es_estratega=True, es_final=True)
+    from app.agent.crm_graph import REFRAME_CIFRA_ESTRATEGA
+    assert out is not None and out[0] == REFRAME_CIFRA_ESTRATEGA

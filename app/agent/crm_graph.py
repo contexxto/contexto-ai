@@ -32,7 +32,7 @@ from langgraph.prebuilt import ToolNode, tools_condition
 from app.agent.graph import _ssl_verify
 from app.agent.crm_tools import CRM_TOOLS, ESTRATEGA_TOOLS
 from app.agent.crm_guardrails import (
-    evaluar_salida_crm, registrar_guardrail, texto_de_content, tool_jsons_del_turno,
+    evaluar_salida_crm, registrar_guardrail, texto_de_content, tool_jsons_de_conversacion,
 )
 from app.config import settings
 
@@ -149,10 +149,9 @@ REFRAME_FAIR_HOUSING = (
 # narra un número que el turno NO respalda con NINGÚN dato (invención pura), en vez de entregar la cifra
 # inventada le pedimos anclar la jugada en su embudo real.
 REFRAME_CIFRA_ESTRATEGA = (
-    "Antes de darte la jugada de la semana quiero apoyarme en tu embudo real, no en un número que no "
-    "puedo respaldar. Déjame revisar el estado de tu cartera —cuántos pidieron corredor, en qué etapa "
-    "están, qué tan fresca es la actividad— y con eso te armo la prioridad con cifras que sí salen de tu "
-    "dato. ¿Le damos?"
+    "Prefiero no darte una cifra de tu cartera que no pueda respaldar con tu dato real. Déjame consultar "
+    "tu embudo —cuántos pidieron corredor, en qué etapa están, qué tan fresca es la actividad— y te doy la "
+    "prioridad con números que sí salen de ahí, sin inventar."
 )
 
 
@@ -222,7 +221,10 @@ def _build_crm_graph() -> StateGraph:
         # respuesta (el except la deja pasar como estaba).
         try:
             texto = texto_de_content(response.content)
-            tool_jsons = tool_jsons_del_turno(state["messages"])
+            # Respaldo de cifras con TODA la conversación (no solo el turno): el Estratega trae la cartera una
+            # vez y la referencia en seguimientos sin re-llamar la tool → el alcance por-turno la marcaba como
+            # inventada (falso positivo → loop del fail-close). Ahora una cifra ya traída queda respaldada.
+            tool_jsons = tool_jsons_de_conversacion(state["messages"])
             resultado = evaluar_salida_crm(texto, tool_jsons)
             registrar_guardrail(resultado, session=cfg.get("thread_id"))
             es_final = not getattr(response, "tool_calls", None)   # salida FINAL, no una llamada a tool

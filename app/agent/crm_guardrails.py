@@ -78,6 +78,21 @@ def tool_jsons_del_turno(messages: list) -> list[str]:
     return list(reversed(out))
 
 
+def tool_jsons_de_conversacion(messages: list) -> list[str]:
+    """Los .content de TODOS los ToolMessage del HILO (no solo el turno actual). El Estratega suele traer la
+    cartera UNA vez (kickoff) y luego referencia esos números en respuestas de seguimiento SIN re-llamar la
+    tool; con el alcance por-turno esos números salían como 'numero_sin_dato' (falso positivo → LOOP del
+    fail-close de cifra). Respaldando con TODA la conversación, una cifra ya traída por la tool queda
+    respaldada, y el fail-close dispara SOLO ante alucinación pura (nunca se llamó ninguna tool en el hilo)."""
+    from langchain_core.messages import ToolMessage
+    out: list[str] = []
+    for m in messages or []:
+        if isinstance(m, ToolMessage):
+            c = m.content
+            out.append(c if isinstance(c, str) else json.dumps(c, ensure_ascii=False))
+    return out
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Baranda 3.1 — cifra_no_inventada
 # ─────────────────────────────────────────────────────────────────────────────

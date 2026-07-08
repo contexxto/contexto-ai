@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import axios from 'axios'
 import { Users, RefreshCw, Flame, MapPin, Sparkles, BarChart3, Compass,
-         TrendingUp, Clock, AlertTriangle, ChevronRight } from 'lucide-react'
+         TrendingUp, Clock, AlertTriangle, ChevronRight, Send } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import { LeadChat } from './LeadsPanel'
 import CRMChat from './CRMChat'
@@ -137,8 +137,8 @@ export default function CRM() {
   }, [d])
 
   const leads = useMemo(() => {
-    if (!d) return []
-    return filtro ? d.leads.filter((l) => l.estado === filtro) : d.leads
+    const L = d?.leads || []   // total>0 con leads ausente (respuesta parcial) no debe white-screenear la lista
+    return filtro ? L.filter((l) => l.estado === filtro) : L
   }, [d, filtro])
 
   // Fase C — puente al Copiloto. La directiva del Estratega puede pedir foco 'lead' (per-interesado); como
@@ -250,7 +250,10 @@ export default function CRM() {
   // widget flotante (botón ✨ abajo-derecha) para que nunca se confunda con la charla de un lead.
   const drawer = sel ? (
     <div style={panelStyle}>
-      <LeadChat activo={{ id: sel.activo_id, direccion: sel.direccion }} lead={sel} onBack={() => setSel(null)} />
+      {/* Cerrar el lead vuelve al hub (si el Copiloto estaba enfocado en ESTE lead, se cierra con él para
+          no degradar a un Copiloto 'cartera' en blanco). Desde la LISTA (sin agente) solo suelta el lead. */}
+      <LeadChat activo={{ id: sel.activo_id, direccion: sel.direccion }} lead={sel}
+        onBack={() => { setSel(null); if (asistente === 'copiloto') setAsistente(null) }} />
     </div>
   ) : (
     <div style={{ ...panelStyle, display: 'flex', flexDirection: 'column', alignItems: 'center',

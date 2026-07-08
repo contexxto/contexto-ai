@@ -9,7 +9,7 @@ import ActualizarEntorno from './ActualizarEntorno'
 
 const C = {
   bg: 'var(--bg)', panel: 'var(--surface-1)', teal: 'var(--teal)', tealHi: 'var(--teal-bright)',
-  text: 'var(--text)', muted: 'var(--text-mid)', line: 'var(--border)',
+  coral: 'var(--coral)', text: 'var(--text)', muted: 'var(--text-mid)', line: 'var(--border)',
 }
 
 // Caché en memoria de la última lista → aperturas repetidas abren al instante.

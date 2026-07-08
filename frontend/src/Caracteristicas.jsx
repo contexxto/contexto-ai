@@ -197,7 +197,7 @@ export default function Caracteristicas({ activo, onClose }) {
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 13px', borderRadius: 8, cursor: 'pointer', fontSize: '.8rem', fontWeight: 600,
                            background: f[k] ? 'rgba(45,189,182,.18)' : 'var(--surface-2)',
                            border: `1px solid ${f[k] ? C.teal : C.line}`, color: f[k] ? C.tealHi : C.muted }}>
-                  {f[k] && <Check size={13} />}{label}
+                  {f[k] ? <Check size={13} /> : null}{label}
                 </button>
               ))}
             </div>
@@ -260,7 +260,7 @@ export default function Caracteristicas({ activo, onClose }) {
               style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 10, padding: '7px 13px', borderRadius: 8, cursor: 'pointer', fontSize: '.8rem', fontWeight: 600,
                        background: f.precio_negociable ? 'rgba(45,189,182,.18)' : 'var(--surface-2)',
                        border: `1px solid ${f.precio_negociable ? C.teal : C.line}`, color: f.precio_negociable ? C.tealHi : C.muted }}>
-              {f.precio_negociable && <Check size={13} />}Precio negociable
+              {f.precio_negociable ? <Check size={13} /> : null}Precio negociable
             </button>
 
             {esVenta && (

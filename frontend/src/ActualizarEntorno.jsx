@@ -187,7 +187,7 @@ export default function ActualizarEntorno({ activo, onClose }) {
                 return (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
                                         padding: '8px 11px', borderRadius: 10, border: `1px solid ${C.line}`,
-                                        background: cerrado ? 'rgba(224,104,90,.08)' : 'rgba(255,255,255,.03)' }}>
+                                        background: cerrado ? 'rgba(224,104,90,.08)' : 'var(--surface-2)' }}>
                     <span style={{ fontSize: '.86rem', textDecoration: cerrado ? 'line-through' : 'none',
                                    color: cerrado ? C.muted : C.text }}>
                       {s.visible}{s.distancia_m ? ` · ~${s.distancia_m} m` : ''}
@@ -224,7 +224,7 @@ export default function ActualizarEntorno({ activo, onClose }) {
                 <button type="button" onClick={capturarUbicacion} disabled={busy || geo === 'capturando'}
                   style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, width: '100%',
                            marginTop: 4, padding: '10px', borderRadius: 10, cursor: 'pointer', fontSize: '.84rem', fontWeight: 600,
-                           background: geo === 'ok' ? 'rgba(45,189,182,.14)' : 'rgba(255,255,255,.04)',
+                           background: geo === 'ok' ? 'rgba(45,189,182,.14)' : 'var(--surface-2)',
                            border: `1px solid ${geo === 'ok' ? C.teal : C.line}`, color: geo === 'ok' ? C.tealHi : C.text }}>
                   <MapPin size={15} />
                   {geo === 'ok' ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>Ubicación capturada <Check size={14} /></span> : geo === 'capturando' ? 'Capturando…' : 'Estoy aquí — usar mi ubicación'}
@@ -239,7 +239,7 @@ export default function ActualizarEntorno({ activo, onClose }) {
                 <label style={lbl}>Foto del lugar (opcional)</label>
                 <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, marginTop: 4,
                                 padding: '10px', borderRadius: 10, cursor: uploading ? 'default' : 'pointer', fontSize: '.84rem',
-                                fontWeight: 600, background: 'rgba(255,255,255,.04)', border: `1px dashed ${C.line}`, color: C.text }}>
+                                fontWeight: 600, background: 'var(--surface-2)', border: `1px dashed ${C.line}`, color: C.text }}>
                   {uploading ? <Loader size={15} style={{ animation: 'spin 1s linear infinite' }} /> : <Camera size={15} />}
                   {uploading ? 'Subiendo…' : nuevo.foto ? 'Cambiar foto' : 'Tomar / subir foto'}
                   <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
@@ -267,7 +267,7 @@ export default function ActualizarEntorno({ activo, onClose }) {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {curaciones.map((c) => (
                     <div key={c.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-                                             padding: '7px 10px', borderRadius: 9, background: 'rgba(255,255,255,.03)' }}>
+                                             padding: '7px 10px', borderRadius: 9, background: 'var(--surface-2)' }}>
                       <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '.82rem', color: C.text, minWidth: 0 }}>
                         {c.foto && <img src={c.foto} alt="" style={{ width: 34, height: 34, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />}
                         <span style={{ minWidth: 0 }}>

@@ -74,13 +74,8 @@
 }
 
 body {
-  /* Grid cartográfico muy sutil; el aura viva la pinta body::before */
+  /* Fondo plano estilo ASI:One — sin grid ni aura (la marca "aura" vive en el contenido) */
   background-color: var(--bg);
-  background-image:
-    linear-gradient(rgba(45,189,182,0.022) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(45,189,182,0.022) 1px, transparent 1px);
-  background-size: 52px 52px, 52px 52px;
-  background-attachment: fixed;
   color: var(--text);
   height: 100dvh;
   overflow: hidden;
@@ -90,26 +85,8 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Aura viva — resplandor teal/coral difuso que respira (estilo Material 3 / Gemini) */
-body::before {
-  content: '';
-  position: fixed;
-  inset: -25%;
-  z-index: -1;
-  pointer-events: none;
-  background:
-    radial-gradient(closest-side at 28% 26%, rgba(45,189,182,0.16), transparent),
-    radial-gradient(closest-side at 76% 72%, rgba(224,104,90,0.10), transparent),
-    radial-gradient(closest-side at 60% 18%, rgba(94,234,212,0.08), transparent);
-  filter: blur(50px);
-  animation: auraDrift 26s ease-in-out infinite alternate;
-}
-@keyframes auraDrift {
-  0%   { transform: translate(0, 0) scale(1); }
-  50%  { transform: translate(4%, -3%) scale(1.08); }
-  100% { transform: translate(-3%, 4%) scale(1.05); }
-}
-@media (prefers-reduced-motion: reduce) { body::before { animation: none; } }
+/* Fondo plano estilo ASI:One: sin aura viva en el fondo. La marca "aura" vive en el contenido. */
+body::before { content: none; }
 
 /* Vidrio translúcido (glassmorphism) */
 .glass {

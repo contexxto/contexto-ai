@@ -1256,11 +1256,12 @@ export default function App() {
 
       {/* ── Header ── */}
       <header style={{
-        display:'flex', alignItems:'center', justifyContent:'space-between',
+        position:'relative', display:'flex', alignItems:'center', justifyContent:'center',
         padding:'16px 0 12px',
         flexShrink:0,
       }}>
-        <div style={{ display:'flex', alignItems:'center', gap:10, minWidth:0 }}>
+        {/* Botón de menú/panel — anclado a la izquierda; el logo va centrado (estilo ASI:One) */}
+        <div style={{ position:'absolute', left:0, top:'50%', transform:'translateY(-50%)' }}>
           {isMobile ? (
             <button onClick={() => setSidebarOpen(true)} title="Conversaciones"
               style={{ background:'none', border:'none', cursor:'pointer',
@@ -1275,17 +1276,12 @@ export default function App() {
               <PanelLeft size={20} />
             </button>
           )}
-          <img src={sphereLogo} alt="Contexto AI" width={isMobile ? 28 : 32} height={isMobile ? 28 : 32}
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:9 }}>
+          <img src={sphereLogo} alt="Contexto AI" width={isMobile ? 26 : 30} height={isMobile ? 26 : 30}
                style={{ display:'block', flexShrink:0 }} />
-          <div style={{ minWidth:0 }}>
-            <div style={{ fontWeight:800, fontSize:isMobile ? '.95rem' : '1rem', letterSpacing:'-.3px' }}>
-              Contexto <span style={{ color:'var(--teal)' }}>AI</span>
-            </div>
-            {!isMobile && (
-              <div style={{ fontSize:'.72rem', color:'var(--text-muted)' }}>
-                Cada lugar tiene un aura · Quito
-              </div>
-            )}
+          <div style={{ fontWeight:800, fontSize:isMobile ? '1rem' : '1.05rem', letterSpacing:'-.3px' }}>
+            Contexto <span style={{ color:'var(--teal)' }}>AI</span>
           </div>
         </div>
       </header>

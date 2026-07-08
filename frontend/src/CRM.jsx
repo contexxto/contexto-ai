@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import axios from 'axios'
 import { Users, RefreshCw, Flame, MapPin, Sparkles, BarChart3, Compass,
-         TrendingUp, Clock, AlertTriangle, ChevronRight } from 'lucide-react'
+         TrendingUp, Clock, AlertTriangle, ChevronRight, Send } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import { LeadChat } from './LeadsPanel'
 import CRMChat from './CRMChat'
@@ -97,6 +97,7 @@ export default function CRM() {
   const [leadPuente, setLeadPuente] = useState(null)   // interesado resuelto del foco 'lead' (Fase C) → puente al Copiloto
   const chatRef = useRef(null)                          // Fase D: handle al Estratega del split → inyectar preguntas del dashboard
   const [filtro, setFiltro] = useState(null) // filtro por etapa del embudo
+  const [verLista, setVerLista] = useState(false) // hub → "ver todos los interesados" (lista completa)
   const [wide, setWide] = useState(() => window.matchMedia('(min-width: 900px)').matches)
   // ¿Hay espacio para ACOPLAR el copiloto como 3ª columna sin apretar la conversación?
   // Abajo de este ancho, el copiloto abre como overlay a la derecha en vez de columna.
@@ -119,6 +120,7 @@ export default function CRM() {
       setD(data)
     } catch { setErr(true) } finally { setLoading(false) }
   }
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { cargar() }, [])
 
   const kpis = useMemo(() => {
@@ -134,10 +136,9 @@ export default function CRM() {
     }
   }, [d])
 
-  const maxFunnel = useMemo(() => (d ? Math.max(1, ...RAIL.map((e) => d.funnel?.[e] || 0)) : 1), [d])
   const leads = useMemo(() => {
-    if (!d) return []
-    return filtro ? d.leads.filter((l) => l.estado === filtro) : d.leads
+    const L = d?.leads || []   // total>0 con leads ausente (respuesta parcial) no debe white-screenear la lista
+    return filtro ? L.filter((l) => l.estado === filtro) : L
   }, [d, filtro])
 
   // Fase C — puente al Copiloto. La directiva del Estratega puede pedir foco 'lead' (per-interesado); como
@@ -159,6 +160,24 @@ export default function CRM() {
     setSel(l)              // enfoca su conversación
     setAsistente('copiloto')
     setAnalisis(false)     // sale del split; el Copiloto (táctico, con timeline) toma el detalle
+  }
+  // Vuelve al HUB (cierra lead/agente/lista/filtro).
+  const volverAlHub = () => { setSel(null); setAsistente(null); setVerLista(false); setFiltro(null); setLeadPuente(null) }
+
+  // Derivados del HUB (estilo ASI "Routine tasks" + "Activity feed"), todo de /mine/leads.
+  const pidenCorredor = useMemo(() => (d?.leads || []).filter((l) => l.handoff_estado || l.handoff_sugerido), [d])
+  const paraReenganchar = useMemo(() => (d?.leads || []).filter((l) => l.reenganche), [d])
+  const recientes = useMemo(() => [...(d?.leads || [])]
+    .filter((l) => l.ultima_actividad)
+    .sort((a, b) => new Date(b.ultima_actividad) - new Date(a.ultima_actividad)).slice(0, 6), [d])
+  const nombreCorto = (l) => {
+    if (!l) return '—'
+    const ph = /^lead #([a-z0-9]+)/i.exec(l.lead || '')
+    if (ph) return `#${ph[1]}`
+    const email = l.email || ''
+    if (l.lead && l.lead !== email) return l.lead.length > 14 ? l.lead.slice(0, 13) + '…' : l.lead
+    const local = email.includes('@') ? email.split('@')[0] : (l.lead || '—')
+    return local.length > 14 ? local.slice(0, 13) + '…' : local
   }
 
   const kpiCard = (icon, val, label, color) => (
@@ -223,41 +242,6 @@ export default function CRM() {
     )
   }
 
-  const railRow = (e) => {
-    const count = d?.funnel?.[e] || 0   // d puede ser null en el primer render (loading)
-    const on = filtro === e
-    return (
-      <button key={e} onClick={() => setFiltro(on ? null : e)}
-        style={{ display: 'block', width: '100%', textAlign: 'left', border: 'none', borderRadius: 10,
-                 padding: '7px 9px', cursor: 'pointer', color: on ? C.text : C.muted,
-                 background: on ? 'rgba(45,189,182,.10)' : 'transparent' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '.75rem', marginBottom: 5 }}>
-          <span style={{ fontWeight: on ? 700 : 500 }}>{ESTADO_LBL[e]}</span>
-          <span style={{ fontWeight: 800, color: count ? C.tealHi : C.muted }}>{count}</span>
-        </div>
-        <div style={{ height: 4, borderRadius: 999, background: 'var(--surface-3)' }}>
-          <div style={{ height: '100%', borderRadius: 999, width: `${(count / maxFunnel) * 100}%`,
-                        background: `linear-gradient(90deg, ${C.teal}, ${C.tealHi})` }} />
-        </div>
-      </button>
-    )
-  }
-
-  const railPanel = (
-    <div style={{ width: 190, flexShrink: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2,
-                  borderRight: `1px solid ${C.line}`, paddingRight: 8 }}>
-      <div style={{ fontSize: '.64rem', textTransform: 'uppercase', letterSpacing: .6, color: C.muted,
-                    fontWeight: 700, padding: '2px 9px 6px' }}>Embudo</div>
-      <button onClick={() => setFiltro(null)}
-        style={{ textAlign: 'left', border: 'none', borderRadius: 10, padding: '7px 9px', cursor: 'pointer',
-                 background: !filtro ? 'rgba(45,189,182,.10)' : 'transparent', color: !filtro ? C.tealHi : C.muted,
-                 fontWeight: 700, fontSize: '.78rem', marginBottom: 4 }}>
-        Todos ({d?.total || 0})
-      </button>
-      {RAIL.map(railRow)}
-    </div>
-  )
-
   const panelStyle = {
     flex: 1, minWidth: 0, border: `1px solid ${C.line}`, borderRadius: 16, padding: '16px 14px',
     background: `radial-gradient(120% 90% at 30% 0%, ${C.panel} 0%, ${C.bg} 70%)`, height: '100%',
@@ -266,7 +250,10 @@ export default function CRM() {
   // widget flotante (botón ✨ abajo-derecha) para que nunca se confunda con la charla de un lead.
   const drawer = sel ? (
     <div style={panelStyle}>
-      <LeadChat activo={{ id: sel.activo_id, direccion: sel.direccion }} lead={sel} onBack={() => setSel(null)} />
+      {/* Cerrar el lead vuelve al hub (si el Copiloto estaba enfocado en ESTE lead, se cierra con él para
+          no degradar a un Copiloto 'cartera' en blanco). Desde la LISTA (sin agente) solo suelta el lead. */}
+      <LeadChat activo={{ id: sel.activo_id, direccion: sel.direccion }} lead={sel}
+        onBack={() => { setSel(null); if (asistente === 'copiloto') setAsistente(null) }} />
     </div>
   ) : (
     <div style={{ ...panelStyle, display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -285,37 +272,26 @@ export default function CRM() {
     </div>
   )
 
+  // Estilos del HUB (tokens; chips rectangulares; texto full-contraste).
+  const secLabel = { fontSize: '.66rem', textTransform: 'uppercase', letterSpacing: '.06em', color: C.muted, fontWeight: 700, marginBottom: 12, padding: '0 2px' }
+  const taskCard = { flex: '1 1 240px', minWidth: 210, background: 'var(--surface-1)', border: `1px solid ${C.line}`, borderRadius: 14, padding: 14 }
+  const taskTitle = { display: 'flex', alignItems: 'center', gap: 7, fontSize: '.9rem', fontWeight: 700, color: C.text, marginBottom: 5 }
+  const taskDesc = { fontSize: '.78rem', color: C.muted, lineHeight: 1.4, marginBottom: 11 }
+  const taskChipsRow = { display: 'flex', gap: 6, flexWrap: 'wrap' }
+  const miniChip = { fontSize: '.68rem', color: C.text, background: 'var(--surface-2)', border: `1px solid ${C.line}`, borderRadius: 5, padding: '4px 9px' }
+  const taskGo = { display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 12, fontSize: '.78rem', fontWeight: 700, color: C.tealHi, background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit' }
+  const evBadge = { fontSize: '.6rem', fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: 'var(--surface-2)', color: C.tealHi }
+  const agChip = { display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '.75rem', fontWeight: 600, color: C.text, background: 'var(--surface-2)', border: `1px solid ${C.line}`, borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontFamily: 'inherit' }
+  const backBtn = { alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '.8rem', fontWeight: 600, color: C.muted, background: 'none', border: 'none', cursor: 'pointer', padding: '2px 2px 6px', fontFamily: 'inherit' }
+
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', color: C.text, padding: '0 16px 16px',
                   fontFamily: 'inherit' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 2px 12px', flexShrink: 0 }}>
         <Users size={20} color={C.teal} />
         <h1 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, letterSpacing: '-.02em' }}>Tu cartera</h1>
-        <button onClick={() => { setAnalisis(a => !a); setAsistente(null); setLeadPuente(null) }} title="Análisis y reportería de tu cartera"
-          style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, fontSize: '.8rem',
-                   fontWeight: 600, padding: '6px 13px', borderRadius: 999, cursor: 'pointer',
-                   background: analisis ? 'rgba(45,189,182,.15)' : 'var(--surface-2)',
-                   color: analisis ? C.tealHi : C.text, border: `1px solid ${C.line}` }}>
-          <BarChart3 size={15} color={C.teal} /> Análisis
-        </button>
-        <button onClick={() => { setAsistente(a => a === 'estratega' ? null : 'estratega'); setAnalisis(false); setLeadPuente(null) }}
-          title="El Estratega lee TODA tu cartera y te recomienda la jugada (proactivo)"
-          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '.8rem',
-                   fontWeight: 600, padding: '6px 13px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${C.line}`,
-                   background: asistente === 'estratega' ? 'rgba(45,189,182,.15)' : 'var(--surface-2)',
-                   color: asistente === 'estratega' ? C.tealHi : C.text }}>
-          <Compass size={15} color={C.teal} /> Estratega
-        </button>
-        <button onClick={() => { setAsistente(a => a === 'copiloto' ? null : 'copiloto'); setAnalisis(false); setLeadPuente(null) }}
-          title="El Copiloto te ayuda con la conversación de cada interesado (táctico)"
-          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '.8rem',
-                   fontWeight: 600, padding: '6px 13px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${C.line}`,
-                   background: asistente === 'copiloto' ? 'rgba(45,189,182,.15)' : 'var(--surface-2)',
-                   color: asistente === 'copiloto' ? C.tealHi : C.text }}>
-          <Sparkles size={15} color={C.teal} /> Copiloto
-        </button>
         <button onClick={cargar} title="Actualizar"
-          style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer',
+          style={{ marginLeft: 'auto', background: 'none', border: 'none', color: C.muted, cursor: 'pointer',
                    transform: loading ? 'rotate(180deg)' : 'none', transition: 'transform .4s' }}>
           <RefreshCw size={16} />
         </button>
@@ -331,26 +307,7 @@ export default function CRM() {
         </div>
       )}
 
-      {/* Tareas de hoy (hub estilo ASI "Routine tasks"): lo accionable, derivado de la cartera. */}
-      {kpis && (kpis.pide > 0 || kpis.reenganchar > 0) && (
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14, flexShrink: 0, alignItems: 'center' }}>
-          <span style={{ fontSize: '.66rem', textTransform: 'uppercase', letterSpacing: '.06em', color: C.muted, fontWeight: 700 }}>Tareas de hoy</span>
-          {kpis.pide > 0 && (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '.78rem', color: C.text,
-                           background: 'var(--surface-2)', border: `1px solid ${C.line}`, borderRadius: 8, padding: '6px 11px' }}>
-              <Flame size={13} color="#E0685A" /> {kpis.pide} {kpis.pide === 1 ? 'pidió' : 'pidieron'} corredor — contáctalos
-            </span>
-          )}
-          {kpis.reenganchar > 0 && (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '.78rem', color: C.text,
-                           background: 'var(--surface-2)', border: `1px solid ${C.line}`, borderRadius: 8, padding: '6px 11px' }}>
-              <Sparkles size={13} color="#E8B84B" /> {kpis.reenganchar} por reenganchar
-            </span>
-          )}
-        </div>
-      )}
-
-      {err && <div style={{ color: '#E0685A', fontSize: '.85rem' }}>⚠️ No se pudieron cargar los interesados.</div>}
+      {err &&<div style={{ color: '#E0685A', fontSize: '.85rem' }}>⚠️ No se pudieron cargar los interesados.</div>}
       {!d && !err && <div style={{ color: C.muted, padding: '24px 0', textAlign: 'center' }}>Cargando…</div>}
 
       {/* Modo ANÁLISIS VIVO (chip "Análisis"): SPLIT — el Estratega a la izquierda re-enfoca el dashboard
@@ -403,50 +360,141 @@ export default function CRM() {
         </div>
       )}
 
-      {d && !analisis && d.total > 0 && (
-        <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 14 }}>
-          {wide && !(asistente && puedeAcoplar) && railPanel}
-          {(wide || !sel) && (
-            <div style={{ width: wide ? 358 : '100%', flexShrink: 0, overflowY: 'auto',
-                          display: 'flex', flexDirection: 'column', gap: 9 }}>
-              {!wide && (
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
-                  <button onClick={() => setFiltro(null)} style={chipStyle(!filtro)}>Todos {d.total}</button>
-                  {RAIL.filter((e) => (d.funnel?.[e] || 0) > 0).map((e) => (
-                    <button key={e} onClick={() => setFiltro(filtro === e ? null : e)} style={chipStyle(filtro === e)}>
-                      {ESTADO_LBL[e]} {d.funnel[e]}
-                    </button>
-                  ))}
+      {/* ── HUB LANDING (estilo ASI "central hub"): Tareas de hoy + Actividad + dock de agentes ── */}
+      {d && !analisis && d.total > 0 && !sel && !asistente && !verLista && (
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ flex: 1, overflowY: 'auto', maxWidth: 680, width: '100%', margin: '0 auto',
+                        display: 'flex', flexDirection: 'column', gap: 22, paddingBottom: 6 }}>
+            {/* Tareas de hoy — tarjetas grandes accionables */}
+            {(pidenCorredor.length > 0 || paraReenganchar.length > 0) && (
+              <div>
+                <div style={secLabel}>Tareas de hoy</div>
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  {pidenCorredor.length > 0 && (
+                    <div style={taskCard}>
+                      <div style={taskTitle}><Flame size={16} color="#E0685A" /> Contacta a {pidenCorredor.length}</div>
+                      <div style={taskDesc}>Pidieron corredor y siguen esperando.</div>
+                      <div style={taskChipsRow}>
+                        {pidenCorredor.slice(0, 3).map((l, i) => <span key={i} style={miniChip}>{nombreCorto(l)}</span>)}
+                        {pidenCorredor.length > 3 && <span style={miniChip}>+{pidenCorredor.length - 3}</span>}
+                      </div>
+                      <button onClick={() => abrirCopilotoConLead(pidenCorredor[0])} style={taskGo}>Abrir Copiloto →</button>
+                    </div>
+                  )}
+                  {paraReenganchar.length > 0 && (
+                    <div style={taskCard}>
+                      <div style={taskTitle}><Sparkles size={16} color="#E8B84B" /> Reengancha</div>
+                      <div style={taskDesc}>{paraReenganchar.length} {paraReenganchar.length === 1 ? 'dormido' : 'dormidos'} por retomar.</div>
+                      <div style={taskChipsRow}>
+                        {paraReenganchar.slice(0, 3).map((l, i) => <span key={i} style={miniChip}>{nombreCorto(l)}</span>)}
+                        {paraReenganchar.length > 3 && <span style={miniChip}>+{paraReenganchar.length - 3}</span>}
+                      </div>
+                      <button onClick={() => abrirCopilotoConLead(paraReenganchar[0])} style={taskGo}>Ver mensaje →</button>
+                    </div>
+                  )}
                 </div>
-              )}
-              {leads.map(leadRow)}
-              {leads.length === 0 && (
-                <div style={{ color: C.muted, fontSize: '.8rem', padding: '20px 4px', textAlign: 'center' }}>
-                  Sin interesados en esta etapa.
+              </div>
+            )}
+
+            {/* Actividad — feed de lo reciente */}
+            {recientes.length > 0 && (
+              <div>
+                <div style={secLabel}>Actividad</div>
+                <div style={{ fontSize: '.78rem', color: C.muted, margin: '-6px 2px 10px' }}>Qué pasó mientras no estabas.</div>
+                <div>
+                  {recientes.map((l, i) => {
+                    const n = NIVEL[l.nivel] || NIVEL.frio
+                    const t = haceCuanto(l.ultima_actividad)
+                    const inicial = (l.lead || '?').replace(/[^A-Za-z0-9]/g, '').charAt(0).toUpperCase() || '?'
+                    const pide = l.handoff_estado || l.handoff_sugerido
+                    return (
+                      <div key={i} onClick={() => abrirCopilotoConLead(l)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 2px', cursor: 'pointer',
+                                 borderBottom: i < recientes.length - 1 ? `1px solid ${C.line}` : 'none' }}>
+                        <div style={{ width: 30, height: 30, borderRadius: 999, flexShrink: 0, display: 'grid', placeItems: 'center',
+                                      fontSize: '.8rem', fontWeight: 700, background: n.c + '22', color: n.c }}>{inicial}</div>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontSize: '.82rem', fontWeight: 600, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.lead}</div>
+                          <div style={{ fontSize: '.74rem', color: C.muted, display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                            {pide ? 'Pidió corredor' : l.reenganche ? 'Por reenganchar' : `${l.mensajes ?? 0} mensajes`}
+                            <span style={evBadge}>{ESTADO_LBL[l.estado] || l.estado}</span>
+                          </div>
+                        </div>
+                        <span style={{ fontSize: '.68rem', color: C.muted, flexShrink: 0 }}>{t || ''}</span>
+                      </div>
+                    )
+                  })}
                 </div>
-              )}
+              </div>
+            )}
+
+            <button onClick={() => setVerLista(true)} style={{ ...taskGo, alignSelf: 'flex-start' }}>
+              Ver los {d.total} interesados →
+            </button>
+          </div>
+
+          {/* Dock de agentes (secundarios, a un tap) */}
+          <div style={{ maxWidth: 680, width: '100%', margin: '0 auto', flexShrink: 0, background: 'var(--surface-1)',
+                        border: `1px solid ${C.line}`, borderRadius: 16, padding: '11px 12px', marginTop: 10 }}>
+            <div style={{ display: 'flex', gap: 7, marginBottom: 10, flexWrap: 'wrap' }}>
+              <button onClick={() => { setAsistente('estratega'); setLeadPuente(null) }} style={agChip}><Compass size={13} color={C.teal} /> Estratega</button>
+              <button onClick={() => { setAsistente('copiloto'); setLeadPuente(null) }} style={agChip}><Sparkles size={13} color={C.teal} /> Copiloto</button>
+              <button onClick={() => { setAnalisis(true); setLeadPuente(null) }} style={agChip}><BarChart3 size={13} color={C.teal} /> Análisis</button>
             </div>
+            <button onClick={() => { setAsistente('estratega'); setLeadPuente(null) }}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+              <Compass size={16} color={C.teal} style={{ flexShrink: 0 }} />
+              <span style={{ flex: 1, textAlign: 'left', color: C.muted, fontSize: '.9rem', fontFamily: 'inherit' }}>Pregúntale a tu Estratega…</span>
+              <span style={{ width: 38, height: 38, borderRadius: 999, background: C.tealHi, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                <Send size={15} color="#06201C" />
+              </span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── LISTA COMPLETA de interesados (desde "Ver todos" en el hub) ── */}
+      {d && !analisis && d.total > 0 && !sel && !asistente && verLista && (
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 9,
+                      maxWidth: 680, width: '100%', margin: '0 auto', overflowY: 'auto' }}>
+          <button onClick={volverAlHub} style={backBtn}>← Volver al hub</button>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
+            <button onClick={() => setFiltro(null)} style={chipStyle(!filtro)}>Todos {d.total}</button>
+            {RAIL.filter((e) => (d.funnel?.[e] || 0) > 0).map((e) => (
+              <button key={e} onClick={() => setFiltro(filtro === e ? null : e)} style={chipStyle(filtro === e)}>
+                {ESTADO_LBL[e]} {d.funnel[e]}
+              </button>
+            ))}
+          </div>
+          {leads.map(leadRow)}
+          {leads.length === 0 && (
+            <div style={{ color: C.muted, fontSize: '.8rem', padding: '20px 4px', textAlign: 'center' }}>Sin interesados en esta etapa.</div>
           )}
-          {(wide || sel) && drawer}
-          {/* RIEL DE AGENTES — columna dedicada (acoplada en ancho; overlay a la derecha en angosto).
-              Copiloto: táctico, recibe el lead abierto (sel) y adapta sus sugerencias. Estratega: de
-              cartera, proactivo, sin lead. El key incluye el modo → cambiar de agente/lead da hilo fresco.
-              Nunca pisa el input de la conversación del cliente porque es su propia columna. */}
-          {asistente && (
-            <div style={puedeAcoplar
-              ? { width: 372, flexShrink: 0, minHeight: 0, display: 'flex', flexDirection: 'column',
-                  border: `1px solid ${C.line}`, borderRadius: 16, padding: '14px 12px',
-                  background: `linear-gradient(180deg, rgba(45,189,182,.08) 0%, ${C.bg} 55%)` }
-              : { position: 'fixed', top: 0, right: 0, bottom: 0, width: 'min(430px, 100vw)', zIndex: 1200,
-                  display: 'flex', flexDirection: 'column', padding: '16px 14px',
-                  borderLeft: `1px solid ${C.line}`, background: C.panel, boxShadow: '-8px 0 44px rgba(0,0,0,.55)' }}>
-              <CRMChat
-                key={asistente === 'copiloto' ? `copiloto-${sel?.session_id || 'cartera'}` : 'estratega'}
-                modo={asistente}
-                lead={asistente === 'copiloto' ? sel : null}
-                onClose={() => setAsistente(null)} />
-            </div>
-          )}
+        </div>
+      )}
+
+      {/* ── VISTA DE AGENTE / LEAD (Copiloto con lead, o Estratega) con volver al hub ── */}
+      {d && !analisis && d.total > 0 && (sel || asistente) && (
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <button onClick={volverAlHub} style={backBtn}>← Volver al hub</button>
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 14 }}>
+            {sel && drawer}
+            {asistente && (
+              <div style={puedeAcoplar || !sel
+                ? { flex: sel ? undefined : 1, width: sel ? 372 : undefined, flexShrink: 0, minHeight: 0, display: 'flex', flexDirection: 'column',
+                    border: `1px solid ${C.line}`, borderRadius: 16, padding: '14px 12px',
+                    background: `linear-gradient(180deg, rgba(45,189,182,.08) 0%, ${C.bg} 55%)` }
+                : { position: 'fixed', top: 0, right: 0, bottom: 0, width: 'min(430px, 100vw)', zIndex: 1200,
+                    display: 'flex', flexDirection: 'column', padding: '16px 14px',
+                    borderLeft: `1px solid ${C.line}`, background: C.panel, boxShadow: '-8px 0 44px rgba(0,0,0,.55)' }}>
+                <CRMChat
+                  key={asistente === 'copiloto' ? `copiloto-${sel?.session_id || 'cartera'}` : 'estratega'}
+                  modo={asistente}
+                  lead={asistente === 'copiloto' ? sel : null}
+                  onClose={() => setAsistente(null)} />
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

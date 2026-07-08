@@ -96,8 +96,9 @@ export default function CRMChat({ onClose, lead, modo = 'copiloto', onPanelSeed 
         { message: t, lead: leadRef, modo }, { headers: apiHeaders() })
       setMsgs(prev => [...prev, { autor: 'crm', texto: data.reply || 'Sin respuesta.' }])
       // Directiva de panel (dashboard vivo, SPEC_Analisis_Vivo): el Estratega re-enfoca el AnalisisPanel.
-      // El kickoff NO re-enfoca (el dashboard ya abre en la North Star por defecto); las preguntas sí.
-      if (!esKickoff && data.panel_seed && onPanelSeed) onPanelSeed(data.panel_seed)
+      // El kickoff NO re-enfoca (el dashboard ya abre en la North Star por defecto); las preguntas sí. Se
+      // llama CADA turno (aun con panel_seed null) para que el padre pueda caducar el puente al Copiloto.
+      if (!esKickoff && onPanelSeed) onPanelSeed(data.panel_seed || null)
     } catch {
       setError('No se pudo consultar. Intenta de nuevo.')
     } finally {

@@ -39,6 +39,43 @@ function haceCuanto(iso) {
   return `hace ${Math.round(h / 24)}d`
 }
 
+// Resuelve la REFERENCIA cruda del foco 'lead' (email / id / nombre que tecleó el corredor) contra sus
+// interesados REALES (owner-scoped, /mine/leads). Acento/caso-insensible, substring sobre nombre+email+id.
+// null si no resuelve → SIN puente (la sobre-extracción del backend es inofensiva). Nunca toca dato de otro
+// corredor (la lista ya viene scopeada) y el Estratega jamás recibió el dato del lead (frontera FH intacta).
+function resolverLead(ref, leads) {
+  if (!ref || !Array.isArray(leads)) return null
+  // NFD quita acentos; deja letras/números/@/./espacio y colapsa espacios → tokenizable, sin regex frágil.
+  const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[^a-z0-9@. ]/g, ' ').replace(/\s+/g, ' ').trim()
+  // Palabras de agregado/conector/plumbing que NO identifican a un interesado (evita matchear genéricos).
+  const STOP = new Set(['lead', 'leads', 'cartera', 'pipeline', 'embudo', 'com', 'gmail', 'hotmail',
+    'outlook', 'yahoo', 'mail', 'web', 'del', 'con', 'los', 'las', 'una', 'que', 'por', 'para',
+    'todo', 'todos', 'nuevo', 'nueva', 'interesado', 'cliente', 'prospecto'])
+  const toks = norm(ref).split(' ').filter((t) => t.length >= 3 && !STOP.has(t))
+  if (!toks.length) return null
+  // IDENTIDAD del interesado: SOLO email (parte local, antes de @) + nombre humano. NUNCA session_id (uuid
+  // plumbing) ni la palabra 'Lead' del placeholder 'Lead #xxxx' (del que solo rescatamos el id hexadecimal).
+  const idDe = (l) => {
+    if (!l) return ''
+    const email = (l.email || '').toLowerCase()
+    const local = email.includes('@') ? email.split('@')[0] : ''
+    let nombre = l.lead || ''
+    const ph = /^lead #([a-z0-9]+)/i.exec(nombre)
+    if (ph) nombre = ph[1]                       // 'Lead #ba0a' → 'ba0a' (el id, sin la palabra 'lead')
+    else if (nombre === l.email) nombre = ''     // el nombre ES el email → ya cubierto por 'local'
+    return norm(`${nombre} ${local}`)
+  }
+  // Puntúa por tokens de la ref que casan (igualdad o prefijo) con un token de identidad; gana el máximo.
+  let best = null, score = 0
+  for (const l of leads) {
+    if (!l) continue
+    const idToks = idDe(l).split(' ').filter(Boolean)
+    const s = toks.filter((t) => idToks.some((it) => it === t || it.startsWith(t) || t.startsWith(it))).length
+    if (s > score) { score = s; best = l }
+  }
+  return score > 0 ? best : null
+}
+
 const chipStyle = (on) => ({
   fontSize: '.7rem', padding: '4px 10px', borderRadius: 999, cursor: 'pointer',
   background: on ? 'rgba(45,189,182,.14)' : 'rgba(255,255,255,.04)',
@@ -57,6 +94,7 @@ export default function CRM() {
   // Directiva de panel del Estratega (SPEC_Analisis_Vivo): re-enfoca el dashboard según la conversación.
   // Default 'handoff' → el dashboard "abre" en la North Star. El chat del split lo actualiza vía onPanelSeed.
   const [panelSeed, setPanelSeed] = useState({ foco: 'handoff', resalta: null, caption: null })
+  const [leadPuente, setLeadPuente] = useState(null)   // interesado resuelto del foco 'lead' (Fase C) → puente al Copiloto
   const [filtro, setFiltro] = useState(null) // filtro por etapa del embudo
   const [wide, setWide] = useState(() => window.matchMedia('(min-width: 900px)').matches)
   // ¿Hay espacio para ACOPLAR el copiloto como 3ª columna sin apretar la conversación?
@@ -99,6 +137,27 @@ export default function CRM() {
     if (!d) return []
     return filtro ? d.leads.filter((l) => l.estado === filtro) : d.leads
   }, [d, filtro])
+
+  // Fase C — puente al Copiloto. La directiva del Estratega puede pedir foco 'lead' (per-interesado); como
+  // el Estratega NO tiene acceso al detalle (frontera FH: sin tool_timeline_de_lead), el frontend resuelve la
+  // referencia contra la cartera y ofrece abrir el Copiloto (que sí tiene el timeline). Sin match → se ignora.
+  const onPanelSeed = (ps) => {
+    if (!ps) { setLeadPuente(null); return }   // turno SIN señal → caduca el puente (CTA agresiva), conserva el foco
+    if (ps.foco === 'lead') {
+      const l = resolverLead(ps.resalta, d?.leads || [])
+      if (l) { setLeadPuente(l); setPanelSeed(ps) }   // SOLO si resuelve a un interesado real
+      else setLeadPuente(null)                        // ref no resuelve → sin puente (limpia uno viejo); conserva foco
+    } else {
+      setLeadPuente(null)
+      setPanelSeed(ps)
+    }
+  }
+  const abrirCopilotoConLead = (l) => {
+    setLeadPuente(null)
+    setSel(l)              // enfoca su conversación
+    setAsistente('copiloto')
+    setAnalisis(false)     // sale del split; el Copiloto (táctico, con timeline) toma el detalle
+  }
 
   const kpiCard = (icon, val, label, color) => (
     <div style={{ flex: 1, minWidth: 148, border: `1px solid ${C.line}`, borderRadius: 16, padding: '13px 15px',
@@ -230,14 +289,14 @@ export default function CRM() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 2px 12px', flexShrink: 0 }}>
         <Users size={20} color={C.teal} />
         <h1 style={{ margin: 0, fontSize: '1.15rem' }}>CRM · Interesados</h1>
-        <button onClick={() => { setAnalisis(a => !a); setAsistente(null) }} title="Análisis y reportería de tu cartera"
+        <button onClick={() => { setAnalisis(a => !a); setAsistente(null); setLeadPuente(null) }} title="Análisis y reportería de tu cartera"
           style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, fontSize: '.8rem',
                    fontWeight: 600, padding: '6px 13px', borderRadius: 999, cursor: 'pointer',
                    background: analisis ? 'rgba(45,189,182,.15)' : 'rgba(255,255,255,.05)',
                    color: analisis ? C.tealHi : C.text, border: `1px solid ${C.line}` }}>
           <BarChart3 size={15} color={C.teal} /> Análisis
         </button>
-        <button onClick={() => { setAsistente(a => a === 'estratega' ? null : 'estratega'); setAnalisis(false) }}
+        <button onClick={() => { setAsistente(a => a === 'estratega' ? null : 'estratega'); setAnalisis(false); setLeadPuente(null) }}
           title="El Estratega lee TODA tu cartera y te recomienda la jugada (proactivo)"
           style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '.8rem',
                    fontWeight: 600, padding: '6px 13px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${C.line}`,
@@ -245,7 +304,7 @@ export default function CRM() {
                    color: asistente === 'estratega' ? C.tealHi : C.text }}>
           <Compass size={15} color={C.teal} /> Estratega
         </button>
-        <button onClick={() => { setAsistente(a => a === 'copiloto' ? null : 'copiloto'); setAnalisis(false) }}
+        <button onClick={() => { setAsistente(a => a === 'copiloto' ? null : 'copiloto'); setAnalisis(false); setLeadPuente(null) }}
           title="El Copiloto te ayuda con la conversación de cada interesado (táctico)"
           style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '.8rem',
                    fontWeight: 600, padding: '6px 13px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${C.line}`,
@@ -276,15 +335,38 @@ export default function CRM() {
       {/* Modo ANÁLISIS VIVO (chip "Análisis"): SPLIT — el Estratega a la izquierda re-enfoca el dashboard
           a la derecha según la conversación (SPEC_Analisis_Vivo). En angosto se apilan (chat arriba). */}
       {d && analisis && (
-        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: wide ? 'row' : 'column', gap: 14 }}>
-          <div style={{ ...(wide ? { width: 380, flexShrink: 0 } : { height: '44%', flexShrink: 0 }),
-                        minHeight: 0, display: 'flex', flexDirection: 'column',
-                        border: `1px solid ${C.line}`, borderRadius: 16, padding: '14px 12px',
-                        background: `linear-gradient(180deg, rgba(45,189,182,.08) 0%, ${C.bg} 55%)` }}>
-            <CRMChat key="estratega-analisis" modo="estratega" onPanelSeed={setPanelSeed} />
-          </div>
-          <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-            <AnalisisPanel panelSeed={panelSeed} onVolver={() => setAnalisis(false)} />
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {/* Puente al Copiloto (Fase C): el Estratega NO ve el detalle de un interesado (frontera FH) → cuando
+              el corredor pregunta por uno, se ofrece abrir el Copiloto, que sí tiene su timeline. */}
+          {leadPuente && (
+            <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px',
+                          borderRadius: 12, border: `1px solid ${C.tealHi}55`,
+                          background: 'linear-gradient(90deg, rgba(45,189,182,.16), rgba(94,234,212,.06))' }}>
+              <Sparkles size={16} color={C.tealHi} style={{ flexShrink: 0 }} />
+              <span style={{ fontSize: '.82rem', color: C.text, minWidth: 0, flex: 1 }}>
+                El detalle de <strong style={{ color: C.tealHi, display: 'inline-block', maxWidth: 170,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'bottom' }}>{leadPuente.lead}</strong> vive en el Copiloto — yo trabajo tu cartera.
+              </span>
+              <button onClick={() => abrirCopilotoConLead(leadPuente)}
+                style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5, fontSize: '.78rem', fontWeight: 700,
+                         padding: '6px 12px', borderRadius: 999, cursor: 'pointer', border: 'none',
+                         background: `linear-gradient(90deg, ${C.teal}, ${C.tealHi})`, color: '#0E0D13' }}>
+                Abrir Copiloto <ChevronRight size={14} />
+              </button>
+              <button onClick={() => setLeadPuente(null)} title="Descartar"
+                style={{ flexShrink: 0, background: 'none', border: 'none', color: C.muted, cursor: 'pointer', fontSize: '1rem', lineHeight: 1 }}>✕</button>
+            </div>
+          )}
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: wide ? 'row' : 'column', gap: 14 }}>
+            <div style={{ ...(wide ? { width: 380, flexShrink: 0 } : { height: '44%', flexShrink: 0 }),
+                          minHeight: 0, display: 'flex', flexDirection: 'column',
+                          border: `1px solid ${C.line}`, borderRadius: 16, padding: '14px 12px',
+                          background: `linear-gradient(180deg, rgba(45,189,182,.08) 0%, ${C.bg} 55%)` }}>
+              <CRMChat key="estratega-analisis" modo="estratega" onPanelSeed={onPanelSeed} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+              <AnalisisPanel panelSeed={panelSeed} onVolver={() => { setAnalisis(false); setLeadPuente(null) }} />
+            </div>
           </div>
         </div>
       )}

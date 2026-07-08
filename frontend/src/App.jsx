@@ -93,7 +93,7 @@ function ActBtn({ title, onClick, active, children }) {
       {hover && (
         <span style={{
           position: 'absolute', bottom: 'calc(100% + 6px)', left: '50%', transform: 'translateX(-50%)',
-          background: '#1E1D28', border: '1px solid rgba(255,255,255,.12)', color: 'var(--text)',
+          background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)',
           fontSize: '.7rem', padding: '4px 9px', borderRadius: 7, whiteSpace: 'nowrap',
           pointerEvents: 'none', zIndex: 30, boxShadow: '0 4px 14px rgba(0,0,0,.45)',
         }}>
@@ -181,7 +181,7 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
           <div style={{
             padding: isUser ? '10px 14px' : '2px 30px 2px 2px',
             borderRadius: isUser ? '18px 18px 4px 18px' : 0,
-            background: isUser ? 'linear-gradient(135deg, #1A7A76, #2DBDB6)' : 'transparent',
+            background: isUser ? 'linear-gradient(135deg, var(--teal-deep), var(--teal))' : 'transparent',
             border: 'none',
             boxShadow: isUser ? '0 4px 18px rgba(45,189,182,.22)' : 'none',
             color: isUser ? '#fff' : 'inherit',
@@ -201,7 +201,7 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
         {isUser && (
           <div style={{
             width:32, height:32, borderRadius:'50%', flexShrink:0,
-            background:'#30363d', display:'flex', alignItems:'center',
+            background:'var(--surface-3)', color:'var(--text)', display:'flex', alignItems:'center',
             justifyContent:'center', fontSize:13, fontWeight:600,
           }}>Tú</div>
         )}
@@ -1347,13 +1347,13 @@ export default function App() {
 
         {error && (
           <div style={{
-            background:'#2d1a1a', border:'1px solid #5a2020', borderRadius:10,
-            padding:'12px 16px', color:'#f85149', fontSize:'.87rem', marginBottom:12,
+            background:'var(--error-bg)', border:'1px solid var(--error-border)', borderRadius:10,
+            padding:'12px 16px', color:'var(--error-text)', fontSize:'.87rem', marginBottom:12,
             display:'flex', justifyContent:'space-between', alignItems:'center',
           }}>
             <span>{error}</span>
             <button onClick={() => setError(null)}
-              style={{ background:'none', border:'none', cursor:'pointer', color:'#f85149', fontSize:16 }}>
+              style={{ background:'none', border:'none', cursor:'pointer', color:'var(--error-text)', fontSize:16 }}>
               ×
             </button>
           </div>

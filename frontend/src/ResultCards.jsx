@@ -6,10 +6,11 @@ import sphereLogo from './assets/sphere.svg'
 // El agente narra (una línea); aquí aparecen los inmuebles con foto + la intención
 // visible (caminabilidad con proveniencia). Reutiliza el lenguaje visual de AnuncioView.
 
+// Paleta vía tokens del design system → adapta a tema oscuro/claro.
 const C = {
-  bg: '#16151E', panel: '#1E1D28', teal: '#2DBDB6', tealHi: '#5EEAD4',
-  coral: '#E0685A', gold: '#E8B84B', text: '#EDEBF2', muted: '#9C99AC',
-  line: 'rgba(45,189,182,.22)',
+  bg: 'var(--bg)', panel: 'var(--surface-1)', teal: 'var(--teal)', tealHi: 'var(--teal-bright)',
+  coral: 'var(--coral)', gold: 'var(--warning)', text: 'var(--text)', muted: 'var(--text-mid)',
+  line: 'var(--border)',
 }
 
 const fmtUSD = (n) => '$' + Number(n).toLocaleString('es-EC')

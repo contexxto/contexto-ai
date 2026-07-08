@@ -235,7 +235,7 @@ export function LeadChat({ activo, lead, onBack }) {
 
   const bubble = (autor) => {
     if (autor === 'corredor') return { align: 'flex-end', bg: 'linear-gradient(90deg,#2DBDB6,#5EEAD4)', color: '#0E0D13', lbl: 'Tú' }
-    if (autor === 'agente') return { align: 'flex-start', bg: 'rgba(255,255,255,.05)', color: C.muted, lbl: 'Agente IA' }
+    if (autor === 'agente') return { align: 'flex-start', bg: 'var(--ai-bg)', color: C.muted, lbl: 'Agente IA' }
     return { align: 'flex-start', bg: 'rgba(45,189,182,.10)', color: C.text, lbl: 'Interesado' }
   }
 
@@ -316,7 +316,7 @@ export function LeadChat({ activo, lead, onBack }) {
       )}
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginTop: 10, flexShrink: 0,
-                    background: 'rgba(20,44,43,.5)', border: `1px solid ${C.line}`, borderRadius: 20, padding: 7 }}>
+                    background: 'var(--surface-2)', border: `1px solid ${C.line}`, borderRadius: 20, padding: 7 }}>
         <textarea value={texto} onChange={e => setTexto(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); responder() } }}
           placeholder="Responde al interesado…" rows={1}

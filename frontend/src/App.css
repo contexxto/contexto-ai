@@ -6,10 +6,10 @@
 .crm-md > :first-child { margin-top: 0; }
 .crm-md > :last-child { margin-bottom: 0; }
 .crm-md p { margin: 6px 0; }
-.crm-md strong { font-weight: 700; color: #EAF7F5; }
+.crm-md strong { font-weight: 700; color: var(--text); }
 .crm-md ul, .crm-md ol { margin: 6px 0; padding-left: 18px; }
 .crm-md li { margin: 3px 0; }
-.crm-md h2, .crm-md h3, .crm-md h4 { margin: 8px 0 4px; font-size: .92rem; font-weight: 700; color: #EAF7F5; }
+.crm-md h2, .crm-md h3, .crm-md h4 { margin: 8px 0 4px; font-size: .92rem; font-weight: 700; color: var(--text); }
 .crm-md code { background: rgba(45,189,182,.14); padding: 1px 5px; border-radius: 5px; font-size: .82em; }
 .crm-md hr { border: none; border-top: 1px solid rgba(45,189,182,.2); margin: 8px 0; }
 .crm-md table { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: .8rem; }

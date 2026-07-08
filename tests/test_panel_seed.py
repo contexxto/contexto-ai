@@ -117,3 +117,29 @@ def test_cartera_sin_keyword_no_es_lead():
     # palabras de agregado). derivar_foco → None → el frontend conserva el foco actual del dashboard.
     for m in ["cuéntame de la cartera", "cuéntame del pipeline", "qué hay de nuevo en la cartera"]:
         assert derivar_foco(m) is None
+
+
+# ── Fase D — el dashboard como ENTRADA (contrato del bucle) ──────────────────
+# Espejo EXACTO de ESTADO_LBL en frontend/src/AnalisisPanel.jsx (las 9 etiquetas que el clic puede emitir).
+_ETIQUETAS_EMBUDO = ["Anónimo", "Identificado", "Explorando", "Enganchado", "Intención",
+                     "Confirmado", "Completado", "Returning", "Dormido"]
+
+
+@pytest.mark.parametrize("lbl", _ETIQUETAS_EMBUDO)
+def test_clic_en_etapa_del_embudo_reenfoca_embudo(lbl):
+    # El clic en CUALQUIER barra del embudo debe re-enfocar el widget de embudo. 'Dormido' colisionaba con
+    # la regla de reenganche ('dormid') → se desambigua con la regla "en el embudo" (prioridad). Cubrir las
+    # 9 etiquetas evita que una futura colisión de label pase en verde.
+    q = f"¿Qué hago con mis 6 en {lbl} para moverlos en el embudo?"
+    assert derivar_foco(q) == "embudo", f"'{lbl}' debería re-enfocar embudo, no {derivar_foco(q)}"
+
+
+def test_clic_en_cohortes_reenfoca_cohortes():
+    assert derivar_foco("¿Cómo van mis 3 interesados maduros?") == "cohortes"
+    assert derivar_foco("¿Y mis 7 en vuelo?") == "cohortes"
+
+
+def test_desambiguacion_no_rompe_reenganche_genuino():
+    # La regla "en el embudo" NO debe robarle los focos legítimos de reenganche (que no hablan del embudo).
+    assert derivar_foco("¿A quién reenganchar primero?") == "reenganche"
+    assert derivar_foco("¿tengo dormidos para reactivar?") == "reenganche"

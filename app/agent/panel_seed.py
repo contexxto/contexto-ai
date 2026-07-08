@@ -33,6 +33,10 @@ def _norm(s: str | None) -> str:
 # reenganche/embudo/cohortes son más específicos que handoff (que también es el "default" temático),
 # por eso van antes. Todo transaccional; ningún patrón alude a clase protegida.
 _REGLAS: list[tuple[str, re.Pattern[str]]] = [
+    # DESAMBIGUACIÓN (Fase D): el clic en una barra del embudo manda "…para moverlos en el embudo" con el
+    # LABEL de la etapa; si el label es 'Dormido' colisiona con 'dormid' (reenganche). Esta regla va PRIMERO:
+    # cualquier pregunta que hable de mover EN EL EMBUDO gana el foco 'embudo', antes que 'reenganche'.
+    ("embudo", re.compile(r"en el embudo")),
     ("reenganche", re.compile(r"reenganch|dormid|reactiv|recuper|retomar|volver a contactar|revivir")),
     ("embudo", re.compile(r"embudo|funnel|atasc|atora|atra[np]|estanc|cuello|se traba|se frena|frena|etapa")),
     ("cohortes", re.compile(r"cohorte|madur|en vuelo")),

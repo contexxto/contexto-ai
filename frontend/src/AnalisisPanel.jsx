@@ -42,7 +42,7 @@ function Tasa({ o, sufijo = '' }) {
 const FOCO_CARD = { handoff: 'handoff', embudo: 'funnel', reenganche: 'lift', cohortes: 'cohortes' }
 const FOCO_LBL = { handoff: 'North Star · handoff', embudo: 'Embudo', reenganche: 'Reenganche', cohortes: 'Cohortes', lead: 'Interesado' }
 
-export default function AnalisisPanel({ onVolver, panelSeed } = {}) {
+export default function AnalisisPanel({ onVolver, panelSeed, onPreguntar } = {}) {
   const [data, setData] = useState(null)
   const [err, setErr] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -130,8 +130,12 @@ export default function AnalisisPanel({ onVolver, panelSeed } = {}) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
           {filas.map(e => {
             const on = e === resaltaEtapa   // la etapa-cuello, cuando el foco es 'embudo'
+            // Fase D — el dashboard como ENTRADA: clic en la etapa → pregunta al Estratega (con keyword
+            // 'embudo' para que su respuesta re-enfoque el widget). El Estratega narra la jugada de esa etapa.
+            const preg = onPreguntar ? () => onPreguntar(`¿Qué hago con mis ${funnel[e]} en ${ESTADO_LBL[e] || e} para moverlos en el embudo?`) : undefined
             return (
-              <div key={e} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div key={e} onClick={preg} title={preg ? 'Pregúntale al Estratega sobre esta etapa' : undefined}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, borderRadius: 6, cursor: preg ? 'pointer' : 'default' }}>
                 <div style={{ width: 96, flexShrink: 0, fontSize: '.78rem', transition: 'color .4s ease',
                               color: on ? C.tealHi : C.text, fontWeight: on ? 700 : 400 }}>{ESTADO_LBL[e] || e}</div>
                 <div style={{ flex: 1, height: 22, borderRadius: 6, background: 'rgba(255,255,255,.04)', overflow: 'hidden',
@@ -146,6 +150,9 @@ export default function AnalisisPanel({ onVolver, panelSeed } = {}) {
             )
           })}
         </div>
+        {onPreguntar && filas.length > 0 && (
+          <div style={{ fontSize: '.66rem', color: C.muted, marginTop: 9 }}>Toca una etapa para preguntarle al Estratega.</div>
+        )}
       </div>
 
       {/* North Star + Lift de reenganche */}
@@ -176,8 +183,12 @@ export default function AnalisisPanel({ onVolver, panelSeed } = {}) {
       <div style={{ ...card, ...fx('cohortes') }}>
         <div style={titulo}><Layers size={13} color={C.teal} /> Cohortes</div>
         <div style={{ display: 'flex', gap: 20, fontSize: '.85rem' }}>
-          <div><strong style={{ color: foco === 'cohortes' ? C.tealHi : C.text, fontSize: '1.2rem', transition: 'color .4s ease' }}>{coh.maduros ?? 0}</strong> <span style={{ color: C.muted }}>maduros</span></div>
-          <div><strong style={{ color: C.text, fontSize: '1.2rem' }}>{coh.en_vuelo ?? 0}</strong> <span style={{ color: C.muted }}>en vuelo</span></div>
+          <div onClick={onPreguntar ? () => onPreguntar(`¿Cómo van mis ${coh.maduros ?? 0} interesados maduros?`) : undefined}
+               title={onPreguntar ? 'Pregúntale al Estratega' : undefined} style={{ cursor: onPreguntar ? 'pointer' : 'default' }}>
+            <strong style={{ color: foco === 'cohortes' ? C.tealHi : C.text, fontSize: '1.2rem', transition: 'color .4s ease' }}>{coh.maduros ?? 0}</strong> <span style={{ color: C.muted }}>maduros</span></div>
+          <div onClick={onPreguntar ? () => onPreguntar(`¿Y mis ${coh.en_vuelo ?? 0} en vuelo?`) : undefined}
+               title={onPreguntar ? 'Pregúntale al Estratega' : undefined} style={{ cursor: onPreguntar ? 'pointer' : 'default' }}>
+            <strong style={{ color: C.text, fontSize: '1.2rem' }}>{coh.en_vuelo ?? 0}</strong> <span style={{ color: C.muted }}>en vuelo</span></div>
         </div>
         {coh._nota && <div style={{ color: C.muted, fontSize: '.7rem', marginTop: 8 }}>{coh._nota}</div>}
       </div>

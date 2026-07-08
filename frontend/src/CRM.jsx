@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import axios from 'axios'
 import { Users, RefreshCw, Flame, MapPin, Sparkles, BarChart3, Compass,
          TrendingUp, Clock, AlertTriangle, ChevronRight } from 'lucide-react'
@@ -95,6 +95,7 @@ export default function CRM() {
   // Default 'handoff' → el dashboard "abre" en la North Star. El chat del split lo actualiza vía onPanelSeed.
   const [panelSeed, setPanelSeed] = useState({ foco: 'handoff', resalta: null, caption: null })
   const [leadPuente, setLeadPuente] = useState(null)   // interesado resuelto del foco 'lead' (Fase C) → puente al Copiloto
+  const chatRef = useRef(null)                          // Fase D: handle al Estratega del split → inyectar preguntas del dashboard
   const [filtro, setFiltro] = useState(null) // filtro por etapa del embudo
   const [wide, setWide] = useState(() => window.matchMedia('(min-width: 900px)').matches)
   // ¿Hay espacio para ACOPLAR el copiloto como 3ª columna sin apretar la conversación?
@@ -362,10 +363,11 @@ export default function CRM() {
                           minHeight: 0, display: 'flex', flexDirection: 'column',
                           border: `1px solid ${C.line}`, borderRadius: 16, padding: '14px 12px',
                           background: `linear-gradient(180deg, rgba(45,189,182,.08) 0%, ${C.bg} 55%)` }}>
-              <CRMChat key="estratega-analisis" modo="estratega" onPanelSeed={onPanelSeed} />
+              <CRMChat ref={chatRef} key="estratega-analisis" modo="estratega" onPanelSeed={onPanelSeed} />
             </div>
             <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-              <AnalisisPanel panelSeed={panelSeed} onVolver={() => { setAnalisis(false); setLeadPuente(null) }} />
+              <AnalisisPanel panelSeed={panelSeed} onVolver={() => { setAnalisis(false); setLeadPuente(null) }}
+                onPreguntar={(t) => chatRef.current?.preguntar(t)} />
             </div>
           </div>
         </div>

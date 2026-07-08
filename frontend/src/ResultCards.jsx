@@ -9,7 +9,7 @@ import sphereLogo from './assets/sphere.svg'
 // Paleta vía tokens del design system → adapta a tema oscuro/claro.
 const C = {
   bg: 'var(--bg)', panel: 'var(--surface-1)', teal: 'var(--teal)', tealHi: 'var(--teal-bright)',
-  coral: 'var(--coral)', gold: 'var(--warning)', text: 'var(--text)', muted: 'var(--text-mid)',
+  coral: 'var(--coral)', gold: 'var(--warning)', accent: 'var(--accent)', text: 'var(--text)', muted: 'var(--text-mid)',
   line: 'var(--border)',
 }
 
@@ -147,7 +147,7 @@ function ResultCard({ r, onOpen, activeId, onActive, seleccionado, onToggleCompa
       {/* Cuerpo */}
       <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
         {precio && (
-          <div style={{ fontSize: '1.02rem', fontWeight: 800, color: C.tealHi, lineHeight: 1 }}>{precio}</div>
+          <div style={{ fontSize: '1.02rem', fontWeight: 800, color: C.accent, lineHeight: 1 }}>{precio}</div>
         )}
         {/* ★ Encaje contigo — el diferenciador de la tarea #8: el score + POR QUÉ (razones
             dato+fuente del motor, jamás veredictos sobre la persona). Solo aparece si el
@@ -194,7 +194,7 @@ function ResultCard({ r, onOpen, activeId, onActive, seleccionado, onToggleCompa
           <span title="El corredor verificó en terreno los servicios de este entorno (Catastro Vivo)."
             style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 4,
                      padding: '2px 8px', borderRadius: 999, fontSize: '.62rem', fontWeight: 700,
-                     background: 'rgba(45,189,182,.12)', border: `1px solid ${C.teal}`, color: C.tealHi }}>
+                     background: 'rgba(45,189,182,.12)', border: `1px solid ${C.teal}`, color: C.accent }}>
             ✓ Verificado por el corredor
           </span>
         )}
@@ -209,7 +209,7 @@ function ResultCard({ r, onOpen, activeId, onActive, seleccionado, onToggleCompa
                 title={`${p.texto} · a ~${p.distancia_m} m (según el mapa — OpenStreetMap)`}
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 4, maxWidth: '100%',
                          padding: '3px 8px', borderRadius: 999, fontSize: '.66rem', fontWeight: 600,
-                         background: 'rgba(45,189,182,.10)', border: `1px solid ${C.line}`, color: C.tealHi }}>
+                         background: 'rgba(45,189,182,.10)', border: `1px solid ${C.line}`, color: C.accent }}>
                 <span style={{ flexShrink: 0 }}>{p.emoji}</span>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 116 }}>{p.texto}</span>
                 <span style={{ color: C.muted, fontWeight: 500, flexShrink: 0, whiteSpace: 'nowrap' }}>· {p.minutos} min</span>

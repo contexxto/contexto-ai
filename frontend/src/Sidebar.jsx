@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import axios from 'axios'
-import { Plus, Pin, PinOff, Pencil, Trash2, MoreHorizontal, MessageSquare, LogIn, LogOut, Home, Map, Shield, Users, Briefcase, Sun } from 'lucide-react'
+import { Plus, Pin, PinOff, Pencil, Trash2, MoreHorizontal, MessageSquare, LogOut, Home, Map, Shield, Users, Briefcase, Sun, PanelLeft } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import sphereLogo from './assets/sphere.svg'
 
@@ -19,7 +19,7 @@ function tituloLimpio(t) {
   return (i === -1 ? t : t.slice(0, i)).trim() || 'Conversación'
 }
 
-export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, onLogin, onLogout, onPublish, onMap, onReview, onCRM, onUpgrade, mobile }) {
+export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, onLogin, onLogout, onPublish, onMap, onReview, onCRM, onUpgrade, mobile, onClose }) {
   const [sessions, setSessions] = useState([])
   const [menuId, setMenuId] = useState(null)
   const [editingId, setEditingId] = useState(null)
@@ -141,6 +141,12 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, o
       <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '16px 18px 14px', borderBottom: `1px solid ${C.border}` }}>
         <img src={sphereLogo} alt="" width={22} height={22} style={{ display: 'block' }} />
         <span style={{ fontSize: '1.05rem', fontWeight: 800, color: C.text, letterSpacing: '-.02em' }}>Contexto</span>
+        {mobile && onClose && (
+          <button onClick={onClose} title="Cerrar menú"
+            style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: C.dim, display: 'flex', padding: 4 }}>
+            <PanelLeft size={20} />
+          </button>
+        )}
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, padding: '12px 12px 0' }}>
@@ -216,15 +222,26 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, o
             </button>
           </div>
         ) : (
-          <button onClick={onLogin}
-            style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, width: '100%',
-              padding: '10px 12px', borderRadius: 10, cursor: 'pointer', marginBottom: 8,
-              background: C.surface, border: `1px solid ${C.border}`, color: C.text,
-              fontSize: '.88rem', fontWeight: 600, fontFamily: 'inherit',
-            }}>
-            <LogIn size={16} /> Entrar
-          </button>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+            <button onClick={onLogin}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                padding: '11px 12px', borderRadius: 10, cursor: 'pointer',
+                background: 'transparent', border: `1px solid ${C.border}`, color: C.text,
+                fontSize: '.86rem', fontWeight: 600, fontFamily: 'inherit',
+              }}>
+              Ingresar
+            </button>
+            <button onClick={onLogin}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                padding: '11px 12px', borderRadius: 10, cursor: 'pointer',
+                background: C.accent, border: 'none', color: '#06201C',
+                fontSize: '.86rem', fontWeight: 700, fontFamily: 'inherit',
+              }}>
+              Registrarse
+            </button>
+          </div>
         )}
 
         {/* Modo claro (visual; el tema claro llega en una fase aparte) */}

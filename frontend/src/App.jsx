@@ -1228,6 +1228,7 @@ export default function App() {
               onCRM={abrirCRM}
               onUpgrade={() => { setUpgradeOpen(true); setSidebarOpen(false) }}
               mobile={true}
+              onClose={() => setSidebarOpen(false)}
             />
           </div>
         </>

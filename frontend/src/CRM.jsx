@@ -8,8 +8,8 @@ import CRMChat from './CRMChat'
 import AnalisisPanel from './AnalisisPanel'
 
 const C = {
-  bg: '#16151E', panel: '#1E1D28', teal: '#2DBDB6', tealHi: '#5EEAD4',
-  text: '#EDEBF2', muted: '#9C99AC', line: 'rgba(45,189,182,.20)',
+  bg: 'var(--bg)', panel: 'var(--surface-1)', teal: 'var(--teal)', tealHi: 'var(--teal-bright)',
+  text: 'var(--text)', muted: 'var(--text-mid)', line: 'var(--border)',
 }
 const NIVEL = {
   caliente: { c: '#E0685A', e: '🔥' }, tibio: { c: '#E8B84B', e: '🟡' }, frio: { c: '#5E9BE0', e: '🔵' },
@@ -78,7 +78,7 @@ function resolverLead(ref, leads) {
 
 const chipStyle = (on) => ({
   fontSize: '.7rem', padding: '4px 10px', borderRadius: 999, cursor: 'pointer',
-  background: on ? 'rgba(45,189,182,.14)' : 'rgba(255,255,255,.04)',
+  background: on ? 'rgba(45,189,182,.14)' : 'var(--surface-2)',
   border: `1px solid ${C.line}`, color: on ? C.tealHi : C.muted, fontWeight: on ? 700 : 500,
 })
 
@@ -127,6 +127,7 @@ export default function CRM() {
     const pid = L.filter((l) => l.handoff_estado || l.handoff_sugerido).length
     return {
       total: d.total,
+      pide: pid,
       conversion: d.total ? Math.round((pid / d.total) * 100) : 0,
       activos: L.filter((l) => l.frescura === 'activo').length,
       reenganchar: L.filter((l) => l.reenganche).length,
@@ -162,7 +163,7 @@ export default function CRM() {
 
   const kpiCard = (icon, val, label, color) => (
     <div style={{ flex: 1, minWidth: 148, border: `1px solid ${C.line}`, borderRadius: 16, padding: '13px 15px',
-                  background: 'rgba(255,255,255,.02)', display: 'flex', alignItems: 'center', gap: 12 }}>
+                  background: 'var(--surface-1)', display: 'flex', alignItems: 'center', gap: 12 }}>
       <div style={{ width: 40, height: 40, borderRadius: 12, display: 'grid', placeItems: 'center',
                     background: color + '18', color, flexShrink: 0 }}>{icon}</div>
       <div style={{ minWidth: 0 }}>
@@ -183,7 +184,7 @@ export default function CRM() {
       <div key={i} onClick={() => setSel(l)}
         style={{ border: `1px solid ${on ? n.c : (pide || l.handoff_sugerido) ? n.c + '55' : C.line}`,
                  borderRadius: 14, padding: '11px 12px', cursor: 'pointer', display: 'flex', gap: 11, alignItems: 'center',
-                 background: on ? 'rgba(45,189,182,.08)' : 'rgba(255,255,255,.02)' }}>
+                 background: on ? 'rgba(45,189,182,.08)' : 'var(--surface-1)' }}>
         <div style={{ width: 38, height: 38, borderRadius: '50%', flexShrink: 0, display: 'grid', placeItems: 'center',
                       background: n.c + '22', color: n.c, fontWeight: 800, fontSize: '.95rem' }}>{inicial}</div>
         <div style={{ minWidth: 0, flex: 1 }}>
@@ -234,7 +235,7 @@ export default function CRM() {
           <span style={{ fontWeight: on ? 700 : 500 }}>{ESTADO_LBL[e]}</span>
           <span style={{ fontWeight: 800, color: count ? C.tealHi : C.muted }}>{count}</span>
         </div>
-        <div style={{ height: 4, borderRadius: 999, background: 'rgba(255,255,255,.06)' }}>
+        <div style={{ height: 4, borderRadius: 999, background: 'var(--surface-3)' }}>
           <div style={{ height: '100%', borderRadius: 999, width: `${(count / maxFunnel) * 100}%`,
                         background: `linear-gradient(90deg, ${C.teal}, ${C.tealHi})` }} />
         </div>
@@ -286,14 +287,14 @@ export default function CRM() {
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', color: C.text, padding: '0 16px 16px',
-                  fontFamily: 'Inter, system-ui, sans-serif' }}>
+                  fontFamily: 'inherit' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 2px 12px', flexShrink: 0 }}>
         <Users size={20} color={C.teal} />
-        <h1 style={{ margin: 0, fontSize: '1.15rem' }}>CRM · Interesados</h1>
+        <h1 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, letterSpacing: '-.02em' }}>Tu cartera</h1>
         <button onClick={() => { setAnalisis(a => !a); setAsistente(null); setLeadPuente(null) }} title="Análisis y reportería de tu cartera"
           style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, fontSize: '.8rem',
                    fontWeight: 600, padding: '6px 13px', borderRadius: 999, cursor: 'pointer',
-                   background: analisis ? 'rgba(45,189,182,.15)' : 'rgba(255,255,255,.05)',
+                   background: analisis ? 'rgba(45,189,182,.15)' : 'var(--surface-2)',
                    color: analisis ? C.tealHi : C.text, border: `1px solid ${C.line}` }}>
           <BarChart3 size={15} color={C.teal} /> Análisis
         </button>
@@ -301,7 +302,7 @@ export default function CRM() {
           title="El Estratega lee TODA tu cartera y te recomienda la jugada (proactivo)"
           style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '.8rem',
                    fontWeight: 600, padding: '6px 13px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${C.line}`,
-                   background: asistente === 'estratega' ? 'rgba(45,189,182,.15)' : 'rgba(255,255,255,.05)',
+                   background: asistente === 'estratega' ? 'rgba(45,189,182,.15)' : 'var(--surface-2)',
                    color: asistente === 'estratega' ? C.tealHi : C.text }}>
           <Compass size={15} color={C.teal} /> Estratega
         </button>
@@ -309,7 +310,7 @@ export default function CRM() {
           title="El Copiloto te ayuda con la conversación de cada interesado (táctico)"
           style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '.8rem',
                    fontWeight: 600, padding: '6px 13px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${C.line}`,
-                   background: asistente === 'copiloto' ? 'rgba(45,189,182,.15)' : 'rgba(255,255,255,.05)',
+                   background: asistente === 'copiloto' ? 'rgba(45,189,182,.15)' : 'var(--surface-2)',
                    color: asistente === 'copiloto' ? C.tealHi : C.text }}>
           <Sparkles size={15} color={C.teal} /> Copiloto
         </button>
@@ -327,6 +328,25 @@ export default function CRM() {
           {kpiCard(<TrendingUp size={20} />, `${kpis.conversion}%`, 'Piden corredor', C.tealHi)}
           {kpiCard(<Clock size={20} />, kpis.activos, 'Activos', C.teal)}
           {kpiCard(<AlertTriangle size={20} />, kpis.reenganchar, 'Por reenganchar', '#E8B84B')}
+        </div>
+      )}
+
+      {/* Tareas de hoy (hub estilo ASI "Routine tasks"): lo accionable, derivado de la cartera. */}
+      {kpis && (kpis.pide > 0 || kpis.reenganchar > 0) && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14, flexShrink: 0, alignItems: 'center' }}>
+          <span style={{ fontSize: '.66rem', textTransform: 'uppercase', letterSpacing: '.06em', color: C.muted, fontWeight: 700 }}>Tareas de hoy</span>
+          {kpis.pide > 0 && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '.78rem', color: C.text,
+                           background: 'var(--surface-2)', border: `1px solid ${C.line}`, borderRadius: 8, padding: '6px 11px' }}>
+              <Flame size={13} color="#E0685A" /> {kpis.pide} {kpis.pide === 1 ? 'pidió' : 'pidieron'} corredor — contáctalos
+            </span>
+          )}
+          {kpis.reenganchar > 0 && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '.78rem', color: C.text,
+                           background: 'var(--surface-2)', border: `1px solid ${C.line}`, borderRadius: 8, padding: '6px 11px' }}>
+              <Sparkles size={13} color="#E8B84B" /> {kpis.reenganchar} por reenganchar
+            </span>
+          )}
         </div>
       )}
 

@@ -5,8 +5,8 @@ import { API_BASE, apiHeaders } from './api'
 import { renderMarkdown } from './markdown'
 
 const C = {
-  bg: '#16151E', panel: '#1E1D28', teal: '#2DBDB6', tealHi: '#5EEAD4',
-  text: '#EDEBF2', muted: '#9C99AC', line: 'rgba(45,189,182,.22)',
+  bg: 'var(--bg)', panel: 'var(--surface-1)', teal: 'var(--teal)', tealHi: 'var(--teal-bright)',
+  text: 'var(--text)', muted: 'var(--text-mid)', line: 'var(--border)',
 }
 const NIVEL = {
   caliente: { c: '#E0685A', e: '🔥' }, tibio: { c: '#E8B84B', e: '🟡' }, frio: { c: '#5E9BE0', e: '🔵' },

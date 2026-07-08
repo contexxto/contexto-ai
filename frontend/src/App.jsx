@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from 'react'
 import axios from 'axios'
 import {
-  Send, MapPin, RefreshCw, Trash2, Copy, CheckCheck, ChevronDown, Menu, Mic, PanelLeft,
-  Share2, Volume2, ThumbsUp, ThumbsDown, ArrowUpToLine
+  Send, MapPin, RefreshCw, Trash2, Copy, CheckCheck, ChevronDown, PanelLeft,
+  Share2, Volume2, ThumbsUp, ThumbsDown, ArrowUpToLine, Plus, ArrowUp, AudioLines
 } from 'lucide-react'
 import { supabase, authEnabled } from './supabaseClient'
 import Auth from './Auth'
@@ -12,6 +12,8 @@ import ShareConversation from './ShareConversation'
 import AnuncioView from './AnuncioView'
 import ResultCards from './ResultCards'
 import DeltaEncaje from './DeltaEncaje'
+import Launcher from './Launcher'
+import AttachSheet from './AttachSheet'
 
 // Headers (backend key + Bearer del usuario) centralizados en api.js
 import { API_BASE, apiHeaders, setAccessToken } from './api'
@@ -324,14 +326,7 @@ function Thinking() {
 }
 
 // ── Main App ────────────────────────────────────────────────
-// Chips de INTENCIÓN (no de zona): capturan qué busca la persona para vivir y
-// arrancan una conversación de emparejamiento (intent-matching), no una consulta.
-const QUICK_PROMPTS = [
-  '🏡 Busco para mi familia: tranquilo, con colegios y parque cerca',
-  '🚇 Quiero vivir cerca del Metro o de mi trabajo',
-  '💰 Dime qué me conviene para mi presupuesto',
-]
-
+// Los chips de INTENCIÓN viven ahora en Launcher.jsx (pantalla inicial limpia).
 export default function App() {
   // Deep link de QR: /a/{uuid} → sesión determinística qr-{id}
   const deepLinkId = (window.location.pathname.match(/^\/a\/([0-9a-fA-F-]{36})$/) || [])[1] || null
@@ -390,6 +385,7 @@ export default function App() {
   const [publishOpen, setPublishOpen] = useState(false)   // modal "Mis publicaciones"
   const [upgradeOpen, setUpgradeOpen] = useState(false)   // modal "Conviértete en corredor"
   const [shareOpen, setShareOpen] = useState(false)       // modal "Compartir conversación"
+  const [attachOpen, setAttachOpen] = useState(false)     // hoja "Adjuntar" (el "+" del dock → búsqueda visual)
   const [shared, setShared] = useState(null)              // datos de una conversación compartida (visor)
   const [sharedErr, setSharedErr] = useState(false)
   const [shareInput, setShareInput] = useState('')        // input "sigue preguntándole al agente" en el visor
@@ -1260,16 +1256,17 @@ export default function App() {
 
       {/* ── Header ── */}
       <header style={{
-        display:'flex', alignItems:'center', justifyContent:'space-between',
+        position:'relative', display:'flex', alignItems:'center', justifyContent:'center',
         padding:'16px 0 12px',
         flexShrink:0,
       }}>
-        <div style={{ display:'flex', alignItems:'center', gap:10, minWidth:0 }}>
+        {/* Botón de menú/panel — anclado a la izquierda; el logo va centrado (estilo ASI:One) */}
+        <div style={{ position:'absolute', left:0, top:'50%', transform:'translateY(-50%)' }}>
           {isMobile ? (
             <button onClick={() => setSidebarOpen(true)} title="Conversaciones"
               style={{ background:'none', border:'none', cursor:'pointer',
                        color:'var(--text)', padding:4, display:'flex', flexShrink:0 }}>
-              <Menu size={22} />
+              <PanelLeft size={22} />
             </button>
           ) : (
             <button onClick={() => setSidebarCollapsed(c => !c)}
@@ -1279,19 +1276,12 @@ export default function App() {
               <PanelLeft size={20} />
             </button>
           )}
-          <img src={sphereLogo} alt="Contexto AI" width={isMobile ? 30 : 36} height={isMobile ? 30 : 36}
-               style={{ display:'block', flexShrink:0,
-                        filter:'drop-shadow(0 0 10px rgba(45,189,182,.45))',
-                        animation:'spin 18s linear infinite' }} />
-          <div style={{ minWidth:0 }}>
-            <div style={{ fontWeight:800, fontSize:isMobile ? '.95rem' : '1rem', letterSpacing:'-.3px' }}>
-              Contexto <span style={{ color:'var(--teal)' }}>AI</span>
-            </div>
-            {!isMobile && (
-              <div style={{ fontSize:'.72rem', color:'var(--text-muted)' }}>
-                Cada lugar tiene un aura · Quito
-              </div>
-            )}
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:9 }}>
+          <img src={sphereLogo} alt="Contexto AI" width={isMobile ? 26 : 30} height={isMobile ? 26 : 30}
+               style={{ display:'block', flexShrink:0 }} />
+          <div style={{ fontWeight:800, fontSize:isMobile ? '1rem' : '1.05rem', letterSpacing:'-.3px' }}>
+            Contexto
           </div>
         </div>
       </header>
@@ -1309,6 +1299,16 @@ export default function App() {
         />
       )}
       {shareOpen && <ShareConversation sessionId={sessionId} onClose={() => setShareOpen(false)} />}
+      {attachOpen && (
+        <AttachSheet
+          onClose={() => setAttachOpen(false)}
+          onPickPhoto={(file) => {
+            const r = new FileReader()
+            r.onload = () => matchByImage(r.result)
+            r.readAsDataURL(file)
+          }}
+        />
+      )}
 
       {/* ── Messages ── */}
       <div
@@ -1317,61 +1317,14 @@ export default function App() {
         style={{ flex:1, overflowY:'auto', padding:'20px 0', position:'relative' }}
       >
         {isEmpty && (
-          <div style={{ textAlign:'center', paddingTop:isMobile ? 40 : 64 }}>
-            <h1 style={{ fontFamily:'var(--font-display)', fontWeight:800,
-                         fontSize:isMobile ? '2.1rem' : '2.8rem', letterSpacing:'-.5px', marginBottom:18, lineHeight:1.12 }}>
-              Cada lugar tiene un <span style={{
-                background:'linear-gradient(135deg, #5EEAD4, #2DBDB6 55%, #E0685A)',
-                WebkitBackgroundClip:'text', backgroundClip:'text', WebkitTextFillColor:'transparent',
-              }}>aura</span>
-            </h1>
-            <p style={{ color:'var(--text-mid)', fontSize:isMobile ? '.92rem' : '1rem', lineHeight:1.7,
-                        maxWidth:560, margin:'0 auto 26px' }}>
-              Entiende qué buscas, verifica en el terreno cómo es cada lugar de verdad
-              —caminabilidad, ruido, transporte, servicios— y te ayuda a decidir cuál encaja
-              contigo. Sin adjetivos de folleto.
-            </p>
-
-            {/* CTA destacado: analiza dónde estás (global, viral) */}
-            <button onClick={analizarMiUbicacion} disabled={geoLoading}
-              style={{ display:'inline-flex', alignItems:'center', gap:9, margin:'0 auto 14px',
-                       padding:'13px 24px', borderRadius:999, border:'none', cursor:geoLoading ? 'default' : 'pointer',
-                       fontWeight:800, fontSize:'.95rem', color:'#0E0D13',
-                       background:'linear-gradient(90deg, #1A7A76, #2DBDB6, #5EEAD4)',
-                       boxShadow:'0 0 34px rgba(45,189,182,.45)' }}>
-              <MapPin size={18} /> {geoLoading ? 'Ubicándote…' : 'Analiza dónde estás'}
-            </button>
-            <div style={{ fontSize:'.76rem', color:'var(--text-muted)', marginBottom:30 }}>
-              Comparte tu ubicación y te cuento cómo es vivir ahí — en Quito o en cualquier ciudad. 🌎
-            </div>
-
-            <div style={{ display:'flex', flexDirection:'column', gap:8, alignItems:'center' }}>
-              {QUICK_PROMPTS.map((p, i) => (
-                <button
-                  key={i}
-                  className="qp"
-                  onClick={() => sendMessage(p)}
-                  style={{
-                    borderRadius:14, padding:'11px 18px', cursor:'pointer',
-                    color:'var(--text)', fontSize:'.85rem', maxWidth:520, textAlign:'left',
-                  }}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
-
-            {/* Camino al intermediario (a quien le vendemos): el hero le hablaba solo al
-                comprador; esto abre el flujo del corredor liderando con SU resultado. */}
-            <button onClick={() => setUpgradeOpen(true)}
-              style={{ marginTop:22, background:'none', border:'none', cursor:'pointer',
-                       color:'var(--text-muted)', fontSize:'.8rem' }}>
-              ¿Eres corredor o inmobiliaria?{' '}
-              <span style={{ color:'var(--teal-bright, #5EEAD4)', fontWeight:700 }}>
-                Que tu próximo lead llegue calificado →
-              </span>
-            </button>
-          </div>
+          <Launcher
+            onSend={sendMessage}
+            onAnalyzeLocation={analizarMiUbicacion}
+            onOpenMap={() => { setMapSeed(null); setMapEncaje(null); setView('map') }}
+            onBroker={() => setUpgradeOpen(true)}
+            geoLoading={geoLoading}
+            isMobile={isMobile}
+          />
         )}
 
         {messages.map((msg, i) => (
@@ -1470,35 +1423,22 @@ export default function App() {
           )
         )}
         <div style={{
-          display:'flex', gap:8, alignItems:'flex-end',
-          background: listening ? 'rgba(45,189,182,.16)' : 'rgba(20,44,43,.5)',
-          backdropFilter:'blur(16px)', WebkitBackdropFilter:'blur(16px)',
-          border:`1px solid ${listening ? 'var(--teal)' : 'rgba(45,189,182,.35)'}`, borderRadius:26, padding:'8px',
-          transition:'border-color .2s, box-shadow .2s, background .2s',
-          boxShadow: listening
-            ? '0 0 0 1px var(--teal), 0 0 42px rgba(45,189,182,.5), 0 0 90px rgba(45,189,182,.22)'
-            : '0 0 28px rgba(45,189,182,.20), 0 0 64px rgba(45,189,182,.09)',
-        }}
-          onFocusCapture={e => { e.currentTarget.style.borderColor='var(--teal)'; e.currentTarget.style.boxShadow='0 0 0 1px var(--teal), 0 0 34px rgba(45,189,182,.34), 0 0 72px rgba(45,189,182,.14)' }}
-          onBlurCapture={e => { e.currentTarget.style.borderColor=listening ? 'var(--teal)' : 'rgba(45,189,182,.35)'; e.currentTarget.style.boxShadow=listening ? '0 0 0 1px var(--teal), 0 0 42px rgba(45,189,182,.5), 0 0 90px rgba(45,189,182,.22)' : '0 0 28px rgba(45,189,182,.20), 0 0 64px rgba(45,189,182,.09)' }}
-        >
-          <button
-            onClick={toggleGeo}
-            disabled={geoLoading}
-            title={geo ? 'Ubicación activa' : 'Compartir mi ubicación'}
-            style={{
-              background: 'rgba(45,189,182,.12)',
-              border: '1px solid rgba(45,189,182,.3)',
-              borderRadius:999, width:38, height:38, flexShrink:0, cursor:'pointer',
-              display:'flex', alignItems:'center', justifyContent:'center',
-              color: 'var(--teal)', transition:'all .15s',
-              boxShadow: geo ? '0 0 12px rgba(45,189,182,.4)' : 'none',
-            }}
-          >
-            {geoLoading
-              ? <RefreshCw size={16} style={{ animation:'spin 1s linear infinite' }}/>
-              : <MapPin size={16}/>}
-          </button>
+          background:'var(--surface-1)',
+          border:`1px solid ${listening ? 'var(--teal)' : 'var(--border)'}`, borderRadius:16, padding:'12px 14px',
+          transition:'border-color .2s',
+        }}>
+          {/* Fila "Para:" — selector de destino, estilo ASI:One */}
+          <div style={{ display:'flex', alignItems:'center', gap:9, marginBottom:11 }}>
+            <span style={{ fontSize:'.78rem', color:'var(--text-dim)' }}>Para:</span>
+            <span style={{ display:'inline-flex', alignItems:'center', gap:7, padding:'5px 11px', borderRadius:999,
+                           border:'1px solid var(--border)', background:'var(--surface-2)' }}>
+              <img src={sphereLogo} alt="" width={14} height={14} style={{ display:'block' }} />
+              <span style={{ fontSize:'.8rem', fontWeight:600, color:'var(--text)' }}>Contexto</span>
+              <span style={{ fontSize:'.74rem', color:'var(--text-dim)' }}>AI</span>
+            </span>
+          </div>
+          <div style={{ height:1, background:'var(--border)', margin:'0 -14px 12px' }} />
+          {/* Campo en su propia línea (como "Ask anything") */}
           <textarea
             ref={inputRef}
             value={input}
@@ -1506,53 +1446,80 @@ export default function App() {
             onKeyDown={e => {
               if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() }
             }}
-            placeholder="Escribe tu pregunta…"
+            placeholder="Pregúntame lo que sea…"
             disabled={loading}
             rows={1}
             style={{
-              flex:1, background:'none', border:'none', outline:'none',
-              color:'var(--text)', fontSize:'.92rem', resize:'none',
-              lineHeight:1.6, maxHeight:120, overflowY:'auto',
-              fontFamily:'inherit',
+              display:'block', width:'100%', background:'none', border:'none', outline:'none',
+              color:'var(--text)', fontSize:'.98rem', resize:'none',
+              lineHeight:1.5, maxHeight:120, overflowY:'auto',
+              fontFamily:'inherit', marginBottom:12,
             }}
             onInput={e => {
               e.target.style.height = 'auto'
               e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'
             }}
           />
-          <button
-            onClick={startVoice}
-            title={listening ? 'Escuchando… toca para detener' : 'Hablar (dictado por voz)'}
-            style={{
-              background: listening ? 'var(--teal)' : 'rgba(45,189,182,.12)',
-              border: `1px solid ${listening ? 'var(--teal)' : 'rgba(45,189,182,.3)'}`,
-              borderRadius:999, width:38, height:38, flexShrink:0, cursor:'pointer',
-              display:'flex', alignItems:'center', justifyContent:'center',
-              color: listening ? '#0E0D13' : 'var(--teal)', transition:'all .15s',
-              animation: listening ? 'pulseGlow 1.2s ease-in-out infinite' : 'none',
-            }}
-          >
-            <Mic size={16}/>
-          </button>
-          <button
-            onClick={() => sendMessage()}
-            disabled={!input.trim() || loading}
-            title="Enviar"
-            style={{
-              background: input.trim() && !loading ? 'var(--teal)' : 'rgba(45,189,182,.12)',
-              border:'1px solid rgba(45,189,182,.3)', borderRadius:999, width:38, height:38,
-              cursor: input.trim() && !loading ? 'pointer' : 'default', flexShrink:0,
-              display:'flex', alignItems:'center', justifyContent:'center',
-              color: input.trim() && !loading ? '#0E0D13' : 'var(--teal)',
-              transition:'background .15s, box-shadow .15s',
-              boxShadow: input.trim() && !loading ? '0 0 16px rgba(45,189,182,.4)' : 'none',
-            }}
-          >
-            {loading
-              ? <RefreshCw size={16} style={{ animation:'spin 1s linear infinite' }}/>
-              : <Send size={16}/>
-            }
-          </button>
+          {/* Fila inferior: ubicación + "+" (izq) · Voz/Enviar (der) */}
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+              <button
+                onClick={toggleGeo}
+                disabled={geoLoading}
+                title={geo ? 'Ubicación activa — toca para quitar' : 'Compartir mi ubicación'}
+                style={{
+                  background:'none', border:'none', borderRadius:999, width:34, height:34, flexShrink:0, cursor:'pointer',
+                  display:'flex', alignItems:'center', justifyContent:'center',
+                  color: geo ? 'var(--teal-bright)' : 'var(--text-muted)', transition:'color .15s',
+                }}
+              >
+                {geoLoading
+                  ? <RefreshCw size={18} style={{ animation:'spin 1s linear infinite' }}/>
+                  : <MapPin size={18}/>}
+              </button>
+              <button
+                onClick={() => setAttachOpen(true)}
+                title="Adjuntar — busca en el inventario por foto"
+                style={{
+                  background:'none', border:'none', borderRadius:999, width:34, height:34, flexShrink:0, cursor:'pointer',
+                  display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text-muted)',
+                }}
+              >
+                <Plus size={20}/>
+              </button>
+            </div>
+            {/* Voz (vacío) ↔ Enviar (con texto), como ASI:One */}
+            {input.trim() ? (
+              <button
+                onClick={() => sendMessage()}
+                disabled={loading}
+                title="Enviar"
+                style={{
+                  background:'var(--teal-bright)', border:'none', borderRadius:999,
+                  width:44, height:44, flexShrink:0, cursor: loading ? 'default' : 'pointer',
+                  display:'flex', alignItems:'center', justifyContent:'center', color:'#06201C',
+                }}
+              >
+                {loading
+                  ? <RefreshCw size={18} style={{ animation:'spin 1s linear infinite' }}/>
+                  : <ArrowUp size={20}/>}
+              </button>
+            ) : (
+              <button
+                onClick={startVoice}
+                title={listening ? 'Escuchando… toca para detener' : 'Hablar (dictado por voz)'}
+                style={{
+                  display:'inline-flex', alignItems:'center', gap:8, flexShrink:0,
+                  padding:'10px 16px', borderRadius:999, border:'none', cursor:'pointer',
+                  background: listening ? 'var(--teal)' : 'var(--teal-bright)', color:'#06201C',
+                  fontWeight:600, fontSize:'.9rem', fontFamily:'inherit',
+                  animation: listening ? 'pulseGlow 1.2s ease-in-out infinite' : 'none',
+                }}
+              >
+                <AudioLines size={17}/> Voz
+              </button>
+            )}
+          </div>
         </div>
         {listening && (
           <div style={{ marginTop:8, fontSize:'.72rem', color:'var(--teal)',

@@ -54,6 +54,8 @@ Lo que hace que esto sea **UN sistema y no un tab más**. Cada turno del Estrate
 
 > El `caption` es **prosa narrada**, pero **toda cifra dentro de él debe salir del payload de `/metricas/lift`** — NUNCA un número inventado. **En Fase A el `caption` es siempre `null`** (el panel ya narra el `_ancla` honesto del payload) → sin riesgo hoy. **REQUISITO al crecer:** cuando un futuro fase genere el caption NARRADO POR EL LLM, DEBE enrutarse por `evaluar_salida_crm` (la baranda `cifra_cartera` + fail-close del Estratega, §5 de `DISENO_Superpoderes_Agentes_CRM.md`) **antes de emitirse** — ese cableado **aún no existe**, así que el LLM no debe emitir un caption no-`null` hasta que se construya. El foso es el mismo que ya tenemos; solo falta conectarlo cuando el caption deje de ser `null`.
 
+> **Resalte y caption dentro del foco — Fase B (dónde se derivan).** El `foco` viaja en la directiva (el backend lo decide desde la pregunta = la señal conversacional). Pero el **resalte fino** (`resalta`: la etapa-cuello, la cohorte) y el **caption del lente** se **derivan en la capa de presentación** (`AnalisisPanel`) a partir del payload de `/metricas/lift` que el panel YA tiene. Es deliberado: así el resalte **siempre cuadra** con el número mostrado (cero divergencia), es **honesto por construcción** (no hay LLM ni número que inventar → no requiere fail-close), y evita un round-trip al backend por turno. Los campos `resalta`/`caption` de la directiva quedan **reservados** para que un futuro fase del backend los fije como override. El "cuello" es descriptivo (la etapa donde más se **concentran** los interesados), no una afirmación de flujo que no podemos probar.
+
 ---
 
 ## Invocación (dos ventanas, el dashboard nace en la conversación)

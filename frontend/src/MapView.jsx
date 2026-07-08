@@ -221,21 +221,12 @@ export default function MapView({ seedIds, encajeById } = {}) {
     if (!el) return
     setChipEdges({ start: el.scrollLeft <= 2, end: el.scrollLeft + el.clientWidth >= el.scrollWidth - 2 })
   }
-  // Scroll de los chips al tocar las flechas. El scroll nativo behavior:'smooth' NO funciona
-  // sobre este contenedor dentro del overlay del mapa (no-op), pero asignar scrollLeft sí:
-  // animamos a mano con rAF (easeOutCubic) para conservar la sensación suave.
+  // Scroll de los chips al tocar las flechas. Salto instantáneo (behavior:'auto'): tanto el
+  // smooth nativo como requestAnimationFrame se estrangulan en pestañas en 2º plano y varían
+  // en móvil; el scrollBy directo es fiable en todo contexto (un carrusel de navegación no
+  // necesita animación). scrollBy síncrono ya verificado funcional sobre este contenedor.
   const scrollChips = (dir) => {
-    const el = chipsRef.current
-    if (!el) return
-    const start = el.scrollLeft
-    const target = start + dir * 180
-    const t0 = performance.now()
-    const step = (now) => {
-      const p = Math.min(1, (now - t0) / 260)
-      el.scrollLeft = start + (target - start) * (1 - Math.pow(1 - p, 3))
-      if (p < 1) requestAnimationFrame(step)
-    }
-    requestAnimationFrame(step)
+    chipsRef.current?.scrollBy({ left: dir * 180 })
   }
   const [mapaInput, setMapaInput] = useState('')
   const [mapaMsg, setMapaMsg] = useState(null)

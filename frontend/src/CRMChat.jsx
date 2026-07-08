@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react'
 import axios from 'axios'
 import { Send, Sparkles, RotateCcw, X, Compass } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
@@ -34,7 +34,7 @@ const ESTADO_LBL = {
 // Un componente, DOS agentes (modo): 'copiloto' (táctico, por interesado) y 'estratega' (cartera,
 // proactivo — al abrir da la jugada). Persistente por hilo (el backend lo deriva del JWT).
 // Ver docs/DISENO_CRM_Vivo.md (arquitectura de dos agentes).
-export default function CRMChat({ onClose, lead, modo = 'copiloto', onPanelSeed } = {}) {
+function CRMChat({ onClose, lead, modo = 'copiloto', onPanelSeed } = {}, ref) {
   const esEstratega = modo === 'estratega'
   const [msgs, setMsgs] = useState([])   // { autor: 'corredor'|'crm', texto }
   const [texto, setTexto] = useState('')
@@ -43,6 +43,7 @@ export default function CRMChat({ onClose, lead, modo = 'copiloto', onPanelSeed 
   const [error, setError] = useState(null)
   const finRef = useRef(null)
   const reiniciando = useRef(false)   // candado síncrono anti-doble-click en 'Nueva' (cubre el await)
+  const enviandoLatch = useRef(false) // candado síncrono anti-doble-envío (cierra el doble-clic del mismo tick)
 
   // El copiloto se enfoca en un interesado; el estratega lee la cartera (sin lead).
   const nom = !esEstratega && lead?.lead ? (lead.lead.includes('@') ? lead.lead.split('@')[0] : lead.lead) : null
@@ -88,7 +89,8 @@ export default function CRMChat({ onClose, lead, modo = 'copiloto', onPanelSeed 
 
   async function enviar(t0, { esKickoff = false } = {}) {
     const t = (t0 ?? texto).trim()
-    if (!t || enviando) return
+    if (!t || enviando || enviandoLatch.current) return   // latch síncrono: cierra el doble-clic del mismo tick
+    enviandoLatch.current = true
     setTexto(''); setError(null); setEnviando(true)
     setMsgs(prev => [...prev, { autor: 'corredor', texto: t }])
     try {
@@ -103,6 +105,7 @@ export default function CRMChat({ onClose, lead, modo = 'copiloto', onPanelSeed 
       setError('No se pudo consultar. Intenta de nuevo.')
     } finally {
       setEnviando(false)
+      enviandoLatch.current = false
     }
   }
 
@@ -122,6 +125,13 @@ export default function CRMChat({ onClose, lead, modo = 'copiloto', onPanelSeed 
       reiniciando.current = false
     }
   }
+
+  // Fase D — el dashboard como ENTRADA: un clic en una etapa/cohorte INYECTA una pregunta al Estratega
+  // (vía ref → preguntar), que la responde y re-enfoca el panel. El ref se refresca en un effect (post-
+  // render, no durante el render) → el handle estable siempre llama a la versión fresca de enviar.
+  const enviarRef = useRef(enviar)
+  useEffect(() => { enviarRef.current = enviar })
+  useImperativeHandle(ref, () => ({ preguntar: (t) => enviarRef.current?.(t) }), [])
 
   const bubble = (autor) => autor === 'corredor'
     ? { align: 'flex-end', bg: 'linear-gradient(90deg,#2DBDB6,#5EEAD4)', color: '#0E0D13', lbl: 'Tú' }
@@ -261,3 +271,5 @@ export default function CRMChat({ onClose, lead, modo = 'copiloto', onPanelSeed 
     </div>
   )
 }
+
+export default forwardRef(CRMChat)

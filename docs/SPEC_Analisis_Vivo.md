@@ -179,8 +179,9 @@ Hereda TODO el foso del CRM Vivo, sin relajarlo:
 - `foco: lead` NO baja al detalle en el Estratega (**respeta la frontera FH**: el Estratega no tiene `tool_timeline_de_lead`) — ofrece un **puente clickeable** para abrir el Copiloto (táctico, con timeline) en ese interesado. Cierra el continuo cartera→interesado.
 - **Resolución honesta:** el backend (`panel_seed.py::_referencia_lead`) extrae la referencia cruda (email/#id/nombre) **best-effort**; el **frontend la resuelve contra `/mine/leads`** (owner-scoped) y solo muestra el puente si **resuelve a un interesado real** → una sobre-extracción es INOFENSIVA (sin match → sin puente, se conserva el foco actual). El Estratega **nunca recibe dato del lead**.
 
-**D — el dashboard como ENTRADA**
-- Tocar una etapa del embudo / un cohorte **alimenta la intención de vuelta al Estratega** ("cuéntame de estos 6 en Intención"). Cierra el bucle: el dashboard deja de ser solo salida y se vuelve input estructurado a la conversación (espeja la Fase 2D del Mapa Vivo).
+**D — el dashboard como ENTRADA** ✅ construido
+- Tocar una etapa del embudo / un cohorte **inyecta una pregunta al Estratega** (vía `useImperativeHandle` del `CRMChat`), que la responde Y re-enfoca el panel. Cierra el bucle: el dashboard deja de ser solo salida y se vuelve input a la conversación (espeja la Fase 2D del Mapa Vivo).
+- **Elegancia — cero backend nuevo:** las preguntas generadas llevan el **keyword** de su foco (*"…para moverlos en el **embudo**"*, *"…**maduros**"*, *"…en **vuelo**"*) → el derivador `panel_seed` que ya existe re-enfoca el widget correcto por el mismo camino que una pregunta tecleada. El bucle salida→entrada→salida reúsa todo el pipeline. Un test (`test_preguntas_del_dashboard_disparan_su_foco`) fija el contrato entre las plantillas del frontend y el derivador.
 
 ---
 

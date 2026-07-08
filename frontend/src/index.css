@@ -1,14 +1,14 @@
 /* ==========================================================================
    CONTEXTO AI · DESIGN TOKENS · Aura Direction (identidad oficial aprobada)
    ========================================================================== */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
   /* ---- Tipografía ---- */
-  --font-display: 'Inter', system-ui, sans-serif;
-  --font-body:    'Inter', system-ui, sans-serif;
+  --font-display: 'Geist', system-ui, sans-serif;
+  --font-body:    'Geist', system-ui, sans-serif;
   --font-mono:    'IBM Plex Mono', ui-monospace, monospace;
 
   /* ---- Marca: Teal ---- */
@@ -22,19 +22,19 @@
   --coral-deep:  #B84A3E;
 
   /* ---- Superficies ---- */
-  /* Superficies gris-neutro (estilo ASI:One) — sin el tinte morado anterior */
-  --bg:          #0E0E10;
-  --surface:     #1A1A1E;   /* alias compat app (= surface-1) */
-  --surface-1:   #1A1A1E;
-  --surface-2:   #27272C;   /* chips — gris claro tipo ASI:One */
-  --surface-3:   #323238;
-  --border:      #2E2E34;
+  /* Superficies EXACTAS de ASI:One (inspeccionadas en asi1.ai con DevTools) */
+  --bg:          #1C1C1C;   /* html bg de ASI — rgb(28,28,28) */
+  --surface:     #282828;   /* dock/input de ASI — rgb(40,40,40) */
+  --surface-1:   #282828;
+  --surface-2:   #2E2E2E;   /* chips */
+  --surface-3:   #3A3A3A;
+  --border:      #404040;   /* borde de ASI — rgb(64,64,64) */
 
   /* ---- Texto ---- */
-  --text:        #F0ECE6;
-  --text-mid:    #A8A3B3;
-  --text-muted:  #A8A3B3;   /* alias compat app */
-  --text-dim:    #6B6778;
+  --text:        #FFFFFF;   /* ASI: blanco puro rgb(255,255,255) */
+  --text-mid:    #C9C9C9;   /* ASI: secundario rgb(201,201,201) */
+  --text-muted:  #C9C9C9;   /* alias compat app */
+  --text-dim:    #8C8C8C;
 
   /* ---- Semánticos ---- */
   --success:     #5EEAD4;

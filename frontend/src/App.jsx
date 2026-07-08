@@ -1275,10 +1275,8 @@ export default function App() {
               <PanelLeft size={20} />
             </button>
           )}
-          <img src={sphereLogo} alt="Contexto AI" width={isMobile ? 30 : 36} height={isMobile ? 30 : 36}
-               style={{ display:'block', flexShrink:0,
-                        filter:'drop-shadow(0 0 10px rgba(45,189,182,.45))',
-                        animation:'spin 18s linear infinite' }} />
+          <img src={sphereLogo} alt="Contexto AI" width={isMobile ? 28 : 32} height={isMobile ? 28 : 32}
+               style={{ display:'block', flexShrink:0 }} />
           <div style={{ minWidth:0 }}>
             <div style={{ fontWeight:800, fontSize:isMobile ? '.95rem' : '1rem', letterSpacing:'-.3px' }}>
               Contexto <span style={{ color:'var(--teal)' }}>AI</span>

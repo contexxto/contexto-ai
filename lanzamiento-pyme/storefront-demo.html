@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<!--
+  DEMO DE STOREFRONT PYME — "Shopify inmobiliario" (escalón 0 · Tienda)
+  Contexto AI · archivo local de revisión (Fase 0: juzgar con los ojos antes de construir).
+  Línea gráfica: docs/branding/LINEA_GRAFICA_CRED_Storefronts.md (extracción real de cred.club) +
+  estética de aristas duras NeoPOP (design system de CRED, open source Apache 2.0 —
+  github.com/CRED-CLUB/neopop-web — usada por inspiración, con atribución).
+  Inmobiliaria y datos: FICTICIOS. Nada se publica. Nada de esto es real.
+-->
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inmobiliaria Horizonte — DEMO · tienda impulsada por Cimiento</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* ============================================================
+     TOKENS — línea CRED (storefront) + teal como único acento
+     ============================================================ */
+  :root{
+    --bg:        #1c1c1c;   /* Eerie Black (CRED) */
+    --bg-deep:   #121212;
+    --surface:   #202020;
+    --surface-2: #242424;
+    --line:      rgba(247,247,247,.10);
+    --line-teal: rgba(45,189,182,.28);
+
+    --text:      #f7f7f7;   /* Lynx White */
+    --text-mid:  #b7b7b7;
+    --text-dim:  #7c7c7c;   /* Namara Grey — para etiquetas atenuadas */
+
+    --teal:      #2DBDB6;
+    --teal-bright:#5EEAD4;
+    --teal-deep: #1A7A76;
+    --on-teal:   #06201C;
+
+    /* Espaciado dramático (escala CRED) */
+    --s-xs: 10px; --s-sm: 20px; --s-md: 40px; --s-lg: 60px; --s-xl: 100px;
+
+    --font: 'Geist', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --mono: 'Geist Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+    --maxw: 1120px;
+  }
+
+  /* ---- reset mínimo ---- */
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    font-family:var(--font);
+    background:var(--bg-deep);
+    color:var(--text);
+    line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  img{max-width:100%;display:block}
+  a{color:inherit;text-decoration:none}
+  svg{display:block}
+
+  /* ---- helpers ---- */
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+  .label{
+    font-size:.72rem;font-weight:600;letter-spacing:.22em;text-transform:uppercase;
+    color:var(--text-dim);
+  }
+  .mono{font-family:var(--mono);font-feature-settings:"tnum" 1}
+  .teal{color:var(--teal-bright)}
+  .display{
+    font-weight:600;line-height:1.08;letter-spacing:-.01em;text-transform:lowercase;
+    color:var(--text);
+  }
+
+  /* ---- botones (238x47, radius 4, NO pills; plunk NeoPOP = borde duro sin blur) ---- */
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:10px;
+    min-width:238px;max-width:100%;min-height:47px;padding:12px 22px;
+    border-radius:4px;font-size:1rem;font-weight:600;font-family:var(--font);
+    cursor:pointer;border:1px solid transparent;transition:transform .12s ease, background .18s ease;
+    text-transform:lowercase;
+  }
+  .btn svg{width:19px;height:19px;flex:0 0 auto}
+  .btn-primary{
+    background:var(--teal-bright);color:var(--on-teal);border-color:var(--teal-bright);
+    box-shadow:4px 4px 0 var(--teal-deep);            /* plunk 3D duro, sin difusión */
+  }
+  .btn-primary:hover{transform:translate(1px,1px);box-shadow:3px 3px 0 var(--teal-deep)}
+  .btn-primary:active{transform:translate(4px,4px);box-shadow:0 0 0 var(--teal-deep)}
+  .btn-ghost{
+    background:transparent;color:var(--teal-bright);border:1px solid var(--line-teal);
+  }
+  .btn-ghost:hover{background:rgba(45,189,182,.07)}
+
+  /* ============================================================
+     RIBBON DEMO (siempre visible)
+     ============================================================ */
+  .demo-ribbon{
+    position:sticky;top:0;z-index:60;
+    background:var(--bg-deep);
+    border-bottom:1px solid var(--line-teal);
+    color:var(--text-mid);
+  }
+  .demo-ribbon .wrap{
+    display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    padding-top:9px;padding-bottom:9px;font-size:.74rem;
+  }
+  .demo-pill{
+    display:inline-flex;align-items:center;gap:7px;
+    border:1px solid var(--teal);color:var(--teal-bright);
+    padding:2px 9px;border-radius:3px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
+    font-size:.66rem;flex:0 0 auto;
+  }
+  .demo-pill span{width:6px;height:6px;background:var(--teal-bright);border-radius:50%}
+  .demo-ribbon .msg{letter-spacing:.02em}
+
+  /* ============================================================
+     HEADER — marca de la inmobiliaria (parametrizable)
+     ============================================================ */
+  .site-head{border-bottom:1px solid var(--line);background:var(--bg)}
+  .site-head .wrap{display:flex;align-items:center;justify-content:space-between;gap:20px;
+    padding-top:18px;padding-bottom:18px}
+  .brand{display:flex;align-items:center;gap:12px;position:relative}
+  .brand .mark{width:38px;height:38px;color:var(--teal-bright);flex:0 0 auto}
+  .brand .name{display:flex;flex-direction:column;line-height:1.05}
+  .brand .name b{font-size:1.14rem;font-weight:700;letter-spacing:-.01em}
+  .brand .name .sub{font-size:.62rem;letter-spacing:.28em;text-transform:uppercase;color:var(--text-dim);margin-top:3px}
+  .brand .demo-flag{
+    font-size:.58rem;font-weight:700;letter-spacing:.16em;color:var(--on-teal);
+    background:var(--teal-bright);padding:2px 6px;border-radius:3px;align-self:flex-start;margin-top:2px;
+  }
+  .nav{display:flex;align-items:center;gap:26px}
+  .nav a{font-size:.86rem;color:var(--text-mid);transition:color .15s}
+  .nav a:hover{color:var(--text)}
+  .nav .btn{min-width:0;min-height:40px;padding:9px 16px;font-size:.86rem}
+
+  /* anotación "zona parametrizable" (nota de demo, no UI real) */
+  .param-note{
+    background:var(--bg-deep);border-bottom:1px dashed var(--line-teal);
+  }
+  .param-note .wrap{padding-top:8px;padding-bottom:8px;display:flex;align-items:center;gap:10px;
+    font-size:.7rem;color:var(--text-dim)}
+  .param-note svg{width:15px;height:15px;color:var(--teal);flex:0 0 auto}
+  .param-note b{color:var(--text-mid);font-weight:600}
+
+  /* ============================================================
+     HERO
+     ============================================================ */
+  .hero{padding:var(--s-lg) 0 var(--s-md);border-bottom:1px solid var(--line);
+    background:
+      radial-gradient(120% 80% at 82% -10%, rgba(45,189,182,.10), transparent 60%),
+      var(--bg);}
+  .hero .label{margin-bottom:22px}
+  .hero h1{font-size:clamp(2.2rem,6vw,4.1rem);font-weight:600;line-height:1.05;
+    letter-spacing:-.02em;text-transform:lowercase;max-width:16ch}
+  .hero .lede{margin-top:22px;max-width:52ch;color:var(--text-mid);font-size:1.06rem}
+  .hero .cta-row{margin-top:var(--s-md);display:flex;gap:14px;flex-wrap:wrap}
+  .hero .aside{margin-top:26px;font-size:.78rem;color:var(--text-dim);display:flex;align-items:center;gap:9px}
+  .hero .aside svg{width:16px;height:16px;color:var(--teal);flex:0 0 auto}
+
+  /* ============================================================
+     SECCIÓN GENÉRICA
+     ============================================================ */
+  section{padding:var(--s-lg) 0}
+  .sec-head{max-width:60ch}
+  .sec-head .label{margin-bottom:16px}
+  .sec-head h2{font-size:clamp(1.6rem,3.4vw,2.4rem);font-weight:600;line-height:1.12;
+    letter-spacing:-.015em;text-transform:lowercase}
+  .sec-head p{margin-top:14px;color:var(--text-mid);font-size:.98rem}
+
+  /* ============================================================
+     INVENTARIO — 3 fichas
+     ============================================================ */
+  .grid-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--s-sm);margin-top:var(--s-md)}
+  .card{
+    background:var(--surface);border:1px solid var(--line);border-radius:6px;overflow:hidden;
+    display:flex;flex-direction:column;transition:border-color .18s ease, transform .18s ease;
+  }
+  .card:hover{border-color:var(--line-teal);transform:translateY(-2px)}
+
+  .photo{position:relative;aspect-ratio:16/11;overflow:hidden;
+    display:flex;align-items:center;justify-content:center;border-bottom:1px solid var(--line)}
+  .photo .ph-svg{width:56px;height:56px;color:rgba(247,247,247,.16)}
+  .photo .foto-demo{position:absolute;left:12px;bottom:12px;font-size:.6rem;font-weight:600;
+    letter-spacing:.2em;text-transform:uppercase;color:var(--text-dim);
+    background:rgba(18,18,18,.72);padding:3px 8px;border-radius:3px}
+  .p1{background:linear-gradient(135deg,#20302f,#181c1e)}
+  .p2{background:linear-gradient(135deg,#25302a,#171b18)}
+  .p3{background:linear-gradient(135deg,#2a2b31,#17181c)}
+
+  /* sello Verificado por el corredor */
+  .seal{
+    position:absolute;top:12px;left:12px;display:inline-flex;align-items:center;gap:7px;
+    background:rgba(18,18,18,.82);border:1px solid var(--teal);color:var(--teal-bright);
+    padding:5px 10px 5px 8px;border-radius:4px;font-size:.68rem;font-weight:600;letter-spacing:.02em;
+  }
+  .seal svg{width:15px;height:15px;flex:0 0 auto}
+  .card-demo{
+    position:absolute;top:12px;right:12px;font-size:.58rem;font-weight:700;letter-spacing:.16em;
+    color:var(--text-dim);border:1px solid var(--line);background:rgba(18,18,18,.7);
+    padding:3px 7px;border-radius:3px;text-transform:uppercase;
+  }
+
+  .card-body{padding:18px;display:flex;flex-direction:column;gap:12px;flex:1}
+  .op{display:inline-flex;align-items:center;gap:7px;font-size:.68rem;font-weight:600;
+    letter-spacing:.16em;text-transform:uppercase;color:var(--text-dim)}
+  .op .dot{width:7px;height:7px;border-radius:50%;background:var(--teal-bright)}
+  .op .dot.sale{background:var(--text-mid)}
+  .card h3{font-size:1.12rem;font-weight:600;text-transform:lowercase;line-height:1.2}
+  .addr{font-size:.82rem;color:var(--text-dim);display:flex;align-items:flex-start;gap:7px}
+  .addr svg{width:15px;height:15px;color:var(--text-dim);flex:0 0 auto;margin-top:2px}
+  .price{display:flex;align-items:baseline;gap:8px;margin-top:2px}
+  .price b{font-size:1.5rem;font-weight:700;font-family:var(--mono)}
+  .price .per{color:var(--text-dim);font-size:.82rem}
+  .specs{display:flex;gap:16px;flex-wrap:wrap;font-size:.8rem;color:var(--text-mid);
+    padding:11px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .specs .s{display:flex;align-items:center;gap:6px}
+  .specs svg{width:15px;height:15px;color:var(--text-dim)}
+  .specs b{font-family:var(--mono);font-weight:500;color:var(--text)}
+
+  .chips{display:flex;flex-wrap:wrap;gap:7px}
+  .chip{display:inline-flex;align-items:center;gap:6px;font-size:.74rem;color:var(--text-mid);
+    background:var(--surface-2);border:1px solid var(--line);border-radius:4px;padding:5px 9px}
+  .chip svg{width:13px;height:13px;color:var(--teal);flex:0 0 auto}
+  .chip.est{color:var(--text-dim)}
+  .chip .ast{color:var(--teal-bright);font-family:var(--mono);font-weight:500}
+
+  .card .card-cta{margin-top:auto;padding-top:4px}
+  .card .card-cta a{display:inline-flex;align-items:center;gap:8px;font-size:.82rem;
+    color:var(--teal-bright);font-weight:600}
+  .card .card-cta svg{width:15px;height:15px;transition:transform .15s}
+  .card .card-cta a:hover svg{transform:translateX(3px)}
+
+  /* leyenda de asteriscos (la joya de honestidad) */
+  .legend{
+    margin-top:var(--s-md);border:1px solid var(--line-teal);border-radius:6px;
+    background:linear-gradient(180deg,rgba(45,189,182,.05),transparent);
+    padding:20px 22px;display:flex;flex-wrap:wrap;gap:22px;align-items:center;justify-content:space-between;
+  }
+  .legend .keys{display:flex;flex-wrap:wrap;gap:22px}
+  .legend .k{display:flex;align-items:center;gap:9px;font-size:.84rem;color:var(--text-mid)}
+  .legend .k svg{width:17px;height:17px;color:var(--teal-bright);flex:0 0 auto}
+  .legend .k .star{font-family:var(--mono);color:var(--teal-bright);font-size:1.05rem;width:17px;text-align:center}
+  .legend .jewel{font-size:.9rem;color:var(--text);text-transform:lowercase;font-weight:500;max-width:34ch}
+
+  /* ============================================================
+     ASÍ SE VIVE AQUÍ — entorno verificado
+     ============================================================ */
+  .env{background:var(--bg);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .env-grid{display:grid;grid-template-columns:300px 1fr;gap:var(--s-md);margin-top:var(--s-md);align-items:start}
+  .walk-card{border:1px solid var(--line-teal);border-radius:6px;padding:26px 22px;background:var(--surface)}
+  .walk-num{font-family:var(--mono);font-size:3.6rem;font-weight:500;color:var(--teal-bright);line-height:1;
+    display:flex;align-items:flex-start;gap:4px}
+  .walk-num sup{font-size:1.3rem;color:var(--teal-bright);margin-top:6px}
+  .walk-card .cap{margin-top:10px;font-size:.9rem;color:var(--text);text-transform:lowercase}
+  .walk-card .sub{margin-top:6px;font-size:.76rem;color:var(--text-dim)}
+  .walk-card .est-note{margin-top:16px;padding-top:14px;border-top:1px solid var(--line);
+    font-size:.72rem;color:var(--text-dim);font-family:var(--mono)}
+
+  .env-rows{display:flex;flex-direction:column}
+  .env-row{display:flex;gap:14px;align-items:flex-start;padding:15px 0;border-top:1px solid var(--line)}
+  .env-row:first-child{border-top:none}
+  .env-row .ic{width:34px;height:34px;border-radius:5px;background:var(--surface-2);
+    border:1px solid var(--line);display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+  .env-row .ic svg{width:18px;height:18px;color:var(--teal)}
+  .env-row .body{flex:1}
+  .env-row .body .t{font-size:.94rem;color:var(--text)}
+  .env-row .body .d{font-size:.8rem;color:var(--text-dim);margin-top:3px}
+  .tag{display:inline-flex;align-items:center;gap:5px;font-size:.66rem;font-weight:600;letter-spacing:.04em;
+    padding:2px 7px;border-radius:3px;margin-left:8px;vertical-align:middle;font-family:var(--mono)}
+  .tag.ver{color:var(--teal-bright);border:1px solid var(--line-teal);background:rgba(45,189,182,.06)}
+  .tag.est{color:var(--text-dim);border:1px solid var(--line)}
+  .tag svg{width:12px;height:12px}
+
+  /* ============================================================
+     AGENTE DEL BARRIO — CTA
+     ============================================================ */
+  .agent{background:
+      radial-gradient(90% 120% at 15% 0%, rgba(45,189,182,.10), transparent 55%),
+      var(--bg-deep);}
+  .agent-grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--s-md);align-items:center;margin-top:var(--s-sm)}
+  .agent h2{font-size:clamp(1.8rem,4vw,2.8rem);font-weight:600;text-transform:lowercase;line-height:1.08;
+    letter-spacing:-.015em;max-width:15ch}
+  .agent p{margin-top:16px;color:var(--text-mid);max-width:44ch}
+  .agent .cta-row{margin-top:var(--s-md);display:flex;gap:14px;flex-wrap:wrap}
+
+  .chat{border:1px solid var(--line);border-radius:8px;background:var(--surface);overflow:hidden}
+  .chat-top{display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--line);
+    background:var(--surface-2)}
+  .chat-top .av{width:26px;height:26px;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%,#5EEAD4,#2DBDB6 55%,#1A7A76 120%);flex:0 0 auto}
+  .chat-top .who{font-size:.84rem;font-weight:600}
+  .chat-top .who span{display:block;font-size:.64rem;color:var(--text-dim);letter-spacing:.14em;
+    text-transform:uppercase;font-weight:500;margin-top:1px}
+  .chat-top .demo{margin-left:auto;font-size:.56rem;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--text-dim);border:1px solid var(--line);padding:2px 6px;border-radius:3px}
+  .chat-body{padding:16px;display:flex;flex-direction:column;gap:12px}
+  .bubble{max-width:88%;padding:11px 14px;border-radius:10px;font-size:.86rem;line-height:1.5}
+  .bubble.user{align-self:flex-end;background:var(--surface-2);border:1px solid var(--line);
+    border-bottom-right-radius:3px;color:var(--text)}
+  .bubble.bot{align-self:flex-start;background:rgba(45,189,182,.08);border:1px solid var(--line-teal);
+    border-bottom-left-radius:3px;color:var(--text)}
+  .bubble .ast{font-family:var(--mono);color:var(--teal-bright)}
+  .ck{display:inline-block;width:12px;height:12px;vertical-align:-1px;color:var(--teal-bright)}
+  .bubble .foot{display:block;margin-top:8px;padding-top:8px;border-top:1px solid var(--line);
+    font-size:.68rem;color:var(--text-dim);font-family:var(--mono)}
+
+  /* ============================================================
+     FOOTER
+     ============================================================ */
+  .site-foot{border-top:1px solid var(--line);background:var(--bg);padding:var(--s-md) 0 var(--s-lg)}
+  .foot-top{display:flex;flex-wrap:wrap;gap:var(--s-md);justify-content:space-between;align-items:flex-start}
+  .foot-brand{display:flex;align-items:center;gap:12px}
+  .foot-brand .mark{width:30px;height:30px;color:var(--teal-bright)}
+  .foot-brand b{font-size:1rem;font-weight:700}
+  .foot-brand .sub{font-size:.62rem;letter-spacing:.24em;text-transform:uppercase;color:var(--text-dim)}
+  .foot-cols{display:flex;gap:var(--s-md);flex-wrap:wrap}
+  .foot-col{font-size:.82rem;color:var(--text-dim);max-width:30ch}
+  .foot-col .label{margin-bottom:10px}
+  .foot-col p{margin-bottom:5px;color:var(--text-mid)}
+
+  .powered{
+    margin-top:var(--s-md);padding-top:var(--s-sm);border-top:1px solid var(--line);
+    display:flex;flex-wrap:wrap;gap:14px 22px;align-items:center;justify-content:space-between;
+  }
+  .powered .by{display:flex;align-items:center;gap:10px;font-size:.86rem;color:var(--text-mid)}
+  .powered .by .sphere{width:20px;height:20px;border-radius:50%;flex:0 0 auto;
+    background:radial-gradient(circle at 35% 30%,#5EEAD4,#2DBDB6 55%,#1A7A76 120%)}
+  .powered .by b{color:var(--text);font-weight:700}
+  .powered .prov{font-size:.68rem;color:var(--text-dim);font-family:var(--mono)}
+  .powered .prov a{color:var(--teal-bright);border-bottom:1px solid var(--line-teal)}
+
+  .fair{margin-top:var(--s-sm);font-size:.78rem;color:var(--text-dim);max-width:70ch;
+    display:flex;gap:9px;align-items:flex-start}
+  .fair svg{width:16px;height:16px;color:var(--teal);flex:0 0 auto;margin-top:2px}
+  .disclaimer{margin-top:14px;font-size:.72rem;color:var(--text-dim);max-width:78ch;line-height:1.6}
+  .disclaimer b{color:var(--text-mid)}
+
+  /* ============================================================
+     RESPONSIVE
+     ============================================================ */
+  @media (max-width:900px){
+    .grid-cards{grid-template-columns:1fr 1fr}
+    .env-grid{grid-template-columns:1fr;gap:var(--s-sm)}
+    .agent-grid{grid-template-columns:1fr;gap:var(--s-sm)}
+    .nav a:not(.btn){display:none}
+  }
+  @media (max-width:620px){
+    .wrap{padding:0 18px}
+    section{padding:var(--s-md) 0}
+    .grid-cards{grid-template-columns:1fr}
+    .hero{padding:var(--s-md) 0}
+    .legend{flex-direction:column;align-items:flex-start;gap:16px}
+    .btn{width:100%}
+    .foot-top{flex-direction:column}
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ RIBBON DEMO ============ -->
+<div class="demo-ribbon">
+  <div class="wrap">
+    <span class="demo-pill"><span></span>Vista demo</span>
+    <span class="msg">tienda de ejemplo de una inmobiliaria ficticia · inmuebles, precios y datos son de muestra — <b style="color:var(--text-mid)">nada de esto es real</b></span>
+  </div>
+</div>
+
+<!-- anotación: zona parametrizable (nota de demo, no parte de la tienda) -->
+<div class="param-note">
+  <div class="wrap">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v6M12 3l-3 3M12 3l3 3"/><rect x="4" y="11" width="16" height="10" rx="2"/></svg>
+    <span>esqueleto CRED parametrizable — <b>el logo, el nombre y el color</b> de cada inmobiliaria se cambian aquí arriba; el motor de verdad debajo es el mismo. un solo tema, no diseño a medida.</span>
+  </div>
+</div>
+
+<!-- ============ HEADER (marca de la inmobiliaria) ============ -->
+<header class="site-head">
+  <div class="wrap">
+    <div class="brand">
+      <!-- marca genérica "Horizonte": sol sobre la línea del horizonte -->
+      <svg class="mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="9"/><path d="M4 13.5h16"/><path d="M8.4 13.5a3.6 3.6 0 017.2 0"/>
+      </svg>
+      <div class="name">
+        <b>Inmobiliaria Horizonte</b>
+        <span class="sub">Quito · Ecuador</span>
+      </div>
+      <span class="demo-flag">DEMO</span>
+    </div>
+    <nav class="nav">
+      <a href="#inventario">propiedades</a>
+      <a href="#entorno">así se vive aquí</a>
+      <a href="#agente">el agente del barrio</a>
+      <a class="btn btn-ghost" href="#agente">contacto</a>
+    </nav>
+  </div>
+</header>
+
+<!-- ============ HERO ============ -->
+<section class="hero">
+  <div class="wrap">
+    <div class="label">la verdad del lugar · quito</div>
+    <h1>tu próximo hogar en quito, con la verdad del barrio debajo.</h1>
+    <p class="lede">no publicamos listados: publicamos lugares verificados. cada ficha la pisó el corredor en terreno; cada estimación lleva su asterisco donde importa.</p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="#agente">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5h14a1 1 0 011 1v9a1 1 0 01-1 1H9l-4 3v-3H5a1 1 0 01-1-1V6a1 1 0 011-1z"/></svg>
+        pregúntale al agente del barrio
+      </a>
+      <a class="btn btn-ghost" href="#inventario">ver inventario verificado</a>
+    </div>
+    <div class="aside">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l2.4 1.8 3-.2.9 2.9 2.5 1.7-1 2.8 1 2.8-2.5 1.7-.9 2.9-3-.2L12 22l-2.4-1.8-3 .2-.9-2.9L3.2 16l1-2.8-1-2.8 2.5-1.7.9-2.9 3 .2z"/><path d="M8.6 12l2.3 2.3 4.5-4.6"/></svg>
+      inventario verificado por el corredor · el entorno explicado por un agente que conoce la cuadra
+    </div>
+  </div>
+</section>
+
+<!-- ============ INVENTARIO — 3 fichas ============ -->
+<section id="inventario">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="label">inventario verificado</div>
+      <h2>aquí no entra todo: solo lo verificado.</h2>
+      <p>la exclusividad es del inventario, jamás de personas. tres inmuebles de ejemplo (demo), cada uno con el sello del corredor y el entorno con sus asteriscos.</p>
+    </div>
+
+    <div class="grid-cards">
+
+      <!-- FICHA 1 -->
+      <article class="card">
+        <div class="photo p1">
+          <svg class="ph-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><rect x="10" y="14" width="4" height="7"/></svg>
+          <span class="seal">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l2.4 1.8 3-.2.9 2.9 2.5 1.7-1 2.8 1 2.8-2.5 1.7-.9 2.9-3-.2L12 22l-2.4-1.8-3 .2-.9-2.9L3.2 16l1-2.8-1-2.8 2.5-1.7.9-2.9 3 .2z"/><path d="M8.6 12l2.3 2.3 4.5-4.6"/></svg>
+            Verificado por el corredor
+          </span>
+          <span class="card-demo">Demo</span>
+          <span class="foto-demo">Foto demo</span>
+        </div>
+        <div class="card-body">
+          <div class="op"><span class="dot"></span>En arriendo</div>
+          <h3>departamento con vista al parque</h3>
+          <div class="addr">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-6-5.3-6-10a6 6 0 1112 0c0 4.7-6 10-6 10z"/><circle cx="12" cy="11" r="2.2"/></svg>
+            av. de los shyris, sector parque la carolina · centro-norte, quito
+          </div>
+          <div class="price"><b>$980</b><span class="per">/ mes · negociable</span></div>
+          <div class="specs">
+            <span class="s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17v-4h18v4M5 13V8a1 1 0 011-1h5v6M13 13V7h5a1 1 0 011 1v5M3 17v2M21 17v2"/></svg><b>2</b> dorm</span>
+            <span class="s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12V6.5A1.5 1.5 0 016.5 5a1.5 1.5 0 011.5 1.5M4 12h16v2a4 4 0 01-4 4H8a4 4 0 01-4-4v-2zM7 18l-1 2M17 18l1 2"/></svg><b>2</b> baños</span>
+            <span class="s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16v16H4z"/><path d="M4 9h4M16 9h4M4 15h4M16 15h4"/></svg><b>96</b> m²</span>
+          </div>
+          <div class="chips">
+            <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="13" cy="4.6" r="1.7"/><path d="M11 8.5l2.4-1 2 2.2 2.3 1.1M12.8 7.4l-1.6 4.2 2.3 2 .6 4.2M11.2 11.6L8.4 13.8 7 18"/></svg>caminabilidad <span class="ast">88*</span></span>
+            <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l4 6h-2.6l3.1 5H14v4h-4v-4H7.5l3.1-5H8z"/></svg>parque a ~3 min a pie</span>
+            <span class="chip est">parada de bus a ~200 m <span class="ast">*</span></span>
+          </div>
+          <div class="card-cta">
+            <a href="#agente">preguntar por este inmueble
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </a>
+          </div>
+        </div>
+      </article>
+
+      <!-- FICHA 2 -->
+      <article class="card">
+        <div class="photo p2">
+          <svg class="ph-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 10v11h14V10"/><path d="M9 21v-6h6v6"/></svg>
+          <span class="seal">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l2.4 1.8 3-.2.9 2.9 2.5 1.7-1 2.8 1 2.8-2.5 1.7-.9 2.9-3-.2L12 22l-2.4-1.8-3 .2-.9-2.9L3.2 16l1-2.8-1-2.8 2.5-1.7.9-2.9 3 .2z"/><path d="M8.6 12l2.3 2.3 4.5-4.6"/></svg>
+            Verificado por el corredor
+          </span>
+          <span class="card-demo">Demo</span>
+          <span class="foto-demo">Foto demo</span>
+        </div>
+        <div class="card-body">
+          <div class="op"><span class="dot sale"></span>En venta</div>
+          <h3>casa con jardín en el valle</h3>
+          <div class="addr">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-6-5.3-6-10a6 6 0 1112 0c0 4.7-6 10-6 10z"/><circle cx="12" cy="11" r="2.2"/></svg>
+            sector la primavera, cumbayá · valle de tumbaco
+          </div>
+          <div class="price"><b>$245.000</b><span class="per">precio de lista</span></div>
+          <div class="specs">
+            <span class="s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17v-4h18v4M5 13V8a1 1 0 011-1h5v6M13 13V7h5a1 1 0 011 1v5M3 17v2M21 17v2"/></svg><b>3</b> dorm</span>
+            <span class="s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12V6.5A1.5 1.5 0 016.5 5a1.5 1.5 0 011.5 1.5M4 12h16v2a4 4 0 01-4 4H8a4 4 0 01-4-4v-2zM7 18l-1 2M17 18l1 2"/></svg><b>3</b> baños</span>
+            <span class="s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16v16H4z"/><path d="M4 9h4M16 9h4M4 15h4M16 15h4"/></svg><b>180</b> m²</span>
+          </div>
+          <div class="chips">
+            <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l4 6h-2.6l3.1 5H14v4h-4v-4H7.5l3.1-5H8z"/></svg>cobertura vegetal alta <span class="ast">*</span></span>
+            <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5l9 4-9 4-9-4 9-4z"/><path d="M7 11v4c0 1 2.2 2 5 2s5-1 5-2v-4"/></svg>colegio a ~6 min</span>
+            <span class="chip est">tráfico bajo <span class="ast">*</span></span>
+          </div>
+          <div class="card-cta">
+            <a href="#agente">preguntar por este inmueble
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </a>
+          </div>
+        </div>
+      </article>
+
+      <!-- FICHA 3 -->
+      <article class="card">
+        <div class="photo p3">
+          <svg class="ph-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="1.5"/><path d="M9 7h2M13 7h2M9 11h2M13 11h2M9 15h2M13 15h2"/></svg>
+          <span class="seal">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l2.4 1.8 3-.2.9 2.9 2.5 1.7-1 2.8 1 2.8-2.5 1.7-.9 2.9-3-.2L12 22l-2.4-1.8-3 .2-.9-2.9L3.2 16l1-2.8-1-2.8 2.5-1.7.9-2.9 3 .2z"/><path d="M8.6 12l2.3 2.3 4.5-4.6"/></svg>
+            Verificado por el corredor
+          </span>
+          <span class="card-demo">Demo</span>
+          <span class="foto-demo">Foto demo</span>
+        </div>
+        <div class="card-body">
+          <div class="op"><span class="dot"></span>En arriendo</div>
+          <h3>suite luminosa en zona cultural</h3>
+          <div class="addr">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-6-5.3-6-10a6 6 0 1112 0c0 4.7-6 10-6 10z"/><circle cx="12" cy="11" r="2.2"/></svg>
+            barrio la floresta, cerca del sector cultural · centro-norte, quito
+          </div>
+          <div class="price"><b>$520</b><span class="per">/ mes</span></div>
+          <div class="specs">
+            <span class="s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17v-4h18v4M5 13V8a1 1 0 011-1h5v6M13 13V7h5a1 1 0 011 1v5M3 17v2M21 17v2"/></svg><b>1</b> dorm</span>
+            <span class="s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12V6.5A1.5 1.5 0 016.5 5a1.5 1.5 0 011.5 1.5M4 12h16v2a4 4 0 01-4 4H8a4 4 0 01-4-4v-2zM7 18l-1 2M17 18l1 2"/></svg><b>1</b> baño</span>
+            <span class="s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16v16H4z"/><path d="M4 9h4M16 9h4M4 15h4M16 15h4"/></svg><b>48</b> m²</span>
+          </div>
+          <div class="chips">
+            <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="13" cy="4.6" r="1.7"/><path d="M11 8.5l2.4-1 2 2.2 2.3 1.1M12.8 7.4l-1.6 4.2 2.3 2 .6 4.2M11.2 11.6L8.4 13.8 7 18"/></svg>caminabilidad <span class="ast">94*</span></span>
+            <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a3 3 0 100-6 3 3 0 000 6zM6 22a3 3 0 100-6 3 3 0 000 6zM18 16a3 3 0 100-6 3 3 0 000 6z"/><path d="M8 18h6a2 2 0 002-2M6 16V9a2 2 0 012-2h6"/></svg>ciclovía a ~1 cuadra</span>
+            <span class="chip est">ruido medio-alto <span class="ast">*</span></span>
+          </div>
+          <div class="card-cta">
+            <a href="#agente">preguntar por este inmueble
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </a>
+          </div>
+        </div>
+      </article>
+
+    </div>
+
+    <!-- LEYENDA DE ASTERISCOS — la joya de honestidad -->
+    <div class="legend">
+      <div class="keys">
+        <div class="k">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4 4 10-10"/></svg>
+          verificado en terreno por el corredor
+        </div>
+        <div class="k">
+          <span class="star">*</span>
+          estimación del modelo (aún no medida en sitio)
+        </div>
+      </div>
+      <div class="jewel">la verdad del lugar. con los asteriscos donde importan.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ASÍ SE VIVE AQUÍ — entorno verificado ============ -->
+<section id="entorno" class="env">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="label">así se vive aquí</div>
+      <h2>cómo se vive de verdad en esta cuadra.</h2>
+      <p>entorno verificado del <b style="color:var(--text-mid);font-weight:600">departamento con vista al parque</b> · sector parque la carolina (demo). lo medido lleva check; lo estimado, su asterisco.</p>
+    </div>
+
+    <div class="env-grid">
+      <div class="walk-card">
+        <div class="walk-num">88<sup>*</sup></div>
+        <div class="cap">excelente caminabilidad</div>
+        <div class="sub">casi todo lo diario, a pie · sin auto</div>
+        <div class="est-note">* índice estimado sobre comercios y servicios cercanos — aún no medido puerta a puerta.</div>
+      </div>
+
+      <div class="env-rows">
+        <div class="env-row">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l4 6h-2.6l3.1 5H14v4h-4v-4H7.5l3.1-5H8z"/></svg></div>
+          <div class="body">
+            <div class="t">parque grande a ~3 min a pie <span class="tag ver"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4 4 10-10"/></svg>verificado</span></div>
+            <div class="d">el corredor caminó la ruta: entrada del parque a la vuelta de la esquina.</div>
+          </div>
+        </div>
+        <div class="env-row">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.3"/><circle cx="17" cy="20" r="1.3"/><path d="M3 4h2l2.2 11h10l2-8H6"/></svg></div>
+          <div class="body">
+            <div class="t">supermercado y farmacia a ~5 min a pie <span class="tag ver"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4 4 10-10"/></svg>verificado</span></div>
+            <div class="d">servicios diarios confirmados en el recorrido del corredor.</div>
+          </div>
+        </div>
+        <div class="env-row">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4" width="14" height="13" rx="2"/><path d="M5 11h14M8 20v-3M16 20v-3"/><circle cx="8.5" cy="14.3" r="1"/><circle cx="15.5" cy="14.3" r="1"/></svg></div>
+          <div class="body">
+            <div class="t">parada de bus a ~200 m <span class="tag est"><span style="font-family:var(--mono)">*</span>estimación</span></div>
+            <div class="d">distancia calculada sobre el mapa — no medida a pie todavía.</div>
+          </div>
+        </div>
+        <div class="env-row">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 8.5a4 4 0 010 7M18.6 6a7 7 0 010 12"/></svg></div>
+          <div class="body">
+            <div class="t">ruido medio en hora pico <span class="tag est"><span style="font-family:var(--mono)">*</span>estimación</span></div>
+            <div class="d">modelado por vía y hora — no hay medición de sonómetro en sitio.</div>
+          </div>
+        </div>
+        <div class="env-row">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 16v-3l2-4.5h10L19 13v3M3 16h18v2a1 1 0 01-1 1h-1v-3M6 19H4a1 1 0 01-1-1v-2"/><circle cx="7.5" cy="16" r="1"/><circle cx="16.5" cy="16" r="1"/></svg></div>
+          <div class="body">
+            <div class="t">tráfico vehicular medio-alto en hora pico <span class="tag est"><span style="font-family:var(--mono)">*</span>estimación</span></div>
+            <div class="d">estimado sobre densidad de vías principales del sector.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ EL AGENTE DEL BARRIO ============ -->
+<section id="agente" class="agent">
+  <div class="wrap">
+    <div class="label">el agente del barrio</div>
+    <div class="agent-grid">
+      <div>
+        <div class="label" style="margin-bottom:14px">vista previa · escalón 1</div>
+        <h2>pregúntale lo que el anuncio no dice.</h2>
+        <p>un agente que conoce la cuadra responde 24/7 sobre el entorno y los asteriscos — con la fuente de cada dato. si quieres, te conecta con el corredor, sin formularios fríos. <b style="color:var(--text-mid);font-weight:600">la tienda verificada es el escalón 0 (gratis); el agente y la captura de leads son el escalón 1</b> — aquí se muestran como anticipo.</p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="#agente">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5h14a1 1 0 011 1v9a1 1 0 01-1 1H9l-4 3v-3H5a1 1 0 01-1-1V6a1 1 0 011-1z"/></svg>
+            pregúntale al agente del barrio
+          </a>
+          <a class="btn btn-ghost" href="#agente">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><path d="M14 14h3v3M20 14v6M14 20h3"/></svg>
+            escanea el qr del letrero
+          </a>
+        </div>
+      </div>
+
+      <div class="chat">
+        <div class="chat-top">
+          <span class="av"></span>
+          <div class="who">agente del barrio<span>inmobiliaria horizonte</span></div>
+          <span class="demo">conversación de ejemplo · demo</span>
+        </div>
+        <div class="chat-body">
+          <div class="bubble user">¿se puede vivir sin auto en la carolina?</div>
+          <div class="bubble bot">
+            sí, con comodidad. la caminabilidad va en <span class="ast">88*</span> — el parque, un supermercado y una farmacia están a menos de 5 min a pie <svg class="ck" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4 4 10-10"/></svg>. la parada de bus queda a ~200 m <span class="ast">*</span>.
+            <span class="foot"><svg class="ck" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4 4 10-10"/></svg> lo caminó el corredor · * estimación del modelo</span>
+          </div>
+          <div class="bubble user">¿y el ruido de noche?</div>
+          <div class="bubble bot">
+            en hora pico el ruido es medio <span class="ast">*</span> — es una estimación por vía y hora, todavía sin sonómetro en sitio. te lo digo con el asterisco por delante, no te lo maquillo.
+            <span class="foot">* estimación — aún no medida en terreno</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FOOTER ============ -->
+<footer class="site-foot">
+  <div class="wrap">
+    <div class="foot-top">
+      <div class="foot-brand">
+        <svg class="mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M4 13.5h16"/><path d="M8.4 13.5a3.6 3.6 0 017.2 0"/></svg>
+        <div>
+          <b>Inmobiliaria Horizonte</b><br>
+          <span class="sub">DEMO · Quito, Ecuador</span>
+        </div>
+      </div>
+      <div class="foot-cols">
+        <div class="foot-col">
+          <div class="label">la tienda</div>
+          <p>inventario verificado</p>
+          <p>así se vive aquí</p>
+          <p>el agente del barrio</p>
+        </div>
+        <div class="foot-col">
+          <div class="label">contacto (demo)</div>
+          <p>los datos de contacto reales serían de la inmobiliaria.</p>
+          <p>su dominio · su marca · sus leads.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="fair">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg>
+      la exclusividad es del inventario verificado, jamás de personas. aquí no se filtra a nadie: solo se verifica el lugar. (fair housing).
+    </div>
+
+    <div class="powered">
+      <div class="by">
+        <span class="sphere"></span>
+        tienda impulsada por <b>Cimiento</b>
+      </div>
+      <div class="prov">nombre provisional de trabajo — candidatos en <a href="naming.md">naming.md</a> · esqueleto basado en la línea gráfica CRED (un solo tema, parametrizado por inmobiliaria)</div>
+    </div>
+
+    <p class="disclaimer">
+      <b>Vista de demostración.</b> «Inmobiliaria Horizonte» es una empresa ficticia creada solo para esta demo. Los inmuebles, precios, direcciones, sellos, índices y conversaciones son de ejemplo y <b>no representan propiedades, ofertas ni datos reales</b>. Las direcciones son sectores genéricos de Quito, sin números exactos. Los índices con asterisco (*) son estimaciones ilustrativas; el sello «verificado por el corredor» ilustra el flujo del producto, no una verificación real. Nada de esto se publica.
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>

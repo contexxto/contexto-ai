@@ -1,0 +1,759 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aura — tu inmobiliaria, con la verdad debajo</title>
+<meta name="description" content="La inmobiliaria PYME monta su tienda con la verdad verificada del lugar, un agente que la explica y sus leads directos como suyos. Oferta local — nada se publica.">
+<meta name="theme-color" content="#121212">
+
+<!--
+  landing-v2 · línea gráfica de referencia (extracción real, adaptada) parametrizada para Contexto AI.
+  v2 aplica la corrección del addendum: titular monumental SERIF (Fraunces / Cormorant Garamond),
+  fondo con profundidad (viñeta radial + aura teal respirando, CSS puro), caja de QR persistente,
+  y la técnica de texto con barrido de luz (bg-clip:text). Teal como ÚNICO acento.
+  Profundidad por aristas duras (box-shadow con blur 0, sin sombras difusas) — CSS propio, no código de terceros.
+  CERO assets/copy/nombre/marca de la referencia. Nombre: AuraReal — decision del fundador, pendiente SENADI (ver naming.md).
+  Borrador interno — no publicado.
+-->
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,340..680;1,9..144,340..600&family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+  /* ============================================================
+     TOKENS · línea de referencia adaptada a Contexto (carbón + teal escaso)
+     ============================================================ */
+  :root{
+    --bg:        #1c1c1c;   /* Eerie Black — puente de referencia == --bg Contexto */
+    --bg-deep:   #121212;
+    --panel:     #1f1f1f;
+    --panel-2:   #181818;
+    --line:      rgba(255,255,255,.09);
+    --line-2:    rgba(255,255,255,.16);
+
+    /* teal — EL ÚNICO acento, escasez deliberada */
+    --teal:        #2DBDB6;
+    --teal-bright: #5EEAD4;
+    --teal-deep:   #1A7A76;
+    --cta-ink:     #06201C;
+
+    --text:      #f2f1ee;
+    --text-mid:  #a7a3a0;
+    --text-dim:  #7c7c7c;
+
+    /* escala extraída — el lujo es aire */
+    --xs: 10px; --sm: 20px; --md: 40px; --lg: 60px; --xl: 100px;
+
+    --maxw: 1180px;
+    --label-ls: .3em;               /* rótulo espaciado (el sello, ~tracking 6px) */
+
+    --serif: "Fraunces", "Cormorant Garamond", Georgia, "Times New Roman", serif;
+    --sans:  "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono:  "Geist Mono", ui-monospace, "SFMono-Regular", monospace;
+  }
+
+  *{ box-sizing:border-box; }
+  html{ -webkit-text-size-adjust:100%; scroll-behavior:smooth; }
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:var(--sans);
+    font-weight:400;
+    font-size:17px;
+    line-height:1.6;
+    letter-spacing:-.005em;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+    overflow-x:hidden;
+  }
+  ::selection{ background:var(--teal-bright); color:var(--cta-ink); }
+
+  /* ---- profundidad de fondo (viñeta + aura teal respirando) ---- */
+  .depth{
+    position:fixed; inset:0; z-index:-2; pointer-events:none;
+    background:
+      radial-gradient(130% 90% at 50% -12%, #262625 0%, #1c1c1c 44%, #141414 100%);
+  }
+  .aura{
+    position:fixed; z-index:-1; pointer-events:none;
+    left:50%; top:34%;
+    width:min(150vw,1500px); height:min(150vw,1500px);
+    transform:translate(-50%,-50%);
+    background:radial-gradient(circle,
+      rgba(45,189,182,.13) 0%, rgba(45,189,182,.05) 30%, rgba(45,189,182,0) 60%);
+    filter:blur(24px);
+    animation:breathe 11s ease-in-out infinite;
+    will-change:transform,opacity;
+  }
+  @keyframes breathe{
+    0%,100%{ opacity:.55; transform:translate(-50%,-50%) scale(1); }
+    50%    { opacity:.95; transform:translate(-50%,-50%) scale(1.09); }
+  }
+  @media (prefers-reduced-motion: reduce){ .aura{ animation:none; opacity:.7; } }
+
+  .wrap{ width:100%; max-width:var(--maxw); margin-inline:auto; padding-inline:clamp(20px,5vw,40px); }
+
+  /* rótulos de sección — MAYÚSCULAS, espaciados, atenuados (el sello) */
+  .label{
+    font-size:clamp(11px,1.1vw,13px); font-weight:600;
+    text-transform:uppercase; letter-spacing:var(--label-ls);
+    color:var(--text-dim);
+    display:inline-flex; align-items:center; gap:14px;
+    margin:0;
+  }
+  .label::before{
+    content:""; width:30px; height:1px; background:var(--teal);
+    display:inline-block; opacity:.95; flex:none;
+  }
+  .label--center{ justify-content:center; }
+
+  /* titulares monumentales — SERIF editorial, minúsculas, tracking negativo */
+  h1,h2,h3{ margin:0; }
+  .serif{
+    font-family:var(--serif);
+    font-optical-sizing:auto;
+    font-weight:560;
+    letter-spacing:-.02em;
+    line-height:1;
+    text-transform:lowercase;
+  }
+  .teal{ color:var(--teal-bright); }
+  em.hl{ font-style:italic; color:var(--teal-bright); }
+
+  /* CTA monumental — radius 4 (NO pill), profundidad NeoPOP sin blur */
+  .cta{
+    --plunk: var(--teal-deep);
+    display:inline-flex; align-items:center; justify-content:center; gap:12px;
+    min-width:238px; min-height:54px;
+    padding:15px 28px;
+    background:var(--teal-bright); color:var(--cta-ink);
+    font-family:var(--sans); font-weight:600; font-size:16px; letter-spacing:.005em;
+    text-decoration:none; text-transform:lowercase;
+    border:none; border-radius:4px;
+    box-shadow:5px 5px 0 0 var(--plunk);
+    transition:transform .12s ease, box-shadow .12s ease;
+    cursor:pointer;
+  }
+  .cta:hover{ transform:translate(2px,2px); box-shadow:3px 3px 0 0 var(--plunk); }
+  .cta:active{ transform:translate(5px,5px); box-shadow:0 0 0 0 var(--plunk); }
+  .cta svg{ width:17px; height:17px; }
+
+  .cta--ghost{
+    background:transparent; color:var(--text);
+    border:1px solid var(--line-2); box-shadow:none;
+    min-height:54px;
+  }
+  .cta--ghost:hover{ transform:none; border-color:var(--teal); color:var(--teal-bright); }
+
+  section{ position:relative; }
+  .divider{ height:1px; background:var(--line); max-width:var(--maxw); margin-inline:auto; }
+
+  /* ============================================================
+     TOP BAR
+     ============================================================ */
+  .topbar{
+    position:sticky; top:0; z-index:60;
+    background:rgba(18,18,18,.78);
+    backdrop-filter:saturate(140%) blur(9px);
+    border-bottom:1px solid var(--line);
+  }
+  .topbar .wrap{ display:flex; align-items:center; justify-content:space-between; gap:16px; height:66px; }
+  .brand{ display:flex; align-items:baseline; gap:14px; min-width:0; }
+  .brand .mark{ font-family:var(--serif); font-weight:600; font-size:22px; letter-spacing:-.01em; color:var(--text); }
+  .brand .mark b{ color:var(--teal); font-weight:600; }
+  .brand .prov{
+    font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:.14em;
+    color:var(--text-dim); border:1px solid var(--line-2); border-radius:3px; padding:4px 8px; white-space:nowrap;
+  }
+  .topbar .navcta{ font-size:13px; min-width:auto; min-height:auto; padding:10px 18px; }
+  @media(max-width:680px){ .brand .prov{ display:none; } }
+
+  /* ============================================================
+     1 · HERO monumental (serif gigante, centrado)
+     ============================================================ */
+  .hero{ padding-top:clamp(72px,15vh,150px); padding-bottom:clamp(64px,12vh,130px); overflow:hidden; text-align:center; }
+  .hero::before{ /* grid teal muy sutil, escaso */
+    content:""; position:absolute; inset:0; pointer-events:none;
+    background-image:linear-gradient(var(--line) 1px,transparent 1px),
+                     linear-gradient(90deg,var(--line) 1px,transparent 1px);
+    background-size:66px 66px;
+    -webkit-mask-image:radial-gradient(ellipse 78% 60% at 50% 28%, #000 0%, transparent 72%);
+            mask-image:radial-gradient(ellipse 78% 60% at 50% 28%, #000 0%, transparent 72%);
+    opacity:.45;
+  }
+  .hero .wrap{ position:relative; display:flex; flex-direction:column; align-items:center; }
+  .hero .label{ margin-bottom:var(--md); }
+  .hero h1{
+    font-family:var(--serif); font-optical-sizing:auto;
+    font-weight:560; text-transform:lowercase;
+    font-size:clamp(2.9rem, 8.4vw, 6.6rem);
+    line-height:.98; letter-spacing:-.025em;
+    max-width:14ch;
+  }
+  .hero h1 em{ font-style:italic; color:var(--teal-bright); }
+  .hero .sub{
+    margin-top:clamp(24px,3.4vw,40px);
+    max-width:54ch; color:var(--text-mid);
+    font-size:clamp(1.05rem,1.55vw,1.28rem); line-height:1.58;
+  }
+  .hero .cta-row{ margin-top:var(--lg); display:flex; flex-wrap:wrap; gap:18px; align-items:center; justify-content:center; }
+  .hero .microcopy{ color:var(--text-dim); font-size:13px; letter-spacing:.01em; }
+
+  /* ============================================================
+     2 · MANIFIESTO (long-read editorial serif)
+     ============================================================ */
+  .manifesto{ padding-block:clamp(72px,12vh,120px); border-top:1px solid var(--line); }
+  .manifesto .grid{ display:grid; grid-template-columns:minmax(0,.32fr) minmax(0,1fr); gap:clamp(32px,5vw,var(--lg)); align-items:start; }
+  .manifesto .lede p{
+    font-family:var(--serif); font-optical-sizing:auto; font-weight:380;
+    font-size:clamp(1.5rem,3.1vw,2.5rem); line-height:1.24; letter-spacing:-.01em;
+    text-transform:lowercase; color:var(--text); max-width:22ch; margin:0;
+  }
+  .manifesto .lede p + p{ margin-top:var(--md); }
+  .manifesto .lede .muted{ color:var(--text-dim); }
+  .manifesto .jewel{
+    display:inline-block; margin-top:var(--lg);
+    font-family:var(--serif); font-weight:420; font-style:italic;
+    color:var(--teal-bright); font-size:clamp(1.15rem,1.9vw,1.5rem);
+    text-transform:lowercase; letter-spacing:-.005em; line-height:1.35;
+    border-left:2px solid var(--teal-deep); padding-left:20px;
+  }
+  @media(max-width:840px){ .manifesto .grid{ grid-template-columns:1fr; gap:var(--md); } }
+
+  /* ============================================================
+     3 · PRODUCTO — 4 capas del motor, mucho aire
+     ============================================================ */
+  .products{ padding-block:clamp(76px,12vh,124px); border-top:1px solid var(--line); }
+  .products .head{ max-width:46ch; margin-bottom:clamp(48px,8vh,var(--xl)); }
+  .products .head h2{ margin-top:var(--md); font-size:clamp(2rem,5vw,3.4rem); }
+  .products .head .sub{ margin-top:var(--sm); color:var(--text-mid); font-size:clamp(1.02rem,1.4vw,1.15rem); }
+
+  .pgrid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(min(100%,320px), 1fr));
+    gap:1px; background:var(--line); border:1px solid var(--line); border-radius:6px; overflow:hidden;
+  }
+  .pcard{
+    background:var(--bg); padding:clamp(30px,3.6vw,54px);
+    display:flex; flex-direction:column; gap:var(--sm);
+    transition:background .18s ease;
+  }
+  .pcard:hover{ background:var(--panel); }
+  .pcard .ico{
+    width:48px; height:48px; border-radius:7px; border:1px solid var(--line-2);
+    display:flex; align-items:center; justify-content:center;
+    color:var(--teal-bright); margin-bottom:var(--xs); flex:none;
+  }
+  .pcard .ico svg{ width:25px; height:25px; }
+  .pcard .knum{ font-family:var(--mono); font-size:12px; color:var(--text-dim); letter-spacing:.08em; }
+  .pcard h3{ font-family:var(--serif); font-weight:540; text-transform:lowercase; letter-spacing:-.015em; line-height:1.05; font-size:clamp(1.45rem,2.3vw,1.85rem); }
+  .pcard p{ color:var(--text-mid); margin:0; font-size:1rem; line-height:1.58; max-width:36ch; }
+  .pcard .aster{
+    margin-top:auto; padding-top:var(--sm);
+    font-family:var(--mono); font-size:11.5px; line-height:1.55; color:var(--text-dim); letter-spacing:.01em;
+  }
+  .pcard .aster b{ color:var(--teal); font-weight:500; }
+
+  /* ============================================================
+     ESCALERA — 3 escalones · hipótesis de piloto
+     ============================================================ */
+  .ladder{ padding-block:clamp(76px,12vh,124px); border-top:1px solid var(--line); background:var(--bg-deep); }
+  .ladder .head{ display:flex; align-items:flex-end; justify-content:space-between; gap:var(--md); flex-wrap:wrap; margin-bottom:var(--lg); }
+  .ladder .head h2{ margin-top:var(--md); font-size:clamp(2rem,5vw,3.4rem); max-width:18ch; }
+  .hyp{
+    display:inline-flex; align-items:center; gap:10px;
+    font-family:var(--mono); font-size:11.5px; text-transform:uppercase; letter-spacing:.16em;
+    color:var(--text-dim); border:1px dashed var(--line-2); border-radius:3px; padding:9px 13px;
+  }
+  .hyp .dot{ width:7px; height:7px; border-radius:50%; background:var(--teal); flex:none; }
+
+  .steps{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+  .step{
+    background:var(--panel-2); border:1px solid var(--line); border-radius:5px;
+    padding:26px 22px 24px; display:flex; flex-direction:column; min-height:250px; position:relative;
+  }
+  .step .n{ font-family:var(--mono); font-size:12px; color:var(--text-dim); letter-spacing:.1em; margin-bottom:14px; }
+  .step h3{ font-family:var(--serif); font-weight:540; text-transform:lowercase; letter-spacing:-.01em; font-size:1.4rem; }
+  .step .desc{ margin-top:12px; color:var(--text-mid); font-size:.92rem; line-height:1.5; flex:1; }
+  .step .fee{ margin-top:18px; padding-top:16px; border-top:1px solid var(--line); font-size:.86rem; color:var(--text); }
+  .step .fee .tag{ display:block; font-family:var(--mono); color:var(--text-dim); font-size:11px; text-transform:uppercase; letter-spacing:.12em; margin-bottom:6px; }
+  .step .fee .amount{ font-weight:600; }
+  .step .fee .amount--free{ color:var(--teal-bright); font-size:1.12rem; }
+  .step .fee .amount--soft{ font-weight:500; color:var(--text); font-size:.92rem; }
+  .step--free{ border-color:var(--teal-deep); box-shadow:6px 6px 0 0 rgba(26,122,118,.34); }
+  .ladder .foot{ margin-top:var(--md); color:var(--text-dim); font-size:13px; line-height:1.65; max-width:74ch; }
+  .ladder .foot b{ color:var(--text-mid); font-weight:500; }
+  @media(max-width:900px){ .steps{ grid-template-columns:repeat(2,1fr); } }
+  @media(max-width:480px){ .steps{ grid-template-columns:1fr; } .step{ min-height:0; } }
+
+  /* ============================================================
+     4 · ANTI-PORTAL — barrido de luz sobre el titular
+     ============================================================ */
+  .anti{ padding-block:clamp(84px,13vh,134px); border-top:1px solid var(--line); }
+  .anti .inner{ max-width:26ch; }
+  .anti h2{
+    font-family:var(--serif); font-weight:560; text-transform:lowercase; letter-spacing:-.02em; line-height:1.02;
+    font-size:clamp(2.3rem,6.4vw,4.4rem); margin-top:var(--md);
+    color:var(--text);   /* fallback si no hay soporte de bg-clip:text */
+  }
+  .anti h2 u{ text-decoration:none; color:var(--teal-bright); }
+  /* barrido de luz (bg-clip:text) — el sello de la referencia, en CSS puro, como mejora progresiva */
+  @supports ((-webkit-background-clip:text) or (background-clip:text)){
+    .anti h2{
+      background:radial-gradient(120% 130% at 50% 45%, #ffffff 0%, rgba(255,255,255,.66) 52%, rgba(255,255,255,.34) 100%);
+      -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; color:transparent;
+    }
+    .anti h2 u{
+      background:linear-gradient(180deg,var(--teal-bright),var(--teal));
+      -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; color:transparent;
+    }
+  }
+  .anti .body{ display:grid; grid-template-columns:1fr 1fr; gap:clamp(32px,5vw,var(--lg)); margin-top:var(--lg); align-items:start; }
+  .anti .body p{ color:var(--text-mid); font-size:1.06rem; max-width:42ch; margin:0; line-height:1.62; }
+  .anti .contrast{ display:flex; flex-direction:column; gap:14px; }
+  .anti .row{ display:flex; gap:16px; align-items:flex-start; padding:18px 20px; border:1px solid var(--line); border-radius:5px; background:var(--panel-2); }
+  .anti .row .k{ font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.12em; color:var(--text-dim); flex:none; width:90px; padding-top:2px; }
+  .anti .row .v{ font-size:.96rem; color:var(--text); line-height:1.5; }
+  .anti .row--them .v{ color:var(--text-mid); }
+  .anti .row--us{ border-color:var(--teal-deep); }
+  .anti .row--us .v b{ color:var(--teal-bright); font-weight:600; }
+  @media(max-width:840px){ .anti .body{ grid-template-columns:1fr; gap:var(--md);} .anti .inner{ max-width:none; } }
+
+  /* ============================================================
+     5 · EL NÚMERO — llega con el piloto
+     ============================================================ */
+  .number{ padding-block:clamp(84px,13vh,134px); border-top:1px solid var(--line); background:var(--bg-deep); text-align:center; }
+  .number .wrap{ display:flex; flex-direction:column; align-items:center; }
+  .number .figure{
+    font-family:var(--serif); font-weight:520; line-height:.9; letter-spacing:-.03em;
+    font-size:clamp(4.5rem,17vw,10rem); color:var(--text); margin:var(--md) 0 var(--sm);
+  }
+  .number .figure .q{ color:var(--teal-deep); }
+  .number .pend{
+    display:inline-flex; align-items:center; gap:9px;
+    font-family:var(--mono); font-size:11.5px; text-transform:uppercase; letter-spacing:.18em;
+    color:var(--teal); border:1px solid var(--teal-deep); border-radius:3px; padding:8px 14px;
+  }
+  .number .pend .dot{ width:7px; height:7px; border-radius:50%; background:currentColor; display:inline-block; }
+  .number h2{ font-family:var(--serif); font-weight:560; text-transform:lowercase; letter-spacing:-.02em; line-height:1.05; font-size:clamp(2rem,5vw,3.2rem); margin-top:var(--md); }
+  .number p{ color:var(--text-mid); max-width:58ch; margin:var(--md) auto 0; font-size:1.06rem; line-height:1.62; }
+  .number .foot{ margin-top:var(--md); color:var(--text-dim); font-size:12.5px; font-family:var(--mono); letter-spacing:.01em; line-height:1.65; max-width:66ch; margin-inline:auto; }
+
+  /* ============================================================
+     6 · OBJECIONES (FAQ) — respuestas honestas
+     ============================================================ */
+  .faq{ padding-block:clamp(76px,12vh,124px); border-top:1px solid var(--line); }
+  .faq .head{ text-align:center; margin-bottom:var(--lg); display:flex; flex-direction:column; align-items:center; }
+  .faq .head h2{ font-family:var(--serif); font-weight:560; text-transform:lowercase; letter-spacing:-.02em; line-height:1.04; font-size:clamp(1.9rem,4.6vw,3rem); margin-top:var(--md); }
+  .faq .list{ max-width:820px; margin-inline:auto; border-top:1px solid var(--line); }
+  .faq details{ border-bottom:1px solid var(--line); }
+  .faq summary{
+    list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:20px;
+    padding:24px 4px; font-family:var(--serif); font-weight:520; text-transform:lowercase; letter-spacing:-.01em;
+    font-size:clamp(1.15rem,2vw,1.5rem); color:var(--text);
+  }
+  .faq summary::-webkit-details-marker{ display:none; }
+  .faq summary .sign{ flex:none; width:26px; height:26px; position:relative; }
+  .faq summary .sign::before,
+  .faq summary .sign::after{ content:""; position:absolute; background:var(--teal); border-radius:2px; transition:transform .2s ease, opacity .2s ease; }
+  .faq summary .sign::before{ top:12px; left:3px; width:20px; height:2px; }
+  .faq summary .sign::after{ top:3px; left:12px; width:2px; height:20px; }
+  .faq details[open] summary .sign::after{ transform:rotate(90deg); opacity:0; }
+  .faq details[open] summary{ color:var(--teal-bright); }
+  .faq .answer{ padding:0 4px 26px; color:var(--text-mid); font-size:1.02rem; line-height:1.66; max-width:66ch; }
+  .faq .answer b{ color:var(--text); font-weight:600; }
+
+  /* ============================================================
+     7 · CIERRE — exclusividad de inventario + CTA
+     ============================================================ */
+  .close{ padding-block:clamp(90px,14vh,160px); border-top:1px solid var(--line); }
+  .close .wrap{ text-align:center; display:flex; flex-direction:column; align-items:center; }
+  .close h2{ font-family:var(--serif); font-weight:560; text-transform:lowercase; letter-spacing:-.025em; line-height:1.02; font-size:clamp(2.4rem,6.6vw,4.6rem); max-width:16ch; margin:var(--md) auto 0; }
+  .close .lead{ color:var(--text-mid); max-width:52ch; margin:var(--md) auto 0; font-size:1.1rem; line-height:1.6; }
+  .close .cta-row{ margin-top:var(--lg); display:flex; justify-content:center; flex-wrap:wrap; gap:18px; }
+  .close .fairnote{
+    margin:var(--lg) auto 0; max-width:60ch;
+    font-family:var(--mono); font-size:12px; line-height:1.7; color:var(--text-dim); letter-spacing:.005em;
+    border-top:1px solid var(--line); padding-top:var(--md);
+  }
+  .close .fairnote b{ color:var(--text-mid); }
+
+  /* ============================================================
+     FOOTER
+     ============================================================ */
+  footer{ border-top:1px solid var(--line); padding-block:var(--lg); background:var(--bg-deep); }
+  footer .wrap{ display:flex; flex-wrap:wrap; gap:var(--md); justify-content:space-between; align-items:flex-start; }
+  footer .col{ max-width:48ch; }
+  footer .mark{ font-family:var(--serif); font-weight:600; font-size:20px; }
+  footer .mark b{ color:var(--teal); }
+  footer .note{ margin-top:12px; color:var(--text-dim); font-size:12.5px; line-height:1.65; }
+  footer .prov{ color:var(--teal); }
+  footer .legal{ font-family:var(--mono); font-size:11px; color:var(--text-dim); letter-spacing:.02em; line-height:1.75; }
+  footer .watermark{
+    margin-top:var(--md); display:inline-flex; align-items:center; gap:9px;
+    font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.16em; color:var(--text-dim);
+    opacity:.55; border:1px dashed var(--line-2); border-radius:3px; padding:6px 11px;
+  }
+  footer .watermark .dot{ width:6px; height:6px; border-radius:50%; background:var(--text-dim); }
+
+  /* ============================================================
+     QR PERSISTENTE (concepto del letrero) — patrón de referencia, contenido nuestro
+     ============================================================ */
+  .qrbox{
+    position:fixed; right:clamp(16px,2.5vw,34px); bottom:clamp(16px,2.5vw,34px); z-index:55;
+    display:flex; align-items:center; gap:16px;
+    padding:16px 18px;
+    background:rgba(18,18,18,.72);
+    backdrop-filter:blur(6px);
+    border:1px solid var(--line-2); border-radius:8px;
+    box-shadow:4px 4px 0 0 rgba(26,122,118,.28);
+    max-width:calc(100vw - 2*clamp(16px,2.5vw,34px));
+    transition:transform .12s ease, box-shadow .12s ease;
+  }
+  .qrbox:hover{ transform:translate(1px,1px); box-shadow:3px 3px 0 0 rgba(26,122,118,.28); }
+  .qrbox .qr{ width:62px; height:62px; flex:none; display:block; }
+  .qrbox .qr rect{ fill:var(--text); }
+  .qrbox .txt{ min-width:0; }
+  .qrbox .txt .t1{ font-family:var(--mono); font-size:9.5px; text-transform:uppercase; letter-spacing:.22em; color:var(--teal); }
+  .qrbox .txt .t2{ font-family:var(--serif); font-weight:540; text-transform:lowercase; letter-spacing:-.01em; font-size:1.05rem; line-height:1.15; margin-top:3px; color:var(--text); }
+  .qrbox .txt .t3{ font-family:var(--mono); font-size:10px; color:var(--text-dim); margin-top:4px; letter-spacing:.02em; }
+  .qrbox .close-qr{
+    position:absolute; top:-9px; right:-9px; width:22px; height:22px; border-radius:50%;
+    background:var(--bg-deep); border:1px solid var(--line-2); color:var(--text-dim);
+    display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:13px; line-height:1;
+  }
+  .qrbox .close-qr:hover{ color:var(--teal-bright); border-color:var(--teal); }
+  .qrbox[hidden]{ display:none; }
+  @media(max-width:560px){
+    .qrbox .txt .t2{ font-size:.95rem; }
+    .qrbox .qr{ width:52px; height:52px; }
+  }
+
+  /* accesibilidad foco */
+  a:focus-visible, .cta:focus-visible, summary:focus-visible, .close-qr:focus-visible{ outline:2px solid var(--teal-bright); outline-offset:3px; border-radius:2px; }
+</style>
+</head>
+<body>
+
+<div class="depth" aria-hidden="true"></div>
+<div class="aura" aria-hidden="true"></div>
+
+<!-- ============ TOP BAR ============ -->
+<header class="topbar">
+  <div class="wrap">
+    <div class="brand">
+      <span class="mark">AuraReal<b>.</b></span>
+      <span class="prov">nombre elegido (validacion registral pendiente) · candidatos en naming.md</span>
+    </div>
+    <a class="cta cta--ghost navcta" href="#cierre">quiero el piloto</a>
+  </div>
+</header>
+
+<main>
+
+  <!-- ============ 1 · HERO ============ -->
+  <section class="hero">
+    <div class="wrap">
+      <p class="label">la verdad del lugar</p>
+      <h1>tu inmobiliaria, con la <em>verdad</em> debajo.</h1>
+      <p class="sub">
+        te montamos la tienda, contigo. por fuera, tu marca en tu dominio.
+        por debajo, lo que un crm o un constructor de webs no traen de fábrica:
+        la verdad verificada del lugar y un agente que la explica —
+        con tus leads directos entrando a tu casa.
+      </p>
+      <div class="cta-row">
+        <a class="cta" href="#cierre">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          montar mi tienda
+        </a>
+        <span class="microcopy">$0 para empezar · barrera cero · cupos de piloto</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 2 · MANIFIESTO ============ -->
+  <section class="manifesto">
+    <div class="wrap grid">
+      <p class="label">el manifiesto</p>
+      <div class="lede">
+        <p>una web bonita con listados tontos es un commodity.</p>
+        <p class="muted">cualquiera la hace. lo que no se copia es el motor debajo:
+          el barrio verificado, el agente que lo conoce, el crm que recuerda.</p>
+        <p>nosotros no vendemos el sitio. el sitio es el caballo. vendemos la verdad
+          que lo sostiene.</p>
+        <span class="jewel">la verdad del lugar. con los asteriscos donde importan.</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 3 · PRODUCTO ============ -->
+  <section class="products">
+    <div class="wrap">
+      <div class="head">
+        <p class="label">lo que va debajo</p>
+        <h2 class="serif">cuatro capas del motor — la verdad verificada y el agente son el diferencial.</h2>
+        <p class="sub">una por beneficio. cada una es una capa del motor — no un adorno del sitio.</p>
+      </div>
+
+      <div class="pgrid">
+        <article class="pcard">
+          <span class="ico">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1.5-4.5A2 2 0 016.4 3h11.2a2 2 0 011.9 1.5L21 9M3 9h18M3 9v9a2 2 0 002 2h14a2 2 0 002-2V9M8 13h8"/></svg>
+          </span>
+          <span class="knum">capa 01</span>
+          <h3>vitrina verificada</h3>
+          <p>catastro vivo debajo de cada ficha: sellos de verificación y la verdad del
+            entorno — ruido estimado, tráfico, comercios y conectividad — no la foto retocada del anuncio.</p>
+          <p class="aster">* <b>verificado en terreno por el corredor.</b> lo estimado se rotula como estimado.</p>
+        </article>
+
+        <article class="pcard">
+          <span class="ico">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 00-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 00-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>
+          </span>
+          <span class="knum">capa 02</span>
+          <h3>un agente que conoce el barrio</h3>
+          <p>en tu tienda, un agente ia que responde lo que el anuncio calla y
+            explica por qué ese lugar es ese lugar. no un chatbot: un vecino con datos.</p>
+          <p class="aster">* responde con fuentes. <b>lo que no sabe, lo dice.</b></p>
+        </article>
+
+        <article class="pcard">
+          <span class="ico">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l3.5-4 3 2.5L21 6"/></svg>
+          </span>
+          <span class="knum">capa 03</span>
+          <h3>crm vivo</h3>
+          <p>cada lead entra a tu casa, no a la de un portal. reenganche y memoria de cada
+            conversación — donde se gana la retención, por valor, no por candado.</p>
+          <p class="aster">* la pre-calificación neutral es de la <b>hoja de ruta (escalón 2)</b> — cuando llegue, jamás cobraremos por dirigirte a un banco.</p>
+        </article>
+
+        <article class="pcard">
+          <span class="ico">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 21v.01M17 21h.01M21 17h.01"/></svg>
+          </span>
+          <span class="knum">capa 04</span>
+          <h3>el qr del letrero</h3>
+          <p>el cartón de "se vende" se vuelve puerta digital. quien pasa escanea y cae en
+            tu ficha /a/{id} — con la verdad del lugar y tu agente, en tu dominio.</p>
+          <p class="aster">* del poste a tu tienda. <b>el lead es tuyo desde el primer escaneo.</b></p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ ESCALERA ============ -->
+  <section class="ladder">
+    <div class="wrap">
+      <div class="head">
+        <div>
+          <p class="label">cómo crece contigo</p>
+          <h2 class="serif">empiezas en cero. subes cuando funciona.</h2>
+        </div>
+        <span class="hyp"><span class="dot"></span> hipótesis de piloto · cifras a validar</span>
+      </div>
+
+      <div class="steps">
+        <div class="step step--free">
+          <div class="n">escalón 0</div>
+          <h3>tienda</h3>
+          <div class="desc">vitrina con línea gráfica premium en tu dominio · publicaciones verificadas · qr de letrero · página /a/{id}.</div>
+          <div class="fee"><span class="tag">cobro</span><span class="amount amount--free">$0</span> — barrera cero durante el piloto.</div>
+        </div>
+
+        <div class="step">
+          <div class="n">escalón 1 · el producto</div>
+          <h3>aurareal 360</h3>
+          <div class="desc">agente ia en tu tienda (entorno verificado) · leads calificados con cupo mensual incluido · crm vivo · reenganche · banner/qr ilimitados · analítica.</div>
+          <div class="fee"><span class="tag">cobro</span><span class="amount amount--soft">saas mensual — la suscripción es el negocio; excedente del cupo: fee fijo por lead</span></div>
+        </div>
+
+        <div class="step">
+          <div class="n">escalón 2</div>
+          <h3>inmobiliaria</h3>
+          <div class="desc">multi-corredor · equipos · roles · reportes al dueño. la casa entera, post-validación.</div>
+          <div class="fee"><span class="tag">cobro</span><span class="amount amount--soft">saas mayor — expansión</span></div>
+        </div>
+      </div>
+
+      <p class="foot">
+        toda cifra es <b>hipótesis a validar</b> en el piloto, no un tarifario.
+        el escalón 0 es gratis durante el piloto (con un cupo acotado de inventario, no para siempre).
+        la suscripción es el negocio: los leads calificados vienen incluidos en el 360, con cupo mensual;
+        solo el excedente sobre el cupo se cobra por lead — fee fijo, se cierre o no.
+        el fee jamás depende de a qué banco o portal se envíe nada.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ 4 · ANTI-PORTAL ============ -->
+  <section class="anti">
+    <div class="wrap">
+      <div class="inner">
+        <p class="label">la línea que no cruzamos</p>
+        <h2>tu cliente es <u>tuyo</u>. nosotros ponemos la verdad.</h2>
+      </div>
+      <div class="body">
+        <p>
+          hoy le pagas a un portal por leads en un canal que no es tuyo. tu marca,
+          diluida entre veinte anuncios iguales. tu cliente, del portal.
+          <br><br>
+          aquí es al revés: tu vitrina, tu qr, tu dominio. tus leads directos —
+          los del qr y los que entran a tu tienda — son tuyos, y el día que te vas,
+          te los llevas. no hay candado de contrato. lo que hace que te quedes no es
+          un cerrojo: es el motor que enriquece cada lugar — comercios y servicios
+          conflados, tiempos caminando reales y el agente que lo explica — que
+          nosotros construimos y seguimos afinando, y que un folleto no iguala.
+        </p>
+        <div class="contrast">
+          <div class="row row--them">
+            <span class="k">el portal</span>
+            <span class="v">alquila el canal. el lead entra a su casa. tu marca compite con veinte anuncios.</span>
+          </div>
+          <div class="row row--us">
+            <span class="k">tu tienda</span>
+            <span class="v"><b>tus leads directos entran a tu casa.</b> tu dominio, tu qr, tu marca. y si te vas, te los llevas.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 5 · EL NÚMERO ============ -->
+  <section class="number">
+    <div class="wrap">
+      <p class="label label--center">la prueba</p>
+      <div class="figure">×<span class="q">?</span></div>
+      <span class="pend"><span class="dot"></span> pendiente · se mide en el piloto</span>
+      <h2>el número llega con el piloto.</h2>
+      <p>
+        el lift real — cuánto más calificas y cierras — no lo prestamos de nadie ni lo
+        inventamos para una demo. se mide contra tu propia base, en tu tienda, durante
+        el piloto. cuando exista, será tuyo y tendrá su asterisco de metodología.
+      </p>
+      <p class="foot">
+        cero cifras demo presentadas como reales. hasta que el piloto lo mida, aquí no hay número —
+        y eso también es la marca.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ 6 · OBJECIONES (FAQ) ============ -->
+  <section class="faq">
+    <div class="wrap">
+      <div class="head">
+        <p class="label label--center">preguntas francas</p>
+        <h2>objeciones, con respuesta honesta.</h2>
+      </div>
+      <div class="list">
+        <details>
+          <summary>ya tengo página web.<span class="sign" aria-hidden="true"></span></summary>
+          <div class="answer">no es o/o. tu web actual es una vitrina; le falta el motor. no te pedimos botarla — le ponemos debajo la verdad verificada, el agente y el crm. sigue siendo tuya, en tu dominio. lo que sumamos es lo que tu web no tiene: <b>que sepa del lugar y capture a tu cliente</b>.</div>
+        </details>
+        <details>
+          <summary>ya estoy en el portal.<span class="sign" aria-hidden="true"></span></summary>
+          <div class="answer">no es o/o, y seamos honestos de por qué: hoy el portal es donde está la demanda — la gente va ahí a buscar; la tienda todavía no genera ese tráfico por sí sola. sigue en el portal si te trae gente. lo que te damos es <b>canal propio</b> para lo que hoy se te escapa: el lead del qr y el directo entran a tu dominio, con tu agente y tu marca. hasta que ese número suba, esto captura y verifica mejor los leads que ya tienes — no reemplaza al portal.</div>
+        </details>
+        <details>
+          <summary>un crm de corredor ya me da dominio, marca y mis leads. ¿en qué eres distinto?<span class="sign" aria-hidden="true"></span></summary>
+          <div class="answer">cierto, y por eso no te lo vendo como magia: dominio propio, tu marca y tus leads son ya lo mínimo de la categoría — no es el diferencial. lo que un crm de corredor <b>no</b> trae es la capa de abajo: cada ficha con su entorno verificado (comercios, tiempos caminando reales, ruido estimado — cada uno con su asterisco) y un agente que responde con la fuente de cada dato. la pregunta honesta que valida el piloto es una: ¿esa verdad verificada del lugar te mueve leads que el crm pelado no? si no, no te cobro; si sí, ese es el foso.</div>
+        </details>
+        <details>
+          <summary>no soy técnico, no sé de páginas.<span class="sign" aria-hidden="true"></span></summary>
+          <div class="answer">la montamos nosotros. en el piloto es a mano. tú das las publicaciones; nosotros ponemos la tienda y la verdad debajo. <b>tu trabajo es vender.</b></div>
+        </details>
+        <details>
+          <summary>¿cuánto me cuesta?<span class="sign" aria-hidden="true"></span></summary>
+          <div class="answer">la tienda arranca en <b>$0</b> durante el piloto. el producto es <b>aurareal 360</b>: un saas mensual con el agente en tu tienda, el crm vivo, el reenganche, la analítica — y un cupo mensual de leads calificados incluido. solo el excedente del cupo se cobra por lead: fee fijo, se cierre o no, porque es por el contacto calificado, no por la venta. montos y cupo son hipótesis del piloto; medimos también tu costo-por-cierre real, para que nunca pagues más que hoy por el mismo resultado.</div>
+        </details>
+        <details>
+          <summary>¿y si un día me quiero ir?<span class="sign" aria-hidden="true"></span></summary>
+          <div class="answer">te vas con lo tuyo: tus leads directos, tu dato de inventario, tu dominio, tu marca. lo que se queda con nosotros es el motor que enriquece cada lugar (los comercios y servicios conflados, los tiempos caminando reales y el agente que lo explica) — eso lo construimos nosotros. por eso la <b>retención es por valor, no por secuestro</b>: te quedas porque ese motor te sigue sirviendo.</div>
+        </details>
+        <details>
+          <summary>¿es exclusivo?<span class="sign" aria-hidden="true"></span></summary>
+          <div class="answer">sí, pero del <b>inventario</b>, nunca de personas. "aquí no entra todo: solo lo verificado." la exclusividad es de los inmuebles con la verdad comprobada — jamás de quién puede entrar, buscar o comprar.</div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 7 · CIERRE ============ -->
+  <section class="close" id="cierre">
+    <div class="wrap">
+      <p class="label label--center">exclusividad de inventario</p>
+      <h2>aquí no entra todo: solo lo verificado.</h2>
+      <p class="lead">
+        el piloto es acotado a propósito. abrimos pocos cupos de tienda para inmobiliarias
+        que quieran montar su vitrina con la verdad debajo — y ser de las primeras en tener
+        el número propio.
+      </p>
+      <div class="cta-row">
+        <a class="cta" href="#">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          reservar mi cupo de piloto
+        </a>
+        <a class="cta cta--ghost" href="#">hablar con una persona</a>
+      </div>
+      <p class="fairnote">
+        la exclusividad es del <b>inventario verificado</b>, jamás de personas.
+        sin filtros de gente. el club es de los inmuebles con la verdad comprobada —
+        nunca de quién puede entrar o comprar.
+      </p>
+    </div>
+  </section>
+
+</main>
+
+<!-- ============ FOOTER ============ -->
+<footer>
+  <div class="wrap">
+    <div class="col">
+      <div class="mark">AuraReal<b>.</b></div>
+      <p class="note">
+        <span class="prov">nombre elegido por el fundador (pendiente validacion registral)</span> — ganador del torneo de naming,
+        no una decisión tomada. candidatos completos, riesgos y verificación pendiente en
+        <b>naming.md</b>. la tienda es tuya: tu dominio, tu marca, tus leads directos.
+      </p>
+      <span class="watermark"><span class="dot"></span> borrador interno — no publicado</span>
+    </div>
+    <div class="col">
+      <p class="legal">
+        contexto ai · quito, ecuador<br>
+        línea gráfica adaptada (no clonada) · profundidad neopop — apache 2.0, con atribución<br>
+        tipografía fraunces + geist (google fonts)<br>
+        material de piloto — nada publicado, uso interno.
+      </p>
+    </div>
+  </div>
+</footer>
+
+<!-- ============ QR PERSISTENTE (concepto del letrero) ============ -->
+<aside class="qrbox" id="qrbox" aria-label="concepto: el qr del letrero lleva a tu tienda">
+  <button class="close-qr" type="button" aria-label="ocultar" onclick="document.getElementById('qrbox').hidden=true">×</button>
+  <svg class="qr" viewBox="0 0 62 62" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <!-- QR conceptual (placeholder, no escaneable) -->
+    <rect x="0" y="0" width="18" height="18"/><rect x="4" y="4" width="10" height="10" fill="#1c1c1c"/><rect x="7" y="7" width="4" height="4"/>
+    <rect x="44" y="0" width="18" height="18"/><rect x="48" y="4" width="10" height="10" fill="#1c1c1c"/><rect x="51" y="7" width="4" height="4"/>
+    <rect x="0" y="44" width="18" height="18"/><rect x="4" y="48" width="10" height="10" fill="#1c1c1c"/><rect x="7" y="51" width="4" height="4"/>
+    <rect x="24" y="0" width="4" height="4"/><rect x="32" y="0" width="4" height="4"/><rect x="24" y="8" width="4" height="4"/><rect x="34" y="6" width="4" height="4"/>
+    <rect x="24" y="24" width="4" height="4"/><rect x="32" y="26" width="4" height="4"/><rect x="40" y="24" width="4" height="4"/><rect x="52" y="24" width="4" height="4"/>
+    <rect x="0" y="24" width="4" height="4"/><rect x="8" y="24" width="4" height="4"/><rect x="8" y="32" width="4" height="4"/>
+    <rect x="24" y="34" width="4" height="4"/><rect x="30" y="40" width="4" height="4"/><rect x="24" y="52" width="4" height="4"/><rect x="34" y="52" width="4" height="4"/>
+    <rect x="40" y="34" width="4" height="4"/><rect x="48" y="40" width="4" height="4"/><rect x="56" y="44" width="4" height="4"/><rect x="40" y="52" width="4" height="4"/><rect x="52" y="56" width="4" height="4"/>
+    <rect x="16" y="40" width="4" height="4"/><rect x="6" y="40" width="4" height="4"/>
+  </svg>
+  <div class="txt">
+    <div class="t1">concepto</div>
+    <div class="t2">el qr del letrero</div>
+    <div class="t3">del poste a tu tienda /a/{id}</div>
+  </div>
+</aside>
+
+</body>
+</html>

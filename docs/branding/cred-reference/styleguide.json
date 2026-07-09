@@ -1,0 +1,183 @@
+{
+  "status": "ok",
+  "domain": "cred.club",
+  "styleguide": {
+    "mode": "light",
+    "colors": {
+      "accent": "#000000",
+      "background": "#ffffff",
+      "text": "#000000"
+    },
+    "typography": {
+      "headings": {
+        "h1": {
+          "fontFamily": "gilroy-regular",
+          "fontSize": "36px",
+          "fontWeight": 700,
+          "lineHeight": "43px",
+          "letterSpacing": "0px",
+          "fontFallbacks": [
+            "gilroy-regular"
+          ]
+        },
+        "h2": {
+          "fontFamily": "Overpass-SemiBold",
+          "fontSize": "29px",
+          "fontWeight": 700,
+          "lineHeight": "41.6px",
+          "letterSpacing": "3.5px",
+          "fontFallbacks": [
+            "Overpass-SemiBold"
+          ]
+        },
+        "h3": {
+          "fontFamily": "gilroy-regular",
+          "fontSize": "24px",
+          "fontWeight": 600,
+          "lineHeight": "29px",
+          "letterSpacing": "0px",
+          "fontFallbacks": [
+            "gilroy-regular"
+          ]
+        },
+        "h4": {
+          "fontFamily": "gilroy-regular",
+          "fontSize": "20px",
+          "fontWeight": 600,
+          "lineHeight": "24px",
+          "letterSpacing": "0px",
+          "fontFallbacks": [
+            "gilroy-regular"
+          ]
+        }
+      },
+      "p": {
+        "fontFamily": "gilroy-regular",
+        "fontSize": "16px",
+        "fontWeight": 400,
+        "lineHeight": "normal",
+        "letterSpacing": "0px",
+        "fontFallbacks": [
+          "gilroy-regular"
+        ]
+      }
+    },
+    "elementSpacing": {
+      "xs": "10px",
+      "sm": "20px",
+      "md": "40px",
+      "lg": "60px",
+      "xl": "100px"
+    },
+    "shadows": {
+      "sm": "none",
+      "md": "none",
+      "lg": "none",
+      "xl": "none",
+      "inner": "none"
+    },
+    "components": {
+      "button": {
+        "primary": {
+          "backgroundColor": "#000000",
+          "color": "#ffffff",
+          "borderColor": "#ffffff4d",
+          "borderRadius": "4px",
+          "borderWidth": "1px",
+          "borderStyle": "solid",
+          "padding": "12px 15px",
+          "fontSize": "16px",
+          "fontWeight": 600,
+          "minWidth": "238px",
+          "minHeight": "47px",
+          "textDecoration": "none",
+          "boxShadow": "none",
+          "fontFallbacks": [
+            "gilroy-medium"
+          ],
+          "fontFamily": "gilroy-medium",
+          "css": "box-sizing: border-box; display: inline-block; min-width: 238px; min-height: 47px; background-color: #000000; color: #ffffff; border: 1px solid #ffffff4d; border-radius: 4px; padding: 12px 15px; font-size: 16px; font-weight: 600; font-family: gilroy-medium; text-decoration: none;"
+        },
+        "secondary": {
+          "borderRadius": "4px",
+          "borderWidth": "1px",
+          "borderStyle": "solid",
+          "padding": "12px 15px",
+          "fontSize": "16px",
+          "fontWeight": 600,
+          "minWidth": "238px",
+          "minHeight": "47px",
+          "textDecoration": "none",
+          "boxShadow": "none",
+          "backgroundColor": "transparent",
+          "color": "#000000",
+          "borderColor": "#000000",
+          "fontFallbacks": [
+            "gilroy-regular"
+          ],
+          "fontFamily": "gilroy-regular",
+          "css": "box-sizing: border-box; display: inline-block; min-width: 238px; min-height: 47px; background-color: transparent; color: #000000; border: 1px solid #000000; border-radius: 4px; padding: 12px 15px; font-size: 16px; font-weight: 600; font-family: gilroy-regular; text-decoration: none;"
+        },
+        "link": {
+          "borderRadius": "0px",
+          "borderWidth": "0px",
+          "borderStyle": "none",
+          "padding": "0px",
+          "fontSize": "16px",
+          "fontWeight": 400,
+          "minWidth": "0px",
+          "minHeight": "0px",
+          "textDecoration": "underline",
+          "boxShadow": "none",
+          "backgroundColor": "transparent",
+          "color": "#000000",
+          "borderColor": "transparent",
+          "fontFallbacks": [
+            "gilroy-regular"
+          ],
+          "fontFamily": "gilroy-regular",
+          "css": "color: #000000; font-size: 16px; font-weight: 400; font-family: gilroy-regular; text-decoration: underline;"
+        }
+      },
+      "card": {
+        "backgroundColor": "#ffffff",
+        "borderColor": "#e5e7eb",
+        "borderRadius": "8px",
+        "borderWidth": "1px",
+        "borderStyle": "solid",
+        "padding": "16px",
+        "boxShadow": "none",
+        "textColor": "#000000",
+        "css": "background-color: #ffffff; color: #000000; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px;"
+      }
+    },
+    "fontLinks": {
+      "gilroy-regular": {
+        "type": "custom",
+        "files": {
+          "400": "https://web-assets.cred.club/v2/_next/assets/fonts/Gilroy-Regular.woff2"
+        },
+        "displayName": "Gilroy Regular"
+      },
+      "Overpass-SemiBold": {
+        "type": "custom",
+        "files": {
+          "600": "https://web-assets.cred.club/v2/_next/assets/fonts/Overpass-SemiBold.woff2"
+        },
+        "displayName": "Overpass Semi Bold"
+      },
+      "gilroy-medium": {
+        "type": "custom",
+        "files": {
+          "500": "https://web-assets.cred.club/v2/_next/assets/fonts/Gilroy-Medium.woff2"
+        },
+        "displayName": "Gilroy Medium"
+      }
+    }
+  },
+  "code": 200,
+  "key_metadata": {
+    "credits_consumed": 10,
+    "credits_remaining": 240
+  }
+}

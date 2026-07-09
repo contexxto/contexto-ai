@@ -1,0 +1,108 @@
+{
+  "status": "ok",
+  "brand": {
+    "domain": "cred.club",
+    "title": "Cred",
+    "description": "CRED is a members‑only financial club in India that rewards individuals with high credit scores (750+) for responsible credit behavior. Through its mobile app, members can pay credit‑card bills, track and improve their credit scores, receive payment reminders, uncover hidden fees, and earn cashback, coins and exclusive lifestyle perks from premium partners. The platform also offers UPI credit payments, car‑vital monitoring, and curated experiences, all secured with end‑to‑end encryption. By turning routine financial actions into rewarding experiences, CRED aims to accelerate the financial and lifestyle progress of its 25 million trusted members.",
+    "slogan": "Not everyone makes it in. The CRED membership rewards trustworthy progress.",
+    "colors": [
+      {
+        "hex": "#7c7c7c",
+        "name": "Namara Grey"
+      },
+      {
+        "hex": "#1c1c1c",
+        "name": "Eerie Black"
+      },
+      {
+        "hex": "#f7f7f7",
+        "name": "Lynx White"
+      }
+    ],
+    "logos": [
+      {
+        "url": "https://media.brand.dev/0820c375-fe7c-4e68-8e33-2b176aefdbe5.png",
+        "mode": "dark",
+        "colors": [
+          {
+            "hex": "#7c7c7c",
+            "name": "Namara Grey"
+          },
+          {
+            "hex": "#1c1c1c",
+            "name": "Eerie Black"
+          },
+          {
+            "hex": "#f7f7f7",
+            "name": "Lynx White"
+          }
+        ],
+        "resolution": {
+          "width": 192,
+          "height": 192,
+          "aspect_ratio": 1
+        },
+        "type": "icon"
+      }
+    ],
+    "backdrops": [
+      {
+        "url": "https://media.brand.dev/d0ef31de-4e93-48da-8c78-24ccfe1ffe1d.jpg",
+        "colors": [
+          {
+            "hex": "#949494",
+            "name": "Grey Shingle"
+          },
+          {
+            "hex": "#303233",
+            "name": "Phantom Ship"
+          },
+          {
+            "hex": "#c3c3c3",
+            "name": "Explosive Grey"
+          }
+        ],
+        "resolution": {
+          "width": 1000,
+          "height": 525,
+          "aspect_ratio": 1.9
+        }
+      }
+    ],
+    "socials": [
+      {
+        "type": "x",
+        "url": "https://x.com/cred_club"
+      }
+    ],
+    "email": null,
+    "phone": null,
+    "is_nsfw": false,
+    "industries": {
+      "eic": [
+        {
+          "industry": "Finance",
+          "subindustry": "Payments & Money Movement"
+        },
+        {
+          "industry": "Finance",
+          "subindustry": "Credit Scoring & Risk Management"
+        }
+      ]
+    },
+    "links": {
+      "blog": "https://engineering.cred.club/",
+      "careers": "https://careers.cred.club/openings",
+      "privacy": "https://cred.club/privacy",
+      "terms": "https://cred.club/terms",
+      "contact": null,
+      "pricing": null
+    },
+    "primary_language": "english"
+  },
+  "code": 200,
+  "key_metadata": {
+    "credits_consumed": 10,
+    "credits_remaining": 230
+  }
+}

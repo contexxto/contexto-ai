@@ -97,3 +97,19 @@ font:600 16px gilroy-medium;
 ---
 
 > **Una línea para recordar:** CRED vende exclusividad de personas; Contexto vende exclusividad de VERDAD. Mismo lenguaje de lujo — alma opuesta (y la nuestra es defendible ante Fair Housing).
+
+---
+
+## 6. ADDENDUM (2026-07-08 noche) — Capturas reales del sitio (24 screenshots de Carlos)
+
+**Fuente:** `cred-reference/screenshots/` (24 PNG extraídos del PPTX de Carlos — la referencia VISUAL que el endpoint screenshot del API negó con 403). Corrigen y completan el styleguide extraído:
+
+1. **El titular monumental es SERIF, no sans.** El hero ("crafted for the creditworthy", "feel the odds fall in your favor") usa un **serif editorial de alto contraste, gigante, en minúsculas, centrado** — el styleguide API reportó Gilroy porque midió el body/secciones, no el display del hero. **El lujo vive en ese serif.** Sustituto libre para nosotros: **Fraunces** (Google Fonts, alto contraste) o Playfair Display; el sans (Geist) queda para body/UI.
+2. **El fondo no es negro plano: es 3D cinematográfico oscuro.** Monolitos de carbón con luz cálida rasante, esferas de vidrio — profundidad fotográfica, no CSS plano. Traducción sin producir 3D: **viñetas radiales + gradientes cálido-sutiles sobre carbón** (nuestro análogo natural: el AURA teal respirando sobre #1c1c1c — ya es lenguaje de Contexto).
+3. **Etiqueta espaciada confirmada** en el header real ("CRED INDUSIND BANK…" caps + tracking amplio, en caja con borde fino).
+4. **QR persistente** abajo-derecha en caja enmarcada ("download CRED") — patrón que mapea 1:1 a nuestro QR de letrero/tienda.
+5. **Texto del hero centrado**, subtítulo corto en sans regular — jerarquía: etiqueta espaciada (arriba) → serif monumental → una línea sans → un CTA.
+
+**Acción para la landing del paquete (`lanzamiento-pyme/landing.html`):** upgrade visual pendiente de revisión con Carlos — (a) hero a serif monumental (Fraunces), (b) fondo con profundidad (viñeta/aura teal), (c) caja de QR persistente. El resto de la línea (teal único, espaciado, CTAs 238px, minúsculas) ya está aplicado.
+
+**Despliegue:** la landing y los storefronts viven en **dominio separado** (decisión de Carlos, 2026-07-08) — NUNCA sobre contexxto.com/la app. Candidatos naturales: subdominio (p.ej. `tiendas.contexxto.com`) o el dominio de la sub-marca ganadora del naming (los compuestos `contexto*.com` y `vitrinaviva.com` están libres — ver `lanzamiento-pyme/naming.md`). Proyecto Vercel separado; nada se publica sin su OK.

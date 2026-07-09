@@ -1,0 +1,548 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>recap — paquete lanzamiento-pyme (AuraReal)</title>
+<meta name="description" content="Recap navegable del paquete lanzamiento-pyme: tesis, los 7 artefactos, el veredicto del red-team y los siguientes pasos. Documento local — nada se publica.">
+<meta name="theme-color" content="#121212">
+
+<!--
+  RECAP — paquete "Shopify inmobiliario" (lanzamiento-pyme)
+  Contexto AI · documento local de navegación, nada se publica.
+  Línea gráfica: CRED (extracción real cred.club) parametrizada para Contexto AI,
+  mismos tokens que landing.html / storefront-demo.html de este paquete.
+  Profundidad NeoPOP (aristas duras, sin blur) — CRED-CLUB/neopop-web, Apache 2.0, atribución conservada.
+  Nombre: AuraReal — decision del fundador, pendiente SENADI (ver naming.md).
+-->
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --bg:        #1c1c1c;
+    --bg-deep:   #121212;
+    --panel:     #1f1f1f;
+    --panel-2:   #181818;
+    --line:      rgba(255,255,255,.09);
+    --line-2:    rgba(255,255,255,.16);
+
+    --teal:        #2DBDB6;
+    --teal-bright: #5EEAD4;
+    --teal-deep:   #1A7A76;
+    --cta-ink:     #06201C;
+
+    --text:      #f2f1ee;
+    --text-mid:  #a7a3a0;
+    --text-dim:  #7c7c7c;
+
+    --xs: 10px; --sm: 20px; --md: 40px; --lg: 60px; --xl: 100px;
+
+    --maxw: 1120px;
+    --label-ls: .22em;
+  }
+
+  *{ box-sizing:border-box; }
+  html{ -webkit-text-size-adjust:100%; scroll-behavior:smooth; }
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:"Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-weight:400;
+    font-size:17px;
+    line-height:1.6;
+    letter-spacing:-.005em;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+    overflow-x:hidden;
+  }
+  ::selection{ background:var(--teal-bright); color:var(--cta-ink); }
+
+  .wrap{ width:100%; max-width:var(--maxw); margin-inline:auto; padding-inline:24px; }
+
+  .label{
+    font-size:12px; font-weight:600;
+    text-transform:uppercase;
+    letter-spacing:var(--label-ls);
+    color:var(--text-dim);
+    display:inline-flex; align-items:center; gap:12px;
+    margin:0;
+  }
+  .label::before{
+    content:""; width:26px; height:1px; background:var(--teal);
+    display:inline-block; opacity:.9;
+  }
+  .label--center{ justify-content:center; }
+
+  h1,h2,h3{ font-weight:600; letter-spacing:-.02em; line-height:1.06; text-transform:lowercase; margin:0; }
+  .teal{ color:var(--teal-bright); }
+  code, .mono{ font-family:"Geist Mono", ui-monospace, monospace; }
+
+  .cta{
+    --plunk: var(--teal-deep);
+    display:inline-flex; align-items:center; justify-content:center; gap:12px;
+    min-width:238px; min-height:52px;
+    padding:14px 26px;
+    background:var(--teal-bright); color:var(--cta-ink);
+    font-family:inherit; font-weight:600; font-size:16px; letter-spacing:.005em;
+    text-decoration:none; text-transform:lowercase;
+    border:none; border-radius:4px;
+    box-shadow:5px 5px 0 0 var(--plunk);
+    transition:transform .12s ease, box-shadow .12s ease;
+    cursor:pointer;
+  }
+  .cta:hover{ transform:translate(2px,2px); box-shadow:3px 3px 0 0 var(--plunk); }
+  .cta:active{ transform:translate(5px,5px); box-shadow:0 0 0 0 var(--plunk); }
+
+  .cta--ghost{
+    background:transparent; color:var(--text);
+    border:1px solid var(--line-2);
+    box-shadow:none;
+  }
+  .cta--ghost:hover{ transform:none; border-color:var(--teal); color:var(--teal-bright); }
+
+  section{ position:relative; }
+
+  /* ============================================================
+     TOP BAR
+     ============================================================ */
+  .topbar{
+    position:sticky; top:0; z-index:50;
+    background:rgba(18,18,18,.86);
+    backdrop-filter:saturate(140%) blur(8px);
+    border-bottom:1px solid var(--line);
+  }
+  .topbar .wrap{ display:flex; align-items:center; justify-content:space-between; height:64px; gap:16px; flex-wrap:wrap; }
+  .brand{ display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; }
+  .brand .mark{ font-weight:700; font-size:19px; letter-spacing:-.01em; color:var(--text); }
+  .brand .mark b{ color:var(--teal); font-weight:700; }
+  .brand .prov{
+    font-size:10px; text-transform:uppercase; letter-spacing:.14em; color:var(--text-dim);
+    border:1px solid var(--line-2); border-radius:3px; padding:3px 7px; white-space:nowrap;
+  }
+  .topbar nav{ display:flex; gap:22px; font-size:13px; }
+  .topbar nav a{ color:var(--text-mid); text-decoration:none; }
+  .topbar nav a:hover{ color:var(--teal-bright); }
+  @media(max-width:760px){ .topbar nav{ display:none; } }
+
+  /* ============================================================
+     HERO
+     ============================================================ */
+  .hero{ padding-top:clamp(56px,10vh,100px); padding-bottom:clamp(48px,8vh,80px); overflow:hidden; }
+  .hero::before{
+    content:""; position:absolute; inset:0; pointer-events:none;
+    background-image:linear-gradient(var(--line) 1px,transparent 1px),
+                     linear-gradient(90deg,var(--line) 1px,transparent 1px);
+    background-size:64px 64px;
+    -webkit-mask-image:radial-gradient(ellipse 80% 55% at 50% 20%, #000 0%, transparent 72%);
+            mask-image:radial-gradient(ellipse 80% 55% at 50% 20%, #000 0%, transparent 72%);
+    opacity:.5;
+  }
+  .hero .wrap{ position:relative; }
+  .hero h1{
+    font-size:clamp(2.1rem, 5.6vw, 3.6rem);
+    max-width:20ch;
+    margin-top:var(--md);
+  }
+  .hero .tesis{
+    margin-top:var(--md);
+    max-width:64ch;
+    font-size:clamp(1.15rem,2.2vw,1.5rem);
+    line-height:1.5;
+    color:var(--text-mid);
+    border-left:2px solid var(--teal-deep);
+    padding-left:20px;
+  }
+  .hero .tesis b{ color:var(--teal-bright); font-weight:600; }
+
+  /* nota visible — provisional / nada publicado / hipótesis */
+  .notebox{
+    margin-top:var(--lg);
+    display:grid; grid-template-columns:repeat(3,1fr); gap:1px;
+    background:var(--line); border:1px solid var(--line); border-radius:5px; overflow:hidden;
+  }
+  .notebox .item{
+    background:var(--panel-2); padding:18px 20px;
+    display:flex; gap:12px; align-items:flex-start;
+  }
+  .notebox .dot{ width:7px; height:7px; border-radius:50%; background:var(--teal); flex:none; margin-top:7px; }
+  .notebox .txt{ font-size:13px; color:var(--text-mid); line-height:1.5; }
+  .notebox .txt b{ color:var(--text); font-weight:600; }
+  .notebox .txt a{ color:var(--teal-bright); }
+  @media(max-width:820px){ .notebox{ grid-template-columns:1fr; } }
+
+  /* ============================================================
+     ARTEFACTOS — grid de tarjetas
+     ============================================================ */
+  .artefactos{ padding-block:clamp(56px,9vh,96px); border-top:1px solid var(--line); }
+  .artefactos .head{ max-width:56ch; margin-bottom:var(--xl); }
+  .artefactos .head h2{ margin-top:var(--md); font-size:clamp(1.7rem,3.6vw,2.5rem); }
+  .artefactos .head .sub{ margin-top:var(--sm); color:var(--text-mid); }
+
+  .agrid{ display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:var(--line); border:1px solid var(--line); }
+  .acard{
+    background:var(--bg); padding:clamp(26px,3vw,34px);
+    display:flex; flex-direction:column; gap:14px;
+    transition:background .18s ease;
+  }
+  .acard:hover{ background:var(--panel); }
+  .acard .top{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .acard .ico{
+    width:42px; height:42px; border-radius:6px;
+    border:1px solid var(--line-2);
+    display:flex; align-items:center; justify-content:center;
+    color:var(--teal-bright); flex:none;
+  }
+  .acard .ico svg{ width:21px; height:21px; }
+  .acard .filetype{
+    font-size:10.5px; text-transform:uppercase; letter-spacing:.1em; color:var(--text-dim);
+    border:1px solid var(--line-2); border-radius:3px; padding:3px 7px;
+  }
+  .acard h3{ font-size:1.18rem; margin-top:2px; }
+  .acard .fname{ font-size:12px; color:var(--text-dim); margin-top:-8px; }
+  .acard p{ color:var(--text-mid); margin:0; font-size:.94rem; line-height:1.55; flex:1; }
+  .acard .go{
+    margin-top:auto; padding-top:12px; border-top:1px solid var(--line);
+    display:flex; align-items:center; justify-content:space-between;
+    font-size:13px; color:var(--teal-bright); text-decoration:none; font-weight:500;
+  }
+  .acard .go svg{ width:15px; height:15px; transition:transform .15s ease; }
+  .acard:hover .go svg{ transform:translateX(3px); }
+  @media(max-width:900px){ .agrid{ grid-template-columns:repeat(2,1fr); } }
+  @media(max-width:600px){ .agrid{ grid-template-columns:1fr; } }
+
+  /* ============================================================
+     VEREDICTO RED-TEAM
+     ============================================================ */
+  .veredicto{ padding-block:clamp(64px,11vh,110px); border-top:1px solid var(--line); background:var(--bg-deep); }
+  .veredicto .head{ max-width:60ch; margin-bottom:var(--lg); }
+  .veredicto .head h2{ margin-top:var(--md); font-size:clamp(1.7rem,3.6vw,2.5rem); }
+  .veredicto .head .sub{ margin-top:var(--sm); color:var(--text-mid); }
+
+  .stats{ display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:var(--line); border:1px solid var(--line); border-radius:5px; overflow:hidden; margin-bottom:var(--lg); }
+  .stat{ background:var(--panel-2); padding:28px 22px; text-align:center; }
+  .stat .n{ font-family:"Geist Mono", ui-monospace, monospace; font-size:clamp(2.4rem,5vw,3.4rem); font-weight:500; color:var(--text); line-height:1; }
+  .stat .n em{ font-style:normal; color:var(--teal-bright); }
+  .stat .k{ margin-top:10px; font-size:12px; text-transform:uppercase; letter-spacing:.12em; color:var(--text-dim); }
+  @media(max-width:760px){ .stats{ grid-template-columns:1fr; } }
+
+  .breakdown{ display:grid; grid-template-columns:1fr 1fr; gap:var(--md); }
+  .bcol{ background:var(--panel-2); border:1px solid var(--line); border-radius:5px; padding:22px 24px; }
+  .bcol .bk{ font-size:12px; text-transform:uppercase; letter-spacing:.14em; color:var(--text-dim); margin-bottom:8px; }
+  .bcol .bn{ font-family:"Geist Mono", ui-monospace, monospace; font-size:1.9rem; color:var(--teal-bright); font-weight:500; }
+  .bcol p{ margin:10px 0 0; color:var(--text-mid); font-size:.9rem; line-height:1.5; }
+  @media(max-width:700px){ .breakdown{ grid-template-columns:1fr; } }
+
+  .gatesnote{
+    margin-top:var(--md); padding:18px 22px;
+    border:1px dashed var(--line-2); border-radius:5px;
+    font-family:"Geist Mono", ui-monospace, monospace; font-size:12.5px; line-height:1.65;
+    color:var(--text-dim);
+  }
+  .gatesnote b{ color:var(--teal); font-weight:500; }
+
+  /* ============================================================
+     SIGUIENTES PASOS
+     ============================================================ */
+  .pasos{ padding-block:clamp(64px,11vh,110px); border-top:1px solid var(--line); }
+  .pasos .head{ max-width:60ch; margin-bottom:var(--lg); }
+  .pasos .head h2{ margin-top:var(--md); font-size:clamp(1.7rem,3.6vw,2.5rem); }
+  .pasos .head .sub{ margin-top:var(--sm); color:var(--text-mid); }
+
+  .steps{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+  .step{
+    background:var(--panel-2); border:1px solid var(--line);
+    border-radius:5px; padding:26px 24px 24px;
+    display:flex; flex-direction:column; min-height:220px;
+  }
+  .step .n{ font-family:"Geist Mono", ui-monospace, monospace; font-size:12px; color:var(--text-dim); letter-spacing:.1em; margin-bottom:14px; }
+  .step h3{ font-size:1.12rem; text-transform:lowercase; }
+  .step p{ margin-top:12px; color:var(--text-mid); font-size:.92rem; line-height:1.55; flex:1; }
+  .step--gate{ border-color:var(--teal-deep); box-shadow:6px 6px 0 0 rgba(26,122,118,.35); }
+  .pasos .fuente{ margin-top:var(--md); color:var(--text-dim); font-size:12.5px; font-family:"Geist Mono", ui-monospace, monospace; max-width:76ch; }
+  @media(max-width:900px){ .steps{ grid-template-columns:1fr; } }
+
+  /* ============================================================
+     FOOTER
+     ============================================================ */
+  footer{ border-top:1px solid var(--line); padding-block:var(--lg); background:var(--bg-deep); }
+  footer .wrap{ display:flex; flex-wrap:wrap; gap:var(--md); justify-content:space-between; align-items:flex-start; }
+  footer .col{ max-width:52ch; }
+  footer .mark{ font-weight:700; font-size:17px; }
+  footer .mark b{ color:var(--teal); }
+  footer .note{ margin-top:12px; color:var(--text-dim); font-size:12.5px; line-height:1.6; }
+  footer .note a{ color:var(--teal-bright); }
+  footer .legal{ font-family:"Geist Mono", ui-monospace, monospace; font-size:11px; color:var(--text-dim); letter-spacing:.02em; line-height:1.7; max-width:40ch; }
+
+  a:focus-visible, .cta:focus-visible{ outline:2px solid var(--teal-bright); outline-offset:3px; }
+</style>
+</head>
+<body>
+
+<!-- ============ TOP BAR ============ -->
+<header class="topbar">
+  <div class="wrap">
+    <div class="brand">
+      <span class="mark">AuraReal<b>.</b></span>
+      <span class="prov">nombre elegido (validacion registral pendiente) · candidatos en naming.md</span>
+    </div>
+    <nav>
+      <a href="#artefactos">artefactos</a>
+      <a href="#veredicto">red-team</a>
+      <a href="#pasos">siguientes pasos</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+  <!-- ============ HERO ============ -->
+  <section class="hero">
+    <div class="wrap">
+      <p class="label">recap navegable del paquete</p>
+      <h1>lanzamiento-pyme — la tesis, en una línea.</h1>
+      <p class="tesis">
+        la inmobiliaria PYME monta su tienda en una hora — con lo que <b>ningún constructor
+        de webs</b> puede darle: la <b>verdad verificada del lugar</b>, un <b>agente</b> que la
+        explica, y sus <b>leads como suyos</b>.
+      </p>
+
+      <div class="notebox">
+        <div class="item">
+          <span class="dot"></span>
+          <span class="txt"><b>nombre: AuraReal.</b> decision del fundador (2026-07-09), pendiente registro SENADI — el torneo y las colisiones chequeadas estan en <a href="naming.md">naming.md</a>.</span>
+        </div>
+        <div class="item">
+          <span class="dot"></span>
+          <span class="txt"><b>nada publicado.</b> todo este paquete son archivos locales de trabajo — cero deploys, cero dominios registrados, cero anuncios.</span>
+        </div>
+        <div class="item">
+          <span class="dot"></span>
+          <span class="txt"><b>números = hipótesis.</b> la escalera de precios, los umbrales de "lead calificado" y cualquier cifra del paquete son hipótesis a validar en el piloto — no un tarifario.</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ ARTEFACTOS ============ -->
+  <section class="artefactos" id="artefactos">
+    <div class="wrap">
+      <div class="head">
+        <p class="label">el paquete</p>
+        <h2>siete artefactos, un solo motor de verdad.</h2>
+        <p class="sub">cada tarjeta abre el archivo correspondiente en esta misma carpeta.</p>
+      </div>
+
+      <div class="agrid">
+
+        <!-- naming.md -->
+        <article class="acard">
+          <div class="top">
+            <span class="ico">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41L11 3.83A2 2 0 009.59 3.24H4a1 1 0 00-1 1v5.59a2 2 0 00.59 1.41l9.59 9.59a2 2 0 002.82 0l5.59-5.59a2 2 0 000-2.83z"/><circle cx="7.5" cy="7.5" r="1.2"/></svg>
+            </span>
+            <span class="filetype">.md</span>
+          </div>
+          <h3>naming</h3>
+          <span class="fname mono">naming.md</span>
+          <p>torneo de 12 candidatos de nombre — dominio (DNS preliminar), colisión de marca y voz, juzgados por un panel editorial simulado. decision final del fundador: <b class="teal">AuraReal</b> (el torneo elegia Cimiento); falta el registro formal SENADI/IEPI.</p>
+          <a class="go" href="naming.md">abrir naming.md
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+        </article>
+
+        <!-- landing.html -->
+        <article class="acard">
+          <div class="top">
+            <span class="ico">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M3 8.5h18"/><circle cx="6" cy="6.3" r=".6" fill="currentColor" stroke="none"/></svg>
+            </span>
+            <span class="filetype">.html</span>
+          </div>
+          <h3>landing</h3>
+          <span class="fname mono">landing.html</span>
+          <p>landing de 6 secciones en línea CRED: hero, manifiesto, cuatro capas del motor, bloque anti-portal, prueba social (pendiente) y la escalera (tienda gratis → aurareal 360 → inmobiliaria) con cierre de exclusividad de inventario.</p>
+          <a class="go" href="landing.html">abrir landing.html
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+        </article>
+
+        <!-- storefront-demo.html -->
+        <article class="acard">
+          <div class="top">
+            <span class="ico">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1.5-4.5A2 2 0 016.4 3h11.2a2 2 0 011.9 1.5L21 9M3 9h18M3 9v9a2 2 0 002 2h14a2 2 0 002-2V9M8 13h8"/></svg>
+            </span>
+            <span class="filetype">.html</span>
+          </div>
+          <h3>storefront — demo</h3>
+          <span class="fname mono">storefront-demo.html</span>
+          <p>tienda ficticia de una inmobiliaria (escalón 0), con fichas verificadas, sellos, QR de letrero y página <code>/a/{id}</code> por inmueble. el "sitio bonito" con la verdad debajo, para juzgar con los ojos.</p>
+          <a class="go" href="storefront-demo.html">abrir storefront-demo.html
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+        </article>
+
+        <!-- pitch-onepager.md -->
+        <article class="acard">
+          <div class="top">
+            <span class="ico">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg>
+            </span>
+            <span class="filetype">.md</span>
+          </div>
+          <h3>pitch — one-pager</h3>
+          <span class="fname mono">pitch-onepager.md</span>
+          <p>una página de venta: el dolor del portal, el reencuadre ("no vendemos páginas web"), la escalera con cobros rotulados hipótesis, y "por qué creerte" — verificación en terreno y asteriscos honestos.</p>
+          <a class="go" href="pitch-onepager.md">abrir pitch-onepager.md
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+        </article>
+
+        <!-- guion-demo.md -->
+        <article class="acard">
+          <div class="top">
+            <span class="ico">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h8a2 2 0 012 2v13l-4-2-4 2-4-2V6a2 2 0 012-2z"/><path d="M9 9h6M9 12h6"/></svg>
+            </span>
+            <span class="filetype">.md</span>
+          </div>
+          <h3>guion — demo</h3>
+          <span class="fname mono">guion-demo.md</span>
+          <p>guion minuto a minuto para una demo en frío de 10 minutos: apertura con el dolor del portal, demo del storefront, objeciones, y cierre con un compromiso de piloto manual — nunca una firma.</p>
+          <a class="go" href="guion-demo.md">abrir guion-demo.md
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+        </article>
+
+        <!-- pricing-detalle.md -->
+        <article class="acard">
+          <div class="top">
+            <span class="ico">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+            </span>
+            <span class="filetype">.md</span>
+          </div>
+          <h3>pricing — detalle</h3>
+          <span class="fname mono">pricing-detalle.md</span>
+          <p>expande la escalera (decisión del fundador: el 360 ES el producto; leads incluidos con cupo): la función pública y auditable de "lead calificado", bandas de precio hipótesis ancladas al gasto de portal, y los 3 experimentos de pricing del piloto.</p>
+          <a class="go" href="pricing-detalle.md">abrir pricing-detalle.md
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+        </article>
+
+        <!-- red-team.md -->
+        <article class="acard">
+          <div class="top">
+            <span class="ico">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.4-3 8.4-7 9-4-.6-7-4.6-7-9V6z"/><path d="M9.5 12l1.8 1.8L15 10"/></svg>
+            </span>
+            <span class="filetype">.md</span>
+          </div>
+          <h3>red-team</h3>
+          <span class="fname mono">red-team.md</span>
+          <p>registro de 33 hallazgos sobre los 6 artefactos del paquete. los 15 críticos/altos ya están aplicados (fixes en la copy) — con gates obligatorios de piloto antes de fijar precio o narrativa. ver veredicto abajo.</p>
+          <a class="go" href="red-team.md">abrir red-team.md
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+        </article>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ VEREDICTO RED-TEAM ============ -->
+  <section class="veredicto" id="veredicto">
+    <div class="wrap">
+      <div class="head">
+        <p class="label">honestidad del proceso</p>
+        <h2>el veredicto del red-team.</h2>
+        <p class="sub">antes de mostrar nada a una inmobiliaria, el paquete se sometió a su propio red-team. el detalle completo, hallazgo por hallazgo, vive en <a href="red-team.md" class="teal">red-team.md</a>.</p>
+      </div>
+
+      <div class="stats">
+        <div class="stat">
+          <div class="n"><em>33</em></div>
+          <div class="k">hallazgos registrados</div>
+        </div>
+        <div class="stat">
+          <div class="n"><em>15</em></div>
+          <div class="k">críticos/altos — aplicados</div>
+        </div>
+        <div class="stat">
+          <div class="n"><em>0</em></div>
+          <div class="k">guardrails rotos por los fixes</div>
+        </div>
+      </div>
+
+      <div class="breakdown">
+        <div class="bcol">
+          <div class="bk">críticos</div>
+          <div class="bn">6</div>
+          <p>foso que se autodestruye, ceguera del lado de la demanda, enemigo equivocado, "en una hora" sin asterisco, "pagas cuando ganas" ≠ fee por lead, y la interacción escalón 1↔2 sin definir. todos con fix aplicado.</p>
+        </div>
+        <div class="bcol">
+          <div class="bk">altos</div>
+          <div class="bn">9</div>
+          <p>proxy de steering en "seguridad de barrio", pre-calificación descrita como capacidad presente, umbral de "lead calificado" débil, precio subcotizable, y más — los 9 también con fix aplicado.</p>
+        </div>
+      </div>
+
+      <div class="gatesnote">
+        <b>pendiente antes de fijar nada:</b> costo-por-cierre implícito ≤ lo que hoy paga al portal · punto de cruce de volumen escalón 1↔2 · leads orgánicos NO-QR (prueba de demanda propia) · prueba de que el entorno verificado + agente mueve leads que un CRM pelado no · test de disparate impact verde en la función "calificado". los 5 gates viven en el cierre de red-team.md.
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SIGUIENTES PASOS ============ -->
+  <section class="pasos" id="pasos">
+    <div class="wrap">
+      <div class="head">
+        <p class="label">qué sigue</p>
+        <h2>los 3 primeros pasos — fase 1, MVP manual.</h2>
+        <p class="sub">nada de esto se construye en automático todavía. el gate duro del MODELO: no tocar el generador self-serve (fase 3) antes de que la fase 1 valide disposición a pagar.</p>
+      </div>
+
+      <div class="steps">
+        <div class="step step--gate">
+          <span class="n">paso 01</span>
+          <h3>montar la tienda a mano</h3>
+          <p>construir el storefront a MANO (sin generador self-serve) para 1 a 3 inmobiliarias del piloto. es servicio done-for-you, no self-serve — el "en una hora" de la tesis todavía no es una capacidad real del producto.</p>
+        </div>
+        <div class="step">
+          <span class="n">paso 02</span>
+          <h3>cerrar un compromiso de piloto, no una firma</h3>
+          <p>en la demo, salir con un paso concreto: nombrar los inmuebles a montar, acordar el dominio, o fijar la fecha de revisión. el objetivo explícito del guion-demo NO es firmar contrato.</p>
+        </div>
+        <div class="step">
+          <span class="n">paso 03</span>
+          <h3>medir la pregunta que valida todo</h3>
+          <p>al mes 2-3: ¿la inmobiliaria paga y renueva por la TECNOLOGÍA de debajo — o por la web? sin esa señal, declarada por el corredor, no hay fase 2 (sacar "el número").</p>
+        </div>
+      </div>
+
+      <p class="fuente">fuente: docs/MODELO_Shopify_Inmobiliario_PYME.md §7 (secuencia, fase 1) + guion-demo.md (cierre del piloto manual) + §10 (métricas de éxito, fase 1).</p>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="col">
+      <div class="mark">AuraReal<b>.</b></div>
+      <p class="note">recap local de <b>lanzamiento-pyme</b> — nombre elegido por el fundador (pendiente validacion registral), candidatos completos en <a href="naming.md">naming.md</a>. nada de este paquete está publicado.</p>
+    </div>
+    <div class="col legal">
+      Contexto AI · 2026-07-08<br>
+      todas las cifras de precio, umbrales y proyecciones = hipótesis a validar en el piloto, no un tarifario.<br>
+      línea gráfica CRED (cred.club) parametrizada · profundidad NeoPOP (CRED-CLUB/neopop-web, Apache 2.0) con atribución.
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

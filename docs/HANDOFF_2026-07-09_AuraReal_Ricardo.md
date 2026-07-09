@@ -19,9 +19,9 @@
 
 **Mi backlog técnico Fase 1:** plantilla de storefront manual (reusa `/a/{id}` + agente) · leads etiquetados por fuente en CRM Vivo (tarea #33, en progreso) · conectar medición de lift (tarea #12) al reporte semanal.
 
-## FRENTE 2 — Negociación Ricardo Sánchez (Mazatlán) 🤝 MESA POR DEFINIRSE
+## FRENTE 2 — Negociación Ricardo Suárez (Mazatlán) 🤝 MESA POR DEFINIRSE
 
-- **Situación:** Ricardo Sánchez preparó "PROYECTO INMOBILIAR-IA" (PDF: `C:\Users\DETPC\Downloads\PROYECTO INMOBILIAR IA.pdf`) como SU apertura de negociación. Sus 5 fallas ≈ 4 ya construidas en Quito + 1 spec. Sus 3 ideas buenas a adoptar con su autoría: riesgo físico/inundación, computer vision del inmueble, Legal Parser. Sus 3 zonas rojas (canon prohíbe): datos delictivos del barrio, AVM cifra puntual, Rent-Score de personas.
+- **Situación:** Ricardo Suárez preparó "PROYECTO INMOBILIAR-IA" (PDF: `C:\Users\DETPC\Downloads\PROYECTO INMOBILIAR IA.pdf`) como SU apertura de negociación. Sus 5 fallas ≈ 4 ya construidas en Quito + 1 spec. Sus 3 ideas buenas a adoptar con su autoría: riesgo físico/inundación, computer vision del inmueble, Legal Parser. Sus 3 zonas rojas (canon prohíbe): datos delictivos del barrio, AVM cifra puntual, Rent-Score de personas.
 - **Documento de mesa LISTO:** `docs/ENCAJE_Mazatlan_Ricardo_1pager.md` (v2, red-teameada con 3 lentes / 24 findings — la v1 regalaba leverage). Claves de la v2: convergencia entre pares, Fase 0 protegida (confidencialidad mutua + standstill + "si valida se construye entre nosotros"), motor = activo escaso licenciado no transferido, foso legal vendido como existencia no como plano, Ricardo = co-autor de producto (no proveedor de contactos), producto local se llama INMOBILIAR-IA (su marca, motor debajo — arquitectura AuraReal).
 - **Reglas de mesa:** documento se presenta; cero números primero; equity solo post-piloto ("la estructura se define con los números del piloto sobre la mesa"). 3 preguntas 80/20: ¿qué desarrollador pagaría HOY por un lead calificado? · ¿qué te ha frenado para arrancar solo? · ¿cómo te ves en 2 años?
 - **Pendiente:** Carlos agenda la reunión (tarea #5, in_progress). Ofrecido: guion de apertura de 2 min.

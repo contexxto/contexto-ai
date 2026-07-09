@@ -1,6 +1,6 @@
 # INMOBILIAR-IA × Contexto — dos caminos, una tesis
 
-**Para:** Ricardo Sánchez · **De:** Carlos Valencia · Contexto AI · **Julio 2026**
+**Para:** Ricardo Suárez · **De:** Carlos Valencia · Contexto AI · **Julio 2026**
 
 > Leí tu documento y me pasó algo poco común: **describías, pieza por pieza, la misma tesis que nosotros llevamos meses operando en Quito** — "plataforma de decisiones, no clasificados". Llegamos al mismo lugar por caminos distintos. Y cuando dos personas llegan a lo mismo por separado, no es coincidencia: **es que la tesis es real.** Este papel muestra dónde convergen los caminos — y por qué juntos valen más que sumados.
 
@@ -49,7 +49,7 @@ Un principio fijo en todas las etapas: **el motor lo aporta Contexto como activo
 
 Antes de estructuras: comprobar con el mercado real que esto es negocio. Con tres protecciones, **para los dos**:
 
-- **Confidencialidad mutua simple** y un compromiso recíproco: durante la validación, **ninguno explora esta tesis con terceros.**
+- **Confidencialidad mutua simple** y un compromiso recíproco: durante la validación, **ninguno explora esta tesis en Mazatlán con terceros.**
 - **Tu red no se compromete**: es una demostración de resultados, no una venta. Si tus contactos dicen "no", no quedaste mal con nadie — probamos una hipótesis.
 - **Si la respuesta es sí, esto se construye entre nosotros dos** — esa es la secuencia acordada de entrada.
 

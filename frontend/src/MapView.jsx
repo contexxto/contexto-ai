@@ -578,6 +578,16 @@ export default function MapView({ seedIds, encajeById } = {}) {
       attributionControl: { compact: true },
     })
     mapRef.current = map
+    // MapLibre solo se auto-ajusta con resize de VENTANA; con el shell (sidebar/rail
+    // colapsable) el contenedor cambia de ancho sin evento window → canvas con tamaño
+    // viejo + hit-testing corrido = "mapa congelado". El ResizeObserver lo corrige.
+    const ro = new ResizeObserver(() => { try { map.resize() } catch { /* map ya removido */ } })
+    ro.observe(ref.current)
+    // Pérdida del contexto WebGL (muchas pestañas / GPU saturada): el mapa queda pintado
+    // pero muerto ("congelado"). Sin esto no hay ninguna señal al usuario de qué pasó.
+    map.on('webglcontextlost', () => {
+      setMapaMsg('El mapa se pausó por falta de memoria gráfica del navegador (suele pasar con muchas pestañas). Recarga la página para restaurarlo.')
+    })
     // Zoom propio (en la columna de controles arriba-derecha) → look consistente con el sistema.
 
     map.on('load', async () => {
@@ -696,7 +706,7 @@ export default function MapView({ seedIds, encajeById } = {}) {
       }
     })
 
-    return () => { map.remove(); mapRef.current = null }
+    return () => { ro.disconnect(); map.remove(); mapRef.current = null }
   }, [])
 
   return (

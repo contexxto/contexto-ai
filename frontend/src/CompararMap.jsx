@@ -51,6 +51,10 @@ export default function CompararMap({ ids, cards = [], onClose }) {
       container: containerRef.current, style: DARK_STYLE,
       attributionControl: false, interactive: true, fadeDuration: 0,
     })
+    // El contenedor cambia de ancho sin evento window (sidebar/rail del shell) →
+    // sin esto el canvas queda viejo y el hit-testing corrido ("mapa congelado").
+    const ro = new ResizeObserver(() => { try { map.resize() } catch { /* map removido */ } })
+    ro.observe(containerRef.current)
     const capas = [
       { aura: auras[0], hue: HUE_A, key: 'a' },
       { aura: auras[1], hue: HUE_B, key: 'b' },
@@ -119,7 +123,7 @@ export default function CompararMap({ ids, cards = [], onClose }) {
       console.warn('[CompararMap]', e?.error?.message || e)
       if (!map.isStyleLoaded()) { clearTimeout(t); setFailed(true) }
     })
-    return () => { cancelled = true; clearTimeout(t); map.remove() }
+    return () => { cancelled = true; clearTimeout(t); ro.disconnect(); map.remove() }
   }, [estado, auras])
 
   const nombre = (i) => cards[i]?.direccion || cards[i]?.tipo_activo || (i === 0 ? 'Inmueble A' : 'Inmueble B')

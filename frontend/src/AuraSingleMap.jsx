@@ -211,6 +211,10 @@ export default function AuraSingleMap({ activoId, tipoActivo, onExpandMap }) {
       container: containerRef.current, style: DARK_STYLE,
       attributionControl: false, interactive: false, fadeDuration: 0,
     })
+    // El contenedor cambia de ancho sin evento window (sidebar/rail del shell) →
+    // sin esto el canvas queda con el tamaño viejo (mapa estirado/desalineado).
+    const ro = new ResizeObserver(() => { try { map.resize() } catch { /* map removido */ } })
+    ro.observe(containerRef.current)
     const t = setTimeout(() => {
       const ok = pintarAura(map, data, hue, () => cancelled)
       if (!ok && !cancelled) setFailed(true)
@@ -223,7 +227,7 @@ export default function AuraSingleMap({ activoId, tipoActivo, onExpandMap }) {
       // desmontado (race del setTimeout) y degrada a la lista honesta de POIs.
       if (!map.isStyleLoaded()) { clearTimeout(t); setFailed(true) }
     })
-    return () => { cancelled = true; clearTimeout(t); map.remove() }
+    return () => { cancelled = true; clearTimeout(t); ro.disconnect(); map.remove() }
     // hue.accent/glow se recalculan con tipoActivo; re-montar si cambia el inmueble o su tipo.
   }, [estado, data, hue.accent, hue.glow])
 
@@ -237,11 +241,15 @@ export default function AuraSingleMap({ activoId, tipoActivo, onExpandMap }) {
       container: expandedRef.current, style: DARK_STYLE,
       attributionControl: false, interactive: true, fadeDuration: 0,
     })
+    // Interactivo en modal: si el layout cambia con el modal abierto, sin esto el
+    // hit-testing queda corrido ("mapa congelado").
+    const ro = new ResizeObserver(() => { try { map.resize() } catch { /* map removido */ } })
+    ro.observe(expandedRef.current)
     const t = setTimeout(() => {
       pintarAura(map, data, hue, () => cancelled, { padding: 72, maxZoom: 17, zoomSolo: 16 })
     }, 60)
     map.on('error', (e) => { if (!cancelled) console.warn('[AuraSingle expandido]', e?.error?.message || e) })
-    return () => { cancelled = true; clearTimeout(t); map.remove() }
+    return () => { cancelled = true; clearTimeout(t); ro.disconnect(); map.remove() }
   }, [expanded, estado, data, hue.accent, hue.glow])
 
   // Cerrar el modal ampliado con Escape (patron estandar de modal).

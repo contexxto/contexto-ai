@@ -174,6 +174,10 @@ export default function MapSeed({ results, mapSeed, onOpen, onExpand, isLast, ac
       interactive: false,          // es un vistazo; "Ampliar" abre el mapa real
       fadeDuration: 0,
     })
+    // El contenedor cambia de ancho sin evento window (sidebar/rail del shell) →
+    // sin esto el canvas queda con el tamaño viejo y los pines DOM se desalinean.
+    const ro = new ResizeObserver(() => { try { map.resize() } catch { /* map removido */ } })
+    ro.observe(containerRef.current)
 
     // La cámara y los pines (marcadores DOM) NO requieren el evento 'load': no
     // añadimos capas al estilo, solo movemos cámara y proyectamos markers. Por eso
@@ -289,7 +293,7 @@ export default function MapSeed({ results, mapSeed, onOpen, onExpand, isLast, ac
       if (!map.isStyleLoaded()) { clearTimeout(t); setFailed(true) }
     })
 
-    return () => { cancelled = true; clearTimeout(t); map.remove(); markersRef.current = {} }
+    return () => { cancelled = true; clearTimeout(t); ro.disconnect(); map.remove(); markersRef.current = {} }
     // Re-inicia si pasa a ser el último turno o si cambia el CONTENIDO de los pines.
   }, [isLast, firma])  // eslint-disable-line react-hooks/exhaustive-deps
 

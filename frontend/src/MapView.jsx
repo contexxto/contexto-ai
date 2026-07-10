@@ -240,6 +240,8 @@ export default function MapView({ seedIds, encajeById } = {}) {
   const capasRef = useRef({ ids: [], markers: [] })  // capas dibujadas por el chat del mapa
   const tourTimer = useRef(null)  // timeout de auto-avance del recorrido
   const recRef = useRef(null)     // SpeechRecognition
+  const vozFinalRef = useRef('')  // finales acumulados del dictado (sobreviven reinicios del motor)
+  const vozStopRef = useRef(false) // true = el usuario pidió detener el dictado (no reiniciar)
   const watchIdRef = useRef(null) // id de watchPosition (ubicación en segundo plano)
 
   // Afford de scroll de los chips: estado inicial de bordes (¿hay overflow?) al montar y
@@ -405,6 +407,9 @@ export default function MapView({ seedIds, encajeById } = {}) {
   async function enviarComando(q) {
     const map = mapRef.current
     if (!q || mapaLoading || !map) return
+    // Enviar termina el dictado (con auto-reinicio activo, si no, el mic seguiría
+    // escribiendo sobre el input recién vaciado).
+    if (recRef.current) { vozStopRef.current = true; try { recRef.current.stop() } catch { /* ya detenido */ } }
     if (tourTimer.current) { clearTimeout(tourTimer.current); tourTimer.current = null }
     setTour(null)
     setMapaLoading(true); setMapaMsg(null)
@@ -459,16 +464,35 @@ export default function MapView({ seedIds, encajeById } = {}) {
   }
   function iniciarRecorrido() { enviarComando('hazme un tour por aquí') }
 
-  // Dictado por voz (Web Speech API) — mismas funciones que el chat del home.
+  // Dictado por voz (Web Speech API) — misma lógica robusta que el chat del home:
+  // continuous=true + acumulación de finales + auto-reinicio (sin esto el motor se
+  // detiene en la primera pausa y no transcribe el mensaje completo).
   function dictarVoz() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SR) { setMapaMsg('El dictado por voz no está disponible. Prueba en Chrome.'); return }
-    if (escuchando) { recRef.current?.stop(); return }
+    if (escuchando) { vozStopRef.current = true; recRef.current?.stop(); return }
     const rec = new SR()
-    rec.lang = 'es-419'; rec.interimResults = true; rec.continuous = false
-    rec.onresult = e => { let t = ''; for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript; setMapaInput(t) }
-    rec.onerror = () => setEscuchando(false)
-    rec.onend = () => setEscuchando(false)
+    rec.lang = 'es-419'; rec.interimResults = true; rec.continuous = true
+    vozFinalRef.current = ''
+    vozStopRef.current = false
+    rec.onresult = e => {
+      let interim = ''
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const r = e.results[i]
+        if (r.isFinal) vozFinalRef.current += r[0].transcript
+        else interim += r[0].transcript
+      }
+      setMapaInput(vozFinalRef.current + interim)
+    }
+    rec.onerror = e => {
+      if (e?.error === 'not-allowed' || e?.error === 'service-not-allowed') vozStopRef.current = true
+    }
+    rec.onend = () => {
+      if (!vozStopRef.current) {
+        try { rec.start(); return } catch { /* cierre normal abajo */ }
+      }
+      setEscuchando(false)
+    }
     recRef.current = rec; setEscuchando(true); rec.start()
   }
   // Tarjeta de aura proactiva (barrio + Walk Score + titular) para una coordenada.

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import axios from 'axios'
 import {
   RefreshCw, Check, X, Save, AlertTriangle, ImageOff, MapPin, ShieldCheck
@@ -63,10 +63,11 @@ function fromUI(field, ui) {
   return ui
 }
 
-// ── Paleta (igual que el resto de la app) ──
+// ── Paleta: tokens del design system (theme-aware, dark/light) ──
 const C = {
-  bg: '#0E0D13', panel: '#16151E', border: '#2E2D3A', text: '#F0ECE6',
-  dim: '#A8A3B3', accent: '#2DBDB6', amber: '#E5C06A', green: '#5EEAD4', red: '#E0685A',
+  bg: 'var(--bg)', panel: 'var(--surface-1)', border: 'var(--border)', text: 'var(--text)',
+  dim: 'var(--text-mid)', accent: 'var(--accent)', amber: 'var(--warning)',
+  green: 'var(--accent)', red: 'var(--coral)',
 }
 
 function confColor(c) {
@@ -81,6 +82,7 @@ export default function ReviewStation() {
   const [pendientes, setPendientes] = useState(0)
   const [loading, setLoading] = useState(false)
   const [selId, setSelId] = useState(null)
+  const selIdRef = useRef(null)   // espejo de selId sin closure stale → loadQueue preserva la selección
   const [form, setForm] = useState({})       // valores UI editables
   const [original, setOriginal] = useState({}) // ficha_vision_raw original
   const [busy, setBusy] = useState(false)
@@ -96,7 +98,9 @@ export default function ReviewStation() {
       const { data } = await axios.get(`${API_BASE}/api/v1/assets/review-queue?limit=100`, { headers: authHeaders })
       setItems(data.items || [])
       setPendientes(data.pendientes || 0)
-      if (data.items?.length && !data.items.find(i => i.activo_id === selId)) {
+      // Preservar la selección actual si sigue en la cola (no pisar edición en curso).
+      // Se lee del ref para evitar el closure stale (deps=[] → selId quedaba congelado en null).
+      if (data.items?.length && !data.items.find(i => i.activo_id === selIdRef.current)) {
         selectItem(data.items[0])
       } else if (!data.items?.length) {
         setSelId(null)
@@ -106,15 +110,18 @@ export default function ReviewStation() {
     } finally {
       setLoading(false)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [])   // sin deps: solo usa setters estables + selIdRef (ref, no reactivo)
 
   // Carga inicial de la cola al montar (fetch-on-mount legítimo).
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { loadQueue() }, [loadQueue])
 
+  // Mantener el ref sincronizado con el estado (para lecturas sin stale en loadQueue).
+  useEffect(() => { selIdRef.current = selId }, [selId])
+
   function selectItem(item) {
     setSelId(item.activo_id)
+    selIdRef.current = item.activo_id
     const raw = item.ficha_vision_raw || {}
     setOriginal(raw)
     const f = {}
@@ -201,26 +208,34 @@ export default function ReviewStation() {
               {loading ? 'Cargando…' : 'No hay activos pendientes. 🎉'}
             </div>
           )}
-          {items.map(it => (
+          {items.map(it => {
+            const previo = !it.ficha_vision_raw || Object.keys(it.ficha_vision_raw).length === 0
+            return (
             <div key={it.activo_id} onClick={() => selectItem(it)}
               style={{
                 padding: '10px 14px', cursor: 'pointer', borderBottom: `1px solid ${C.border}`,
-                background: it.activo_id === selId ? '#1E1D28' : 'transparent',
+                background: it.activo_id === selId ? 'var(--surface-2)' : 'transparent',
                 borderLeft: `3px solid ${it.activo_id === selId ? C.accent : 'transparent'}`,
               }}>
               <div style={{ fontSize: '.85rem', marginBottom: 4, lineHeight: 1.3 }}>{it.direccion}</div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <span style={{ fontSize: '.72rem', color: C.dim }}>{it.tipo_activo}</span>
-                <span style={{
-                  fontSize: '.72rem', padding: '1px 7px', borderRadius: 20,
-                  border: `1px solid ${confColor(it.confianza_extraccion)}`,
-                  color: confColor(it.confianza_extraccion),
-                }}>
-                  conf {it.confianza_extraccion ?? '—'}
-                </span>
+                {/* Sin ficha (activo previo) → el número de confianza es engañoso: se rotula "activo previo". */}
+                {previo ? (
+                  <span style={{ fontSize: '.72rem', padding: '1px 7px', borderRadius: 20,
+                    border: `1px solid ${C.border}`, color: C.dim }}>
+                    activo previo
+                  </span>
+                ) : (
+                  <span style={{ fontSize: '.72rem', padding: '1px 7px', borderRadius: 20,
+                    border: `1px solid ${confColor(it.confianza_extraccion)}`,
+                    color: confColor(it.confianza_extraccion) }}>
+                    conf {it.confianza_extraccion ?? '—'}
+                  </span>
+                )}
               </div>
             </div>
-          ))}
+          )})}
         </div>
 
         {/* Foto + formulario (derecha) */}
@@ -250,17 +265,19 @@ export default function ReviewStation() {
             {/* Formulario editable */}
             <div style={{ flex: '1 1 55%', padding: 18, overflow: 'auto' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-                <strong>Ficha extraída por IA</strong>
-                <span style={{ fontSize: '.8rem', color: confColor(selected.confianza_extraccion) }}>
-                  confianza {selected.confianza_extraccion ?? '—'}
-                </span>
+                <strong>{sinRaw ? 'Activo previo' : 'Ficha extraída por IA'}</strong>
+                {!sinRaw && (
+                  <span style={{ fontSize: '.8rem', color: confColor(selected.confianza_extraccion) }}>
+                    confianza {selected.confianza_extraccion ?? '—'}
+                  </span>
+                )}
               </div>
 
               {sinRaw && (
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: 10, marginBottom: 14,
-                  background: '#2A2410', border: `1px solid ${C.amber}`, borderRadius: 6, fontSize: '.82rem' }}>
-                  <AlertTriangle size={16} color={C.amber} />
-                  Activo previo sin extracción guardada. Puedes aprobar/rechazar, pero no hay campos que corregir.
+                  background: 'var(--surface-2)', border: `1px solid ${C.amber}`, borderRadius: 6, fontSize: '.82rem', color: C.text }}>
+                  <AlertTriangle size={16} color={C.amber} style={{ flexShrink: 0 }} />
+                  Este activo se cargó antes de la extracción por IA — no tiene ficha detallada que revisar. Puedes publicarlo o rechazarlo.
                 </div>
               )}
 
@@ -296,7 +313,7 @@ export default function ReviewStation() {
                 <button onClick={guardar} disabled={busy || nChanged === 0} style={btn(C.accent, '#fff', nChanged === 0)}>
                   <Save size={15} /> Guardar {nChanged > 0 ? `(${nChanged})` : ''}
                 </button>
-                <button onClick={() => decidir('approve')} disabled={busy} style={btn(C.green, '#fff')}>
+                <button onClick={() => decidir('approve')} disabled={busy} style={btn('var(--teal-bright)', '#06201C')}>
                   <Check size={15} /> Aprobar y publicar
                 </button>
                 <button onClick={() => decidir('reject')} disabled={busy} style={btn(C.red, '#fff')}>
@@ -316,14 +333,14 @@ export default function ReviewStation() {
 // ── estilos inline reutilizables ──
 function inp(dudoso) {
   return {
-    width: '100%', padding: '7px 9px', background: '#16151E', color: '#F0ECE6',
-    border: `1px solid ${dudoso ? '#E5C06A' : '#2E2D3A'}`, borderRadius: 6, fontSize: '.85rem',
+    width: '100%', padding: '7px 9px', background: 'var(--surface-2)', color: 'var(--text)',
+    border: `1px solid ${dudoso ? 'var(--warning)' : 'var(--border)'}`, borderRadius: 6, fontSize: '.85rem',
   }
 }
 function btn(bg, fg, disabled = false) {
   return {
     display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 12px',
-    background: disabled ? '#21262d' : bg, color: disabled ? '#6e7681' : fg,
+    background: disabled ? 'var(--surface-2)' : bg, color: disabled ? 'var(--text-dim)' : fg,
     border: 'none', borderRadius: 6, cursor: disabled ? 'default' : 'pointer', fontSize: '.85rem',
   }
 }

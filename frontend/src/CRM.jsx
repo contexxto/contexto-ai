@@ -163,19 +163,6 @@ export default function CRM() {
   // Vuelve al HUB (cierra lead/agente/lista/filtro).
   const maxFunnel = useMemo(() => (d ? Math.max(1, ...RAIL.map((e) => d.funnel?.[e] || 0)) : 1), [d])
 
-  // Derivados de la franja "Hoy" (tareas accionables), todo de /mine/leads.
-  const pidenCorredor = useMemo(() => (d?.leads || []).filter((l) => l.handoff_estado || l.handoff_sugerido), [d])
-  const paraReenganchar = useMemo(() => (d?.leads || []).filter((l) => l.reenganche), [d])
-  const nombreCorto = (l) => {
-    if (!l) return '—'
-    const ph = /^lead #([a-z0-9]+)/i.exec(l.lead || '')
-    if (ph) return `#${ph[1]}`
-    const email = l.email || ''
-    if (l.lead && l.lead !== email) return l.lead.length > 14 ? l.lead.slice(0, 13) + '…' : l.lead
-    const local = email.includes('@') ? email.split('@')[0] : (l.lead || '—')
-    return local.length > 14 ? local.slice(0, 13) + '…' : local
-  }
-
   const kpiCard = (icon, val, label, color) => (
     <div style={{ flex: 1, minWidth: 148, border: `1px solid ${C.line}`, borderRadius: 16, padding: '13px 15px',
                   background: 'var(--surface-1)', display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -304,9 +291,6 @@ export default function CRM() {
     </div>
   )
 
-  // Estilos de la franja "Hoy" y chips (tokens; texto full-contraste).
-  const miniChip = { fontSize: '.68rem', color: C.text, background: 'var(--surface-2)', border: `1px solid ${C.line}`, borderRadius: 5, padding: '4px 9px' }
-  const taskGo = { display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 12, fontSize: '.78rem', fontWeight: 700, color: C.tealHi, background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit' }
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', color: C.text, padding: '0 16px 16px',
@@ -423,27 +407,6 @@ export default function CRM() {
           {(wide || (!sel && !asistente)) && (
             <div style={{ width: wide ? 340 : '100%', flexShrink: 0, overflowY: 'auto',
                           display: 'flex', flexDirection: 'column', gap: 9 }}>
-              {/* Franja "Hoy": las tareas del hub (contactar/reenganchar), sin salir de la vista de trabajo */}
-              {(pidenCorredor.length > 0 || paraReenganchar.length > 0) && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', padding: '9px 12px',
-                              background: 'var(--surface-1)', border: `1px solid ${C.line}`, borderRadius: 12 }}>
-                  {pidenCorredor.length > 0 && (
-                    <>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '.8rem', fontWeight: 700, color: C.text }}>
-                        <Flame size={14} color="#E0685A" /> Contacta a {pidenCorredor.length}
-                      </span>
-                      {pidenCorredor.slice(0, 3).map((l, i) => <span key={i} style={miniChip}>{nombreCorto(l)}</span>)}
-                      {pidenCorredor.length > 3 && <span style={miniChip}>+{pidenCorredor.length - 3}</span>}
-                      <button onClick={() => abrirCopilotoConLead(pidenCorredor[0])} style={{ ...taskGo, padding: '5px 10px', fontSize: '.74rem' }}>Abrir Copiloto →</button>
-                    </>
-                  )}
-                  {paraReenganchar.length > 0 && (
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '.78rem', color: C.muted }}>
-                      <Sparkles size={13} color="#E8B84B" /> {paraReenganchar.length} por reenganchar
-                    </span>
-                  )}
-                </div>
-              )}
               {/* Chips de filtro — móvil (en desktop filtra el riel de embudo) */}
               {!wide && (
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>

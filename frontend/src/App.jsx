@@ -396,6 +396,8 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)  // colapsar sidebar (escritorio)
   const [listening, setListening] = useState(false)       // dictado por voz
   const recognitionRef = useRef(null)
+  const voiceFinalRef = useRef('')      // finales acumulados del dictado (sobreviven reinicios del motor)
+  const voiceStopRef = useRef(false)    // true = el usuario pidió detener (no auto-reiniciar)
   const lastAiRef = useRef('')   // última respuesta del agente (para bloquear ecos/reenvíos)
   const [modoCorredor, setModoCorredor] = useState(false)  // handoff en vivo: el lead habla con el corredor (no el AI)
   const handoffSeenRef = useRef(0)                          // último id de mensaje de handoff visto
@@ -629,6 +631,9 @@ export default function App() {
   const sendMessage = useCallback(async (text, geoOverride) => {
     const userText = (text ?? input).trim()
     if (!userText || loading) return
+    // Enviar termina el dictado (con auto-reinicio activo, si no, el mic seguiría
+    // escribiendo sobre el input recién vaciado).
+    if (recognitionRef.current) { voiceStopRef.current = true; try { recognitionRef.current.stop() } catch { /* ya detenido */ } }
     // Guard: nunca reenviar la respuesta anterior del agente como si fuera del usuario
     // (eco por copiar/pegar o lazo de audio). Una pregunta real jamás es idéntica.
     if (lastAiRef.current && userText === lastAiRef.current.trim()) {
@@ -945,23 +950,42 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Dictado por voz (Web Speech API) — "hablarle al agente"
+  // Dictado por voz (Web Speech API) — "hablarle al agente".
+  // continuous=true + acumulación de finales + auto-reinicio: sin esto, el motor se
+  // detiene en la PRIMERA pausa al hablar y Chrome corta solo tras unos segundos de
+  // silencio → "se corta y no transcribe el mensaje completo". El dictado ahora solo
+  // termina cuando el usuario vuelve a tocar el botón (o al enviar el mensaje).
   const startVoice = useCallback(() => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SR) { setError('El dictado por voz no está disponible en este navegador. Prueba en Chrome.'); return }
-    if (listening) { recognitionRef.current?.stop(); return }
+    if (listening) { voiceStopRef.current = true; recognitionRef.current?.stop(); return }
     window.speechSynthesis?.cancel()  // corta el "Escuchar" (TTS) para que el micrófono no capte la voz del agente
     const rec = new SR()
     rec.lang = 'es-419'      // español de Latinoamérica
     rec.interimResults = true
-    rec.continuous = false
+    rec.continuous = true
+    voiceFinalRef.current = ''
+    voiceStopRef.current = false
     rec.onresult = (e) => {
-      let txt = ''
-      for (let i = 0; i < e.results.length; i++) txt += e.results[i][0].transcript
-      setInput(txt)
+      let interim = ''
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const r = e.results[i]
+        if (r.isFinal) voiceFinalRef.current += r[0].transcript
+        else interim += r[0].transcript
+      }
+      setInput(voiceFinalRef.current + interim)
     }
-    rec.onerror = () => setListening(false)
-    rec.onend = () => { setListening(false); setTimeout(() => inputRef.current?.focus(), 50) }
+    rec.onerror = (e) => {
+      // 'no-speech'/'aborted' son benignos (silencio); el permiso negado sí termina.
+      if (e?.error === 'not-allowed' || e?.error === 'service-not-allowed') voiceStopRef.current = true
+    }
+    rec.onend = () => {
+      if (!voiceStopRef.current) {
+        try { rec.start(); return } catch { /* si el motor no puede reiniciar, cerramos abajo */ }
+      }
+      setListening(false)
+      setTimeout(() => inputRef.current?.focus(), 50)
+    }
     recognitionRef.current = rec
     setListening(true)
     rec.start()

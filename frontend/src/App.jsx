@@ -1237,59 +1237,103 @@ export default function App() {
     )
   }
 
-  // Vista de CRM del corredor (pantalla completa)
+  // Envoltorio de SHELL para las vistas de pantalla completa (CRM, Revisión, Mapa): conserva
+  // el sidebar de la app (como la home) en vez de un takeover suelto — así estas vistas mantienen
+  // el mismo diseño gráfico. La vista va en el área de contenido, con barra superior (toggle + volver).
+  const shellWrap = (content) => (
+    <div style={{ display:'flex', height:'100dvh' }}>
+      {!isMobile && !sidebarCollapsed && (
+        <Sidebar
+          sessionId={sessionId}
+          onSelect={switchSession}
+          onNew={resetSession}
+          reloadKey={`${sessionId}:${messages.length}:${session?.user?.id ?? 'guest'}`}
+          user={authEnabled && session ? { email: session.user?.email, rol } : null}
+          onLogin={() => { setAuthMode('login'); setAuthOpen(true) }}
+          onLogout={logout}
+          onPublish={() => (authEnabled && session) ? setPublishOpen(true) : setAuthOpen(true)}
+          onMap={() => { setMapSeed(null); setMapEncaje(null); setView('map') }}
+          onReview={() => setView('review')}
+          onCRM={abrirCRM}
+          onUpgrade={() => setUpgradeOpen(true)}
+          puedeInstalar={puedeInstalar}
+          onInstalar={instalarApp}
+          mobile={false}
+        />
+      )}
+      {isMobile && sidebarOpen && (
+        <>
+          <div onClick={() => setSidebarOpen(false)}
+            style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.55)', zIndex:40 }} />
+          <div style={{ position:'fixed', top:0, left:0, bottom:0, zIndex:50 }}>
+            <Sidebar
+              sessionId={sessionId}
+              onSelect={(id) => { switchSession(id); setSidebarOpen(false) }}
+              onNew={() => { resetSession(); setSidebarOpen(false) }}
+              reloadKey={`${sessionId}:${messages.length}:${session?.user?.id ?? 'guest'}`}
+              user={authEnabled && session ? { email: session.user?.email, rol } : null}
+              onLogin={() => { setAuthMode('login'); setAuthOpen(true); setSidebarOpen(false) }}
+              onLogout={logout}
+              onPublish={() => { (authEnabled && session) ? setPublishOpen(true) : setAuthOpen(true); setSidebarOpen(false) }}
+              onMap={() => { setMapSeed(null); setMapEncaje(null); setView('map'); setSidebarOpen(false) }}
+              onReview={() => { setView('review'); setSidebarOpen(false) }}
+              onCRM={abrirCRM}
+              onUpgrade={() => { setUpgradeOpen(true); setSidebarOpen(false) }}
+              puedeInstalar={puedeInstalar}
+              onInstalar={instalarApp}
+              mobile={true}
+              onClose={() => setSidebarOpen(false)}
+            />
+          </div>
+        </>
+      )}
+      <div style={{ flex:1, minWidth:0, height:'100dvh', overflow:'hidden', display:'flex', flexDirection:'column' }}>
+        <div style={{ padding:'8px 16px', display:'flex', alignItems:'center', gap:10, flexShrink:0 }}>
+          {isMobile ? (
+            <button onClick={() => setSidebarOpen(true)} title="Menú"
+              style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text)', padding:4, display:'flex' }}>
+              <PanelLeft size={22} />
+            </button>
+          ) : (
+            <button onClick={() => setSidebarCollapsed(c => !c)}
+              title={sidebarCollapsed ? 'Mostrar barra lateral' : 'Ocultar barra lateral'}
+              style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-muted)', padding:4, display:'flex' }}>
+              <PanelLeft size={20} />
+            </button>
+          )}
+          <button onClick={() => setView('chat')} style={{
+            background:'none', border:'1px solid var(--border)', borderRadius:8,
+            cursor:'pointer', color:'var(--text-muted)', padding:'6px 12px', fontSize:'.85rem',
+          }}>← Volver al chat</button>
+        </div>
+        <div style={{ flex:1, minHeight:0 }}>{content}</div>
+      </div>
+    </div>
+  )
+
+  // Vista de CRM del corredor — dentro del shell (conserva el sidebar).
   if (view === 'crm') {
-    return (
-      <div style={{ height:'100dvh', display:'flex', flexDirection:'column' }}>
-        <div style={{ padding:'8px 16px' }}>
-          <button onClick={() => setView('chat')} style={{
-            background:'none', border:'1px solid var(--border)', borderRadius:8,
-            cursor:'pointer', color:'var(--text-muted)', padding:'6px 12px', fontSize:'.85rem',
-          }}>← Volver al chat</button>
-        </div>
-        <div style={{ flex:1, minHeight:0 }}><ErrorBoundary label="el CRM"><CRM /></ErrorBoundary></div>
-      </div>
-    )
+    return shellWrap(<ErrorBoundary label="el CRM"><CRM /></ErrorBoundary>)
   }
 
-  // Vista de Estación de Revisión (pantalla completa)
+  // Vista de Estación de Revisión — dentro del shell (conserva el sidebar).
   if (view === 'review') {
-    return (
-      <div style={{ height:'100dvh', display:'flex', flexDirection:'column' }}>
-        <div style={{ padding:'8px 16px' }}>
-          <button onClick={() => setView('chat')} style={{
-            background:'none', border:'1px solid var(--border)', borderRadius:8,
-            cursor:'pointer', color:'var(--text-muted)', padding:'6px 12px', fontSize:'.85rem',
-          }}>← Volver al chat</button>
-        </div>
-        <div style={{ flex:1, minHeight:0 }}><ReviewStation /></div>
-      </div>
-    )
+    return shellWrap(<ReviewStation />)
   }
 
-  // Vista de Mapa Vivo (pantalla completa)
+  // Vista de Mapa Vivo — dentro del shell (conserva el sidebar).
   if (view === 'map') {
-    return (
-      <div style={{ height:'100dvh', display:'flex', flexDirection:'column' }}>
-        <div style={{ padding:'8px 16px' }}>
-          <button onClick={() => setView('chat')} style={{
-            background:'none', border:'1px solid var(--border)', borderRadius:8,
-            cursor:'pointer', color:'var(--text-muted)', padding:'6px 12px', fontSize:'.85rem',
-          }}>← Volver al chat</button>
+    return shellWrap(
+      <Suspense fallback={
+        <div style={{ height:'100%', display:'grid', placeItems:'center', color:'var(--text-muted)' }}>
+          Cargando mapa…
         </div>
-        <div style={{ flex:1, minHeight:0 }}>
-          <Suspense fallback={
-            <div style={{ height:'100%', display:'grid', placeItems:'center', color:'var(--text-muted)' }}>
-              Cargando mapa…
-            </div>
-          }>
-            {/* key por seed → fuerza re-montar MapView cuando cambia el conjunto (de una
-                semilla a otra, o a catastro completo): el filtro del geojson se aplica al
-                montar, así que el remonte garantiza que nunca muestre un set stale. */}
-            <MapView key={mapSeed ? mapSeed.join(',') : 'all'} seedIds={mapSeed} encajeById={mapEncaje} />
-          </Suspense>
-        </div>
-      </div>
+      }>
+        {/* key por seed → fuerza re-montar MapView cuando cambia el conjunto (de una
+            semilla a otra, o a catastro completo): el filtro del geojson se aplica al
+            montar, así que el remonte garantiza que nunca muestre un set stale. */}
+        <MapView key={mapSeed ? mapSeed.join(',') : 'all'} seedIds={mapSeed} encajeById={mapEncaje} />
+      </Suspense>
     )
   }
 

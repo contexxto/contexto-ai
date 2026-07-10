@@ -342,3 +342,46 @@ const sectionLabel = {
   fontSize: '.68rem', textTransform: 'uppercase', letterSpacing: '.5px',
   color: C.faint, padding: '4px 6px', marginBottom: 2,
 }
+
+// ── Rail delgado (sidebar colapsado): iconos siempre visibles para saltar de sección
+// a un clic, estilo ASI:One. Mismos iconos y gating por rol que el Sidebar completo. ──
+function RailButton({ icon, title, onClick, active }) {
+  return (
+    <button onClick={onClick} title={title} aria-label={title}
+      style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'center', width: 40, height: 40,
+        borderRadius: 10, cursor: 'pointer', border: 'none', fontFamily: 'inherit',
+        background: active ? C.active : 'transparent', color: active ? C.text : C.dim,
+      }}
+      onMouseEnter={e => { e.currentTarget.style.background = C.surface2; e.currentTarget.style.color = C.text }}
+      onMouseLeave={e => { e.currentTarget.style.background = active ? C.active : 'transparent'; e.currentTarget.style.color = active ? C.text : C.dim }}>
+      {icon}
+    </button>
+  )
+}
+
+export function RailNav({ user, onNew, onPublish, onMap, onReview, onCRM, onUpgrade, onExpand }) {
+  const corredor = user?.rol === 'corredor' || user?.rol === 'inmobiliaria'
+  return (
+    <div style={{
+      width: 56, flexShrink: 0, height: '100dvh', display: 'flex', flexDirection: 'column',
+      alignItems: 'center', gap: 4, padding: '10px 0', background: C.surface,
+      borderRight: `1px solid ${C.border}`,
+    }}>
+      <RailButton icon={<PanelLeft size={18} />} title="Mostrar barra lateral" onClick={onExpand} />
+      <div style={{ height: 6 }} />
+      <RailButton icon={<Plus size={18} />} title="Nuevo chat" onClick={onNew} />
+      <RailButton icon={<Home size={18} />} title="Mis inmuebles" onClick={onPublish} />
+      <RailButton icon={<Map size={18} />} title="Mapa Vivo" onClick={onMap} />
+      {corredor && (
+        <>
+          <RailButton icon={<Users size={18} />} title="CRM" onClick={onCRM} />
+          <RailButton icon={<Shield size={18} />} title="Revisión" onClick={onReview} />
+        </>
+      )}
+      {user && !corredor && onUpgrade && (
+        <RailButton icon={<Briefcase size={18} />} title="Conviértete en corredor" onClick={onUpgrade} />
+      )}
+    </div>
+  )
+}

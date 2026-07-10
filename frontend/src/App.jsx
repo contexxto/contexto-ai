@@ -22,7 +22,7 @@ import './App.css'
 import ReviewStation from './ReviewStation'
 import CRM from './CRM'
 import ErrorBoundary from './ErrorBoundary'
-import Sidebar from './Sidebar'
+import Sidebar, { RailNav } from './Sidebar'
 import sphereLogo from './assets/sphere.svg'
 
 // Carga diferida ROBUSTA ante deploys. Si el chunk falla al descargarse (típico cuando un
@@ -1237,6 +1237,20 @@ export default function App() {
     )
   }
 
+  // Rail delgado (sidebar colapsado): iconos de sección siempre visibles para saltar a un clic.
+  const desktopRail = (
+    <RailNav
+      user={authEnabled && session ? { email: session.user?.email, rol } : null}
+      onNew={resetSession}
+      onPublish={() => (authEnabled && session) ? setPublishOpen(true) : setAuthOpen(true)}
+      onMap={() => { setMapSeed(null); setMapEncaje(null); setView('map') }}
+      onReview={() => setView('review')}
+      onCRM={abrirCRM}
+      onUpgrade={() => setUpgradeOpen(true)}
+      onExpand={() => setSidebarCollapsed(false)}
+    />
+  )
+
   // Envoltorio de SHELL para las vistas de pantalla completa (CRM, Revisión, Mapa): conserva
   // el sidebar de la app (como la home) en vez de un takeover suelto — así estas vistas mantienen
   // el mismo diseño gráfico. La vista va en el área de contenido, con barra superior (toggle + volver).
@@ -1261,6 +1275,7 @@ export default function App() {
           mobile={false}
         />
       )}
+      {!isMobile && sidebarCollapsed && desktopRail}
       {isMobile && sidebarOpen && (
         <>
           <div onClick={() => setSidebarOpen(false)}
@@ -1372,6 +1387,7 @@ export default function App() {
           mobile={false}
         />
       )}
+      {!isMobile && sidebarCollapsed && desktopRail}
       {isMobile && sidebarOpen && (
         <>
           <div onClick={() => setSidebarOpen(false)}

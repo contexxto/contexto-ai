@@ -1,6 +1,6 @@
 # Backlog de UX — Contexto (re-priorizado el 20 jun 2026)
 
-**Consolida:** `UX_Vision_Intent_Matching.md` + `UX_Patrones_Zillow_Redfin.md` + `PLAN_Capa_Citable.md`,
+**Consolida:** [`UX_Vision_Intent_Matching.md`](UX_Vision_Intent_Matching.md) + [`UX_Patrones_Zillow_Redfin.md`](UX_Patrones_Zillow_Redfin.md) + [`PLAN_Capa_Citable.md`](PLAN_Capa_Citable.md),
 re-ordenado tras el test ChatGPT/Gemini-Mazatlán (20 jun).
 
 ## El filtro (la claridad de hoy)

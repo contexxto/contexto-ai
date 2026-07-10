@@ -137,8 +137,8 @@ El propio podcast lo clava: *"el capital humano siempre vale"* es **diplomacia c
 
 ## Conexión con lo que ya existe
 
-- `NORTHSTAR_Contexto_Claude_Inmobiliario.md` — el qué/hacia dónde (este doc es el por qué).
-- `INTELIGENCIA_y_PLAN_2026-06-16.md` — las 3 señales de mercado + el insight del dato vivo + el plan; el **loop del corredor** es el ⭐ de la próxima semana.
+- [`NORTHSTAR_Contexto_Claude_Inmobiliario.md`](NORTHSTAR_Contexto_Claude_Inmobiliario.md) — el qué/hacia dónde (este doc es el por qué).
+- [`INTELIGENCIA_y_PLAN_2026-06-16.md`](INTELIGENCIA_y_PLAN_2026-06-16.md) — las 3 señales de mercado + el insight del dato vivo + el plan; el **loop del corredor** es el ⭐ de la próxima semana.
 - El loop de contribución del corredor = la implementación concreta del "sistema vivo".
 - OKF = el camino de portabilidad/interoperabilidad (movida #2).
 

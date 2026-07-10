@@ -2,7 +2,7 @@
 
 > **Estado:** documentado, NO ejecutado. Pendiente de aprobación de Carlos para arrancar Fase 1.
 > **Fecha:** 2026-07-08 · **Autor:** exploración de 4 agentes + síntesis (Claude Code)
-> **Relacionados:** `docs/SPEC_Foso_Capa_de_Datos.md`, `docs/DEPLOY_Valhalla.md`, `CLAUDE.md` (líneas ~71-76: "Google es puente transitorio").
+> **Relacionados:** [`docs/SPEC_Foso_Capa_de_Datos.md`](SPEC_Foso_Capa_de_Datos.md), [`docs/DEPLOY_Valhalla.md`](DEPLOY_Valhalla.md), [`CLAUDE.md`](../CLAUDE.md) (líneas ~71-76: "Google es puente transitorio").
 
 ---
 
@@ -11,7 +11,7 @@
 - **Fragilidad operativa (evidencia en vivo):** el 2026-07-08 el map-chat tuvo un **P1** — `"parque más cercano"` devolvía *"No pude procesar tu pregunta"*. Causa raíz: latencia/timeout intermitente de **Google** (Places + Directions, secuenciales, hasta ~16s). Se puso un parche defensivo (`asyncio.wait_for` + graceful + AbortController), pero **la raíz es la dependencia de Google**.
 - **Foso:** el diferenciador de Contexto NO es el polígono/isócrona (que Google acaba de **commoditizar** con su nueva Isochrones API) — es el **dato verificado, honesto, con proveniencia** ("estimación vs medición", "verificado por el corredor"). El stack propio (Overture+OSM almacenables) es territorial y no replicable (Patrón Valencia **P7**). Google no puede ofrecer eso.
 - **Costo:** Google Places/Directions son **pago por llamada**. Valhalla + PostGIS = costo fijo (zero-burn, T3/T4).
-- **Decisión ya zanjada** (`CLAUDE.md`): Google es un **puente transitorio**; el norte es poseer la capa propia.
+- **Decisión ya zanjada** ([`CLAUDE.md`](../CLAUDE.md)): Google es un **puente transitorio**; el norte es poseer la capa propia.
 
 ---
 
@@ -53,7 +53,7 @@ Esto explica el P1 de hoy: `"parque más cercano"` pegó a Google (y timeouteó)
 ### 2.4 Valhalla — solo isócronas hoy, sin routing
 
 - Integrado **solo** para `/isochrone` peatonal: `app/isocronas.py:48` (`POST {valhalla_url}/isochrone`, `costing=pedestrian`).
-- URL: `app/config.py:50` (`valhalla_url = 'http://localhost:8002'`); Docker: `docker-compose.valhalla.yml`; deploy: `docs/DEPLOY_Valhalla.md`.
+- URL: `app/config.py:50` (`valhalla_url = 'http://localhost:8002'`); Docker: `docker-compose.valhalla.yml`; deploy: [`docs/DEPLOY_Valhalla.md`](DEPLOY_Valhalla.md).
 - **NO** hay routing punto-a-punto (`/route`) — las rutas peatonales siguen en Google (`_ruta_a_pie`).
 - Valhalla soporta `/route` nativo (mismo motor, `costing=pedestrian`), pero **falta confirmar que el deployment lo expone** + validar calidad/latencia vs Google en Quito.
 

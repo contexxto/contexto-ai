@@ -1,7 +1,7 @@
 # Fair Housing + Spec de mejoras al agente
 
 **Fecha:** 2026-06-23 · Salida de la revisión adversaria de compliance (lente Fair Housing EE.UU. **riesgo alto** + ética LATAM **riesgo medio**) y la spec técnica anclada al código.
-**Acompaña a:** `BATALLA_Redfin_vs_Contexto_2026-06-23.md`.
+**Acompaña a:** [`BATALLA_Redfin_vs_Contexto_2026-06-23.md`](BATALLA_Redfin_vs_Contexto_2026-06-23.md).
 
 > ⚠️ **Hallazgo crítico:** `grep "steering|fair housing|discrimina|protected"` sobre todo `app/` = **0 resultados.** No existe NINGUNA defensa instrumentada de Fair Housing. Todo el control anti-steering depende de prosa frágil en un prompt de 300 líneas a temperature 0.2 — el mismo control SOFT que el hueco #1 ya demostró que falla. Para un producto que se posiciona donde "Redfin se retira por compliance", esto es la exposición más grave.
 

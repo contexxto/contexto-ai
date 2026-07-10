@@ -1,8 +1,8 @@
 # red-team — lanzamiento "Shopify inmobiliario" (paquete PYME)
 
 > **Contexto AI · 2026-07-08** · Registro de hallazgos del red-team sobre los artefactos del paquete
-> (`landing.html`, `pitch-onepager.md`, `guion-demo.md`, `pricing-detalle.md`, `storefront-demo.html`).
-> Documento local — nada se publica. Nombre `Cimiento` = **provisional de trabajo** (ver `naming.md`).
+> (`landing.html`, [`pitch-onepager.md`](pitch-onepager.md), [`guion-demo.md`](guion-demo.md), [`pricing-detalle.md`](pricing-detalle.md), `storefront-demo.html`).
+> Documento local — nada se publica. Nombre `Cimiento` = **provisional de trabajo** (ver [`naming.md`](naming.md)).
 >
 > **Cómo leer esto:** cada hallazgo lleva severidad, archivo(s), el problema, el fix y su **estado**.
 > Todos los CRÍTICOS y ALTOS fueron **aplicados** en esta pasada del FIXER. Al final va una sección
@@ -42,7 +42,7 @@ sin sombras difusas).
 
 ### C-2 · "montas tu tienda en una hora" como hecho, sin asterisco
 - **Severidad:** CRÍTICA
-- **Archivos:** `landing.html` (hero + meta) · `pitch-onepager.md` (L11, L29) · `guion-demo.md` (tesis L18)
+- **Archivos:** `landing.html` (hero + meta) · [`pitch-onepager.md`](pitch-onepager.md) (L11, L29) · [`guion-demo.md`](guion-demo.md) (tesis L18)
 - **Problema:** "en una hora" es el benchmark de GuruHotel/Shopify (MODELO §4), no una capacidad medida
   de este producto; el generador self-serve que lo haría real está ❌ **sin construir** (MODELO §6); y el
   propio pitch se contradice (self-serve "montas TÚ" vs "la montamos nosotros, a mano" del piloto, MODELO
@@ -53,7 +53,7 @@ sin sombras difusas).
 
 ### C-4 · "pagas cuando ganas" no es lo mismo que fee por lead
 - **Severidad:** CRÍTICA
-- **Archivos:** `pitch-onepager.md` (L75) · `guion-demo.md` (Bloque 3, L125/L137) · gate en `pricing-detalle.md`
+- **Archivos:** [`pitch-onepager.md`](pitch-onepager.md) (L75) · [`guion-demo.md`](guion-demo.md) (Bloque 3, L125/L137) · gate en [`pricing-detalle.md`](pricing-detalle.md)
 - **Problema:** un lead calificado **no es una venta**. GuruHotel cobra 5% *por reserva realizada* (resultado);
   aquí se cambió a fee por *input* (lead) pero se conservó el lenguaje "cobras cuando el cliente gana". En real
   estate (baja frecuencia, alto ticket, baja tasa de cierre) el corredor puede pagar por 30 leads y cerrar
@@ -65,7 +65,7 @@ sin sombras difusas).
 
 ### C-5 · interacción escalón 1 (per-lead) ↔ escalón 2 (SaaS) sin definir
 - **Severidad:** CRÍTICA
-- **Archivos:** `pricing-detalle.md` (§1, §4.1) · `landing.html` (sección ESCALERA)
+- **Archivos:** [`pricing-detalle.md`](pricing-detalle.md) (§1, §4.1) · `landing.html` (sección ESCALERA)
 - **Problema:** ningún artefacto decía si un cliente en tier 2 sigue pagando por lead. Las tres lecturas
   rompían el modelo: (REEMPLAZA) el per-lead muere justo cuando crece el volumen y capa el LTV del tier 1;
   (AGRUPA ILIMITADO) el usuario pesado cae en margen negativo (el SaaS solo absorbía Fijo+Soporte);
@@ -78,7 +78,7 @@ sin sombras difusas).
 
 ### C-9 · el foso se autodestruye: el dato verificado es del corredor (portable)
 - **Severidad:** CRÍTICA
-- **Archivos:** `guion-demo.md` · `pitch-onepager.md` · `storefront-demo.html`
+- **Archivos:** [`guion-demo.md`](guion-demo.md) · [`pitch-onepager.md`](pitch-onepager.md) · `storefront-demo.html`
 - **Problema:** el paquete vendía como muralla el DATO VERIFICADO, pero ese dato lo produce y lo posee el
   corredor ("verificado por el corredor", "la verdad la pone quien conoce la zona") — y a la vez se promete
   "te vas con tus leads, el dato es tuyo". Activo defensivo 100% portable: el corredor puede volcar ese mismo
@@ -90,7 +90,7 @@ sin sombras difusas).
 
 ### C-10 · ceguera del lado de la DEMANDA
 - **Severidad:** CRÍTICA
-- **Archivos:** `pricing-detalle.md` · `guion-demo.md` · `landing.html`
+- **Archivos:** [`pricing-detalle.md`](pricing-detalle.md) · [`guion-demo.md`](guion-demo.md) · `landing.html`
 - **Problema:** el foso del portal no es el canal, es la **agregación de compradores** (la gente va a Plusvalía
   a *buscar*). El paquete vende herramienta de OFERTA (storefront en dominio propio) sin resolver de dónde sale
   el tráfico: el único influjo cierto es el QR del letrero (embudo diminuto). Todo el GTM maximizaba el
@@ -103,7 +103,7 @@ sin sombras difusas).
 
 ### C-11 · enemigo equivocado / hombre de paja
 - **Severidad:** CRÍTICA
-- **Archivos:** `pitch-onepager.md` · `guion-demo.md` · `landing.html`
+- **Archivos:** [`pitch-onepager.md`](pitch-onepager.md) · [`guion-demo.md`](guion-demo.md) · `landing.html`
 - **Problema:** todo el arsenal apuntaba a "constructor de webs" (Wix/Squarespace) y a los portales. Pero el
   competidor que ENTRA a Ecuador (LIDZ, Pulppo) es un **CRM proptech para corredores** — la misma categoría de
   Cimiento — que ya entrega dominio+marca+CRM+leads por defecto e integra con los portales para tráfico. No
@@ -119,10 +119,10 @@ sin sombras difusas).
 
 ### A-1 · "seguridad" del barrio como dato verificado (proxy de steering)
 - **Severidad:** ALTA
-- **Archivos:** `landing.html` (capa 01) · `pitch-onepager.md` (§el dolor, §por qué creerte)
+- **Archivos:** `landing.html` (capa 01) · [`pitch-onepager.md`](pitch-onepager.md) (§el dolor, §por qué creerte)
 - **Problema:** prometer "seguridad" del barrio como verdad verificada es el proxy de steering más litigado en
   Fair Housing; contradice COMPLIANCE_FairHousing (un "score de deseabilidad de barrio" = redlining
-  algorítmico), contradice el propio `guion-demo.md` L119 (el agente NO da veredictos, muestra el dato objetivo)
+  algorítmico), contradice el propio [`guion-demo.md`](guion-demo.md) L119 (el agente NO da veredictos, muestra el dato objetivo)
   y es promesa sin respaldo (el storefront no muestra métrica de "seguridad").
 - **Fix aplicado:** se borró "seguridad" de **toda** lista de "verdad del entorno". Sustituido por sub-señales
   objetivas con proveniencia: *ruido estimado, tráfico, comercios y conectividad / tiempos caminando reales*,
@@ -130,7 +130,7 @@ sin sombras difusas).
 
 ### A-3 · pre-calificación / encaje financiero como capacidad presente
 - **Severidad:** ALTA
-- **Archivos:** `guion-demo.md` (L147-148) · `landing.html` (capa 03) · `pitch-onepager.md` (tabla escalón 1) · `storefront-demo.html`
+- **Archivos:** [`guion-demo.md`](guion-demo.md) (L147-148) · `landing.html` (capa 03) · [`pitch-onepager.md`](pitch-onepager.md) (tabla escalón 1) · `storefront-demo.html`
 - **Problema:** la capa financiera está 📄 **spec, sin construir** (MODELO §6), pero se describía en presente
   ("podemos mostrarle al comprador cuánto podría pagar… bancos compiten lado a lado"). Autocontradicción con la
   línea roja del propio guion L209 ("no prometas features que no controlas… vende lo que ya está vivo").
@@ -141,7 +141,7 @@ sin sombras difusas).
 
 ### A-6 · "lead calificado" con umbral demasiado bajo + proveedor juez y parte
 - **Severidad:** ALTA
-- **Archivos:** `pricing-detalle.md` (§2.1, §2.2-C, §2.2-D) · `guion-demo.md` (L145)
+- **Archivos:** [`pricing-detalle.md`](pricing-detalle.md) (§2.1, §2.2-C, §2.2-D) · [`guion-demo.md`](guion-demo.md) (L145)
 - **Problema:** el criterio C era un OR cuyo eslabón débil ("dejó vía de reenganche con consentimiento") lo
   cumple casi cualquier captura → dispara cobro facilísimo (la "presión por volumen" que el MODELO §9 quiere
   evitar). Además, conflicto estructural: Contexto define el umbral N, cobra por superarlo y versiona la función,
@@ -154,7 +154,7 @@ sin sombras difusas).
 
 ### A-7 · anti-portal "no es o/o" sabotea la monetización
 - **Severidad:** ALTA
-- **Archivos:** `pitch-onepager.md` (L69) · `guion-demo.md` (Bloque 1, L60)
+- **Archivos:** [`pitch-onepager.md`](pitch-onepager.md) (L69) · [`guion-demo.md`](guion-demo.md) (Bloque 1, L60)
 - **Problema:** el mensaje elegido para bajar fricción ("sigue en el portal si te trae gente") invita a seguir
   alimentando el portal, donde nace y se captura el grueso de leads → el agente de la tienda ve poco tráfico →
   poco ingreso tier 1 → sin razón para subir a tier 2. "Tus leads son tuyos" solo aplica al goteo del QR/directo.
@@ -165,7 +165,7 @@ sin sombras difusas).
 
 ### A-8 · escalón 0 gratis ilimitado + demo desalineada con la escalera
 - **Severidad:** ALTA
-- **Archivos:** `landing.html` · `pitch-onepager.md` · `storefront-demo.html` · `pricing-detalle.md` §4.2
+- **Archivos:** `landing.html` · [`pitch-onepager.md`](pitch-onepager.md) · `storefront-demo.html` · [`pricing-detalle.md`](pricing-detalle.md) §4.2
 - **Problema:** (a) el tier 0 gratis cargaba el costo más caro (verificación en terreno + montaje **manual
   humano**, no marginal ~0) sin disparador de conversión ni tope; (b) la demo se rotula "escalón 0" pero su
   pieza central es el agente + chat, que es **escalón 1**.
@@ -177,7 +177,7 @@ sin sombras difusas).
 
 ### A-12 · exageración del foso: "toma años" sobre datos abiertos
 - **Severidad:** ALTA
-- **Archivo:** `guion-demo.md` (L178)
+- **Archivo:** [`guion-demo.md`](guion-demo.md) (L178)
 - **Problema:** "la verdad de cada zona… toma años y terreno" es indefendible ante un técnico: el motor de
   entorno se construye sobre Overture + OSM + Valhalla (abiertos); isócronas, conteo de POIs y walkability se
   replican en **semanas**. Y el propio storefront admite que la mayoría de datos son **estimaciones** (asterisco).
@@ -188,7 +188,7 @@ sin sombras difusas).
 
 ### A-13 · contradicción foso-vs-portabilidad
 - **Severidad:** ALTA
-- **Archivos:** `landing.html` · `pitch-onepager.md` · `pricing-detalle.md`
+- **Archivos:** `landing.html` · [`pitch-onepager.md`](pitch-onepager.md) · [`pricing-detalle.md`](pricing-detalle.md)
 - **Problema:** no pueden coexistir "saas mensual — el foso / el candado es que el crm y el agente viven
   contigo" con "te vas con tus leads, la retención se gana por valor, no por secuestro". Si todo es portable,
   el costo de cambio es ~0 y un rival con valor + tráfico se lleva al cliente en un clic.
@@ -199,7 +199,7 @@ sin sombras difusas).
 
 ### A-14 · precio subcotizable / guerra de subsidio anclada a un precio desconocido
 - **Severidad:** ALTA
-- **Archivo:** `pricing-detalle.md` (§3.4)
+- **Archivo:** [`pricing-detalle.md`](pricing-detalle.md) (§3.4)
 - **Problema:** §3.4 mandaba fijar el fee "por debajo del costo-por-contacto que la PYME ya paga al portal",
   pero §3.1 admite que **ese precio es desconocido** (los portales no publican tarifa). Y el escalón 0 corre a
   margen negativo (CAC): un entrante VC-backed (Pulppo/LIDZ) también pone el lead a $0 y aguanta más el subsidio.
@@ -210,7 +210,7 @@ sin sombras difusas).
 
 ### A-15 · "tus leads son tuyos" vendido como foso cuando es table-stakes
 - **Severidad:** ALTA
-- **Archivos:** `landing.html` · `pitch-onepager.md`
+- **Archivos:** `landing.html` · [`pitch-onepager.md`](pitch-onepager.md)
 - **Problema:** todo CRM proptech moderno (Pulppo/LIDZ) ya entrega dominio propio, microsite y propiedad del
   lead por diseño. "Tus leads son tuyos" no diferencia contra el rival real, solo contra el portal.
 - **Fix aplicado:** se dejó de tratar "leads propios" como foso — se nombra explícitamente como **higiene de
@@ -227,7 +227,7 @@ sin sombras difusas).
 
 | # | Sev. | Observación | Disposición |
 |---|---|---|---|
-| M-1 | MEDIA | Jerga técnica "isócronas peatonales propias" en `pitch-onepager.md` §por qué creerte — el guion la prohíbe como término interno (L116/L233) que "un técnico desmiente". | **Corregido de paso** al aplicar A-1: reemplazado por "tiempos caminando reales". |
+| M-1 | MEDIA | Jerga técnica "isócronas peatonales propias" en [`pitch-onepager.md`](pitch-onepager.md) §por qué creerte — el guion la prohíbe como término interno (L116/L233) que "un técnico desmiente". | **Corregido de paso** al aplicar A-1: reemplazado por "tiempos caminando reales". |
 | M-2 | BAJA | El estribillo abreviado "tus leads son tuyos" persiste en la chuleta del guion (SIEMPRE haz, L253) como consigna de venta. | **Conservado a propósito** como consigna corta; los beats sustantivos ya llevan el alcance honesto ("del QR y directos"). Revisar si se quiere endurecer también la consigna. |
 | M-3 | BAJA | `landing.html` sigue usando "el foso" como palabra pública (ESCALERA escalón 2 "saas mensual — el foso"). | **Conservado**; es coherente con la nueva narrativa (foso = motor + verificación acumulada, no lock-in contractual). Vigilar que no reintroduzca la idea de "candado". |
 | M-4 | BAJA | La pre-calificación neutral aparece en la ESCALERA (escalón 2) sin la etiqueta explícita "(roadmap)" que sí lleva en pricing. | **Aceptado**; la ESCALERA es, por definición, de pasos futuros a los que se sube — el marco ya comunica que es capacidad posterior. |

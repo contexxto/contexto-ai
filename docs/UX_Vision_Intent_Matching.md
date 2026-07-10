@@ -1,7 +1,7 @@
 # Contexto AI — Visión de UX: del buscador al emparejamiento de intención
 
 **Fecha:** 2026-06-18
-**Deriva de:** `VISION_Sistema_Vivo.md` (sección "De ranking a recomendación") + análisis de competidores (Esri, Realtor.com RealAssist) en `INTELIGENCIA_y_PLAN_2026-06-16.md`.
+**Deriva de:** [`VISION_Sistema_Vivo.md`](VISION_Sistema_Vivo.md) (sección "De ranking a recomendación") + análisis de competidores (Esri, Realtor.com RealAssist) en [`INTELIGENCIA_y_PLAN_2026-06-16.md`](INTELIGENCIA_y_PLAN_2026-06-16.md).
 
 > Documento de dirección de UX, no especificación. Aterriza CÓMO debe sentirse Contexto
 > para expresar la tesis (intent-matching + verdad del lugar + handoff humano), sin copiar
@@ -101,8 +101,8 @@ El dato es evidencia de fit, no una ficha fría. **Anti-portal puro.**
 
 ## Conexión con docs
 
-- `VISION_Sistema_Vivo.md` — la tesis (sistema vivo + grafo + ranking→recomendación). Este doc es **cómo se siente** esa tesis.
-- `NORTHSTAR_Contexto_Claude_Inmobiliario.md` — el qué/hacia dónde.
+- [`VISION_Sistema_Vivo.md`](VISION_Sistema_Vivo.md) — la tesis (sistema vivo + grafo + ranking→recomendación). Este doc es **cómo se siente** esa tesis.
+- [`NORTHSTAR_Contexto_Claude_Inmobiliario.md`](NORTHSTAR_Contexto_Claude_Inmobiliario.md) — el qué/hacia dónde.
 - `INTELIGENCIA_y_PLAN` — los competidores de los que se roban patrones (Esri, Realtor.com).
 
 ---

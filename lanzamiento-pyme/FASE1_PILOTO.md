@@ -24,9 +24,9 @@ Si la respuesta es sí en 1-3 inmobiliarias reales → Fase 3 (productizar self-
 
 ## 3. Checklist de montaje manual (por inmobiliaria, ~1 semana)
 
-**Día 0 — Kickoff (30 min, el guion ya existe: `guion-demo.md`)**
-- [ ] Demo con `storefront-demo.html` + pitch (`pitch-onepager.md`).
-- [ ] Firmar el acuerdo simple del piloto: escalón 0 = $0, definición de **lead calificado** por escrito (§2 de `pricing-detalle.md`: pasó por el agente + declaró qué busca + pidió avanzar; tope mensual elegido por la inmobiliaria).
+**Día 0 — Kickoff (30 min, el guion ya existe: [`guion-demo.md`](guion-demo.md))**
+- [ ] Demo con `storefront-demo.html` + pitch ([`pitch-onepager.md`](pitch-onepager.md)).
+- [ ] Firmar el acuerdo simple del piloto: escalón 0 = $0, definición de **lead calificado** por escrito (§2 de [`pricing-detalle.md`](pricing-detalle.md): pasó por el agente + declaró qué busca + pidió avanzar; tope mensual elegido por la inmobiliaria).
 - [ ] Recoger: logo, colores (si tiene), lista de publicaciones, datos de contacto.
 
 **Días 1-3 — Carga y verificación**
@@ -69,7 +69,7 @@ Si la respuesta es sí en 1-3 inmobiliarias reales → Fase 3 (productizar self-
 - [ ] **Nombres de las 1-3 inmobiliarias** + fecha de kickoff ← **lo único que bloquea el arranque**
 - [ ] Comprar `aurareal.ec` (NIC.ec) — centavos, candado temprano.
 - [ ] Búsqueda SENADI (clases 35/36/42) — gate antes de que el nombre toque público.
-- [ ] Diseño en Lovable (`PROMPT_LOVABLE.md` + capturas) — en paralelo, no bloquea el piloto.
+- [ ] Diseño en Lovable ([`PROMPT_LOVABLE.md`](PROMPT_LOVABLE.md) + capturas) — en paralelo, no bloquea el piloto.
 
 ## 7. Qué NO hacemos en Fase 1 (disciplina)
 

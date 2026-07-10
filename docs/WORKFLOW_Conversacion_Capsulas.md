@@ -1,7 +1,7 @@
 # Borrador — Workflow de Conversación de Contexto ("Cápsulas")
 
 **Fecha:** 2026-06-14
-**Base:** `INVESTIGACION_Comportamiento_y_Enganche.md`
+**Base:** [`INVESTIGACION_Comportamiento_y_Enganche.md`](INVESTIGACION_Comportamiento_y_Enganche.md)
 **Estado:** ✅ APLICADO al agente (Regla 0 en `graph.py`, commit a639cff) y VALIDADO en
 la prueba de esfuerzo (cápsula, plan e informe — los 3 modos). Diseñado en plan mode con
 Opus 4.8 + esfuerzo máximo.

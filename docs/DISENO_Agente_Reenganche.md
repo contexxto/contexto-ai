@@ -19,7 +19,7 @@ embudo `interesado→contactado→calificado→agendado→visitado→oferta`, co
 de contacto** y costo por lead. Es riguroso — y es **intensidad por tiempo**: *"soy intenso hasta que
 el cliente me diga que no."* Funciona, pero es exactamente el empuje que el comprador ya rechaza.
 
-El estudio `ESTUDIO_Adopcion_IA_Real_Estate_2026-07.md` lo cuantificó (cifras verificadas):
+El estudio [`ESTUDIO_Adopcion_IA_Real_Estate_2026-07.md`](ESTUDIO_Adopcion_IA_Real_Estate_2026-07.md) lo cuantificó (cifras verificadas):
 - La confianza del comprador en la IA para elegir casa **cayó de 30% a 16% en un año** (Cotality 2026)
   — cae *precisamente* cuando se siente manipuladora.
 - **44% pagaría** por que un humano **verifique** una recomendación automatizada.

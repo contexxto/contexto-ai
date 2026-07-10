@@ -1,8 +1,8 @@
 # Munición Linden + Qué replicar YA (de Redfin × Sierra)
 
-**Fecha:** 2026-06-23 · Acompaña a `INTELIGENCIA_Sierra_Redfin_2026-06-23.md`
+**Fecha:** 2026-06-23 · Acompaña a [`INTELIGENCIA_Sierra_Redfin_2026-06-23.md`](INTELIGENCIA_Sierra_Redfin_2026-06-23.md)
 
-> **Actualización — alineado a la regla "cero homer" de `TEARDOWN_y_PITCH_Linden_2026-06-24.md`:**
+> **Actualización — alineado a la regla "cero homer" de [`TEARDOWN_y_PITCH_Linden_2026-06-24.md`](TEARDOWN_y_PITCH_Linden_2026-06-24.md):**
 > las cifras de terceros (Redfin 2×/+47% tours, Zoopla, ADT/Fortune 500) NO se usan como prueba
 > ni como meta de Contexto — solo como señal de tendencia del mercado, siempre citando la fuente.
 > La prueba del valor se mide SIEMPRE en los números del propio cliente (Linden). El entregable

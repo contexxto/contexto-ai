@@ -13,9 +13,9 @@
 > El detalle de abajo se escribió con la escalera de 4 — sigue siendo válido como insumo
 > (función de lead calificado, anclajes, unit economics), leído bajo esta decisión.
 
-> **Contexto AI · 2026-07-08** · Expansión del §5 de `docs/MODELO_Shopify_Inmobiliario_PYME.md` (la escalera de precios).
-> **Insumos:** reglas de neutralidad y "pagar por calificar, no por dirigir" de `docs/PRODUCTO_Encaje_Financiero_Neutral.md`; principio auditable "no juzgamos, medimos y citamos" + proveniencia de `docs/COMPLIANCE_FairHousing_AgentSpec_2026-06-23.md`; benchmarks Shopify/GuruHotel del MODELO.
-> **Nombre del producto:** `AuraReal` — decision del fundador (2026-07-09), pendiente registro SENADI. Torneo y racional en `naming.md`.
+> **Contexto AI · 2026-07-08** · Expansión del §5 de [`docs/MODELO_Shopify_Inmobiliario_PYME.md`](../docs/MODELO_Shopify_Inmobiliario_PYME.md) (la escalera de precios).
+> **Insumos:** reglas de neutralidad y "pagar por calificar, no por dirigir" de [`docs/PRODUCTO_Encaje_Financiero_Neutral.md`](../docs/PRODUCTO_Encaje_Financiero_Neutral.md); principio auditable "no juzgamos, medimos y citamos" + proveniencia de [`docs/COMPLIANCE_FairHousing_AgentSpec_2026-06-23.md`](../docs/COMPLIANCE_FairHousing_AgentSpec_2026-06-23.md); benchmarks Shopify/GuruHotel del MODELO.
+> **Nombre del producto:** `AuraReal` — decision del fundador (2026-07-09), pendiente registro SENADI. Torneo y racional en [`naming.md`](naming.md).
 
 ---
 
@@ -244,10 +244,10 @@ Escalón 2:  SaaS_mensual  = margen real + NRR.  Absorbe Fijo + Soporte, y el Va
 
 ## Fuentes
 
-- **Escalera, benchmarks y reglas:** `docs/MODELO_Shopify_Inmobiliario_PYME.md` (§3 Shopify, §4 GuruHotel, §5 escalera, §7 secuencia, §8–9 líneas rojas/riesgos).
-- **Neutralidad + "pagar por calificar, no por dirigir" + función pública/versionada:** `docs/PRODUCTO_Encaje_Financiero_Neutral.md` (§5 reglas Fair Housing, §7 estructura de negocio, regla 7).
-- **Principio auditable "no juzgamos, medimos y citamos" + proveniencia `[medido]/[estimación]/[verificado]` + clasificador determinista + disparate impact:** `docs/COMPLIANCE_FairHousing_AgentSpec_2026-06-23.md`.
-- **Nombre provisional:** `naming.md` (torneo — decision final: `AuraReal`).
+- **Escalera, benchmarks y reglas:** [`docs/MODELO_Shopify_Inmobiliario_PYME.md`](../docs/MODELO_Shopify_Inmobiliario_PYME.md) (§3 Shopify, §4 GuruHotel, §5 escalera, §7 secuencia, §8–9 líneas rojas/riesgos).
+- **Neutralidad + "pagar por calificar, no por dirigir" + función pública/versionada:** [`docs/PRODUCTO_Encaje_Financiero_Neutral.md`](../docs/PRODUCTO_Encaje_Financiero_Neutral.md) (§5 reglas Fair Housing, §7 estructura de negocio, regla 7).
+- **Principio auditable "no juzgamos, medimos y citamos" + proveniencia `[medido]/[estimación]/[verificado]` + clasificador determinista + disparate impact:** [`docs/COMPLIANCE_FairHousing_AgentSpec_2026-06-23.md`](../docs/COMPLIANCE_FairHousing_AgentSpec_2026-06-23.md).
+- **Nombre provisional:** [`naming.md`](naming.md) (torneo — decision final: `AuraReal`).
 - **Anclaje de mercado (todo `DIRECCIONAL`, 2026-07-08):**
   - Modelo pago-por-contacto y multi-portal, pricing gated a demo: [blog.properati.com.ec](https://blog.properati.com.ec/quieres-publicar-en-properati/) · [proppit.com (EC)](https://proppit.com/?country=ec) · [plusvalia.com](https://www.plusvalia.com/) — *ninguno publica tarifa; se rotula opaco.*
   - Costo-por-contacto direccional (España, EUR, cartera 40–200 props): [inmoblog.com](https://www.inmoblog.com/cuanto-cuesta-un-contacto-comprador-de-vivienda/).

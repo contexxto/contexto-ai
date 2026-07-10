@@ -64,7 +64,7 @@ tiene.** El foso pasa de *"describir"* a *"verificar lo específico + conectar"*
 ---
 
 ## Conexión con docs
-- `UX_Patrones_Zillow_Redfin.md` — URL semántica = ser citable por la IA (AEO).
-- `VISION_Sistema_Vivo.md` — "de ranking a recomendación" (ahora con números: 61% empieza en IA).
-- `INTELIGENCIA_y_PLAN_2026-06-16.md` — Habi/búsqueda agéntica, Cynthia (el dato es el muro).
-- `BRUJULA_Modelo_Mazatlan.md` — mismo motor + misma capa citable, otra cuña (terrenos).
+- [`UX_Patrones_Zillow_Redfin.md`](UX_Patrones_Zillow_Redfin.md) — URL semántica = ser citable por la IA (AEO).
+- [`VISION_Sistema_Vivo.md`](VISION_Sistema_Vivo.md) — "de ranking a recomendación" (ahora con números: 61% empieza en IA).
+- [`INTELIGENCIA_y_PLAN_2026-06-16.md`](INTELIGENCIA_y_PLAN_2026-06-16.md) — Habi/búsqueda agéntica, Cynthia (el dato es el muro).
+- [`BRUJULA_Modelo_Mazatlan.md`](BRUJULA_Modelo_Mazatlan.md) — mismo motor + misma capa citable, otra cuña (terrenos).

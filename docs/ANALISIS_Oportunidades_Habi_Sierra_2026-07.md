@@ -1,8 +1,8 @@
 # ANÁLISIS — Señales estratégicas: Sierra/Rocket + Habi
 
 > **Contexto AI · 2026-07-08** · Corrido por el **Whaber Founder Playbook** (48 tácticas Squibb × 8 patrones Valencia).
-> **Origen:** dos señales de LinkedIn compartidas por Carlos el mismo día + el caso de Habi ya documentado (`PRODUCTO_Encaje_Financiero_Neutral.md`, `ESTUDIO_Adopcion_IA_Real_Estate_2026-07.md`).
-> **Relacionados:** análisis de la Google Isochrones API (mismo día); `docs/PLAN_Migracion_MapChat_Google_a_Stack_Propio.md`.
+> **Origen:** dos señales de LinkedIn compartidas por Carlos el mismo día + el caso de Habi ya documentado ([`PRODUCTO_Encaje_Financiero_Neutral.md`](PRODUCTO_Encaje_Financiero_Neutral.md), [`ESTUDIO_Adopcion_IA_Real_Estate_2026-07.md`](ESTUDIO_Adopcion_IA_Real_Estate_2026-07.md)).
+> **Relacionados:** análisis de la Google Isochrones API (mismo día); [`docs/PLAN_Migracion_MapChat_Google_a_Stack_Propio.md`](PLAN_Migracion_MapChat_Google_a_Stack_Propio.md).
 
 ---
 
@@ -85,13 +85,13 @@ Una "alianza" donde le alimentas tu **entorno verificado** = te vuelves **feed c
 1. **🥇 Sacar el número "3x" propio** (tarea #12, Linden) — es el sizzle que sirve para TODO (venta a corredores, Radar, levantar, partnership). Sin este número, todo lo demás es conversación.
 2. **Agregar los 4 contactos al Radar** + definir el "algo útil mensual" (T13) para cada uno.
 3. **Redactar el primer contacto value-first** a Rueda/Restrepo (T35: pregunta específica, no "seamos aliados"). *(Pendiente — ofrecido, no ejecutado.)*
-4. **Seguir profundizando el foso** (migración al stack propio; ver `PLAN_Migracion_MapChat_Google_a_Stack_Propio.md`) — la capa no-clonable que hace que Habi/Sierra/Google no te alcancen donde importa.
+4. **Seguir profundizando el foso** (migración al stack propio; ver [`PLAN_Migracion_MapChat_Google_a_Stack_Propio.md`](PLAN_Migracion_MapChat_Google_a_Stack_Propio.md)) — la capa no-clonable que hace que Habi/Sierra/Google no te alcancen donde importa.
 
 ---
 
 ## Fuentes
 - Sierra/Rocket: sierra.ai/customers/rocket-mortgage (post de LinkedIn de Sierra, 2026-07-08 · promo de vendor — el "3x" con asterisco de autoselección).
 - Habi/Pulppo: [The Real Deal](https://therealdeal.com/international/2026/03/06/proptech-unicorn-habi-acquires-mexican-startup-pulppo/) · [Bloomberg Línea](https://www.bloomberglinea.com/latinoamerica/colombia/habi-adquiere-pulppo-y-acelera-su-expansion-en-mexico-colombia-y-argentina/) (adquisición 2026-03-02; México/Colombia/Argentina; visión 2030 ~20% share).
-- Caso Habi documentado: `docs/PRODUCTO_Encaje_Financiero_Neutral.md`, `docs/ESTUDIO_Adopcion_IA_Real_Estate_2026-07.md`, `docs/DISENO_Agente_Reenganche.md`, `docs/PLAN_Estrategico_Mazatlan_Ricardo.md`.
+- Caso Habi documentado: [`docs/PRODUCTO_Encaje_Financiero_Neutral.md`](PRODUCTO_Encaje_Financiero_Neutral.md), [`docs/ESTUDIO_Adopcion_IA_Real_Estate_2026-07.md`](ESTUDIO_Adopcion_IA_Real_Estate_2026-07.md), [`docs/DISENO_Agente_Reenganche.md`](DISENO_Agente_Reenganche.md), [`docs/PLAN_Estrategico_Mazatlan_Ricardo.md`](PLAN_Estrategico_Mazatlan_Ricardo.md).
 
 > ⚠️ **Cite, don't assert:** las cifras de Habi/Pulppo son de prensa/vendor (direccional); el "3x" de Rocket es un stat de customer-story con sesgo de autoselección. Atribuir, no afirmar como verdad Whaber.

@@ -1,8 +1,8 @@
 # MODELO — "Shopify Inmobiliario": storefronts para inmobiliarias PYME con la verdad de Contexto debajo
 
 > **Contexto AI · 2026-07-08** · Origen: instinto de Carlos (*"con un par de clicks tienen montada su página con diseño de $10.000 — y debajo anclamos la tecnología de Contexto: un negocio 360"*), corrido por el **Whaber Founder Playbook** y anclado en dos benchmarks verificados: **Shopify** (modelo) y **GuruHotel** (la prueba LATAM).
-> **Línea gráfica:** `docs/branding/LINEA_GRAFICA_CRED_Storefronts.md` (extracción real de cred.club vía Context.dev + NeoPOP Apache 2.0).
-> **Relacionados:** `PRODUCTO_Encaje_Financiero_Neutral.md` (la capa "pagos" hecha bien) · `ANALISIS_Oportunidades_Habi_Sierra_2026-07.md` (el mapa competitivo) · `PLAN_Capa_Citable.md` (AEO) · tarea #33 CRM Vivo (el back-office).
+> **Línea gráfica:** [`docs/branding/LINEA_GRAFICA_CRED_Storefronts.md`](branding/LINEA_GRAFICA_CRED_Storefronts.md) (extracción real de cred.club vía Context.dev + NeoPOP Apache 2.0).
+> **Relacionados:** [`PRODUCTO_Encaje_Financiero_Neutral.md`](PRODUCTO_Encaje_Financiero_Neutral.md) (la capa "pagos" hecha bien) · [`ANALISIS_Oportunidades_Habi_Sierra_2026-07.md`](ANALISIS_Oportunidades_Habi_Sierra_2026-07.md) (el mapa competitivo) · [`PLAN_Capa_Citable.md`](PLAN_Capa_Citable.md) (AEO) · tarea #33 CRM Vivo (el back-office).
 
 ---
 
@@ -87,7 +87,7 @@ GuruHotel = "Shopify de hoteles" (YC, LATAM, 1.000+ hoteles): sitio + motor de r
 
 ## 7. Secuencia (A7 — el orden es todo)
 
-1. **Fase 0 (ahora): mockup de la landing de la oferta** con la línea CRED (`LINEA_GRAFICA_CRED_Storefronts.md`) — juzgar con los ojos antes de construir.
+1. **Fase 0 (ahora): mockup de la landing de la oferta** con la línea CRED ([`LINEA_GRAFICA_CRED_Storefronts.md`](branding/LINEA_GRAFICA_CRED_Storefronts.md)) — juzgar con los ojos antes de construir.
 2. **Fase 1 — MVP manual (T4):** montar el storefront a MANO para 1-3 inmobiliarias del piloto (sin generador self-serve). **La pregunta que valida todo:** *¿pagan y renuevan por la TECNOLOGÍA debajo — no por la web?* Sin esto, no hay fase 2.
 3. **Fase 2 — el número:** sacar el **"3x" propio** (tarea #12, lift medido en los números del piloto — no espejo de nadie). Es el sizzle que vende la escalera completa.
 4. **Fase 3 — productizar:** generador self-serve ("clicks → tienda en 1 hora"), tema CRED parametrizado (logo/colores de la inmobiliaria sobre el esqueleto), dominio propio, onboarding.
@@ -125,7 +125,7 @@ GuruHotel = "Shopify de hoteles" (YC, LATAM, 1.000+ hoteles): sitio + motor de r
 
 ## Fuentes
 - GuruHotel: [YC](https://www.ycombinator.com/companies/guruhotel) · [Bloomberg Línea ($2.1M seed, "Shopify of Hotels")](https://www.bloomberglinea.com/english/guruhotel-wants-to-become-the-shopify-of-hotels-raises-21m/) · [guruhotel.com](https://guruhotel.com) — *cifras de vendor/prensa, direccionales*.
-- Mapa competitivo: `ANALISIS_Oportunidades_Habi_Sierra_2026-07.md` (+ LIDZ vía Diario Financiero, mismo día).
+- Mapa competitivo: [`ANALISIS_Oportunidades_Habi_Sierra_2026-07.md`](ANALISIS_Oportunidades_Habi_Sierra_2026-07.md) (+ LIDZ vía Diario Financiero, mismo día).
 - Modelo Shopify: descripción pública de su pricing/estructura (suscripción + payments + app store).
 - Línea gráfica: extracción real de cred.club vía Context.dev (`docs/branding/cred-reference/`) + NeoPOP (Apache 2.0).
 

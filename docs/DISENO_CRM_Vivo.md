@@ -212,7 +212,7 @@ sería otra demo que no escala (el 17%-ve-impacto del que se queja el estudio).
   (el Copiloto sigue observe-only), no toca `MODO_BLOQUEO`; FH mantiene prioridad y cubre a ambos. Una **revisión
   adversarial** cazó 2 hallazgos MED del primer intento (`_uso_playbook` por-turno: fuga mixta + FP de metodología),
   ambos cerrados por el anclaje. +10 tests con regresiones (suite **433** verde). Detalle en
-  `docs/DISENO_Superpoderes_Agentes_CRM.md` §5. (PR del doc de superpoderes, reconciliado.)
+  [`docs/DISENO_Superpoderes_Agentes_CRM.md`](DISENO_Superpoderes_Agentes_CRM.md) §5. (PR del doc de superpoderes, reconciliado.)
 - **2026-07-07 — v0.10 · Retrieval del PLAYBOOK de venta al CRM (el payoff del Corredor-Brain)** — El Copiloto y
   el Estratega ahora consultan a demanda un **playbook de venta HONESTA** destilado del LLM-wiki `Corredor-Brain`
   (Serhant/Keller/Corcoran/Hormozi, ya filtrado por foso + Fair Housing). Arquitectura deployable: el vault es LOCAL
@@ -234,7 +234,7 @@ sería otra demo que no escala (el 17%-ve-impacto del que se queja el estudio).
   superpoderes** (6 Copiloto tácticos + 5 Estratega de cartera) + 6 rechazados por marca, todos colgados de un
   **candado de redacción común** (proveniencia + Fair Housing anti-proxy + no-presión). Hallazgo lateral: el
   fail-close del Estratega no cubre `cifra` en la jugada proactiva. Decisión de Carlos: **documentar primero.**
-  Anchor doc completo → **`docs/DISENO_Superpoderes_Agentes_CRM.md`**. Nada de código tocado.
+  Anchor doc completo → **[`docs/DISENO_Superpoderes_Agentes_CRM.md`](DISENO_Superpoderes_Agentes_CRM.md)**. Nada de código tocado.
 - **2026-07-07 — v0.8 · Pulidas del Estratega (soak en vivo 3/3 de Carlos)** — El soak con la cartera real
   (10 interesados) salió **3/3**: cifras cuadraron, scores rotulados como estimación, Fair Housing declinó
   limpio ("incluso a favor"), y no inventó el presupuesto ("no tengo ese dato"). Dos pulidas de precisión:

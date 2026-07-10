@@ -90,11 +90,11 @@ abiertos = SÍ, es el norte. Un futuro yo NO debe leer esto como "reactivar Nomi
 
 ## 🧭 Dónde está el "por qué" (no duplicar aquí)
 
-- `docs/NORTHSTAR_Contexto_Claude_Inmobiliario.md` — qué / hacia dónde.
-- `docs/VISION_Sistema_Vivo.md` — la tesis (sistema vivo, grafo de habitabilidad, de
+- [`docs/NORTHSTAR_Contexto_Claude_Inmobiliario.md`](docs/NORTHSTAR_Contexto_Claude_Inmobiliario.md) — qué / hacia dónde.
+- [`docs/VISION_Sistema_Vivo.md`](docs/VISION_Sistema_Vivo.md) — la tesis (sistema vivo, grafo de habitabilidad, de
   ranking a recomendación).
-- `docs/UX_Vision_Intent_Matching.md` — cómo debe sentirse (intent-matching).
-- `docs/INTELIGENCIA_y_PLAN_2026-06-16.md` — competidores y plan.
+- [`docs/UX_Vision_Intent_Matching.md`](docs/UX_Vision_Intent_Matching.md) — cómo debe sentirse (intent-matching).
+- [`docs/INTELIGENCIA_y_PLAN_2026-06-16.md`](docs/INTELIGENCIA_y_PLAN_2026-06-16.md) — competidores y plan.
 
 ---
 

@@ -46,7 +46,7 @@ Hoy los scores (`score_ruido_predictivo`, `volumen_trafico_historico`, `walk_sco
 **real y nuevo** que traiga el corredor, **no tenemos aún una fuente automática** que los calcule.
 
 Esto es exactamente lo que conectan las señales de mercado de Google (ver
-`REPORTE_Senales_Mercado_Google.md`): Earth AI / capas de tráfico / dinámica de poblaciones.
+[`REPORTE_Senales_Mercado_Google.md`](REPORTE_Senales_Mercado_Google.md)): Earth AI / capas de tráfico / dinámica de poblaciones.
 La decisión: ¿los scores iniciales son **manuales/heurísticos** (rápido, imperfecto) o conectamos
 una **fuente de datos** (más trabajo, más defendible)? → **es nuestro foso de datos.**
 

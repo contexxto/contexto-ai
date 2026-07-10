@@ -57,7 +57,7 @@ El chat, las fichas y la UI son la superficie *commoditizable*. El **loop que ap
 3. **Evals en plata.** Medir handoffs calificados, no minutos ni vanity.
 4. **El handoff humano es la espina, no el fallback.** *"La venta es fricción humana"*; la IA da contexto, el humano cierra.
 
-> Derivación completa, paralelos con Nadella y contrapunto honesto en `VISION_Sistema_Vivo.md`.
+> Derivación completa, paralelos con Nadella y contrapunto honesto en [`VISION_Sistema_Vivo.md`](VISION_Sistema_Vivo.md).
 
 ---
 
@@ -81,7 +81,7 @@ El producto es el foso; **la API es la distribución.** Contexto no se vende com
 - **Con design partner (InmobIA/Bolívar):** se expone el API de negocio (Ficha/Investment/Scoring/Market) — *que el integrador hale la API a existir*.
 - **Con tracción:** plataforma de developers (sandbox, Swagger, OAuth, webhooks, Store).
 - **Efecto de red:** cada integrador que consume **hidrata el catálogo** → foso más profundo.
-> Detalle en `ESTRATEGIA_API_First.md`. Reencuadra el pitch a Bolívar: no "compra mi app", sino "integra mi motor en Ciencuadras/Davivienda".
+> Detalle en [`ESTRATEGIA_API_First.md`](ESTRATEGIA_API_First.md). Reencuadra el pitch a Bolívar: no "compra mi app", sino "integra mi motor en Ciencuadras/Davivienda".
 
 ---
 

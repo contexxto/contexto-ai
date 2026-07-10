@@ -1,7 +1,7 @@
 # Tarjeta de combate: Redfin × Sierra vs. Contexto
 
 **Fecha:** 2026-06-23 · Basado en el teardown en vivo de Redfin AI Search + 10 agentes que cruzaron cada hueco con el código real de Contexto.
-**Acompaña a:** `COMPLIANCE_FairHousing_AgentSpec_2026-06-23.md` (las barandas y la spec técnica) e `INTELIGENCIA_Sierra_Redfin_2026-06-23.md`.
+**Acompaña a:** [`COMPLIANCE_FairHousing_AgentSpec_2026-06-23.md`](COMPLIANCE_FairHousing_AgentSpec_2026-06-23.md) (las barandas y la spec técnica) e [`INTELIGENCIA_Sierra_Redfin_2026-06-23.md`](INTELIGENCIA_Sierra_Redfin_2026-06-23.md).
 
 > Regla de oro de esta tarjeta: solo se listan jugadas **defendibles** tras las barandas de Fair Housing. El ángulo de "estilo de vida" SOLO es vendible si está instrumentado (guardrail + eval), no como prosa en el prompt.
 

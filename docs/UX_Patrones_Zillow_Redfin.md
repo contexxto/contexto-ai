@@ -3,7 +3,7 @@
 **Fecha:** 19 jun 2026
 **Origen:** *teardowns* de zillow.com y redfin.com hechos con Claude en Chrome (inspección de
 estructura/UX, NO extracción de anuncios — ambos bloquean el scraping). Insumo para el trabajo
-de UX, sobre todo el **Mapa Vivo (escalón 2A)** de `UX_Vision_Intent_Matching.md`.
+de UX, sobre todo el **Mapa Vivo (escalón 2A)** de [`UX_Vision_Intent_Matching.md`](UX_Vision_Intent_Matching.md).
 
 > **Síntesis en una frase:** roba su disciplina —*una intención, una caja, un número de marca,
 > URL semántica, telemetría*— e ignora su foso (inventario/MLS), su mapa de pines de precio y su
@@ -64,6 +64,6 @@ caminabilidad (0-100) es **un dato de entrada**, no el titular.
 ---
 
 ## Conexión con docs
-- `UX_Vision_Intent_Matching.md` — el Mapa Vivo (E / escalón 2A) es donde aterriza la jugada de isócronas.
-- `VISION_Sistema_Vivo.md` — el foso (dato contribuido) que ninguno de los dos portales tiene.
-- `INTELIGENCIA_y_PLAN_2026-06-16.md` — Cynthia Wu (1.5): el dato es el muro; el agente es commodity.
+- [`UX_Vision_Intent_Matching.md`](UX_Vision_Intent_Matching.md) — el Mapa Vivo (E / escalón 2A) es donde aterriza la jugada de isócronas.
+- [`VISION_Sistema_Vivo.md`](VISION_Sistema_Vivo.md) — el foso (dato contribuido) que ninguno de los dos portales tiene.
+- [`INTELIGENCIA_y_PLAN_2026-06-16.md`](INTELIGENCIA_y_PLAN_2026-06-16.md) — Cynthia Wu (1.5): el dato es el muro; el agente es commodity.

@@ -1,8 +1,8 @@
 # PREP — Mesa con Ricardo Suárez · Zoom · 60 min
 
 **Preparación de negociación (método Siete Huesos) · 2026-07-09**
-**Documento de mesa:** `ENCAJE_Mazatlan_Ricardo_1pager.md` (v2 red-teameada + standstill acotado a Mazatlán)
-**Supersede:** `GUION_Reunion_Ricardo_InmobIA.md` (15-jun) — su modelo (revenue-share con números, fee mensual, "piloto 90 días") contradice las reglas v2. Solo sobrevive su estructura de escucha.
+**Documento de mesa:** [`ENCAJE_Mazatlan_Ricardo_1pager.md`](ENCAJE_Mazatlan_Ricardo_1pager.md) (v2 red-teameada + standstill acotado a Mazatlán)
+**Supersede:** [`GUION_Reunion_Ricardo_InmobIA.md`](GUION_Reunion_Ricardo_InmobIA.md) (15-jun) — su modelo (revenue-share con números, fee mensual, "piloto 90 días") contradice las reglas v2. Solo sobrevive su estructura de escucha.
 
 ---
 

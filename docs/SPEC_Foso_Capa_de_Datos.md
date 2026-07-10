@@ -4,7 +4,7 @@
 > **verificados contra fuentes oficiales** en una investigación adversarial. Cuando
 > arranquemos, este documento es la fuente; no hay que re-investigar.
 >
-> **Norte (CLAUDE.md):** poseer la capa de datos en vez de alquilar APIs. **Google = el
+> **Norte ([CLAUDE.md](../CLAUDE.md)):** poseer la capa de datos en vez de alquilar APIs. **Google = el
 > puente, no el destino.** Este spec construye los dos ladrillos que permiten soltar
 > Google Places (POIs) y quedarnos sin depender de nadie para el alcance (isócronas).
 >

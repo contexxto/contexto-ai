@@ -70,4 +70,4 @@ Valhalla NO debe quedar abierto a internet).
   re-correr el batch cuando entren inmuebles nuevos.
 - Sin `VALHALLA_URL` alcanzable, `app/isocronas.isocrona()` degrada limpio (log + None):
   el mapa no pinta isócronas, pero nada se rompe.
-- Ver `docs/SPEC_Foso_Capa_de_Datos.md` §2 para el detalle del motor y la cuña.
+- Ver [`docs/SPEC_Foso_Capa_de_Datos.md`](SPEC_Foso_Capa_de_Datos.md) §2 para el detalle del motor y la cuña.

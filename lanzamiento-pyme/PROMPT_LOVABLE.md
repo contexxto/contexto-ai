@@ -75,5 +75,5 @@ Crea una landing page B2B en español para "AuraReal" (mostrar como "aurareal" c
 
 ### Después de Lovable (mi cancha otra vez)
 1. Me pasas la URL del preview → **QA de claims y marca** (que ninguna iteración haya roto las reglas duras).
-2. Decisiones tuyas: nombre definitivo + dominio (los `contexto*.com` y `vitrinaviva.com` están libres — `naming.md`).
+2. Decisiones tuyas: nombre definitivo + dominio (los `contexto*.com` y `vitrinaviva.com` están libres — [`naming.md`](naming.md)).
 3. Yo conecto la tech real debajo cuando arranque el piloto: QR → storefront verificado → agente → CRM. La landing vende; el motor cumple.

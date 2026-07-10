@@ -1,7 +1,7 @@
 # guion de demo — 10 minutos para una inmobiliaria PYME
 
 > **Contexto AI · 2026-07-08** · Para que Carlos lo presente en frío a una inmobiliaria PYME (Ecuador/LATAM).
-> **Anclado en:** `docs/MODELO_Shopify_Inmobiliario_PYME.md` (la escalera y las líneas rojas) · `docs/PRODUCTO_Encaje_Financiero_Neutral.md` (la capa financiera neutral) · `docs/ANALISIS_Oportunidades_Habi_Sierra_2026-07.md` (el enemigo: los portales) · `docs/branding/LINEA_GRAFICA_CRED_Storefronts.md` + `Contexto_AI_Brand/BRAND.md` (voz) · `lanzamiento-pyme/naming.md` (nombre).
+> **Anclado en:** [`docs/MODELO_Shopify_Inmobiliario_PYME.md`](../docs/MODELO_Shopify_Inmobiliario_PYME.md) (la escalera y las líneas rojas) · [`docs/PRODUCTO_Encaje_Financiero_Neutral.md`](../docs/PRODUCTO_Encaje_Financiero_Neutral.md) (la capa financiera neutral) · [`docs/ANALISIS_Oportunidades_Habi_Sierra_2026-07.md`](../docs/ANALISIS_Oportunidades_Habi_Sierra_2026-07.md) (el enemigo: los portales) · [`docs/branding/LINEA_GRAFICA_CRED_Storefronts.md`](../docs/branding/LINEA_GRAFICA_CRED_Storefronts.md) + `Contexto_AI_Brand/BRAND.md` (voz) · [`lanzamiento-pyme/naming.md`](naming.md) (nombre).
 > **Insumo en pantalla:** `storefront-demo.html` (el storefront de ejemplo del paquete). Este guion está escrito contra sus beats esperados — ajusta los clics exactos al archivo final cuando esté listo.
 
 ---
@@ -258,7 +258,7 @@
 # DESPUÉS DE LA REUNIÓN (si hubo sí)
 
 1. Confirma por escrito, ese mismo día, los 5-10 inmuebles y la fecha de revisión (sin contrato, solo el plan del piloto).
-2. Agenda la verificación en terreno con su equipo (`docs/GUIA_Ingesta_Corredor.md` / `FLUJO_Piloto_Hidratacion.md`).
+2. Agenda la verificación en terreno con su equipo ([`docs/GUIA_Ingesta_Corredor.md`](../docs/GUIA_Ingesta_Corredor.md) / [`FLUJO_Piloto_Hidratacion.md`](../docs/FLUJO_Piloto_Hidratacion.md)).
 3. Monta la tienda a mano con la línea CRED (fase 1 del modelo — sin generador self-serve todavía).
 4. Al cierre del piloto: mide el lift **con sus números** (tarea #12) — ese es el "3x" honesto que después vende la escalera completa. Hasta que exista, sigue sin mencionarlo.
 

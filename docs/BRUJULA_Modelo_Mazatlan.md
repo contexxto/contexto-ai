@@ -108,6 +108,6 @@ No construir todavía. Que Ricardo te conecte con **2-3 desarrolladores / vended
 ---
 
 ## Conexión con docs
-- `INTELIGENCIA_y_PLAN_2026-06-16.md` — Eva/Aino, Cynthia Wu (el dato es el muro), búsqueda agéntica (Habi/Germán Rueda).
-- `VISION_Sistema_Vivo.md` — "de ranking a recomendación" (ahora con números: 61% empieza en IA).
-- `UX_Patrones_Zillow_Redfin.md` — URL semántica = ser citable por la IA (AEO).
+- [`INTELIGENCIA_y_PLAN_2026-06-16.md`](INTELIGENCIA_y_PLAN_2026-06-16.md) — Eva/Aino, Cynthia Wu (el dato es el muro), búsqueda agéntica (Habi/Germán Rueda).
+- [`VISION_Sistema_Vivo.md`](VISION_Sistema_Vivo.md) — "de ranking a recomendación" (ahora con números: 61% empieza en IA).
+- [`UX_Patrones_Zillow_Redfin.md`](UX_Patrones_Zillow_Redfin.md) — URL semántica = ser citable por la IA (AEO).

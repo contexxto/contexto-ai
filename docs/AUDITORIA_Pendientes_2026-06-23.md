@@ -16,7 +16,7 @@
   - Filtro anti-hype "as bajo la manga" en `graph.py`
 - **Bug corregido en `intencion.py`** — explorador que compara 2+ zonas era marcado "frío"; ahora sube a "tibio" (fix: `n_msgs_zona` suma al score). 44/44 tests verdes.
 - **Demo Linden preparado y validado** en `contexxto.com` — 3 casos reales de Quito.
-- **Guion de descubrimiento** guardado en vault (`GUION_Descubrimiento_Linden_2026-06-23.md`).
+- **Guion de descubrimiento** guardado en vault ([`GUION_Descubrimiento_Linden_2026-06-23.md`](GUION_Descubrimiento_Linden_2026-06-23.md)).
 - **Call Linden exitosa** → piloto acordado.
 
 ---

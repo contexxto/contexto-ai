@@ -2,8 +2,8 @@
 
 > ⚠️ **SUPERSEDED (2026-07-09):** este guion es de la etapa "integración por API" (15-jun) y
 > contradice la estrategia v2 (propone revenue-share con números, fee mensual y piloto de 90 días —
-> prohibido por "cero números primero"). **Usar `PREP_Mesa_Ricardo_SieteHuesos.md` +
-> `ENCAJE_Mazatlan_Ricardo_1pager.md`.** Se conserva solo como historial.
+> prohibido por "cero números primero"). **Usar [`PREP_Mesa_Ricardo_SieteHuesos.md`](PREP_Mesa_Ricardo_SieteHuesos.md) +
+> [`ENCAJE_Mazatlan_Ricardo_1pager.md`](ENCAJE_Mazatlan_Ricardo_1pager.md).** Se conserva solo como historial.
 
 **Objetivo:** descubrir su interés real, posicionar Contexto como **el motor que integra (no construye)**, y aterrizar un **piloto acotado**. NO vender una app; ofrecer infraestructura.
 **Duración sugerida:** 30 min. **Regla de oro:** escucha 80%, habla 20%.

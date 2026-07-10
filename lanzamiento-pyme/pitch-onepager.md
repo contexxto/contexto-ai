@@ -1,8 +1,8 @@
 # aurareal — tu inmobiliaria, con la verdad debajo
 
-> **nombre: `AuraReal` — decision del fundador (2026-07-09), pendiente registro SENADI.** el torneo, las colisiones chequeadas y el racional viven en `naming.md`.
+> **nombre: `AuraReal` — decision del fundador (2026-07-09), pendiente registro SENADI.** el torneo, las colisiones chequeadas y el racional viven en [`naming.md`](naming.md).
 
-> **contexto AI · 2026-07-08 · pitch one-pager para la inmobiliaria PYME.** documento local, nada se publica. fuentes canon: `docs/MODELO_Shopify_Inmobiliario_PYME.md`, `docs/ANALISIS_Oportunidades_Habi_Sierra_2026-07.md`, `docs/PRODUCTO_Encaje_Financiero_Neutral.md`, `docs/branding/LINEA_GRAFICA_CRED_Storefronts.md`.
+> **contexto AI · 2026-07-08 · pitch one-pager para la inmobiliaria PYME.** documento local, nada se publica. fuentes canon: [`docs/MODELO_Shopify_Inmobiliario_PYME.md`](../docs/MODELO_Shopify_Inmobiliario_PYME.md), [`docs/ANALISIS_Oportunidades_Habi_Sierra_2026-07.md`](../docs/ANALISIS_Oportunidades_Habi_Sierra_2026-07.md), [`docs/PRODUCTO_Encaje_Financiero_Neutral.md`](../docs/PRODUCTO_Encaje_Financiero_Neutral.md), [`docs/branding/LINEA_GRAFICA_CRED_Storefronts.md`](../docs/branding/LINEA_GRAFICA_CRED_Storefronts.md).
 
 ---
 

@@ -1262,15 +1262,18 @@ export default function App() {
   }
 
   // Rail delgado (sidebar colapsado): iconos de sección siempre visibles para saltar a un clic.
+  // OJO: los modales (publicar/login/upgrade) y el chat SOLO se renderizan en la vista 'chat'
+  // (las vistas mapa/CRM/revisión hacen return temprano) → toda acción cuya UI vive allá
+  // debe volver primero con setView('chat'), o el clic "no dispara" nada visible.
   const desktopRail = (
     <RailNav
       user={authEnabled && session ? { email: session.user?.email, rol } : null}
-      onNew={resetSession}
-      onPublish={() => (authEnabled && session) ? setPublishOpen(true) : setAuthOpen(true)}
+      onNew={() => { resetSession(); setView('chat') }}
+      onPublish={() => { setView('chat'); (authEnabled && session) ? setPublishOpen(true) : setAuthOpen(true) }}
       onMap={() => { setMapSeed(null); setMapEncaje(null); setView('map') }}
       onReview={() => setView('review')}
       onCRM={abrirCRM}
-      onUpgrade={() => setUpgradeOpen(true)}
+      onUpgrade={() => { setView('chat'); setUpgradeOpen(true) }}
       onExpand={() => setSidebarCollapsed(false)}
     />
   )
@@ -1283,17 +1286,17 @@ export default function App() {
       {!isMobile && !sidebarCollapsed && (
         <Sidebar
           sessionId={sessionId}
-          onSelect={switchSession}
-          onNew={resetSession}
+          onSelect={(id) => { switchSession(id); setView('chat') }}
+          onNew={() => { resetSession(); setView('chat') }}
           reloadKey={`${sessionId}:${messages.length}:${session?.user?.id ?? 'guest'}`}
           user={authEnabled && session ? { email: session.user?.email, rol } : null}
-          onLogin={() => { setAuthMode('login'); setAuthOpen(true) }}
-          onLogout={logout}
-          onPublish={() => (authEnabled && session) ? setPublishOpen(true) : setAuthOpen(true)}
+          onLogin={() => { setView('chat'); setAuthMode('login'); setAuthOpen(true) }}
+          onLogout={() => { setView('chat'); logout() }}
+          onPublish={() => { setView('chat'); (authEnabled && session) ? setPublishOpen(true) : setAuthOpen(true) }}
           onMap={() => { setMapSeed(null); setMapEncaje(null); setView('map') }}
           onReview={() => setView('review')}
           onCRM={abrirCRM}
-          onUpgrade={() => setUpgradeOpen(true)}
+          onUpgrade={() => { setView('chat'); setUpgradeOpen(true) }}
           puedeInstalar={puedeInstalar}
           onInstalar={instalarApp}
           mobile={false}
@@ -1307,17 +1310,17 @@ export default function App() {
           <div style={{ position:'fixed', top:0, left:0, bottom:0, zIndex:50 }}>
             <Sidebar
               sessionId={sessionId}
-              onSelect={(id) => { switchSession(id); setSidebarOpen(false) }}
-              onNew={() => { resetSession(); setSidebarOpen(false) }}
+              onSelect={(id) => { switchSession(id); setView('chat'); setSidebarOpen(false) }}
+              onNew={() => { resetSession(); setView('chat'); setSidebarOpen(false) }}
               reloadKey={`${sessionId}:${messages.length}:${session?.user?.id ?? 'guest'}`}
               user={authEnabled && session ? { email: session.user?.email, rol } : null}
-              onLogin={() => { setAuthMode('login'); setAuthOpen(true); setSidebarOpen(false) }}
-              onLogout={logout}
-              onPublish={() => { (authEnabled && session) ? setPublishOpen(true) : setAuthOpen(true); setSidebarOpen(false) }}
+              onLogin={() => { setView('chat'); setAuthMode('login'); setAuthOpen(true); setSidebarOpen(false) }}
+              onLogout={() => { setView('chat'); logout() }}
+              onPublish={() => { setView('chat'); (authEnabled && session) ? setPublishOpen(true) : setAuthOpen(true); setSidebarOpen(false) }}
               onMap={() => { setMapSeed(null); setMapEncaje(null); setView('map'); setSidebarOpen(false) }}
               onReview={() => { setView('review'); setSidebarOpen(false) }}
               onCRM={abrirCRM}
-              onUpgrade={() => { setUpgradeOpen(true); setSidebarOpen(false) }}
+              onUpgrade={() => { setView('chat'); setUpgradeOpen(true); setSidebarOpen(false) }}
               puedeInstalar={puedeInstalar}
               onInstalar={instalarApp}
               mobile={true}
@@ -1395,17 +1398,17 @@ export default function App() {
       {!isMobile && !sidebarCollapsed && (
         <Sidebar
           sessionId={sessionId}
-          onSelect={switchSession}
-          onNew={resetSession}
+          onSelect={(id) => { switchSession(id); setView('chat') }}
+          onNew={() => { resetSession(); setView('chat') }}
           reloadKey={`${sessionId}:${messages.length}:${session?.user?.id ?? 'guest'}`}
           user={authEnabled && session ? { email: session.user?.email, rol } : null}
-          onLogin={() => { setAuthMode('login'); setAuthOpen(true) }}
-          onLogout={logout}
-          onPublish={() => (authEnabled && session) ? setPublishOpen(true) : setAuthOpen(true)}
+          onLogin={() => { setView('chat'); setAuthMode('login'); setAuthOpen(true) }}
+          onLogout={() => { setView('chat'); logout() }}
+          onPublish={() => { setView('chat'); (authEnabled && session) ? setPublishOpen(true) : setAuthOpen(true) }}
           onMap={() => { setMapSeed(null); setMapEncaje(null); setView('map') }}
           onReview={() => setView('review')}
           onCRM={abrirCRM}
-          onUpgrade={() => setUpgradeOpen(true)}
+          onUpgrade={() => { setView('chat'); setUpgradeOpen(true) }}
           puedeInstalar={puedeInstalar}
           onInstalar={instalarApp}
           mobile={false}
@@ -1419,17 +1422,17 @@ export default function App() {
           <div style={{ position:'fixed', top:0, left:0, bottom:0, zIndex:50 }}>
             <Sidebar
               sessionId={sessionId}
-              onSelect={(id) => { switchSession(id); setSidebarOpen(false) }}
-              onNew={() => { resetSession(); setSidebarOpen(false) }}
+              onSelect={(id) => { switchSession(id); setView('chat'); setSidebarOpen(false) }}
+              onNew={() => { resetSession(); setView('chat'); setSidebarOpen(false) }}
               reloadKey={`${sessionId}:${messages.length}:${session?.user?.id ?? 'guest'}`}
               user={authEnabled && session ? { email: session.user?.email, rol } : null}
-              onLogin={() => { setAuthMode('login'); setAuthOpen(true); setSidebarOpen(false) }}
-              onLogout={logout}
-              onPublish={() => { (authEnabled && session) ? setPublishOpen(true) : setAuthOpen(true); setSidebarOpen(false) }}
+              onLogin={() => { setView('chat'); setAuthMode('login'); setAuthOpen(true); setSidebarOpen(false) }}
+              onLogout={() => { setView('chat'); logout() }}
+              onPublish={() => { setView('chat'); (authEnabled && session) ? setPublishOpen(true) : setAuthOpen(true); setSidebarOpen(false) }}
               onMap={() => { setMapSeed(null); setMapEncaje(null); setView('map'); setSidebarOpen(false) }}
               onReview={() => { setView('review'); setSidebarOpen(false) }}
               onCRM={abrirCRM}
-              onUpgrade={() => { setUpgradeOpen(true); setSidebarOpen(false) }}
+              onUpgrade={() => { setView('chat'); setUpgradeOpen(true); setSidebarOpen(false) }}
               puedeInstalar={puedeInstalar}
               onInstalar={instalarApp}
               mobile={true}

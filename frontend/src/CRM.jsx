@@ -97,7 +97,10 @@ export default function CRM() {
   const [leadPuente, setLeadPuente] = useState(null)   // interesado resuelto del foco 'lead' (Fase C) → puente al Copiloto
   const chatRef = useRef(null)                          // Fase D: handle al Estratega del split → inyectar preguntas del dashboard
   const [filtro, setFiltro] = useState(null) // filtro por etapa del embudo
-  const [verLista, setVerLista] = useState(false) // hub → "ver todos los interesados" (lista completa)
+  // Aterrizaje por pantalla: en desktop la HOME es la vista de trabajo (lista de interesados,
+  // como el CRM original — "bien distribuido"); el hub-resumen queda a un tap ("Resumen del día").
+  // En móvil el hub SÍ es el mejor aterrizaje (resumen primero, lista a un tap).
+  const [verLista, setVerLista] = useState(() => window.matchMedia('(min-width: 900px)').matches)
   const [wide, setWide] = useState(() => window.matchMedia('(min-width: 900px)').matches)
   // ¿Hay espacio para ACOPLAR el copiloto como 3ª columna sin apretar la conversación?
   // Abajo de este ancho, el copiloto abre como overlay a la derecha en vez de columna.
@@ -162,7 +165,8 @@ export default function CRM() {
     setAnalisis(false)     // sale del split; el Copiloto (táctico, con timeline) toma el detalle
   }
   // Vuelve al HUB (cierra lead/agente/lista/filtro).
-  const volverAlHub = () => { setSel(null); setAsistente(null); setVerLista(false); setFiltro(null); setLeadPuente(null) }
+  // "Volver" regresa a la HOME correcta según pantalla: lista (desktop) / hub (móvil).
+  const volverAlHub = () => { setSel(null); setAsistente(null); setVerLista(wide); setFiltro(null); setLeadPuente(null) }
 
   // Derivados del HUB (estilo ASI "Routine tasks" + "Activity feed"), todo de /mine/leads.
   const pidenCorredor = useMemo(() => (d?.leads || []).filter((l) => l.handoff_estado || l.handoff_sugerido), [d])
@@ -453,11 +457,32 @@ export default function CRM() {
         </div>
       )}
 
-      {/* ── LISTA COMPLETA de interesados (desde "Ver todos" en el hub) ── */}
+      {/* ── LISTA COMPLETA de interesados (HOME en desktop; desde "Ver todos" en móvil) ── */}
       {d && !analisis && d.total > 0 && !sel && !asistente && verLista && (
         <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 9,
                       maxWidth: 680, width: '100%', margin: '0 auto', overflowY: 'auto' }}>
-          <button onClick={volverAlHub} style={backBtn}>← Volver al hub</button>
+          <button onClick={() => setVerLista(false)} style={backBtn}>{wide ? 'Resumen del día →' : '← Volver al hub'}</button>
+          {/* Franja "Hoy" compacta: las tareas del hub, visibles sin salir de la vista de trabajo */}
+          {(pidenCorredor.length > 0 || paraReenganchar.length > 0) && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', padding: '9px 12px',
+                          background: 'var(--surface-1)', border: `1px solid ${C.line}`, borderRadius: 12 }}>
+              {pidenCorredor.length > 0 && (
+                <>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '.8rem', fontWeight: 700, color: C.text }}>
+                    <Flame size={14} color="#E0685A" /> Contacta a {pidenCorredor.length}
+                  </span>
+                  {pidenCorredor.slice(0, 3).map((l, i) => <span key={i} style={miniChip}>{nombreCorto(l)}</span>)}
+                  {pidenCorredor.length > 3 && <span style={miniChip}>+{pidenCorredor.length - 3}</span>}
+                  <button onClick={() => abrirCopilotoConLead(pidenCorredor[0])} style={{ ...taskGo, padding: '5px 10px', fontSize: '.74rem' }}>Abrir Copiloto →</button>
+                </>
+              )}
+              {paraReenganchar.length > 0 && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '.78rem', color: C.muted }}>
+                  <Sparkles size={13} color="#E8B84B" /> {paraReenganchar.length} por reenganchar
+                </span>
+              )}
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
             <button onClick={() => setFiltro(null)} style={chipStyle(!filtro)}>Todos {d.total}</button>
             {RAIL.filter((e) => (d.funnel?.[e] || 0) > 0).map((e) => (
@@ -473,10 +498,10 @@ export default function CRM() {
         </div>
       )}
 
-      {/* ── VISTA DE AGENTE / LEAD (Copiloto con lead, o Estratega) con volver al hub ── */}
+      {/* ── VISTA DE AGENTE / LEAD (Copiloto con lead, o Estratega) — vuelve a la HOME por pantalla ── */}
       {d && !analisis && d.total > 0 && (sel || asistente) && (
         <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <button onClick={volverAlHub} style={backBtn}>← Volver al hub</button>
+          <button onClick={volverAlHub} style={backBtn}>{wide ? '← Volver a interesados' : '← Volver al hub'}</button>
           <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 14 }}>
             {sel && drawer}
             {asistente && (

@@ -31,9 +31,23 @@
     <meta name="twitter:title" content="Contexto · Cada lugar tiene un aura" />
     <meta name="twitter:description" content="La IA inmobiliaria que verifica el entorno antes de recomendarlo." />
     <meta name="twitter:image" content="https://contexxto.com/og-cover.png" />
+    <!-- Rendimiento: conexiones adelantadas (DNS/TLS) + fuentes SIN la cadena @import del CSS
+         (el @import obligaba a: descargar CSS → descubrir el import → otra ronda de red antes
+         de pintar texto). El <link> aquí arranca la descarga junto con el HTML. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="%VITE_API_URL%" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500&display=swap" />
+
     <!-- Tema anti-flash: aplica dark/light antes de renderizar -->
     <script>
       try { document.documentElement.setAttribute('data-theme', localStorage.getItem('contexto_theme') === 'light' ? 'light' : 'dark'); } catch (e) {}
+    </script>
+    <!-- Warm-up del backend (Render se duerme tras inactividad y el primer golpe del día
+         tarda 30-60s): este ping lo despierta APENAS carga el HTML, en paralelo a que el
+         usuario lee/escribe — cuando envía su primer mensaje, el backend ya va despierto. -->
+    <script>
+      try { fetch('%VITE_API_URL%/health', { mode: 'cors' }).catch(function () {}) } catch (e) {}
     </script>
   </head>
   <body>

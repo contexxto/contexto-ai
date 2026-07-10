@@ -1,0 +1,21 @@
+# Keep-alive del backend en Render: sin tráfico, Render duerme el servicio y el
+# primer usuario del día paga 30-60s de cold-start ("carga lento"). Este ping cada
+# ~10 minutos lo mantiene despierto. Nota honesta: el cron de GitHub Actions puede
+# retrasarse algunos minutos en horas pico — reduce drásticamente los cold-starts,
+# no los elimina al 100%. (Refuerzo opcional: UptimeRobot gratis cada 5 min.)
+name: keepalive-backend
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ping /health
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 90 https://contexto-ai-oregon.onrender.com/health || true)
+          echo "health -> HTTP $code"

@@ -1,7 +1,8 @@
 /* ==========================================================================
    CONTEXTO AI · DESIGN TOKENS · Aura Direction (identidad oficial aprobada)
+   Fuentes: cargadas vía <link> en index.html (no @import aquí — el @import creaba
+   una cadena render-blocking: CSS → descubrir import → otra ronda de red).
    ========================================================================== */
-@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 

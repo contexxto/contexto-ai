@@ -300,7 +300,7 @@ export default function CRM() {
                  fontWeight: 700, fontSize: '.78rem', marginBottom: 4 }}>
         Todos ({d?.total || 0})
       </button>
-      {RAIL.filter((e) => (d?.funnel?.[e] || 0) > 0).map(railRow)}
+      {RAIL.map(railRow)}
     </div>
   )
 

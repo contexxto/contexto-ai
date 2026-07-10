@@ -1301,10 +1301,6 @@ export default function App() {
               <PanelLeft size={20} />
             </button>
           )}
-          <button onClick={() => setView('chat')} style={{
-            background:'none', border:'1px solid var(--border)', borderRadius:8,
-            cursor:'pointer', color:'var(--text-muted)', padding:'6px 12px', fontSize:'.85rem',
-          }}>← Volver al chat</button>
         </div>
         <div style={{ flex:1, minHeight:0 }}>{content}</div>
       </div>

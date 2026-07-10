@@ -1330,20 +1330,24 @@ export default function App() {
         </>
       )}
       <div style={{ flex:1, minWidth:0, height:'100dvh', overflow:'hidden', display:'flex', flexDirection:'column' }}>
-        <div style={{ padding:'8px 16px', display:'flex', alignItems:'center', gap:10, flexShrink:0 }}>
-          {isMobile ? (
-            <button onClick={() => setSidebarOpen(true)} title="Menú"
-              style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text)', padding:4, display:'flex' }}>
-              <PanelLeft size={22} />
-            </button>
-          ) : (
-            <button onClick={() => setSidebarCollapsed(c => !c)}
-              title={sidebarCollapsed ? 'Mostrar barra lateral' : 'Ocultar barra lateral'}
-              style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-muted)', padding:4, display:'flex' }}>
-              <PanelLeft size={20} />
-            </button>
-          )}
-        </div>
+        {/* Barra superior SOLO cuando hace falta el toggle: en desktop colapsado el RAIL ya
+            trae el suyo → sin esto quedaban DOS toggles a la vez ("tres columnas" fantasma). */}
+        {(isMobile || !sidebarCollapsed) && (
+          <div style={{ padding:'8px 16px', display:'flex', alignItems:'center', gap:10, flexShrink:0 }}>
+            {isMobile ? (
+              <button onClick={() => setSidebarOpen(true)} title="Menú"
+                style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text)', padding:4, display:'flex' }}>
+                <PanelLeft size={22} />
+              </button>
+            ) : (
+              <button onClick={() => setSidebarCollapsed(true)}
+                title="Ocultar barra lateral"
+                style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-muted)', padding:4, display:'flex' }}>
+                <PanelLeft size={20} />
+              </button>
+            )}
+          </div>
+        )}
         <div style={{ flex:1, minHeight:0 }}>{content}</div>
       </div>
     </div>
@@ -1471,23 +1475,27 @@ export default function App() {
         padding:'16px 0 12px',
         flexShrink:0,
       }}>
-        {/* Botón de menú/panel — anclado a la izquierda; el logo va centrado (estilo ASI:One) */}
-        <div style={{ position:'absolute', left:0, top:'50%', transform:'translateY(-50%)' }}>
-          {isMobile ? (
-            <button onClick={() => setSidebarOpen(true)} title="Conversaciones"
-              style={{ background:'none', border:'none', cursor:'pointer',
-                       color:'var(--text)', padding:4, display:'flex', flexShrink:0 }}>
-              <PanelLeft size={22} />
-            </button>
-          ) : (
-            <button onClick={() => setSidebarCollapsed(c => !c)}
-              title={sidebarCollapsed ? 'Mostrar barra lateral' : 'Ocultar barra lateral'}
-              style={{ background:'none', border:'none', cursor:'pointer',
-                       color:'var(--text-muted)', padding:4, display:'flex', flexShrink:0 }}>
-              <PanelLeft size={20} />
-            </button>
-          )}
-        </div>
+        {/* Botón de menú/panel — anclado a la izquierda; el logo va centrado (estilo ASI:One).
+            En desktop COLAPSADO no se muestra: el RAIL ya trae su propio toggle — dos toggles a
+            la vez leían como una "tercera columna" fantasma. */}
+        {(isMobile || !sidebarCollapsed) && (
+          <div style={{ position:'absolute', left:0, top:'50%', transform:'translateY(-50%)' }}>
+            {isMobile ? (
+              <button onClick={() => setSidebarOpen(true)} title="Conversaciones"
+                style={{ background:'none', border:'none', cursor:'pointer',
+                         color:'var(--text)', padding:4, display:'flex', flexShrink:0 }}>
+                <PanelLeft size={22} />
+              </button>
+            ) : (
+              <button onClick={() => setSidebarCollapsed(true)}
+                title="Ocultar barra lateral"
+                style={{ background:'none', border:'none', cursor:'pointer',
+                         color:'var(--text-muted)', padding:4, display:'flex', flexShrink:0 }}>
+                <PanelLeft size={20} />
+              </button>
+            )}
+          </div>
+        )}
         <div style={{ display:'flex', alignItems:'center', gap:9 }}>
           <img src={sphereLogo} alt="Contexto AI" width={isMobile ? 26 : 30} height={isMobile ? 26 : 30}
                style={{ display:'block', flexShrink:0 }} />

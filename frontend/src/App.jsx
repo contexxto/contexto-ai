@@ -964,16 +964,21 @@ export default function App() {
     rec.lang = 'es-419'      // español de Latinoamérica
     rec.interimResults = true
     rec.continuous = true
-    voiceFinalRef.current = ''
+    voiceFinalRef.current = ''   // BASE: texto confirmado de sesiones previas (sobrevive los reinicios del motor)
     voiceStopRef.current = false
+    let sesionFinal = ''         // final-only de ESTA sesión (se commitea a la base al reiniciar)
     rec.onresult = (e) => {
-      let interim = ''
-      for (let i = e.resultIndex; i < e.results.length; i++) {
+      // Reconstruir SIEMPRE desde 0 (no acumular con resultIndex): Android Chrome re-reporta
+      // los mismos resultados y con += se duplicaban en cascada ("EstoEsto esEsto es una…").
+      let fin = '', interim = ''
+      for (let i = 0; i < e.results.length; i++) {
         const r = e.results[i]
-        if (r.isFinal) voiceFinalRef.current += r[0].transcript
+        if (r.isFinal) fin += r[0].transcript
         else interim += r[0].transcript
       }
-      setInput(voiceFinalRef.current + interim)
+      sesionFinal = fin
+      const base = voiceFinalRef.current
+      setInput(((base ? base + ' ' : '') + fin + interim).replace(/\s{2,}/g, ' '))
     }
     rec.onerror = (e) => {
       // 'no-speech'/'aborted' son benignos (silencio); el permiso negado sí termina.
@@ -981,6 +986,9 @@ export default function App() {
     }
     rec.onend = () => {
       if (!voiceStopRef.current) {
+        // Commitear el final de esta sesión a la base ANTES de reiniciar (con espacio, sin duplicar).
+        if (sesionFinal.trim()) voiceFinalRef.current = (voiceFinalRef.current + ' ' + sesionFinal).trim()
+        sesionFinal = ''
         try { rec.start(); return } catch { /* si el motor no puede reiniciar, cerramos abajo */ }
       }
       setListening(false)

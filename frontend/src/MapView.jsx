@@ -473,22 +473,29 @@ export default function MapView({ seedIds, encajeById } = {}) {
     if (escuchando) { vozStopRef.current = true; recRef.current?.stop(); return }
     const rec = new SR()
     rec.lang = 'es-419'; rec.interimResults = true; rec.continuous = true
-    vozFinalRef.current = ''
+    vozFinalRef.current = ''   // BASE confirmada (sobrevive reinicios)
     vozStopRef.current = false
+    let sesionFinal = ''       // final-only de ESTA sesión
     rec.onresult = e => {
-      let interim = ''
-      for (let i = e.resultIndex; i < e.results.length; i++) {
+      // Reconstruir desde 0 (no acumular con resultIndex): Android Chrome re-reporta resultados
+      // y con += se duplicaban en cascada.
+      let fin = '', interim = ''
+      for (let i = 0; i < e.results.length; i++) {
         const r = e.results[i]
-        if (r.isFinal) vozFinalRef.current += r[0].transcript
+        if (r.isFinal) fin += r[0].transcript
         else interim += r[0].transcript
       }
-      setMapaInput(vozFinalRef.current + interim)
+      sesionFinal = fin
+      const base = vozFinalRef.current
+      setMapaInput(((base ? base + ' ' : '') + fin + interim).replace(/\s{2,}/g, ' '))
     }
     rec.onerror = e => {
       if (e?.error === 'not-allowed' || e?.error === 'service-not-allowed') vozStopRef.current = true
     }
     rec.onend = () => {
       if (!vozStopRef.current) {
+        if (sesionFinal.trim()) vozFinalRef.current = (vozFinalRef.current + ' ' + sesionFinal).trim()
+        sesionFinal = ''
         try { rec.start(); return } catch { /* cierre normal abajo */ }
       }
       setEscuchando(false)

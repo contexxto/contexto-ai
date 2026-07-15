@@ -963,22 +963,35 @@ export default function App() {
     const rec = new SR()
     rec.lang = 'es-419'      // español de Latinoamérica
     rec.interimResults = true
-    rec.continuous = true
+    // Android: continuous=true está roto en Chrome móvil — reporta la MISMA frase como
+    // entradas finales acumulativas ("estoy" → "Estoy buscando…"), imposibles de sumar sin
+    // cascada. Ahí usamos sesiones cortas (continuous=false) y el auto-reinicio de onend
+    // mantiene el dictado continuo igual.
+    const esAndroid = /android/i.test(navigator.userAgent)
+    rec.continuous = !esAndroid
     voiceFinalRef.current = ''   // BASE: texto confirmado de sesiones previas (sobrevive los reinicios del motor)
     voiceStopRef.current = false
     let sesionFinal = ''         // final-only de ESTA sesión (se commitea a la base al reiniciar)
     rec.onresult = (e) => {
-      // Reconstruir SIEMPRE desde 0 (no acumular con resultIndex): Android Chrome re-reporta
-      // los mismos resultados y con += se duplicaban en cascada ("EstoEsto esEsto es una…").
-      let fin = '', interim = ''
+      // Reconstruir SIEMPRE desde 0 y COLAPSAR entradas que extienden a la anterior: en
+      // Android cada entrada puede ser una foto acumulativa de la misma frase (se reemplaza,
+      // no se suma). Los segmentos distintos (desktop) se unen CON espacio — antes se
+      // pegaban: "La Carolinaque esté…".
+      const fins = [], ints = []
       for (let i = 0; i < e.results.length; i++) {
         const r = e.results[i]
-        if (r.isFinal) fin += r[0].transcript
-        else interim += r[0].transcript
+        const t = (r[0]?.transcript || '').trim()
+        if (!t) continue
+        const arr = r.isFinal ? fins : ints
+        const prev = arr[arr.length - 1]
+        if (prev && (t.toLowerCase().startsWith(prev.toLowerCase()) || prev.toLowerCase().startsWith(t.toLowerCase()))) {
+          arr[arr.length - 1] = t.length >= prev.length ? t : prev
+        } else arr.push(t)
       }
+      const fin = fins.join(' ')
       sesionFinal = fin
       const base = voiceFinalRef.current
-      setInput(((base ? base + ' ' : '') + fin + interim).replace(/\s{2,}/g, ' '))
+      setInput([base, fin, ints.join(' ')].filter(Boolean).join(' ').replace(/\s{2,}/g, ' '))
     }
     rec.onerror = (e) => {
       // 'no-speech'/'aborted' son benignos (silencio); el permiso negado sí termina.

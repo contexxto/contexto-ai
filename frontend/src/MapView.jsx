@@ -465,29 +465,39 @@ export default function MapView({ seedIds, encajeById } = {}) {
   function iniciarRecorrido() { enviarComando('hazme un tour por aquí') }
 
   // Dictado por voz (Web Speech API) — misma lógica robusta que el chat del home:
-  // continuous=true + acumulación de finales + auto-reinicio (sin esto el motor se
-  // detiene en la primera pausa y no transcribe el mensaje completo).
+  // continuous solo en desktop + acumulación de finales + auto-reinicio (sin esto el
+  // motor se detiene en la primera pausa y no transcribe el mensaje completo).
   function dictarVoz() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SR) { setMapaMsg('El dictado por voz no está disponible. Prueba en Chrome.'); return }
     if (escuchando) { vozStopRef.current = true; recRef.current?.stop(); return }
     const rec = new SR()
-    rec.lang = 'es-419'; rec.interimResults = true; rec.continuous = true
+    rec.lang = 'es-419'; rec.interimResults = true
+    // Android: continuous=true está roto en Chrome móvil (finales acumulativos de la misma
+    // frase → cascada); sesiones cortas + auto-reinicio de onend = mismo dictado continuo.
+    const esAndroid = /android/i.test(navigator.userAgent)
+    rec.continuous = !esAndroid
     vozFinalRef.current = ''   // BASE confirmada (sobrevive reinicios)
     vozStopRef.current = false
     let sesionFinal = ''       // final-only de ESTA sesión
     rec.onresult = e => {
-      // Reconstruir desde 0 (no acumular con resultIndex): Android Chrome re-reporta resultados
-      // y con += se duplicaban en cascada.
-      let fin = '', interim = ''
+      // Reconstruir desde 0 y COLAPSAR entradas que extienden a la anterior (Android manda
+      // fotos acumulativas de la misma frase); segmentos distintos se unen CON espacio.
+      const fins = [], ints = []
       for (let i = 0; i < e.results.length; i++) {
         const r = e.results[i]
-        if (r.isFinal) fin += r[0].transcript
-        else interim += r[0].transcript
+        const t = (r[0]?.transcript || '').trim()
+        if (!t) continue
+        const arr = r.isFinal ? fins : ints
+        const prev = arr[arr.length - 1]
+        if (prev && (t.toLowerCase().startsWith(prev.toLowerCase()) || prev.toLowerCase().startsWith(t.toLowerCase()))) {
+          arr[arr.length - 1] = t.length >= prev.length ? t : prev
+        } else arr.push(t)
       }
+      const fin = fins.join(' ')
       sesionFinal = fin
       const base = vozFinalRef.current
-      setMapaInput(((base ? base + ' ' : '') + fin + interim).replace(/\s{2,}/g, ' '))
+      setMapaInput([base, fin, ints.join(' ')].filter(Boolean).join(' ').replace(/\s{2,}/g, ' '))
     }
     rec.onerror = e => {
       if (e?.error === 'not-allowed' || e?.error === 'service-not-allowed') vozStopRef.current = true

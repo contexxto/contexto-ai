@@ -98,6 +98,18 @@ abiertos = SÍ, es el norte. Un futuro yo NO debe leer esto como "reactivar Nomi
 
 ---
 
+## 📣 Máquina de demanda (contenido público — 2026-07-14)
+
+Comunicar lo que se construye SIN vender (decisión del fundador). Constitución:
+[`docs/estrategia/VOZ_AEO_CONTEXTO.md`](docs/estrategia/VOZ_AEO_CONTEXTO.md) — voces, vocabulario
+canónico en español, formatos y candados (NEVER §8: nada sensible, nada de mandatos/mesas,
+jamás anti-corredor, Fair Housing siempre, publicación automatizada PROHIBIDA — solo borradores).
+Backlog: [`docs/estrategia/BACKLOG_Contenido_v0.md`](docs/estrategia/BACKLOG_Contenido_v0.md).
+Los borradores los produce la tarea programada `despacho-contexto` (lunes y jueves 15:00,
+post-hidratación de los cerebros) en `contenido/despachos/`; el fundador publica a mano.
+
+---
+
 ## ⚙️ Operativa del repo
 
 - Frontend: `cd frontend && npm run build` para verificar. Vercel autodespliega `main`.

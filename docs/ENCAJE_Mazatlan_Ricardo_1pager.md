@@ -2,7 +2,7 @@
 
 **Para:** Ricardo Suárez · **De:** Carlos Valencia · Contexto AI · **Julio 2026**
 
-> Leí tu documento y me pasó algo poco común: **describías, pieza por pieza, la misma tesis que nosotros llevamos meses operando en Quito** — "plataforma de decisiones, no clasificados". Llegamos al mismo lugar por caminos distintos. Y cuando dos personas llegan a lo mismo por separado, no es coincidencia: **es que la tesis es real.** Este papel muestra dónde convergen los caminos — y por qué juntos valen más que sumados.
+> Leí tu documento y me pasó algo poco común: **describías, pieza por pieza, la misma tesis que nosotros llevamos meses operando en Quito** — "plataforma de decisiones, no clasificados". Llegamos al mismo lugar por caminos distintos. Y cuando dos personas llegan a lo mismo por separado, no es coincidencia: **es que la tesis es real.** Y hay una capa más honda, que afiné esta semana: al apuntar tu producto al que **compra** —no al que publica anuncios— pusiste el dedo en el lado del mercado que todos abandonaron. Ese es el hallazgo difícil, no el obvio. Este papel muestra dónde convergen los caminos — y por qué juntos valen más que sumados.
 
 ---
 
@@ -11,6 +11,14 @@
 Tus cinco fallas son las correctas. Lo sabemos porque el motor que las ataca **está operando con inventario e inmuebles reales en Quito**: la verificación con sello y fecha de frescura, la búsqueda conversacional que justifica cada recomendación, el contraste de zonas y propiedades sobre un mapa vivo, y el reenganche automático de interesados dormidos (con el CRM completo en integración final). La capa de diagnóstico financiero educativo — tu quinta falla — está diseñada, con las guardas legales ya contempladas, en la hoja de ruta.
 
 **Lo que esto significa para tu proyecto:** no arrancas de cero. El riesgo técnico ya lo absorbimos nosotros, operándolo — y lo que queda por construir para Mazatlán no es la máquina: es lo que la máquina no puede fabricar.
+
+### El lado que el mercado abandonó — y por qué tu instinto valía
+
+Vale la pena nombrar lo que tu documento apunta y casi nadie ve. Toda la ola de IA inmobiliaria de estos años se construyó para el que **vende**: portales, calificadores de contactos, papeleo del vendedor. El que **compra** —el que arriesga los ahorros de su vida en la decisión más grande que va a tomar— quedó navegando solo.
+
+No es descuido: es que construir para el comprador es de lo más difícil que hay. El comprador transacciona una vez por década, y ese costo de conseguirlo no se amortiza. Divvy, Reali, Flyhomes — una fila de lápidas de los que lo intentaron a gran escala y no cerraron los números.
+
+Tu proyecto apunta justo a ese lado difícil. Y la diferencia con ese cementerio es el **modelo**: no tomamos balance ni le cobramos al comprador. El comprador confía; **paga el que tiene el inmueble parado** — el desarrollador a quien un interesado calificado le resuelve capital inmovilizado. Ese es el negocio, y es exactamente lo que la validación de abajo pone a prueba.
 
 ## 2. Lo que tu documento suma — y entra al plan con tu autoría
 
@@ -53,7 +61,7 @@ Antes de estructuras: comprobar con el mercado real que esto es negocio. Con tre
 - **Tu red no se compromete**: es una demostración de resultados, no una venta. Si tus contactos dicen "no", no quedaste mal con nadie — probamos una hipótesis.
 - **Si la respuesta es sí, esto se construye entre nosotros dos** — esa es la secuencia acordada de entrada.
 
-La validación misma: elegimos juntos 2-3 desarrolladores o vendedores de terreno de tu confianza y probamos **las dos caras de tu tesis** — que el comprador confía en una plataforma de decisiones, y que el desarrollador paga por un interesado calificado respaldado por dato verificado. Dos semanas de trabajo real y salimos sabiendo, con datos, si INMOBILIAR-IA es negocio.
+La validación misma: elegimos juntos 2-3 desarrolladores o vendedores de terreno de tu confianza y probamos **las dos caras de tu tesis**. Una cara es **el que arriesga** — el comprador que enfrenta la decisión más grande de su vida y confía en una plataforma de decisiones cuando el dato está verificado. La otra es **el que sangra** — el desarrollador con inventario parado que paga por un interesado calificado respaldado por ese dato, no por otro chat. Dos semanas de trabajo real y salimos sabiendo, con datos, si INMOBILIAR-IA es negocio.
 
 ---
 

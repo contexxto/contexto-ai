@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="es" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mapa Vivo — layout limpio (mockup)</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#1C1C1C; --surface-1:#282828; --surface-2:#2E2E2E; --border:#404040;
+    --text:#FFFFFF; --mid:#C9C9C9; --dim:#8C8C8C; --teal:#2DBDB6; --bright:#5EEAD4; --deep:#1A7A76; --ink:#06201C;
+    --coral:#E0685A; --gold:#E5C06A;
+    /* tokens de OVERLAY del mapa (nuevos): superficie translúcida sobre teselas oscuras */
+    --map-panel:rgba(28,28,28,.82); --map-border:rgba(255,255,255,.10);
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-font-smoothing:antialiased}
+  body{background:#050506;font-family:'Geist',system-ui,sans-serif;display:flex;gap:44px;justify-content:center;
+       align-items:flex-start;padding:40px 30px;min-height:100vh;flex-wrap:wrap}
+  .frame{display:flex;flex-direction:column;align-items:center;gap:13px}
+  .cap{font-size:.72rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#6A6B70}
+
+  .phone{width:390px;height:830px;border-radius:46px;position:relative;overflow:hidden;
+         border:1px solid rgba(255,255,255,.06);box-shadow:0 40px 110px rgba(0,0,0,.6),inset 0 0 0 8px #000;background:#111}
+  .notch{position:absolute;top:0;left:50%;transform:translateX(-50%);width:150px;height:26px;background:#000;border-radius:0 0 18px 18px;z-index:40}
+
+  /* MAPA (fake): teselas oscuras tipo CARTO dark-matter */
+  .map{position:absolute;inset:0;background:
+        radial-gradient(120% 90% at 50% 10%, #22222a 0%, #191920 60%, #141419 100%);}
+  .streets{position:absolute;inset:0;opacity:.5}
+  .streets path{stroke:#3a3a44;stroke-width:1;fill:none}
+  .streets .major{stroke:#45454f;stroke-width:1.6}
+  .lbl{position:absolute;color:#6a6a76;font-size:.7rem;font-weight:600}
+  .city{position:absolute;color:#8a8a96;font-size:.82rem;font-weight:700;letter-spacing:.12em}
+  /* pins de inmuebles (ruido) */
+  .pin{position:absolute;width:15px;height:15px;border-radius:999px;border:2px solid rgba(0,0,0,.35);box-shadow:0 1px 4px rgba(0,0,0,.5)}
+  .bajo{background:var(--teal)} .medio{background:var(--gold)} .alto{background:var(--coral)}
+
+  /* ── TOP BAR ── */
+  .topbar{position:absolute;top:14px;left:14px;right:14px;display:flex;justify-content:space-between;align-items:flex-start;z-index:20}
+  .back{display:inline-flex;align-items:center;gap:6px;background:var(--map-panel);backdrop-filter:blur(10px);
+        border:1px solid var(--map-border);border-radius:999px;padding:8px 14px;color:var(--text);font-size:.82rem;font-weight:600}
+  .ctrls{display:flex;flex-direction:column;gap:8px}
+  .ctrl{width:40px;height:40px;border-radius:12px;background:var(--map-panel);backdrop-filter:blur(10px);
+        border:1px solid var(--map-border);display:grid;place-items:center;color:var(--mid)}
+  .ctrl.geo{color:var(--bright);border-color:rgba(45,189,182,.35)}
+  .ctrl .lu{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  .zoomgrp{display:flex;flex-direction:column;background:var(--map-panel);backdrop-filter:blur(10px);border:1px solid var(--map-border);border-radius:12px;overflow:hidden}
+  .zoomgrp button{width:40px;height:36px;background:none;border:none;color:var(--mid);font-size:1.1rem;font-weight:600;display:grid;place-items:center}
+  .zoomgrp button:first-child{border-bottom:1px solid var(--map-border)}
+
+  /* ── BOTTOM DOCK (un solo panel, todo junto) ── */
+  .dock{position:absolute;left:12px;right:12px;bottom:14px;z-index:30;background:var(--map-panel);backdrop-filter:blur(14px);
+        border:1px solid var(--map-border);border-radius:20px;padding:11px 12px 12px;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+  /* fila 1: estado + leyenda + recorre (compacta, una línea) */
+  .statusrow{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+  .status{font-size:.72rem;color:var(--mid);font-weight:600}
+  .status b{color:var(--text);font-weight:700}
+  .legend{display:flex;align-items:center;gap:9px;font-size:.66rem;color:var(--dim)}
+  .legend .sw{display:inline-flex;align-items:center;gap:4px}
+  .legend .dot{width:9px;height:9px;border-radius:999px}
+  .recorre{margin-left:auto;display:inline-flex;align-items:center;gap:6px;background:linear-gradient(90deg,var(--deep),var(--teal));
+           color:var(--ink);border-radius:999px;padding:6px 13px;font-size:.72rem;font-weight:700}
+  .recorre .lu{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2}
+  /* fila 2: chips scrollables */
+  .chips{display:flex;gap:7px;overflow-x:auto;margin-bottom:10px;padding-bottom:2px}
+  .chip{flex-shrink:0;display:inline-flex;align-items:center;gap:5px;background:var(--surface-2);border:1px solid var(--border);
+        border-radius:8px;padding:7px 12px;font-size:.74rem;color:var(--text);font-weight:600}
+  .chip.on{background:rgba(45,189,182,.16);border-color:rgba(45,189,182,.5);color:var(--bright)}
+  /* fila 3: input */
+  .inputbar{display:flex;align-items:center;gap:8px;background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:8px 10px}
+  .inputbar .ph{flex:1;color:var(--dim);font-size:.86rem}
+  .ic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:var(--mid)}
+  .ic .lu{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  .send{width:36px;height:36px;border-radius:999px;background:var(--teal);display:grid;place-items:center;color:var(--ink)}
+  .send .lu{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+  /* chip "Voz" — idéntico al del launcher (consistente en todas las pantallas) */
+  .voz{display:inline-flex;align-items:center;gap:7px;background:var(--bright);color:var(--ink);border-radius:999px;
+       padding:8px 16px;font-size:.84rem;font-weight:700;flex-shrink:0}
+  .voz .lu{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+
+  .homebar{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);width:130px;height:5px;background:rgba(255,255,255,.22);border-radius:3px;z-index:41}
+  .caption{width:100%;text-align:center;color:#6A6B70;font-size:.9rem;margin-top:20px;line-height:1.7;max-width:660px}
+  .caption b{color:var(--bright);font-weight:600}
+</style>
+</head>
+<body>
+  <div class="frame">
+    <div class="cap">Mapa Vivo · layout limpio (dark)</div>
+    <div class="phone">
+      <div class="notch"></div>
+
+      <!-- MAPA fake -->
+      <div class="map">
+        <svg class="streets" viewBox="0 0 390 830" preserveAspectRatio="none">
+          <path class="major" d="M170,120 C 200,300 190,520 210,760"/>
+          <path d="M60,200 C 160,260 240,300 340,340"/>
+          <path d="M40,420 C 150,440 250,470 360,520"/>
+          <path d="M120,80 C 150,240 160,460 150,700"/>
+          <path d="M250,150 C 260,350 250,560 240,780"/>
+        </svg>
+        <span class="city" style="top:560px;left:66px">Q U I T O</span>
+        <span class="lbl" style="top:280px;left:40px">Nono</span>
+        <span class="lbl" style="top:470px;left:300px">Cumbayá</span>
+        <span class="lbl" style="top:540px;left:300px">Tumbaco</span>
+        <span class="lbl" style="top:640px;left:40px">Lloa</span>
+        <span class="lbl" style="top:660px;left:250px">Guangopolo</span>
+        <!-- pins -->
+        <span class="pin bajo"  style="top:470px;left:150px"></span>
+        <span class="pin medio" style="top:455px;left:172px"></span>
+        <span class="pin bajo"  style="top:500px;left:162px"></span>
+        <span class="pin alto"  style="top:512px;left:184px"></span>
+        <span class="pin medio" style="top:420px;left:190px"></span>
+        <span class="pin bajo"  style="top:395px;left:205px"></span>
+        <span class="pin alto"  style="top:405px;left:225px"></span>
+        <span class="pin bajo"  style="top:585px;left:150px"></span>
+        <span class="pin medio" style="top:625px;left:145px"></span>
+        <span class="pin bajo"  style="top:645px;left:165px"></span>
+        <span class="pin bajo"  style="top:435px;left:270px"></span>
+        <span class="pin medio" style="top:445px;left:292px"></span>
+      </div>
+
+      <!-- TOP BAR -->
+      <div class="topbar">
+        <span class="back"><svg class="lu" viewBox="0 0 24 24" style="width:15px;height:15px"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg> Volver al chat</span>
+        <div class="ctrls">
+          <span class="ctrl geo" title="Mi ubicación"><svg class="lu" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></span>
+          <div class="zoomgrp"><button>+</button><button>−</button></div>
+          <span class="ctrl" title="Ayuda"><svg class="lu" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+        </div>
+      </div>
+
+      <!-- BOTTOM DOCK (todo junto, limpio) -->
+      <div class="dock">
+        <div class="statusrow">
+          <span class="status"><b>Catastro</b> · 40 activos</span>
+          <span class="legend">
+            <span class="sw"><span class="dot bajo"></span>Bajo</span>
+            <span class="sw"><span class="dot medio"></span>Medio</span>
+            <span class="sw"><span class="dot alto"></span>Alto</span>
+          </span>
+          <span class="recorre"><svg class="lu" viewBox="0 0 24 24"><path d="m22 8-6 4 6 4V8Z"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg> Recorre esta zona</span>
+        </div>
+        <div class="chips">
+          <span class="chip on"><svg class="lu" viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2"><path d="M13 4v16M13 4l6 4-6 4"/></svg> 15 min a pie</span>
+          <span class="chip">30 min a pie</span>
+          <span class="chip">Transporte</span>
+          <span class="chip">Salud</span>
+          <span class="chip">Súper</span>
+          <span class="chip">Parques</span>
+        </div>
+        <div class="inputbar">
+          <span class="ic"><svg class="lu" viewBox="0 0 24 24"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg></span>
+          <span class="ph">Pregúntale al mapa: "ruta al Metro"…</span>
+          <span class="voz"><svg class="lu" viewBox="0 0 24 24"><path d="M2 10v4M6 6v12M10 3v18M14 8v8M18 5v14M22 10v4"/></svg> Voz</span>
+        </div>
+      </div>
+      <div class="homebar"></div>
+    </div>
+  </div>
+
+  <div class="caption">
+    <b>Un solo dock abajo</b> reemplaza los 3 grupos que chocaban: estado + leyenda compacta + "Recorre esta zona" en UNA línea,
+    los chips en fila scrollable, y el input. <b>Controles arriba-derecha</b> (ubicación, zoom, ayuda "?") — la tarjeta de ayuda
+    gigante pasa a ser un botón "?" (onboarding de una vez). <b>Todo con tokens</b> (mismo sistema, panel translúcido sobre las
+    teselas oscuras). El mapa sigue oscuro (atmosférico) — el light mode es decisión aparte.
+  </div>
+</body>
+</html>

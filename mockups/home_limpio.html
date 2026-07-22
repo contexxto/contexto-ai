@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Home — propuesta limpia</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0F1013; --surface:#17181C; --surface2:#1D1F24; --line:rgba(255,255,255,.07);
+    --text:#ECEDEF; --muted:#9A9CA3; --faint:#6E7079;
+    --teal:#2DBDB6; --tealsoft:rgba(45,189,182,.12); --pill:#23252B;
+    --hot:#E0685A; --gold:#E8B84B;
+  }
+  *{box-sizing:border-box; margin:0; padding:0; -webkit-font-smoothing:antialiased}
+  body{background:#08090b; font-family:'Inter',system-ui,sans-serif; display:flex; gap:52px;
+       align-items:flex-start; justify-content:center; padding:56px 40px; min-height:100vh; flex-wrap:wrap}
+
+  .phone{width:392px; height:840px; background:var(--bg); border-radius:44px; position:relative;
+         overflow:hidden; border:1px solid rgba(255,255,255,.06);
+         box-shadow:0 40px 120px rgba(0,0,0,.6), inset 0 0 0 8px #000}
+  .notch{position:absolute; top:0; left:50%; transform:translateX(-50%); width:150px; height:26px;
+         background:#000; border-radius:0 0 18px 18px; z-index:20}
+  .statusbar{display:flex; justify-content:space-between; align-items:center; padding:16px 26px 6px;
+             font-size:13px; color:var(--text); font-weight:600}
+  .statusbar .r{color:var(--muted); font-size:12px}
+
+  .wrap{padding:14px 20px 20px; height:calc(100% - 44px); display:flex; flex-direction:column}
+
+  /* top bar */
+  .top{display:flex; align-items:center; gap:12px; margin-bottom:20px}
+  .top .back{color:var(--muted)}
+  .top .refresh{margin-left:auto; color:var(--muted)}
+
+  /* greeting */
+  .hello{font-size:.8rem; color:var(--muted); margin-bottom:5px}
+  .h1{font-size:1.55rem; font-weight:800; letter-spacing:-.02em; margin-bottom:8px}
+  .summary{font-size:.9rem; color:var(--muted); line-height:1.5; margin-bottom:20px}
+  .summary b{color:var(--text); font-weight:600}
+
+  /* KPI grid */
+  .kpis{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:20px}
+  .kpi{background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:14px 15px}
+  .kpi .v{font-size:1.5rem; font-weight:800; letter-spacing:-.02em}
+  .kpi .l{font-size:.74rem; color:var(--muted); margin-top:2px}
+  .kpi.accent .v{color:var(--teal)}
+
+  /* quick actions */
+  .acts{display:flex; gap:9px; margin-bottom:24px}
+  .act{flex:1; display:flex; flex-direction:column; align-items:center; gap:7px; padding:14px 8px;
+       background:var(--surface); border:1px solid var(--line); border-radius:16px}
+  .act .ai{width:30px; height:30px; border-radius:9px; background:var(--tealsoft); display:grid; place-items:center}
+  .act .al{font-size:.76rem; color:var(--text); font-weight:500}
+
+  /* list */
+  .lhead{font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--faint);
+         font-weight:700; margin-bottom:12px; padding-left:2px}
+  .list{display:flex; flex-direction:column; gap:10px}
+  .lead{display:flex; align-items:center; gap:12px; background:var(--surface); border:1px solid var(--line);
+        border-radius:16px; padding:12px 14px}
+  .lead .av{width:40px; height:40px; border-radius:12px; flex-shrink:0; display:grid; place-items:center;
+            font-weight:700; font-size:.95rem; color:var(--teal); background:var(--tealsoft)}
+  .lead.hot .av{color:var(--hot); background:rgba(224,104,90,.14)}
+  .lead .mid{flex:1; min-width:0}
+  .lead .nm{display:flex; align-items:center; gap:8px}
+  .lead .nm b{font-size:.9rem; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .stage{font-size:.62rem; font-weight:600; color:var(--teal); background:var(--tealsoft);
+         padding:2px 8px; border-radius:999px; flex-shrink:0}
+  .lead .addr{font-size:.72rem; color:var(--faint); margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .lead .right{flex-shrink:0; display:flex; flex-direction:column; align-items:flex-end; gap:5px}
+  .lead .msgs{font-size:.72rem; color:var(--muted)}
+  .lead .cta{font-size:.66rem; font-weight:700; color:var(--hot); display:flex; align-items:center; gap:4px}
+
+  /* caption */
+  .caption{color:#cfd2d6; font-family:'Inter',sans-serif; max-width:300px; font-size:.9rem; line-height:1.6;
+           align-self:center; margin-top:12px}
+  .caption h2{font-size:1.1rem; margin-bottom:12px; font-weight:700}
+  .caption .k{color:var(--teal); font-weight:600}
+  .caption li{margin:0 0 9px 18px}
+</style>
+</head>
+<body>
+
+  <div class="phone">
+    <div class="notch"></div>
+    <div class="statusbar"><span>11:26</span><span class="r">✦ &nbsp; 5G &nbsp; ▮▮▮</span></div>
+
+    <div class="wrap">
+      <div class="top">
+        <span class="back"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg></span>
+        <span class="refresh"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></span>
+      </div>
+
+      <div class="hello">Buenas, Carlos 👋</div>
+      <div class="h1">Tu cartera</div>
+      <div class="summary"><b>11 interesados</b> · <b>3</b> pidieron corredor y siguen esperando. Contáctalos hoy.</div>
+
+      <div class="kpis">
+        <div class="kpi"><div class="v">11</div><div class="l">Interesados</div></div>
+        <div class="kpi accent"><div class="v">36%</div><div class="l">Piden corredor</div></div>
+        <div class="kpi"><div class="v">1</div><div class="l">Activos</div></div>
+        <div class="kpi"><div class="v">0</div><div class="l">Por reenganchar</div></div>
+      </div>
+
+      <div class="acts">
+        <div class="act">
+          <div class="ai"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#2DBDB6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg></div>
+          <div class="al">Análisis</div>
+        </div>
+        <div class="act">
+          <div class="ai"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#2DBDB6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg></div>
+          <div class="al">Estratega</div>
+        </div>
+        <div class="act">
+          <div class="ai"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#2DBDB6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.8L18 9.7l-4.1 1.9L12 16l-1.9-4.4L6 9.7l4.1-1.9z"/></svg></div>
+          <div class="al">Copiloto</div>
+        </div>
+      </div>
+
+      <div class="lhead">Interesados</div>
+      <div class="list">
+        <div class="lead hot">
+          <div class="av">V</div>
+          <div class="mid">
+            <div class="nm"><b>valenciaruperto24@gmail.com</b><span class="stage">Intención</span></div>
+            <div class="addr">Jorge Salvador Lara y Pasaje Oe5f</div>
+          </div>
+          <div class="right"><span class="msgs">💬 2</span><span class="cta">🔥 Contactar</span></div>
+        </div>
+        <div class="lead hot">
+          <div class="av">L</div>
+          <div class="mid">
+            <div class="nm"><b>Lead #fa23</b><span class="stage">Intención</span></div>
+            <div class="addr">Jorge Salvador Lara y Pasaje Oe5f</div>
+          </div>
+          <div class="right"><span class="msgs">💬 2</span><span class="cta">🔥 Contactar</span></div>
+        </div>
+        <div class="lead">
+          <div class="av">M</div>
+          <div class="mid">
+            <div class="nm"><b>mayra241512@gmail.com</b><span class="stage">Intención</span></div>
+            <div class="addr">Jorge Salvador Lara y Pasaje Oe5f</div>
+          </div>
+          <div class="right"><span class="msgs">💬 1</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="caption">
+    <h2>Home — versión limpia</h2>
+    <p>El mismo lenguaje del Estratega, aplicado a la cartera:</p>
+    <ul>
+      <li>Arranca con un <span class="k">saludo humano</span> y una línea honesta de qué toca hoy.</li>
+      <li>KPIs en tiles <span class="k">planos</span>, sin gradientes; el % en teal como acento.</li>
+      <li>Acciones (Análisis · Estratega · Copiloto) como <span class="k">chips claros</span>, estilo launcher.</li>
+      <li>Lista con aire; el <span class="k">🔥 Contactar</span> guía la mirada a lo urgente.</li>
+    </ul>
+  </div>
+
+</body>
+</html>

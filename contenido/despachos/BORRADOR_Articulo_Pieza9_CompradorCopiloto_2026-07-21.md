@@ -29,6 +29,8 @@ El patrón es claro y es despiadado: el comprador transacciona una vez por déca
 
 De ese cementerio sobreviven solo tres formas de sostenerse: cobrar un éxito contingente al cierre, que pague un tercero cuyo negocio mejora, o apoyarse en una infraestructura pública. Ninguna de las tres es un asistente que le cobra al comprador. Por eso el hueco sigue abierto.
 
+Y no es que la industria no lo vea. Desde adentro del mundo de los portales ya se debate en voz alta *cambiar de bando* — dejar de servir sobre todo al vendedor para no perder ante la IA la "fase de consideración", ese momento en que la persona sopesa antes de decidir (per Edmund Keith, OnlineMarketplaces, 2026). Su propio análisis de más de 18.000 declaraciones de ejecutivos lo confirma: al comprador se le sigue mencionando **seis veces menos** que al vendedor. ¿Y por qué no cambian? Porque —lo admite él mismo— sería una herejía contra veinte años de márgenes del 60-70% construidos del lado de quien vende. Ese es justo el punto: el hueco se ve desde hace rato; lo que falta es quien pueda llenarlo sin ese conflicto encima.
+
 **La demanda, sin embargo, es real — y ya se probó**
 
 Lo interesante es que el dogma "el comprador no paga" tiene grietas. Cuando el valor es enorme y medible, el comprador sí paga: hay modelos recientes donde el ahorro para el comprador es tan grande y tan concreto que acepta un honorario de éxito atado al cierre. La disposición existe; lo que falla es el envase.

@@ -194,3 +194,66 @@ class CorreccionFicha(Base):
     valor_humano: Mapped[str | None] = mapped_column(Text, nullable=True)
     revisor: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class IntencionSesion(Base):
+    """Estado ACTUAL de intención por sesión (Migration 018 / Motor de Intención, Fase 0).
+
+    Snapshot upserted cada turno con lo que calcula app/intencion.py (estado explicable +
+    score). La llave es session_id = thread_id del agente (qr-{session} / crm-{user}), el
+    mismo de chat_sessions (006) y handoff_mensaje. SIN FK dura a chat_sessions para no
+    rechazar sesiones ANÓNIMAS (estado 0, que sí queremos medir). Habilita el panel CRM Vivo
+    y el handoff en el pico. Fair Housing: 'senales' guarda solo señales transaccionales
+    declaradas (precio/visita/ficha/zona/uso), nunca composición del hogar ni clase protegida.
+    """
+    __tablename__ = "intencion_sesion"
+
+    session_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    activo_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("activos_inmutables.id", ondelete="SET NULL"), nullable=True
+    )
+    estado: Mapped[str] = mapped_column(Text, nullable=False)
+    nivel: Mapped[str] = mapped_column(Text, nullable=False)
+    score: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    handoff_sugerido: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    turnos: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    razones: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    senales: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    resumen: Mapped[str | None] = mapped_column(Text, nullable=True)
+    primer_visto: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    actualizado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "estado IN ('anonimo','identificado','explorando','enganchado',"
+            "'intencion','confirmado','completado','returning','dormido')",
+            name="ck_intencion_estado",
+        ),
+        CheckConstraint("nivel IN ('frio','tibio','caliente')", name="ck_intencion_nivel"),
+        CheckConstraint("score BETWEEN 0 AND 100", name="ck_intencion_score"),
+    )
+
+
+class IntencionEvento(Base):
+    """Log append-only de cambios de estado de intención (Migration 018).
+
+    Una fila por CAMBIO de estado → serie temporal para medir el LIFT de intención y las
+    transiciones del embudo (North Star: handoffs calificados sobre verdad verificada, no
+    minutos de uso). Lo consume el reporte semanal (app/lift.py) y el panel del corredor.
+    """
+    __tablename__ = "intencion_evento"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    session_id: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    activo_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    estado: Mapped[str] = mapped_column(Text, nullable=False)
+    nivel: Mapped[str] = mapped_column(Text, nullable=False)
+    score: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    handoff_sugerido: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    creado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

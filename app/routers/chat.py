@@ -21,6 +21,7 @@ from app.database import AsyncSessionLocal
 from app.encaje import calcular_encaje, delta_encaje
 from app.entorno import limpiar_texto_servicios
 from app.entorno_curacion import aplicar_curacion, parse_servicios
+from app.intencion import analizar_intencion
 from app.limiter import limiter
 from app.preferencias import extraer_preferencias
 
@@ -584,6 +585,15 @@ async def _stream_agent(message: str, session_id: str) -> AsyncIterator[str]:
             tool_name = event.get("name", "")
             yield f"data: {json.dumps({'tool_call': tool_name})}\n\n"
 
+    # Instrumentar la intención (Fase 0): tras el stream, lee el estado final del hilo y
+    # persiste. Best-effort — jamás rompe el stream (cubre el flujo del QR-lead si usa SSE).
+    try:
+        _st = await agent_graph.compiled_graph.aget_state(config)
+        _msgs = (_st.values or {}).get("messages", []) if (_st and _st.values) else []
+        asyncio.create_task(registrar_intencion(session_id, _msgs))
+    except Exception:  # noqa: BLE001 — instrumentar jamás rompe el stream
+        pass
+
     yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
 
 
@@ -643,6 +653,9 @@ async def chat(
     )
 
     tool_calls = sum(1 for m in messages if hasattr(m, "type") and m.type == "tool")
+    # Instrumentar la intención del turno (Fase 0 del Motor de Intención). Fire-and-forget:
+    # jamás bloquea ni rompe la respuesta; alimenta el panel CRM y el reporte de lift.
+    _aio.create_task(registrar_intencion(payload.session_id, messages))
     results = await build_result_cards(messages)
     map_seed = _map_seed_from_cards(results, prev_mode)
     # spatial_context VIVO (deja de ser placeholder muerto): persiste el foco del turno en el
@@ -1057,6 +1070,92 @@ async def marcar_actividad_lead(session_id: str) -> None:
             )
             await db.commit()
     except Exception:  # noqa: BLE001 — marcar actividad jamás debe romper el chat
+        pass
+
+
+# ── Instrumentación del Motor de Intención (Fase 0) ─────────────────────────
+# Persiste el estado + score EXPLICABLE que calcula app/intencion.py por sesión, para que
+# el embudo sea MEDIBLE (lift + handoffs calificados — la North Star metric). El esquema
+# canónico vive en migrations/018_intencion_sesion.sql; aquí se autocrea en runtime (patrón
+# handoff/lead_actividad) para no exigir SQL a mano en dev. Best-effort: JAMÁS rompe el chat.
+_INTENCION_DDL = [
+    "CREATE TABLE IF NOT EXISTS intencion_sesion (session_id text PRIMARY KEY, "
+    "activo_id uuid, estado text NOT NULL, nivel text NOT NULL, "
+    "score integer NOT NULL DEFAULT 0, handoff_sugerido boolean NOT NULL DEFAULT false, "
+    "turnos integer NOT NULL DEFAULT 0, razones jsonb NOT NULL DEFAULT '[]'::jsonb, "
+    "senales jsonb NOT NULL DEFAULT '{}'::jsonb, resumen text, "
+    "primer_visto timestamptz NOT NULL DEFAULT now(), "
+    "actualizado_en timestamptz NOT NULL DEFAULT now())",
+    "CREATE INDEX IF NOT EXISTS intencion_sesion_estado_idx ON intencion_sesion (estado)",
+    "CREATE TABLE IF NOT EXISTS intencion_evento (id bigserial PRIMARY KEY, "
+    "session_id text NOT NULL, activo_id uuid, estado text NOT NULL, nivel text NOT NULL, "
+    "score integer NOT NULL DEFAULT 0, handoff_sugerido boolean NOT NULL DEFAULT false, "
+    "creado_en timestamptz NOT NULL DEFAULT now())",
+    "CREATE INDEX IF NOT EXISTS intencion_evento_sesion_idx ON intencion_evento (session_id, creado_en)",
+]
+_intencion_ready = False
+
+
+async def ensure_intencion_tables(db) -> None:
+    """Crea las tablas de intención si faltan (idempotente, una vez por proceso)."""
+    global _intencion_ready
+    if _intencion_ready:
+        return
+    for ddl in _INTENCION_DDL:
+        await db.execute(text(ddl))
+    await db.commit()
+    _intencion_ready = True
+
+
+async def registrar_intencion(session_id: str, messages: list) -> None:
+    """Fase 0 del Motor de Intención: clasifica el estado del turno desde señales
+    observables (texto del usuario, tools usadas, QR) y lo persiste — upsert del estado
+    ACTUAL + evento append-only si CAMBIÓ (la serie para medir el lift). Best-effort y no
+    bloqueante: si algo falla, el chat nunca se rompe. Fair Housing: solo señales
+    transaccionales declaradas (lo que ya computa app/intencion.py)."""
+    try:
+        def _tool(sub: str) -> bool:
+            return any(getattr(m, "type", "") == "tool"
+                       and sub in (getattr(m, "name", "") or "").lower() for m in messages)
+        r = analizar_intencion(
+            mensajes_usuario=_user_texts(messages),
+            herramientas_usadas=sum(1 for m in messages if getattr(m, "type", "") == "tool"),
+            es_qr=session_id.startswith("qr-"),
+            uso_tool_inversion=_tool("invers") or _tool("investment"),
+            pidio_corredor=_tool("handoff"),
+        )
+        activo = activo_de_session(session_id)
+        async with AsyncSessionLocal() as db:
+            await ensure_intencion_tables(db)
+            prev = (await db.execute(
+                text("SELECT estado FROM intencion_sesion WHERE session_id = :s"),
+                {"s": session_id},
+            )).scalar()
+            await db.execute(
+                text(
+                    "INSERT INTO intencion_sesion (session_id, activo_id, estado, nivel, score, "
+                    "  handoff_sugerido, turnos, razones, senales, resumen) "
+                    "VALUES (:s, :a, :e, :n, :sc, :h, :t, CAST(:r AS jsonb), CAST(:se AS jsonb), :re) "
+                    "ON CONFLICT (session_id) DO UPDATE SET "
+                    "  activo_id = COALESCE(EXCLUDED.activo_id, intencion_sesion.activo_id), "
+                    "  estado = EXCLUDED.estado, nivel = EXCLUDED.nivel, score = EXCLUDED.score, "
+                    "  handoff_sugerido = EXCLUDED.handoff_sugerido, turnos = EXCLUDED.turnos, "
+                    "  razones = EXCLUDED.razones, senales = EXCLUDED.senales, "
+                    "  resumen = EXCLUDED.resumen, actualizado_en = now()"
+                ),
+                {"s": session_id, "a": activo, "e": r["estado"], "n": r["nivel"], "sc": r["score"],
+                 "h": r["handoff_sugerido"], "t": r["turnos"], "r": json.dumps(r["razones"]),
+                 "se": json.dumps(r["senales"]), "re": r["resumen"]},
+            )
+            if r["estado"] != prev:  # append al log SOLO en cambio de estado (serie del lift)
+                await db.execute(
+                    text("INSERT INTO intencion_evento (session_id, activo_id, estado, nivel, "
+                         "  score, handoff_sugerido) VALUES (:s, :a, :e, :n, :sc, :h)"),
+                    {"s": session_id, "a": activo, "e": r["estado"], "n": r["nivel"],
+                     "sc": r["score"], "h": r["handoff_sugerido"]},
+                )
+            await db.commit()
+    except Exception:  # noqa: BLE001 — instrumentar la intención jamás rompe el chat
         pass
 
 

@@ -1,10 +1,10 @@
 # Estudio — El giro pro-comprador de los portales (y qué significa para Contexto)
 
-### De la señal de Edmund Keith al caso Huispedia · investigación + accionables
+### De la señal de Edmund Keith a los casos vivos (Huispedia + Habivio) · investigación + accionables
 
-**Fecha:** 2026-07-23 · **Autor:** Contexto AI (investigación asistida — señal + web + captura en vivo) · **Estado:** v1.0, borrador para red-team del fundador
+**Fecha:** 2026-07-23 · **Autor:** Contexto AI (investigación asistida — señal + web + captura en vivo) · **Estado:** v1.1, borrador para red-team del fundador
 
-> **Tesis en una línea.** Un analista de la propia industria de portales declara en público lo que Contexto viene sosteniendo: el lado del comprador es la frontera. Un retador real (Huispedia, NL) ya lo opera. Pero ambos anclan su "verdad" en el **precio** —sobre dato público que en LATAM no existe—, no en la **verdad del terreno**. Eso confirma la categoría y, por contraste, afila el foso de Contexto.
+> **Tesis en una línea.** El giro pro-comprador dejó de ser teoría: un analista de portales lo predica (Keith), un retador digital lo opera sobre el eje **precio** (Huispedia, NL) y un fiduciario humano sobre el eje **representación + verdad del inmueble** (Habivio, ES). Contexto vive en el segundo eje —la verdad del lugar— y sobre el sustrato que ninguno tiene: dato verificado donde el público no existe (LATAM).
 
 ---
 
@@ -14,7 +14,8 @@ Esta pieza nace de una señal de LinkedIn y se construyó en tres capas, cada un
 
 1. **La señal:** un post de **Edmund Keith** (Head of Content, OnlineMarketplaces.com) argumentando que los portales deben "cambiar de bando" — *per Edmund Keith (LinkedIn / OnlineMarketplaces, 2026)*. Opinión de industria + una gráfica propietaria; direccional, no prueba.
 2. **El artículo completo** que respalda el post (lectura directa de la fuente).
-3. **El caso vivo:** investigación web de **Huispedia** + **captura en vivo** de su producto (Claude-in-Chrome, 2026-07-23) sobre una vivienda real.
+3. **El caso vivo (digital):** investigación web de **Huispedia** + **captura en vivo** de su producto (Claude-in-Chrome, 2026-07-23) sobre una vivienda real.
+4. **El caso vivo (humano):** investigación web de **Habivio** (personal shopper inmobiliario, Alicante) — el eje representación/verdad.
 
 **Convención de lectura (heredada de `ESTUDIO_Adopcion_IA_Real_Estate_2026-07.md`):** cifras de terceros = *cite-don't-assert*, atribuidas con autor/fecha; los números auto-reportados van rotulados con asterisco (\*); nada aquí se presenta como logro o dato propio de Contexto (regla "cero homer").
 
@@ -60,6 +61,26 @@ Esta pieza nace de una señal de LinkedIn y se construyó en tres capas, cada un
 
 ---
 
+## 2.b El fiduciario humano — Habivio (personal shopper, España): el eje representación/verdad
+
+Si Huispedia ocupa el eje **precio**, Habivio ocupa el otro eje del giro pro-comprador: **representación + verdad del inmueble** — el más cercano a Contexto.
+
+**Ficha:** Juan Castillo (Alicante). Representa **exclusivamente al comprador** — *"No vendemos viviendas. Solo representamos a quien compra."* **Cero tecnología/IA** (solo una calculadora de gastos). 5 años con inversores, 1,5 con particulares.
+
+**El modelo:**
+- **5 fases:** Diagnóstico (perfil/presupuesto) → Búsqueda (filtra el mercado completo) → Visitas solo a lo que encaja → **Auditoría integral + negociación** → Cierre y post-compra.
+- **Auditoría integral:** legal · técnico · urbanístico · **vecinal** — *"la tranquilidad de saber qué estás comprando, sin sorpresas, sin imprevistos."*
+- **Honorarios:** success-fee híbrido — honorarios cerrados pactados (NO % de comisión) + provisión inicial + **pago principal solo tras firma en notaría**. Lo paga **el comprador, contingente al cierre.** Atiende **compradores a distancia**.
+
+**Qué añade al estudio:**
+- **Es el modelo-superviviente de la tesis, en humano.** Fiduciario del comprador + success-fee contingente al cierre = el único patrón que sobrevive (tesis Senales-Brain). Confirma que **el comprador sí paga** por representación de alto valor (como Roam).
+- **Su "auditoría integral" ES la verdad verificada de Contexto — pero manual e inescalable** (1 cliente, 1 ciudad, sin dato que se acumule). Contexto la vuelve **activo de dato que compone** (Catastro Vivo). Es la validación **y** el techo del modelo humano-puro.
+- **Ancla en la verdad, no en el precio** — filosóficamente más cerca de Contexto que los portales. Tercera confirmación de la semana: el whitespace es la verdad y la representación, no el precio.
+
+**Asterisco:** sitio **promocional**, **n=1**, **mercado maduro** (España, con Idealista/catastro), sin cifras de honorarios publicadas. *Per Habivio / Juan Castillo (LinkedIn + habivio.es, 2026).*
+
+---
+
 ## 3. Lectura con la lente de Contexto (triangulación)
 
 **Lo que CONFIRMA:**
@@ -101,6 +122,11 @@ Esta pieza nace de una señal de LinkedIn y se construyó en tres capas, cada un
 8. **Riel de afiliación financiera (crédito/hipoteca) = "tercero que sangra" adicional.** (Hipótesis a validar) Huispedia monetiza con afiliación de hipotecas (Independer). Un riel de **navegación/referido de crédito (BIESS)** es ingreso del lado comprador **sin cobrarle al comprador**, y engancha con la pieza de crédito del copiloto fiduciario. Ojo compliance.
 9. **Da gratis la verdad; cobra el handoff.** (Alta confianza) Ventaja estructural sobre el paywall de Huispedia: honestidad completa gratis → más confianza → mejor lead calificado (que paga el corredor/desarrollador).
 
+### Del fiduciario humano (Habivio)
+11. **Checklist del foso = la auditoría del comprador.** (Observado→adoptar) Mapea las capas de verdad de Contexto al miedo real: **legal** (cédula/escrituras → Legal Parser) · **técnico** (estado → visión) · **urbanístico** (riesgo físico/uso de suelo) · **vecinal** (carácter de zona, con candado Fair Housing).
+12. **El personal shopper es el handoff humano ideal** (del lado del comprador). En LATAM casi no existe → Contexto lo **arma con verdad verificada** donde emerja, o **es la capa escalable** donde no. (Hipótesis GTM.)
+13. **Mensaje:** el marco *"saber qué estás comprando, sin sorpresas"* + el *"coste = libertad"* de Juan Castillo — anclas emocionales para el manifiesto y el deck.
+
 ### Compliance (estructural, no negociable)
 10. **Fair Housing por construcción:** perfilamos lugares e inmuebles, jamás personas; accesibilidad/caminabilidad sí, deseabilidad/composición de barrio no; sin AVM de cifra puntual; sin scoring de personas. (Ver regla permanente #2 del handoff y `PRODUCTO_Encaje_Financiero_Neutral.md`.)
 
@@ -116,6 +142,7 @@ Esta pieza nace de una señal de LinkedIn y se construyó en tres capas, cada un
 **Fuentes externas:**
 - Edmund Keith — *"To win the consideration phase, portals may have to switch sides"* — OnlineMarketplaces.com + post LinkedIn (2026). Opinión de industria.
 - Huispedia — huispedia.nl (captura en vivo 2026-07-23) · perfiles de terceros: Tracxn, Crunchbase, Dealroom · Luntero (Huispedia vs Funda) · nota de prensa Huispedia ("data-organización del año 2026").
+- Habivio (personal shopper, Alicante) — habivio.es + habivio.es/particulares-2 · entrevista Alicante Plaza · LinkedIn Juan Castillo (2026). Sitio promocional, n=1, sin honorarios publicados.
 
 **Anclas del canon interno:** `NORTHSTAR_Contexto_Claude_Inmobiliario.md` · `VISION_Sistema_Vivo.md` (ranking→recomendación) · `ESTUDIO_Adopcion_IA_Real_Estate_2026-07.md` (el hueco ground-truth) · `ICP_Contexto_2026-07.md` (wedge Quito, arquitectura B2B2C) · Senales-Brain: tesis *"El copiloto fiduciario del comprador informal no existe en LATAM"* y *"El descubrimiento migra del portal al asistente de IA"*.
 

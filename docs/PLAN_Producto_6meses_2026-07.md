@@ -2,9 +2,39 @@
 
 ### Auditoría del estado real + roadmap anclado en el wedge Quito
 
-**Fecha:** 2026-07-24 · **Autor:** Contexto AI (auditoría de repo + estrategia de la semana) · **Estado:** v1.0, borrador para red-team del fundador
+**Fecha:** 2026-07-24 · **Autor:** Contexto AI (auditoría de repo + estrategia de la semana) · **Estado:** v1.1 — **RE-AUDITADO 2026-07-24** (ver §0.5, que corrige y re-ancla); borrador para red-team del fundador
 
 > **Objetivo verificable a 6 meses:** probar el **ICP de dos caras** en Quito con MAKLO — (a) el comprador-habitante confía en la ficha verificada y llega al **pico de intención**; (b) el desarrollador **paga por el lead calificado** — todo **instrumentado y medido** (lift de intención + handoffs calificados). No "más features": *evidencia del negocio*.
+
+---
+
+## 0.5 · RE-AUDITORÍA (2026-07-24) — corrección honesta de scope
+
+> Tras auditar el **código real** (no el NORTHSTAR desactualizado), este plan estaba **sobre-dimensionado en construcción.** La mayoría de las "fases a construir" **ya está construida.** Esta sección corrige y re-ancla; el cuerpo de abajo se conserva como el razonamiento original, superado en scope por esto. *Reconocimiento honesto: no audité a fondo la superficie CRM/lift antes de escribir el plan — este es el correctivo.*
+
+**Lo que ya está construido (verificado en código, no en el NORTHSTAR):**
+- **Fase 0 (instrumentar):** había cómputo en vivo (`intencion_de_sesion`) + ahora persistencia (`intencion_sesion` / `intencion_evento`) + el lift lee el recorrido (Part A). **Hecho y en prod, probado con sesión real.**
+- **Fase 1 (CRM Vivo + handoff + lift):** ✅ **SHIPPED.** Panel de leads (`LeadsPanel.jsx` + `/assets/{id}/leads`), funnel, handoff al pico, chat in-platform, y `/assets/metricas/lift` con disciplina anti-vanity.
+- **Fase 2 (auditoría del comprador):** 🔨 **parcial, más de lo esperado** — capa de inversión expuesta (`GET /{id}/investment`), visión/ficha técnica, entorno/habitabilidad/estilo-de-vida.
+- **Fase 3 (storefront / Canal):** 🔨 kit AuraReal completo en `lanzamiento-pyme/`; Canal de Aura en su Fase 0 (canal fantasma).
+
+**Los gaps REALES (pequeños, de código — hacer cuando el uso lo pida):**
+1. **Atribución por origen** (orgánico-habitante vs campaña-pagada) — el muro de leads del Canal §8. No construido.
+2. **Legal Parser** (escrituras/predial → alertas) — el pilar legal de la auditoría Habivio. No confirmado como construido.
+3. **OKF / capa citable** (Fase 4) — planificado, futuro.
+
+**El reencuadre que gobierna los próximos 6 meses:**
+> **El cuello de botella NO es construir features — es adopción y conversión.**
+
+Evidencia dura en el propio repo: `intencion_evento` = **1 sesión** (un test); `activos_inmutables` = **40 demo**; **0 leads de corredor real.** La máquina está construida y **ociosa** — el riesgo **88%-pilotea / 5%-cosecha** del `ESTUDIO_Adopcion_IA_Real_Estate`, hecho realidad aquí.
+
+**El plan re-anclado (norte real):**
+1. **MAKLO / inventario real** (mesa 29-jul-2026): inventario verificado real + su storefront → los primeros QR reales. *El combustible de todo.*
+2. **Onboarding de 1-2 corredores reales** usando el panel CRM Vivo con SUS leads (no demo).
+3. **Medir el lift con dato real** — la máquina ya está lista (Fase 0 + Part A); solo falta el tráfico.
+4. **Los gaps de código chicos** (atribución, Legal Parser) se hacen **cuando el uso los pida**, no antes.
+
+**En una línea:** de *"¿qué construimos?"* → *"¿cómo logramos que 20 compradores-habitante reales y 1 corredor real toquen esto en Quito este mes?"* — porque el producto ya está; lo que falta es la demanda que lo valide.
 
 ---
 
@@ -50,6 +80,8 @@
 ---
 
 ## 3. El plan por fases
+
+> ⚠️ **Corregido por la re-auditoría (§0.5):** la mayoría de estas fases **ya está construida** (Fase 0-1 shipped, 2 parcial, 3 andamiado). Lo de abajo se conserva como el razonamiento original; el **norte operativo real es §0.5** (MAKLO + tráfico real, no re-construir).
 
 ### Fase 0 — Instrumentar + poblar *(ago · semanas 1–4) — desbloquea todo lo demás*
 El paso de menor riesgo y mayor apalancamiento. Sin esto, nada se puede medir.

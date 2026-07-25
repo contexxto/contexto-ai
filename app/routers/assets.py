@@ -1013,10 +1013,34 @@ async def metricas_lift(
             actividad_por_sid = {r["session_id"]: dict(r) for r in filas}
         except Exception:  # noqa: BLE001 — sin actividad aún no debe romper la métrica
             await db.rollback()
-    # Unidad = LEAD; handoff es EVENTO (pidió corredor), no un score.
-    leads_u = [{"session_id": l.get("session_id"), "estado": l.get("estado"),
+    # ── Funnel por RECORRIDO: el PICO de intención alcanzado (historial persistido en
+    # intencion_evento, Fase 0), no el snapshot del estado actual. Un lead que llegó a
+    # 'intencion' y luego se enfrió cuenta como 'intencion' — lo honesto para el embudo
+    # (cuán LEJOS llegó, no dónde idlea ahora). Respaldo: el estado vivo si aún no hay
+    # transiciones registradas para esa sesión (leads previos al despliegue de la Fase 0).
+    _DEPTH = {"anonimo": 0, "identificado": 1, "explorando": 2, "enganchado": 3,
+              "intencion": 4, "confirmado": 5, "completado": 6, "returning": 4, "dormido": 2}
+    pico_por_sid: dict[str, str] = {}
+    if sids:
+        try:
+            evs = (await db.execute(
+                text("SELECT session_id, estado FROM intencion_evento WHERE session_id = ANY(:ids)"),
+                {"ids": sids})).mappings().all()
+            for e in evs:
+                s, es = e["session_id"], e["estado"]
+                if s not in pico_por_sid or _DEPTH.get(es, 0) > _DEPTH.get(pico_por_sid[s], 0):
+                    pico_por_sid[s] = es
+        except Exception:  # noqa: BLE001 — sin historial aún → cae al estado vivo, no rompe la métrica
+            await db.rollback()
+    # Unidad = LEAD; estado = pico alcanzado (historial) o el vivo de respaldo; handoff es EVENTO.
+    leads_u = [{"session_id": l.get("session_id"),
+                "estado": pico_por_sid.get(l.get("session_id")) or l.get("estado"),
                 "handoff": bool(l.get("handoff_estado"))} for l in leads]
-    return resumen_lift(leads_u, actividad_por_sid, datetime.now(timezone.utc))
+    out = resumen_lift(leads_u, actividad_por_sid, datetime.now(timezone.utc))
+    out["_funnel_fuente"] = ("recorrido: pico de intención alcanzado, del historial persistido "
+                             "(intencion_evento, Fase 0); estado actual en vivo como respaldo")
+    out["_transiciones_registradas"] = len(pico_por_sid)
+    return out
 
 
 @router.get(

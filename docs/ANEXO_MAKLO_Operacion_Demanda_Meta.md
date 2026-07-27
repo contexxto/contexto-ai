@@ -52,7 +52,33 @@
 
 > **El punto de marca:** esto no lo hacemos porque una ley nos obligue en Ecuador — lo hacemos **por construcción**. Es lo que nos permite decirle al comprador que no lo perfilamos, y sostenerlo.
 
-**⚠️ A verificar en el setup (NO verificado):** si Meta exige declarar la **categoría especial de anuncios de Vivienda** para campañas dirigidas a Ecuador. Sé que Meta *clasifica* anuncios de vivienda en EC (el archivo público los etiqueta), pero **no confirmé** si la restricción de segmentación aplica fuera de EE.UU./Canadá. Importa por una razón operativa concreta: si aplica, puede imponerse un **radio geográfico mínimo**, y un proyecto hiperlocal como MAKLO lo sentiría. Verificar en la documentación oficial de Meta antes de armar la primera campaña; declararla mal puede tumbar los anuncios.
+### ✅ VERIFICADO (2026-07-26, documentación oficial): en Ecuador **ninguna plataforma nos restringe**
+
+| Pregunta | Respuesta oficial |
+|---|---|
+| ¿Meta exige la **categoría especial de Vivienda** para campañas a Ecuador? | **NO.** Se exige solo si *"eres un anunciante en Estados Unidos"* o *"tu audiencia objetivo está en Estados Unidos, Canadá o ciertas partes de Europa"* (lista de ~48 países/territorios europeos). **Ningún país de LATAM aparece.** — [Meta: about ads for housing](https://www.facebook.com/business/help/1198401317374558) |
+| ¿Google restringe la segmentación de vivienda en Ecuador? | **NO.** *"This update applies to all housing, employment, and credit ads serving in the United States and Canada."* — [Google Ads Policy FAQ](https://support.google.com/adspolicy/answer/9997418) |
+| ¿Google prohíbe segmentar/excluir por **ingreso del hogar** en vivienda? | **NO.** "Household Income" figura entre las opciones **sin restricción**. Lo restringido es edad, género, estado parental, estado civil y códigos postales completos. |
+
+**Dos consecuencias, una buena y una que define nuestra postura:**
+
+1. **Operativa (buena):** al no aplicar la categoría especial, **no hay radio geográfico mínimo forzado**. El targeting hiperlocal del eje Labrador–Bicentenario está plenamente disponible. *(El riesgo que este anexo marcaba antes queda descartado.)*
+2. **De marca (la que importa):** **la plataforma no nos protege — el único candado es el nuestro.** En Ecuador podríamos segmentar por edad, ingreso estimado o composición familiar sin que nadie lo impida. La prohibición del §2 es, por tanto, **política propia de Contexto**, no cumplimiento normativo.
+
+> ⚠️ **Cómo se dice esto (y cómo NO):** nunca afirmar que estas prácticas son *ilegales* en Ecuador — no lo son, y un abogado lo verifica en cinco minutos. Se dice: *"Meta y Google restringen esto en EE.UU. y Europa; aquí no. Podríamos hacerlo y sería válido. Elegimos no hacerlo."* La honestidad de asteriscos aplica también a los argumentos de compliance: un argumento inflado se cae y se lleva la credibilidad con él.
+
+### Actualizaciones de plataforma evaluadas (2026-07-26)
+
+Reportadas *per* Thomas Eccel y Bram Van der Hallen (LinkedIn, 2026) — **no verificadas en documentación oficial**; el veredicto es nuestro y no depende de que existan.
+
+| Función | Veredicto | Razón |
+|---|---|---|
+| **Audiencias solo-de-exclusión** (Meta) | 🟢 **Adoptar, con candado** | Excluir a quien ya compró o ya es lead activo es eficiencia, no discriminación: excluye por **estado en el embudo**, un hecho auditable. **Candado: toda lista de exclusión debe poder explicarse con un evento del CRM, o no se sube.** Que sea irreversible (no convertible en audiencia de inclusión) es una ventaja de compliance. |
+| **pLTV / valor de vida predicho** (Meta) | 🔴 **Declinar** | En vivienda, "optimizar hacia quien genera más valor" = optimizar hacia quien puede pagar más: es **scoring de personas** (NUNCA §7.7) y un proxy de ingreso por la puerta de atrás. Además, para MAKLO ni siquiera aplica: un comprador de vivienda transacciona una vez por década — no hay "lifetime value" que predecir. |
+| **Exclusión por ingreso del hogar** (Google PMax) | 🔴 **Declinar** | La plataforma lo permite (verificado arriba). Lo declinamos igual: el ingreso del hogar de la plataforma es una **estimación inferida por un algoritmo**, y excluir personas por un ingreso que alguien les supuso es exactamente el juicio sobre personas que este anexo prohíbe. |
+| Atribución personalizada (Meta) | ⚪ No aplica aún | Pensada para e-commerce; nuestra "compra" es offline y a meses. |
+| Informe de marca / brand lift (Google) | 🟢 Guardar | Útil para medir si el **Canal de Aura** levanta búsquedas de marca. No aplica hasta que haya campaña de generación de demanda. |
+| AI Performance Insights, Merchant Center (Google) | ⚪ Señal, no herramienta | Confirma que las plataformas empiezan a reportar visibilidad en respuestas de IA — valida la apuesta de la capa citable. Pero es Shopping, no vivienda. |
 
 ---
 

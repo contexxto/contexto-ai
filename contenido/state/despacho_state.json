@@ -1,5 +1,5 @@
 {
-  "last_run": "2026-07-20",
+  "last_run": "2026-07-27",
   "despachos": [
     {
       "fecha": "2026-07-14",
@@ -22,6 +22,33 @@
         "Senales-Brain tesis: Las redes sociales son el segundo frente de tierra rentada en el descubrimiento inmobiliario",
         "Senales-Brain source: El comprador descubre en redes pero transa en el portal (investigacion)",
         "Senales-Brain tesis: El listing dejo de ser moat, los portales desintermedian a sus agentes"
+      ]
+    },
+    {
+      "fecha": "2026-07-24",
+      "piezas": [
+        "El sistema del vendedor ya se consolidó; el foso que sigue es el criterio sobre el lugar",
+        "Automatizar una inmobiliaria no es poner un bot"
+      ],
+      "fuentes": [
+        "Senales-Brain tesis: La categoria del CRM inmobiliario se consolido; el foso abierto es la inteligencia de lugar al lado vendedor",
+        "Senales-Brain tesis: En proptech el bot se commoditizo, gana la orquestacion sobre el CRM",
+        "Senales-Brain source: Automatizar una inmobiliaria no es poner un bot",
+        "Senales-Brain source: El orden correcto para automatizar inmobiliarias"
+      ]
+    },
+    {
+      "fecha": "2026-07-27",
+      "piezas": [
+        "La brecha 68-17: adoptar la herramienta no es lo mismo que cambiar el resultado",
+        "8 de cada 10 leads se pierden por seguimiento, no por talento"
+      ],
+      "fuentes": [
+        "Senales-Brain tesis: En proptech el bot se commoditizo, gana la orquestacion sobre el CRM (reforzada con La brecha 68-17)",
+        "Senales-Brain source: La brecha 68-17 en proptech es de flujo de trabajo no de herramienta",
+        "Corredor-Brain principle: Follow-up disciplinado (Keller/Serhant/Corcoran/Hormozi)",
+        "Corredor-Brain tactic: Book a Meeting from a Meeting (BAMFAM)",
+        "Senales-Brain source: Inmobiliarias pierden 8 de 10 leads por seguimiento - Ferreira"
       ]
     }
   ]

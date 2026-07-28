@@ -12,8 +12,8 @@ Reglas: cada pieza pasa el criterio de calidad §6 y los NEVER §8 de
 | 1 | Qué es verificación en terreno (y por qué una foto no lo es) | Artículo largo | borrador 2026-07-14 |
 | 2 | El listing ya no es el foso | Post página | borrador 2026-07-20 |
 | 3 | Tierra rentada: cuando tu negocio vive en la interfaz de otro | Post página | borrador 2026-07-14 |
-| 4 | Automatizar una inmobiliaria no es poner un bot | Post página | pendiente |
-| 5 | 8 de cada 10 leads se pierden por seguimiento, no por talento | Post página | pendiente |
+| 4 | Automatizar una inmobiliaria no es poner un bot | Post página | borrador 2026-07-24 |
+| 5 | 8 de cada 10 leads se pierden por seguimiento, no por talento | Post página | borrador 2026-07-27 |
 | 6 | La conversación dejó de ser gratis | Post página | pendiente |
 | 7 | Los geo-datos se volvieron gratis; la verdad local, no | Post página | pendiente |
 | 8 | El orden de un marketplace no se vende | Post página | pendiente |
@@ -140,3 +140,17 @@ La pieza fundacional de vocabulario — el "punto de luz" de la marca hecho text
   ("Las redes sociales son el segundo frente de tierra rentada", confirmada 2026-07-15)
   (ver `contenido/despachos/DESPACHO_2026-07-20.md`). Corredor-Brain sin novedad desde
   last_run.
+- 2026-07-24 — Tercera corrida del despacho automatizado: pieza 4 pasada a borrador (backlog,
+  prioridad 3º) + 1 pieza nueva fuera de backlog desde tesis emergente de Senales-Brain
+  ("La categoría del CRM inmobiliario se consolidó; el foso abierto es la inteligencia de
+  lugar al lado vendedor", creada 2026-07-22 por barrido manual del fundador)
+  (ver `contenido/despachos/DESPACHO_2026-07-24.md`). Corredor-Brain W5 (2026-07-20) sin
+  explotar todavía — candidata para la próxima corrida.
+- 2026-07-27 — Cuarta corrida del despacho automatizado: pieza 5 pasada a borrador (backlog,
+  siguiente pendiente en orden), reforzada por la hidratación W6 de Corredor-Brain (Hormozi:
+  BAMFAM, Pull Up Appointments, Ask Again/Looping, las tres 🟢) sobre el principio ya
+  convergente `Follow-up disciplinado` + 1 pieza nueva fuera de backlog desde tesis reforzada
+  de Senales-Brain ("La brecha 68-17 en proptech es de flujo de trabajo no de herramienta",
+  primera cifra de gremio NAR sobre la tesis del bot commoditizado)
+  (ver `contenido/despachos/DESPACHO_2026-07-27.md`). Backlog #7 (geo-datos) tiene evidencia
+  fresca sin usar (2ª señal Catastral, catastro de Chile) — candidata para la próxima corrida.

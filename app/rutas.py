@@ -130,10 +130,12 @@ async def _servicios_propios(lat: float, lon: float) -> dict[str, dict]:
     return out
 
 
-# Categorías que NUESTRA capa cubre (= CHECK de pois_propios). `iglesia` y `seguridad`
-# NO están: esas siguen yendo a Google hasta que se ingesten (Fase 3 del plan de migración).
+# Categorías que NUESTRA capa cubre (= CHECK de pois_propios, migración 021).
+# Desde 2026-07-27 son TODAS: el branch "ruta a X" ya no llama a Google en ningún caso
+# (Google solo entra si un punto queda fuera del bbox de la ciudad cargada).
 _CATS_PROPIAS = {"salud", "farmacia", "supermercado", "educacion",
-                 "parque", "centro_comercial", "transporte"}
+                 "parque", "centro_comercial", "transporte",
+                 "iglesia", "seguridad"}
 
 # "metro" / "terminal" en la frase → subtipos de nuestra capa (espejo de los tipos de Google).
 _SUBTIPOS_PROPIOS = {
@@ -311,7 +313,11 @@ _CAT_GOOGLE["transporte"] = ["subway_station", "train_station", "bus_station", "
 _CAT_LABEL = {
     "transporte": "🚇 transporte", "educacion": "🏫 educación", "salud": "🏥 salud",
     "farmacia": "💊 farmacia", "supermercado": "🛒 supermercado", "parque": "🌳 parque",
-    "iglesia": "⛪ iglesia", "seguridad": "🛡️ seguridad", "centro_comercial": "🛍️ centro comercial",
+    # "seguridad" a secas se lee como una cualidad del barrio ("¿es seguro?"), que el
+    # canon Fair Housing prohíbe afirmar. El rótulo nombra el SERVICIO: la UPC es un
+    # lugar con dirección, como un hospital. Ver migración 021.
+    "iglesia": "⛪ iglesia", "seguridad": "🛡️ UPC (policía comunitaria)",
+    "centro_comercial": "🛍️ centro comercial",
 }
 # Ícono + color por categoría (capa visual semántica, estilo Google Maps).
 _CAT_EMOJI = {

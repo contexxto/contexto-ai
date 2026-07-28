@@ -182,6 +182,8 @@ def pull_osm_transporte() -> list[dict]:
       node["amenity"="pharmacy"]({s},{w},{n},{e});
       node["shop"="supermarket"]({s},{w},{n},{e});
       node["shop"="convenience"]({s},{w},{n},{e});
+      node["amenity"="place_of_worship"]({s},{w},{n},{e});
+      node["amenity"="police"]({s},{w},{n},{e});
     );
     out body;
     """
@@ -196,9 +198,11 @@ def pull_osm_transporte() -> list[dict]:
             break
         except Exception as ex:  # rate-limit / caído → probar siguiente mirror
             print(f"   ⚠️ Overpass {url.split('/')[2]} falló ({str(ex)[:60]})")
-    if elems is None:  # todos los mirrors fallaron → degradar sin romper el spike
-        print("   ⚠️ ningún endpoint de Overpass respondió — sigo sin transporte")
-        return []
+    if elems is None:  # todos los mirrors fallaron
+        # Devuelve None (≠ lista vacía) para que el llamador NO confunda "Overpass caído"
+        # con "OSM ya no tiene estos POIs" y no cierre nada. Ver incidente en CERRAR_*.
+        print("   ⚠️ ningún endpoint de Overpass respondió — NO se cerrará ningún POI de OSM")
+        return None
     out = []
     for el in elems:
         tags = el.get("tags", {}) or {}
@@ -226,6 +230,17 @@ def pull_osm_transporte() -> list[dict]:
             # abierta a priorizar sin recargar.
             subtipo = "supermercado" if tags["shop"] == "supermarket" else "minimarket"
             nombre = tags["name"]
+        elif tags.get("amenity") == "place_of_worship":
+            if not tags.get("name"):
+                continue
+            categoria, subtipo, nombre = "iglesia", "place_of_worship", tags["name"]
+        elif tags.get("amenity") == "police":
+            # El PUESTO DE POLICÍA como servicio físico (igual que un hospital), NO una
+            # medida de qué tan seguro es el barrio. El canon prohíbe lo segundo; esto
+            # es un hecho con dirección. Ver migración 021 y el rótulo en _CAT_LABEL.
+            if not tags.get("name"):
+                continue
+            categoria, subtipo, nombre = "seguridad", "police", tags["name"]
         # ── transporte ───────────────────────────────────────────────────────
         elif tags.get("railway") == "subway_entrance" or tags.get("station") == "subway":
             categoria, subtipo, nombre = "transporte", "metro", tags.get("name") or "Estación de Metro"
@@ -312,12 +327,23 @@ UPSERT_OSM = text(f"""
 # Lo que sigue en la tabla pero YA NO viene del origen: se marca cerrado, NO se borra.
 # Un POI que desaparece de Overture/OSM puede ser un cierre real o un borrado erróneo
 # del mapa; conservar la fila permite revertir y deja el historial.
-CERRAR_AUSENTES = text("""
+#
+# ⚠️ POR FUENTE, y NUNCA si la fuente falló. Incidente 2026-07-27: Overpass devolvió 504
+# en sus dos endpoints, `pull_osm` degradó a lista vacía, y la versión anterior de esta
+# sentencia —que miraba las dos fuentes juntas— marcó 3.924 POIs de OSM como cerrados.
+# La guarda de "0 POIs cosechados" no saltó porque Overture SÍ había traído 2.851.
+# Lección: "no pude consultar el origen" NO es "el POI ya no existe".
+_CERRAR = """
     UPDATE pois_propios SET operativo = false, actualizado_en = now()
-    WHERE ciudad = :ciudad AND operativo
-      AND ((overture_id IS NOT NULL AND overture_id <> ALL(CAST(:ov AS text[])))
-        OR (osm_id      IS NOT NULL AND osm_id      <> ALL(CAST(:osm AS text[]))))
-""")
+    WHERE ciudad = :ciudad AND operativo AND fuente = '{f}'
+      AND {col} IS NOT NULL AND {col} <> ALL(CAST(:ids AS text[]))
+"""
+CERRAR_OVERTURE = text(_CERRAR.format(f="overture", col="overture_id"))
+CERRAR_OSM = text(_CERRAR.format(f="osm", col="osm_id"))
+
+# Si una fuente trae menos de esta fracción de lo que ya había, se asume respuesta
+# parcial (no un cierre masivo real) y NO se cierra nada de esa fuente.
+UMBRAL_CAIDA = 0.5
 
 NEAREST_SQL = text("""
     SELECT DISTINCT ON (categoria)
@@ -349,10 +375,13 @@ def main():
     t0 = time.time()
     pois = pull_overture()
     print(f"   {len(pois)} POIs Overture ({time.time()-t0:.0f}s)")
-    print("── 2) OSM transporte (Overpass) ──", flush=True)
+    print("── 2) OSM: transporte + comercio + culto/UPC (Overpass) ──", flush=True)
     t0 = time.time()
-    transp = pull_osm_transporte()
-    print(f"   {len(transp)} paradas/estaciones de transporte ({time.time()-t0:.0f}s)")
+    transp = pull_osm_transporte()          # None = Overpass caído (≠ [] = sin resultados)
+    osm_ok = transp is not None
+    transp = transp or []
+    print(f"   {len(transp)} POIs de OSM ({time.time()-t0:.0f}s)"
+          + ("" if osm_ok else "  ⚠️ FUENTE CAÍDA"))
     pois += transp
 
     por_cat: dict[str, int] = {}
@@ -392,12 +421,28 @@ def main():
         if osm:
             db.execute(UPSERT_OSM, osm)
 
-        # Los que siguen en la tabla pero ya no vienen del origen → cerrados, no borrados.
-        cerrados = db.execute(CERRAR_AUSENTES, {
-            "ciudad": CIUDAD,
-            "ov": [p["overture_id"] for p in ov] or [""],
-            "osm": [p["osm_id"] for p in osm] or [""],
-        }).rowcount
+        # Cierre POR FUENTE, y solo si esa fuente respondió con volumen creíble.
+        # Dos guardas, ambas nacidas del incidente del 2026-07-27 (ver CERRAR_*):
+        #   (a) fuente caída  → no se cierra nada de ella.
+        #   (b) caída brusca  → si trae <50% de lo que había, se asume respuesta parcial.
+        cerrados = 0
+        for nombre_f, filas, sent, ok in (
+            ("overture", ov, CERRAR_OVERTURE, True),
+            ("osm", osm, CERRAR_OSM, osm_ok),
+        ):
+            previos_f = db.execute(text(
+                "SELECT count(*) FROM pois_propios WHERE ciudad=:c AND operativo AND fuente=:f"
+            ), {"c": CIUDAD, "f": nombre_f}).scalar()
+            if not ok:
+                print(f"   ⚠️ '{nombre_f}' no respondió → NO se cierra ninguno de sus "
+                      f"{previos_f} POIs")
+                continue
+            if previos_f and len(filas) < previos_f * UMBRAL_CAIDA:
+                print(f"   ⚠️ '{nombre_f}' trajo {len(filas)} vs {previos_f} en tabla "
+                      f"(<{UMBRAL_CAIDA:.0%}) → respuesta parcial, NO se cierra nada. Revisar.")
+                continue
+            ids = [p["overture_id" if nombre_f == "overture" else "osm_id"] for p in filas]
+            cerrados += db.execute(sent, {"ciudad": CIUDAD, "ids": ids or [""]}).rowcount
 
         n = db.execute(text("SELECT count(*) FROM pois_propios WHERE ciudad = :c AND operativo"),
                        {"c": CIUDAD}).scalar()

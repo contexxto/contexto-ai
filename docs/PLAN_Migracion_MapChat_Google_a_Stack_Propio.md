@@ -205,6 +205,29 @@ refresco con su `id`**, que es lo que hace posible el punto 3.
 Primera corrida real: 2.851 Overture + 3.924 OSM upserted, **3 marcados cerrados**, 0 borrados.
 Ahora sí tiene sentido una tarea mensual (Overture) / semanal (OSM) — **sigue sin programarse**.
 
+> ### ⚠️ INCIDENTE 2026-07-27 — el cierre masivo (leer antes de programar cualquier cron)
+> En la segunda corrida, **Overpass devolvió 504 en sus dos endpoints**. `pull_osm` degradaba a
+> lista vacía, y la primera versión de `CERRAR_AUSENTES` —que miraba las dos fuentes juntas—
+> concluyó que los 3.924 POIs de OSM "ya no existían en el origen" y **los marcó cerrados**.
+> Producción quedó en 2.851 operativos de 6.775 hasta que se revirtió.
+>
+> **Por qué la guarda existente no saltó:** era `if not pois: abortar`, y `pois` NO estaba vacío —
+> Overture sí había traído sus 2.851. La guarda miraba el total, no cada fuente.
+>
+> **La lección:** *"no pude consultar el origen" no es "el POI ya no existe".* Un pipeline que
+> borra o cierra por ausencia necesita distinguir las dos cosas, siempre.
+>
+> **Arreglado con tres cambios** (verificados con un simulacro que reproduce el 504):
+> 1. `pull_osm` devuelve **None** cuando Overpass cae (≠ `[]`, que sería "no hay resultados").
+> 2. El cierre es **por fuente** (`CERRAR_OVERTURE` / `CERRAR_OSM`) y se salta entera la fuente
+>    que no respondió.
+> 3. **Guarda de caída brusca:** si una fuente trae menos del 50% (`UMBRAL_CAIDA`) de lo que ya
+>    había en la tabla, se asume respuesta parcial y no se cierra nada de ella.
+>
+> Que el modelo fuera "marcar cerrado" y no "borrar" es lo que hizo el incidente reversible con un
+> solo `UPDATE`. Si el refresco hubiera sido el `DELETE`+`INSERT` anterior, se habrían perdido 3.924
+> filas y habría hecho falta recargar desde el origen — con Overpass caído, imposible en ese momento.
+
 **2b. ✅ OSM sumado para comercio de barrio (2026-07-27) — cierra la brecha de paridad.**
 Medido en el bbox de Quito: OSM tenía **1.078 `shop=convenience`** (la tienda de esquina, que **no
 existía** en la capa), 601 farmacias vs 466 de Overture y 341 supermercados vs 311. Era exactamente
@@ -226,8 +249,17 @@ donde se capturó. Es el foso que no se puede descargar de ninguna API — y el 
 construye ventaja en vez de mantenerla.
 
 **Otros pendientes de la fase (sin dependencia entre sí):**
-- Categorías faltantes en capa propia: **iglesia, seguridad** (vía OSM; `entorno.py` usa 8 cat y
-  `pois_propios` cubre 7). Hoy son las únicas dos que el branch "ruta a X" manda a Google (§3 Fase 1).
+- ✅ ~~Categorías faltantes: **iglesia, seguridad**~~ — **RESUELTO 2026-07-27** (migración 021 +
+  ingesta OSM: `place_of_worship` 276, `police` 127). Eran las dos únicas que el branch "ruta a X"
+  mandaba a Google, y las que Google respondía **peor**: verificado en vivo con clave real,
+  "iglesia más cercana" devolvía *"Wilson Maldonado"* y "UPC más cercano" *"ABOGADOS EN LINES"*.
+  Ahora devuelven "Capilla Católica de Adoración…" y "Punto Nube" (nomenclatura real de la policía
+  de Quito, junto a UPC Río Coca, GOE y retenes). **El branch ya no llama a Google en ninguna
+  categoría** — solo quedaría para puntos fuera del bbox de la ciudad cargada.
+  **Rótulo revisado (Fair Housing):** `_CAT_LABEL` pasó de "🛡️ seguridad" a "🛡️ UPC (policía
+  comunitaria)" y `entorno.py` de "Seguridad (UPC)" a "UPC (policía comunitaria)". La UPC es un
+  lugar con dirección, como un hospital; "seguridad" a secas se lee como una cualidad del barrio,
+  que el canon prohíbe afirmar. Con dato malo la ambigüedad pasaba desapercibida; con dato bueno, no.
 - **Atribución Overture/ODbL en UI:** hay menciones sueltas a OpenStreetMap en 3 vistas y **nada de
   Overture** hacia el usuario final; 2.047 POIs ODbL sirviendo en prod piden atribución formal.
   Alinea con el foso de honestidad — es discurso de proveniencia, cumplirlo es barato.

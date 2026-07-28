@@ -199,7 +199,15 @@ function agregarRutaAnimada(map, id, coords, color, dur = 950) {
     requestAnimationFrame(loop)
   }
   requestAnimationFrame(loop)
-  return [`${id}-glow`, id, `${id}-flow`]
+  // ORDEN DE LIMPIEZA: `id` es a la vez capa principal y FUENTE de las tres capas, y
+  // limpiarCapas recorre esta lista en orden (removeLayer + removeSource por id). Si `id`
+  // no va AL FINAL, removeSource corre cuando `-flow` aún usa la fuente y MapLibre NO la
+  // borra (dispara un error-event y retorna en silencio — verificado en su fuente 5.24).
+  // La fuente quedaba huérfana y el siguiente addSource(mismo id) lanzaba
+  // «Source "cmd-ruta-0" already exists» → TODA pregunta posterior al mapa fallaba con
+  // "No pude procesar eso" hasta recargar la página. Bug destapado en el test en vivo
+  // del 2026-07-28 por Carlos: "la segunda pregunta no procesa".
+  return [`${id}-glow`, `${id}-flow`, id]
 }
 
 export default function MapView({ seedIds, encajeById } = {}) {
@@ -314,8 +322,20 @@ export default function MapView({ seedIds, encajeById } = {}) {
   function limpiarCapas() {
     const map = mapRef.current
     if (!map) return
-    capasRef.current.ids.forEach(id => { if (map.getLayer(id)) map.removeLayer(id); if (map.getSource(id)) map.removeSource(id) })
-    capasRef.current.markers.forEach(m => m.remove())
+    // DOS PASADAS: primero TODAS las capas, luego TODAS las fuentes. Con una sola pasada
+    // el orden de la lista importa: removeSource sobre una fuente aún en uso NO borra
+    // (MapLibre dispara un error-event y retorna en silencio), la fuente queda huérfana y
+    // el siguiente addSource(mismo id) lanza «already exists» → el mapa quedaba atascado
+    // ("la segunda pregunta no procesa", test en vivo 2026-07-28). agregarRutaAnimada ya
+    // devuelve el orden correcto; las dos pasadas hacen la limpieza inmune al orden.
+    // try/catch por id: un id malo no debe abortar la limpieza del resto.
+    capasRef.current.ids.forEach(id => {
+      try { if (map.getLayer(id)) map.removeLayer(id) } catch { /* seguir limpiando */ }
+    })
+    capasRef.current.ids.forEach(id => {
+      try { if (map.getSource(id)) map.removeSource(id) } catch { /* seguir limpiando */ }
+    })
+    capasRef.current.markers.forEach(m => { try { m.remove() } catch { /* seguir */ } })
     capasRef.current = { ids: [], markers: [] }
   }
   function marcadorEtiqueta(coords, etiqueta, color) {

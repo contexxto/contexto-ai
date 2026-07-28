@@ -692,7 +692,9 @@ def _frase_dentro(filas: list, activos: int) -> str:
     linea = ""
     if partes:
         linea = "\n\n**Dentro de esa mancha hay:** " + " · ".join(partes)
-        linea += f" y {resto} categoría{'s' if resto != 1 else ''} más." if resto > 0 else "."
+        # Cola compacta: "· +2 más" pesa menos que "y 2 categorías más" y mantiene el
+        # mismo separador de la lista (se escanea de corrido, sin cambiar de ritmo).
+        linea += f" · +{resto} más." if resto > 0 else "."
     if activos:
         linea += (f"\n\nY **{activos} inmueble{'s' if activos != 1 else ''}** "
                   f"del catastro dentro del área.")

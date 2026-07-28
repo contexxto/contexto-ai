@@ -739,6 +739,22 @@ async def _accion_isocrona(lat: float, lon: float, p: str) -> dict:
     }
 
 
+def _sello_fuente(items: list[dict]) -> str:
+    """Proveniencia del dato, en una línea aparte. Honestidad de asteriscos: nuestra capa
+    es Overture+OSM conflados y curados — es DATO PROPIO, no "verificado en terreno" (eso
+    solo lo es lo que un corredor pisó). Nunca se infla la etiqueta.
+
+    Solo marca lo propio, en positivo; lo que vino de Google no se desmerece ni se oculta."""
+    if not items:
+        return ""
+    propios = sum(1 for s in items if s.get("fuente") == "propio")
+    if propios == 0:
+        return ""
+    if propios == len(items):
+        return "\n\n*Todo de nuestra capa propia.*"
+    return f"\n\n*{propios} de {len(items)} de nuestra capa propia.*"
+
+
 async def comando_mapa(pregunta: str, lat: float, lon: float) -> dict:
     """Interpreta una pregunta y devuelve {texto, acciones} para que el mapa reaccione."""
     p = (pregunta or "").lower()
@@ -770,8 +786,9 @@ async def comando_mapa(pregunta: str, lat: float, lon: float) -> dict:
                 tipos = ["bus_station"]
                 subtipos = _SUBTIPOS_PROPIOS["terminal"]
 
-        # Propio-primero (mismo patrón que _servicios_con_coords). Google queda para las
-        # categorías que nuestra capa no cubre (iglesia, seguridad) y para fuera de bbox.
+        # Propio-primero (mismo patrón que _servicios_con_coords). Desde la migración 021
+        # nuestra capa cubre las 9 categorías (iglesia y seguridad incluidas): Google solo
+        # entra si el punto cae fuera del bbox de la ciudad cargada.
         dest = await _nearest_propio(lat, lon, cat, subtipos)
         if not dest and key:
             dest = await _nearest_categoria(lat, lon, cat, key, tipos)
@@ -787,14 +804,16 @@ async def comando_mapa(pregunta: str, lat: float, lon: float) -> dict:
                     ruta = await _ruta_a_pie(c, lat, lon, dest["lat"], dest["lon"], key)
             except Exception:  # noqa: BLE001
                 ruta = None
+        sello = _sello_fuente([dest])
         if ruta and ruta.get("coords"):
             etiqueta = f"🚶 {ruta['duracion_min']} min · {dest['nombre']}"
             return {
-                "texto": f"Ilumino la ruta a **{dest['nombre']}**: {ruta['duracion_min']} min a pie ({ruta['distancia_m']} m).",
+                "texto": (f"Ilumino la ruta a **{dest['nombre']}**: "
+                          f"{ruta['duracion_min']} min a pie ({ruta['distancia_m']} m)." + sello),
                 "acciones": [{"tipo": "ruta", "coords": ruta["coords"], "destino": [dest["lon"], dest["lat"]],
                               "etiqueta": etiqueta, "color": "#5EEAD4"}],
             }
-        return {"texto": f"Encontré {dest['nombre']} a {dest['distancia_m']} m, pero no pude trazar la ruta.",
+        return {"texto": f"Encontré **{dest['nombre']}** a {dest['distancia_m']} m, pero no pude trazar la ruta." + sello,
                 "acciones": [{"tipo": "puntos", "items": [{"coords": [dest["lon"], dest["lat"]], "etiqueta": dest["nombre"]}], "color": "#5EEAD4"}]}
 
     # 2) ¿Pide ver lo que hay alrededor?
@@ -812,7 +831,18 @@ async def comando_mapa(pregunta: str, lat: float, lon: float) -> dict:
                 "etiqueta": f"{emoji} {_nombre_limpio(s['nombre'])} ({s['distancia_m']} m)",
                 "color": _CAT_COLOR.get(s.get("cat"), "#5EEAD4"),
             })
-        return {"texto": "Enciendo los servicios cercanos en el mapa.", "acciones": [{"tipo": "puntos", "items": items, "color": "#5EEAD4"}]}
+        # Decir QUÉ se encendió, no solo que se encendió: el pin sin nombre obliga a
+        # cazarlo en el mapa. Mismo principio que la isócrona — el gesto no es la respuesta.
+        # Con el emoji de categoría (el mismo del pin): "Cedicontex (279 m)" solo no dice
+        # nada; "🏥 Cedicontex (279 m)" se lee igual que el mapa.
+        def _linea(s: dict) -> str:
+            e = _CAT_EMOJI.get(s.get("cat"), "📍")
+            if s.get("cat") == "transporte" and not s.get("es_masivo"):
+                e = "🚏"
+            return f"{e} {_nombre_limpio(s['nombre'])} ({s['distancia_m']} m)"
+        lista = " · ".join(_linea(s) for s in servicios)
+        return {"texto": f"**Lo que tienes cerca:** {lista}." + _sello_fuente(servicios),
+                "acciones": [{"tipo": "puntos", "items": items, "color": "#5EEAD4"}]}
 
     # 3) Fallback: guía
     return {"texto": "Pídeme algo como *“ruta al Metro”*, *“colegio más cercano”* o *“qué hay cerca”* y lo ilumino en el mapa.",

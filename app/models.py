@@ -141,6 +141,10 @@ class PoiPropio(Base):
     marca: Mapped[str | None] = mapped_column(Text, nullable=True)
     direccion: Mapped[str | None] = mapped_column(Text, nullable=True)
     operativo: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Slug del mercado ('quito', …). Es la unidad de RECARGA, no de consulta: el script
+    # de ingesta borra y repuebla por ciudad (migración 019) en vez de truncar la tabla.
+    # Las queries de entorno NO filtran por aquí — filtran por proximidad (ST_DWithin).
+    ciudad: Mapped[str] = mapped_column(Text, nullable=False, server_default="quito")
     actualizado_en: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -152,6 +156,10 @@ class PoiPropio(Base):
             name="ck_pois_categoria",
         ),
         CheckConstraint("fuente IN ('overture','osm')", name="ck_pois_fuente"),
+        CheckConstraint(
+            "ciudad = lower(btrim(ciudad)) AND ciudad <> '' AND ciudad !~ '\\s'",
+            name="ck_pois_ciudad",
+        ),
     )
 
 

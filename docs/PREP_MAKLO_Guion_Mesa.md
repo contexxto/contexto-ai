@@ -94,6 +94,10 @@ Del checklist §6 del PREP, priorizadas. Si la sesión se va de tema, estas son 
 - **No mencionar el otro carril** (Ricardo / Mazatlán / PYME). "Operamos en Quito con inventario real" basta.
 - **La demo:** fichas vivas de la operación actual de Quito. La prueba de que la tecnología existe — sin inflar.
 - **Honestidad de asteriscos en todo.** Es, además, el idioma que un constructor respeta.
+- **⚡ La agencia NO se menciona** (decisión del fundador, 2026-07-27 — ver [`PREP_Algoritmo_Studio_Partnership.md`](PREP_Algoritmo_Studio_Partnership.md)). Esta mesa es por el mandato; un tercero con su propio pack contamina el número antes de que Jorge declare el suyo.
+  **Si pregunta por producción de contenido o quién hace los reels:**
+  > *"La producción se dimensiona según lo que el proyecto necesite y el presupuesto que tenga. Hay varias formas de resolverla —desde lo que producimos nosotros hasta sumar un equipo dedicado— y la elegimos cuando tengamos el alcance claro. Por eso quiero entender primero qué presupuesto sostiene el proyecto."*
+  Devuelve la conversación a **su** número, que es lo que se necesita, sin cerrar ninguna puerta ni nombrar a nadie.
 
 ---
 

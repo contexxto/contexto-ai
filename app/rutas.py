@@ -108,7 +108,10 @@ async def _servicios_propios(lat: float, lon: float) -> dict[str, dict]:
             })).mappings().all()
             for f in filas:
                 out[f["categoria"]] = {
-                    "nombre": f["nombre"], "lat": f["lat"], "lon": f["lon"],
+                    # Mismo criterio que en _nearest_propio: la marca solo cuando el
+                    # nombre es genérico ("Farmacia", "Tienda"…).
+                    "nombre": _nombre_poi(f["nombre"], f["marca"]),
+                    "lat": f["lat"], "lon": f["lon"],
                     "distancia_m": f["distancia_m"], "cat": f["categoria"],
                     "marca": f["marca"], "fuente": "propio",
                 }
@@ -158,6 +161,26 @@ _PROPIOS_NEAREST_SQL = text("""
 """)
 
 
+# Nombres que no dicen nada al usuario: si el POI trae `marca`, la marca es mejor
+# etiqueta. Overture a veces deja el nombre en el genérico de la categoría con la marca
+# aparte (93 filas así en Quito) — sin esto, "Farmacia" le ganaba a "Vanttive" a 180 m
+# más cerca solo por tener la columna poblada.
+_NOMBRES_GENERICOS = {
+    "farmacia", "farmacias", "botica", "supermercado", "supermercados", "tienda",
+    "minimarket", "mini market", "abarrotes", "hospital", "clinica", "clínica",
+    "centro medico", "centro médico", "escuela", "colegio", "parque",
+    "centro comercial", "mall",
+}
+
+
+def _nombre_poi(nombre: str | None, marca: str | None) -> str | None:
+    """Etiqueta que ve el usuario: la marca solo cuando el nombre no aporta nada."""
+    n = (nombre or "").strip()
+    if marca and (not n or n.lower() in _NOMBRES_GENERICOS):
+        return marca.strip()
+    return n or marca
+
+
 async def _nearest_propio(lat: float, lon: float, cat: str,
                           subtipos: list[str] | None = None) -> dict | None:
     """El POI más cercano de UNA categoría desde nuestra capa (pois_propios).
@@ -180,21 +203,21 @@ async def _nearest_propio(lat: float, lon: float, cat: str,
     if not filas:
         return None
 
-    cands = [{"nombre": f["nombre"], "lat": f["lat"], "lon": f["lon"],
+    cands = [{"nombre": _nombre_poi(f["nombre"], f["marca"]), "lat": f["lat"], "lon": f["lon"],
               "distancia_m": f["distancia_m"], "cat": cat, "fuente": "propio",
-              "es_masivo": bool(f["es_masivo"]), "_marca": f["marca"]} for f in filas]
+              "es_masivo": bool(f["es_masivo"])} for f in filas]
 
     elegido = cands[0]
     if cat != "transporte":
         # Misma regla que con Google: una marca reconocible gana si está dentro del margen.
-        # Ventaja de la capa propia: además del nombre tenemos la columna `marca` de Overture.
+        # Se juzga por el NOMBRE YA RESUELTO (`_nombre_poi`), no por la columna `marca`
+        # a secas: lo que decide es que el usuario reconozca la etiqueta que va a leer.
         elegido = next(
             (c for c in cands
-             if (c["_marca"] or _es_marca(c["nombre"]))
+             if _es_marca(c["nombre"])
              and c["distancia_m"] <= cands[0]["distancia_m"] + _MARGEN_MARCA_M),
             cands[0],
         )
-    elegido.pop("_marca", None)
     return elegido
 
 

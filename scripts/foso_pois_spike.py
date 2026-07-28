@@ -157,16 +157,31 @@ _OVERPASS_ENDPOINTS = [
 
 
 def pull_osm_transporte() -> list[dict]:
-    """Transporte público de OSM (Overture Places no lo cubre bien). Overpass, sin auth."""
+    """POIs de OSM: transporte + el comercio de barrio que Overture no ve. Overpass, sin auth.
+
+    Overture es débil en dos frentes y OSM los cubre (mismo criterio, dos aplicaciones):
+      - transporte: Overture Places no mapea paradas (su theme de transporte son calles).
+      - comercio de barrio: medido 2026-07-27 en el bbox de Quito — OSM tiene 1.078
+        `shop=convenience` (la tienda de esquina, que NO existía en nuestra capa),
+        601 farmacias vs 466 de Overture y 341 supermercados vs 311. Esa era la brecha
+        de paridad contra Google (+84 m en farmacia, +24 m en supermercado).
+    En salud NO se suma OSM: Overture tiene 858 contra 498 de OSM (clinic+doctors).
+
+    OSM es ODbL → almacenable CON atribución (a diferencia del contenido de Google
+    Places, que los términos de esa plataforma no permiten guardar).
+    """
     s, w, n, e = BBOX["ymin"], BBOX["xmin"], BBOX["ymax"], BBOX["xmax"]
     query = f"""
-    [out:json][timeout:90];
+    [out:json][timeout:120];
     (
       node["highway"="bus_stop"]({s},{w},{n},{e});
       node["amenity"="bus_station"]({s},{w},{n},{e});
       node["railway"="station"]({s},{w},{n},{e});
       node["railway"="subway_entrance"]({s},{w},{n},{e});
       node["public_transport"="station"]({s},{w},{n},{e});
+      node["amenity"="pharmacy"]({s},{w},{n},{e});
+      node["shop"="supermarket"]({s},{w},{n},{e});
+      node["shop"="convenience"]({s},{w},{n},{e});
     );
     out body;
     """
@@ -192,18 +207,40 @@ def pull_osm_transporte() -> list[dict]:
         # Subtipo → distingue el hub MASIVO (Metro/terminal, héroe de plusvalía) de la
         # simple parada de bus. Se guarda en categoria_overture (:cat_leaf) para que la
         # capa de producción priorice el masivo igual que _mejor_transporte con Google.
-        if tags.get("railway") == "subway_entrance" or tags.get("station") == "subway":
-            subtipo, nombre = "metro", tags.get("name") or "Estación de Metro"
+        # ── comercio (categorías nuevas 2026-07-27) ──────────────────────────
+        # Sin nombre NO entra: "Encontré Farmacia a 200 m" es peor experiencia que
+        # caer a Google. En transporte sí entra sin nombre (una parada anónima sigue
+        # sirviendo). Medido: descarta ~40 farmacias y ~78 tiendas de 1.679.
+        if tags.get("amenity") == "pharmacy":
+            if not tags.get("name"):
+                continue
+            categoria, subtipo, nombre = "farmacia", "pharmacy", tags["name"]
+        elif tags.get("shop") in ("supermarket", "convenience"):
+            if not tags.get("name"):
+                continue
+            categoria = "supermercado"
+            # El minimarket queda distinguible del supermercado grande en
+            # categoria_overture, igual que parada_bus se distingue de metro. Hoy no
+            # se prioriza uno sobre otro (gana el más cercano, y la preferencia de
+            # marca ya favorece cadenas reconocibles); el subtipo deja la puerta
+            # abierta a priorizar sin recargar.
+            subtipo = "supermercado" if tags["shop"] == "supermarket" else "minimarket"
+            nombre = tags["name"]
+        # ── transporte ───────────────────────────────────────────────────────
+        elif tags.get("railway") == "subway_entrance" or tags.get("station") == "subway":
+            categoria, subtipo, nombre = "transporte", "metro", tags.get("name") or "Estación de Metro"
         elif tags.get("railway") == "station":
-            subtipo, nombre = "estacion_tren", tags.get("name") or "Estación de tren"
+            categoria, subtipo, nombre = "transporte", "estacion_tren", tags.get("name") or "Estación de tren"
         elif tags.get("amenity") == "bus_station":
-            subtipo, nombre = "terminal_bus", tags.get("name") or "Terminal de bus"
+            categoria, subtipo, nombre = "transporte", "terminal_bus", tags.get("name") or "Terminal de bus"
         elif tags.get("public_transport") == "station":
-            subtipo, nombre = "estacion", tags.get("name") or "Estación"
+            categoria, subtipo, nombre = "transporte", "estacion", tags.get("name") or "Estación"
+        elif tags.get("highway") == "bus_stop":
+            categoria, subtipo, nombre = "transporte", "parada_bus", tags.get("name") or "Parada de bus"
         else:
-            subtipo, nombre = "parada_bus", tags.get("name") or "Parada de bus"
+            continue
         out.append(_normalizar({
-            "nombre": nombre, "categoria": "transporte", "cat_leaf": subtipo,
+            "nombre": nombre, "categoria": categoria, "cat_leaf": subtipo,
             "lat": el["lat"], "lon": el["lon"], "confidence": None,
             "overture_id": None, "osm_id": str(el["id"]), "marca": None,
             "direccion": None, "operativo": True, "fuente": "osm",
@@ -241,12 +278,45 @@ CREATE INDEX IF NOT EXISTS pois_propios_cat_idx    ON pois_propios (categoria);
 CREATE INDEX IF NOT EXISTS pois_propios_ciudad_idx ON pois_propios (ciudad);
 """
 
-INSERT_SQL = text("""
-    INSERT INTO pois_propios
-        (nombre, categoria, categoria_overture, geom, fuente, confianza, overture_id, osm_id, marca, direccion, operativo, ciudad)
-    VALUES
-        (:nombre, :categoria, :cat_leaf, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326),
-         :fuente, :confidence, :overture_id, :osm_id, :marca, :direccion, :operativo, :ciudad)
+# UPSERT por identificador de ORIGEN (migración 020). Reemplaza el DELETE+INSERT:
+# la fila SOBREVIVE al refresco con su `id`, y con ella lo que le cuelgue (la curación
+# del corredor, cuando exista). `actualizado_en` marca el último contacto con el origen.
+# El WHERE del ON CONFLICT repite el predicado del índice parcial — Postgres lo exige
+# para saber a qué índice apuntar.
+_SET = """
+        nombre = EXCLUDED.nombre,
+        categoria = EXCLUDED.categoria,
+        categoria_overture = EXCLUDED.categoria_overture,
+        geom = EXCLUDED.geom,
+        confianza = EXCLUDED.confianza,
+        marca = EXCLUDED.marca,
+        direccion = EXCLUDED.direccion,
+        operativo = EXCLUDED.operativo,
+        ciudad = EXCLUDED.ciudad,
+        actualizado_en = now()
+"""
+_COLS = """(nombre, categoria, categoria_overture, geom, fuente, confianza,
+            overture_id, osm_id, marca, direccion, operativo, ciudad)"""
+_VALS = """(:nombre, :categoria, :cat_leaf, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326),
+            :fuente, :confidence, :overture_id, :osm_id, :marca, :direccion, :operativo, :ciudad)"""
+
+UPSERT_OVERTURE = text(f"""
+    INSERT INTO pois_propios {_COLS} VALUES {_VALS}
+    ON CONFLICT (overture_id) WHERE overture_id IS NOT NULL DO UPDATE SET {_SET}
+""")
+UPSERT_OSM = text(f"""
+    INSERT INTO pois_propios {_COLS} VALUES {_VALS}
+    ON CONFLICT (osm_id) WHERE osm_id IS NOT NULL DO UPDATE SET {_SET}
+""")
+
+# Lo que sigue en la tabla pero YA NO viene del origen: se marca cerrado, NO se borra.
+# Un POI que desaparece de Overture/OSM puede ser un cierre real o un borrado erróneo
+# del mapa; conservar la fila permite revertir y deja el historial.
+CERRAR_AUSENTES = text("""
+    UPDATE pois_propios SET operativo = false, actualizado_en = now()
+    WHERE ciudad = :ciudad AND operativo
+      AND ((overture_id IS NOT NULL AND overture_id <> ALL(CAST(:ov AS text[])))
+        OR (osm_id      IS NOT NULL AND osm_id      <> ALL(CAST(:osm AS text[]))))
 """)
 
 NEAREST_SQL = text("""
@@ -303,24 +373,37 @@ def main():
             if stmt.strip():
                 db.execute(text(stmt))
 
-        # Recarga ACOTADA a esta ciudad. Antes era `TRUNCATE pois_propios`, que borraba
-        # TODOS los mercados (ver migración 019). Las demás ciudades no se tocan.
+        # UPSERT por ciudad (migración 020). Antes era TRUNCATE (borraba TODOS los
+        # mercados, migración 019) y luego DELETE+INSERT (perdía el `id` y la
+        # antigüedad de cada POI). Ahora la fila sobrevive al refresco.
         otras = db.execute(text(
             "SELECT ciudad, count(*) FROM pois_propios WHERE ciudad <> :c GROUP BY 1"
         ), {"c": CIUDAD}).all()
         previos = db.execute(text(
             "SELECT count(*) FROM pois_propios WHERE ciudad = :c"), {"c": CIUDAD}).scalar()
-        print(f"   reemplazando {previos} POIs de '{CIUDAD}' por {len(pois)} nuevos")
+        print(f"   en la tabla antes: {previos} POIs de '{CIUDAD}' · cosechados ahora: {len(pois)}")
         if otras:
             print("   intactas: " + ", ".join(f"{c}={n}" for c, n in otras))
 
-        db.execute(text("DELETE FROM pois_propios WHERE ciudad = :c"), {"c": CIUDAD})
-        db.execute(INSERT_SQL, pois)
+        ov = [p for p in pois if p.get("overture_id")]
+        osm = [p for p in pois if p.get("osm_id")]
+        if ov:
+            db.execute(UPSERT_OVERTURE, ov)
+        if osm:
+            db.execute(UPSERT_OSM, osm)
 
-        n = db.execute(text("SELECT count(*) FROM pois_propios WHERE ciudad = :c"),
+        # Los que siguen en la tabla pero ya no vienen del origen → cerrados, no borrados.
+        cerrados = db.execute(CERRAR_AUSENTES, {
+            "ciudad": CIUDAD,
+            "ov": [p["overture_id"] for p in ov] or [""],
+            "osm": [p["osm_id"] for p in osm] or [""],
+        }).rowcount
+
+        n = db.execute(text("SELECT count(*) FROM pois_propios WHERE ciudad = :c AND operativo"),
                        {"c": CIUDAD}).scalar()
         total = db.execute(text("SELECT count(*) FROM pois_propios")).scalar()
-        print(f"   cargados {n} POIs en '{CIUDAD}' ✅  (tabla completa: {total})")
+        print(f"   upsert: {len(ov)} Overture + {len(osm)} OSM · marcados cerrados: {cerrados}")
+        print(f"   operativos en '{CIUDAD}': {n} ✅  (tabla completa, incl. cerrados: {total})")
 
     with eng.connect() as db:
         print("\n── 4) Validación: nuestra capa vs Google (servicios_cercanos guardado) ──", flush=True)

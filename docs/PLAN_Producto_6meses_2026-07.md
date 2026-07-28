@@ -42,7 +42,21 @@ Evidencia dura en el propio repo: `intencion_evento` = **1 sesión** (un test); 
 
 **Audité (evidencia real, 2026-07-24):** `git log` (30 commits), estructura de `app/` (~40 módulos), `migrations/` (16), `frontend/src/`, y el canon reciente (`ESTRATEGIA_Canal_Aura_Contexto.md`, `ICP_Contexto_2026-07.md`, `ESTUDIO_Portales_Giro_ProComprador`).
 
-**NO verificado (marcado como tal):** el estado de **datos en producción** (¿está poblada `pois_propios` en prod? ¿corrió la ingesta?) — me apoyo en el `HANDOFF_2026-07-09` (2 semanas), que hay que **confirmar contra prod** antes de actuar. La ausencia de persistencia de `estado_intencion` sí está verificada (no existe en `models.py` ni en `migrations/`).
+**~~NO verificado~~ → VERIFICADO 2026-07-27:** el estado de **datos en producción**. Este apartado
+decía apoyarse en el `HANDOFF_2026-07-09` y pedía "confirmar contra prod antes de actuar". Se
+confirmó: **`pois_propios` SÍ está poblada — 4.898 POIs de Quito, cargados el 2026-07-01** (Overture
+2.851 + OSM transporte 2.047). La ingesta **sí corrió**. La premisa heredada de que la tabla estaba
+vacía (del `PLAN_Migracion_MapChat_Google_a_Stack_Propio.md` §2.3, 2026-07-08) era **falsa** y se
+propagó 19 días sin que nadie corriera un `SELECT count(*)`. Cobertura medida: 38 de 40 inmuebles con
+las 6 categorías resueltas por capa propia; Google rellena 3 huecos de 280. Lo que sí sigue abierto
+es el **paso 2 de la Fase 1** (el branch `comando_mapa` del map-chat aún llama a Google directo) —
+detalle y correcciones en `PLAN_Migracion_MapChat_Google_a_Stack_Propio.md` §2.3 y §4.
+
+> **Lección de método, aplicable a este plan entero:** un dato marcado como "no verificado" que
+> igual se usa para decidir se comporta como verificado. Si el costo de comprobarlo es una consulta,
+> se comprueba antes de escribir la recomendación — no después.
+
+La ausencia de persistencia de `estado_intencion` sí está verificada (no existe en `models.py` ni en `migrations/`) — *nota: superada por la Fase 0, ya shippeada (§0.5).*
 
 ---
 

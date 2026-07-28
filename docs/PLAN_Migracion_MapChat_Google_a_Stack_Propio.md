@@ -1,7 +1,10 @@
 # PLAN — Migración del Map-Chat: Google Maps → Stack propio (`pois_propios` + Valhalla)
 
-> **Estado:** documentado, NO ejecutado. Pendiente de aprobación de Carlos para arrancar Fase 1.
+> **Estado:** Fase 1 **a medias** — los datos SÍ están cargados (paso 1 hecho), el cableado del
+> map-chat NO (paso 2 pendiente). Ver §2.3, corregido contra producción el 2026-07-27.
 > **Fecha:** 2026-07-08 · **Autor:** exploración de 4 agentes + síntesis (Claude Code)
+> **Corregido:** 2026-07-27 (sesión Claude Code con Carlos) — la premisa central de este plan
+> ("`pois_propios` está vacía") era **FALSA**. Verificada contra la DB de prod, no inferida.
 > **Relacionados:** [`docs/SPEC_Foso_Capa_de_Datos.md`](SPEC_Foso_Capa_de_Datos.md), [`docs/DEPLOY_Valhalla.md`](DEPLOY_Valhalla.md), [`CLAUDE.md`](../CLAUDE.md) (líneas ~71-76: "Google es puente transitorio").
 
 ---
@@ -42,13 +45,47 @@
 - Fallback: `_servicios_con_coords()` `app/rutas.py:130-172` — solo Google para lo que falte.
 - Script de ingesta: `scripts/foso_pois_spike.py` — Overture (6 cat, bbox Quito, DuckDB/S3 anónimo, umbrales confianza 0.55-0.70) + Overpass OSM (transporte).
 
-### 2.3 🚨 El hallazgo crítico
+### 2.3 ~~🚨 El hallazgo crítico~~ → CORREGIDO 2026-07-27 (verificado contra prod)
 
-**La tabla `pois_propios` está VACÍA en producción.** El script de ingesta se escribió pero **nunca corrió** (`scripts/foso_pois_spike.py:254` consulta el conteo; hoy es 0). Por eso **todo cae a Google**.
+> **Lo que decía este apartado era falso.** Afirmaba: *"La tabla `pois_propios` está VACÍA en
+> producción. El script nunca corrió. Por eso todo cae a Google"*, y atribuía a eso el P1 del
+> 2026-07-08. **Nunca se verificó contra la base.** Se conserva el error escrito porque su
+> propagación —dos planes lo repitieron durante 19 días— es la lección: el propio apartado pedía
+> "verificar antes de Fase 1" y nadie corrió la consulta. Cuesta 30 segundos.
 
-Esto explica el P1 de hoy: `"parque más cercano"` pegó a Google (y timeouteó) **porque no hay dato propio que lo responda**.
+**El estado real (consulta de solo lectura contra la DB de prod, 2026-07-27):**
 
-> **⚠️ Verificar antes de Fase 1:** confirmar el conteo real de `pois_propios` en la DB de prod (`SELECT categoria, count(*) FROM pois_propios GROUP BY 1`). Todo el plan asume tabla vacía/incompleta.
+`pois_propios` tiene **4.898 POIs de Quito**, cargados el **2026-07-01** (una sola corrida:
+`min(actualizado_en) = max(actualizado_en)`). Todos operativos.
+
+| categoría | fuente | n |
+|---|---|---|
+| transporte | osm | 2.047 |
+| educacion | overture | 964 |
+| salud | overture | 858 |
+| farmacia | overture | 466 |
+| supermercado | overture | 311 |
+| centro_comercial | overture | 143 |
+| parque | overture | **109** |
+
+2.851 con `overture_id` + 2.047 con `osm_id` = 4.898 (cuadra).
+
+**Cobertura medida sobre los 40 inmuebles con geometría:** 38 tienen las 6 categorías de entorno
+resueltas por capa propia a 1.500 m; 1 tiene 5 de 6; 1 tiene 4 de 6. Los 40 tienen transporte propio
+a 3 km. **Google rellena 3 huecos de 280 posibles** (2 de `centro_comercial`, 1 de `parque`) — es el
+fallback marginal que el diseño buscaba, no la fuente primaria.
+
+**El hallazgo real, que sí sigue abierto:** hay **dos caminos de código** y solo uno usa el foso.
+
+- ✅ `_servicios_con_coords()` (entorno de la ficha) → propio-primero, consume los 4.898.
+- ❌ `comando_mapa()` (`app/rutas.py:562-581`, el "ruta a la farmacia" del map-chat) → toma
+  `settings.google_maps_api_key` y llama a `_nearest_categoria()` **directo a Google Places, sin
+  consultar `pois_propios`**. Si no hay clave de Google, el branch aborta entero.
+
+**Esa es la causa plausible del P1 del 2026-07-08:** `"parque más cercano"` entra por `comando_mapa`
+→ Google → timeout, **con 109 parques propios cargados desde el 1 de julio que nunca se consultaron**.
+No fue falta de dato: fue que ese camino no lo mira. *(Plausible, no probado — no hay traza del
+request original.)*
 
 ### 2.4 Valhalla — solo isócronas hoy, sin routing
 
@@ -61,18 +98,26 @@ Esto explica el P1 de hoy: `"parque más cercano"` pegó a Google (y timeouteó)
 
 ## 3. Plan por fases
 
-### 🟢 Fase 1 — Poblar datos + cablear ruta-a-categoría (mayor palanca, menor riesgo)
+### 🟡 Fase 1 — Poblar datos + cablear ruta-a-categoría (A MEDIAS — ver estado por paso)
 
 **Objetivo:** que las consultas de POIs/nearest del map-chat usen la DB propia, no Google.
 
-1. **Datos (ops):** correr `scripts/foso_pois_spike.py` contra la DB de prod → Overture (6 cat) + OSM (transporte), bbox Quito.
+1. ✅ **HECHO (2026-07-01).** **Datos (ops):** `scripts/foso_pois_spike.py` corrió contra prod →
+   4.898 POIs (Overture 6 cat + OSM transporte), bbox Quito. Verificado 2026-07-27 (§2.3).
    - Overture: gratis (DuckDB/S3 anónimo). Licencia **CDLA Permissive 2.0** (sin share-alike) para las 6 cat; OSM transporte = **ODbL** (requiere atribución).
-   - **Requiere:** acceso de escritura a la DB de prod (Supabase).
-2. **Código (pequeño, en rama):** el branch "ruta a X" del map-chat (`comando_mapa` → `_nearest_categoria`, `app/rutas.py:571-595`) hoy va **directo a Google**. Cablearlo a **propio-primero → Google fallback**, reusando `_PROPIOS_ENTORNO_SQL` (ya existe). Mismo patrón que `_servicios_con_coords`.
-3. **Verificar paridad:** para N puntos de prueba en Quito, comparar POI-propio vs Google (¿devuelve el "más cercano" razonable?). Rótulo de proveniencia `fuente:propio`.
+   - ⚠️ **Deuda que dejó:** sin cron de refresco (release Overture `2026-06-17.0`, congelado) y
+     **atribución incompleta en UI** — hay menciones sueltas a OpenStreetMap en 3 vistas, Overture
+     no aparece atribuido al usuario final. Los 2.047 POIs ODbL exigen atribución formal.
+2. ❌ **PENDIENTE — es lo que queda de esta fase.** **Código (pequeño, en rama):** el branch
+   "ruta a X" del map-chat (`comando_mapa` → `_nearest_categoria`, `app/rutas.py:562-581`) sigue yendo
+   **directo a Google** (verificado 2026-07-27). Cablearlo a **propio-primero → Google fallback**,
+   reusando `_PROPIOS_ENTORNO_SQL` (ya existe). Mismo patrón que `_servicios_con_coords`.
+   **Con la tabla ya poblada, este paso es puro código y de bajo riesgo.**
+3. ❌ **PENDIENTE. Verificar paridad:** para N puntos de prueba en Quito, comparar POI-propio vs Google (¿devuelve el "más cercano" razonable?). Rótulo de proveniencia `fuente:propio`. El paso 4 del propio script hace esta comparación.
 
-**Impacto:** elimina el grueso de la dependencia de Google **Places** + **arregla la raíz del P1 de hoy** (parque más cercano → DB propia, rápido, sin timeout).
-**Riesgo:** bajo (mayormente datos; el código reusa lo que ya existe). **Esfuerzo:** medio (ops + cambio chico).
+**Impacto de lo que falta (paso 2):** que el map-chat deje de pegarle a Google en cada "ruta a X"
+teniendo el dato en casa — es la raíz plausible del P1 del 2026-07-08 (§2.3).
+**Riesgo:** bajo. **Esfuerzo:** chico (el dato ya está; es cablear una rama que ya existe al lado).
 
 ### 🟡 Fase 2 — Routing con Valhalla `/route` (reemplazar Google Directions)
 
@@ -95,14 +140,51 @@ Esto explica el P1 de hoy: `"parque más cercano"` pegó a Google (y timeouteó)
 
 ---
 
-## 4. Recomendación
+## 4. Recomendación — REESCRITA 2026-07-27
 
-**Empezar por Fase 1.** Es el 80/20: mayormente datos, cambio de código mínimo (reusa la arquitectura existente), y **elimina la raíz del bug de hoy** además de recortar el grueso de la dependencia de Google. Fase 2 (routing) después, con validación cuidadosa. Fase 3 es mantenimiento continuo.
+> La recomendación original ("empezar por Fase 1: es mayormente datos") ya no aplica: **los datos
+> están puestos desde el 2026-07-01**. Lo que queda de la Fase 1 es solo el paso 2, que es código.
 
-### Qué se necesita para arrancar Fase 1
-- ✅ Aprobación de Carlos.
-- 🔑 Acceso de escritura a la DB de prod (Supabase) para correr la ingesta.
-- 🔍 Verificar primero el conteo real de `pois_propios` (§2.3).
+**Cerrar el paso 2 de la Fase 1** — cablear `comando_mapa` a propio-primero. Es el único cambio que
+convierte 4.898 POIs ya cargados y pagados en cero llamadas a Google para el "ruta a X" del map-chat.
+Bajo riesgo, esfuerzo chico, y quita la causa plausible del P1. Fase 2 (routing con Valhalla) después,
+con validación de calidad de aceras. Fase 3 es mantenimiento continuo.
+
+**Pero no es urgente por sí solo.** Con 40 inmuebles demo y 0 corredores reales, el ahorro es
+teórico. El disparador honesto es **inventario real** (mesa MAKLO 2026-07-29): ahí las consultas
+dejan de ser de demo y la latencia de Google entra al camino crítico de un comprador de verdad.
+Ver `PLAN_Producto_6meses_2026-07.md` §0.5 — el cuello de botella sigue siendo adopción, no capacidad.
+
+### Qué se necesita para cerrar la Fase 1
+- ✅ ~~Acceso de escritura a la DB de prod~~ — ya no hace falta, la ingesta ya corrió.
+- 🔍 ~~Verificar el conteo real~~ — hecho 2026-07-27: 4.898 POIs (§2.3).
+- 🔨 Una rama de código sobre `app/rutas.py:562-581` + medir paridad (paso 3).
+
+### Deuda separada, no bloqueante
+- **Refresco:** sin cron; el dato es del release Overture `2026-06-17.0` cargado el 01-jul.
+- **Atribución ODbL/Overture** incompleta en UI (§3, Fase 1 paso 1).
+- ✅ ~~**Multi-ciudad:** `scripts/foso_pois_spike.py` hace `TRUNCATE pois_propios` sin acotar por
+  región y **ninguna migración define columna de ciudad** — correrlo con el bbox de otra ciudad
+  **borraría Quito**.~~ **RESUELTO 2026-07-27** (`migrations/019_pois_propios_ciudad.sql`, aplicada y
+  verificada en prod: 4.898 POIs → `ciudad='quito'`, 0 nulos, índice y CHECK activos):
+  - Columna `ciudad` con `NOT NULL DEFAULT 'quito'`, índice `pois_propios_ciudad_idx` y CHECK de slug
+    limpio (minúsculas, sin espacios) — probado que rechaza `'Puebla DF'`.
+  - El script recarga con `DELETE ... WHERE ciudad = :c`, **nunca `TRUNCATE`**. Imprime cuántos
+    reemplaza y qué mercados deja intactos.
+  - Registro `CIUDADES` que ata slug ↔ bbox en la misma entrada (imposible cargar el bbox de una
+    ciudad con el nombre de otra) + CLI: `python scripts/foso_pois_spike.py <ciudad>`. Ciudad
+    desconocida aborta antes de tocar red o DB.
+  - Guarda extra: si la cosecha devuelve 0 POIs, **aborta antes del DELETE** — así un fallo de
+    Overture/Overpass ya no puede dejar un mercado vacío.
+  - `app/models.py::PoiPropio` refleja la columna y el CHECK.
+  - **Las queries de lectura NO cambiaron**: `_PROPIOS_ENTORNO_SQL` / `_PROPIOS_TRANSPORTE_SQL`
+    filtran por proximidad (`ST_DWithin`), y un POI de otro mercado nunca cae en el radio. La ciudad
+    es unidad de **carga**, no de consulta. *(Supuesto anotado en la migración: mercados a cientos de
+    km. Revisar si algún día se cargan dos ciudades conurbadas.)*
+  - **Pendiente al abrir mercado nuevo:** medir su bbox en un visor real y añadirlo a `CIUDADES`. Los
+    de Puebla y Mazatlán quedaron como comentarios sin coordenadas — **a propósito, no se inventaron**.
+- **`parque` = 109 POIs** para todo Quito, la cobertura más floja (umbral `CONF_MIN` 0.70, el más
+  exigente). Con inventario disperso será el primer hueco en abrirse; es un número en el script.
 
 ---
 

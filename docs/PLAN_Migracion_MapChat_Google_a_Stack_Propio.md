@@ -124,13 +124,36 @@ request original.)*
    - ⚠️ **Trampa encontrada:** `:param::tipo` **rompe** en SQLAlchemy — el `::` del cast se come el
      bindparam y el parámetro queda literal en el SQL (la query devolvía 0 filas en silencio, tapada
      por el `except`). Usar `CAST(:param AS tipo)`. Anotado en el código.
-3. 🟡 **Paridad: medida por cobertura, NO contra Google.** Sobre los 40 inmuebles reales × 7
-   categorías: **280 de 280 resueltas por capa propia** con el radio de 3 km del branch (100%).
-   Verificación funcional en La Carolina: Parque Metropolitano 204 m, Quicentro 1.366 m, estación
-   La Carolina 1.733 m marcada como masiva. **Lo que NO se hizo:** comparar top-1 propio vs top-1
-   Google en la misma muestra — el entorno local no tiene clave de Google, así que el camino de
-   fallback y el trazado de ruta **no se probaron contra el servicio real**, solo por flujo de
-   control con clave simulada. Pendiente antes de dar por cerrada la Fase 1.
+3. ✅ **PARIDAD MEDIDA CONTRA GOOGLE (2026-07-27), sin gastar cuota.** Se comparó el top-1 propio
+   por categoría contra `servicios_cercanos` — el texto que Google dejó guardado en cada inmueble
+   entre el 06 y el 11-jun-2026, **tres semanas antes** de que existiera la capa propia (01-jul), así
+   que no hay circularidad. 219 comparaciones sobre 40 inmuebles.
+
+   | categoría | casos | mismo lugar | propio ≤ Google | dif. mediana |
+   |---|---|---|---|---|
+   | parque | 29 | 5 | 27 | **−401 m** |
+   | centro_comercial | 34 | 10 | 28 | −154 m |
+   | educacion | 39 | 2 | 24 | −78 m |
+   | salud | 39 | 3 | 22 | −19 m |
+   | supermercado | 39 | 16 | 25 | −1 m |
+   | farmacia | 39 | 22 | 19 | +1 m |
+   | **TOTAL** | **219** | **57 (26%)** | **159 (73%)** | **−62 m** |
+
+   **El 26% de "mismo lugar" engaña en los dos sentidos.** A favor: hay coincidencias que el
+   comparador no detecta por nombre ("Cruz Hospital Psiquiátrico San Lorenzo" = "Exhospicio San
+   Lázaro"), y **Google trae basura visible** — devolvía `semáforo` a 1.105 m como parque,
+   `EQ. RECONTEC 09` a 453 m, `PY Tecnologia` como centro comercial y `PlusMedical;Pro Shape Gym`
+   como salud. En contra: dos fuentes pueden dar lugares distintos e igualmente válidos.
+
+   **Transporte NO se pudo medir:** el texto guardado de Google no lo incluye (sus 8 categorías son
+   seguridad, farmacia, supermercado, educación, centro comercial, salud, iglesia y parque). Queda
+   sin comparación la categoría con más puntos de la capa (2.044).
+
+   **Sigue sin verificarse:** el trazado de ruta contra el servicio real y el camino de fallback —
+   el entorno local no tiene clave de Google; eso se probó por flujo de control con clave simulada.
+   Riesgo concreto no descartado: una coordenada de Overture puede caer en el centro del polígono de
+   un parque, donde Google no encuentre calle para trazar (antes el destino venía del propio Google,
+   así que siempre era ruteable).
 
 **Impacto ya obtenido:** el branch "ruta a X" dejó de gastar cuota de Google en las 7 categorías
 propias, y con ello desaparece la causa plausible del P1 del 2026-07-08 (§2.3).
@@ -166,19 +189,58 @@ para todos los demás inmuebles del barrio, y la misma farmacia fantasma se le m
 comprador. **El "foso sobre el foso" de la SPEC §1.8 —el corredor confirma o cierra un POI— no está
 construido:** hay una capa de puntos y una capa de correcciones, y no se tocan.
 
-**1. Restricción única sobre el identificador de origen (requisito de todo lo demás).**
-Hoy la tabla solo tiene PK sobre `id` (bigserial) — **no hay UNIQUE sobre `overture_id` ni `osm_id`**
-(verificado en prod). Sin eso no se puede hacer `ON CONFLICT`, y el refresco está condenado a
-borrar-y-recargar. El GERS id de Overture es **estable entre releases** (la SPEC §1.3 ya lo anotó
-como "para dedupe futuro") y **los datos ya cumplen**: 2.851 `overture_id` distintos de 2.851 totales.
-Es una migración pequeña; falta solo declararlo.
+**1. ✅ HECHO (2026-07-27) — Restricción única sobre el identificador de origen.**
+`migrations/020_pois_propios_id_origen_unico.sql`, aplicada en prod. Dos índices **parciales**
+(`WHERE ... IS NOT NULL`) porque las columnas son mutuamente excluyentes: `pois_propios_overture_uidx`
+y `pois_propios_osm_uidx`. Verificado 0 duplicados antes de crearlos. La migración deja además un
+respaldo `pois_propios_backup_20260727` (4.898 filas) — era la primera recarga real de la tabla.
+*No resuelve la conflación Overture↔OSM (mismo lugar en ambas fuentes = dos filas); eso tiene su
+receta aparte en la SPEC §1.6 (≤60 m + nombre similar por trigram) y sigue pendiente.*
 
-**2. Refresco como upsert, no como reemplazo.** Solo después del punto 1. Hoy re-correr el script
-hace `DELETE` de la ciudad + `INSERT`: cada POI recibe `id` nuevo, se pierde desde cuándo lo conoces,
-y cualquier fila que apunte a la anterior queda huérfana. Es una foto que reemplaza a la otra, no un
-registro que evoluciona. Con el UNIQUE, el refresco pasa a ser: actualizar lo que cambió, marcar
-`operativo=false` lo que desapareció del origen, insertar lo nuevo — **conservando la fila, su
-antigüedad y lo que tenga colgado**. Ahí sí tiene sentido una tarea mensual (Overture) / semanal (OSM).
+**2. ✅ HECHO (2026-07-27) — Refresco como upsert.** El script ya no hace `DELETE`+`INSERT`: hace
+`ON CONFLICT (overture_id|osm_id) DO UPDATE` por fuente, y lo que ya no viene del origen se marca
+**`operativo=false`, no se borra** (un POI que desaparece del mapa puede ser un cierre real o un
+borrado erróneo: conservar la fila permite revertir y deja historial). La fila **sobrevive al
+refresco con su `id`**, que es lo que hace posible el punto 3.
+Primera corrida real: 2.851 Overture + 3.924 OSM upserted, **3 marcados cerrados**, 0 borrados.
+Ahora sí tiene sentido una tarea mensual (Overture) / semanal (OSM) — **sigue sin programarse**.
+
+> ### ⚠️ INCIDENTE 2026-07-27 — el cierre masivo (leer antes de programar cualquier cron)
+> En la segunda corrida, **Overpass devolvió 504 en sus dos endpoints**. `pull_osm` degradaba a
+> lista vacía, y la primera versión de `CERRAR_AUSENTES` —que miraba las dos fuentes juntas—
+> concluyó que los 3.924 POIs de OSM "ya no existían en el origen" y **los marcó cerrados**.
+> Producción quedó en 2.851 operativos de 6.775 hasta que se revirtió.
+>
+> **Por qué la guarda existente no saltó:** era `if not pois: abortar`, y `pois` NO estaba vacío —
+> Overture sí había traído sus 2.851. La guarda miraba el total, no cada fuente.
+>
+> **La lección:** *"no pude consultar el origen" no es "el POI ya no existe".* Un pipeline que
+> borra o cierra por ausencia necesita distinguir las dos cosas, siempre.
+>
+> **Arreglado con tres cambios** (verificados con un simulacro que reproduce el 504):
+> 1. `pull_osm` devuelve **None** cuando Overpass cae (≠ `[]`, que sería "no hay resultados").
+> 2. El cierre es **por fuente** (`CERRAR_OVERTURE` / `CERRAR_OSM`) y se salta entera la fuente
+>    que no respondió.
+> 3. **Guarda de caída brusca:** si una fuente trae menos del 50% (`UMBRAL_CAIDA`) de lo que ya
+>    había en la tabla, se asume respuesta parcial y no se cierra nada de ella.
+>
+> Que el modelo fuera "marcar cerrado" y no "borrar" es lo que hizo el incidente reversible con un
+> solo `UPDATE`. Si el refresco hubiera sido el `DELETE`+`INSERT` anterior, se habrían perdido 3.924
+> filas y habría hecho falta recargar desde el origen — con Overpass caído, imposible en ese momento.
+
+**2b. ✅ OSM sumado para comercio de barrio (2026-07-27) — cierra la brecha de paridad.**
+Medido en el bbox de Quito: OSM tenía **1.078 `shop=convenience`** (la tienda de esquina, que **no
+existía** en la capa), 601 farmacias vs 466 de Overture y 341 supermercados vs 311. Era exactamente
+la brecha contra Google (+84 m en farmacia, +24 m en supermercado). Se sumó OSM a esas dos categorías
+—mismo patrón que ya se usaba en transporte— con el minimarket distinguible en `categoria_overture`.
+En salud NO se sumó: Overture gana 858 a 498.
+**Resultado: 4.898 → 6.775 POIs operativos.** farmacia 466→1.025, supermercado 311→1.632.
+Paridad: farmacia +84 m → **+1 m**, supermercado +24 m → **−1 m** (ver §3 Fase 1 paso 3).
+*Regla de calidad: el comercio SIN nombre no entra ("Encontré Farmacia a 200 m" es peor que caer a
+Google); el transporte sin nombre sí, porque una parada anónima sigue sirviendo.*
+**Nota legal:** OSM es ODbL → almacenable **con atribución**. Los términos de Google Maps Platform
+no permiten guardar el contenido de Places: arrastrar sus resultados a `pois_propios` se descartó por
+eso, no por dificultad técnica. (Verificar los términos vigentes antes de apoyar una decisión en ello.)
 
 **3. Enganchar la curación al POI.** Que `entorno_curacion` pueda referirse a una fila de
 `pois_propios` y no solo a un texto por inmueble. Es lo que convierte cada visita de terreno en un
@@ -187,8 +249,17 @@ donde se capturó. Es el foso que no se puede descargar de ninguna API — y el 
 construye ventaja en vez de mantenerla.
 
 **Otros pendientes de la fase (sin dependencia entre sí):**
-- Categorías faltantes en capa propia: **iglesia, seguridad** (vía OSM; `entorno.py` usa 8 cat y
-  `pois_propios` cubre 7). Hoy son las únicas dos que el branch "ruta a X" manda a Google (§3 Fase 1).
+- ✅ ~~Categorías faltantes: **iglesia, seguridad**~~ — **RESUELTO 2026-07-27** (migración 021 +
+  ingesta OSM: `place_of_worship` 276, `police` 127). Eran las dos únicas que el branch "ruta a X"
+  mandaba a Google, y las que Google respondía **peor**: verificado en vivo con clave real,
+  "iglesia más cercana" devolvía *"Wilson Maldonado"* y "UPC más cercano" *"ABOGADOS EN LINES"*.
+  Ahora devuelven "Capilla Católica de Adoración…" y "Punto Nube" (nomenclatura real de la policía
+  de Quito, junto a UPC Río Coca, GOE y retenes). **El branch ya no llama a Google en ninguna
+  categoría** — solo quedaría para puntos fuera del bbox de la ciudad cargada.
+  **Rótulo revisado (Fair Housing):** `_CAT_LABEL` pasó de "🛡️ seguridad" a "🛡️ UPC (policía
+  comunitaria)" y `entorno.py` de "Seguridad (UPC)" a "UPC (policía comunitaria)". La UPC es un
+  lugar con dirección, como un hospital; "seguridad" a secas se lee como una cualidad del barrio,
+  que el canon prohíbe afirmar. Con dato malo la ambigüedad pasaba desapercibida; con dato bueno, no.
 - **Atribución Overture/ODbL en UI:** hay menciones sueltas a OpenStreetMap en 3 vistas y **nada de
   Overture** hacia el usuario final; 2.047 POIs ODbL sirviendo en prod piden atribución formal.
   Alinea con el foso de honestidad — es discurso de proveniencia, cumplirlo es barato.

@@ -34,7 +34,10 @@ _CATEGORIAS: list[dict] = [
      "osm": lambda t: t.get("amenity") in {"hospital", "clinic", "doctors"}, "google": "hospital"},
     {"key": "iglesia", "emoji": "⛪", "label": "Iglesia",
      "osm": lambda t: t.get("amenity") == "place_of_worship", "google": "church"},
-    {"key": "seguridad", "emoji": "🛡️", "label": "Seguridad (UPC)",
+    # Rótulo: el SERVICIO (la UPC es un lugar con dirección), no la cualidad del barrio.
+    # "Seguridad" a secas se lee como "¿es seguro aquí?", que el canon Fair Housing
+    # prohíbe afirmar. Ver migración 021.
+    {"key": "seguridad", "emoji": "🛡️", "label": "UPC (policía comunitaria)",
      "osm": lambda t: t.get("amenity") == "police", "google": "police"},
     {"key": "parque", "emoji": "🌳", "label": "Parque",
      "osm": lambda t: t.get("leisure") in {"park", "garden"}, "google": "park"},

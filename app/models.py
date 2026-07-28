@@ -152,7 +152,7 @@ class PoiPropio(Base):
     __table_args__ = (
         CheckConstraint(
             "categoria IN ('salud','farmacia','supermercado','educacion',"
-            "'parque','centro_comercial','transporte')",
+            "'parque','centro_comercial','transporte','iglesia','seguridad')",
             name="ck_pois_categoria",
         ),
         CheckConstraint("fuente IN ('overture','osm')", name="ck_pois_fuente"),

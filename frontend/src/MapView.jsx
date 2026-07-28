@@ -844,7 +844,11 @@ export default function MapView({ seedIds, encajeById } = {}) {
                         borderRadius: 14, padding: '10px 14px', color: 'var(--map-text)', fontSize: 13, marginBottom: 9,
                         lineHeight: 1.5, display: 'flex', gap: 9, alignItems: 'flex-start', boxShadow: '0 10px 30px rgba(0,0,0,.5)' }}>
             <span style={{ flexShrink: 0, display: 'flex', marginTop: 1, color: 'var(--teal-bright)' }}>{tour ? <Film size={16} /> : <MapPin size={16} />}</span>
-            <span dangerouslySetInnerHTML={{ __html: mapaMsg.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\*(.+?)\*/g, '<i>$1</i>') }} />
+            {/* El backend manda párrafos separados por \n\n (p.ej. la isócrona: la frase, qué
+                hay dentro, los inmuebles). En HTML los saltos colapsan a espacio y todo se leía
+                como un párrafo corrido — este dato se escanea, no se lee de corrido. */}
+            <span style={{ whiteSpace: 'pre-line' }}
+                  dangerouslySetInnerHTML={{ __html: mapaMsg.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\*(.+?)\*/g, '<i>$1</i>') }} />
           </div>
         )}
 

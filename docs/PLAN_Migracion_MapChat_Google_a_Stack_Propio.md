@@ -108,16 +108,32 @@ request original.)*
    - ⚠️ **Deuda que dejó:** sin cron de refresco (release Overture `2026-06-17.0`, congelado) y
      **atribución incompleta en UI** — hay menciones sueltas a OpenStreetMap en 3 vistas, Overture
      no aparece atribuido al usuario final. Los 2.047 POIs ODbL exigen atribución formal.
-2. ❌ **PENDIENTE — es lo que queda de esta fase.** **Código (pequeño, en rama):** el branch
-   "ruta a X" del map-chat (`comando_mapa` → `_nearest_categoria`, `app/rutas.py:562-581`) sigue yendo
-   **directo a Google** (verificado 2026-07-27). Cablearlo a **propio-primero → Google fallback**,
-   reusando `_PROPIOS_ENTORNO_SQL` (ya existe). Mismo patrón que `_servicios_con_coords`.
-   **Con la tabla ya poblada, este paso es puro código y de bajo riesgo.**
-3. ❌ **PENDIENTE. Verificar paridad:** para N puntos de prueba en Quito, comparar POI-propio vs Google (¿devuelve el "más cercano" razonable?). Rótulo de proveniencia `fuente:propio`. El paso 4 del propio script hace esta comparación.
+2. ✅ **HECHO (2026-07-27).** **Código:** `comando_mapa` ya no llama a Google directo. Nuevo
+   `_nearest_propio()` (`app/rutas.py`) = espejo de `_nearest_categoria` contra `pois_propios`:
+   mismo radio (3 km), misma preferencia de marca dentro del margen, mismo shape + `fuente:"propio"`.
+   El branch hace **propio-primero → Google solo por hueco**.
+   - Cubre las 7 categorías de `pois_propios`. **`iglesia` y `seguridad` siguen yendo a Google**
+     (no están en la capa; es la deuda de Fase 3 de abajo) — verificado con espía: de 4 consultas,
+     las únicas que llegaron a Google fueron esas dos.
+   - "metro" / "terminal" en la frase mapean a subtipos propios (`metro|estacion_tren|estacion` /
+     `terminal_bus`), espejo de los `includedTypes` de Google.
+   - **Sin clave de Google el branch ya no muere.** Antes devolvía "El mapa interactivo necesita
+     Google Maps activo" para todo; ahora resuelve el destino con capa propia e ilumina el punto
+     (la línea de ruta sigue necesitando Google — eso es Fase 2). El chequeo de clave se movió al
+     único ramal que depende de Google de punta a punta (el tour).
+   - ⚠️ **Trampa encontrada:** `:param::tipo` **rompe** en SQLAlchemy — el `::` del cast se come el
+     bindparam y el parámetro queda literal en el SQL (la query devolvía 0 filas en silencio, tapada
+     por el `except`). Usar `CAST(:param AS tipo)`. Anotado en el código.
+3. 🟡 **Paridad: medida por cobertura, NO contra Google.** Sobre los 40 inmuebles reales × 7
+   categorías: **280 de 280 resueltas por capa propia** con el radio de 3 km del branch (100%).
+   Verificación funcional en La Carolina: Parque Metropolitano 204 m, Quicentro 1.366 m, estación
+   La Carolina 1.733 m marcada como masiva. **Lo que NO se hizo:** comparar top-1 propio vs top-1
+   Google en la misma muestra — el entorno local no tiene clave de Google, así que el camino de
+   fallback y el trazado de ruta **no se probaron contra el servicio real**, solo por flujo de
+   control con clave simulada. Pendiente antes de dar por cerrada la Fase 1.
 
-**Impacto de lo que falta (paso 2):** que el map-chat deje de pegarle a Google en cada "ruta a X"
-teniendo el dato en casa — es la raíz plausible del P1 del 2026-07-08 (§2.3).
-**Riesgo:** bajo. **Esfuerzo:** chico (el dato ya está; es cablear una rama que ya existe al lado).
+**Impacto ya obtenido:** el branch "ruta a X" dejó de gastar cuota de Google en las 7 categorías
+propias, y con ello desaparece la causa plausible del P1 del 2026-07-08 (§2.3).
 
 ### 🟡 Fase 2 — Routing con Valhalla `/route` (reemplazar Google Directions)
 

@@ -40,7 +40,10 @@ const ENCAJE_COLOR = [
 const CHIPS = [
   [Footprints, '15 min a pie', 'qué alcanzo a 15 minutos a pie'],
   [Footprints, '30 min a pie', 'qué alcanzo a 30 minutos a pie'],
-  [TrainFront, 'Transporte', 'ruta al metro'],
+  // El chip pedía 'ruta al metro' → una sola ruta al hub masivo, ignorando las paradas de
+  // bus más cercanas. "Transporte" = panorama (todas las paradas + la estación masiva);
+  // la ruta única al Metro sigue viva escribiendo "ruta al Metro" (el placeholder la sugiere).
+  [TrainFront, 'Transporte', 'transporte cerca'],
   [Cross, 'Salud', 'hospital más cercano'],
   [Pill, 'Farmacia', 'farmacia más cercana'],
   [ShoppingCart, 'Súper', 'supermercado más cercano'],

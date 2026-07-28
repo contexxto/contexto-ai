@@ -298,7 +298,10 @@ async def _ruta_a_pie(client: httpx.AsyncClient, o_lat: float, o_lon: float,
 
 # ── Mapa conversacional: pregunta → acciones de mapa ────────────────────────
 _PALABRAS_CAT = {
-    "transporte": ["metro", "estacion", "estación", "terminal", "parada", "bus", "transporte"],
+    # "bus" SIN límites de palabra hacía match en "BUSco un colegio" → ruta al Metro (bug
+    # real, cazado por regresión 2026-07-28). El caso "bus" suelto lo captura la rama 0b
+    # del panorama con \b; aquí queda "autobus" que no colisiona con nada.
+    "transporte": ["metro", "estacion", "estación", "terminal", "parada", "autobus", "autobús", "transporte"],
     "educacion": ["colegio", "escuela", "educacion", "educación", "universidad", "guarderia", "guardería"],
     "salud": ["hospital", "salud", "clinica", "clínica", "consultorio", "medico", "médico", "doctor"],
     "farmacia": ["farmacia", "botica"],
@@ -739,6 +742,93 @@ async def _accion_isocrona(lat: float, lon: float, p: str) -> dict:
     }
 
 
+# ── Panorama de transporte: TODAS las paradas cercanas + la estación masiva ──
+# "Transporte" a secas no es "llévame al Metro": es "¿con qué me muevo desde aquí?".
+# La ruta única al hub masivo (ignorando 15 paradas más cercanas) responde otra pregunta.
+_PANORAMA_TRANSPORTE_SQL = text("""
+    SELECT nombre, categoria_overture, ST_Y(geom) AS lat, ST_X(geom) AS lon,
+        ROUND(ST_Distance(geom::geography,
+              ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography))::int AS distancia_m,
+        (categoria_overture = ANY(:masivo)) AS es_masivo
+    FROM pois_propios
+    WHERE operativo AND categoria = 'transporte'
+      AND ST_DWithin(geom::geography,
+                     ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, :max_m)
+    ORDER BY geom <-> ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)
+    LIMIT 60
+""")
+
+_RADIO_PANORAMA_M = 800     # paradas a ≤10 min a pie (~80 m/min)
+_RADIO_MASIVO_M = 2500      # el Metro/terminal se nombra aunque quede más lejos
+
+_ETIQUETA_MASIVO = {"metro": "Metro", "terminal_bus": "terminal",
+                    "estacion_tren": "estación de tren", "estacion": "estación"}
+
+
+def _es_generico(nombre: str | None) -> bool:
+    n = (nombre or "").strip().lower()
+    return not n or n in ("parada de bus", "parada", "bus stop", "parada de autobús")
+
+
+async def _panorama_transporte(lat: float, lon: float) -> dict:
+    """Todas las paradas a ≤_RADIO_PANORAMA_M + la estación masiva más cercana (hasta
+    _RADIO_MASIVO_M). Enciende todos los puntos y NOMBRA lo que enciende (cápsula curada:
+    con ~15 paradas, listar todas sería un volcado). Honesto sobre el límite de la capa:
+    tenemos paradas y estaciones, no los recorridos de las líneas."""
+    try:
+        async with engine.connect() as conn:
+            filas = (await conn.execute(_PANORAMA_TRANSPORTE_SQL, {
+                "lat": lat, "lon": lon, "max_m": _RADIO_MASIVO_M, "masivo": _TRANSPORTE_MASIVO,
+            })).mappings().all()
+    except Exception:  # noqa: BLE001 — sin capa, el llamador cae al flujo de ruta única
+        filas = []
+    if not filas:
+        return {"texto": "No tengo transporte mapeado cerca de este punto — es un hueco de "
+                         "nuestra capa aquí, no que no exista.", "acciones": []}
+
+    paradas = [f for f in filas if not f["es_masivo"] and f["distancia_m"] <= _RADIO_PANORAMA_M]
+    masivo = next((f for f in filas if f["es_masivo"]), None)
+
+    # Pins: todas las paradas del radio + el masivo (color distinto, como el pin del mapa).
+    items = [{"coords": [f["lon"], f["lat"]],
+              "etiqueta": f"🚏 {_nombre_limpio(f['nombre']) if not _es_generico(f['nombre']) else 'Parada de bus'} ({f['distancia_m']} m)",
+              "color": "#5E9BE0"} for f in paradas]
+    if masivo:
+        et = _ETIQUETA_MASIVO.get(masivo["categoria_overture"], "estación")
+        items.append({"coords": [masivo["lon"], masivo["lat"]],
+                      "etiqueta": f"🚇 {_nombre_limpio(masivo['nombre'])} ({et}, {masivo['distancia_m']} m)",
+                      "color": "#5EEAD4"})
+
+    # Texto: el masivo primero (con minutos a pie ~80 m/min), luego las paradas CON nombre
+    # (dedup por nombre — la misma parada suele estar 2 veces, una por sentido), luego el
+    # conteo del resto. Cápsula, no volcado.
+    partes = []
+    if masivo:
+        mins = max(1, round(masivo["distancia_m"] / 80))
+        et = _ETIQUETA_MASIVO.get(masivo["categoria_overture"], "estación")
+        partes.append(f"🚇 **{_nombre_limpio(masivo['nombre'])}** ({et}) a {masivo['distancia_m']} m (~{mins} min)")
+    vistas: set[str] = set()
+    nombradas = []
+    for f in paradas:
+        n = _nombre_limpio(f["nombre"])
+        if _es_generico(n) or n.lower() in vistas:
+            continue
+        vistas.add(n.lower())
+        nombradas.append(f"🚏 {n} ({f['distancia_m']} m)")
+        if len(nombradas) >= 4:
+            break
+    partes.extend(nombradas)
+    resto = len(paradas) - len(nombradas)
+    if resto > 0:
+        partes.append(f"+{resto} parada{'s' if resto != 1 else ''} más")
+
+    texto = ("**Transporte a pie desde aquí:** " + " · ".join(partes) + "."
+             + "\n\nTe enciendo todas en el mapa. Aún no tengo los recorridos de las líneas "
+               "— te muestro paradas y estaciones."
+             + _sello_fuente([{"fuente": "propio"}]))
+    return {"texto": texto, "acciones": [{"tipo": "puntos", "items": items, "color": "#5E9BE0"}]}
+
+
 def _sello_fuente(items: list[dict]) -> str:
     """Proveniencia del dato, en una línea aparte. Honestidad de asteriscos: nuestra capa
     es Overture+OSM conflados y curados — es DATO PROPIO, no "verificado en terreno" (eso
@@ -772,6 +862,14 @@ async def comando_mapa(pregunta: str, lat: float, lon: float) -> dict:
         if not key:
             return {"texto": "El mapa interactivo necesita Google Maps activo.", "acciones": []}
         return await recorrido_zona(lat, lon)
+
+    # 0b) ¿Transporte en GENERAL? ("transporte", "paradas", "buses", "líneas") → panorama:
+    # todas las paradas cercanas + la estación masiva. "Metro"/"terminal"/"tren" siguen
+    # abajo con su ruta única (ahí el usuario sí nombró un destino concreto). Límites de
+    # palabra (\b) a propósito: "bus" sin bordes haría match en "busco".
+    if (not re.search(r"\b(metro|terminal|tren)\b", p)
+            and re.search(r"\b(transporte|paradas?|bus|buses|l[ií]neas?)\b", p)):
+        return await _panorama_transporte(lat, lon)
 
     # 1) ¿Pide una ruta a una categoría?  NUESTRA CAPA PRIMERO, Google solo por hueco.
     cat = next((c for c, kws in _PALABRAS_CAT.items() if any(k in p for k in kws)), None)

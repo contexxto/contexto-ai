@@ -146,13 +146,61 @@ propias, y con ello desaparece la causa plausible del P1 del 2026-07-08 (§2.3).
 
 **Impacto:** elimina la dependencia de Google **Routes**. **Riesgo:** medio (calidad de aceras OSM). **Esfuerzo:** alto (código nuevo + validación + posible config/deploy de Valhalla).
 
-### 🔵 Fase 3 — Completar (continuo)
+### 🔵 Fase 3 — Frescura y acumulación (continuo)
 
-- Categorías faltantes en capa propia: **iglesia, seguridad** (vía OSM; hoy `entorno.py` usa 8 cat pero `pois_propios` solo 7).
-- **Frescura:** cron de refresco (Overture mensual / OSM Geofabrik semanal) — hoy no existe.
-- **Atribución ODbL en UI** (columna `fuente` ya existe; falta exponerla) — alinea con el foso de honestidad.
-- **Métricas:** conteo de POIs por categoría/ciudad persistido (monitoreo de salud del foso).
-- **Expansión:** bbox para nuevas ciudades (Puebla/Linden) — hoy `pois_propios` es solo Quito.
+> **Ampliada 2026-07-27** con el diagnóstico del ciclo de actualización. El orden de los tres
+> primeros puntos **no es preferencia, es dependencia**: el 3 sin el 1 se destruye en el primer
+> refresco, y hacer el 2 antes que el 1 institucionaliza el borrado.
+
+**Estado del dato hoy:** los 4.898 POIs tienen `actualizado_en = 2026-07-01`, sobre release Overture
+`2026-06-17.0` clavado a mano en el script. El transporte es una captura Overpass del mismo día.
+**Nada los renueva:** sin tarea programada, sin disparador, sin aviso. Overture publica versiones
+fechadas (fijar la versión es deliberado, por reproducibilidad — pero fijar sin renovar es congelar);
+OSM es continuo.
+
+**El hallazgo que ordena esta fase (verificado 2026-07-27):** `entorno_curacion` **NO apunta a
+`pois_propios`**. Está ligada al inmueble (`activo_id`) y guarda el nombre del lugar como texto libre
++ acción (`cerrado`|`agregado`) + lat/lon + foto. Consecuencia: cuando un corredor marca que una
+farmacia cerró, ese conocimiento **queda atrapado en el contexto de ese inmueble**; el POI sigue vivo
+para todos los demás inmuebles del barrio, y la misma farmacia fantasma se le muestra al siguiente
+comprador. **El "foso sobre el foso" de la SPEC §1.8 —el corredor confirma o cierra un POI— no está
+construido:** hay una capa de puntos y una capa de correcciones, y no se tocan.
+
+**1. Restricción única sobre el identificador de origen (requisito de todo lo demás).**
+Hoy la tabla solo tiene PK sobre `id` (bigserial) — **no hay UNIQUE sobre `overture_id` ni `osm_id`**
+(verificado en prod). Sin eso no se puede hacer `ON CONFLICT`, y el refresco está condenado a
+borrar-y-recargar. El GERS id de Overture es **estable entre releases** (la SPEC §1.3 ya lo anotó
+como "para dedupe futuro") y **los datos ya cumplen**: 2.851 `overture_id` distintos de 2.851 totales.
+Es una migración pequeña; falta solo declararlo.
+
+**2. Refresco como upsert, no como reemplazo.** Solo después del punto 1. Hoy re-correr el script
+hace `DELETE` de la ciudad + `INSERT`: cada POI recibe `id` nuevo, se pierde desde cuándo lo conoces,
+y cualquier fila que apunte a la anterior queda huérfana. Es una foto que reemplaza a la otra, no un
+registro que evoluciona. Con el UNIQUE, el refresco pasa a ser: actualizar lo que cambió, marcar
+`operativo=false` lo que desapareció del origen, insertar lo nuevo — **conservando la fila, su
+antigüedad y lo que tenga colgado**. Ahí sí tiene sentido una tarea mensual (Overture) / semanal (OSM).
+
+**3. Enganchar la curación al POI.** Que `entorno_curacion` pueda referirse a una fila de
+`pois_propios` y no solo a un texto por inmueble. Es lo que convierte cada visita de terreno en un
+activo que **se acumula y se propaga** a todos los inmuebles del barrio, en vez de morir en la ficha
+donde se capturó. Es el foso que no se puede descargar de ninguna API — y el único de los tres que
+construye ventaja en vez de mantenerla.
+
+**Otros pendientes de la fase (sin dependencia entre sí):**
+- Categorías faltantes en capa propia: **iglesia, seguridad** (vía OSM; `entorno.py` usa 8 cat y
+  `pois_propios` cubre 7). Hoy son las únicas dos que el branch "ruta a X" manda a Google (§3 Fase 1).
+- **Atribución Overture/ODbL en UI:** hay menciones sueltas a OpenStreetMap en 3 vistas y **nada de
+  Overture** hacia el usuario final; 2.047 POIs ODbL sirviendo en prod piden atribución formal.
+  Alinea con el foso de honestidad — es discurso de proveniencia, cumplirlo es barato.
+- **Métricas:** conteo de POIs por categoría/ciudad persistido (salud del foso). Con la columna
+  `ciudad` ya existente esto es una query, no un desarrollo.
+- **`parque` = 109 POIs** en todo Quito (umbral `CONF_MIN` 0.70, el más exigente). Invisible con
+  inventario concentrado; primer hueco en abrirse con inventario disperso.
+- ✅ ~~**Expansión:** bbox para nuevas ciudades~~ — **RESUELTO 2026-07-27** (migración 019 + registro
+  `CIUDADES`; ver §4). Falta solo medir el bbox real de cada mercado nuevo antes de abrirlo.
+
+**Cuándo:** nada de esto duele con 40 inmuebles demo y 0 corredores reales. El punto 3 es el que
+construye lo irreplicable, y su disparador natural es **corredores visitando inventario real**.
 
 ---
 

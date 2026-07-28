@@ -152,7 +152,10 @@ def pull_overture() -> list[dict]:
 
 _OVERPASS_ENDPOINTS = [
     "https://overpass-api.de/api/interpreter",
-    "https://overpass.kumi.systems/api/interpreter",  # mirror de respaldo
+    "https://overpass.kumi.systems/api/interpreter",   # mirror de respaldo
+    "https://overpass.private.coffee/api/interpreter",  # 3er mirror: los dos de arriba
+    # cayeron JUNTOS dos veces el 27-28/07/2026 (504); un tercero independiente
+    # baja la probabilidad de corrida incompleta del refresco semanal.
 ]
 
 
@@ -171,21 +174,28 @@ def pull_osm_transporte() -> list[dict]:
     Places, que los términos de esa plataforma no permiten guardar).
     """
     s, w, n, e = BBOX["ymin"], BBOX["xmin"], BBOX["ymax"], BBOX["xmax"]
+    # `nwr` (node+way+relation), no `node`: gran parte del mundo real está mapeado como
+    # POLÍGONO (el edificio de la iglesia, el perímetro del parque, el local de la
+    # farmacia). Solo-nodos nos dejó ciegos a 1.198 parques, 315 iglesias, 171 farmacias
+    # y 95 UPCs en Quito — destapado en el test en vivo del 2026-07-28, cuando "ruta al
+    # parque" respondió Plaza Quitumbe a 28 min con el Parque Lineal Calicanto al lado.
+    # `out body center` añade a ways/relations su centroide (center.lat/center.lon).
     query = f"""
     [out:json][timeout:120];
     (
-      node["highway"="bus_stop"]({s},{w},{n},{e});
-      node["amenity"="bus_station"]({s},{w},{n},{e});
-      node["railway"="station"]({s},{w},{n},{e});
-      node["railway"="subway_entrance"]({s},{w},{n},{e});
-      node["public_transport"="station"]({s},{w},{n},{e});
-      node["amenity"="pharmacy"]({s},{w},{n},{e});
-      node["shop"="supermarket"]({s},{w},{n},{e});
-      node["shop"="convenience"]({s},{w},{n},{e});
-      node["amenity"="place_of_worship"]({s},{w},{n},{e});
-      node["amenity"="police"]({s},{w},{n},{e});
+      nwr["highway"="bus_stop"]({s},{w},{n},{e});
+      nwr["amenity"="bus_station"]({s},{w},{n},{e});
+      nwr["railway"="station"]({s},{w},{n},{e});
+      nwr["railway"="subway_entrance"]({s},{w},{n},{e});
+      nwr["public_transport"="station"]({s},{w},{n},{e});
+      nwr["amenity"="pharmacy"]({s},{w},{n},{e});
+      nwr["shop"="supermarket"]({s},{w},{n},{e});
+      nwr["shop"="convenience"]({s},{w},{n},{e});
+      nwr["amenity"="place_of_worship"]({s},{w},{n},{e});
+      nwr["amenity"="police"]({s},{w},{n},{e});
+      nwr["leisure"~"^(park|garden)$"]({s},{w},{n},{e});
     );
-    out body;
+    out body center;
     """
     headers = {"User-Agent": "whaber-foso-spike/1.0 (contacto: dev@whaber.local)"}
     elems = None
@@ -206,7 +216,11 @@ def pull_osm_transporte() -> list[dict]:
     out = []
     for el in elems:
         tags = el.get("tags", {}) or {}
-        if el.get("lat") is None or el.get("lon") is None:
+        # Nodos traen lat/lon directo; ways/relations traen su centroide en `center`
+        # (pedido con `out body center`).
+        lat = el.get("lat") or (el.get("center") or {}).get("lat")
+        lon = el.get("lon") or (el.get("center") or {}).get("lon")
+        if lat is None or lon is None:
             continue
         # Subtipo → distingue el hub MASIVO (Metro/terminal, héroe de plusvalía) de la
         # simple parada de bus. Se guarda en categoria_overture (:cat_leaf) para que la
@@ -241,6 +255,14 @@ def pull_osm_transporte() -> list[dict]:
             if not tags.get("name"):
                 continue
             categoria, subtipo, nombre = "seguridad", "police", tags["name"]
+        elif tags.get("leisure") in ("park", "garden"):
+            # Refuerzo a la categoría más flaca (Overture: 109 en todo Quito por su
+            # umbral de confianza; OSM tiene 357 parques CON NOMBRE). Solo con nombre,
+            # mismo criterio que el comercio: "ruta al parque" → "Parque" a secas no
+            # aporta; los 800+ sin nombre son mayormente verde residual de barrio.
+            if not tags.get("name"):
+                continue
+            categoria, subtipo, nombre = "parque", tags["leisure"], tags["name"]
         # ── transporte ───────────────────────────────────────────────────────
         elif tags.get("railway") == "subway_entrance" or tags.get("station") == "subway":
             categoria, subtipo, nombre = "transporte", "metro", tags.get("name") or "Estación de Metro"
@@ -256,8 +278,11 @@ def pull_osm_transporte() -> list[dict]:
             continue
         out.append(_normalizar({
             "nombre": nombre, "categoria": categoria, "cat_leaf": subtipo,
-            "lat": el["lat"], "lon": el["lon"], "confidence": None,
-            "overture_id": None, "osm_id": str(el["id"]), "marca": None,
+            "lat": lat, "lon": lon, "confidence": None,
+            # "type/id" (formato estándar OSM): con `nwr`, el node 123 y el way 123 son
+            # objetos DISTINTOS con el mismo número — sin prefijo, el índice único los
+            # colapsaría en una fila. Migración 022 prefijó las filas previas (nodos).
+            "overture_id": None, "osm_id": f"{el['type']}/{el['id']}", "marca": None,
             "direccion": None, "operativo": True, "fuente": "osm",
         }))
     return out

@@ -361,6 +361,10 @@ NEAREST_SQL = text("""
 def main():
     global CIUDAD, BBOX
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
+    flags = {a.lower() for a in sys.argv[1:] if a.startswith("-")}
+    # El paso 4 es para leerlo con ojos humanos; en las corridas programadas solo
+    # ensucia el log. `refresco_pois.cmd` lo pasa siempre.
+    sin_validacion = "--sin-validacion" in flags
     CIUDAD = (args[0] if args else CIUDAD_DEFAULT).strip().lower()
     if CIUDAD not in CIUDADES:
         print(f"❌ Ciudad desconocida: {CIUDAD!r}")
@@ -450,6 +454,10 @@ def main():
         print(f"   upsert: {len(ov)} Overture + {len(osm)} OSM · marcados cerrados: {cerrados}")
         print(f"   operativos en '{CIUDAD}': {n} ✅  (tabla completa, incl. cerrados: {total})")
 
+    if sin_validacion:
+        eng.dispose()
+        _salir(osm_ok)
+
     with eng.connect() as db:
         print("\n── 4) Validación: nuestra capa vs Google (servicios_cercanos guardado) ──", flush=True)
         # Prioriza inmuebles que SÍ tengan servicios guardados (para un vs-Google real).
@@ -477,7 +485,25 @@ def main():
             print(f"   GOOGLE: {sc[:260] or '(vacío)'}")
 
     eng.dispose()
-    print("\n✅ Spike #18 completo. pois_propios (Overture + OSM transporte) cargada y consultable.")
+    _salir(osm_ok)
+
+
+def _salir(osm_ok: bool):
+    """Código de salida con SEÑAL, para que la tarea programada no corra a ciegas.
+
+    Hasta 2026-07-28 esto salía siempre 0, incluso con Overpass caído: la corrida
+    quedaba a medias y nadie se enteraba. Ahora:
+      0 = las dos fuentes respondieron.
+      2 = una fuente no respondió (los datos viejos quedaron intactos, no se cerró
+          nada). Es REINTENTABLE — `refresco_pois.cmd` lo reintenta.
+      1 = error duro (excepción sin capturar, o cero POIs cosechados).
+    """
+    if osm_ok:
+        print("\n✅ Refresco completo — las dos fuentes respondieron.")
+        sys.exit(0)
+    print("\n⚠️ Refresco INCOMPLETO: Overpass no respondió. Overture sí se actualizó; "
+          "los POIs de OSM quedaron como estaban (no se cerró ninguno). Reintentable.")
+    sys.exit(2)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,13 @@
+# Los lanzadores de Windows DEBEN quedar con CRLF.
+#
+# Con LF, cmd.exe ejecuta bien los comandos sueltos pero rompe los bloques con
+# paréntesis (`for (...)`, `if (...)`): parte cada línea en fragmentos y los intenta
+# ejecutar como comandos. El síntoma es desconcertante — errores del tipo
+# «"en" no se reconoce como un comando» — y cuesta relacionarlo con la causa.
+# Pasó el 2026-07-28 con scripts/refresco_pois.cmd.
+#
+# `core.autocrlf=true` ya lo arregla en Windows, pero no en un clon con otra
+# configuración ni en Linux/Mac. Esto lo hace explícito e independiente del entorno.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf

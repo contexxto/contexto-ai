@@ -203,7 +203,21 @@ receta aparte en la SPEC §1.6 (≤60 m + nombre similar por trigram) y sigue pe
 borrado erróneo: conservar la fila permite revertir y deja historial). La fila **sobrevive al
 refresco con su `id`**, que es lo que hace posible el punto 3.
 Primera corrida real: 2.851 Overture + 3.924 OSM upserted, **3 marcados cerrados**, 0 borrados.
-Ahora sí tiene sentido una tarea mensual (Overture) / semanal (OSM) — **sigue sin programarse**.
+Ahora sí tiene sentido una tarea mensual (Overture) / semanal (OSM) — ✅ **PROGRAMADA 2026-07-28**:
+tarea de Windows **"Refresco POIs Contexto"**, lunes 14:00 (una hora antes del radar), vía
+`scripts/refresco_pois.cmd quito`. Una sola tarea semanal cubre ambas fuentes: re-consultar
+Overture cuesta ~10 s contra S3 y solo cambia con el release mensual; separar cadencias no paga.
+Detalles operativos:
+- **Reintentos**: 3 intentos espaciados 15 min. Overpass falló 2 de 3 veces el 2026-07-27; un
+  fallo no corrompe nada (código 2 = fuente caída, POIs de OSM intactos), pero dejaba la corrida
+  a medias. Código 1 = error duro, no se reintenta.
+- **Señal**: `foso_pois_spike.py` ya no sale siempre 0 — `_salir()` devuelve 0/2 según si las
+  dos fuentes respondieron. `--sin-validacion` omite el paso 4 (comparación legible para humanos)
+  en corridas programadas.
+- **Log**: `logs/refresco_pois_<ciudad>_<fecha>.log` (ignorado por git). Si la máquina estaba
+  apagada el lunes, `StartWhenAvailable` la corre al encender.
+- **Verificada de punta a punta** el 2026-07-28: corrida real vía el lanzador → código 0,
+  7.189 operativos, 0 cerrados (idempotente); y el camino de error duro corta sin reintentar.
 
 > ### ⚠️ INCIDENTE 2026-07-27 — el cierre masivo (leer antes de programar cualquier cron)
 > En la segunda corrida, **Overpass devolvió 504 en sus dos endpoints**. `pull_osm` degradaba a

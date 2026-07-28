@@ -637,16 +637,102 @@ def _extraer_minutos(p: str) -> int:
     return max(_ISO_MIN, min(_ISO_MAX, val))
 
 
+# Qué hay DENTRO de la isócrona: la promesa de "todo lo que alcanzas" solo se cumple si se
+# dice QUÉ se alcanza. El polígono sin contenido es un mapa bonito; con contenido es la verdad
+# del lugar (que es el producto). Los POIs ya están en nuestra capa: un ST_Contains los saca.
+_DENTRO_POIS_SQL = text("""
+    SELECT categoria, count(*)::int AS n
+    FROM pois_propios
+    WHERE COALESCE(operativo, true)
+      AND ST_Contains(ST_SetSRID(ST_GeomFromGeoJSON(:geo), 4326), geom)
+    GROUP BY categoria
+    ORDER BY n DESC
+""")
+
+# Tope de categorías nombradas: el canon manda cápsulas, no volcado (el exceso de
+# información paraliza — Iyengar & Lepper). Con 9 categorías la frase se vuelve un informe;
+# con las 6 principales se escanea de un vistazo y el resto se resume en una cola honesta.
+_MAX_CATS_DENTRO = 6
+
+_DENTRO_ACTIVOS_SQL = text("""
+    SELECT count(*)::int AS n
+    FROM activos_inmutables
+    WHERE ST_Contains(ST_SetSRID(ST_GeomFromGeoJSON(:geo), 4326), geom)
+""")
+
+# Etiqueta legible por categoría: (singular, plural). Descriptivas y neutras — se CUENTA
+# equipamiento, nunca se juzga la zona (Fair Housing: medimos y citamos, el usuario juzga).
+_ETIQUETA_CAT = {
+    "farmacia":         ("farmacia", "farmacias"),
+    "supermercado":     ("supermercado", "supermercados"),
+    "parque":           ("parque", "parques"),
+    "iglesia":          ("iglesia", "iglesias"),
+    "centro_comercial": ("centro comercial", "centros comerciales"),
+    "educacion":        ("punto de educación", "puntos de educación"),
+    "salud":            ("punto de salud", "puntos de salud"),
+    "transporte":       ("parada de transporte", "paradas de transporte"),
+    "seguridad":        ("punto de seguridad", "puntos de seguridad"),
+}
+
+
+def _frase_dentro(filas: list, activos: int) -> str:
+    """Arma la frase de contenido de la isócrona. Vacío → cadena vacía (el llamador omite).
+
+    Cura a las _MAX_CATS_DENTRO categorías más numerosas y resume la cola: informa sin
+    volcar. Los conteos son un HECHO de nuestra capa (se mide y se cita); ningún adjetivo
+    juzga la zona — eso lo hace el usuario."""
+    partes = []
+    for f in filas[:_MAX_CATS_DENTRO]:
+        n = f["n"]
+        sing, plur = _ETIQUETA_CAT.get(f["categoria"], (f["categoria"], f["categoria"]))
+        partes.append(f"{n} {sing if n == 1 else plur}")
+    resto = len(filas) - _MAX_CATS_DENTRO
+    if not partes and not activos:
+        return ""
+    linea = ""
+    if partes:
+        linea = "\n\n**Dentro de esa mancha hay:** " + " · ".join(partes)
+        linea += f" y {resto} categoría{'s' if resto != 1 else ''} más." if resto > 0 else "."
+    if activos:
+        linea += (f"\n\nY **{activos} inmueble{'s' if activos != 1 else ''}** "
+                  f"del catastro dentro del área.")
+    return linea
+
+
+async def _contenido_isocrona(geometry: dict) -> str:
+    """Qué hay dentro del polígono, desde NUESTRA capa (pois_propios + catastro).
+
+    Best-effort: si la DB o la geometría fallan, devuelve "" y el mapa igual pinta el
+    contorno — nunca se degrada el turno por el detalle."""
+    import json as _json
+    try:
+        geo = _json.dumps(geometry)
+        async with engine.connect() as conn:
+            filas = (await conn.execute(_DENTRO_POIS_SQL, {"geo": geo})).mappings().all()
+            activos = (await conn.execute(_DENTRO_ACTIVOS_SQL, {"geo": geo})).scalar() or 0
+        return _frase_dentro(list(filas), int(activos))
+    except Exception:  # noqa: BLE001 — el contenido es un extra; el contorno ya vale por sí solo
+        return ""
+
+
 async def _accion_isocrona(lat: float, lon: float, p: str) -> dict:
-    """Isócrona peatonal EN VIVO (Valhalla) → acción de polígono para el mapa."""
+    """Isócrona peatonal EN VIVO (Valhalla) → polígono + QUÉ se alcanza dentro."""
     minutos = _extraer_minutos(p)
     isos = await isocrona(lat, lon, [minutos])
     if not isos:
         return {"texto": "El motor de isócronas peatonales no está disponible ahora mismo.", "acciones": []}
     contornos = [{"minutos": it["minutos"], "geometry": it["geometry"]} for it in isos]
+    texto = (f"Te ilumino **todo lo que alcanzas a {minutos} min a pie** desde aquí — "
+             "por calles reales, no en línea recta.")
+    # El contenido del área: sin esto, la frase promete algo que no entrega.
+    dentro = await _contenido_isocrona(contornos[0]["geometry"])
+    if dentro:
+        texto += dentro
+    else:
+        texto += ("\n\nTodavía no tengo equipamiento cargado dentro de esa área — "
+                  "es un hueco de nuestra capa aquí, no que no exista nada.")
     return {
-        "texto": f"Te ilumino **todo lo que alcanzas a {minutos} min a pie** desde aquí — "
-                 "por calles reales, no en línea recta.",
+        "texto": texto,
         "acciones": [{"tipo": "isocrona", "contornos": contornos, "centro": [lon, lat]}],
     }
 

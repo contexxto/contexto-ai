@@ -108,16 +108,32 @@ request original.)*
    - ⚠️ **Deuda que dejó:** sin cron de refresco (release Overture `2026-06-17.0`, congelado) y
      **atribución incompleta en UI** — hay menciones sueltas a OpenStreetMap en 3 vistas, Overture
      no aparece atribuido al usuario final. Los 2.047 POIs ODbL exigen atribución formal.
-2. ❌ **PENDIENTE — es lo que queda de esta fase.** **Código (pequeño, en rama):** el branch
-   "ruta a X" del map-chat (`comando_mapa` → `_nearest_categoria`, `app/rutas.py:562-581`) sigue yendo
-   **directo a Google** (verificado 2026-07-27). Cablearlo a **propio-primero → Google fallback**,
-   reusando `_PROPIOS_ENTORNO_SQL` (ya existe). Mismo patrón que `_servicios_con_coords`.
-   **Con la tabla ya poblada, este paso es puro código y de bajo riesgo.**
-3. ❌ **PENDIENTE. Verificar paridad:** para N puntos de prueba en Quito, comparar POI-propio vs Google (¿devuelve el "más cercano" razonable?). Rótulo de proveniencia `fuente:propio`. El paso 4 del propio script hace esta comparación.
+2. ✅ **HECHO (2026-07-27).** **Código:** `comando_mapa` ya no llama a Google directo. Nuevo
+   `_nearest_propio()` (`app/rutas.py`) = espejo de `_nearest_categoria` contra `pois_propios`:
+   mismo radio (3 km), misma preferencia de marca dentro del margen, mismo shape + `fuente:"propio"`.
+   El branch hace **propio-primero → Google solo por hueco**.
+   - Cubre las 7 categorías de `pois_propios`. **`iglesia` y `seguridad` siguen yendo a Google**
+     (no están en la capa; es la deuda de Fase 3 de abajo) — verificado con espía: de 4 consultas,
+     las únicas que llegaron a Google fueron esas dos.
+   - "metro" / "terminal" en la frase mapean a subtipos propios (`metro|estacion_tren|estacion` /
+     `terminal_bus`), espejo de los `includedTypes` de Google.
+   - **Sin clave de Google el branch ya no muere.** Antes devolvía "El mapa interactivo necesita
+     Google Maps activo" para todo; ahora resuelve el destino con capa propia e ilumina el punto
+     (la línea de ruta sigue necesitando Google — eso es Fase 2). El chequeo de clave se movió al
+     único ramal que depende de Google de punta a punta (el tour).
+   - ⚠️ **Trampa encontrada:** `:param::tipo` **rompe** en SQLAlchemy — el `::` del cast se come el
+     bindparam y el parámetro queda literal en el SQL (la query devolvía 0 filas en silencio, tapada
+     por el `except`). Usar `CAST(:param AS tipo)`. Anotado en el código.
+3. 🟡 **Paridad: medida por cobertura, NO contra Google.** Sobre los 40 inmuebles reales × 7
+   categorías: **280 de 280 resueltas por capa propia** con el radio de 3 km del branch (100%).
+   Verificación funcional en La Carolina: Parque Metropolitano 204 m, Quicentro 1.366 m, estación
+   La Carolina 1.733 m marcada como masiva. **Lo que NO se hizo:** comparar top-1 propio vs top-1
+   Google en la misma muestra — el entorno local no tiene clave de Google, así que el camino de
+   fallback y el trazado de ruta **no se probaron contra el servicio real**, solo por flujo de
+   control con clave simulada. Pendiente antes de dar por cerrada la Fase 1.
 
-**Impacto de lo que falta (paso 2):** que el map-chat deje de pegarle a Google en cada "ruta a X"
-teniendo el dato en casa — es la raíz plausible del P1 del 2026-07-08 (§2.3).
-**Riesgo:** bajo. **Esfuerzo:** chico (el dato ya está; es cablear una rama que ya existe al lado).
+**Impacto ya obtenido:** el branch "ruta a X" dejó de gastar cuota de Google en las 7 categorías
+propias, y con ello desaparece la causa plausible del P1 del 2026-07-08 (§2.3).
 
 ### 🟡 Fase 2 — Routing con Valhalla `/route` (reemplazar Google Directions)
 
@@ -130,13 +146,61 @@ teniendo el dato en casa — es la raíz plausible del P1 del 2026-07-08 (§2.3)
 
 **Impacto:** elimina la dependencia de Google **Routes**. **Riesgo:** medio (calidad de aceras OSM). **Esfuerzo:** alto (código nuevo + validación + posible config/deploy de Valhalla).
 
-### 🔵 Fase 3 — Completar (continuo)
+### 🔵 Fase 3 — Frescura y acumulación (continuo)
 
-- Categorías faltantes en capa propia: **iglesia, seguridad** (vía OSM; hoy `entorno.py` usa 8 cat pero `pois_propios` solo 7).
-- **Frescura:** cron de refresco (Overture mensual / OSM Geofabrik semanal) — hoy no existe.
-- **Atribución ODbL en UI** (columna `fuente` ya existe; falta exponerla) — alinea con el foso de honestidad.
-- **Métricas:** conteo de POIs por categoría/ciudad persistido (monitoreo de salud del foso).
-- **Expansión:** bbox para nuevas ciudades (Puebla/Linden) — hoy `pois_propios` es solo Quito.
+> **Ampliada 2026-07-27** con el diagnóstico del ciclo de actualización. El orden de los tres
+> primeros puntos **no es preferencia, es dependencia**: el 3 sin el 1 se destruye en el primer
+> refresco, y hacer el 2 antes que el 1 institucionaliza el borrado.
+
+**Estado del dato hoy:** los 4.898 POIs tienen `actualizado_en = 2026-07-01`, sobre release Overture
+`2026-06-17.0` clavado a mano en el script. El transporte es una captura Overpass del mismo día.
+**Nada los renueva:** sin tarea programada, sin disparador, sin aviso. Overture publica versiones
+fechadas (fijar la versión es deliberado, por reproducibilidad — pero fijar sin renovar es congelar);
+OSM es continuo.
+
+**El hallazgo que ordena esta fase (verificado 2026-07-27):** `entorno_curacion` **NO apunta a
+`pois_propios`**. Está ligada al inmueble (`activo_id`) y guarda el nombre del lugar como texto libre
++ acción (`cerrado`|`agregado`) + lat/lon + foto. Consecuencia: cuando un corredor marca que una
+farmacia cerró, ese conocimiento **queda atrapado en el contexto de ese inmueble**; el POI sigue vivo
+para todos los demás inmuebles del barrio, y la misma farmacia fantasma se le muestra al siguiente
+comprador. **El "foso sobre el foso" de la SPEC §1.8 —el corredor confirma o cierra un POI— no está
+construido:** hay una capa de puntos y una capa de correcciones, y no se tocan.
+
+**1. Restricción única sobre el identificador de origen (requisito de todo lo demás).**
+Hoy la tabla solo tiene PK sobre `id` (bigserial) — **no hay UNIQUE sobre `overture_id` ni `osm_id`**
+(verificado en prod). Sin eso no se puede hacer `ON CONFLICT`, y el refresco está condenado a
+borrar-y-recargar. El GERS id de Overture es **estable entre releases** (la SPEC §1.3 ya lo anotó
+como "para dedupe futuro") y **los datos ya cumplen**: 2.851 `overture_id` distintos de 2.851 totales.
+Es una migración pequeña; falta solo declararlo.
+
+**2. Refresco como upsert, no como reemplazo.** Solo después del punto 1. Hoy re-correr el script
+hace `DELETE` de la ciudad + `INSERT`: cada POI recibe `id` nuevo, se pierde desde cuándo lo conoces,
+y cualquier fila que apunte a la anterior queda huérfana. Es una foto que reemplaza a la otra, no un
+registro que evoluciona. Con el UNIQUE, el refresco pasa a ser: actualizar lo que cambió, marcar
+`operativo=false` lo que desapareció del origen, insertar lo nuevo — **conservando la fila, su
+antigüedad y lo que tenga colgado**. Ahí sí tiene sentido una tarea mensual (Overture) / semanal (OSM).
+
+**3. Enganchar la curación al POI.** Que `entorno_curacion` pueda referirse a una fila de
+`pois_propios` y no solo a un texto por inmueble. Es lo que convierte cada visita de terreno en un
+activo que **se acumula y se propaga** a todos los inmuebles del barrio, en vez de morir en la ficha
+donde se capturó. Es el foso que no se puede descargar de ninguna API — y el único de los tres que
+construye ventaja en vez de mantenerla.
+
+**Otros pendientes de la fase (sin dependencia entre sí):**
+- Categorías faltantes en capa propia: **iglesia, seguridad** (vía OSM; `entorno.py` usa 8 cat y
+  `pois_propios` cubre 7). Hoy son las únicas dos que el branch "ruta a X" manda a Google (§3 Fase 1).
+- **Atribución Overture/ODbL en UI:** hay menciones sueltas a OpenStreetMap en 3 vistas y **nada de
+  Overture** hacia el usuario final; 2.047 POIs ODbL sirviendo en prod piden atribución formal.
+  Alinea con el foso de honestidad — es discurso de proveniencia, cumplirlo es barato.
+- **Métricas:** conteo de POIs por categoría/ciudad persistido (salud del foso). Con la columna
+  `ciudad` ya existente esto es una query, no un desarrollo.
+- **`parque` = 109 POIs** en todo Quito (umbral `CONF_MIN` 0.70, el más exigente). Invisible con
+  inventario concentrado; primer hueco en abrirse con inventario disperso.
+- ✅ ~~**Expansión:** bbox para nuevas ciudades~~ — **RESUELTO 2026-07-27** (migración 019 + registro
+  `CIUDADES`; ver §4). Falta solo medir el bbox real de cada mercado nuevo antes de abrirlo.
+
+**Cuándo:** nada de esto duele con 40 inmuebles demo y 0 corredores reales. El punto 3 es el que
+construye lo irreplicable, y su disparador natural es **corredores visitando inventario real**.
 
 ---
 

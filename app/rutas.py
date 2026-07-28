@@ -127,6 +127,77 @@ async def _servicios_propios(lat: float, lon: float) -> dict[str, dict]:
     return out
 
 
+# Categorías que NUESTRA capa cubre (= CHECK de pois_propios). `iglesia` y `seguridad`
+# NO están: esas siguen yendo a Google hasta que se ingesten (Fase 3 del plan de migración).
+_CATS_PROPIAS = {"salud", "farmacia", "supermercado", "educacion",
+                 "parque", "centro_comercial", "transporte"}
+
+# "metro" / "terminal" en la frase → subtipos de nuestra capa (espejo de los tipos de Google).
+_SUBTIPOS_PROPIOS = {
+    "metro": ["metro", "estacion_tren", "estacion"],
+    "terminal": ["terminal_bus"],
+}
+
+_PROPIOS_NEAREST_SQL = text("""
+    SELECT nombre, marca,
+        ST_Y(geom) AS lat, ST_X(geom) AS lon,
+        ROUND(ST_Distance(geom::geography,
+              ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography))::int AS distancia_m,
+        (categoria_overture = ANY(:masivo)) AS es_masivo
+    FROM pois_propios
+    WHERE operativo AND categoria = :cat
+      -- CAST(... AS text[]) y NO `:subtipos::text[]`: el `::` del cast se come el
+      -- bindparam en SQLAlchemy y el parámetro queda literal en el SQL.
+      AND (cardinality(CAST(:subtipos AS text[])) = 0
+           OR categoria_overture = ANY(CAST(:subtipos AS text[])))
+      AND ST_DWithin(geom::geography,
+                     ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, :max_m)
+    ORDER BY (categoria_overture = ANY(:masivo)) DESC,
+             geom <-> ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)
+    LIMIT 8
+""")
+
+
+async def _nearest_propio(lat: float, lon: float, cat: str,
+                          subtipos: list[str] | None = None) -> dict | None:
+    """El POI más cercano de UNA categoría desde nuestra capa (pois_propios).
+
+    Espejo de `_nearest_categoria` (Google) para el branch "ruta a X" del map-chat:
+    mismo radio (3 km), misma preferencia de marca reconocible dentro del margen, y
+    mismo shape de retorno + `fuente: "propio"`. Devuelve None si la categoría no está
+    en nuestra capa o no hay nada cerca → el llamador cae a Google.
+    """
+    if cat not in _CATS_PROPIAS:
+        return None
+    try:
+        async with engine.connect() as conn:
+            filas = (await conn.execute(_PROPIOS_NEAREST_SQL, {
+                "lat": lat, "lon": lon, "cat": cat, "max_m": 3000,
+                "subtipos": subtipos or [], "masivo": _TRANSPORTE_MASIVO,
+            })).mappings().all()
+    except Exception:  # noqa: BLE001 — si la capa/DB falla, el llamador cae a Google
+        return None
+    if not filas:
+        return None
+
+    cands = [{"nombre": f["nombre"], "lat": f["lat"], "lon": f["lon"],
+              "distancia_m": f["distancia_m"], "cat": cat, "fuente": "propio",
+              "es_masivo": bool(f["es_masivo"]), "_marca": f["marca"]} for f in filas]
+
+    elegido = cands[0]
+    if cat != "transporte":
+        # Misma regla que con Google: una marca reconocible gana si está dentro del margen.
+        # Ventaja de la capa propia: además del nombre tenemos la columna `marca` de Overture.
+        elegido = next(
+            (c for c in cands
+             if (c["_marca"] or _es_marca(c["nombre"]))
+             and c["distancia_m"] <= cands[0]["distancia_m"] + _MARGEN_MARCA_M),
+            cands[0],
+        )
+    elegido.pop("_marca", None)
+    return elegido
+
+
 async def _servicios_con_coords(lat: float, lon: float, key: str, n: int = 6) -> list[dict]:
     """
     El servicio más cercano POR CATEGORÍA. FUENTE PRIMARIA: nuestra capa propia
@@ -560,32 +631,45 @@ async def comando_mapa(pregunta: str, lat: float, lon: float) -> dict:
         return await _accion_isocrona(lat, lon, p)
 
     key = settings.google_maps_api_key
-    if not key:
-        return {"texto": "El mapa interactivo necesita Google Maps activo.", "acciones": []}
 
-    # 0) ¿Pide un recorrido/tour por la zona?
+    # 0) ¿Pide un recorrido/tour por la zona? (depende de Google de punta a punta)
     if any(k in p for k in ["tour", "recorre", "recorré", "recorrido", "recorrer", "pasea", "paseo",
                             "muestrame la zona", "muéstrame la zona", "muestrame el barrio",
                             "conoce la zona", "conocer la zona", "enséñame la zona", "ensename la zona"]):
+        if not key:
+            return {"texto": "El mapa interactivo necesita Google Maps activo.", "acciones": []}
         return await recorrido_zona(lat, lon)
 
-    # 1) ¿Pide una ruta a una categoría?
+    # 1) ¿Pide una ruta a una categoría?  NUESTRA CAPA PRIMERO, Google solo por hueco.
     cat = next((c for c, kws in _PALABRAS_CAT.items() if any(k in p for k in kws)), None)
     if cat:
-        tipos = None
+        tipos = None            # tipos de Google (fallback)
+        subtipos = None         # subtipos de nuestra capa
         if cat == "transporte":
             if "metro" in p:
                 tipos = ["subway_station", "train_station", "light_rail_station"]
+                subtipos = _SUBTIPOS_PROPIOS["metro"]
             elif "terminal" in p:
                 tipos = ["bus_station"]
-        dest = await _nearest_categoria(lat, lon, cat, key, tipos)
+                subtipos = _SUBTIPOS_PROPIOS["terminal"]
+
+        # Propio-primero (mismo patrón que _servicios_con_coords). Google queda para las
+        # categorías que nuestra capa no cubre (iglesia, seguridad) y para fuera de bbox.
+        dest = await _nearest_propio(lat, lon, cat, subtipos)
+        if not dest and key:
+            dest = await _nearest_categoria(lat, lon, cat, key, tipos)
         if not dest:
             return {"texto": f"No encontré {_CAT_LABEL.get(cat, cat)} cerca de ese punto.", "acciones": []}
-        try:
-            async with httpx.AsyncClient(verify=settings.ssl_verify.lower() != "false", timeout=_TIMEOUT) as c:
-                ruta = await _ruta_a_pie(c, lat, lon, dest["lat"], dest["lon"], key)
-        except Exception:  # noqa: BLE001
-            ruta = None
+
+        # La ruta a pie sigue siendo Google (Fase 2 del plan: pasarla a Valhalla /route).
+        # Sin key aún tenemos el destino: se ilumina el punto aunque no se trace la línea.
+        ruta = None
+        if key:
+            try:
+                async with httpx.AsyncClient(verify=settings.ssl_verify.lower() != "false", timeout=_TIMEOUT) as c:
+                    ruta = await _ruta_a_pie(c, lat, lon, dest["lat"], dest["lon"], key)
+            except Exception:  # noqa: BLE001
+                ruta = None
         if ruta and ruta.get("coords"):
             etiqueta = f"🚶 {ruta['duracion_min']} min · {dest['nombre']}"
             return {

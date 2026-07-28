@@ -6,6 +6,7 @@ import {
   Footprints, TrainFront, Cross, Pill, ShoppingCart, Trees, GraduationCap, Film, Lightbulb, MessageCircle, Palette, ChevronRight, ChevronLeft,
 } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
+import { ATRIBUCION } from './atribucion'
 
 // Estilo de mapa oscuro premium (CARTO dark-matter, gratuito, sin token).
 const DARK_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
@@ -592,7 +593,7 @@ export default function MapView({ seedIds, encajeById } = {}) {
       style: DARK_STYLE,
       center: QUITO,
       zoom: 12.5,
-      attributionControl: { compact: true },
+      attributionControl: ATRIBUCION,
     })
     mapRef.current = map
     // MapLibre solo se auto-ajusta con resize de VENTANA; con el shell (sidebar/rail

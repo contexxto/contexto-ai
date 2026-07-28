@@ -4,6 +4,7 @@ import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { X, ArrowLeftRight } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
+import { ATRIBUCION } from './atribucion'
 
 // Modo COMPARAR espacial (docs/SPEC_Mapa_Vivo.md L30/L216): DOS AURAS superpuestas en el
 // MISMO encuadre donde se VE el trade-off — no un "82% vs 76%" frío ni solo una tabla. Cada
@@ -49,7 +50,7 @@ export default function CompararMap({ ids, cards = [], onClose }) {
     let cancelled = false
     const map = new maplibregl.Map({
       container: containerRef.current, style: DARK_STYLE,
-      attributionControl: false, interactive: true, fadeDuration: 0,
+      attributionControl: ATRIBUCION, interactive: true, fadeDuration: 0,
     })
     // El contenedor cambia de ancho sin evento window (sidebar/rail del shell) →
     // sin esto el canvas queda viejo y el hit-testing corrido ("mapa congelado").

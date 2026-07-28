@@ -5,6 +5,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import { Maximize2, X } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import { intentHue } from './intentHue'
+import { ATRIBUCION } from './atribucion'
 
 // Mapa Vivo — modo AURA-SINGLE. El inmueble re-centrado en SU entorno: nace cálido
 // (el "ya llegué", no el "estoy evaluando"). Pinta el inmueble como un aura que florece
@@ -209,7 +210,7 @@ export default function AuraSingleMap({ activoId, tipoActivo, onExpandMap }) {
     setFailed(false)
     const map = new maplibregl.Map({
       container: containerRef.current, style: DARK_STYLE,
-      attributionControl: false, interactive: false, fadeDuration: 0,
+      attributionControl: ATRIBUCION, interactive: false, fadeDuration: 0,
     })
     // El contenedor cambia de ancho sin evento window (sidebar/rail del shell) →
     // sin esto el canvas queda con el tamaño viejo (mapa estirado/desalineado).
@@ -239,7 +240,7 @@ export default function AuraSingleMap({ activoId, tipoActivo, onExpandMap }) {
     let cancelled = false
     const map = new maplibregl.Map({
       container: expandedRef.current, style: DARK_STYLE,
-      attributionControl: false, interactive: true, fadeDuration: 0,
+      attributionControl: ATRIBUCION, interactive: true, fadeDuration: 0,
     })
     // Interactivo en modal: si el layout cambia con el modal abierto, sin esto el
     // hit-testing queda corrido ("mapa congelado").

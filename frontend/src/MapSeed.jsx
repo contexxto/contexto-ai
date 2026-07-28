@@ -3,6 +3,7 @@ import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { MapPin, Maximize2 } from 'lucide-react'
 import { intentHue } from './intentHue'
+import { ATRIBUCION } from './atribucion'
 
 // Mapa Vivo — modo ZONA (semilla inline). El mapa NACE en la conversación: los
 // resultados del turno, leídos como espacio. Invitación viva que se abre al mapa
@@ -170,7 +171,7 @@ export default function MapSeed({ results, mapSeed, onOpen, onExpand, isLast, ac
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: DARK_STYLE,
-      attributionControl: false,
+      attributionControl: ATRIBUCION,
       interactive: false,          // es un vistazo; "Ampliar" abre el mapa real
       fadeDuration: 0,
     })

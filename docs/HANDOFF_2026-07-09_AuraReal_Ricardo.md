@@ -29,7 +29,7 @@
 ## FRENTE 3 — Contexto-AI producción (estado técnico)
 
 - **Shippeado y verificado (2026-07-08):** design system en suite de publicación (#117) · fix crash del mapa TDZ (#118) · PWA auto-update con toast (confirmado en el teléfono de Carlos) · flechas de chips del mapa funcionales · chat al design system + light-mode · robustez del map-chat (wait_for + graceful; causa raíz: latencia Google) · chip Instalar sin glow · toast reposicionado.
-- **Plan estratégico pendiente de ejecutar:** migración map-chat Google → stack propio ([`docs/PLAN_Migracion_MapChat_Google_a_Stack_Propio.md`](PLAN_Migracion_MapChat_Google_a_Stack_Propio.md)). Hallazgo crítico: **tabla `pois_propios` está VACÍA en prod** (ingesta nunca corrió). Fase 1 = poblarla + cablear propio-primero. Documentado, NO ejecutado.
+- **Plan estratégico pendiente de ejecutar:** migración map-chat Google → stack propio ([`docs/PLAN_Migracion_MapChat_Google_a_Stack_Propio.md`](PLAN_Migracion_MapChat_Google_a_Stack_Propio.md)). ~~Hallazgo crítico: **tabla `pois_propios` está VACÍA en prod** (ingesta nunca corrió). Fase 1 = poblarla + cablear propio-primero. Documentado, NO ejecutado.~~ **CORREGIDO 2026-07-27 (verificado contra prod):** la tabla **NO está vacía** — 4.898 POIs de Quito cargados el 2026-07-01; la ingesta **sí corrió**. De la Fase 1 solo falta el **paso 2** (cablear `comando_mapa` a propio-primero; hoy llama a Google directo). Detalle en §2.3 y §4 de ese plan.
 - **En progreso:** CRM Vivo (tarea #33).
 
 ## RAMAS SIN MERGEAR (piden "Mergéalo" de Carlos)
@@ -55,4 +55,4 @@
 2. **Carlos:** agendar reunión Ricardo (llevar el 1-pager v2) · comprar `aurareal.ec` · búsqueda SENADI.
 3. **Carlos (paralelo):** Lovable con [`PROMPT_LOVABLE.md`](../lanzamiento-pyme/PROMPT_LOVABLE.md) + capturas CRED → pasar URL para QA.
 4. **Claude (al desbloquearse 1):** plantilla storefront manual + leads por fuente + montaje del primer piloto.
-5. **Claude (cuando Carlos diga):** ejecutar Fase 1 de la migración a stack propio (poblar `pois_propios`).
+5. **Claude (cuando Carlos diga):** cerrar el **paso 2** de la Fase 1 de la migración a stack propio — cablear `comando_mapa` (`app/rutas.py:562-581`) a propio-primero. *(Poblar `pois_propios` ya NO aplica: hecho el 2026-07-01, 4.898 POIs. Corregido 2026-07-27.)*

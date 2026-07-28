@@ -8,7 +8,14 @@ Prueba end-to-end el primer ladrillo del stack propio (ver docs/SPEC_Foso_Capa_d
   4. Valida: POI mas cercano POR categoria para inmuebles de prueba, lado a lado con el
      servicios_cercanos que dejo Google (comparacion honesta sin gastar la API de Google).
 
-Corre:  ./.venv/Scripts/python.exe scripts/foso_pois_spike.py
+Corre:  ./.venv/Scripts/python.exe scripts/foso_pois_spike.py [ciudad]
+        (sin argumento = 'quito'. Ciudades registradas en el dict CIUDADES.)
+
+MULTI-CIUDAD (desde 2026-07-27, migracion 019): la recarga es POR CIUDAD
+(`DELETE ... WHERE ciudad = :c`), no un TRUNCATE de la tabla. Correr este script para
+un mercado NO toca los demas. Antes de la 019, abrir la segunda ciudad habria borrado
+Quito entero.
+
 Lee DATABASE_URL_OVERRIDE del .env (patron de scripts/asignar_corredor.py).
 
 NOTA: TODO SINCRONO (DuckDB + asyncio crashea el GIL en Windows). requests con verify=False
@@ -48,7 +55,31 @@ from sqlalchemy import create_engine, text
 urllib3.disable_warnings()  # verify=False para Overpass (SSL corporativo local)
 
 OVERTURE = "s3://overturemaps-us-west-2/release/2026-06-17.0/theme=places/type=place/*"
-BBOX = dict(xmin=-78.60, xmax=-78.40, ymin=-0.35, ymax=-0.05)  # Quito
+
+# ── Registro de mercados ────────────────────────────────────────────────────────
+# Cada entrada ata el SLUG de ciudad a su bbox. Van juntos a propósito: así es
+# imposible cargar el bbox de una ciudad etiquetado con el nombre de otra.
+#
+# Para abrir un mercado nuevo: agrega su entrada aquí y corre
+#   python scripts/foso_pois_spike.py <slug>
+# El script borra y recarga SOLO ese slug (`DELETE ... WHERE ciudad=`), nunca la
+# tabla entera. Antes de la migración 019 esto era un TRUNCATE y abrir la segunda
+# ciudad habría borrado Quito.
+#
+# El slug debe cumplir el CHECK de la migración 019: minúsculas, sin espacios.
+# NO inventes el bbox: sácalo de un visor real (bboxfinder / OSM export) y déjalo
+# anotado con la fecha en que lo mediste.
+CIUDADES = {
+    # slug: (xmin=oeste, xmax=este, ymin=sur, ymax=norte)   ← lon, lon, lat, lat
+    "quito": dict(xmin=-78.60, xmax=-78.40, ymin=-0.35, ymax=-0.05),
+    # "puebla":  dict(xmin=..., xmax=..., ymin=..., ymax=...),   # pendiente de medir
+    # "mazatlan": dict(xmin=..., xmax=..., ymin=..., ymax=...),  # pendiente de medir
+}
+CIUDAD_DEFAULT = "quito"
+
+# Se fijan en main() según la ciudad pedida por CLI.
+CIUDAD = CIUDAD_DEFAULT
+BBOX = CIUDADES[CIUDAD_DEFAULT]
 # Umbral de confianza POR categoría. La confianza mezcla "¿es real?" con "¿categoría
 # correcta?": el ruido (oficinas/negocios mal etiquetados) se concentra en parque y
 # centro_comercial → exigente ahí (0.70). Salud/farmacia/super/educación son fiables a
@@ -76,11 +107,13 @@ LEAF_TO_CAT = {leaf: cat for cat, leafs in CAT_LEAF.items() for leaf in leafs}
 
 # Claves comunes a TODO POI (Overture y OSM) — el executemany exige el mismo shape.
 _KEYS = ("nombre", "categoria", "cat_leaf", "lon", "lat", "confidence",
-         "overture_id", "osm_id", "marca", "direccion", "operativo", "fuente")
+         "overture_id", "osm_id", "marca", "direccion", "operativo", "fuente", "ciudad")
 
 
 def _normalizar(p: dict) -> dict:
-    return {k: p.get(k) for k in _KEYS}
+    d = {k: p.get(k) for k in _KEYS}
+    d["ciudad"] = CIUDAD  # el slug del mercado en curso; nunca se toma del POI
+    return d
 
 
 def pull_overture() -> list[dict]:
@@ -196,21 +229,24 @@ CREATE TABLE IF NOT EXISTS pois_propios (
     marca          text,
     direccion      text,
     operativo      boolean DEFAULT true,
+    ciudad         text NOT NULL DEFAULT 'quito',
     actualizado_en timestamptz NOT NULL DEFAULT now()
 );
 -- idempotente: si la tabla ya existía de una corrida previa, agrega columnas nuevas
 ALTER TABLE pois_propios ADD COLUMN IF NOT EXISTS osm_id text;
 ALTER TABLE pois_propios ADD COLUMN IF NOT EXISTS fuente text NOT NULL DEFAULT 'overture';
-CREATE INDEX IF NOT EXISTS pois_propios_geom_gix ON pois_propios USING GIST (geom);
-CREATE INDEX IF NOT EXISTS pois_propios_cat_idx  ON pois_propios (categoria);
+ALTER TABLE pois_propios ADD COLUMN IF NOT EXISTS ciudad text NOT NULL DEFAULT 'quito';
+CREATE INDEX IF NOT EXISTS pois_propios_geom_gix   ON pois_propios USING GIST (geom);
+CREATE INDEX IF NOT EXISTS pois_propios_cat_idx    ON pois_propios (categoria);
+CREATE INDEX IF NOT EXISTS pois_propios_ciudad_idx ON pois_propios (ciudad);
 """
 
 INSERT_SQL = text("""
     INSERT INTO pois_propios
-        (nombre, categoria, categoria_overture, geom, fuente, confianza, overture_id, osm_id, marca, direccion, operativo)
+        (nombre, categoria, categoria_overture, geom, fuente, confianza, overture_id, osm_id, marca, direccion, operativo, ciudad)
     VALUES
         (:nombre, :categoria, :cat_leaf, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326),
-         :fuente, :confidence, :overture_id, :osm_id, :marca, :direccion, :operativo)
+         :fuente, :confidence, :overture_id, :osm_id, :marca, :direccion, :operativo, :ciudad)
 """)
 
 NEAREST_SQL = text("""
@@ -227,6 +263,18 @@ NEAREST_SQL = text("""
 
 
 def main():
+    global CIUDAD, BBOX
+    args = [a for a in sys.argv[1:] if not a.startswith("-")]
+    CIUDAD = (args[0] if args else CIUDAD_DEFAULT).strip().lower()
+    if CIUDAD not in CIUDADES:
+        print(f"❌ Ciudad desconocida: {CIUDAD!r}")
+        print(f"   Registradas: {', '.join(sorted(CIUDADES))}")
+        print("   Para abrir un mercado nuevo, agrega su bbox al dict CIUDADES de este script.")
+        sys.exit(1)
+    BBOX = CIUDADES[CIUDAD]
+    print(f"═══ Mercado: {CIUDAD.upper()} · bbox lon[{BBOX['xmin']}, {BBOX['xmax']}] "
+          f"lat[{BBOX['ymin']}, {BBOX['ymax']}] ═══", flush=True)
+
     print("── 1) Overture Places (6 categorías, umbral de conf por categoría) ──", flush=True)
     t0 = time.time()
     pois = pull_overture()
@@ -243,16 +291,36 @@ def main():
     for cat, n in sorted(por_cat.items(), key=lambda x: -x[1]):
         print(f"     {cat:16} {n}")
 
+    if not pois:
+        print("❌ Cero POIs cosechados — abortado ANTES de tocar la DB "
+              "(si no, borraríamos la ciudad y la dejaríamos vacía).")
+        sys.exit(1)
+
     eng = create_engine(SYNC_URL, echo=False)
     with eng.begin() as db:
         print("── 3) Cargando a pois_propios ──", flush=True)
         for stmt in DDL.strip().split(";"):
             if stmt.strip():
                 db.execute(text(stmt))
-        db.execute(text("TRUNCATE pois_propios RESTART IDENTITY"))
+
+        # Recarga ACOTADA a esta ciudad. Antes era `TRUNCATE pois_propios`, que borraba
+        # TODOS los mercados (ver migración 019). Las demás ciudades no se tocan.
+        otras = db.execute(text(
+            "SELECT ciudad, count(*) FROM pois_propios WHERE ciudad <> :c GROUP BY 1"
+        ), {"c": CIUDAD}).all()
+        previos = db.execute(text(
+            "SELECT count(*) FROM pois_propios WHERE ciudad = :c"), {"c": CIUDAD}).scalar()
+        print(f"   reemplazando {previos} POIs de '{CIUDAD}' por {len(pois)} nuevos")
+        if otras:
+            print("   intactas: " + ", ".join(f"{c}={n}" for c, n in otras))
+
+        db.execute(text("DELETE FROM pois_propios WHERE ciudad = :c"), {"c": CIUDAD})
         db.execute(INSERT_SQL, pois)
-        n = db.execute(text("SELECT count(*) FROM pois_propios")).scalar()
-        print(f"   cargados {n} POIs ✅")
+
+        n = db.execute(text("SELECT count(*) FROM pois_propios WHERE ciudad = :c"),
+                       {"c": CIUDAD}).scalar()
+        total = db.execute(text("SELECT count(*) FROM pois_propios")).scalar()
+        print(f"   cargados {n} POIs en '{CIUDAD}' ✅  (tabla completa: {total})")
 
     with eng.connect() as db:
         print("\n── 4) Validación: nuestra capa vs Google (servicios_cercanos guardado) ──", flush=True)

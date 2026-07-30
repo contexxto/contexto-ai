@@ -13,11 +13,11 @@ const C = {
   text: 'var(--text)', muted: 'var(--text-mid)', line: 'var(--border)',
 }
 
-// Etiquetas humanas de las 7 dimensiones-necesidad (whitelist cerrada del motor).
+// Etiquetas humanas de las dimensiones-necesidad (whitelist cerrada del motor).
 const DIM_LABEL = {
-  tranquilidad: 'Tranquilidad', caminable: 'Caminable', transporte: 'Transporte',
-  area_verde: 'Área verde', presupuesto_max: 'Presupuesto',
-  min_dormitorios: 'Dormitorios', acepta_mascotas: 'Mascotas',
+  tipo_inmueble: 'Tipo', tranquilidad: 'Tranquilidad', caminable: 'Caminable',
+  transporte: 'Transporte', area_verde: 'Área verde', presupuesto_max: 'Presupuesto',
+  dormitorios: 'Dormitorios', acepta_mascotas: 'Mascotas',
 }
 
 const nombreCorto = (c) => c?.direccion || c?.tipo_activo || 'Inmueble'

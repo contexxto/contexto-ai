@@ -572,6 +572,46 @@ async def tool_connect_with_broker(config: RunnableConfig) -> str:
 
 
 @tool
+async def tool_priorizar_opcion(activo_id: str, motivo: str) -> str:
+    """
+    Lead with a property OTHER than the engine's #1 — and make the card panel follow you.
+
+    The [MOTOR DE ENCAJE] block gives you the engine's ranking, and the panel the user sees
+    is in that exact order. Sometimes you have a REAL, data-backed reason to lead with a
+    different one (e.g. it is the only listing that actually confirms it accepts pets, while
+    the engine's #1 has no data on that). That is allowed — silently reordering is not.
+
+    Call this ONLY in that case, BEFORE writing your answer. It moves that property to the
+    first card, so prose and panel tell the same story. Then you MUST also say in your reply
+    that you are putting it first and why.
+
+    Do NOT call it to promote something the block lists as FUERA DEL PANEL, and do NOT call
+    it just to agree with the engine (if you lead with the engine's #1, no call is needed).
+
+    Args:
+        activo_id: UUID of the property to place first — it must be one of the options
+                   listed inside the [MOTOR DE ENCAJE] block for this turn.
+        motivo: The concrete, verifiable reason, in Spanish, in one short sentence (e.g.
+                "es el único que confirma que acepta mascotas"). It is shown to the user.
+    """
+    aid = (activo_id or "").strip()
+    razon = " ".join((motivo or "").split())
+    if not aid:
+        return json.dumps({"ok": False, "message": "Falta el id del inmueble a priorizar."})
+    if len(razon) < 8:
+        # Sin motivo NO hay priorización: el punto entero del mecanismo es que el reordenamiento
+        # quede DECLARADO. Reordenar en silencio es exactamente el fallo que esto corrige.
+        return json.dumps({"ok": False, "activo_id": aid, "message": (
+            "No prioricé nada: falta el motivo. Vuelve a llamarme con un motivo concreto y "
+            "verificable en los datos, o quédate con el orden del motor.")})
+    return json.dumps({
+        "ok": True, "activo_id": aid, "motivo": razon,
+        "message": ("Listo: esa opción quedó PRIMERA en el panel de tarjetas. Ahora dilo en tu "
+                    "respuesta: que la pones primera y este motivo. No lo dejes implícito."),
+    }, ensure_ascii=False)
+
+
+@tool
 async def tool_traducir_estilo_de_vida(concepto: str) -> str:
     """
     Translate a FUZZY lifestyle concept the user expressed ("quiero algo con buena vida
@@ -610,4 +650,5 @@ AGENT_TOOLS = [
     tool_analyze_investment,
     tool_connect_with_broker,
     tool_traducir_estilo_de_vida,
+    tool_priorizar_opcion,
 ]

@@ -28,11 +28,11 @@ def test_sanitizar_bool_solo_true():
 
 def test_sanitizar_numericos_positivos():
     assert _sanitizar({"presupuesto_max": 800.0}) == {"presupuesto_max": 800.0}
-    assert _sanitizar({"min_dormitorios": 2.0}) == {"min_dormitorios": 2}  # → int
+    assert _sanitizar({"dormitorios": 2.0}) == {"dormitorios": 2}  # → int
     # Cero / negativo / NaN / no-numérico → descartado.
     assert _sanitizar({"presupuesto_max": 0}) == {}
     assert _sanitizar({"presupuesto_max": -5}) == {}
-    assert _sanitizar({"min_dormitorios": float("nan")}) == {}
+    assert _sanitizar({"dormitorios": float("nan")}) == {}
     assert _sanitizar({"presupuesto_max": "mucho"}) == {}
 
 
@@ -42,7 +42,7 @@ def test_sanitizar_numerico_string_coacciona():
 
 def test_sanitizar_rechaza_bool_e_infinito_como_numero():
     # bool no es un número declarado (True==1) y ±inf no es un tope real → se descartan.
-    assert _sanitizar({"min_dormitorios": True}) == {}
+    assert _sanitizar({"dormitorios": True}) == {}
     assert _sanitizar({"presupuesto_max": float("inf")}) == {}
     assert _sanitizar({"presupuesto_max": "inf"}) == {}
 
@@ -54,12 +54,12 @@ def test_sanitizar_no_dict_es_vacio():
 
 
 def test_sanitizar_mezcla_realista():
-    bruto = {"tranquilidad": True, "presupuesto_max": 700, "min_dormitorios": 2,
+    bruto = {"tranquilidad": True, "presupuesto_max": 700, "dormitorios": 2,
              "acepta_mascotas": True, "area_verde": True, "transporte": True, "caminable": True,
              "raza": "x", "edad": 30}  # los 2 últimos son ruido protegido
     limpio = _sanitizar(bruto)
     assert "raza" not in limpio and "edad" not in limpio
-    assert limpio["presupuesto_max"] == 700 and limpio["min_dormitorios"] == 2
+    assert limpio["presupuesto_max"] == 700 and limpio["dormitorios"] == 2
     assert limpio["tranquilidad"] and limpio["acepta_mascotas"]
 
 

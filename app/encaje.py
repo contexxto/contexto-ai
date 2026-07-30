@@ -24,29 +24,47 @@ este módulo solo consume el schema ya poblado.
 from __future__ import annotations
 
 import math
+import unicodedata
 
 # ── Whitelist CERRADA de dimensiones de NECESIDAD declarable ────────────────────────
 # Agregar una dimensión aquí es una decisión consciente. NADA fuera de esta lista puede
 # influir en el encaje: es la barrera estructural de Fair Housing. Toda dimensión es una
 # NECESIDAD (algo que el inmueble tiene/no tiene), jamás un rasgo de la persona.
 DIMENSIONES: tuple[str, ...] = (
+    "tipo_inmueble",    # texto — QUÉ pidió (departamento/casa/oficina/local comercial/quinta)
     "tranquilidad",     # bool — quiere ruido bajo
     "caminable",        # bool — quiere poder resolver a pie
     "transporte",       # bool — quiere estar cerca de transporte masivo
     "area_verde",       # bool — quiere verde/parque cerca
     "presupuesto_max",  # número — tope de precio (misma unidad que el precio del inmueble)
-    "min_dormitorios",  # int — mínimo de dormitorios
+    "dormitorios",      # int — los dormitorios que pidió (EXACTOS, no "N o más")
     "acepta_mascotas",  # bool — necesita que acepten mascotas
 )
 
 # Peso por dimensión en el promedio ponderado. Presupuesto pesa más: estar sobre el tope
 # es una necesidad dura, no un matiz. El resto, equitativo (transparencia sobre finura).
-# Ajustar pesos es un refinamiento futuro; v1 prioriza que el número sea explicable.
+# El TIPO pesa como los demás A PROPÓSITO: no necesita peso extra porque incumplirlo TOPA
+# el score (ver _REQUISITOS_DUROS), y entre las tarjetas que sí se muestran es una constante
+# (todas son del tipo pedido) — subirle el peso solo diluiría a las dimensiones que de
+# verdad diferencian una opción de otra, achatando el número que la persona lee.
 _PESOS: dict[str, float] = {
     "presupuesto_max": 1.5,
-    "tranquilidad": 1.0, "caminable": 1.0, "transporte": 1.0,
-    "area_verde": 1.0, "min_dormitorios": 1.0, "acepta_mascotas": 1.0,
+    "tipo_inmueble": 1.0, "tranquilidad": 1.0, "caminable": 1.0, "transporte": 1.0,
+    "area_verde": 1.0, "dormitorios": 1.0, "acepta_mascotas": 1.0,
 }
+
+# ── REQUISITOS DUROS (arreglo del fallo 2, BATALLA_Hiinmo 2026-07-30) ────────────────
+# Hay necesidades que NO son un matiz ponderable: si el usuario pidió un DEPARTAMENTO, una
+# casa no encaja "un poco menos" — no es lo que pidió. Un promedio ponderado, por más peso
+# que le dé al tipo, siempre puede diluir el incumplimiento con las otras dimensiones (en
+# vivo: una casa de 4 dormitorios coronada con "100% encaje contigo" ante una consulta de
+# "departamento de 2 dormitorios"). Por eso el incumplimiento de un requisito duro TOPA el
+# score: nunca puede parecer un buen encaje.
+# El tope está DEBAJO del umbral con que chat.py recorta el panel de tarjetas
+# (_ENCAJE_MIN_GRID), para que un inmueble del tipo equivocado salga del panel salvo que no
+# haya nada más que mostrar — y si se muestra, se muestre con su número honesto.
+_REQUISITOS_DUROS: frozenset[str] = frozenset({"tipo_inmueble"})
+_TOPE_REQUISITO_DURO = 49
 
 _RUIDO_S = {"BAJO": 1.0, "MEDIO": 0.5, "ALTO": 0.0}
 
@@ -88,6 +106,50 @@ def _bool(v):
     return None
 
 
+# Sinónimos que apuntan al mismo tipo de inmueble. El catastro guarda un enum corto
+# ('Departamento', 'Casa', 'Local Comercial', 'Oficina', 'Quinta') y el extractor emite ese
+# mismo enum, pero normalizamos por si un dato heredado o un scraper trae la variante larga.
+_ALIAS_TIPO = {
+    "depto": "departamento", "depa": "departamento", "apartamento": "departamento",
+    "local": "local comercial", "casa de campo": "quinta",
+}
+
+
+def normalizar_tipo(v) -> str | None:
+    """Tipo de inmueble a su forma canónica comparable (sin tildes, minúsculas, sin
+    espacios de más). None si no es un texto con contenido → 'sin dato'."""
+    if not isinstance(v, str):
+        return None
+    s = " ".join(v.strip().lower().split())
+    if not s:
+        return None
+    s = "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
+    return _ALIAS_TIPO.get(s, s)
+
+
+def estado_presupuesto(tope, precio) -> dict | None:
+    """DENTRO o SOBRE el tope, con el exceso YA calculado. Fuente ÚNICA de esa aritmética.
+
+    La usan el scorer de presupuesto (razón de la tarjeta) y el bloque autoritativo que ve
+    el modelo, para que la frase del chat y la de la tarjeta NO puedan divergir. El modelo
+    tiene PROHIBIDO hacer esta resta por su cuenta (en vivo afirmó que $710 estaba "dentro
+    de tu presupuesto de $700"): recibe el veredicto ya hecho.
+    Devuelve {dentro, exceso, precio, tope, etiqueta} o None si falta un dato comparable.
+    """
+    p, t = _num(precio), _num(tope)
+    if p is None or t is None or t <= 0:
+        return None
+    exceso = p - t
+    return {
+        "dentro": exceso <= 0,
+        "exceso": max(0.0, exceso),
+        "precio": p,
+        "tope": t,
+        "etiqueta": (f"dentro de tu tope de ${int(t):,}" if exceso <= 0
+                     else f"sobre tu tope por ${int(round(exceso)):,}"),
+    }
+
+
 def _nivel(s: float) -> str:
     """Nivel cualitativo de satisfacción de una dimensión (para ícono en el frontend)."""
     return "alto" if s >= 0.8 else "parcial" if s >= 0.4 else "bajo"
@@ -103,6 +165,28 @@ def _razon(dimension, cumple, s, texto, fuente=None, aporta=True):
 # Cada uno recibe (valor_declarado, inmueble) y devuelve una razón. `aporta=False` marca
 # "sin dato": la dimensión se declaró pero el inmueble no tiene la señal → se explica al
 # usuario pero NO entra al promedio (no castigamos ni premiamos lo que no sabemos).
+
+# Género gramatical del tipo, para que la razón se lea en español natural ("es una casa,
+# no un departamento"). Cualquier tipo desconocido cae al masculino.
+_TIPO_FEMENINO = {"casa", "quinta", "oficina", "bodega"}
+
+
+def _un(tipo: str) -> str:
+    return "una" if tipo in _TIPO_FEMENINO else "un"
+
+
+def _score_tipo_inmueble(decl, inm) -> dict:
+    """REQUISITO DURO: o es el tipo que pidió, o no lo es. Sin grises (ver _REQUISITOS_DUROS)."""
+    pedido, tiene = normalizar_tipo(decl), normalizar_tipo(inm.get("tipo_activo"))
+    if pedido is None or tiene is None:
+        return _razon("tipo_inmueble", "sin_dato", None,
+                      "Pediste un tipo de inmueble · sin dato de tipo aquí", None, aporta=False)
+    if pedido == tiene:
+        return _razon("tipo_inmueble", "alto", 1.0,
+                      f"Es {_un(pedido)} {pedido}, como pediste", "ficha del inmueble")
+    return _razon("tipo_inmueble", "bajo", 0.0,
+                  f"Es {_un(tiene)} {tiene}, no {_un(pedido)} {pedido}", "ficha del inmueble")
+
 
 def _score_tranquilidad(_decl, inm) -> dict:
     ruido = inm.get("ruido")
@@ -153,31 +237,47 @@ def _score_area_verde(_decl, inm) -> dict:
 
 
 def _score_presupuesto(decl, inm) -> dict:
-    precio = _num(inm.get("precio"))
-    decl = _num(decl)
-    if precio is None or decl is None or decl <= 0:
+    est = estado_presupuesto(decl, inm.get("precio"))
+    if est is None:
         return _razon("presupuesto_max", "sin_dato", None,
                       "Diste un presupuesto · sin precio comparable aquí", None, aporta=False)
-    if precio <= decl:
+    precio, tope = est["precio"], est["tope"]
+    if est["dentro"]:
         return _razon("presupuesto_max", "alto", 1.0,
-                      f"Dentro de tu presupuesto (${int(precio):,} ≤ ${int(decl):,})", "precio publicado")
-    exceso = (precio - decl) / decl
+                      f"Dentro de tu presupuesto (${int(precio):,} ≤ ${int(tope):,})", "precio publicado")
+    exceso = est["exceso"] / tope
     s = 0.4 if exceso <= 0.05 else 0.15 if exceso <= 0.15 else 0.0
+    # El EXCESO EN DÓLARES va en el texto (antes solo iban los dos precios). Es el número que
+    # el modelo tiene prohibido calcular por su cuenta y que en vivo tradujo a "justo en tu
+    # tope" para un $710 contra un tope de $700 (fallo 4).
     return _razon("presupuesto_max", _nivel(s), s,
-                  f"Sobre tu presupuesto (${int(precio):,} vs ${int(decl):,})", "precio publicado")
+                  f"Sobre tu tope por ${int(round(est['exceso'])):,} "
+                  f"(${int(precio):,} vs ${int(tope):,})", "precio publicado")
 
 
-def _score_min_dormitorios(decl, inm) -> dict:
+def _score_dormitorios(decl, inm) -> dict:
+    """Los dormitorios que pidió, tomados LITERAL. "2 dormitorios" es 2 — no "2 o más".
+
+    Fallo 2 de BATALLA_Hiinmo (2026-07-30): el motor leía el número como un mínimo y le
+    escribía al usuario "Cumple tus 2+ dormitorios (4)" cuando nadie había dicho "2+".
+    Tener de más tampoco es lo pedido (es otro inmueble, y normalmente otro precio): puntúa
+    PARCIAL y lo dice, en vez de coronarlo como coincidencia perfecta.
+    """
     d = _num(inm.get("num_dormitorios"))
     decl = _num(decl)
     if d is None or decl is None or decl <= 0:
-        return _razon("min_dormitorios", "sin_dato", None,
-                      "Pediste un mínimo de dormitorios · sin dato aquí", None, aporta=False)
+        return _razon("dormitorios", "sin_dato", None,
+                      "Pediste un número de dormitorios · sin dato aquí", None, aporta=False)
     d, decl = int(d), int(decl)
-    s = 1.0 if d >= decl else 0.4 if d == decl - 1 else 0.0
-    txt = (f"Cumple tus {decl}+ dormitorios ({d})" if d >= decl
-           else f"Tiene {d} dormitorio(s), pediste {decl}+")
-    return _razon("min_dormitorios", _nivel(s), s, txt, "ficha del inmueble")
+    if d == decl:
+        s, txt = 1.0, f"Tiene los {decl} dormitorios que pediste"
+    elif d > decl:
+        s, txt = 0.6, f"Tiene {d} dormitorios, pediste {decl}"
+    elif d == decl - 1:
+        s, txt = 0.4, f"Tiene {d} dormitorio(s), pediste {decl}"
+    else:
+        s, txt = 0.0, f"Tiene {d} dormitorio(s), pediste {decl}"
+    return _razon("dormitorios", _nivel(s), s, txt, "ficha del inmueble")
 
 
 def _score_acepta_mascotas(_decl, inm) -> dict:
@@ -191,12 +291,13 @@ def _score_acepta_mascotas(_decl, inm) -> dict:
 
 
 _SCORERS = {
+    "tipo_inmueble": _score_tipo_inmueble,
     "tranquilidad": _score_tranquilidad,
     "caminable": _score_caminable,
     "transporte": _score_transporte,
     "area_verde": _score_area_verde,
     "presupuesto_max": _score_presupuesto,
-    "min_dormitorios": _score_min_dormitorios,
+    "dormitorios": _score_dormitorios,
     "acepta_mascotas": _score_acepta_mascotas,
 }
 
@@ -206,7 +307,8 @@ def _dims_declaradas(preferencias: dict) -> list[str]:
 
     Solo mira claves de la whitelist (Fair Housing: lo demás se ignora). Para las bool,
     'declarada' = presente y truthy (declarar False = 'no me importa' → no puntúa). Para
-    las numéricas (presupuesto/dormitorios), 'declarada' = presente y no-None.
+    las numéricas (presupuesto/dormitorios), 'declarada' = presente y no-None. Para
+    tipo_inmueble, 'declarada' = un texto con contenido reconocible.
     """
     prefs = preferencias or {}
     out = []
@@ -214,9 +316,12 @@ def _dims_declaradas(preferencias: dict) -> list[str]:
         if dim not in prefs:
             continue
         val = prefs[dim]
-        if dim in ("presupuesto_max", "min_dormitorios"):
+        if dim in ("presupuesto_max", "dormitorios"):
             n = _num(val)               # nº válido y POSITIVO: un tope de 0 (o basura) no
             if n is not None and n > 0:  # es una necesidad declarable → se ignora.
+                out.append(dim)
+        elif dim == "tipo_inmueble":
+            if normalizar_tipo(val):         # texto con contenido; lo demás no es una necesidad
                 out.append(dim)
         elif val:  # bool truthy
             out.append(dim)
@@ -226,12 +331,15 @@ def _dims_declaradas(preferencias: dict) -> list[str]:
 def calcular_encaje(preferencias: dict, inmueble: dict) -> dict:
     """Encaje 0-100 de `inmueble` con las necesidades DECLARADAS en `preferencias`.
 
-    Devuelve {score, razones, dimensiones_declaradas, dimensiones_evaluadas}:
+    Devuelve {score, razones, dimensiones_declaradas, dimensiones_evaluadas, duros_incumplidos}:
       - score: int 0-100, o None si no hay NADA que puntuar honestamente (ninguna
         preferencia declarada, o ninguna con señal disponible en el inmueble). None ≠ 0:
         "no sé" no es "no encaja" — el frontend no debe pintar un "0%" falso.
       - razones: lista explicable (dato + fuente). Incluye las 'sin_dato' (aporta=False)
         para ser honestos sobre lo que no sabemos, sin que afecten el número.
+      - duros_incumplidos: las dimensiones de _REQUISITOS_DUROS que el inmueble NO cumple
+        (hoy: pediste departamento y esto es una casa). Si hay alguna, el score va TOPADO
+        a _TOPE_REQUISITO_DURO: no es lo que pediste, no puede lucir como un buen encaje.
 
     El promedio es ponderado SOLO sobre las dimensiones con señal (aporta=True): no
     castigamos ni premiamos lo que el inmueble no reporta.
@@ -239,17 +347,22 @@ def calcular_encaje(preferencias: dict, inmueble: dict) -> dict:
     declaradas = _dims_declaradas(preferencias)
     razones = [_SCORERS[dim](preferencias.get(dim), inmueble or {}) for dim in declaradas]
     evaluadas = [r for r in razones if r["aporta"]]
+    duros = [r["dimension"] for r in evaluadas
+             if r["dimension"] in _REQUISITOS_DUROS and r["s"] <= 0]
 
     if not evaluadas:
-        return {"score": None, "razones": razones,
+        return {"score": None, "razones": razones, "duros_incumplidos": duros,
                 "dimensiones_declaradas": declaradas, "dimensiones_evaluadas": []}
 
     num = sum(r["s"] * _PESOS[r["dimension"]] for r in evaluadas)
     den = sum(_PESOS[r["dimension"]] for r in evaluadas)
-    score = round(100 * num / den)
+    score = max(0, min(100, round(100 * num / den)))
+    if duros:
+        score = min(score, _TOPE_REQUISITO_DURO)
     return {
-        "score": max(0, min(100, score)),
+        "score": score,
         "razones": razones,
+        "duros_incumplidos": duros,
         "dimensiones_declaradas": declaradas,
         "dimensiones_evaluadas": [r["dimension"] for r in evaluadas],
     }

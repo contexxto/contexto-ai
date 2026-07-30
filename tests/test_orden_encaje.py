@@ -90,7 +90,10 @@ def test_tarjetas_se_reordenan_por_encaje_descendente(monkeypatch):
     # La peor opción (fuera de presupuesto, ruido alto) NO debe encabezar el carrusel —
     # exactamente el defecto que se vio en vivo.
     assert cards[0]["id"] == "barato_silencioso"
-    assert cards[-1]["id"] == "caro_ruidoso"
+    # Y desde el fallo 3 de BATALLA_Hiinmo (2026-07-30) ya ni siquiera aparece: $1.130 contra
+    # un tope de $800 y ruido alto no es "la última opción", es ruido en pantalla. El panel se
+    # corta por encaje/presupuesto (ver chat._recortar_grid).
+    assert [c["id"] for c in cards] == ["barato_silencioso", "medio"]
 
 
 def test_sin_preferencias_declaradas_preserva_el_orden_espacial(monkeypatch):

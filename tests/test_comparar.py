@@ -105,7 +105,7 @@ def test_caracteristicas_no_dict_no_lanza(monkeypatch):
     # jsonb no-objeto: "5" (str→int truthy) y [1,2] (list) NO deben reventar (.get →
     # AttributeError → 500). Se tratan como inmueble sin specs, no como un error.
     rows = [_mk_row("A", caracteristicas="5"), _mk_row("B", caracteristicas=[1, 2])]
-    _patch(monkeypatch, {"min_dormitorios": 2}, rows)
+    _patch(monkeypatch, {"dormitorios": 2}, rows)
     res = asyncio.run(chat.comparar_inmuebles("s", "A", "B"))
     assert res["ok"] is True and len(res["cards"]) == 2
 

@@ -2,15 +2,15 @@
 Captura de PREFERENCIAS declaradas del usuario — el INPUT del motor de encaje (app/encaje.py).
 
 LLM → schema FIJO y CERRADO. Lee lo que el usuario dijo en la conversación y extrae SOLO las
-necesidades que declaró explícitamente: las 7 dimensiones de encaje.DIMENSIONES + la OPERACIÓN
+necesidades que declaró explícitamente: las dimensiones de encaje.DIMENSIONES + la OPERACIÓN
 (arriendo/venta) como campo aparte (no puntúa en el encaje; es un filtro duro aguas abajo que
 separa magnitudes incomparables — canon mensual de arriendo vs precio de venta).
 
 ── Fair Housing (innegociable, tarea #14) ──────────────────────────────────────────────
 Tres barreras, en capas:
-  1. El TOOL SCHEMA solo tiene las 7 dimensiones-necesidad + `operacion` (enum arriendo|venta)
+  1. El TOOL SCHEMA solo tiene las dimensiones-necesidad + `operacion` (enum arriendo|venta)
      → el LLM no puede emitir un campo "familia/hijos/origen/…" porque no existe en el schema.
-     `operacion` es también una NECESIDAD (qué busca), jamás un rasgo de la persona.
+     `operacion` y `tipo_inmueble` son también NECESIDADES (qué busca), jamás rasgos de la persona.
   2. El PROMPT prohíbe inferir preferencias a partir de QUIÉN es la persona ("tengo hijos"
      NO se traduce a área verde ni a más dormitorios).
   3. El SANITIZADOR (`_sanitizar`) descarta cualquier clave fuera de encaje.DIMENSIONES (más
@@ -34,8 +34,11 @@ from app.encaje import DIMENSIONES
 logger = logging.getLogger(__name__)
 
 _BOOL_DIMS = {"tranquilidad", "caminable", "transporte", "area_verde", "acepta_mascotas"}
-_NUM_DIMS = {"presupuesto_max", "min_dormitorios"}
+_NUM_DIMS = {"presupuesto_max", "dormitorios"}
 _OPERACIONES = {"arriendo", "venta"}  # enum cerrado; canal APARTE de encaje.DIMENSIONES
+# Tipos de inmueble del catastro (mismo enum que la columna `tipo_activo`). Cerrado, igual
+# que `operacion`: es una NECESIDAD sobre el inmueble (QUÉ busca), jamás un rasgo de la persona.
+_TIPOS_INMUEBLE = {"departamento", "casa", "local comercial", "oficina", "quinta"}
 
 _SYSTEM = (
     "Eres un extractor de PREFERENCIAS declaradas para una búsqueda inmobiliaria. Lee lo que "
@@ -46,7 +49,13 @@ _SYSTEM = (
     "hijos, edad, nacionalidad, origen, religión, género, discapacidad, etc., IGNÓRALO por "
     "completo: no lo traduzcas a ninguna preferencia (ej.: 'tengo hijos' NO implica área verde, "
     "ni más dormitorios, ni tranquilidad; 'me mudo con mi pareja' NO implica nada).\n"
-    "3. presupuesto_max: el número que dijo como tope (misma moneda). min_dormitorios: entero.\n"
+    "3. presupuesto_max: el número que dijo como tope (misma moneda).\n"
+    "3b. dormitorios: el número EXACTO que pidió, tal cual lo dijo. 'de 2 dormitorios' es 2 — "
+    "NO lo conviertas en un mínimo ni lo expandas a 'dos o más'. Si dijo un rango o un mínimo "
+    "explícito ('al menos 3', 'de 3 en adelante'), registra el número que nombró.\n"
+    "3c. tipo_inmueble: el tipo que pidió, mapeado al enum ('departamento' cubre depa/depto/"
+    "apartamento/suite; 'casa' cubre casa/vivienda unifamiliar; 'quinta' cubre casa de campo/"
+    "hacienda). SOLO si nombró un tipo — 'busco algo en Cumbayá' NO declara tipo.\n"
     "4. operacion: 'arriendo' si declaró que busca ALQUILAR (señales de INTENCIÓN: 'al mes', "
     "'mensual', 'canon', 'arrendar', 'rentar', 'alquilar') o 'venta' si declaró que busca COMPRAR "
     "('comprar', 'adquirir', 'precio de compra'). SOLO si expresó esa INTENCIÓN. Igual que la "
@@ -67,8 +76,13 @@ _TOOL = {
             "transporte": {"type": "boolean", "description": "pidió estar cerca de transporte masivo (Metro/parada)"},
             "area_verde": {"type": "boolean", "description": "pidió áreas verdes / parque cerca"},
             "presupuesto_max": {"type": "number", "description": "tope de precio que declaró (solo si lo dijo)"},
-            "min_dormitorios": {"type": "integer", "description": "mínimo de dormitorios que pidió (solo si lo dijo)"},
+            "dormitorios": {"type": "integer",
+                            "description": "los dormitorios que pidió, el número EXACTO que dijo "
+                                           "(NO lo interpretes como mínimo; solo si lo dijo)"},
             "acepta_mascotas": {"type": "boolean", "description": "necesita que acepten mascotas"},
+            "tipo_inmueble": {"type": "string",
+                              "enum": ["departamento", "casa", "local comercial", "oficina", "quinta"],
+                              "description": "el tipo de inmueble que pidió, SOLO si nombró uno"},
             "operacion": {"type": "string", "enum": ["arriendo", "venta"],
                           "description": "la operación que busca: arriendo (alquilar) o venta (comprar), SOLO si lo declaró"},
         },
@@ -90,7 +104,13 @@ def _sanitizar(bruto) -> dict:
             continue
         if k not in DIMENSIONES:            # whitelist cerrada: nada ajeno pasa
             continue
-        if k in _BOOL_DIMS:
+        if k == "tipo_inmueble":
+            # Enum CERRADO (los tipos del catastro): igual que `operacion`, no abre la
+            # whitelist a texto libre — el motor lo trata como REQUISITO DURO, así que un
+            # valor inventado por el LLM podría tumbar el encaje de todo el inventario.
+            if isinstance(v, str) and " ".join(v.strip().lower().split()) in _TIPOS_INMUEBLE:
+                out["tipo_inmueble"] = " ".join(v.strip().lower().split())
+        elif k in _BOOL_DIMS:
             if v is True:                   # solo registramos la necesidad AFIRMADA
                 out[k] = True
         elif k in _NUM_DIMS:
@@ -101,7 +121,7 @@ def _sanitizar(bruto) -> dict:
             except (TypeError, ValueError):
                 continue
             if math.isfinite(n) and n > 0:  # descarta NaN, ±inf y no-positivos
-                out[k] = int(n) if k == "min_dormitorios" else n
+                out[k] = int(n) if k == "dormitorios" else n
     return out
 
 

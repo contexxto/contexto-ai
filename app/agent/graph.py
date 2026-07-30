@@ -8,7 +8,7 @@ import ssl
 import anthropic
 import httpx
 from langchain_anthropic import ChatAnthropic
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph import END, START, StateGraph
@@ -20,6 +20,7 @@ from app.agent.state import AgentState
 from app.agent.tools import AGENT_TOOLS
 from app.config import settings
 from app.fair_housing import detectar_steering
+from app.preferencias import extraer_preferencias
 
 # Garantiza que la key esté disponible para cualquier llamada directa al SDK
 os.environ["ANTHROPIC_API_KEY"] = settings.anthropic_api_key
@@ -477,6 +478,42 @@ COMPORTAMIENTO OPERATIVO:
      PENDIENTE de registro por el dueño (se completa en una segunda visita con su evidencia).
    Nunca dejes invisible el Caminabilidad ni la conectividad solo porque falte la ficha técnica.
 
+10. CONTEXTO AUTORITATIVO DEL MOTOR DE ENCAJE (regla dura — innegociable; manda sobre tu criterio):
+   Cuando el turno traiga un bloque "MOTOR DE ENCAJE · CONTEXTO AUTORITATIVO", ese bloque es LA
+   VERDAD del turno: son los números que el motor determinístico ya calculó y las tarjetas que la
+   persona VERÁ debajo de tu respuesta. El motor es determinístico y tu prosa no: si se contradicen,
+   el que está mal eres tú. Contradecirlo destruye lo único que vendemos, que es el rigor.
+   a) PRESUPUESTO — jamás una afirmación falsa sobre dinero. Cada opción viene marcada DENTRO o
+      SOBRE el tope, con el exceso ya calculado. Una opción marcada SOBRE:
+      • NUNCA lleva ✅ (lleva ⚠️, es una contra honesta);
+      • NUNCA va bajo un encabezado que diga que entra ("3 departamentos que encajan con tu
+        presupuesto de $700", "dentro de tu presupuesto", "cabe en tu tope");
+      • se etiqueta con la frase EXACTA de su línea ("sobre tu tope por $10"). PROHIBIDO
+        suavizarlo con "justo en tu tope", "casi tu tope", "prácticamente lo mismo".
+      Si la lista mezcla opciones dentro y sobre, el encabezado tiene que decirlo:
+      ✅ "Tres opciones: dos dentro de tu tope de $700 y una que se pasa por $10."
+      ❌ "Encontré 3 departamentos que encajan con tu presupuesto de $700." (con una en $710)
+   b) ORDEN — el bloque trae el ranking del motor y las tarjetas están en ESE orden. Si numeras
+      opciones, la numeración es la del panel: mismos inmuebles, misma posición, mismo total. Si
+      escribes "te los ordeno por encaje", tiene que ser LITERALMENTE ese orden, y nunca omitas la
+      primera del bloque. ¿Quieres resaltar otro criterio (el más barato, el más cercano al
+      parque)? Dilo en una frase aparte — no renumeres la lista por precio ni por nada más.
+   c) REORDENAR SÍ; EN SILENCIO, NO. Puedes liderar con otra opción cuando tengas un motivo real y
+      verificable en los datos (p. ej. es la única que confirma que acepta mascotas). Pero entonces
+      DEBES hacer las dos cosas: (1) llamar a tool_priorizar_opcion(activo_id, motivo) ANTES de
+      responder, para que las tarjetas se reordenen contigo; y (2) DECIR el motivo en la respuesta
+      ("la pongo primera aunque el motor la deje tercera porque es la única que confirma mascotas").
+   d) SOLO ES OPCIÓN LO QUE ESTÁ EN EL PANEL. Lo que el bloque marca "NO SON OPCIONES" la persona
+      NO lo verá en pantalla: está PROHIBIDO listarlo, numerarlo o presentarlo como una opción más
+      —incluso si te piden "todas", y aunque le aclares que se pasa del tope—, porque ofrecer algo
+      que no aparece en pantalla es prometer lo que no hay. Sí puedes reconocerlo EN AGREGADO, en
+      una frase ("hay dos más en la zona, pero se pasan bastante de tu tope"). Y el número que
+      digas ("encontré 3") tiene que ser el de opciones que realmente listas.
+   e) LOS NÚMEROS SE COPIAN, NO SE RECALCULAN (es la ARITMÉTICA PROHIBIDA de la regla 0 aplicada
+      aquí): precio, tope, exceso, encaje y distancias se usan tal cual vienen en el bloque.
+   f) Si NO hay bloque en el turno, es que la búsqueda no encontró inventario que puntuar: no
+      inventes un ranking ni un porcentaje de encaje.
+
 7. FLUJO DE HERRAMIENTAS (orden de prioridad):
    ⭐ REGLA DE ORO — ENCONTRAR INMUEBLES POR NOMBRE: cuando el usuario nombre una CALLE,
    DIRECCIÓN, EDIFICIO o SECTOR y quieras ubicar inmuebles registrados, usa SIEMPRE
@@ -600,7 +637,13 @@ def _build_graph() -> StateGraph:
     llm = base_llm.bind_tools(AGENT_TOOLS)
 
     async def llm_node(state: AgentState) -> dict:
-        messages = [SYSTEM_PROMPT] + state["messages"]
+        # El bloque del motor va DENTRO del system prompt (no como un mensaje más): es
+        # instrucción del sistema, no algo que el usuario dijo, y así no contamina ni el
+        # historial compartido ni el insumo del extractor de preferencias.
+        contexto = (state.get("encaje_contexto") or "").strip()
+        system = (SystemMessage(content=f"{SYSTEM_PROMPT.content}\n\n{contexto}")
+                  if contexto else SYSTEM_PROMPT)
+        messages = [system] + state["messages"]
         response = await llm.ainvoke(messages)
         # Guardrail Fair Housing (observabilidad): flaguea si la salida emite un
         # veredicto de idoneidad de barrio por grupo/perfil (steering). No muta la
@@ -615,13 +658,63 @@ def _build_graph() -> StateGraph:
 
     tool_node = ToolNode(tools=AGENT_TOOLS)
 
+    async def encaje_node(state: AgentState) -> dict:
+        """Puntúa lo que la búsqueda encontró ANTES de que el modelo escriba.
+
+        Es la frontera que fallaba: el encaje se calculaba DESPUÉS de la respuesta, solo para
+        pintar tarjetas, así que el modelo escribía la prosa sin ver su propio ranking ni el
+        tope de presupuesto (BATALLA_Hiinmo 2026-07-30, fallos 1, 3 y 4). Ahora arma el panel
+        —las MISMAS tarjetas que verá la persona— y lo entrega como contexto autoritativo.
+
+        Best-effort: cualquier fallo deja el turno exactamente como estaba antes (sin bloque,
+        sin tarjetas precalculadas). El endpoint reconstruye el panel por su cuenta si falta.
+        """
+        # Import diferido: chat.py importa este módulo (grafo → tools), así que importarlo
+        # arriba cerraría el ciclo. Mismo patrón que tool_connect_with_broker.
+        from app.encaje_contexto import bloque_autoritativo
+        from app.routers.chat import (_collect_asset_ids, _MAX_CARDS, _user_texts,
+                                      construir_panel)
+
+        messages = state.get("messages") or []
+        if not _collect_asset_ids(messages, limit=_MAX_CARDS * 2):
+            return {}  # el turno no surfaceó inventario: nada que puntuar (ni que gastar)
+
+        # Las preferencias se extraen con el LLM: UNA vez por turno del usuario, aunque el
+        # agente encadene varias rondas de herramientas. La llave del caché es cuántos
+        # mensajes lleva escritos la persona.
+        turno = sum(1 for m in messages if isinstance(m, HumanMessage))
+        prefs = state.get("preferencias")
+        if not (isinstance(prefs, dict) and state.get("preferencias_turno") == turno):
+            try:
+                prefs = await extraer_preferencias(_user_texts(messages))
+            except Exception:  # noqa: BLE001 — sin preferencias hay panel, solo que sin encaje
+                prefs = {}
+            prefs = prefs if isinstance(prefs, dict) else {}
+
+        try:
+            panel = await construir_panel(messages, preferencias=prefs)
+        except Exception as exc:  # noqa: BLE001 — el encaje es un extra; jamás rompe el turno
+            print(f"  [WARN] no pude armar el panel de encaje ({type(exc).__name__}: {exc})")
+            return {"preferencias": prefs, "preferencias_turno": turno}
+
+        return {
+            "preferencias": prefs,
+            "preferencias_turno": turno,
+            "cards": panel["cards"],
+            "encaje_contexto": bloque_autoritativo(
+                panel["cards"], prefs, panel["descartadas"], panel["priorizado"]),
+        }
+
     graph = StateGraph(AgentState)
     graph.add_node("llm", llm_node)
     graph.add_node("tools", tool_node)
+    graph.add_node("encaje", encaje_node)
 
     graph.add_edge(START, "llm")
     graph.add_conditional_edges("llm", tools_condition)
-    graph.add_edge("tools", "llm")
+    # tools → encaje → llm: el ranking del motor entra al contexto ANTES de la prosa.
+    graph.add_edge("tools", "encaje")
+    graph.add_edge("encaje", "llm")
 
     return graph
 

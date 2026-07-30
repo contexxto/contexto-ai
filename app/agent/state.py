@@ -18,7 +18,7 @@ class SpatialContext(TypedDict, total=False):
     capas: list
 
 
-class AgentState(TypedDict):
+class _AgentStateCore(TypedDict):
     # Full conversational history — add_messages merges instead of overwriting
     messages: Annotated[list, add_messages]
 
@@ -27,3 +27,25 @@ class AgentState(TypedDict):
 
     # Raw DB results injected into LLM context to ground responses
     sql_results: list[dict[str, Any]]
+
+
+class AgentState(_AgentStateCore, total=False):
+    """Estado del turno. Las claves de abajo (opcionales) las escribe el nodo `encaje`, que
+    corre entre las herramientas y la respuesta: calcula el ENCAJE de lo que la búsqueda
+    encontró ANTES de que el modelo escriba, para que la prosa y las tarjetas salgan del
+    MISMO objeto. Antes el encaje se calculaba después de responder y el modelo nunca veía
+    su propio ranking — de ahí los fallos 1, 3 y 4 de BATALLA_Hiinmo (2026-07-30)."""
+
+    # Necesidades declaradas (schema cerrado de app/preferencias.py), extraídas UNA vez por
+    # turno; `preferencias_turno` = nº de mensajes del usuario cuando se extrajeron (la
+    # llave del caché: mientras no haya turno nuevo, no se vuelve a llamar al LLM).
+    preferencias: dict | None
+    preferencias_turno: int
+
+    # Las tarjetas del turno YA puntuadas y ordenadas por el motor — exactamente las que
+    # verá la persona. El endpoint las reusa en vez de recalcularlas.
+    cards: list[dict[str, Any]]
+
+    # El bloque de texto autoritativo (ranking + restricciones) que llm_node añade al
+    # system prompt. Vacío = este turno no encontró inventario que puntuar.
+    encaje_contexto: str

@@ -18,7 +18,7 @@ from app.agent.state import AgentState
 from app.auth import CurrentUser, get_current_user, get_optional_user
 from app.config import settings
 from app.database import AsyncSessionLocal
-from app.encaje import calcular_encaje, delta_encaje
+from app.encaje import calcular_encaje, delta_encaje, normalizar_tipo
 from app.entorno import limpiar_texto_servicios
 from app.entorno_curacion import aplicar_curacion, parse_servicios
 from app.intencion import analizar_intencion
@@ -105,8 +105,15 @@ _SEARCH_TOOLS = {"tool_search_nearby_assets", "tool_find_assets_by_text"}
 _MAX_CARDS = 6  # tope de tarjetas visibles por turno (y de pines del Mapa Vivo)
 
 
-def _collect_asset_ids(messages, limit: int = 6) -> list[str]:
-    """IDs de inmueble que las tools de búsqueda devolvieron, en orden, sin repetir."""
+def _desde_ultimo_turno(messages) -> list:
+    """Los mensajes desde el último turno del usuario (incluido). Si no hay ninguno
+    (el caller ya pasó los mensajes de UN turno, como el historial), devuelve todo."""
+    ultimo = max((i for i, m in enumerate(messages) if isinstance(m, HumanMessage)), default=None)
+    return messages if ultimo is None else messages[ultimo:]
+
+
+def _ids_en(messages, limit: int) -> list[str]:
+    """IDs de inmueble que las tools de búsqueda devolvieron en estos mensajes, en orden."""
     ids: list[str] = []
     seen: set[str] = set()
     for m in messages:
@@ -126,6 +133,18 @@ def _collect_asset_ids(messages, limit: int = 6) -> list[str]:
                 if len(ids) >= limit:
                     return ids
     return ids
+
+
+def _collect_asset_ids(messages, limit: int = 6) -> list[str]:
+    """IDs de inmueble que las tools de búsqueda devolvieron, en orden, sin repetir.
+
+    Prioriza lo que se buscó en el TURNO ACTUAL: si el usuario acaba de pedir una búsqueda
+    nueva, el panel debe hablar de ESA búsqueda, no arrastrar los inmuebles del primer turno
+    del hilo (el barrido empezaba por el mensaje más viejo y se llenaba con ellos). Si el
+    turno actual no buscó nada —un seguimiento del tipo "muéstrame las fichas"—, cae a los
+    acumulados del hilo para no vaciar el panel de golpe.
+    """
+    return _ids_en(_desde_ultimo_turno(messages), limit) or _ids_en(messages, limit)
 
 
 # Caminata ~4.8 km/h → 80 m/min. Conservador y honesto (estimamos un poco de más,
@@ -226,6 +245,7 @@ def _user_texts(messages) -> list[str]:
 def _senales_encaje(row: dict, car: dict) -> dict:
     """Señales del inmueble que consume app.encaje.calcular_encaje (solo NECESIDADES)."""
     return {
+        "tipo_activo": row.get("tipo_activo"),
         "walk_score": row.get("caminabilidad"),
         "ruido": row.get("ruido"),
         "vegetacion": row.get("vegetacion"),
@@ -285,10 +305,26 @@ def _card_from_row(row: dict, preferencias: dict | None = None) -> dict:
     # (nada de un % inventado). Fair Housing: calcular_encaje solo lee necesidades.
     enc = calcular_encaje(preferencias, _senales_encaje(row, car)) if preferencias else None
     card["encaje"] = enc["score"] if enc else None
+    # Razones ORDENADAS POR LO QUE MÁS PESA EN LA DECISIÓN, no por el orden interno de las
+    # dimensiones: primero lo que rompe un requisito duro ("es una casa, no un departamento"),
+    # después el dinero (la línea que el modelo debe copiar tal cual), y luego el resto. Van
+    # TODAS: la tarjeta muestra las 2 primeras, pero el bloque autoritativo necesita el cuadro
+    # completo — con un tope de 4 en orden canónico, la razón del PRESUPUESTO se caía de la
+    # lista justo en las consultas con muchas necesidades declaradas, que es cuando más importa.
+    def _prioridad(r: dict) -> int:
+        if r["dimension"] in (enc.get("duros_incumplidos") or []):
+            return 0
+        return 1 if r["dimension"] == "presupuesto_max" else 2
+
     card["encaje_razones"] = [
         {"texto": r["texto"], "cumple": r["cumple"], "fuente": r["fuente"]}
-        for r in (enc["razones"] if enc else []) if r.get("aporta")
-    ][:4]
+        for r in sorted((x for x in (enc["razones"] if enc else []) if x.get("aporta")),
+                        key=_prioridad)
+    ]
+    # Requisitos duros incumplidos (hoy: el tipo de inmueble). No lo pinta la tarjeta —
+    # lo usan el corte del panel y el bloque autoritativo que ve el modelo, para que un
+    # inmueble que NO es lo que la persona pidió nunca se presente como si lo fuera.
+    card["duros_incumplidos"] = list(enc.get("duros_incumplidos") or []) if enc else []
     return card
 
 
@@ -346,19 +382,94 @@ async def _fetch_cards_rows(ids: list[str]) -> tuple[list, dict] | None:
         return None
 
 
-async def build_result_cards(messages, *, preferencias: dict | None = None) -> list[dict]:
-    """Construye las tarjetas para los inmuebles que el agente surfaceó este turno.
-    Preserva el orden en que aparecieron. Cada tarjeta lleva su ENCAJE (tarea #8) contra
-    las necesidades DECLARADAS del usuario, extraídas del hilo (LLM → schema fijo).
+# ── Corte del panel de tarjetas (fallo 3, BATALLA_Hiinmo 2026-07-30) ────────────────
+# Con techo de $700/mes el panel mostraba $990 (40% de encaje) y $1.130 (37%): ocupan
+# pantalla con lo que ya se sabe que no sirve, y le dan al modelo material para narrar
+# opciones que no son opciones. Se corta por DOS criterios, ambos objetivos:
+#   · encaje por debajo del umbral → no es una opción, es ruido;
+#   · precio más allá del margen sobre el tope → fuera de presupuesto de verdad.
+# El margen deja pasar el "casi entra" ($710 contra $700), que SÍ vale la pena mostrar
+# mientras se etiquete honestamente (lo hace la razón "Sobre tu tope por $10").
+# El umbral está POR ENCIMA de encaje._TOPE_REQUISITO_DURO (49): un inmueble del tipo
+# equivocado sale del panel por construcción.
+_ENCAJE_MIN_GRID = 60
+_MARGEN_PRESUPUESTO = 0.10
+
+
+def _recortar_grid(cards: list[dict], preferencias: dict | None,
+                   protegidos: set[str] | None = None) -> list[dict]:
+    """Deja en el panel solo lo que es una opción de verdad. Nunca lo vacía.
+
+    Honesto por omisión: una tarjeta con `encaje=None` (falta señal, no "no encaja") NO se
+    corta — "no sé" no es "no sirve". Si el corte se lo llevaría todo, conserva la mejor
+    (el panel vacío no informa; la tarjeta mal encajada al menos muestra qué SÍ existe, con
+    su número honesto). `protegidos` = ids que el modelo priorizó con motivo declarado.
+    """
+    if not cards:
+        return cards
+    tope = (preferencias or {}).get("presupuesto_max")
+    tope = float(tope) if isinstance(tope, (int, float)) and not isinstance(tope, bool) and tope > 0 else None
+    protegidos = protegidos or set()
+
+    def _pasa(c: dict) -> bool:
+        if c.get("id") in protegidos:
+            return True
+        enc = c.get("encaje")
+        if enc is not None and enc < _ENCAJE_MIN_GRID:
+            return False
+        precio = c.get("precio")
+        if tope is not None and precio is not None and precio > tope * (1 + _MARGEN_PRESUPUESTO):
+            return False
+        return True
+
+    quedan = [c for c in cards if _pasa(c)]
+    return quedan or cards[:1]
+
+
+# ── Priorización declarada por el modelo (fallo 1) ──────────────────────────────────
+def _priorizado_por_el_modelo(messages) -> tuple[str | None, str | None]:
+    """(activo_id, motivo) si el modelo usó tool_priorizar_opcion en el turno actual.
+
+    El modelo PUEDE liderar con una opción distinta a la #1 del motor (a veces con buen
+    motivo: en vivo priorizó la única que confirmaba mascotas). Lo que no puede es hacerlo
+    en silencio: la tool es el canal para que el panel se reordene CON él y el motivo quede
+    escrito. Vale solo para el turno en curso — una priorización vieja no manda hoy.
+    """
+    aid = motivo = None
+    for m in _desde_ultimo_turno(messages):
+        if getattr(m, "type", "") != "tool" or (getattr(m, "name", "") or "") != "tool_priorizar_opcion":
+            continue
+        try:
+            data = json.loads(m.content if isinstance(m.content, str) else str(m.content))
+        except Exception:  # noqa: BLE001 — un tool message no-JSON no debe romper el turno
+            continue
+        if isinstance(data, dict) and data.get("ok") and data.get("activo_id"):
+            aid, motivo = str(data["activo_id"]), data.get("motivo")  # gana la última
+    return aid, motivo
+
+
+async def construir_panel(messages, *, preferencias: dict | None = None) -> dict:
+    """El PANEL del turno: {cards, descartadas, preferencias, priorizado}.
+
+    Fuente ÚNICA de lo que la persona verá y de lo que el modelo lee como contexto
+    autoritativo (app/encaje_contexto.py). Que ambos salgan de aquí es lo que garantiza
+    que la prosa y las tarjetas no puedan contar historias distintas.
+
+    `cards` son las que se muestran (ya ordenadas por encaje y recortadas); `descartadas`
+    las que el corte del panel dejó fuera — se nombran para que el modelo sepa que existen
+    y NO las ofrezca, en vez de que reaparezcan de memoria en la prosa.
 
     `preferencias`: si se pasa explícito (ya extraídas por el caller), NO vuelve a llamar al
-    LLM — las usa tal cual. Lo usa get_session_history para extraer las preferencias UNA sola
-    vez por carga de historial (ver `_preferencias_de_historial`) en vez de una vez por turno."""
+    LLM — las usa tal cual. Lo usan el nodo `encaje` del grafo (que las extrae una vez por
+    turno) y get_session_history (una vez por carga de historial).
+    """
+    vacio = {"cards": [], "descartadas": [], "preferencias": preferencias or {},
+             "priorizado": (None, None)}
     # Recolectamos con holgura (2× el tope visible) para que el filtro de operación de abajo
     # tenga material y no adelgace de más los resultados; luego se recorta a _MAX_CARDS.
     ids = _collect_asset_ids(messages, limit=_MAX_CARDS * 2)
     if not ids:
-        return []
+        return vacio
     if preferencias is not None:
         # Ya extraídas por el caller (p.ej. historial): solo falta el fetch de las filas.
         fetched = await _fetch_cards_rows(ids)
@@ -371,8 +482,9 @@ async def build_result_cards(messages, *, preferencias: dict | None = None) -> l
             return_exceptions=True,
         )
         preferencias = prefs if isinstance(prefs, dict) else {}
+        vacio["preferencias"] = preferencias
     if isinstance(fetched, Exception) or fetched is None:
-        return []
+        return vacio
     rows, curaciones = fetched
 
     by_id: dict[str, dict] = {}
@@ -403,6 +515,18 @@ async def build_result_cards(messages, *, preferencias: dict | None = None) -> l
         # el badge VENTA/ARRIENDO de la tarjeta mantiene la honestidad), sin re-colar MONITOREO.
         coinciden = [i for i in ofertables if _op_de(i) in (op_norm, "")]
         orden = coinciden or ofertables
+    # Filtro duro de TIPO DE INMUEBLE (fallo 2): si pidió un departamento, el panel es de
+    # departamentos. Mismo patrón que la operación —incluido "dato faltante ≠ no encaja" y la
+    # degradación si NADA coincide (la zona solo tiene casas)—, pero con una diferencia clave:
+    # al degradar, el encaje de esas tarjetas ya viene TOPADO por el motor (requisito duro
+    # incumplido), así que muestran su número honesto en vez de coronarse con un 100%.
+    tipo = (preferencias or {}).get("tipo_inmueble")
+    if tipo:
+        pedido = normalizar_tipo(tipo)
+        def _tipo_de(i: str) -> str | None:
+            return normalizar_tipo(by_id[i].get("tipo_activo"))
+        del_tipo = [i for i in orden if _tipo_de(i) in (pedido, None)]
+        orden = del_tipo or orden
     cards = [_card_from_row(by_id[i], preferencias) for i in orden]
     # ORDENAR POR ENCAJE (bug real detectado en vivo, demo Mazatlán 2026-07-03): antes se
     # devolvía en el orden crudo de la búsqueda espacial/similitud, NO por qué tan bien
@@ -417,7 +541,26 @@ async def build_result_cards(messages, *, preferencias: dict | None = None) -> l
     # se muestran como 0% falso.
     if any(c["encaje"] is not None for c in cards):
         cards.sort(key=lambda c: c["encaje"] if c["encaje"] is not None else -1, reverse=True)
-    return cards[:_MAX_CARDS]
+    # Si el modelo declaró una prioridad distinta (con motivo, vía tool_priorizar_opcion),
+    # el PANEL se mueve con él: la promesa es que prosa y tarjetas cuenten lo mismo.
+    prioritario, motivo = _priorizado_por_el_modelo(messages)
+    if prioritario and any(c["id"] == prioritario for c in cards):
+        cards.sort(key=lambda c: c["id"] != prioritario)  # estable: solo sube el elegido
+    visibles = _recortar_grid(cards, preferencias,
+                              protegidos={prioritario} if prioritario else None)[:_MAX_CARDS]
+    vistos = {c["id"] for c in visibles}
+    return {
+        "cards": visibles,
+        "descartadas": [c for c in cards if c["id"] not in vistos],
+        "preferencias": preferencias or {},
+        "priorizado": (prioritario, motivo),
+    }
+
+
+async def build_result_cards(messages, *, preferencias: dict | None = None) -> list[dict]:
+    """Solo las tarjetas visibles del turno (la vista que consume el endpoint y el historial).
+    El panel completo —con lo descartado y la priorización— está en `construir_panel`."""
+    return (await construir_panel(messages, preferencias=preferencias))["cards"]
 
 
 # FSM del lente (SPEC_Mapa_Vivo "Estados y transiciones"): el modo lo decide la PRECISIÓN de
@@ -570,6 +713,11 @@ async def _stream_agent(message: str, session_id: str) -> AsyncIterator[str]:
         "messages": [HumanMessage(content=message)],
         "spatial_context": {},
         "sql_results": [],
+        # Panel del turno ANTERIOR: se limpia al entrar. Si no, un turno que no busca nada
+        # heredaría el bloque autoritativo del turno pasado y el modelo hablaría de tarjetas
+        # que ya no están en pantalla.
+        "cards": [],
+        "encaje_contexto": "",
     }
 
     async for event in agent_graph.compiled_graph.astream_events(input_state, config=config, version="v2"):
@@ -656,7 +804,13 @@ async def chat(
     # Instrumentar la intención del turno (Fase 0 del Motor de Intención). Fire-and-forget:
     # jamás bloquea ni rompe la respuesta; alimenta el panel CRM y el reporte de lift.
     _aio.create_task(registrar_intencion(payload.session_id, messages))
-    results = await build_result_cards(messages)
+    # Las tarjetas ya las armó el nodo `encaje` del grafo, ANTES de que el modelo escribiera:
+    # devolver ESAS es lo que garantiza que el panel sea el mismo del que habla la respuesta
+    # (y de paso evita repetir la extracción de preferencias y la consulta a la BD). Solo se
+    # reconstruyen si el nodo no corrió o degradó — el turno nunca se queda sin panel.
+    results = final_state.get("cards")
+    if not isinstance(results, list) or not results:
+        results = await build_result_cards(messages)
     map_seed = _map_seed_from_cards(results, prev_mode)
     # spatial_context VIVO (deja de ser placeholder muerto): persiste el foco del turno en el
     # estado del agente para que la transición no pierda el encuadre. Best-effort: si el

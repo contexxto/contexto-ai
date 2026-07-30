@@ -46,10 +46,57 @@ def test_presupuesto_dentro_vs_sobre():
     assert calcular_encaje({"presupuesto_max": 800}, {"precio": 830})["score"] == 40
 
 
-def test_min_dormitorios():
-    assert calcular_encaje({"min_dormitorios": 2}, {"num_dormitorios": 3})["score"] == 100
-    assert calcular_encaje({"min_dormitorios": 2}, {"num_dormitorios": 1})["score"] == 40
-    assert calcular_encaje({"min_dormitorios": 3}, {"num_dormitorios": 1})["score"] == 0
+def test_dormitorios_se_leen_literal_no_como_minimo():
+    """Fallo 2 de BATALLA_Hiinmo (2026-07-30): ante 'departamento de 2 dormitorios' el motor
+    leía el 2 como un MÍNIMO y coronaba con 100% (y con el texto 'Cumple tus 2+ dormitorios')
+    una ficha de 4 dormitorios que nadie pidió. Nadie escribió '2+'."""
+    exacto = calcular_encaje({"dormitorios": 2}, {"num_dormitorios": 2})
+    assert exacto["score"] == 100
+    assert "2+" not in exacto["razones"][0]["texto"]
+
+    de_mas = calcular_encaje({"dormitorios": 2}, {"num_dormitorios": 4})
+    assert de_mas["score"] == 60, "tener el doble de dormitorios NO es lo que se pidió"
+    assert "4" in de_mas["razones"][0]["texto"] and "2" in de_mas["razones"][0]["texto"]
+
+    assert calcular_encaje({"dormitorios": 2}, {"num_dormitorios": 1})["score"] == 40
+    assert calcular_encaje({"dormitorios": 3}, {"num_dormitorios": 1})["score"] == 0
+
+
+# ── Tipo de inmueble = REQUISITO DURO (fallo 2) ──────────────────────────────────────
+def test_tipo_de_inmueble_que_no_es_el_pedido_no_puede_lucir_como_buen_encaje():
+    """La repro literal: se pidió 'departamento de 2 dormitorios' y la tarjeta ganadora era
+    una CASA de 4 dormitorios marcada '100% encaje contigo'. Con el tipo como requisito duro,
+    ese inmueble no puede pasar del tope aunque acierte todo lo demás."""
+    prefs = {"tipo_inmueble": "departamento", "dormitorios": 2, "presupuesto_max": 150000}
+    casa = {"tipo_activo": "Casa", "num_dormitorios": 4, "precio": 135400}
+    r = calcular_encaje(prefs, casa)
+    assert r["score"] <= 49, f"una casa no puede encajar {r['score']}% con quien pidió departamento"
+    assert r["duros_incumplidos"] == ["tipo_inmueble"]
+    # Y lo DICE, no solo lo puntúa.
+    tipo = [x for x in r["razones"] if x["dimension"] == "tipo_inmueble"][0]
+    assert "casa" in tipo["texto"].lower() and "departamento" in tipo["texto"].lower()
+
+
+def test_tipo_correcto_no_topa_nada():
+    prefs = {"tipo_inmueble": "departamento", "dormitorios": 2, "presupuesto_max": 150000}
+    depto = {"tipo_activo": "Departamento", "num_dormitorios": 2, "precio": 135400}
+    r = calcular_encaje(prefs, depto)
+    assert r["score"] == 100 and r["duros_incumplidos"] == []
+
+
+def test_tipo_tolera_caja_tildes_y_sinonimos():
+    for declarado in ("departamento", "Departamento", "DEPARTAMENTO", "apartamento", "depto"):
+        r = calcular_encaje({"tipo_inmueble": declarado}, {"tipo_activo": "Departamento"})
+        assert r["score"] == 100, f"'{declarado}' debería coincidir con Departamento"
+    assert calcular_encaje({"tipo_inmueble": "local comercial"},
+                           {"tipo_activo": "Local Comercial"})["score"] == 100
+
+
+def test_tipo_sin_dato_no_castiga():
+    # El inmueble no reporta tipo → 'sin dato', no un 0 que tope el score (no sé ≠ no encaja).
+    r = calcular_encaje({"tipo_inmueble": "departamento", "caminable": True},
+                        {"walk_score": 90})
+    assert r["score"] == 90 and r["duros_incumplidos"] == []
 
 
 def test_acepta_mascotas():
@@ -136,7 +183,7 @@ def test_solo_atributos_protegidos_no_produce_encaje():
 def test_razones_pasan_el_detector_de_steering():
     """Las razones generadas son dato+fuente, nunca veredictos de idoneidad → es_limpio."""
     prefs = {"tranquilidad": True, "caminable": True, "transporte": True, "area_verde": True,
-             "presupuesto_max": 800, "min_dormitorios": 2, "acepta_mascotas": True}
+             "presupuesto_max": 800, "dormitorios": 2, "acepta_mascotas": True}
     inm = {"ruido": "BAJO", "walk_score": 88, "transporte_min": 12, "parque_min": 6,
            "precio": 950, "num_dormitorios": 1, "acepta_mascotas": False}
     r = calcular_encaje(prefs, inm)
@@ -181,8 +228,8 @@ def test_acepta_mascotas_string_no_invierte_veredicto():
 
 def test_walk_score_string_y_dormitorios_bool():
     assert calcular_encaje({"caminable": True}, {"walk_score": "88"})["score"] == 88
-    # min_dormitorios=True (bool) NO es un número declarado → se ignora.
-    assert calcular_encaje({"min_dormitorios": True}, {"num_dormitorios": 3})["dimensiones_declaradas"] == []
+    # dormitorios=True (bool) NO es un número declarado → se ignora.
+    assert calcular_encaje({"dormitorios": True}, {"num_dormitorios": 3})["dimensiones_declaradas"] == []
 
 
 # ── DELTA (modo COMPARAR) ────────────────────────────────────────────────────────────

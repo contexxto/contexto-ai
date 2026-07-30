@@ -14,6 +14,16 @@ REM    0 = las dos fuentes respondieron  -> listo
 REM    2 = una fuente caida (reintentable, datos viejos intactos)
 REM    1 = error duro -> no se reintenta, hay que mirar el log
 REM
+REM  CUANDO CORRE: tarea de Windows "Refresco POIs Contexto", lunes 17:00.
+REM  Esa hora NO es arbitraria -- el lunes es el dia cargado de la maquina:
+REM    09:31 hydrate-nate-herk | 11:26 hydrate-corredor | 13:05 hydrate-senales
+REM    (~60 min medidos) | 15:00 radar-competidores | 15:01 despacho-contexto
+REM  Estaba a las 14:00 y se pisaba con la hidratacion de senales, que el
+REM  2026-07-30 corrio de 13:05 a 14:05. A las 17:00 el tren ya termino y esta
+REM  corrida (hasta ~40 min con los reintentos) cabe holgada.
+REM  Este refresco NO depende de ningun cerebro: es dato de Overture/OSM. Si el
+REM  tren del lunes cambia de horario, mover esta tarea es seguro.
+REM
 REM  Uso manual:  scripts\refresco_pois.cmd [ciudad]     (por defecto: quito)
 REM ============================================================================
 setlocal enabledelayedexpansion

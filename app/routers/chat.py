@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import re
 import secrets
 import unicodedata
@@ -26,6 +27,12 @@ from app.limiter import limiter
 from app.preferencias import extraer_preferencias
 
 router = APIRouter(prefix="/api/v1/chat", tags=["Chat — Agente Conversacional"])
+
+# Instrumentación del Motor de Intención. Es el único camino de escritura de intencion_sesion
+# e intencion_evento (las tablas de la North Star), así que un fallo suyo JAMÁS puede ser
+# silencioso: un registro que falla es indistinguible de menos demanda.
+# Ver docs/AUDITORIA_Fallos_Silenciosos_2026-07-31.md §1.
+log = logging.getLogger("intencion")
 
 # ── Seguridad ────────────────────────────────────────────────
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -1309,8 +1316,11 @@ async def registrar_intencion(session_id: str, messages: list) -> None:
                      "sc": r["score"], "h": r["handoff_sugerido"]},
                 )
             await db.commit()
-    except Exception:  # noqa: BLE001 — instrumentar la intención jamás rompe el chat
-        pass
+    except Exception as exc:  # noqa: BLE001 — jamás rompe el chat, pero JAMÁS en silencio
+        # No bloqueante (el chat sigue), pero deja rastro: sin esto, un CheckConstraint de
+        # intencion_sesion (estado/nivel/score, models.py:238) apagaría la serie del lift para
+        # siempre sin una sola línea de log, y el reporte semanal leería "menos demanda".
+        log.error("registrar_intencion falló para session=%s: %s", session_id, exc, exc_info=True)
 
 
 class LeadContacto(BaseModel):

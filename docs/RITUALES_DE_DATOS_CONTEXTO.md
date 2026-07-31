@@ -73,24 +73,52 @@ recoge. Si ese es el caso, **el problema no es tráfico**, y comprarlo lo empeor
 
 ---
 
-## 2. Ritual cero — correr el baseline (esta semana)
+## 2. Ritual cero — el baseline (CORRIDO el 2026-07-31)
 
 ```bash
-psql "$DATABASE_URL" -f scripts/baseline_intencion.sql
+./.venv/Scripts/python.exe scripts/baseline_intencion.py
 ```
 
-Anota los números aunque sean feos y aunque N sea 9. Un número feo medido vale infinitamente más que
-un número bonito estimado. El GTM todavía dice `X%` e `Y%` en su baseline — esto lo reemplaza.
+*(La variante `scripts/baseline_intencion.sql` es la misma consulta para quien tenga `psql`.
+En las máquinas de trabajo **no está instalado**, y la base es Supabase, así que el runner de
+Python — que usa la misma conexión de la app — es el camino por defecto.)*
+
+### BASELINE — 2026-07-31
 
 ```
-BASELINE — corrido el ____________
-  Sesiones con intención:      ____
-  Handoffs sugeridos:          ____
-  Leads que escribieron:       ____
-  Atendidos <24h:              ____   ← la métrica
-  Nunca atendidos:             ____
-  Espera mediana:              ____
+Sesiones con intención:   13   (12 de ellas en la semana del 27-jul)
+Handoffs sugeridos:        3
+Leads que escribieron:     3
+Atendidos <24h:            2   ← LA MÉTRICA
+Nunca atendidos:           1   (*)
+Espera mediana:        3m 38s
+Espera peor:           1h 02m
+Escrituras de intención en 24h: 5
 ```
+
+**(*) El único "nunca atendido" es del 2026-07-02 y NO tiene fila en `intencion_sesion`** — es
+anterior a la migración 018, o sea anterior a que existiera el motor de intención. Descontándolo,
+de los leads posteriores a la instrumentación se atendieron **2 de 2**.
+
+Con `N=3 < UMBRAL_N=5`, el estado es **`acumulando`**: se reporta el conteo, nunca un porcentaje.
+
+### Lo que dice este baseline (y corrige a la v1 de este documento)
+
+**La fuga NO está donde este documento suponía.** La v1 y la v2 §1 decían que la fuga típica está en
+`handoff sugerido → nadie recoge`. Los datos dicen lo contrario: **los 3 handoffs sugeridos
+produjeron 3 leads que escribieron, y la respuesta fue rápida** — mediana de 3 minutos y medio, peor
+caso 1 hora. El lado de la oferta está sano.
+
+**El cuello está arriba del embudo: no entra gente.** 13 sesiones en total, 12 de ellas en una sola
+semana. Eso no es un problema de conversión, es de **volumen**.
+
+Esto afina el diagnóstico del proyecto ("el cuello de botella es adopción/conversión, no features"):
+de esas dos, los datos señalan **adopción** — meter gente al embudo — y exoneran, por ahora, a la
+conversión. La consecuencia práctica es que trabajar en la calidad del handoff o en la velocidad de
+respuesta optimizaría algo que ya funciona.
+
+**Advertencia obligatoria:** con N=3, esto es una **dirección**, no una conclusión. Vuelve a correrlo
+cuando `leads_escribieron ≥ 5` antes de mover recursos con este argumento.
 
 ---
 

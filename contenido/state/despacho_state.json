@@ -1,5 +1,5 @@
 {
-  "last_run": "2026-07-27",
+  "last_run": "2026-07-30",
   "despachos": [
     {
       "fecha": "2026-07-14",
@@ -49,6 +49,18 @@
         "Corredor-Brain principle: Follow-up disciplinado (Keller/Serhant/Corcoran/Hormozi)",
         "Corredor-Brain tactic: Book a Meeting from a Meeting (BAMFAM)",
         "Senales-Brain source: Inmobiliarias pierden 8 de 10 leads por seguimiento - Ferreira"
+      ]
+    },
+    {
+      "fecha": "2026-07-30",
+      "piezas": [
+        "Los geo-datos se volvieron gratis; la verdad local, no",
+        "La conversación dejó de ser gratis"
+      ],
+      "fuentes": [
+        "Senales-Brain tesis: Los geo-datos base se commoditizan, el foso es la frescura local",
+        "Senales-Brain source: Benchmark de isocronas Google vs Mapbox HERE y TravelTime (Afi Labs)",
+        "Senales-Brain tesis: Los canales conversacionales alquilados dejan de ser gratis (COGS por conversacion)"
       ]
     }
   ]

@@ -14,8 +14,8 @@ Reglas: cada pieza pasa el criterio de calidad §6 y los NEVER §8 de
 | 3 | Tierra rentada: cuando tu negocio vive en la interfaz de otro | Post página | borrador 2026-07-14 |
 | 4 | Automatizar una inmobiliaria no es poner un bot | Post página | borrador 2026-07-24 |
 | 5 | 8 de cada 10 leads se pierden por seguimiento, no por talento | Post página | borrador 2026-07-27 |
-| 6 | La conversación dejó de ser gratis | Post página | pendiente |
-| 7 | Los geo-datos se volvieron gratis; la verdad local, no | Post página | pendiente |
+| 6 | La conversación dejó de ser gratis | Post página | borrador 2026-07-30 |
+| 7 | Los geo-datos se volvieron gratis; la verdad local, no | Post página | borrador 2026-07-30 |
 | 8 | El orden de un marketplace no se vende | Post página | pendiente |
 | 9 | El comprador informal no tiene copiloto | Artículo largo | borrador 2026-07-21 |
 | 10 | Construyendo la máquina de verificación — capítulo 1 | Video YouTube | pendiente |
@@ -154,3 +154,11 @@ La pieza fundacional de vocabulario — el "punto de luz" de la marca hecho text
   primera cifra de gremio NAR sobre la tesis del bot commoditizado)
   (ver `contenido/despachos/DESPACHO_2026-07-27.md`). Backlog #7 (geo-datos) tiene evidencia
   fresca sin usar (2ª señal Catastral, catastro de Chile) — candidata para la próxima corrida.
+- 2026-07-30 — Quinta corrida del despacho automatizado: piezas 7 y 6 pasadas a borrador. Pieza 7
+  usó evidencia más fresca y concreta que la anotada la corrida anterior (benchmark de isócronas
+  Google vs Mapbox/HERE/TravelTime, per Afi Labs, capturado 2026-07-27) en vez del catastro de
+  Chile, por indicación explícita del propio cerebro de señales. Pieza 6 entró por cadencia pura
+  (sin novedad de cosecha; su tesis ya era confirmada/alta desde 2026-07-10)
+  (ver `contenido/despachos/DESPACHO_2026-07-30.md`). Corredor-Brain sin hidratación nueva desde
+  W5 (07-27); próxima corrida automática 2026-08-03. Quedan pendientes: #8 (siguiente en orden) y
+  #10 (video, sin tocar).

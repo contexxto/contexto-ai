@@ -1,6 +1,6 @@
 """
-Los 4 fallos reproducidos en contexxto.com el 2026-07-30
-(docs/BATALLA_Hiinmo_vs_Contexto_2026-07-30.md), cada uno con su repro literal.
+Los 4 fallos reproducidos en contexxto.com el 2026-07-31
+(docs/BATALLA_Hiinmo_vs_Contexto_2026-07-31.md), cada uno con su repro literal.
 
 Diagnóstico transversal del informe: en 3 corridas de la MISMA consulta el panel devolvió
 scores idénticos (el motor es determinístico) mientras la prosa cambió cada vez y nunca

@@ -53,7 +53,7 @@ _PESOS: dict[str, float] = {
     "area_verde": 1.0, "dormitorios": 1.0, "acepta_mascotas": 1.0,
 }
 
-# ── REQUISITOS DUROS (arreglo del fallo 2, BATALLA_Hiinmo 2026-07-30) ────────────────
+# ── REQUISITOS DUROS (arreglo del fallo 2, BATALLA_Hiinmo 2026-07-31) ────────────────
 # Hay necesidades que NO son un matiz ponderable: si el usuario pidió un DEPARTAMENTO, una
 # casa no encaja "un poco menos" — no es lo que pidió. Un promedio ponderado, por más peso
 # que le dé al tipo, siempre puede diluir el incumplimiento con las otras dimensiones (en
@@ -258,7 +258,7 @@ def _score_presupuesto(decl, inm) -> dict:
 def _score_dormitorios(decl, inm) -> dict:
     """Los dormitorios que pidió, tomados LITERAL. "2 dormitorios" es 2 — no "2 o más".
 
-    Fallo 2 de BATALLA_Hiinmo (2026-07-30): el motor leía el número como un mínimo y le
+    Fallo 2 de BATALLA_Hiinmo (2026-07-31): el motor leía el número como un mínimo y le
     escribía al usuario "Cumple tus 2+ dormitorios (4)" cuando nadie había dicho "2+".
     Tener de más tampoco es lo pedido (es otro inmueble, y normalmente otro precio): puntúa
     PARCIAL y lo dice, en vez de coronarlo como coincidencia perfecta.

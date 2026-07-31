@@ -1,6 +1,6 @@
 # ANÁLISIS — Hiinmo (hiinmo.com) · Teardown competitivo
 
-**Fecha:** 2026-07-30
+**Fecha:** 2026-07-31
 **Sujeto:** Hiinmo S.A.S. — Quito, Edificio Silva Nuñez, Av. Shyris y Naciones Unidas. Miembro de CAINEC.
 **Método:** recorrido del sitio público (home, planes, CRM, marketing, nosotros, FAQ, directorios de aliados,
 fichas de inmueble, simulador). Dos consultas reales al asistente "Inmo". Conteos de inventario tomados de los
@@ -177,8 +177,8 @@ decisión económica, y esa decisión es difícil de revertir.
 ## Advertencias de método
 
 - Conteos de inventario y contadores de visita son los que el propio sitio publica; pueden variar.
-- Las citas del asistente Inmo son transcripciones literales de dos consultas del 30-jul-2026.
+- Las citas del asistente Inmo son transcripciones literales de dos consultas del 31-jul-2026.
 - La inferencia sobre GoHighLevel se basa en el dominio de sus formularios públicos y en la coincidencia del
   set de funciones, **no en una confirmación de la empresa**.
 
-**Ver también:** `BATALLA_Hiinmo_vs_Contexto_2026-07-30.md` (prueba pareada con la misma consulta).
+**Ver también:** `BATALLA_Hiinmo_vs_Contexto_2026-07-31.md` (prueba pareada con la misma consulta).

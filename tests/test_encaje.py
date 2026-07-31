@@ -47,7 +47,7 @@ def test_presupuesto_dentro_vs_sobre():
 
 
 def test_dormitorios_se_leen_literal_no_como_minimo():
-    """Fallo 2 de BATALLA_Hiinmo (2026-07-30): ante 'departamento de 2 dormitorios' el motor
+    """Fallo 2 de BATALLA_Hiinmo (2026-07-31): ante 'departamento de 2 dormitorios' el motor
     leía el 2 como un MÍNIMO y coronaba con 100% (y con el texto 'Cumple tus 2+ dormitorios')
     una ficha de 4 dormitorios que nadie pidió. Nadie escribió '2+'."""
     exacto = calcular_encaje({"dormitorios": 2}, {"num_dormitorios": 2})

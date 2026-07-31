@@ -1,6 +1,6 @@
 # BATALLA — Hiinmo vs Contexto · Prueba pareada + reproducción de fallos
 
-**Fecha:** 2026-07-30
+**Fecha:** 2026-07-31
 **Método:** consulta A (contexto de vida) y consulta B (estructurada), **idénticas palabra por palabra** en
 hiinmo.com y contexxto.com, sin sesión iniciada en ninguna. Transcripciones literales.
 **Reproducción:** 3 corridas de A y 2 de B sobre Contexto para separar fallo sistemático de varianza del modelo.
@@ -202,7 +202,7 @@ Los cuatro viven en la frontera motor↔prosa. **Ninguno requiere tocar el catas
 
 ---
 
-## VERIFICACIÓN POST-ARREGLO (2026-07-30, 12:45)
+## VERIFICACIÓN POST-ARREGLO (2026-07-31, 12:45)
 
 Arreglo desplegado (`05225ca` en main, bundle `index-DO_bbvR5` → `index-BBsuukUD`). Se repitieron las dos
 consultas contra producción.
@@ -252,9 +252,9 @@ así que probablemente es el hedge el que está desactualizado.
 
 ## Advertencias de método
 
-- Consultas del 30-jul-2026, sin sesión iniciada, texto idéntico en ambas plataformas.
+- Consultas del 31-jul-2026, sin sesión iniciada, texto idéntico en ambas plataformas.
 - Cifras de inventario de Contexto = las que su propio asistente reportó al preguntárselo directamente.
 - Cifras de Hiinmo = títulos de sus páginas de resultados.
 - Fallos 1 y 3 confirmados en 3/3 corridas; fallos 2 y 4 en 2/2. **Ninguno es varianza del modelo.**
 
-**Ver también:** `ANALISIS_Hiinmo_Teardown_2026-07-30.md` (teardown completo del competidor).
+**Ver también:** `ANALISIS_Hiinmo_Teardown_2026-07-31.md` (teardown completo del competidor).

@@ -2,6 +2,26 @@
 
 > **Estado:** Fase 1 **a medias** — los datos SÍ están cargados (paso 1 hecho), el cableado del
 > map-chat NO (paso 2 pendiente). Ver §2.3, corregido contra producción el 2026-07-27.
+>
+> <!-- estado-verificable
+> codigo:
+>   existe: scripts/foso_pois_spike.py
+>   existe: app/rutas.py::_nearest_propio
+>   existe: app/rutas.py::entorno_curable
+>   existe: app/rutas.py::verificacion_de_entorno
+>   existe: migrations/023_curacion_engancha_poi.sql
+>   existe: docker-compose.valhalla.yml
+>   existe: app/isocronas.py
+>   no-existe: app/rutas_valhalla.py
+> datos:
+>   2026-08-04: pois_propios tiene 8.499 filas (8.489 operativas) en quito
+>   2026-08-04: la vista pois_vivos existe en prod y devuelve 8.489 filas
+> -->
+>
+> ⚠️ Este doc afirma estado, así que sus afirmaciones son ejecutables: las verifica
+> `tests/test_afirmaciones_docs.py`. El `no-existe:` marca la Fase 2 (routing con
+> Valhalla) — el día que se construya, este bloque se pone rojo y obliga a actualizar
+> el doc. Es deliberado: es la única forma de que un "pendiente" no envejezca en falso.
 > **Fecha:** 2026-07-08 · **Autor:** exploración de 4 agentes + síntesis (Claude Code)
 > **Corregido:** 2026-07-27 (sesión Claude Code con Carlos) — la premisa central de este plan
 > ("`pois_propios` está vacía") era **FALSA**. Verificada contra la DB de prod, no inferida.

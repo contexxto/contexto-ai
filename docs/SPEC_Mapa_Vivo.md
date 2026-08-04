@@ -21,6 +21,17 @@
 > "no verificado" que igual se usa para decidir se comporta como verificado.* Un encabezado de
 > estado que nadie refresca es peor que no tenerlo.
 >
+> <!-- estado-verificable
+> codigo:
+>   existe: frontend/src/MapSeed.jsx
+>   existe: frontend/src/AuraSingleMap.jsx
+>   existe: frontend/src/CompararMap.jsx
+>   existe: app/routers/chat.py::_map_seed_from_cards
+>   existe: app/routers/chat.py::_decidir_modo
+>   existe: app/isocronas.py
+>   existe: tests/test_map_seed.py
+> -->
+>
 > **Lo que SÍ sigue abierto:** 2C (isócronas reales en el mapa — el motor existe,
 > `app/isocronas.py` + Valhalla + migración 015), 2D (el mapa como ENTRADA), y el hueco que abrió
 > la migración 023: **`fresco` sigue siendo de alcance ficha** (`chat.py`, `r["fresco"] = bool(cur)`),

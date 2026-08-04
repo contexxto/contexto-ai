@@ -12,6 +12,19 @@
 
 > Tras auditar el **código real** (no el NORTHSTAR desactualizado), este plan estaba **sobre-dimensionado en construcción.** La mayoría de las "fases a construir" **ya está construida.** Esta sección corrige y re-ancla; el cuerpo de abajo se conserva como el razonamiento original, superado en scope por esto. *Reconocimiento honesto: no audité a fondo la superficie CRM/lift antes de escribir el plan — este es el correctivo.*
 
+<!-- estado-verificable
+codigo:
+  existe: frontend/src/LeadsPanel.jsx
+  existe: app/lift.py::resumen_lift
+  existe: migrations/018_intencion_sesion.sql
+  existe: app/intencion.py
+-->
+
+> Las afirmaciones de "ya está construido" de esta sección son ejecutables — las verifica
+> `tests/test_afirmaciones_docs.py`. Este doc es donde nació la lección ("un dato marcado
+> como no verificado que igual se usa para decidir se comporta como verificado"); es el
+> primero que debe cumplirla.
+
 **Lo que ya está construido (verificado en código, no en el NORTHSTAR):**
 - **Fase 0 (instrumentar):** había cómputo en vivo (`intencion_de_sesion`) + ahora persistencia (`intencion_sesion` / `intencion_evento`) + el lift lee el recorrido (Part A). **Hecho y en prod, probado con sesión real.**
 - **Fase 1 (CRM Vivo + handoff + lift):** ✅ **SHIPPED.** Panel de leads (`LeadsPanel.jsx` + `/assets/{id}/leads`), funnel, handoff al pico, chat in-platform, y `/assets/metricas/lift` con disciplina anti-vanity.

@@ -256,11 +256,43 @@ Google); el transporte sin nombre sí, porque una parada anónima sigue sirviend
 no permiten guardar el contenido de Places: arrastrar sus resultados a `pois_propios` se descartó por
 eso, no por dificultad técnica. (Verificar los términos vigentes antes de apoyar una decisión en ello.)
 
-**3. Enganchar la curación al POI.** Que `entorno_curacion` pueda referirse a una fila de
-`pois_propios` y no solo a un texto por inmueble. Es lo que convierte cada visita de terreno en un
-activo que **se acumula y se propaga** a todos los inmuebles del barrio, en vez de morir en la ficha
-donde se capturó. Es el foso que no se puede descargar de ninguna API — y el único de los tres que
-construye ventaja en vez de mantenerla.
+**3. ✅ HECHO (2026-08-04) — Enganchar la curación al POI.** `entorno_curacion.poi_id` referencia
+una fila de `pois_propios` (migración 023, aplicada y verificada en prod). Cada visita de terreno
+**se acumula y se propaga** a todos los inmuebles del barrio en vez de morir en la ficha donde se
+capturó. Es el foso que no se puede descargar de ninguna API — y el único de los tres que construye
+ventaja en vez de mantenerla.
+
+**La decisión de diseño que lo hace sobrevivir:** la verificación **NO** se escribe sobre
+`pois_propios`. El upsert del refresco semanal incluye `operativo = EXCLUDED.operativo`, así que un
+`operativo=false` puesto por un corredor sería **resucitado por el cron del lunes** — Overture sigue
+listando el local abierto. La fila sobrevive al refresco (migración 020), pero sus columnas se pisan.
+Por eso la curación es un **overlay de lectura**, el mismo patrón que ya usaba el texto:
+
+| Manda | En |
+|---|---|
+| origen (Overture/OSM) | nombre, geom, dirección, marca, confianza |
+| el humano | si el lugar EXISTE |
+
+Lo resuelve la vista **`pois_vivos`**: (1) la observación humana más reciente por POI gana sobre el
+origen; (2) entre humanas gana la más reciente (un local reabre); (3) sin observación humana decide
+`operativo`. Las 5 lecturas de entorno de `app/rutas.py` apuntan a la vista, **nunca** a la tabla.
+Tercera acción `confirmado` ("estuve ahí, sigue abierto"), que puede sostener vivo un POI que el
+origen dio de baja.
+
+**Verificado en prod el 2026-08-04** (transacción con rollback, sin dejar rastro): un POI operativo
+desaparece de `pois_vivos` al marcarlo cerrado; uno dado de baja por el origen revive al confirmarlo;
+un `confirmado` posterior le gana a un `cerrado` anterior. `vivos_con_overlay == operativos_origen`
+(8.489) con 0 curaciones enganchadas → la vista es inocua mientras nadie haya caminado.
+
+`tests/test_curacion_propaga.py` (8 tests) guarda el invariante por los dos frentes: que ninguna
+lectura vuelva a `pois_propios` y que el upsert del refresco no toque columnas de verificación.
+Son **estáticos a propósito**: el fallo aquí no lanza excepción —la query devuelve filas válidas,
+solo ignora al corredor— y no hay DB de pruebas en el repo.
+
+⚠️ **Deuda consciente — alcance de la autorización.** `_assert_owner` valida que el corredor sea
+dueño de ESE inmueble, pero una curación con `poi_id` afecta a toda la ciudad. Con un puñado de
+corredores de confianza es el trato buscado (la verdad local compartida ES el foso); con decenas
+hace falta **quórum**: N observaciones independientes antes de ocultar un POI para todos.
 
 **Otros pendientes de la fase (sin dependencia entre sí):**
 - ✅ ~~Categorías faltantes: **iglesia, seguridad**~~ — **RESUELTO 2026-07-27** (migración 021 +

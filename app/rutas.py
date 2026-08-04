@@ -61,32 +61,52 @@ _CATS_ENTORNO = ["salud", "farmacia", "supermercado", "educacion", "parque", "ce
 _TRANSPORTE_MASIVO = ["metro", "estacion_tren", "terminal_bus", "estacion"]
 _RADIO_TRANSP_M = 3000  # el hub masivo puede estar más lejos (mismo criterio que Google)
 
+# ⚠️ Las lecturas de entorno van contra la VISTA `pois_vivos`, NUNCA contra la tabla
+# `pois_propios` (migración 023). La vista aplica el overlay de curación del corredor:
+# un POI que un corredor marcó cerrado en terreno desaparece para TODOS los inmuebles
+# del barrio, no solo para la ficha donde se capturó. Es la propagación que convierte
+# cada visita en un activo acumulativo — el foso sobre el foso (SPEC_Foso §1.8).
+#
+# Y NO se filtra por `operativo` aquí: la vista ya lo resolvió, y hacerlo de nuevo
+# rompería el caso "el origen lo dio de baja pero el corredor lo confirmó en terreno"
+# (el humano estuvo ahí ayer; Overture es de hace un mes).
 _PROPIOS_ENTORNO_SQL = text("""
     SELECT DISTINCT ON (categoria)
-        categoria, nombre, marca,
+        categoria, nombre, marca, verificado_en,
         ST_Y(geom) AS lat, ST_X(geom) AS lon,
         ROUND(ST_Distance(geom::geography,
               ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography))::int AS distancia_m
-    FROM pois_propios
-    WHERE operativo AND categoria = ANY(:cats)
+    FROM pois_vivos
+    WHERE categoria = ANY(:cats)
       AND ST_DWithin(geom::geography,
                      ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, :max_m)
     ORDER BY categoria, geom <-> ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)
 """)
 
 _PROPIOS_TRANSPORTE_SQL = text("""
-    SELECT nombre, ST_Y(geom) AS lat, ST_X(geom) AS lon,
+    SELECT nombre, verificado_en, ST_Y(geom) AS lat, ST_X(geom) AS lon,
         ROUND(ST_Distance(geom::geography,
               ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography))::int AS distancia_m,
         (categoria_overture = ANY(:masivo)) AS es_masivo
-    FROM pois_propios
-    WHERE operativo AND categoria = 'transporte'
+    FROM pois_vivos
+    WHERE categoria = 'transporte'
       AND ST_DWithin(geom::geography,
                      ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, :max_m)
     ORDER BY (categoria_overture = ANY(:masivo)) DESC,
              geom <-> ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)
     LIMIT 1
 """)
+
+
+def _fecha(v: object) -> str | None:
+    """`verificado_en` (timestamptz o None) → 'AAAA-MM-DD' para la UI, o None.
+
+    Mismo recorte que `info_verificacion()` en app/entorno_curacion.py: al comprador
+    le sirve el día en que un corredor pisó el lugar, no la hora exacta.
+    """
+    if not v:
+        return None
+    return (v.isoformat() if hasattr(v, "isoformat") else str(v))[:10] or None
 
 
 async def _servicios_propios(lat: float, lon: float) -> dict[str, dict]:
@@ -114,6 +134,9 @@ async def _servicios_propios(lat: float, lon: float) -> dict[str, dict]:
                     "lat": f["lat"], "lon": f["lon"],
                     "distancia_m": f["distancia_m"], "cat": f["categoria"],
                     "marca": f["marca"], "fuente": "propio",
+                    # Fecha en que un corredor pisó ESTE lugar (None = nadie todavía).
+                    # Alimenta el flag `fresco` del Mapa Vivo y la insignia del anuncio.
+                    "verificado_en": _fecha(f["verificado_en"]),
                 }
             tr = (await conn.execute(_PROPIOS_TRANSPORTE_SQL, {
                 "lat": lat, "lon": lon, "max_m": _RADIO_TRANSP_M,
@@ -124,6 +147,7 @@ async def _servicios_propios(lat: float, lon: float) -> dict[str, dict]:
                     "nombre": tr["nombre"], "lat": tr["lat"], "lon": tr["lon"],
                     "distancia_m": tr["distancia_m"], "cat": "transporte",
                     "es_masivo": bool(tr["es_masivo"]), "fuente": "propio",
+                    "verificado_en": _fecha(tr["verificado_en"]),
                 }
     except Exception:  # noqa: BLE001 — si la capa/DB falla, el llamador cae a Google
         return {}
@@ -144,13 +168,13 @@ _SUBTIPOS_PROPIOS = {
 }
 
 _PROPIOS_NEAREST_SQL = text("""
-    SELECT nombre, marca,
+    SELECT nombre, marca, verificado_en,
         ST_Y(geom) AS lat, ST_X(geom) AS lon,
         ROUND(ST_Distance(geom::geography,
               ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography))::int AS distancia_m,
         (categoria_overture = ANY(:masivo)) AS es_masivo
-    FROM pois_propios
-    WHERE operativo AND categoria = :cat
+    FROM pois_vivos
+    WHERE categoria = :cat
       -- CAST(... AS text[]) y NO `:subtipos::text[]`: el `::` del cast se come el
       -- bindparam en SQLAlchemy y el parámetro queda literal en el SQL.
       AND (cardinality(CAST(:subtipos AS text[])) = 0
@@ -207,7 +231,8 @@ async def _nearest_propio(lat: float, lon: float, cat: str,
 
     cands = [{"nombre": _nombre_poi(f["nombre"], f["marca"]), "lat": f["lat"], "lon": f["lon"],
               "distancia_m": f["distancia_m"], "cat": cat, "fuente": "propio",
-              "es_masivo": bool(f["es_masivo"])} for f in filas]
+              "es_masivo": bool(f["es_masivo"]),
+              "verificado_en": _fecha(f["verificado_en"])} for f in filas]
 
     elegido = cands[0]
     if cat != "transporte":
@@ -645,9 +670,8 @@ def _extraer_minutos(p: str) -> int:
 # del lugar (que es el producto). Los POIs ya están en nuestra capa: un ST_Contains los saca.
 _DENTRO_POIS_SQL = text("""
     SELECT categoria, count(*)::int AS n
-    FROM pois_propios
-    WHERE COALESCE(operativo, true)
-      AND ST_Contains(ST_SetSRID(ST_GeomFromGeoJSON(:geo), 4326), geom)
+    FROM pois_vivos
+    WHERE ST_Contains(ST_SetSRID(ST_GeomFromGeoJSON(:geo), 4326), geom)
     GROUP BY categoria
     ORDER BY n DESC
 """)
@@ -750,8 +774,8 @@ _PANORAMA_TRANSPORTE_SQL = text("""
         ROUND(ST_Distance(geom::geography,
               ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography))::int AS distancia_m,
         (categoria_overture = ANY(:masivo)) AS es_masivo
-    FROM pois_propios
-    WHERE operativo AND categoria = 'transporte'
+    FROM pois_vivos
+    WHERE categoria = 'transporte'
       AND ST_DWithin(geom::geography,
                      ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, :max_m)
     ORDER BY geom <-> ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)

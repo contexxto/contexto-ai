@@ -1463,8 +1463,14 @@ async def _assert_owner(db: AsyncSession, activo_id: uuid.UUID, user: CurrentUse
 # El corredor sabe antes que el mapa: marca POIs cerrados y agrega los nuevos.
 # Se guarda como overlay (autor + fecha) sobre el texto hidratado, reversible.
 class CuracionRequest(BaseModel):
-    accion: str = Field(..., description="cerrado | agregado")
+    accion: str = Field(..., description="cerrado | agregado | confirmado")
     nombre: str = Field(..., min_length=2, max_length=120)
+    # Enganche al POI real de la capa propia (migración 023). Cuando viene, la
+    # observación deja de ser una nota sobre ESTE inmueble y pasa a valer para todo
+    # el barrio: el POI desaparece (o se confirma) en cada ficha que lo tenga cerca.
+    # Sin poi_id la curación sigue siendo texto libre — el camino de siempre, para
+    # lugares que no existen en pois_propios.
+    poi_id: int | None = Field(default=None, ge=1)
     categoria: str | None = Field(default=None, max_length=60)
     distancia_m: int | None = Field(default=None, ge=0, le=20000)
     # El corredor captura su GPS junto al lugar nuevo; el backend calcula la
@@ -1514,13 +1520,36 @@ async def post_entorno(
     await ensure_curacion_table(db)
     await _assert_owner(db, activo_id, user)
     accion = payload.accion.strip().lower()
-    if accion not in ("cerrado", "agregado"):
+    if accion not in ("cerrado", "agregado", "confirmado"):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Acción inválida.")
     # La categoría es obligatoria al AGREGAR (lista curada en el front, no texto
     # libre): datos consistentes para el grafo y los íconos del mapa.
     if accion == "agregado" and not (payload.categoria and payload.categoria.strip()):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             "La categoría es obligatoria para agregar un lugar.")
+    # 'confirmado' ("estuve ahí, sigue abierto") solo tiene sentido sobre un POI de la
+    # capa propia: es lo que puede resucitar una fila que el origen dio de baja. Sin
+    # poi_id no habría a qué aplicarlo — el texto ya lista el lugar.
+    if accion == "confirmado" and payload.poi_id is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "Confirmar requiere el POI de la capa propia (poi_id).")
+
+    # El poi_id se valida contra la tabla ANTES de insertar: la FK ya lo garantiza,
+    # pero un 422 explicable le sirve al front más que un 500 de integridad.
+    if payload.poi_id is not None:
+        existe = (await db.execute(
+            text("SELECT 1 FROM pois_propios WHERE id = :p"), {"p": payload.poi_id},
+        )).first()
+        if not existe:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                "Ese POI no existe en la capa propia.")
+
+    # ⚠️ ALCANCE DE LA AUTORIZACIÓN — decisión consciente, revisar al escalar.
+    # `_assert_owner` verifica que el corredor sea dueño de ESTE inmueble, pero una
+    # curación con poi_id afecta a TODA la ciudad. Con un puñado de corredores de
+    # confianza es el trato que queremos (la verdad local compartida ES el foso); con
+    # decenas hace falta quórum: N observaciones independientes antes de ocultar un POI
+    # para todos. Está anotado en docs/PLAN_Migracion... Fase 3.
 
     # Si el corredor capturó su GPS junto al lugar nuevo, calculamos la distancia
     # REAL con el geom del inmueble (PostGIS) — nunca un metro tecleado a ojo.
@@ -1536,11 +1565,12 @@ async def post_entorno(
             distancia = int(round(d["d"]))
 
     await db.execute(
-        text("INSERT INTO entorno_curacion (activo_id, accion, nombre, categoria, distancia_m, lat, lon, foto, corredor_id) "
-             "VALUES (:a, :ac, :n, :c, :d, :lat, :lon, :f, :u)"),
+        text("INSERT INTO entorno_curacion (activo_id, accion, nombre, categoria, distancia_m, lat, lon, foto, corredor_id, poi_id) "
+             "VALUES (:a, :ac, :n, :c, :d, :lat, :lon, :f, :u, :poi)"),
         {"a": str(activo_id), "ac": accion, "n": payload.nombre.strip(),
          "lat": payload.lat, "lon": payload.lon, "f": (payload.foto or None),
-         "c": (payload.categoria or None), "d": distancia, "u": user.user_id},
+         "c": (payload.categoria or None), "d": distancia, "u": user.user_id,
+         "poi": payload.poi_id},
     )
     await db.commit()
     curaciones = await fetch_curaciones(db, str(activo_id))

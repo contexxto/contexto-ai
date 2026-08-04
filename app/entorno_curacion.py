@@ -12,6 +12,29 @@ que se aplica al servir el entorno al agente y al anuncio:
 Cada curación queda con autor (corredor) + fecha → auditable y base de la insignia
 "Entorno verificado por el corredor". El catastro base (texto hidratado) NO se toca:
 la curación es una capa encima, reversible.
+
+DOS ALCANCES (migración 023)
+----------------------------
+Una curación vale para ESTE inmueble o para TODO el barrio, según traiga `poi_id`:
+
+  - `poi_id IS NULL`  → alcance ficha. Es el camino original: el lugar se identifica
+    por su nombre en texto libre y el overlay se aplica al texto de este activo. Es lo
+    correcto para lugares que NO están en la capa propia.
+  - `poi_id` presente → alcance ciudad. La observación se cuelga de la fila real de
+    `pois_propios` y la resuelve la vista `pois_vivos`: si un corredor cierra la
+    farmacia, desaparece de TODOS los inmuebles del barrio, no solo de la ficha donde
+    la marcó. Eso es lo que hace que cada visita de terreno se ACUMULE en vez de morir
+    donde se capturó (SPEC_Foso_Capa_de_Datos.md §1.8).
+
+  Con `poi_id` aparece una tercera acción, 'confirmado' ("estuve ahí, sigue abierto"),
+  que no altera el texto —el lugar ya está listado— pero sí puede sostener vivo un POI
+  que el origen dio de baja. El humano que caminó ayer le gana a un dataset del mes
+  pasado.
+
+⚠️ La verificación NUNCA se escribe sobre `pois_propios`: el refresco semanal hace
+   ON CONFLICT DO UPDATE con `operativo = EXCLUDED.operativo` y borraría el trabajo del
+   corredor en silencio. Origen manda en nombre/geom/dirección; el humano manda en si
+   el lugar existe. Ver el encabezado de migrations/023_curacion_engancha_poi.sql.
 """
 import re
 import unicodedata
@@ -37,7 +60,15 @@ _CURACION_DDL = [
     "ALTER TABLE entorno_curacion ADD COLUMN IF NOT EXISTS lat double precision",
     "ALTER TABLE entorno_curacion ADD COLUMN IF NOT EXISTS lon double precision",
     "ALTER TABLE entorno_curacion ADD COLUMN IF NOT EXISTS foto text",
+    # Enganche al POI de la capa propia (migración 023). Se repite aquí a propósito:
+    # `fetch_curaciones` traga sus errores y devuelve [], así que si la migración no
+    # corrió, la curación se apagaría ENTERA y en silencio. Mismo motivo por el que
+    # arriba están lat/lon/foto.
+    "ALTER TABLE entorno_curacion ADD COLUMN IF NOT EXISTS poi_id bigint "
+    "REFERENCES pois_propios (id) ON DELETE SET NULL",
     "CREATE INDEX IF NOT EXISTS ix_entorno_cur_activo ON entorno_curacion (activo_id)",
+    "CREATE INDEX IF NOT EXISTS ix_entorno_cur_poi ON entorno_curacion (poi_id, creado_en DESC) "
+    "WHERE poi_id IS NOT NULL",
 ]
 _curacion_ready = False
 
@@ -123,7 +154,7 @@ async def fetch_curaciones(db, activo_id) -> list[dict[str, Any]]:
     try:
         rows = (
             await db.execute(
-                text("SELECT id, accion, nombre, categoria, distancia_m, foto, "
+                text("SELECT id, accion, nombre, categoria, distancia_m, foto, poi_id, "
                      "creado_en::text AS creado_en FROM entorno_curacion "
                      "WHERE activo_id = :a ORDER BY creado_en DESC"),
                 {"a": str(activo_id)},

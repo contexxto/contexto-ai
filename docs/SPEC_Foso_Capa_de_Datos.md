@@ -180,9 +180,19 @@ solo cambia la fuente de la que sale.
 
 La tabla `entorno_curacion` (existente) ya hace overlay del corredor sobre el texto de
 `servicios_cercanos`. Con `pois_propios` como base, el mismo overlay aplica: el corredor
-**confirma** (sube confianza / marca verificado) o **cierra** (`operativo=false`) un POI.
+**confirma** o **cierra** un POI.
 Ese cruce —POI abierto × verificación humana con fecha— es **el foso sobre el foso**:
 ni Redfin ni Google lo tienen.
+
+> ✅ **CONSTRUIDO 2026-08-04** — migración 023, aplicada y verificada en prod.
+> `entorno_curacion.poi_id` → `pois_propios.id`, resuelto por la vista `pois_vivos`.
+>
+> **Corrección a este apartado:** decía que cerrar un POI es ponerle `operativo=false`. **No se
+> hace así, y hacerlo sería un error silencioso**: el upsert del refresco semanal incluye
+> `operativo = EXCLUDED.operativo`, de modo que el cron del lunes resucitaría el local cerrado
+> porque Overture lo sigue listando abierto. La verificación humana **nunca** se escribe en
+> `pois_propios`; vive en `entorno_curacion` y se aplica en LECTURA. Detalle completo en
+> `PLAN_Migracion_MapChat_Google_a_Stack_Propio.md` Fase 3, punto 3.
 
 ### 1.9 Cutover de Google Places
 

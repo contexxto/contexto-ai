@@ -29,7 +29,7 @@ from app.entorno_curacion import (
     info_verificacion,
     parse_servicios,
 )
-from app.rutas import entorno_curable
+from app.rutas import entorno_curable, verificacion_de_entorno
 from app.scores_heuristicos import scores_para
 from app.walk_score import (
     _fetch_pois,
@@ -642,6 +642,15 @@ async def asset_anuncio(
     # Overlay de curación del corredor (Catastro Vivo) + insignia de verificación.
     _curaciones = await fetch_curaciones(db, str(activo_id))
     _servicios = limpiar_texto_servicios(aplicar_curacion(row["servicios_cercanos"], _curaciones))
+    # Misma regla que las tarjetas del chat: la insignia se enciende por curación de
+    # ESTA ficha o por verificación de terreno heredada del barrio (migración 023). Que
+    # las dos superficies usaran criterios distintos seria peor que no tener insignia:
+    # el mismo inmueble se veria verificado en el mapa y sin verificar en su anuncio.
+    _verif = info_verificacion(_curaciones)
+    _terreno = (await verificacion_de_entorno([str(activo_id)])).get(str(activo_id))
+    if _terreno:
+        _verif = {"verificado": True,
+                  "fecha": max([f for f in (_verif.get("fecha"), _terreno) if f])}
 
     return {
         "id": row["id"],
@@ -665,7 +674,7 @@ async def asset_anuncio(
         "fotos": car.get("fotos") or ([row["imagen_url"]] if row["imagen_url"] else []),
         "ficha": ficha,
         "inversion": inversion,
-        "entorno_verificado": info_verificacion(_curaciones),
+        "entorno_verificado": _verif,
     }
 
 
@@ -1509,7 +1518,15 @@ async def get_entorno(
     if row and row["lat"] is not None and row["lon"] is not None:
         try:
             pois = await entorno_curable(float(row["lat"]), float(row["lon"]))
-        except Exception:  # noqa: BLE001 — la capa propia es un extra; el texto sigue
+        except Exception as exc:  # noqa: BLE001 — la capa propia es un extra; el texto sigue
+            # Sin aviso, el corredor vería solo la lista de texto y curaría con alcance
+            # ficha creyendo que aporta al barrio. La degradación es correcta; el
+            # silencio la vuelve indetectable.
+            logging.getLogger("foso").warning(
+                "foso=entorno_curable_caido activo=%s causa=%s: %s — el corredor solo "
+                "verá la lista de texto (curación de alcance ficha)",
+                activo_id, type(exc).__name__, str(exc)[:300],
+            )
             pois = []
 
     return {

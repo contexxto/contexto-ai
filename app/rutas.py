@@ -11,6 +11,7 @@ devuelve None y el mapa simplemente no muestra rutas.
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 
 import httpx
@@ -26,6 +27,35 @@ from app.walk_score import _haversine_m, walk_score_para
 # 5s mantiene el peor caso en ~10s, holgado bajo el wait_for(13s) del endpoint.
 _TIMEOUT = 5.0
 _RADIO_M = 1500
+
+# El foso degrada en silencio POR DISEÑO (si la capa propia falla, el comprador ve el
+# entorno de Google en vez de un error). Pero degradar callado significa que el producto
+# "funciona" mostrando menos verdad y nadie se entera — el género de fallo de
+# docs/AUDITORIA_Fallos_Silenciosos_2026-07-31.md. La degradación se conserva; el
+# silencio no.
+log = logging.getLogger("foso")
+
+
+def _avisar_capa_caida(donde: str, exc: Exception) -> None:
+    """Registra una caída de la capa propia distinguiendo la causa.
+
+    La distinción importa: que FALTE la vista es un problema de despliegue (la
+    migración 023 no corrió en este entorno) y se arregla una vez; un error de
+    conexión es transitorio. Tratarlos igual manda a buscar al lugar equivocado —
+    misma lección que el incidente del cierre masivo: "no pude consultar" no es
+    "no existe".
+    """
+    detalle = str(exc)
+    if "pois_vivos" in detalle and ("does not exist" in detalle or "no existe" in detalle):
+        log.error(
+            "foso=capa_caida donde=%s causa=vista_ausente — la vista `pois_vivos` no "
+            "existe en esta base: falta aplicar migrations/023_curacion_engancha_poi.sql. "
+            "El entorno está cayendo a Google y la curación del corredor NO se aplica.",
+            donde,
+        )
+    else:
+        log.warning("foso=capa_caida donde=%s causa=%s: %s",
+                    donde, type(exc).__name__, detalle[:300])
 
 
 def _decode_polyline(enc: str) -> list[list[float]]:
@@ -152,7 +182,8 @@ async def _servicios_propios(lat: float, lon: float) -> dict[str, dict]:
                     "verificado_en": _fecha(tr["verificado_en"]),
                     "poi_id": tr["id"],
                 }
-    except Exception:  # noqa: BLE001 — si la capa/DB falla, el llamador cae a Google
+    except Exception as exc:  # noqa: BLE001 — si la capa/DB falla, el llamador cae a Google
+        _avisar_capa_caida("_servicios_propios", exc)
         return {}
     return out
 
@@ -185,6 +216,54 @@ async def entorno_curable(lat: float, lon: float) -> list[dict]:
         })
     out.sort(key=lambda x: (x["distancia_m"] is None, x["distancia_m"] or 0))
     return out
+
+
+# La verificación de terreno que le corresponde a CADA inmueble. Un solo viaje a la DB
+# para todo el panel — por tarjeta serían 2 queries × N.
+#
+# ⚠️ El DISTINCT ON por (activo, categoría) no es un detalle de rendimiento, es de
+# HONESTIDAD: cuenta solo los POIs que el entorno REALMENTE muestra (el más cercano de
+# cada categoría), no cualquiera dentro del radio. Un lugar verificado a 1.400 m que
+# ninguna ficha exhibe no puede encender la insignia — eso sería inflar el dato, justo
+# lo que el guardrail del pin-anillo prohíbe ("la calidez es registro, no pulgar en la
+# balanza").
+_VERIFICACION_ENTORNO_SQL = text("""
+    WITH mostrados AS (
+        SELECT DISTINCT ON (a.id, pv.categoria)
+               a.id AS activo_id, pv.verificado_en
+        FROM activos_inmutables a
+        JOIN pois_vivos pv
+          ON ST_DWithin(pv.geom::geography, a.geom::geography, :max_m)
+        WHERE a.id = ANY(CAST(:ids AS uuid[])) AND a.geom IS NOT NULL
+        ORDER BY a.id, pv.categoria, pv.geom <-> a.geom
+    )
+    SELECT activo_id, max(verificado_en) AS verificado_en
+    FROM mostrados
+    WHERE verificado_en IS NOT NULL
+    GROUP BY activo_id
+""")
+
+
+async def verificacion_de_entorno(activo_ids: list[str]) -> dict[str, str]:
+    """{activo_id: 'AAAA-MM-DD'} — cuándo pisó un corredor algún lugar de ese entorno.
+
+    Es la propagación hecha visible: un corredor verifica la farmacia parado en el
+    inmueble A y el inmueble B de enfrente hereda la insignia, porque comparten el POI.
+    Sin esto la migración 023 acumula verdad que nadie ve.
+
+    Ausente del dict = nadie ha caminado ese entorno todavía (≠ error).
+    """
+    if not activo_ids:
+        return {}
+    try:
+        async with engine.connect() as conn:
+            filas = (await conn.execute(_VERIFICACION_ENTORNO_SQL, {
+                "ids": [str(i) for i in activo_ids], "max_m": _RADIO_M,
+            })).mappings().all()
+        return {str(f["activo_id"]): _fecha(f["verificado_en"]) for f in filas}
+    except Exception as exc:  # noqa: BLE001 — sin insignia, nunca sin tarjetas
+        _avisar_capa_caida("verificacion_de_entorno", exc)
+        return {}
 
 
 # Categorías que NUESTRA capa cubre (= CHECK de pois_propios, migración 021).
@@ -257,7 +336,8 @@ async def _nearest_propio(lat: float, lon: float, cat: str,
                 "lat": lat, "lon": lon, "cat": cat, "max_m": 3000,
                 "subtipos": subtipos or [], "masivo": _TRANSPORTE_MASIVO,
             })).mappings().all()
-    except Exception:  # noqa: BLE001 — si la capa/DB falla, el llamador cae a Google
+    except Exception as exc:  # noqa: BLE001 — si la capa/DB falla, el llamador cae a Google
+        _avisar_capa_caida("_nearest_propio", exc)
         return None
     if not filas:
         return None

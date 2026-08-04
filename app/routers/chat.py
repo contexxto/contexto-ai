@@ -21,10 +21,11 @@ from app.config import settings
 from app.database import AsyncSessionLocal
 from app.encaje import calcular_encaje, delta_encaje, normalizar_tipo
 from app.entorno import limpiar_texto_servicios
-from app.entorno_curacion import aplicar_curacion, parse_servicios
+from app.entorno_curacion import aplicar_curacion, info_verificacion, parse_servicios
 from app.intencion import analizar_intencion
 from app.limiter import limiter
 from app.preferencias import extraer_preferencias
+from app.rutas import verificacion_de_entorno
 from app.verificacion_prosa import resumen as resumen_prosa, verificar_prosa
 
 router = APIRouter(prefix="/api/v1/chat", tags=["Chat — Agente Conversacional"])
@@ -307,8 +308,11 @@ def _card_from_row(row: dict, preferencias: dict | None = None) -> dict:
         "pois": _pois_de_intencion(row.get("servicios_cercanos")),
         # Verificación del entorno por el corredor (Catastro Vivo). El pin del Mapa Vivo
         # (modo ZONA) lo pinta como halo SÓLIDO (verificado) vs suave ("según el mapa").
-        # Es el eje HALO del pin-anillo. Honesto: solo se enciende si hay curación real.
+        # Es el eje HALO del pin-anillo. Honesto: solo se enciende si hay verificación
+        # humana real — de esta ficha o de un POI del barrio que este entorno usa.
         "fresco": bool(row.get("fresco")),
+        # Cuándo. Sin fecha, "verificado" no envejece nunca y termina mintiendo.
+        "verificado_en": row.get("verificado_en"),
     }
     # ★ ENCAJE (tarea #8): eje ARCO del pin-anillo. "X% de encaje contigo" contra las
     # necesidades DECLARADAS. Solo si el usuario declaró algo (preferencias no vacías) y
@@ -386,8 +390,17 @@ async def _fetch_cards_rows(ids: list[str]) -> tuple[list, dict] | None:
     """
     try:
         async with AsyncSessionLocal() as db:
-            rows = (await db.execute(text(query), {"ids": ids})).mappings().all()
+            rows = [dict(r) for r in (await db.execute(text(query), {"ids": ids})).mappings().all()]
             curaciones = await _fetch_curaciones_batch(db, ids)
+            # Verificación de TERRENO heredada del barrio (migración 023). Va aquí y no
+            # en build_result_cards por dos razones: este es el único punto que ya habla
+            # con la DB para armar tarjetas (los tests lo mockean entero, así que la
+            # suite no toca red), y va como query APARTE en vez de un JOIN en el SQL de
+            # arriba — si `pois_vivos` faltara, un JOIN tumbaría TODAS las tarjetas.
+            # Una insignia ausente es degradación aceptable; un panel vacío no.
+            verif = await verificacion_de_entorno(ids)
+            for r in rows:
+                r["verificado_en_terreno"] = verif.get(r["id"])
             return rows, curaciones
     except Exception:  # noqa: BLE001 — sin tarjetas es degradación aceptable, no error
         return None
@@ -505,7 +518,18 @@ async def construir_panel(messages, *, preferencias: dict | None = None) -> dict
         # Catastro Vivo: aplica el overlay del corredor (quita los POIs que marcó
         # CERRADOS) ANTES de armar los chips, igual que la página de anuncio /a/{id}.
         r["servicios_cercanos"] = aplicar_curacion(r.get("servicios_cercanos"), cur)
-        r["fresco"] = bool(cur)  # verificación (halo del pin); ver _card_from_row
+        # `fresco` = un humano estuvo aquí, por cualquiera de las dos vías:
+        #   · alcance FICHA  — el corredor editó el entorno de ESTE inmueble
+        #   · alcance BARRIO — alguien verificó en terreno un POI que este entorno usa
+        # Antes solo contaba la primera, así que la propagación de la 023 acumulaba
+        # verdad que el pin nunca mostraba.
+        terreno = r.get("verificado_en_terreno")
+        r["fresco"] = bool(cur) or bool(terreno)
+        # La FECHA es lo que hace honesta la insignia: "verificado" a secas no envejece,
+        # y una revisión de hace ocho meses no vale lo que una de la semana pasada.
+        # Se elige la más reciente de las dos vías; el frontend decide cómo la muestra.
+        fechas = [f for f in (info_verificacion(cur).get("fecha"), terreno) if f]
+        r["verificado_en"] = max(fechas) if fechas else None
         by_id[r["id"]] = r
 
     orden = [i for i in ids if i in by_id]
@@ -609,6 +633,9 @@ def _map_seed_from_cards(cards: list[dict], prev_mode: str | None = None) -> dic
             "lon": c.get("lon"),
             "encaje": c.get("encaje"),
             "fresco": bool(c.get("fresco")),
+            # La fecha viaja con el pin: el halo dice QUE se verificó, la fecha dice
+            # CUÁNDO. Un halo sin fecha envejece sin avisar.
+            "verificado_en": c.get("verificado_en"),
             "badge": (c["pois"][0] if c.get("pois") else None),
             "direccion": c.get("direccion"),
             "tipo_activo": c.get("tipo_activo"),

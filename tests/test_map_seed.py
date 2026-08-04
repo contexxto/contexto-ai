@@ -60,7 +60,10 @@ def test_forma_y_bbox():
 def test_pin_lleva_lo_del_mapa_no_precio():
     ms = _map_seed_from_cards([_card("a", -0.18, -78.48)])
     p = ms["pines"][0]
-    assert set(p) == {"id", "lat", "lon", "encaje", "fresco", "badge", "direccion", "tipo_activo"}
+    # `verificado_en` acompaña a `fresco` desde la migración 023: el halo dice QUE se
+    # verificó y la fecha dice CUÁNDO — sin ella la insignia no envejece nunca.
+    assert set(p) == {"id", "lat", "lon", "encaje", "fresco", "verificado_en",
+                      "badge", "direccion", "tipo_activo"}
     assert "precio" not in p  # guardrail del SPEC: el pin NUNCA lleva precio
     assert p["encaje"] == 80 and p["badge"]["emoji"] == "🌳"
 

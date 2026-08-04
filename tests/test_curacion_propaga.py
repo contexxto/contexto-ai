@@ -14,10 +14,12 @@ Los dos frentes:
   2. ESCRITURA — el upsert del refresco no puede tocar nada que produzca el humano
                  (si lo tocara, el cron del lunes borraría la verificación).
 """
+import logging
 import re
 from pathlib import Path
 
 from app.entorno_curacion import aplicar_curacion, info_verificacion
+from app.rutas import _avisar_capa_caida
 
 _APP = Path(__file__).resolve().parents[1] / "app"
 _SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
@@ -115,6 +117,35 @@ def test_confirmado_si_cuenta_como_verificacion_para_la_insignia():
     info = info_verificacion(curaciones)
     assert info["verificado"] is True
     assert info["fecha"] == "2026-08-04"
+
+
+# ══ La degradación se conserva; el silencio no ══════════════════════════════════════
+def test_vista_ausente_se_reporta_como_error_con_la_migracion_a_aplicar(caplog):
+    """Si falta `pois_vivos`, el producto sigue respondiendo — pero sin curación.
+
+    Ese es el peor caso posible: todo "funciona", el comprador ve el entorno de Google
+    y el trabajo de terreno del corredor no se aplica en ningún lado. Tiene que salir
+    como ERROR y decir QUÉ correr, no como una advertencia genérica más.
+    """
+    with caplog.at_level(logging.WARNING, logger="foso"):
+        _avisar_capa_caida("_servicios_propios",
+                           Exception('relation "pois_vivos" does not exist'))
+    reg = caplog.records[-1]
+    assert reg.levelno == logging.ERROR
+    assert "023" in reg.getMessage(), "el aviso debe nombrar la migración a aplicar"
+
+
+def test_fallo_transitorio_no_se_reporta_como_error(caplog):
+    """Contrapeso: un timeout no es un despliegue roto.
+
+    Si ambos salieran como ERROR, el que sí exige acción quedaría enterrado entre
+    ruido y el aviso dejaría de leerse — que es como se pierde un canal de alerta.
+    """
+    with caplog.at_level(logging.WARNING, logger="foso"):
+        _avisar_capa_caida("_nearest_propio", TimeoutError("connection timed out"))
+    reg = caplog.records[-1]
+    assert reg.levelno == logging.WARNING
+    assert "023" not in reg.getMessage()
 
 
 def test_cerrado_sigue_quitando_del_texto_con_poi_id():

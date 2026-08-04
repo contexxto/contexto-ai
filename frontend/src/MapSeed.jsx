@@ -60,8 +60,27 @@ const badgeDe = (r) => r?.badge || (Array.isArray(r?.pois) && r.pois.length ? r.
 const firmaPines = (pins) =>
   pins.map((p) => {
     const poi = badgeDe(p)
-    return `${p.id}@${p.lat},${p.lon}#${p.fresco ? 1 : 0}=${p.encaje ?? ''}~${poi ? poi.emoji + poi.minutos : ''}`
+    // `verificado_en` entra en la firma: un corredor puede re-verificar un POI sin que
+    // `fresco` cambie (ya estaba en true), y sin esto el caption seguiria mostrando la
+    // fecha vieja.
+    return `${p.id}@${p.lat},${p.lon}#${p.fresco ? 1 : 0}:${p.verificado_en || ''}=${p.encaje ?? ''}~${poi ? poi.emoji + poi.minutos : ''}`
   }).join('|')
+
+// 'AAAA-MM-DD' → '4 ago'. Se construye con Date.UTC para que la fecha no retroceda un
+// dia en zonas al oeste de UTC (Quito es UTC-5): `new Date('2026-08-04')` se interpreta
+// como medianoche UTC y al formatearlo en local mostraria el 3.
+const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
+const fechaCorta = (iso) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '')
+  if (!m) return iso || ''
+  const [, y, mes, dia] = m
+  const idx = Number(mes) - 1
+  if (idx < 0 || idx > 11) return iso
+  const ahora = new Date()
+  // El año solo se muestra si NO es el actual — "4 ago 2025" avisa de una revision vieja
+  // sin ensuciar el caso comun.
+  return `${Number(dia)} ${MESES[idx]}${Number(y) === ahora.getFullYear() ? '' : ' ' + y}`
+}
 
 const headerChip = {
   display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px',
@@ -372,9 +391,14 @@ export default function MapSeed({ results, mapSeed, onOpen, onExpand, isLast, ac
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {activo.direccion || activo.tipo_activo || 'Inmueble'}
             </span>
+            {/* La fecha es parte de la afirmación, no un adorno: "verificado" a secas
+                no envejece y una revisión de hace ocho meses se lee igual que la de
+                ayer. Con fecha, el comprador la descuenta solo. */}
             <span style={{ flexShrink: 0, marginLeft: 'auto', fontWeight: 700,
                            color: activo.fresco ? C.tealHi : C.muted }}>
-              {activo.fresco ? '✓ verificado' : 'según el mapa'}
+              {activo.fresco
+                ? (activo.verificado_en ? `✓ en terreno · ${fechaCorta(activo.verificado_en)}` : '✓ verificado')
+                : 'según el mapa'}
             </span>
           </div>
         )}

@@ -36,6 +36,7 @@ Una curación vale para ESTE inmueble o para TODO el barrio, según traiga `poi_
    corredor en silencio. Origen manda en nombre/geom/dirección; el humano manda en si
    el lugar existe. Ver el encabezado de migrations/023_curacion_engancha_poi.sql.
 """
+import logging
 import re
 import unicodedata
 from typing import Any
@@ -161,5 +162,15 @@ async def fetch_curaciones(db, activo_id) -> list[dict[str, Any]]:
             )
         ).mappings().all()
         return [dict(r) for r in rows]
-    except Exception:  # noqa: BLE001 — tabla inexistente todavía / error transitorio
+    except Exception as exc:  # noqa: BLE001 — tabla inexistente todavía / error transitorio
+        # Devolver [] equivale a "este inmueble no tiene curación", que es
+        # INDISTINGUIBLE de "no pude leerla". Si la columna poi_id falta (migración 023
+        # sin aplicar), la curación entera se apagaría sin que nadie lo note y el
+        # inmueble perdería su insignia de verificado. Misma lección del incidente del
+        # cierre masivo: "no pude consultar el origen" no es "no hay nada".
+        logging.getLogger("foso").warning(
+            "foso=curacion_ilegible activo=%s causa=%s: %s — el inmueble se servirá "
+            "SIN curación ni insignia de verificado",
+            activo_id, type(exc).__name__, str(exc)[:300],
+        )
         return []

@@ -24,7 +24,11 @@ y el nuestro no es replicable sin el Place Graph.
 
 ## 1. Ficha del video
 
-- **Duración objetivo:** 8–12 min (suficiente para watch-time real; lejos del vlog de 3 min y del podcast de 60).
+- **Duración: piso DURO de 8 min** (objetivo 8–12). No es rango: pasando los 8 minutos se habilitan los
+  **mid-roll ads** = el doble de inventario publicitario (per Eloísa Wolf). Ningún ancla por debajo de 8.
+- **Doblaje al inglés** desde el piloto (per Eloísa Wolf: el RPM lo fija el país de la audiencia — EE.UU. >
+  España > México; Ecuador no figura). El aura es visual → se dobla casi perfecto, y activa al avatar
+  nómada/expat/diáspora, que está en geo de RPM alto. Presupuestar la pista EN desde el arranque.
 - **Producción:** **LEAN** (per Eloísa: no sobre-producir). Cámara en mano / gimbal + celular. Sin dron obligatorio.
   Audio limpio (lavalier) > imagen perfecta. Los overlays de datos son gráficos simples, no motion graphics.
 - **Rodaje:** 1 día. Dos bloques: **martes 7:00–9:00 am** (la hora que nadie filma) y **17:30–18:30** (la luz + el regreso).

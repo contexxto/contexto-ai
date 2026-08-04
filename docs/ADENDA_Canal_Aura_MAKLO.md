@@ -32,6 +32,19 @@ Convertir el **entorno verificado en terreno** que la máquina YA produce (PROPU
 - **Pauta** → **ya es de MAKLO** (PROPUESTA §5; Regla de mesa #3 "sin pauta no hay mandato"). Se redirige parte a amplificar el aura. **No es un favor que se pide — es precondición documentada.** No reabrir ese punto.
 - **Sin % de venta** (canon intacto). El canal = "la máquina" → NO se lo llevan al salir (PROPUESTA §8), igual que el agente IA.
 
+**⚠️ NO DECIR EN LA MESA (corrección 2026-07-26, masterclass de Eloísa Wolf):** que *"AdSense paga la producción"*.
+El RPM depende del **país de la audiencia** (EE.UU. > España > México; **Ecuador no figura**). Bienes raíces SÍ es
+nicho premium (10-30 RPM en EE.UU.), pero con audiencia quiteña el ingreso publicitario es marginal → **nicho
+premium × geografía barata**. Prometerlo sería cifra sin asterisco (viola el canon de honestidad). La producción se
+cotiza como **costo real** (setup + mensual), punto. *(Palanca de largo plazo, no prometible hoy: doblar el aura al
+inglés activa audiencia US/expat/diáspora, que sí paga RPM alto.)*
+
+**Modelo de patrocinio si Jorge pide "más presencia de marca" (§9 del canon):** ofrecer **slot rotativo de inserción
+dinámica** (llega 2026: se vende un espacio DENTRO del video ya publicado, por un periodo, y se retira después),
+**no patrocinio del episodio**. El contenido editorial queda intacto y auditable, el dinero entra y sale, y la
+biblioteca de auras se vuelve inventario re-vendible de Contexto. Es la respuesta correcta a "quiero que el canal
+hable más de mis unidades" — le das presencia sin venderle el criterio.
+
 ## 3. Firewall del ángel — en vivo
 Jorge ya lo mencionó ("si sale bien, inversión ángel en Contexto"). **Usar el guion textual del PREP §2 — no improvisar.** Mesas separadas, sin excepción. El cheque ángel NO compra control editorial ni propiedad del canal. *"Si sale bien"* = el gate: la due diligence es 90 días de piloto; después esa mesa se abre a mayor valoración y con tracción probada.
 

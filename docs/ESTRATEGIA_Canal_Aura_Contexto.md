@@ -59,6 +59,82 @@ familia, "etapa de vida", zip, lookalikes (HUD v. Facebook 2019; NFHA v. Redfin 
    *descubren* (mindset scroll); **YouTube convierte** (mindset aprender/comprar).
 6. **Click-and-watch:** la miniatura decide. Mandar interesados → alto watch-time → el algoritmo sube.
 
+### 4.bis — Delta de la masterclass *"Cómo se gana dinero en serio en YouTube"* (canal propio de Eloísa Wolf, 2026-07)
+*Corrige y amplía lo anterior. Todo "per Eloísa Wolf"; los estudios que ella cita (HubSpot, Social Media Examiner, Hormozi, Priestley) van rotulados como terceros.*
+
+- 🔴 **CORRECCIÓN — AdSense NO paga la fiesta en Ecuador.** El RPM depende del **país de la audiencia**, no del
+  idioma: su orden es **EE.UU. > España > México**; Ecuador no figura. A favor: **bienes raíces es de los nichos
+  que MÁS pagan** (con finanzas, tecnología, negocios, IA: 10-30 RPM en EE.UU.). Resultado para nosotros:
+  **nicho premium × geografía barata.** ⚠️ **Prohibido prometer en mesa que AdSense cubre la producción de un
+  canal Quito-Quito** — sería cifra sin asterisco. La producción se presupuesta como costo real (setup+mensual).
+- 🟢 **El arreglo — geo de alto RPM vía inglés/US Hispanics.** US Hispanics paga como EE.UU. Caso Diary of a CEO:
+  **+3M suscriptores hispanos en 6 meses solo doblando**. Aplicado al revés: **doblar el aura de Quito al inglés**
+  activa al avatar "arrendar un año y trabajar" (nómada/expat, físicamente en EE.UU.) **+ la diáspora ecuatoriana
+  que compra en su país**. El aura es visual → se dobla casi perfecto (una masterclass hablada, no). La
+  investigación ya lo insinuaba: *She Run the World* (tour para expat, EN, 6.7K) salió en la búsqueda de nómadas.
+- 💡 **Inserción dinámica de segmentos de marca (llega 2026) = el modelo supply-side correcto.** Permite vender un
+  espacio DENTRO de un video ya publicado, por un periodo, y **retirarlo después** (como pauta de televisora).
+  **Resuelve la tensión de captura editorial:** el desarrollador **no patrocina el episodio** (anti-patrón "el
+  podcast que invita a quien le conviene") — **compra un slot rotativo** en el video de esa zona. Contenido
+  intacto y auditable; la biblioteca de auras se vuelve **inventario re-vendible**, no contenido quemado.
+  → Debe quedar escrito ANTES de negociar patrocinio con cualquier promotor.
+- ⚙️ **Piso duro de 8 minutos:** pasando los 8 min se habilitan mid-rolls = doble inventario publicitario.
+  Ningún video ancla por debajo de 8 min. (Regla, no rango.)
+- ⚙️ **Brand Kit del canal** (nativo en YouTube): expone **ingreso familiar de la audiencia** y qué compraría.
+  Para vender patrocinio a un desarrollador, ese dato ES el pitch — y es dato de plataforma, no afirmación nuestra.
+- ⚙️ **La imperfección es foso en la era de IA:** contenido sin guion, en primera persona, es lo que no se copia.
+  Refuerza el formato "caminar y hablar", nunca locutar.
+- **Refuerzos** (ya en canon, no re-derivar): 4-7-11 · evergreen (un video puede rendir 5+ años) · el algoritmo es
+  audiencia · no sobre-producir · **jamás construir en tierra ajena** → siempre llevar la audiencia a lo propio
+  (plataforma + CRM de Contexto, ver §8) · el video que más vende no es el viral, es el que **habla al dolor más
+  profundo** · dato de Hormozi (tercero): YouTube le dio **28% del tráfico pero 60% de las ventas**, convirtiendo
+  3-4x mejor que cualquier red.
+
+### 4.ter — Delta del curso de YouTube Automation / canales faceless (Sebastián, 2026-08)
+*Género DISTINTO: negocio de AdSense por volumen con contenido faceless/IA. La mayoría de su
+optimización NO aplica aquí y parte haría daño. Claims autorreportados, sin auditar → "per Sebastián".*
+
+- 🔍 **Regla 1:10 (test de nicho):** un nicho tiene empuje algorítmico si hay canales con **<100K subs
+  (ideal <50K) recibiendo >500K vistas/mes (ideal >1M)** — vistas mensuales ≥10x los subs. Si solo hay
+  canales viejos y grandes con vistas ≤ subs, el nicho está **estancado**, no vacío. Se piden 3-5 casos
+  para validar.
+  **Objeción que esto plantea a nuestro veredicto de whitespace** (Diana 6K, Entre Muros 111): por su
+  marco Quito parecería nicho sin empuje, no whitespace. **Respuesta:** su marco asume negocio de
+  AdSense por volumen; el nuestro necesita ~100 leads calificados en una ciudad. Y el test **SÍ pasa en
+  el nicho relocation/lugar** (evidencia Charlotte: 780 subs→25K vistas; 50 subs→1.9K). Conclusión
+  honesta: **el nicho no está muerto, está desatendido y es pequeño** — fatal para AdSense, ideal para
+  transacciones. Mantener el veredicto, con este asterisco escrito.
+- ⚠️ **SHORTS — corrección al canon (dos expertos se contradicen):** Sebastián eliminó Shorts de todos
+  sus canales; argumento: traen audiencia en modo scroll-dopamina que se suscribe, no da clic en los
+  largos (hunde CTR) y si entra se sale (hunde retención) → **reentrenas al algoritmo con la audiencia
+  equivocada**. Su dato: Short con 11,7M vistas = $407. Eloísa, en cambio, es pro-Shorts.
+  **Resolución para Contexto:** nuestro avatar toma la decisión más lenta y cara de su vida = el polo
+  opuesto del scroller. **NO publicar shorts en el canal de aura** (al menos hasta tener el núcleo
+  returning consolidado). Los cortes verticales van a **Instagram/LinkedIn**, que en nuestro modelo ya
+  son las superficies de DESCUBRIMIENTO; YouTube es la de CONVERSIÓN. Ordena el modelo, no lo rompe.
+- 📊 **WTPI (watch time ÷ impresiones):** afirma que en 2026 YouTube ya no premia CTR ni retención
+  aisladas sino el tiempo de visualización por impresión. Evidencia razonable: los A/B de miniaturas hoy
+  declaran que eligen por **"porcentaje del tiempo de reproducción"**, no por CTR. **Nos favorece:** el
+  clickbait envejece mal y gana la satisfacción — miniatura honesta + valor real + trade-offs.
+- 🛡️ **La purga de IA es foso:** desde jul-2025 YouTube persigue "contenido inauténtico" y "reutilizado"
+  y elimina canales clon / granja / zombie. Contexto es estructuralmente lo contrario: **metraje propio
+  en terreno + datos medidos con fecha + voz y cara reales = infalsificable.** Nadie genera con IA la
+  caminata real al Metro un martes 7am con cronómetro. Ventaja creciente en un YouTube inundado de slop.
+- 🔴 **Lo que NO tomamos — fórmula 3-2-1:** de sus 3 disparadores, **shock** ("lo que NADIE te dice de
+  este barrio" = sensacionalismo de zona) y **FOMO** (escasez/urgencia fabricada) están **prohibidos**
+  por §7. Solo **curiosidad** es admisible. Sí tomamos: **una promesa única y específica en los primeros
+  15 segundos** (ya está en el cold open del guion).
+- ⚙️ **Cadencia — conflicto:** afirma una ventana de momentum de **72h** para subir el siguiente video.
+  Choca con el **semanal** del playbook inmobiliario (RealtyHack/LabCoat). Para faceless de volumen
+  quizá; aquí perseguir 72h destruiría la calidad que ES el producto. **Semanal, sin discusión.**
+- ✅ **Confirmaciones de terceros** (ya en canon): piso de 8 min para mid-rolls · inglés paga ~2-2,5x
+  sobre el mismo contenido en español · horizonte largo y no lineal (su curva: $94 el primer mes
+  monetizado → $12,7K en diciembre del mismo año) · "sé impaciente con tus acciones, paciente con los
+  resultados" · modelar patrones ≠ copiar contenido.
+- 💡 **Táctica menor adoptable:** la **pestaña Comunidad con encuestas** genera interacción y hace que
+  YouTube muestre tus videos a quienes votaron. On-brand si la pregunta es honesta
+  (ej. "al elegir dónde vivir, ¿qué pesa más: el trayecto diario o el silencio?").
+
 ## 5. La jerarquía de demanda (per Keller/Bullseye — DEMANDA §2)
 El retorno cae del centro hacia afuera. **Orden de activación (no arrancar por la pauta):**
 **reactivación** (lista dormida, ~$0) → **esferas/aliados** → **orgánico/citable + AURA (círculo 3)**
@@ -110,6 +186,10 @@ consumo.
   servicios de reubicación/boards pagan por ser *mostrados* como marca ancla. **Amurallado del
   editorial** — el segundo que un lugar paga por un aura favorecedor, mueres como referencia (el
   anti-patrón "el podcast que invita a quien le conviene"). Disclosure siempre.
+  **Forma preferida (ver §4.bis): slot rotativo de inserción dinámica**, NO patrocinio del episodio —
+  el dinero entra y sale sin tocar el contenido, y la biblioteca se vuelve inventario re-vendible.
+- **AdSense:** ingreso adicional, **NO** el que financia la producción en geo Ecuador (§4.bis).
+  Sube si el doblaje al inglés trae audiencia US/expat/diáspora.
 - **Firewall con inversión:** mandato/patrocinio e inversión (ángel) son **mesas independientes,
   sin excepción**. El cheque no compra control editorial ni propiedad del canal.
 
@@ -119,7 +199,9 @@ comprar · vender/invertir · "el dato que tu corredor no te da" (diferenciador)
 Formato de guion: **vender el outcome con dato con proveniencia** (per Serhant/Corcoran) — no
 "78 m², 2D" sino "llegas caminando al Metro en X min medidos". Honesto, con trade-offs (eso da las
 7 horas de confianza y lo vuelve citable). Producción **lean** (per Eloísa: no sobre-producir);
-pocos anclas cinematográficos + mucho evergreen ligero (search, shorts, overlays de datos).
+pocos anclas cinematográficos + mucho evergreen ligero (search, overlays de datos).
+**Los cortes verticales NO se publican en el canal** (ver §4.ter): van a Instagram/LinkedIn como
+descubrimiento, para no contaminar la señal de audiencia del canal de conversión.
 
 ---
 

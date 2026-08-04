@@ -49,3 +49,8 @@ class AgentState(_AgentStateCore, total=False):
     # El bloque de texto autoritativo (ranking + restricciones) que llm_node añade al
     # system prompt. Vacío = este turno no encontró inventario que puntuar.
     encaje_contexto: str
+
+    # Lo que el corte del panel dejó fuera: la persona NO lo ve en pantalla. Viaja hasta el
+    # endpoint para que `verificacion_prosa` pueda detectar que la respuesta lo ofreció igual
+    # (ofrecer lo que no aparece es prometer lo que no hay).
+    descartadas: list[dict[str, Any]]

@@ -701,6 +701,7 @@ def _build_graph() -> StateGraph:
             "preferencias": prefs,
             "preferencias_turno": turno,
             "cards": panel["cards"],
+            "descartadas": panel["descartadas"],
             "encaje_contexto": bloque_autoritativo(
                 panel["cards"], prefs, panel["descartadas"], panel["priorizado"]),
         }

@@ -25,6 +25,7 @@ from app.entorno_curacion import aplicar_curacion, parse_servicios
 from app.intencion import analizar_intencion
 from app.limiter import limiter
 from app.preferencias import extraer_preferencias
+from app.verificacion_prosa import resumen as resumen_prosa, verificar_prosa
 
 router = APIRouter(prefix="/api/v1/chat", tags=["Chat — Agente Conversacional"])
 
@@ -33,6 +34,9 @@ router = APIRouter(prefix="/api/v1/chat", tags=["Chat — Agente Conversacional"
 # silencioso: un registro que falla es indistinguible de menos demanda.
 # Ver docs/AUDITORIA_Fallos_Silenciosos_2026-07-31.md §1.
 log = logging.getLogger("intencion")
+
+# Desobediencia de la prosa al motor. Se registra, no se bloquea: ver `_auditar_prosa`.
+log_prosa = logging.getLogger("prosa")
 
 # ── Seguridad ────────────────────────────────────────────────
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -713,6 +717,39 @@ async def comparar_endpoint(request: Request, payload: CompararReq) -> dict:
     return await comparar_inmuebles(payload.session_id, payload.id_a, payload.id_b)
 
 
+def _auditar_prosa(session_id: str, reply: str, valores: dict | None) -> None:
+    """¿La respuesta escrita respeta lo que el motor calculó? Solo INFORMA.
+
+    El bloque autoritativo (`encaje_contexto`) garantiza que el modelo RECIBA el ranking, los
+    conteos y las frases obligatorias antes de escribir. No garantiza que los obedezca: en la
+    repro en vivo la prohibición se respetaba en la lista numerada y se rompía tres párrafos
+    después. Esto compara el texto final contra las MISMAS tarjetas que la persona verá.
+
+    Deliberadamente NO bloquea ni reescribe el turno. Todavía no sabemos con qué frecuencia la
+    prosa desobedece —la batalla Hiinmo fue una auditoría manual de 3 corridas—, y bloquear sin
+    esa cifra apuesta el turno de un usuario real a una corazonada. Primero se mide; el día que
+    la tasa lo justifique, el interruptor está aquí.
+    """
+    try:
+        v = valores or {}
+        violaciones = verificar_prosa(reply, v.get("cards"), v.get("preferencias"),
+                                      v.get("descartadas"))
+        if violaciones:
+            log_prosa.warning("la prosa se aparta del motor · sesion=%s · %s",
+                              session_id, resumen_prosa(violaciones))
+    except Exception as exc:  # noqa: BLE001 — el guardián jamás puede tumbar el turno
+        log_prosa.warning("verificacion_prosa fallo (%s: %s)", type(exc).__name__, exc)
+
+
+def _ultima_respuesta(messages) -> str:
+    """La última respuesta del LLM sin tool_calls pendientes."""
+    return next(
+        (m.content for m in reversed(messages)
+         if isinstance(m, AIMessage) and not getattr(m, "tool_calls", None)),
+        "Sin respuesta del agente.",
+    )
+
+
 async def _stream_agent(message: str, session_id: str) -> AsyncIterator[str]:
     """Streams agent token chunks como Server-Sent Events, con memoria de sesión."""
     config = _langgraph_config(session_id)
@@ -724,6 +761,7 @@ async def _stream_agent(message: str, session_id: str) -> AsyncIterator[str]:
         # heredaría el bloque autoritativo del turno pasado y el modelo hablaría de tarjetas
         # que ya no están en pantalla.
         "cards": [],
+        "descartadas": [],
         "encaje_contexto": "",
     }
 
@@ -744,8 +782,12 @@ async def _stream_agent(message: str, session_id: str) -> AsyncIterator[str]:
     # persiste. Best-effort — jamás rompe el stream (cubre el flujo del QR-lead si usa SSE).
     try:
         _st = await agent_graph.compiled_graph.aget_state(config)
-        _msgs = (_st.values or {}).get("messages", []) if (_st and _st.values) else []
+        _valores = (_st.values or {}) if (_st and _st.values) else {}
+        _msgs = _valores.get("messages", [])
         asyncio.create_task(registrar_intencion(session_id, _msgs))
+        # El stream es el camino que usa la gente de verdad: si la auditoría de prosa solo
+        # cubriera el no-stream, mediríamos el turno que casi nadie ejecuta.
+        _auditar_prosa(session_id, _ultima_respuesta(_msgs), _valores)
     except Exception:  # noqa: BLE001 — instrumentar jamás rompe el stream
         pass
 
@@ -800,12 +842,7 @@ async def chat(
     final_state = await agent_graph.compiled_graph.ainvoke(input_state, config=config)
     messages = final_state["messages"]
 
-    # La última respuesta del LLM sin tool_calls pendientes
-    reply = next(
-        (m.content for m in reversed(messages)
-         if isinstance(m, AIMessage) and not getattr(m, "tool_calls", None)),
-        "Sin respuesta del agente.",
-    )
+    reply = _ultima_respuesta(messages)
 
     tool_calls = sum(1 for m in messages if hasattr(m, "type") and m.type == "tool")
     # Instrumentar la intención del turno (Fase 0 del Motor de Intención). Fire-and-forget:
@@ -818,6 +855,10 @@ async def chat(
     results = final_state.get("cards")
     if not isinstance(results, list) or not results:
         results = await build_result_cards(messages)
+    # Se audita contra `results` —lo que de verdad se devuelve— y no contra el estado, para que
+    # el veredicto sea sobre lo que la persona verá aunque el panel se haya reconstruido arriba.
+    _auditar_prosa(payload.session_id, reply,
+                   {**final_state, "cards": results})
     map_seed = _map_seed_from_cards(results, prev_mode)
     # spatial_context VIVO (deja de ser placeholder muerto): persiste el foco del turno en el
     # estado del agente para que la transición no pierda el encuadre. Best-effort: si el

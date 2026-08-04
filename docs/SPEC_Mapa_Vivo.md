@@ -2,8 +2,29 @@
 
 > El mapa como intérprete visual de la intención conversacional. No un filtro de pines-precio: un lector de la charla que pinta el razonamiento del agente y el foso (datos de entorno verificados con proveniencia).
 
-**Fecha:** 26 jun 2026 · **Origen:** discusión de visión (fundador) + grounding en código real (MapView.jsx, App.jsx, app/agent/tools.py, app/rutas.py). · **Estado:** spec — no implementado.
+**Fecha:** 26 jun 2026 · **Origen:** discusión de visión (fundador) + grounding en código real (MapView.jsx, App.jsx, app/agent/tools.py, app/rutas.py).
 > ⚠️ Las referencias `archivo:línea` son al momento del grounding; confirmar en el build.
+
+> ## ⚠️ ESTADO — CORREGIDO 2026-08-04 (este encabezado decía "spec — no implementado" y era FALSO)
+>
+> **Fases 2A y 2B están CONSTRUIDAS.** Verificado en código, no inferido:
+> `frontend/src/MapSeed.jsx` (semilla inline), `AuraSingleMap.jsx`, `CompararMap.jsx`;
+> `app/routers/chat.py::_map_seed_from_cards` + `_decidir_modo` (la FSM del lente, **con
+> histéresis** para que no parpadee — detalle que esta spec ni pedía); el pin sin precio con arco
+> de `encaje` y halo de `fresco` (`'✓ verificado'` vs `'según el mapa'`);
+> `spatial_context` en `app/agent/state.py`, que la §"Estados y transiciones" listaba como
+> pendiente. Cubierto por `tests/test_map_seed.py`.
+>
+> **El costo de no corregirlo:** el 2026-08-04 una sesión leyó este encabezado y le recomendó al
+> fundador construir 2A —que ya existía— como pieza central del trabajo. Es la misma lección que
+> ya dejó escrita `PLAN_Producto_6meses_2026-07.md` §0.5 con el NORTHSTAR: *un dato marcado como
+> "no verificado" que igual se usa para decidir se comporta como verificado.* Un encabezado de
+> estado que nadie refresca es peor que no tenerlo.
+>
+> **Lo que SÍ sigue abierto:** 2C (isócronas reales en el mapa — el motor existe,
+> `app/isocronas.py` + Valhalla + migración 015), 2D (el mapa como ENTRADA), y el hueco que abrió
+> la migración 023: **`fresco` sigue siendo de alcance ficha** (`chat.py`, `r["fresco"] = bool(cur)`),
+> así que la verificación de terreno que ahora se propaga a nivel de POI **no llega al pin**.
 
 ---
 

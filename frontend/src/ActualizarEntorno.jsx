@@ -31,7 +31,8 @@ const CATEGORIAS = [
 // El "loop" del Catastro Vivo: el corredor sabe antes que el mapa.
 // Marca POIs cerrados (❌) y agrega los nuevos (➕). Su voz queda verificada.
 export default function ActualizarEntorno({ activo, onClose }) {
-  const [base, setBase] = useState([])          // servicios del mapa (hidratados)
+  const [base, setBase] = useState([])          // servicios del mapa (texto hidratado)
+  const [pois, setPois] = useState([])          // POIs de la capa propia (traen poi_id)
   const [curaciones, setCuraciones] = useState([])
   const [verificado, setVerificado] = useState({ verificado: false, fecha: null })
   const [loading, setLoading] = useState(true)
@@ -45,6 +46,7 @@ export default function ActualizarEntorno({ activo, onClose }) {
     try {
       const { data } = await axios.get(`${API_BASE}/api/v1/assets/${activo.id}/entorno`, { headers: apiHeaders() })
       setBase(data.servicios_base || [])
+      setPois(data.pois_entorno || [])
       setCuraciones(data.curaciones || [])
       setVerificado(data.verificado || { verificado: false, fecha: null })
     } catch {
@@ -61,6 +63,21 @@ export default function ActualizarEntorno({ activo, onClose }) {
     return [...cerrados].some(c => c && (c === n || c.includes(n) || n.includes(c)))
   }
   const agregados = curaciones.filter(c => c.accion === 'agregado')
+
+  // Estado de un POI de la capa: ESPEJA la regla de la vista pois_vivos — manda la
+  // observación MÁS RECIENTE, no "existe algún cerrado". Sin esto, un lugar que
+  // cerró y reabrió se vería tachado para siempre en el formulario mientras el
+  // comprador lo ve abierto. `curaciones` viene ordenado DESC por creado_en.
+  const estadoPoi = (poiId) =>
+    curaciones.find(c => c.poi_id === poiId)?.accion || null
+
+  // El texto hidratado suele repetir lugares que ya están en la capa. Se ocultan del
+  // segundo listado para no ofrecer dos botones al mismo sitio con alcances distintos.
+  // Dedup por igualdad EXACTA normalizada, jamás difusa: un falso positivo aquí solo
+  // esconde una fila, pero si el match difuso se usara para atar poi_id, cerraría el
+  // lugar equivocado en toda la ciudad.
+  const nombresEnCapa = new Set(pois.map(p => norm(p.nombre)))
+  const baseFiltrado = base.filter(s => !nombresEnCapa.has(norm(s.visible)))
 
   async function aplicar(payload) {
     setBusy(true); setError(null)
@@ -176,13 +193,62 @@ export default function ActualizarEntorno({ activo, onClose }) {
           </div>
         ) : (
           <>
-            {/* Servicios del mapa */}
-            <div style={sec}>SERVICIOS DEL MAPA (toca lo que ya cerró)</div>
-            {base.length === 0 && (
-              <div style={{ fontSize: '.82rem', color: C.muted }}>No hay servicios cargados del mapa para este inmueble.</div>
+            {/* Capa propia — lo que ve el comprador. Curarlo vale para todo el barrio. */}
+            {pois.length > 0 && (
+              <>
+                <div style={sec}>LO QUE VE EL COMPRADOR</div>
+                <p style={{ fontSize: '.74rem', color: C.muted, margin: '0 0 8px' }}>
+                  Estos salen de nuestra capa de lugares. Lo que corrijas aquí vale para{' '}
+                  <strong style={{ color: C.tealHi }}>todos los inmuebles del sector</strong>, no solo para este.
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                  {pois.map((p) => {
+                    const estado = estadoPoi(p.poi_id)
+                    const cerrado = estado === 'cerrado'
+                    return (
+                      <div key={p.poi_id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                            gap: 8, padding: '8px 11px', borderRadius: 10,
+                                            border: `1px solid ${cerrado ? C.coral : C.line}`,
+                                            background: cerrado ? 'rgba(224,104,90,.08)' : 'var(--surface-2)' }}>
+                        <span style={{ minWidth: 0 }}>
+                          <span style={{ fontSize: '.86rem', textDecoration: cerrado ? 'line-through' : 'none',
+                                         color: cerrado ? C.muted : C.text }}>
+                            {p.emoji} {p.nombre}{p.distancia_m ? ` · ~${p.distancia_m} m` : ''}
+                          </span>
+                          {p.verificado_en && !cerrado && (
+                            <span style={{ display: 'block', fontSize: '.7rem', color: C.tealHi }}>
+                              <Check size={11} style={{ verticalAlign: 'middle' }} /> verificado en terreno · {p.verificado_en}
+                            </span>
+                          )}
+                        </span>
+                        {cerrado ? (
+                          <span style={{ fontSize: '.72rem', color: C.coral, flexShrink: 0 }}>cerrado</span>
+                        ) : (
+                          <span style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                            <button disabled={busy} title="Sigue abierto — lo confirmo"
+                              onClick={() => aplicar({ accion: 'confirmado', nombre: p.nombre, poi_id: p.poi_id })}
+                              style={chipBtn(C.teal)}><Check size={13} /> Sigue</button>
+                            <button disabled={busy}
+                              onClick={() => aplicar({ accion: 'cerrado', nombre: p.nombre, poi_id: p.poi_id })}
+                              style={chipBtn(C.coral)}><Ban size={13} /> Cerró</button>
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+
+            {/* Texto hidratado del catastro — alcance FICHA, sin poi_id. */}
+            <div style={sec}>{pois.length > 0 ? 'OTROS (SOLO ESTE INMUEBLE)' : 'SERVICIOS DEL MAPA (toca lo que ya cerró)'}</div>
+            {baseFiltrado.length === 0 && (
+              <div style={{ fontSize: '.82rem', color: C.muted }}>
+                {pois.length > 0 ? 'Nada más que corregir aquí.' : 'No hay servicios cargados del mapa para este inmueble.'}
+              </div>
             )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-              {base.map((s, i) => {
+              {baseFiltrado.map((s, i) => {
                 const cerrado = estaCerrado(s.visible)
                 return (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
@@ -271,10 +337,15 @@ export default function ActualizarEntorno({ activo, onClose }) {
                       <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '.82rem', color: C.text, minWidth: 0 }}>
                         {c.foto && <img src={c.foto} alt="" style={{ width: 34, height: 34, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />}
                         <span style={{ minWidth: 0 }}>
-                          {c.accion === 'cerrado' ? <Ban size={13} style={{ verticalAlign: 'middle' }} /> : <Plus size={13} style={{ verticalAlign: 'middle' }} />} {c.nombre}
+                          {c.accion === 'cerrado' ? <Ban size={13} style={{ verticalAlign: 'middle' }} />
+                            : c.accion === 'confirmado' ? <Check size={13} style={{ verticalAlign: 'middle' }} />
+                            : <Plus size={13} style={{ verticalAlign: 'middle' }} />} {c.nombre}
                           {c.distancia_m ? ` · ~${c.distancia_m} m` : ''}
                           <span style={{ color: C.muted, fontSize: '.72rem' }}>
-                            {c.accion === 'cerrado' ? ' (cerrado)' : ' (agregado)'}
+                            {c.accion === 'cerrado' ? ' (cerrado)'
+                              : c.accion === 'confirmado' ? ' (confirmado)' : ' (agregado)'}
+                            {/* El alcance es lo que distingue una curación valiosa de una nota. */}
+                            {c.poi_id ? ' · todo el sector' : ' · solo este inmueble'}
                           </span>
                         </span>
                       </span>

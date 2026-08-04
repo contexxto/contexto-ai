@@ -72,7 +72,7 @@ _RADIO_TRANSP_M = 3000  # el hub masivo puede estar más lejos (mismo criterio q
 # (el humano estuvo ahí ayer; Overture es de hace un mes).
 _PROPIOS_ENTORNO_SQL = text("""
     SELECT DISTINCT ON (categoria)
-        categoria, nombre, marca, verificado_en,
+        id, categoria, nombre, marca, verificado_en,
         ST_Y(geom) AS lat, ST_X(geom) AS lon,
         ROUND(ST_Distance(geom::geography,
               ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography))::int AS distancia_m
@@ -84,7 +84,7 @@ _PROPIOS_ENTORNO_SQL = text("""
 """)
 
 _PROPIOS_TRANSPORTE_SQL = text("""
-    SELECT nombre, verificado_en, ST_Y(geom) AS lat, ST_X(geom) AS lon,
+    SELECT id, nombre, verificado_en, ST_Y(geom) AS lat, ST_X(geom) AS lon,
         ROUND(ST_Distance(geom::geography,
               ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography))::int AS distancia_m,
         (categoria_overture = ANY(:masivo)) AS es_masivo
@@ -137,6 +137,8 @@ async def _servicios_propios(lat: float, lon: float) -> dict[str, dict]:
                     # Fecha en que un corredor pisó ESTE lugar (None = nadie todavía).
                     # Alimenta el flag `fresco` del Mapa Vivo y la insignia del anuncio.
                     "verificado_en": _fecha(f["verificado_en"]),
+                    # Identidad del POI: lo que el corredor cierra/confirma en terreno.
+                    "poi_id": f["id"],
                 }
             tr = (await conn.execute(_PROPIOS_TRANSPORTE_SQL, {
                 "lat": lat, "lon": lon, "max_m": _RADIO_TRANSP_M,
@@ -148,9 +150,40 @@ async def _servicios_propios(lat: float, lon: float) -> dict[str, dict]:
                     "distancia_m": tr["distancia_m"], "cat": "transporte",
                     "es_masivo": bool(tr["es_masivo"]), "fuente": "propio",
                     "verificado_en": _fecha(tr["verificado_en"]),
+                    "poi_id": tr["id"],
                 }
     except Exception:  # noqa: BLE001 — si la capa/DB falla, el llamador cae a Google
         return {}
+    return out
+
+
+async def entorno_curable(lat: float, lon: float) -> list[dict]:
+    """Los POIs que el corredor puede cerrar/confirmar en terreno, con su `poi_id`.
+
+    Sale de `_servicios_propios` A PROPÓSITO — la MISMA query que arma el entorno que
+    ve el comprador. Así lo que el corredor corrige es, por construcción, exactamente
+    lo que se está mostrando; si se duplicara la consulta, las dos listas podrían
+    divergir y el corredor estaría curando algo que nadie ve.
+
+    Cada item trae el `poi_id` que convierte la curación en alcance CIUDAD (migración
+    023). Los lugares que no estén en la capa propia no aparecen aquí: se curan por
+    texto libre, como siempre.
+    """
+    servicios = await _servicios_propios(lat, lon)
+    out: list[dict] = []
+    for cat, s in servicios.items():
+        if not s.get("poi_id"):
+            continue
+        out.append({
+            "poi_id": s["poi_id"],
+            "nombre": s.get("nombre") or _CAT_LABEL.get(cat, cat),
+            "categoria": cat,
+            "etiqueta": _CAT_LABEL.get(cat, cat),
+            "emoji": _CAT_EMOJI.get(cat, "📍"),
+            "distancia_m": s.get("distancia_m"),
+            "verificado_en": s.get("verificado_en"),
+        })
+    out.sort(key=lambda x: (x["distancia_m"] is None, x["distancia_m"] or 0))
     return out
 
 

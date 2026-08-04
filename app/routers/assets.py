@@ -29,6 +29,7 @@ from app.entorno_curacion import (
     info_verificacion,
     parse_servicios,
 )
+from app.rutas import entorno_curable
 from app.scores_heuristicos import scores_para
 from app.walk_score import (
     _fetch_pois,
@@ -1494,12 +1495,27 @@ async def get_entorno(
     await ensure_curacion_table(db)
     await _assert_owner(db, activo_id, user)
     row = (await db.execute(
-        text("SELECT servicios_cercanos FROM activos_inmutables WHERE id = :id"),
+        text("SELECT servicios_cercanos, ST_Y(geom) AS lat, ST_X(geom) AS lon "
+             "FROM activos_inmutables WHERE id = :id"),
         {"id": str(activo_id)},
     )).mappings().first()
     curaciones = await fetch_curaciones(db, str(activo_id))
+
+    # POIs de la capa propia con su `poi_id` (migración 023). Es lo que de verdad ve el
+    # comprador, y cerrarlos vale para TODO el barrio — no solo para esta ficha. Sin
+    # geometría del inmueble no hay entorno que curar; degrada a lista vacía y queda el
+    # camino de texto, que nunca dependió de coordenadas.
+    pois: list[dict] = []
+    if row and row["lat"] is not None and row["lon"] is not None:
+        try:
+            pois = await entorno_curable(float(row["lat"]), float(row["lon"]))
+        except Exception:  # noqa: BLE001 — la capa propia es un extra; el texto sigue
+            pois = []
+
     return {
         "servicios_base": parse_servicios((row or {}).get("servicios_cercanos")),
+        # Alcance CIUDAD: cada uno trae poi_id. El front los ofrece primero.
+        "pois_entorno": pois,
         "curaciones": curaciones,
         "verificado": info_verificacion(curaciones),
     }

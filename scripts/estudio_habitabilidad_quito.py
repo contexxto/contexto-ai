@@ -25,6 +25,20 @@ from sqlalchemy import text  # noqa: E402
 from app.database import engine  # noqa: E402
 from app.isocronas import isocrona  # noqa: E402
 
+# ── Edición 3: parroquias CENSALES + valles (sobre la isócrona real de la ed.2) ──
+# La ed.2 media 18 "sectores" con centroides que yo estime a ojo. Al contrastarlos con el
+# limite administrativo real, varios estaban desplazados hasta 2,9 km — o sea, no median el
+# barrio que decian medir. Aqui la unidad de analisis pasa a ser la PARROQUIA (unidad censal
+# y administrativa) con su centroide geometrico oficial, tomado de OpenStreetMap.
+# Consecuencia: los numeros NO son comparables 1:1 con la ed.2 — cambio la unidad, no solo
+# la precision. Una parroquia es mayor y mas heterogenea que un "barrio".
+CENTROIDES = Path(__file__).resolve().parents[1] / "docs" / "parroquias_quito_centroides.json"
+
+# Umbral de cobertura: por debajo de esto no se afirma "esta desabastecido" — se reporta como
+# HUECO DE NUESTRA CAPA. Distinguir "no hay" de "no tenemos" es la linea que separa un dato
+# honesto de una difamacion de barrio.
+MIN_POIS_COBERTURA = 15
+
 # ── Edición 2: ISÓCRONA REAL por calles (Valhalla, costing=pedestrian) ──
 # La ed.1 usó un radio de 1.200 m en línea recta. Un círculo cubre SIEMPRE más que lo
 # realmente caminable: no conoce quebradas, avenidas sin cruce ni manzanas cerradas. Los
@@ -35,29 +49,13 @@ RADIO_M = 1200          # se conserva SOLO para calcular el sesgo del método an
 _NOTA_METODO = (f"isócrona real de {MINUTOS} min a pie por calles (Valhalla, costing=pedestrian); "
                 f"se reporta además el sesgo del radio de {RADIO_M} m usado en la ed.1")
 
-# Centroides APROXIMADOS de sector (no coordenadas catastrales). Sirven para comparar
-# sectores entre sí, no para describir un punto exacto.
-SECTORES: list[tuple[str, str, float, float]] = [
-    # (sector, zona, lat, lon)
-    ("La Carolina",        "Norte",  -0.1807, -78.4842),
-    ("Iñaquito",           "Norte",  -0.1760, -78.4850),
-    ("La Concepción",      "Norte",  -0.1656, -78.4890),
-    ("El Labrador",        "Norte",  -0.1690, -78.4870),
-    ("El Batán",           "Norte",  -0.1810, -78.4780),
-    ("Quito Tenis",        "Norte",  -0.1750, -78.4950),
-    ("El Bosque",          "Norte",  -0.1780, -78.5000),
-    ("González Suárez",    "Norte",  -0.1990, -78.4830),
-    ("La Floresta",        "Centro-N", -0.2030, -78.4870),
-    ("La Mariscal",        "Centro-N", -0.2020, -78.4920),
-    ("Cotocollao",         "Norte",  -0.1090, -78.4930),
-    ("Carcelén",           "Norte",  -0.0950, -78.4720),
-    ("Ponceano",           "Norte",  -0.1150, -78.4830),
-    ("Centro Histórico",   "Centro", -0.2200, -78.5120),
-    ("La Magdalena",       "Sur",    -0.2420, -78.5230),
-    ("Solanda",            "Sur",    -0.2680, -78.5400),
-    ("Quitumbe",           "Sur",    -0.2953, -78.5444),
-    ("Chillogallo",        "Sur",    -0.2750, -78.5560),
-]
+def cargar_parroquias() -> list[tuple[str, str, float, float]]:
+    """Centroides OFICIALES de parroquia (OSM). Devuelve (nombre, tipo, lat, lon)."""
+    doc = json.loads(CENTROIDES.read_text(encoding="utf-8"))
+    return [(p["parroquia"], p["tipo"], p["lat"], p["lon"]) for p in doc["parroquias"]]
+
+
+SECTORES = cargar_parroquias()
 
 CATEGORIAS = ["transporte", "supermercado", "farmacia", "salud",
               "educacion", "parque", "centro_comercial", "iglesia", "seguridad"]
@@ -149,6 +147,8 @@ async def analizar() -> list[dict]:
                 # Sesgo del método anterior: cuánto de más contaba el círculo.
                 "total_en_radio_ed1": int(en_radio),
                 "inflacion_radio_pct": round((en_radio - total) / total * 100) if total else None,
+                # Cobertura: por debajo del umbral NO se afirma carencia — es hueco de capa.
+                "cobertura_suficiente": total >= MIN_POIS_COBERTURA,
                 "masivo_nombre": (masivo or {}).get("nombre"),
                 "masivo_tipo": (masivo or {}).get("categoria_overture"),
                 "masivo_dist_m": (masivo or {}).get("d"),
@@ -158,34 +158,36 @@ async def analizar() -> list[dict]:
 
 
 def imprimir(filas: list[dict]) -> None:
-    print(f"\nESTUDIO DE HABITABILIDAD MEDIDA — QUITO · ed.2\n{_NOTA_METODO}")
+    print(f"\nESTUDIO DE HABITABILIDAD MEDIDA — QUITO · ed.3 (parroquias)\n{_NOTA_METODO}")
     print(f"Fuente: pois_propios (Overture + OSM curados). Sectores: {len(filas)}")
     print(f"⚠ {ADVERTENCIA_FH}\n")
     # Orden GEOGRÁFICO (zona norte→sur, luego alfabético), NO por cantidad: la tabla compara,
     # no rankea. Cada quien lee la columna que le importa.
-    _z = {"Norte": 0, "Centro-N": 1, "Centro": 2, "Sur": 3}
-    orden = sorted(filas, key=lambda f: (_z.get(f["zona"], 9), f["sector"]))
-    cab = (f"{'SECTOR':<19}{'ZONA':<10}{'km²':>6}{'TOT':>5}{'TRA':>5}{'SUP':>5}{'FAR':>5}{'SAL':>5}"
+    _z = {"urbana": 0, "rural": 1}
+    medidas = [f for f in filas if f["cobertura_suficiente"]]
+    sin_cob = [f for f in filas if not f["cobertura_suficiente"]]
+    orden = sorted(medidas, key=lambda f: (_z.get(f["zona"], 9), f["sector"]))
+    cab = (f"{'PARROQUIA':<24}{'TIPO':<9}{'km²':>6}{'TOT':>5}{'TRA':>5}{'SUP':>5}{'FAR':>5}{'SAL':>5}"
            f"{'EDU':>5}{'PAR':>5}  {'MÁS ESCASO':<20}{'ed.1':>6}")
     print(cab); print("-" * len(cab))
     for f in orden:
         escaso = f"{f['eslabon_debil']} ({f['eslabon_debil_n']})"
         infl = f"+{f['inflacion_radio_pct']}%" if f["inflacion_radio_pct"] is not None else "—"
-        print(f"{f['sector']:<19}{f['zona']:<10}{f['area_km2']:>6}{f['total_pois']:>5}"
+        print(f"{f['sector']:<24}{f['zona']:<9}{f['area_km2']:>6}{f['total_pois']:>5}"
               f"{f['transporte']:>5}{f['supermercado']:>5}{f['farmacia']:>5}{f['salud']:>5}"
               f"{f['educacion']:>5}{f['parque']:>5}  {escaso:<20}{infl:>6}")
 
     # El sesgo del método anterior, cuantificado.
-    infl = [f["inflacion_radio_pct"] for f in filas if f["inflacion_radio_pct"] is not None]
+    infl = [f["inflacion_radio_pct"] for f in medidas if f["inflacion_radio_pct"] is not None]
     if infl:
         print(f"\nSESGO DEL MÉTODO ed.1 (radio vs isócrona real): el círculo contaba entre "
               f"{min(infl)}% y {max(infl)}% de más — mediana {sorted(infl)[len(infl)//2]}%.")
-        peor = max(filas, key=lambda f: f["inflacion_radio_pct"] or 0)
+        peor = max(medidas, key=lambda f: f["inflacion_radio_pct"] or 0)
         print(f"  Donde más engañaba: {peor['sector']} (+{peor['inflacion_radio_pct']}%) — "
               f"el radio promete servicios que a pie no se alcanzan.")
 
     # Hallazgos como HECHOS con nombre propio, no como veredictos de zona.
-    por_total = sorted(filas, key=lambda f: f["total_pois"])
+    por_total = sorted(medidas, key=lambda f: f["total_pois"])
     mas, menos = por_total[-1], por_total[0]
     print(f"\nRANGO MEDIDO: de {menos['total_pois']} puntos de servicio ({menos['sector']}) "
           f"a {mas['total_pois']} ({mas['sector']}) — {round(mas['total_pois']/max(menos['total_pois'],1),1)}x "
@@ -193,11 +195,18 @@ def imprimir(filas: list[dict]) -> None:
 
     # Desequilibrio: mucha conexión, poca atención cotidiana. Es el dato que un promedio esconde.
     print("\nCONECTADOS PERO DESABASTECIDOS (transporte alto, canasta cotidiana baja):")
-    for f in sorted(filas, key=lambda f: f["eslabon_debil_n"])[:4]:
+    for f in sorted(medidas, key=lambda f: f["eslabon_debil_n"])[:4]:
         print(f"  · {f['sector']:<18} {f['transporte']:>3} de transporte, pero solo "
               f"{f['eslabon_debil_n']} de {f['eslabon_debil']}")
 
-    faltantes = [f for f in filas if f["categorias_ausentes"]]
+    if sin_cob:
+        print(f"\nSIN COBERTURA SUFICIENTE — NO se reportan como carentes ({len(sin_cob)} parroquias):")
+        print(f"  Menos de {MIN_POIS_COBERTURA} puntos en la isócrona. Puede ser zona genuinamente")
+        print(f"  rural O un hueco de nuestra capa. No lo sabemos, así que no lo afirmamos.")
+        for f in sorted(sin_cob, key=lambda f: f["total_pois"]):
+            print(f"  · {f['sector']:<24} {f['total_pois']:>3} puntos ({f['zona']})")
+
+    faltantes = [f for f in medidas if f["categorias_ausentes"]]
     if faltantes:
         print("\nSIN NINGÚN PUNTO DE UNA CATEGORÍA (a este radio):")
         for f in faltantes:

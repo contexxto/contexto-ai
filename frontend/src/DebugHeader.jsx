@@ -12,7 +12,7 @@
  *
  * QUITAR este archivo y su uso en App.jsx cuando el bug esté cerrado.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 const FLAG = 'contexto_debug_header'
 
@@ -104,13 +104,23 @@ function useGestoDebug(activo, setActivo) {
 // encenderla con 5 toques para leer que ocurrio en las ultimas cargas.
 const LOG = 'contexto_debug_log'
 
-function grabarCarga() {
+function grabar(etiqueta) {
   try {
     const m = medir()
     const previas = JSON.parse(localStorage.getItem(LOG) || '[]')
-    previas.unshift({ t: Date.now(), upd: m.upd, hdr: m.hdr, img: m.img, enc: m.encima, st: m.stand, vp: m.vp })
-    localStorage.setItem(LOG, JSON.stringify(previas.slice(0, 6)))
+    previas.unshift({ e: etiqueta, t: Date.now(), upd: m.upd, hdr: m.hdr, img: m.img, enc: m.encima, st: m.stand, vp: m.vp })
+    localStorage.setItem(LOG, JSON.stringify(previas.slice(0, 8)))
   } catch { /* modo privado o cuota */ }
+}
+
+// Firma compacta del header: si cambia, algo le paso. Sirve para cazar el INSTANTE
+// en que se rompe, sin depender de que el usuario lo note y capture a tiempo.
+function firma() {
+  const hd = document.querySelector('header')
+  if (!hd) return 'sin-header'
+  const r = hd.getBoundingClientRect()
+  const img = hd.querySelector('img')
+  return `${Math.round(r.top)}/${Math.round(r.height)}/${img ? Math.round(img.getBoundingClientRect().width) : 'noimg'}/${hd.querySelector('button') ? 'btn' : 'nobtn'}`
 }
 
 function leerLog() {
@@ -121,11 +131,25 @@ function leerLog() {
 // si la sonda está apagada.
 export default function DebugHeaderGate() {
   const [activo, setActivo] = useState(debugActivo)
+  const ref = useRef(null)   // firma del header en la última comprobación
   useGestoDebug(activo, setActivo)
   useEffect(() => {
     // 1s de margen para que React haya pintado y el layout esté asentado.
-    const id = setTimeout(grabarCarga, 1000)
+    const id = setTimeout(() => { grabar('carga'); ref.current = firma() }, 1000)
     return () => clearTimeout(id)
+  }, [])
+  // Vigilante: cada 500ms compara la firma del header y registra SOLO los cambios.
+  // Asi queda constancia del momento exacto de la rotura aunque nadie esté mirando.
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (ref.current === null) return          // aun no hay linea base
+      const f = firma()
+      if (f !== ref.current) { ref.current = f; grabar(`CAMBIO -> ${f}`) }
+    }, 500)
+    // La PWA instalada se reanuda mas que se carga: registra tambien al volver a primer plano.
+    const onVis = () => { if (document.visibilityState === 'visible') grabar('reanuda') }
+    document.addEventListener('visibilitychange', onVis)
+    return () => { clearInterval(id); document.removeEventListener('visibilitychange', onVis) }
   }, [])
   return activo ? <Badge /> : null
 }
@@ -152,7 +176,7 @@ img ${d.img}
 btn ${d.btn} · encima: ${d.encima}
 ── ultimas cargas (hace / update / header / img / encima) ──
 ${leerLog().map(e =>
-  `${Math.round((Date.now() - e.t) / 1000)}s · upd ${e.upd} · st ${e.st} · ${e.vp} · ${e.hdr} · img ${e.img} · ${e.enc}`
+  `${Math.round((Date.now() - e.t) / 1000)}s [${e.e || 'carga'}] upd ${e.upd} · st ${e.st} · ${e.vp} · ${e.hdr} · img ${e.img} · ${e.enc}`
 ).join('\n') || '(sin registros todavia)'}`}
     </div>
   )

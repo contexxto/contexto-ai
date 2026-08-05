@@ -80,6 +80,67 @@ Y ahora la pregunta que de verdad importa: la próxima vez que un anuncio le dig
 
 ---
 
+## Texto de acompañamiento (el post con que se comparte el artículo)
+
+> Formato §4: líneas cortas, aire cada 2-3 líneas, cero emojis, sin CTA, cierra con pregunta.
+> Las dos primeras líneas son lo único que se ve antes del "ver más" — ahí va el gancho.
+
+---
+
+Publicamos un estudio hace unos días.
+
+Estaba mal medido.
+
+Queríamos saber cuánto se alcanza caminando quince minutos en distintos sectores de Quito: farmacias, supermercados, salud, colegios.
+
+Y lo medimos con un círculo. Mil doscientos metros a la redonda. Rápido, barato, y lo que hace medio mundo.
+
+El problema es que un círculo no sabe caminar.
+
+No conoce las quebradas. No sabe que hay avenidas que no se cruzan. Mete la manzana del otro lado del barranco como si estuviera a la vuelta.
+
+Así que lo medimos otra vez, siguiendo las calles que existen de verdad.
+
+En la mitad de los sectores, el círculo contaba un 37% de más.
+
+En el peor caso, prometía 137 servicios a quince minutos. Caminando, se alcanzan 24.
+
+Y eso nos cambió la conclusión principal: la brecha entre el sector mejor y peor servido no era de 5,7 veces. Era de casi 20.
+
+Pero lo que de verdad apareció al medir bien fue otra cosa.
+
+Quince minutos a pie desde el Centro Histórico cubren 3,7 kilómetros cuadrados. Los mismos quince minutos, en otro sector, cubren 1,2.
+
+Un tercio de ciudad. Caminando exactamente lo mismo.
+
+Podíamos haber corregido la tabla en silencio. Nadie se habría dado cuenta.
+
+No lo hicimos por una razón práctica, no moral: el método es parte del dato. Un número sin el método con que se midió no es información, es una afirmación.
+
+Y en este sector se escriben afirmaciones todos los días. "Excelente ubicación." "Todo cerca." "A pasos del metro."
+
+Nadie dice nunca a cuántos pasos, medidos cómo, ni desde dónde.
+
+Escribimos el detalle completo — incluido cuánto nos equivocamos y dónde.
+
+La próxima vez que un anuncio le diga que tiene "todo a pocos minutos": ¿cómo sabe usted si eso se midió, se estimó, o simplemente se escribió?
+
+---
+
+**Variante corta** (si se prefiere un post más liviano):
+
+Publicamos un estudio. Estaba mal medido.
+
+Calculamos lo que se alcanza a quince minutos a pie usando un círculo de 1.200 metros. Pero un círculo no sabe caminar: no conoce quebradas ni avenidas que no se cruzan.
+
+Al medirlo por calles reales, el círculo contaba hasta un 471% de más. Y la brecha entre el sector mejor y peor servido de Quito pasó de 5,7 veces a casi 20.
+
+Podíamos haber corregido la tabla en silencio. Publicamos el error porque el método es parte del dato: un número sin el método con que se midió no es información, es una afirmación.
+
+¿Cuántas de las cifras que circulan en su industria aguantarían que alguien pregunte cómo se midieron?
+
+---
+
 ## Proveniencia (pie del artículo / primer comentario — nunca en el cuerpo)
 
 - **Estudio propio:** *Estudio de Habitabilidad Medida — Quito*, ed. 2 (2026-08-04). 18 sectores, isócrona peatonal de 15 min calculada sobre la red de calles con motor propio (Valhalla auto-hospedado, tiles de Ecuador). Datos: capa propia de 8.499 puntos de interés en Quito (Overture Places + OpenStreetMap, conflados y curados). **Motor y datos crudos publicados y reproducibles.**

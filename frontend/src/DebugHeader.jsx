@@ -50,10 +50,12 @@ function medir() {
   }
   const ir = img?.getBoundingClientRect()
   // ¿Esta carga viene de aceptar un update? App.jsx sella la hora justo antes de navegar.
+  // Solo cuenta si el sello es reciente: si no, la carga es normal y el sello es de antes.
   let upd = 'no'
   try {
     const t = Number(localStorage.getItem('contexto_post_update'))
-    if (t) upd = `hace ${Math.round((Date.now() - t) / 1000)}s`
+    const seg = t ? Math.round((Date.now() - t) / 1000) : null
+    upd = seg == null ? 'no' : seg < 30 ? `SI (${seg}s)` : `no (ult. ${seg}s)`
   } catch { /* modo privado */ }
   return {
     upd,
@@ -95,10 +97,36 @@ function useGestoDebug(activo, setActivo) {
   }, [activo, setActivo])
 }
 
-// Envoltorio SIEMPRE montado: solo escucha el gesto. No pinta nada si la sonda está apagada.
+// ── Bitácora de cargas ─────────────────────────────────────────────────────
+// Clave del asunto: cuando Carlos saca la captura, el momento del fallo YA PASO
+// (si recarga o navega, vuelvo a ver un header sano). Asi que grabamos una foto
+// del header ~1s despues de CADA carga, este la sonda encendida o no. Luego basta
+// encenderla con 5 toques para leer que ocurrio en las ultimas cargas.
+const LOG = 'contexto_debug_log'
+
+function grabarCarga() {
+  try {
+    const m = medir()
+    const previas = JSON.parse(localStorage.getItem(LOG) || '[]')
+    previas.unshift({ t: Date.now(), upd: m.upd, hdr: m.hdr, img: m.img, enc: m.encima, st: m.stand, vp: m.vp })
+    localStorage.setItem(LOG, JSON.stringify(previas.slice(0, 6)))
+  } catch { /* modo privado o cuota */ }
+}
+
+function leerLog() {
+  try { return JSON.parse(localStorage.getItem(LOG) || '[]') } catch { return [] }
+}
+
+// Envoltorio SIEMPRE montado: escucha el gesto y graba la bitácora. No pinta nada
+// si la sonda está apagada.
 export default function DebugHeaderGate() {
   const [activo, setActivo] = useState(debugActivo)
   useGestoDebug(activo, setActivo)
+  useEffect(() => {
+    // 1s de margen para que React haya pintado y el layout esté asentado.
+    const id = setTimeout(grabarCarga, 1000)
+    return () => clearTimeout(id)
+  }, [])
   return activo ? <Badge /> : null
 }
 
@@ -118,10 +146,14 @@ function Badge() {
       padding: '5px 7px', borderRadius: 6, maxWidth: '96vw', whiteSpace: 'pre-wrap',
       border: '1px solid #2DBDB6',
     }}>
-      {`update: ${d.upd} · vp ${d.vp} · vv ${d.vv} · safe ${d.sa} · scrollY ${d.scrollY} · standalone ${d.stand}
+      {`AHORA · update: ${d.upd} · vp ${d.vp} · vv ${d.vv} · safe ${d.sa} · scrollY ${d.scrollY} · standalone ${d.stand}
 header ${d.hdr} · ${d.hdrCss}
 img ${d.img}
-btn ${d.btn} · encima: ${d.encima}`}
+btn ${d.btn} · encima: ${d.encima}
+── ultimas cargas (hace / update / header / img / encima) ──
+${leerLog().map(e =>
+  `${Math.round((Date.now() - e.t) / 1000)}s · upd ${e.upd} · st ${e.st} · ${e.vp} · ${e.hdr} · img ${e.img} · ${e.enc}`
+).join('\n') || '(sin registros todavia)'}`}
     </div>
   )
 }

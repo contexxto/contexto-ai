@@ -23,13 +23,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sqlalchemy import text  # noqa: E402
 
 from app.database import engine  # noqa: E402
+from app.isocronas import isocrona  # noqa: E402
 
-# Radio de análisis. 1.200 m ≈ 15 min a pie a 80 m/min EN LÍNEA RECTA. La isócrona real por
-# calles siempre cubre MENOS área que el círculo, así que estos conteos son un TECHO, no la
-# cifra exacta caminable. Se rotula en todo el output — el motor de isócronas reales
-# (Valhalla) existe y la edición siguiente del estudio debe usarlo.
-RADIO_M = 1200
-_NOTA_RADIO = f"radio de {RADIO_M} m en línea recta (~15 min a pie); la isócnona real por calles cubre menos"
+# ── Edición 2: ISÓCRONA REAL por calles (Valhalla, costing=pedestrian) ──
+# La ed.1 usó un radio de 1.200 m en línea recta. Un círculo cubre SIEMPRE más que lo
+# realmente caminable: no conoce quebradas, avenidas sin cruce ni manzanas cerradas. Los
+# conteos de la ed.1 eran, por diseño, un TECHO. Aquí se cuenta dentro del polígono de lo
+# que se alcanza a pie de verdad, y se mide de paso cuánto inflaba el círculo.
+MINUTOS = 15
+RADIO_M = 1200          # se conserva SOLO para calcular el sesgo del método anterior
+_NOTA_METODO = (f"isócrona real de {MINUTOS} min a pie por calles (Valhalla, costing=pedestrian); "
+                f"se reporta además el sesgo del radio de {RADIO_M} m usado en la ed.1")
 
 # Centroides APROXIMADOS de sector (no coordenadas catastrales). Sirven para comparar
 # sectores entre sí, no para describir un punto exacto.
@@ -75,13 +79,27 @@ ADVERTENCIA_FH = (
     "servicios. La ponderación es de cada persona según su vida."
 )
 
-_SQL = text("""
+# Dentro de la ISÓCRONA real (lo caminable de verdad).
+_SQL_ISO = text("""
     SELECT categoria, count(*)::int AS n
+    FROM pois_propios
+    WHERE COALESCE(operativo, true)
+      AND ST_Contains(ST_SetSRID(ST_GeomFromGeoJSON(:geo), 4326), geom)
+    GROUP BY categoria
+""")
+
+# Dentro del RADIO (método ed.1) — solo para cuantificar cuánto inflaba.
+_SQL_RADIO = text("""
+    SELECT count(*)::int AS n
     FROM pois_propios
     WHERE COALESCE(operativo, true)
       AND ST_DWithin(geom::geography,
                      ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, :radio)
-    GROUP BY categoria
+""")
+
+# Área real de la isócrona en km² — el "tamaño de tu vida a 15 minutos".
+_SQL_AREA = text("""
+    SELECT ROUND((ST_Area(ST_SetSRID(ST_GeomFromGeoJSON(:geo), 4326)::geography) / 1e6)::numeric, 2) AS km2
 """)
 
 _SQL_MASIVO = text("""
@@ -101,8 +119,16 @@ async def analizar() -> list[dict]:
     filas: list[dict] = []
     async with engine.connect() as conn:
         for sector, zona, lat, lon in SECTORES:
-            res = (await conn.execute(_SQL, {"lat": lat, "lon": lon, "radio": RADIO_M})).mappings().all()
+            isos = await isocrona(lat, lon, [MINUTOS])
+            if not isos:
+                print(f"  ! {sector}: Valhalla no devolvió isócrona — sector OMITIDO "
+                      f"(no se sustituye por radio: sería mezclar métodos en la misma tabla)")
+                continue
+            geo = json.dumps(isos[0]["geometry"])
+            res = (await conn.execute(_SQL_ISO, {"geo": geo})).mappings().all()
             conteo = {r["categoria"]: r["n"] for r in res}
+            en_radio = (await conn.execute(_SQL_RADIO, {"lat": lat, "lon": lon, "radio": RADIO_M})).scalar() or 0
+            km2 = (await conn.execute(_SQL_AREA, {"geo": geo})).scalar()
             masivo = (await conn.execute(_SQL_MASIVO, {"lat": lat, "lon": lon, "masivo": _MASIVO})).mappings().first()
             total = sum(conteo.get(c, 0) for c in CATEGORIAS)
             completas = sum(1 for c in CATEGORIAS if conteo.get(c, 0) > 0)
@@ -119,6 +145,10 @@ async def analizar() -> list[dict]:
                 "categorias_ausentes": ausentes,
                 "eslabon_debil": eslabon_cat,
                 "eslabon_debil_n": canasta[eslabon_cat],
+                "area_km2": float(km2) if km2 is not None else None,
+                # Sesgo del método anterior: cuánto de más contaba el círculo.
+                "total_en_radio_ed1": int(en_radio),
+                "inflacion_radio_pct": round((en_radio - total) / total * 100) if total else None,
                 "masivo_nombre": (masivo or {}).get("nombre"),
                 "masivo_tipo": (masivo or {}).get("categoria_overture"),
                 "masivo_dist_m": (masivo or {}).get("d"),
@@ -128,22 +158,31 @@ async def analizar() -> list[dict]:
 
 
 def imprimir(filas: list[dict]) -> None:
-    print(f"\nESTUDIO DE HABITABILIDAD MEDIDA — QUITO   ({_NOTA_RADIO})")
+    print(f"\nESTUDIO DE HABITABILIDAD MEDIDA — QUITO · ed.2\n{_NOTA_METODO}")
     print(f"Fuente: pois_propios (Overture + OSM curados). Sectores: {len(filas)}")
     print(f"⚠ {ADVERTENCIA_FH}\n")
     # Orden GEOGRÁFICO (zona norte→sur, luego alfabético), NO por cantidad: la tabla compara,
     # no rankea. Cada quien lee la columna que le importa.
     _z = {"Norte": 0, "Centro-N": 1, "Centro": 2, "Sur": 3}
     orden = sorted(filas, key=lambda f: (_z.get(f["zona"], 9), f["sector"]))
-    cab = (f"{'SECTOR':<19}{'ZONA':<10}{'TOT':>5}{'TRA':>5}{'SUP':>5}{'FAR':>5}{'SAL':>5}"
-           f"{'EDU':>5}{'PAR':>5}  {'MÁS ESCASO':<22}MASIVO MÁS CERCANO")
+    cab = (f"{'SECTOR':<19}{'ZONA':<10}{'km²':>6}{'TOT':>5}{'TRA':>5}{'SUP':>5}{'FAR':>5}{'SAL':>5}"
+           f"{'EDU':>5}{'PAR':>5}  {'MÁS ESCASO':<20}{'ed.1':>6}")
     print(cab); print("-" * len(cab))
     for f in orden:
-        masivo = f"{f['masivo_nombre']} ({f['masivo_dist_m']} m)" if f["masivo_nombre"] else "—"
         escaso = f"{f['eslabon_debil']} ({f['eslabon_debil_n']})"
-        print(f"{f['sector']:<19}{f['zona']:<10}{f['total_pois']:>5}"
+        infl = f"+{f['inflacion_radio_pct']}%" if f["inflacion_radio_pct"] is not None else "—"
+        print(f"{f['sector']:<19}{f['zona']:<10}{f['area_km2']:>6}{f['total_pois']:>5}"
               f"{f['transporte']:>5}{f['supermercado']:>5}{f['farmacia']:>5}{f['salud']:>5}"
-              f"{f['educacion']:>5}{f['parque']:>5}  {escaso:<22}{masivo}")
+              f"{f['educacion']:>5}{f['parque']:>5}  {escaso:<20}{infl:>6}")
+
+    # El sesgo del método anterior, cuantificado.
+    infl = [f["inflacion_radio_pct"] for f in filas if f["inflacion_radio_pct"] is not None]
+    if infl:
+        print(f"\nSESGO DEL MÉTODO ed.1 (radio vs isócrona real): el círculo contaba entre "
+              f"{min(infl)}% y {max(infl)}% de más — mediana {sorted(infl)[len(infl)//2]}%.")
+        peor = max(filas, key=lambda f: f["inflacion_radio_pct"] or 0)
+        print(f"  Donde más engañaba: {peor['sector']} (+{peor['inflacion_radio_pct']}%) — "
+              f"el radio promete servicios que a pie no se alcanzan.")
 
     # Hallazgos como HECHOS con nombre propio, no como veredictos de zona.
     por_total = sorted(filas, key=lambda f: f["total_pois"])
@@ -174,7 +213,7 @@ async def main() -> None:
     if args.json:
         Path(args.json).write_text(json.dumps({
             "meta": {"fuente": "pois_propios (Overture Places + OSM, curados)",
-                     "radio_m": RADIO_M, "nota_radio": _NOTA_RADIO,
+                     "metodo": "isocrona real Valhalla (pedestrian)", "minutos": MINUTOS, "nota_metodo": _NOTA_METODO, "radio_ed1_m": RADIO_M,
                      "advertencia": "centroides de sector APROXIMADOS; sirven para comparar sectores, no para describir un punto exacto"},
             "sectores": filas,
         }, ensure_ascii=False, indent=2), encoding="utf-8")

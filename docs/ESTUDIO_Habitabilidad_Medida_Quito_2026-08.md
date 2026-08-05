@@ -1,8 +1,9 @@
 # Estudio de Habitabilidad Medida — Quito
 
-### Equipamiento urbano a distancia caminable, medido en 18 sectores · Edición 1
+### Equipamiento urbano alcanzable a pie, medido en 18 sectores · **Edición 2**
 
 **Fecha:** 2026-08-04 · **Autor:** Contexto AI · **Fuente:** capa propia (`pois_propios`, 8.499 puntos en Quito)
+**Método:** isócrona real de **15 min a pie por calles** (Valhalla, `costing=pedestrian`)
 **Motor reproducible:** [`scripts/estudio_habitabilidad_quito.py`](../scripts/estudio_habitabilidad_quito.py) · **Datos crudos:** [`datos_estudio_habitabilidad_quito.json`](datos_estudio_habitabilidad_quito.json)
 
 > ⚠️ **Este estudio cuenta equipamiento medido. NO ordena sectores por deseabilidad ni recomienda dónde vivir.** Más servicios no significa "mejor zona": significa más servicios. Quien pondera es cada persona, según su vida — no valora igual quien trabaja desde casa que quien lleva hijos al colegio. La tabla está ordenada **geográficamente**, nunca por cantidad.
@@ -13,11 +14,11 @@
 
 En Lima, **CODIP + IPSOS** publican desde hace 7 ediciones el *Estudio del Perfil del Comprador* (n=739, IC ±4%, panel del portal Nexo Inmobiliario). Es un buen estudio y responde una pregunta legítima: **qué dice la gente que quiere.** Entre sus preguntas está *"¿qué atributos te hacen elegir un distrito?"*.
 
-Este documento responde una pregunta distinta, y complementaria:
+Este documento responde una pregunta distinta y complementaria:
 
-> **¿Qué hay realmente en cada sector, a distancia caminable?**
+> **¿Qué se alcanza realmente a pie desde cada sector?**
 
-La diferencia no es de presupuesto, es de método. Un estudio de perfil mide **preferencia declarada**; este mide **equipamiento observado**. Uno pregunta, el otro cuenta. Y donde el primero necesita una muestra y trabajo de campo, el segundo necesita una capa de datos geográficos propia — que es exactamente el activo que Contexto construyó.
+La diferencia no es de presupuesto, es de método. Un estudio de perfil mide **preferencia declarada**; este mide **equipamiento alcanzable**. Uno pregunta, el otro camina. Y donde el primero necesita muestra y trabajo de campo, el segundo necesita una capa geográfica propia y un motor de rutas — que es exactamente el activo que Contexto construyó.
 
 **Lo que este estudio NO puede hacer, y no finge hacer:** no dice cuántos dormitorios quiere la gente, ni su presupuesto, ni su momento de compra. Eso requiere encuesta. Aquí no hay ninguna cifra de intención declarada.
 
@@ -30,85 +31,113 @@ La diferencia no es de presupuesto, es de método. Un estudio de perfil mide **p
 | **Universo** | 18 sectores de Quito (Norte, Centro y Sur), definidos por centroide aproximado |
 | **Fuente de datos** | `pois_propios`: 8.499 puntos de interés en Quito — Overture Places + OpenStreetMap, conflados y curados |
 | **Categorías** | transporte · supermercado · farmacia · salud · educación · parque · centro comercial · iglesia · seguridad (9) |
-| **Radio de análisis** | **1.200 m en línea recta** (≈15 min a pie a 80 m/min) |
+| **Área de análisis** | **Isócrona real de 15 min a pie**, calculada por la red de calles (Valhalla auto-hospedado, `costing=pedestrian`) |
 | **Fecha de medición** | 2026-08-04 |
-| **Reproducibilidad** | Motor abierto en el repo; cualquiera con la capa puede re-correrlo |
+| **Reproducibilidad** | Motor abierto en el repo; con la capa y Valhalla, cualquiera lo re-corre |
 
-**Tres límites que hay que decir en voz alta:**
+**Dos límites que hay que decir en voz alta:**
 
-1. **El radio es una aproximación generosa.** 1.200 m en línea recta cubre **más** área que una isócnona real por calles. Los conteos son un **techo**, no la cifra exacta caminable. *(El motor de isócronas reales —Valhalla— ya opera en producción; la edición 2 debe usarlo.)*
-2. **Los centroides de sector son aproximados.** Sirven para comparar sectores entre sí, no para describir un punto exacto. Mover el centroide 300 m cambia los números.
-3. **La capa mide presencia, no calidad ni horario.** Que haya 6 puntos de salud no dice si están abiertos, si atienden urgencias o si son consultorios pequeños.
-
----
-
-## 2. La tabla
-
-*Orden geográfico (Norte → Centro → Sur), nunca por cantidad. "Más escaso" = la categoría con menos puntos de la canasta cotidiana (supermercado, farmacia, salud, educación).*
-
-| Sector | Zona | Total | Transp. | Súper | Farm. | Salud | Educ. | Parque | Más escaso | Masivo más cercano |
-|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|
-| Carcelén | Norte | 100 | 28 | 23 | 16 | 6 | 9 | 5 | salud (6) | Terminal Carcelén (594 m) |
-| Cotocollao | Norte | 204 | 36 | 54 | 34 | 20 | 25 | 8 | salud (20) | Rumihurco (381 m) |
-| El Batán | Norte | 332 | 71 | 60 | 47 | 59 | 45 | 26 | educación (45) | La Carolina (670 m) |
-| El Bosque | Norte | 225 | 30 | 14 | 34 | 89 | 24 | 18 | súper (14) | Iñaquito (1.803 m) |
-| **El Labrador** | Norte | **399** | 90 | 65 | 73 | 60 | 53 | 26 | educación (53) | **Estación de Metro (601 m)** |
-| González Suárez | Norte | 360 | 84 | 66 | 42 | 68 | 63 | 9 | farmacia (42) | Panamericana Int. (633 m) |
-| Iñaquito | Norte | 430 | 88 | 68 | 74 | 87 | 61 | 20 | educación (61) | Estación Iñaquito (148 m) |
-| La Carolina | Norte | 449 | 96 | 77 | 66 | 93 | 57 | 26 | educación (57) | Iñaquito (439 m) |
-| **La Concepción** | Norte | **369** | 93 | 60 | 64 | 56 | 43 | 25 | educación (43) | **Estación de Metro (588 m)** |
-| Ponceano | Norte | 137 | 41 | 36 | 14 | 17 | 16 | 1 | farmacia (14) | Flor del Valle (746 m) |
-| Quito Tenis | Norte | 252 | 45 | 38 | 35 | 61 | 32 | 22 | educación (32) | Iñaquito (1.256 m) |
-| La Floresta | Centro-N | 479 | 109 | 89 | 68 | 71 | 98 | 10 | farmacia (68) | Panamericana Int. (270 m) |
-| La Mariscal | Centro-N | 569 | 133 | 90 | 87 | 91 | 113 | 13 | farmacia (87) | Cruz del Sur (410 m) |
-| Centro Histórico | Centro | 398 | 82 | 92 | 52 | 27 | 36 | 22 | salud (27) | San Francisco (263 m) |
-| Chillogallo | Sur | 192 | 34 | 90 | 17 | 12 | 20 | 3 | salud (12) | Santa Rosa 3 (939 m) |
-| La Magdalena | Sur | 301 | 38 | 78 | 48 | 52 | 41 | 15 | educación (41) | Terminal de bus (331 m) |
-| Quitumbe | Sur | 136 | 48 | 29 | 24 | 8 | 7 | 11 | educación (7) | Quitumbe (1.185 m) |
-| Solanda | Sur | 271 | 30 | 92 | 51 | 37 | 19 | 21 | educación (19) | Solanda (410 m) |
+1. **Los centroides de sector son aproximados.** Sirven para comparar sectores entre sí, no para describir un punto exacto. Mover el centroide 300 m cambia los números.
+2. **La capa mide presencia, no calidad ni horario.** Que haya 6 puntos de salud no dice si están abiertos, si atienden urgencias o si son consultorios pequeños. Y **nada aquí está verificado en terreno** — eso es otra cosa, y se rotula aparte cuando existe.
 
 ---
 
-## 3. Lo que muestran los números
+## 2. Lo primero: esta edición corrige a la anterior
 
-### 3.1 El rango es de 5,7x
+La **edición 1** de este estudio usó un radio de 1.200 m en línea recta como aproximación de "15 minutos a pie". Era una aproximación declarada, pero resultó ser **mucho peor de lo que suponíamos**.
 
-De **100** puntos de servicio a 15 min (Carcelén) a **569** (La Mariscal). Vivir en Quito no es una sola experiencia: entre dos sectores de la misma ciudad hay casi seis veces de diferencia en lo que se alcanza caminando.
+Un círculo no conoce quebradas, ni avenidas sin cruce, ni manzanas cerradas, ni la ladera. Al medir con la red de calles real:
 
-### 3.2 Conectado no es lo mismo que abastecido
+| | Sesgo del radio |
+|---|---|
+| **Mediana** | el círculo contaba **+37%** de más |
+| **Mínimo** | +15% (Centro Histórico — traza regular, plana, muy conectada) |
+| **Máximo** | **+471%** (Ponceano — el radio prometía 137 servicios; a pie se alcanzan **24**) |
 
-El hallazgo que un promedio esconde. Hay sectores con **transporte abundante y canasta cotidiana escasa**:
+Y la consecuencia sobre el hallazgo principal:
+
+> La brecha entre el sector con más y con menos equipamiento pasó de **5,7x** (radio) a **19,7x** (isócrona real). **La desigualdad real es 3,5 veces mayor de la que mostraba el método aproximado.**
+
+Se publica el error en vez de sustituirlo en silencio, porque el método es parte del dato. Un estudio que corrige su propia medición vale más que uno que nunca dice cómo midió.
+
+---
+
+## 3. La tabla
+
+*Orden geográfico (Norte → Centro → Sur), nunca por cantidad. "Más escaso" = la categoría con menos puntos de la canasta cotidiana (supermercado, farmacia, salud, educación). "ed.1" = cuánto inflaba el método anterior.*
+
+| Sector | Zona | km² a pie | Total | Transp. | Súper | Farm. | Salud | Educ. | Parque | Más escaso | ed.1 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|
+| Carcelén | Norte | 2,62 | 73 | 21 | 19 | 15 | 6 | 5 | 2 | educación (5) | +37% |
+| Cotocollao | Norte | 2,84 | 165 | 31 | 44 | 28 | 18 | 18 | 6 | salud (18) | +24% |
+| El Batán | Norte | 2,54 | 232 | 53 | 45 | 35 | 39 | 31 | 13 | educación (31) | +43% |
+| El Bosque | Norte | 1,76 | 64 | 12 | 10 | 13 | 10 | 8 | 6 | educación (8) | **+252%** |
+| **El Labrador** | Norte | **3,55** | **334** | 88 | 53 | 59 | 52 | 45 | 13 | educación (45) | +19% |
+| González Suárez | Norte | 2,58 | 203 | 43 | 38 | 27 | 31 | 42 | 5 | farmacia (27) | +77% |
+| Iñaquito | Norte | 3,48 | 346 | 69 | 53 | 56 | 77 | 47 | 15 | educación (47) | +24% |
+| La Carolina | Norte | 3,27 | 327 | 75 | 53 | 47 | 70 | 39 | 16 | educación (39) | +37% |
+| **La Concepción** | Norte | **3,23** | **274** | 66 | 41 | 53 | 42 | 34 | 18 | educación (34) | +35% |
+| Ponceano | Norte | **1,22** | **24** | 10 | 6 | 2 | 3 | 2 | 0 | farmacia (2) | **+471%** |
+| Quito Tenis | Norte | 2,70 | 166 | 33 | 29 | 28 | 38 | 18 | 10 | educación (18) | +52% |
+| La Floresta | Centro-N | 3,46 | 385 | 90 | 78 | 59 | 39 | 82 | 8 | salud (39) | +24% |
+| La Mariscal | Centro-N | 3,51 | **472** | 108 | 76 | 70 | 76 | 91 | 11 | farmacia (70) | +21% |
+| Centro Histórico | Centro | **3,70** | 347 | 69 | 74 | 50 | 27 | 33 | 16 | salud (27) | +15% |
+| Chillogallo | Sur | 3,31 | 157 | 29 | 75 | 16 | 10 | 14 | 2 | salud (10) | +22% |
+| La Magdalena | Sur | 2,81 | 204 | 31 | 47 | 34 | 35 | 30 | 12 | educación (30) | +48% |
+| Quitumbe | Sur | 2,63 | 84 | 30 | 14 | 17 | 6 | 6 | 4 | salud (6) | +62% |
+| Solanda | Sur | 2,87 | 192 | 24 | 65 | 36 | 27 | 9 | 14 | educación (9) | +41% |
+
+---
+
+## 4. Lo que muestran los números
+
+### 4.1 Quince minutos no son quince minutos
+
+El hallazgo que solo aparece al medir por calles: **el área alcanzable a pie varía 3x entre sectores.**
+
+- **Centro Histórico: 3,70 km²** — traza regular, plana, muy conectada.
+- **Ponceano: 1,22 km²** — la misma caminata de 15 minutos cubre **un tercio** de ciudad.
+
+En una ciudad de ladera y quebradas como Quito, *"a 15 minutos a pie"* no describe una distancia: describe **cuánta ciudad te deja alcanzar la traza urbana**. Dos personas caminando lo mismo, en sectores distintos, viven ciudades de tamaño diferente.
+
+### 4.2 El rango real es de 19,7x
+
+De **24** puntos de servicio alcanzables (Ponceano) a **472** (La Mariscal). No es una diferencia de matiz: es una diferencia de vida cotidiana dentro de la misma ciudad.
+
+### 4.3 Conectado no es lo mismo que abastecido
+
+Hay sectores con transporte y sin canasta cotidiana:
 
 | Sector | Transporte | Pero solo… |
 |---|---:|---|
-| Carcelén | 28 | **6** puntos de salud |
-| Quitumbe | 48 | **7** puntos de educación |
-| Chillogallo | 34 | **12** puntos de salud |
-| El Bosque | 30 | **14** supermercados |
+| Ponceano | 10 | **2** farmacias |
+| Carcelén | 21 | **5** puntos de educación |
+| Quitumbe | 30 | **6** puntos de salud |
+| El Bosque | 12 | **8** puntos de educación |
 
-**Quitumbe es el caso más claro:** tiene estación de Metro y 48 puntos de transporte, pero **7 de educación y 8 de salud**. Está construido para *salir*, no para *quedarse*. Un índice promedio lo mostraría como "bien conectado"; el eslabón débil muestra lo que realmente falta.
+**Quitumbe sigue siendo el caso más nítido:** tiene estación de Metro y 30 puntos de transporte alcanzables, pero **6 de salud y 6 de educación**. Está construido para *salir*, no para *quedarse*. Un promedio lo llamaría "bien conectado"; el eslabón débil muestra lo que falta.
 
-### 3.3 Cada sector tiene su carencia, y no es la misma
+### 4.4 Sectores sin ninguna presencia de una categoría
 
-- **El Bosque** concentra salud (89, el máximo de la muestra) pero es el más escaso en supermercados (14).
-- **Chillogallo y Solanda** tienen abundante comercio (90 y 92 súper) y poca salud o educación.
-- **La Mariscal y La Floresta** — los dos totales más altos — tienen su punto débil en farmacias, no por escasez sino porque todo lo demás es aún más denso.
-- **Ponceano** es el único sector sin **ningún** centro comercial a este radio.
+A 15 minutos a pie, medidos por calle:
 
-Por eso el estudio no rankea: **el sector "más completo" depende de qué te falta a ti.**
+- **Ponceano:** ningún parque, ningún centro comercial, ningún punto de seguridad.
+- **Carcelén:** ningún centro comercial.
 
-### 3.4 El eje del Metro (Labrador–La Concepción)
+### 4.5 El eje del Metro (Labrador–La Concepción)
 
-Los dos sectores del eje quedan en el tercio superior de la muestra: **El Labrador 399** y **La Concepción 369** puntos de servicio, ambos a ~600 m de una estación de Metro. Su punto más escaso es educación (53 y 43). Es un sector de servicios densos y conexión masiva, con equipamiento educativo por debajo de La Floresta o La Mariscal.
+**El Labrador** es el sector con **menor sesgo de toda la muestra (+19%)**: su traza es tan caminable que el círculo casi acertaba. Alcanza **334** puntos de servicio en **3,55 km²** — de las áreas peatonales más grandes medidas. **La Concepción** alcanza **274** en 3,23 km². En ambos, la categoría más escasa es educación.
+
+Traducido: es un eje de **alta conectividad y servicios densos, con equipamiento educativo por debajo** de La Floresta o La Mariscal.
 
 ---
 
-## 4. Qué se puede hacer con esto (y qué no)
+## 5. Qué se puede hacer con esto (y qué no)
 
 **Sirve para:**
 - **Emparejar intención con lugar**: si alguien declara que necesita colegio cerca, los datos dicen dónde hay más — sin decirle dónde debe vivir.
-- **Dar contexto verificable a un inmueble**: no "excelente ubicación", sino "a 15 min a pie tienes X, Y, Z — medido".
-- **Detectar huecos de mercado**: un sector con transporte fuerte y servicios débiles es una oportunidad de desarrollo y una advertencia para el comprador.
+- **Dar contexto verificable a un inmueble**: no "excelente ubicación", sino "a 15 min caminando por calles reales alcanzas X, Y, Z — medido".
+- **Detectar huecos de mercado**: transporte fuerte con servicios débiles es a la vez una oportunidad de desarrollo y una advertencia para el comprador.
 
 **No sirve para** —y no debe usarse así—:
 - Rankear barrios por calidad o deseabilidad.
@@ -117,13 +146,13 @@ Los dos sectores del eje quedan en el tercio superior de la muestra: **El Labrad
 
 ---
 
-## 5. Metodología y próximas ediciones
+## 6. Metodología y próximas ediciones
 
-**Cómo se calculó:** para cada centroide de sector, se cuentan los POIs operativos de `pois_propios` dentro de 1.200 m geodésicos (`ST_DWithin` sobre `geography`), agrupados por categoría. La estación masiva más cercana se busca sin límite de radio (metro, terminal, estación de tren). Motor completo y reproducible en el repo.
+**Cómo se calculó:** para cada centroide de sector se pide a Valhalla la isócrona peatonal de 15 minutos (`costing=pedestrian`, polígonos cerrados) y se cuentan los POIs operativos de `pois_propios` **dentro del polígono** (`ST_Contains`). El área se calcula en `geography` (km² reales). En paralelo se cuenta el total dentro del radio de 1.200 m de la ed.1, solo para cuantificar el sesgo del método anterior. Si Valhalla no responde para un sector, **el sector se omite** en vez de sustituirse por radio: mezclar dos métodos en la misma tabla la invalidaría.
 
-**Edición 2 — mejoras comprometidas:**
-1. **Isócronas reales por calle** en vez de radio (el motor ya opera; elimina el sesgo del "techo").
-2. **Más sectores y centroides mejor anclados** (por parroquia censal, no por punto aproximado).
+**Edición 3 — mejoras pendientes:**
+1. **Centroides por parroquia censal**, no por punto aproximado.
+2. **Más sectores** y cobertura de valles (Cumbayá, Tumbaco).
 3. **Cruce con oferta real** cuando haya inventario verificado suficiente.
 4. **Verificación en terreno** de una muestra: el diferencial que ninguna capa descargada tiene.
 
@@ -131,11 +160,12 @@ Los dos sectores del eje quedan en el tercio superior de la muestra: **El Labrad
 
 ---
 
-## 6. Proveniencia y honestidad
+## 7. Proveniencia y honestidad
 
-- **Dato propio:** los 8.499 POIs son de Contexto (Overture Places + OSM, conflados y curados). **No están verificados en terreno** — eso es otra cosa y se rotula aparte cuando existe.
+- **Dato propio:** los 8.499 POIs son de Contexto (Overture Places + OSM, conflados y curados). **No están verificados en terreno.**
+- **Motor de isócronas propio:** Valhalla auto-hospedado con tiles de Ecuador. Sin llaves de terceros — y sin el problema legal de almacenar isócronas de Google (sus términos lo prohíben; la licencia ODbL de OSM no).
 - **Comparación con el estudio de Lima:** *per CODIP/IPSOS Perú (7ª edición, campo oct-2025 a ene-2026, n=739, panel del portal Nexo Inmobiliario)*. Se cita como referencia de método, no como dato aplicable a Quito: otra ciudad, otra moneda, otro sistema hipotecario.
-- **Cifras de mercado de terceros** (precio/m² de Quito, participación de gama media) **no se usan en este estudio** — se mencionan en la investigación de contexto pero no forman parte de las mediciones de aquí.
-- Cada número de la tabla sale de una consulta reproducible sobre datos propios. Si alguien discrepa, puede correr el motor.
+- **Corrección publicada:** la ed.1 de este mismo documento sobreestimaba entre 15% y 471%. El dato viejo no se borró: se midió y se reporta.
+- Cada número sale de una consulta reproducible sobre datos propios. Si alguien discrepa, puede correr el motor.
 
-> **La frase que resume el método:** ellos preguntan qué quiere la gente; nosotros contamos qué hay. Las dos preguntas importan — pero solo una se puede verificar sin encuestar a nadie.
+> **La frase que resume el método:** ellos preguntan qué quiere la gente; nosotros medimos qué se alcanza caminando. Las dos preguntas importan — pero solo una se puede verificar sin encuestar a nadie.

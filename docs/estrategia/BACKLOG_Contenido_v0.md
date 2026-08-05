@@ -162,3 +162,11 @@ La pieza fundacional de vocabulario — el "punto de luz" de la marca hecho text
   (ver `contenido/despachos/DESPACHO_2026-07-30.md`). Corredor-Brain sin hidratación nueva desde
   W5 (07-27); próxima corrida automática 2026-08-03. Quedan pendientes: #8 (siguiente en orden) y
   #10 (video, sin tocar).
+- 2026-08-03 — Sexta corrida del despacho automatizado: 2 piezas nuevas fuera de backlog, ninguna
+  del backlog cubierta. Prioridad 1º: tesis [[El modelo es commodity, el foso es el andamiaje
+  agentico y el dato propio]] reforzada con evidencia de M&A real (Yardi abre registro a Claude vs.
+  RealPage compra Cherre, per Christian H., 2026-07-23). Prioridad 2º: táctica 🟢 nueva de
+  Corredor-Brain (hidratación W6) [[Seguimiento a contactos huérfanos (orphan)]], per Gary Keller
+  (ver `contenido/despachos/DESPACHO_2026-08-03.md`). Quedan pendientes: #8 (siguiente en orden) y
+  #10 (video, sin tocar) — candidatas para la próxima corrida si la cosecha no trae novedad de
+  prioridad 1º/2º.

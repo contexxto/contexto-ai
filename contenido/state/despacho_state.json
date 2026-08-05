@@ -1,5 +1,5 @@
 {
-  "last_run": "2026-07-30",
+  "last_run": "2026-08-03",
   "despachos": [
     {
       "fecha": "2026-07-14",
@@ -61,6 +61,18 @@
         "Senales-Brain tesis: Los geo-datos base se commoditizan, el foso es la frescura local",
         "Senales-Brain source: Benchmark de isocronas Google vs Mapbox HERE y TravelTime (Afi Labs)",
         "Senales-Brain tesis: Los canales conversacionales alquilados dejan de ser gratis (COGS por conversacion)"
+      ]
+    },
+    {
+      "fecha": "2026-08-03",
+      "piezas": [
+        "Dos apuestas opuestas sobre el foso de datos",
+        "El comprador que no es tu cliente, pero sí es tu contacto"
+      ],
+      "fuentes": [
+        "Senales-Brain tesis: El modelo es commodity, el foso es el andamiaje agentico y el dato propio (reforzada con Yardi/RealPage)",
+        "Senales-Brain source: Yardi abre su registro a Claude, RealPage compra Cherre para poseer el suyo",
+        "Corredor-Brain tactic: Seguimiento a contactos huérfanos (orphan) — per Gary Keller"
       ]
     }
   ]

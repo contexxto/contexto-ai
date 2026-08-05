@@ -19,6 +19,7 @@ Reglas: cada pieza pasa el criterio de calidad §6 y los NEVER §8 de
 | 8 | El orden de un marketplace no se vende | Post página | pendiente |
 | 9 | El comprador informal no tiene copiloto | Artículo largo | borrador 2026-07-21 |
 | 10 | Construyendo la máquina de verificación — capítulo 1 | Video YouTube | pendiente |
+| 11 | Medimos la ciudad con un círculo (corrección publicada) | Artículo largo | borrador 2026-08-04 |
 
 ---
 
@@ -170,3 +171,7 @@ La pieza fundacional de vocabulario — el "punto de luz" de la marca hecho text
   (ver `contenido/despachos/DESPACHO_2026-08-03.md`). Quedan pendientes: #8 (siguiente en orden) y
   #10 (video, sin tocar) — candidatas para la próxima corrida si la cosecha no trae novedad de
   prioridad 1º/2º.
+- 2026-08-04 — Pieza **fuera de backlog** nacida del `ESTUDIO_Habitabilidad_Medida_Quito_2026-08`
+  (ed.2): *"Medimos la ciudad con un círculo. Nos equivocamos hasta en un 471%."* — artículo largo,
+  cuota de agosto. El ángulo no son los números sino **publicar la corrección del propio método**
+  (honestidad de asteriscos demostrada, no enunciada). Añadida como #11 al backlog.

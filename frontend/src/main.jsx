@@ -4,6 +4,9 @@ import './index.css'
 import App from './App.jsx'
 import QueEs from './QueEs.jsx'
 import ErrorBoundary from './ErrorBoundary.jsx'
+// TEMPORAL — sonda del bug "el header desaparece tras actualizar la PWA". Se enciende
+// con /?debug=1 y no monta nada para el resto de usuarios. Quitar al cerrar el bug.
+import DebugHeader, { debugActivo } from './DebugHeader.jsx'
 
 // Web de marketing (/que-es): página standalone. Se renderiza EN LUGAR de <App/>
 // (no dentro), así NO monta la maquinaria del app (sesión Supabase, carga de
@@ -19,6 +22,7 @@ createRoot(document.getElementById('root')).render(
             onLogin={() => window.location.assign('/?login=1')}
             onBroker={() => window.location.assign('/?corredor=1')} />
         : <App />}
+      {debugActivo() && <DebugHeader />}
     </ErrorBoundary>
   </StrictMode>,
 )

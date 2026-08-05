@@ -705,10 +705,26 @@ export default function App() {
   // ── Registro del Service Worker + auto-update de la PWA ─────────────────────
   // Registra el SW (PWA instalable + push) y detecta cuando hay una versión nueva
   // esperando: en vez de recargar por sorpresa, avisamos con un toast ("Actualizar").
-  // Al aceptar, el SW nuevo toma control (SKIP_WAITING) y recargamos UNA vez en
-  // 'controllerchange'. El ref evita recargar en la primera toma de control (usuario nuevo).
+  // Al aceptar, el SW nuevo toma control (SKIP_WAITING) y recargamos UNA vez.
+  // OJO con el MOMENTO de la recarga: 'controllerchange' dispara MIENTRAS el worker nuevo
+  // todavía está reclamando clientes (skipWaiting → activate → clients.claim()). Recargar
+  // en ese instante dejaba el header sin pintar en la PWA de Android (el hueco de 54px
+  // seguía en el layout, pero logo y botón no se dibujaban) hasta cerrar y reabrir la app.
+  // Ahora esperamos a que el worker llegue a 'activated' y navegamos de verdad
+  // (location.replace) en vez de reload() — documento nuevo, sin capas heredadas.
   const [swUpdate, setSwUpdate] = useState(null)   // registration con un worker en 'waiting'
   const swUpdatingRef = useRef(false)
+  const swReloadedRef = useRef(false)
+  // Una sola recarga, venga del 'activated' del worker o del fallback 'controllerchange'.
+  const recargarUnaVez = useCallback(() => {
+    if (swReloadedRef.current) return
+    swReloadedRef.current = true
+    // Fuera del turno actual: deja cerrar el ciclo de activación antes de navegar.
+    setTimeout(() => {
+      const { origin, pathname, search } = window.location   // sin hash: replace() con hash no navega
+      window.location.replace(`${origin}${pathname}${search}`)
+    }, 0)
+  }, [])
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return
     let reg = null
@@ -724,8 +740,9 @@ export default function App() {
         })
       })
       .catch(e => console.warn('SW:', e))
-    // Recarga una sola vez cuando el SW nuevo toma control, pero SOLO si el usuario aceptó.
-    const onControllerChange = () => { if (swUpdatingRef.current) window.location.reload() }
+    // Fallback: si por lo que sea no llega el 'activated' del worker (p.ej. otra pestaña
+    // disparó el skipWaiting), recargamos al tomar control — pero SOLO si el usuario aceptó.
+    const onControllerChange = () => { if (swUpdatingRef.current) recargarUnaVez() }
     navigator.serviceWorker.addEventListener('controllerchange', onControllerChange)
     // Al volver a la pestaña, re-chequea updates (además del ciclo automático del navegador).
     const onFocus = () => { reg?.update?.().catch(() => {}) }
@@ -734,11 +751,18 @@ export default function App() {
       navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange)
       window.removeEventListener('focus', onFocus)
     }
-  }, [])
+  }, [recargarUnaVez])
   const aplicarUpdate = useCallback(() => {
     swUpdatingRef.current = true
-    swUpdate?.waiting?.postMessage({ type: 'SKIP_WAITING' })
-  }, [swUpdate])
+    const w = swUpdate?.waiting
+    if (!w) { recargarUnaVez(); return }   // ya no hay worker esperando: recarga y punto
+    // Esperamos a que el worker nuevo termine de activarse ANTES de navegar.
+    w.addEventListener('statechange', () => { if (w.state === 'activated') recargarUnaVez() })
+    if (w.state === 'activated') recargarUnaVez()   // carrera: ya se activó antes de suscribirnos
+    w.postMessage({ type: 'SKIP_WAITING' })
+    // Red de seguridad: si en 3s no llegó ni 'activated' ni 'controllerchange', recarga igual.
+    setTimeout(recargarUnaVez, 3000)
+  }, [swUpdate, recargarUnaVez])
 
   // ── PWA "Instalar app" ────────────────────────────────────────────────────
   // Android / desktop Chrome emiten beforeinstallprompt → lo diferimos para nuestro botón.

@@ -112,6 +112,13 @@ html[data-theme="light"] {
   --shadow-lg:   0 8px 32px rgba(0,0,0,0.12);
 }
 
+/* OJO al mantener esto: `overflow: hidden` aquí bloquea el scroll del DEDO pero NO el
+   programático, y además impide que se emitan eventos de scroll — así que si algo empuja
+   el documento, la app queda atascada y nadie se entera. Pasó: un scrollIntoView movía el
+   documento 56px en la PWA instalada y el header se iba fuera de pantalla hasta cerrar la
+   app. Probado: `overflow: clip` NO lo evita (el viewport se sigue desplazando por
+   programa), así que la defensa real es no mover nunca el documento — mover el contenedor.
+   Ver el auto-scroll en App.jsx. */
 body {
   /* Fondo plano estilo ASI:One — sin grid ni aura (la marca "aura" vive en el contenido) */
   background-color: var(--bg);

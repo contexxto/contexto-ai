@@ -591,9 +591,12 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Auto-scroll
+  // Auto-scroll. OJO: scrollIntoView desplaza TODOS los contenedores scrolleables que
+  // haya por encima, incluido el documento — asi se iba el header fuera de pantalla en
+  // la PWA instalada. Movemos solo la lista de mensajes, que es lo que se quiere mover.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const el = scrollRef.current
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
   }, [messages, loading])
 
   const handleScroll = useCallback(() => {
@@ -698,7 +701,7 @@ export default function App() {
       )
     } finally {
       setLoading(false)
-      setTimeout(() => inputRef.current?.focus(), 100)
+      setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 100)
     }
   }, [input, loading, sessionId, geo, modoCorredor])
 
@@ -1032,7 +1035,7 @@ export default function App() {
         try { rec.start(); return } catch { /* si el motor no puede reiniciar, cerramos abajo */ }
       }
       setListening(false)
-      setTimeout(() => inputRef.current?.focus(), 50)
+      setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 50)
     }
     recognitionRef.current = rec
     setListening(true)
@@ -1072,7 +1075,7 @@ export default function App() {
         if (first) {
           first = false
           setGeoLoading(false)
-          if (!silent) setTimeout(() => inputRef.current?.focus(), 100)
+          if (!silent) setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 100)
         }
       },
       () => {
@@ -1167,7 +1170,7 @@ export default function App() {
     setSessionId(newId)
     setMessages([])
     setError(null)
-    setTimeout(() => inputRef.current?.focus(), 100)
+    setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 100)
   }, [])
 
   const switchSession = useCallback((id) => {
@@ -1630,7 +1633,11 @@ export default function App() {
       {/* Scroll to bottom button */}
       {showScrollBtn && (
         <button
-          onClick={() => bottomRef.current?.scrollIntoView({ behavior:'smooth' })}
+          onClick={() => {
+            // Mismo motivo que el auto-scroll: mover la lista, nunca el documento.
+            const el = scrollRef.current
+            if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+          }}
           title="Bajar al final"
           style={{
             position:'fixed', bottom:90, right:24, width:36, height:36,

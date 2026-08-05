@@ -70,7 +70,39 @@ function medir() {
   }
 }
 
-export default function DebugHeader() {
+/**
+ * Enciende/apaga con 5 toques rápidos (menos de 1,5s entre el primero y el quinto).
+ * Existe porque escribir "/?debug=1" en Chrome de Android es poco fiable: el
+ * autocompletado se come el parámetro y te lleva al dominio pelado.
+ */
+function useGestoDebug(activo, setActivo) {
+  useEffect(() => {
+    let toques = []
+    const onTap = () => {
+      const ahora = Date.now()
+      toques = [...toques.filter(t => ahora - t < 1500), ahora]
+      if (toques.length >= 5) {
+        toques = []
+        try {
+          if (activo) localStorage.removeItem(FLAG)
+          else localStorage.setItem(FLAG, '1')
+        } catch { /* modo privado */ }
+        setActivo(!activo)
+      }
+    }
+    document.addEventListener('pointerdown', onTap, true)   // captura: no lo bloquea nada
+    return () => document.removeEventListener('pointerdown', onTap, true)
+  }, [activo, setActivo])
+}
+
+// Envoltorio SIEMPRE montado: solo escucha el gesto. No pinta nada si la sonda está apagada.
+export default function DebugHeaderGate() {
+  const [activo, setActivo] = useState(debugActivo)
+  useGestoDebug(activo, setActivo)
+  return activo ? <Badge /> : null
+}
+
+function Badge() {
   const [d, setD] = useState(medir)
   useEffect(() => {
     const tick = () => setD(medir())

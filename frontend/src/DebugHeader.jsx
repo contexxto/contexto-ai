@@ -49,7 +49,14 @@ function medir() {
     encima = el ? `${el.tagName}${el.className ? '.' + String(el.className).slice(0, 14) : ''}` : 'null'
   }
   const ir = img?.getBoundingClientRect()
+  // ¿Esta carga viene de aceptar un update? App.jsx sella la hora justo antes de navegar.
+  let upd = 'no'
+  try {
+    const t = Number(localStorage.getItem('contexto_post_update'))
+    if (t) upd = `hace ${Math.round((Date.now() - t) / 1000)}s`
+  } catch { /* modo privado */ }
   return {
+    upd,
     vp: `${innerWidth}x${innerHeight}`,
     vv: window.visualViewport ? `${Math.round(visualViewport.height)}@${Math.round(visualViewport.offsetTop)}` : '—',
     sa: Math.round(safeAreaTop()),
@@ -79,7 +86,7 @@ export default function DebugHeader() {
       padding: '5px 7px', borderRadius: 6, maxWidth: '96vw', whiteSpace: 'pre-wrap',
       border: '1px solid #2DBDB6',
     }}>
-      {`vp ${d.vp} · vv ${d.vv} · safe ${d.sa} · scrollY ${d.scrollY} · standalone ${d.stand}
+      {`update: ${d.upd} · vp ${d.vp} · vv ${d.vv} · safe ${d.sa} · scrollY ${d.scrollY} · standalone ${d.stand}
 header ${d.hdr} · ${d.hdrCss}
 img ${d.img}
 btn ${d.btn} · encima: ${d.encima}`}

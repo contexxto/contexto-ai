@@ -719,6 +719,9 @@ export default function App() {
   const recargarUnaVez = useCallback(() => {
     if (swReloadedRef.current) return
     swReloadedRef.current = true
+    // Marca temporal para la sonda de debug: así el recuadro distingue una carga normal
+    // de la que viene JUSTO de aceptar un update (que es cuando se rompe el header).
+    try { localStorage.setItem('contexto_post_update', String(Date.now())) } catch { /* modo privado */ }
     // Fuera del turno actual: deja cerrar el ciclo de activación antes de navegar.
     setTimeout(() => {
       const { origin, pathname, search } = window.location   // sin hash: replace() con hash no navega

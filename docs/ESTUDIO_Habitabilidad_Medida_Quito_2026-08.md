@@ -147,6 +147,12 @@ El archivo trae coordenadas, enlace a Maps y columnas vacías para llenar en la 
 
 **Qué se hace con el resultado:** cada punto verificado entra al sistema de curación (que ya propaga la verificación al resto del barrio), y la tasa de error medida se publica en la ed.4. Si de 42 puntos fallan 8, eso es un **19% de error de capa** — y ese número, dicho en voz alta, vale más que cualquier afirmación de exactitud.
 
+> **Nota 2026-08-06 — por qué esta muestra dejó de poder esperar.** Google anunció hoy que Maps acepta contribuciones conversacionales: sugerir una edición hablando, o subir la foto del letrero de un local para que el sistema extraiga el horario *(per blog oficial de Google, 2026-08-06; por ahora solo en Estados Unidos)*. Es el mismo gesto que propone esta sección: un humano corrige el mapa.
+>
+> La diferencia que este estudio aspira a poder defender no está en el gesto, sino en la **proveniencia**. Una observación con nombre, fecha y método declarado no es equivalente a una contribución anónima agregada a escala — pero esa no-equivalencia hay que **demostrarla**, y hoy no podemos: la muestra está diseñada y **nadie la ha caminado**. Mientras la tasa de error de la ed.4 siga sin medirse, la honestidad de esta capa es una promesa de método, no un resultado.
+>
+> Se deja escrito para que la ed.4 no pueda presentarse como si el compromiso hubiera sido siempre fácil de cumplir.
+
 ---
 
 ## 6. Metodología

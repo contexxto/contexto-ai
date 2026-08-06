@@ -412,3 +412,75 @@ Corrido por el Whaber Founder Playbook el 2026-07-08 a raíz del lanzamiento de 
 - **Oportunidad de relación (no de dependencia):** Kleppe/Ubilabs = contacto de **Radar** (T13/T38); Google Maps = sponsor potencial (T24). Contexto tiene un caso de isócronas peatonales en **producción real en LATAM** — material de "dar valor primero" (T36).
 
 > **Frase ancla:** *"Google acaba de convertir la isócrona en commodity. Nuestro foso nunca fue el polígono — es que el corredor lo verificó en terreno."*
+
+---
+
+### Adenda 2026-08-06 (17:16) — Ask Maps: el mismo actor, otro movimiento
+
+**Qué pasó.** Google anunció hoy la expansión de **Ask Maps** con capacidades de agente: pedido de
+comida que escribe directo en el carrito del comercio, descubrimiento de hoteles **comparando precio y
+disponibilidad en vivo**, eventos con enlace de compra, **Inteligencia Personal** (conexión opcional a
+Gmail, y Calendar próximamente), widget de transporte público actualizado al minuto, memoria de
+conversaciones previas y **contribuciones conversacionales** — sugerir una edición hablando, o subir la
+foto del letrero de un local para que Maps extraiga el horario. *(Per blog oficial de Google,
+2026-08-06.)*
+
+Rollout declarado: transporte, personalización y memoria en todos los países donde Ask Maps existe;
+**comida, hoteles, eventos y contribuciones solo en Estados Unidos** por ahora. Se suma **México** (con
+Australia, Brasil, Canadá, Indonesia y Japón) al despliegue en español; **Ecuador no aparece** en esa
+lista — entraría por el tramo de 150+ países en inglés.
+
+**Esto no invalida el §6 de arriba, pero lo parte en dos.** El veredicto del 2026-07-08 —*"la API de
+Google NO es amenaza, es validación"*— se emitió sobre la **Isochrones API**: Google moviéndose como
+*proveedor*. Ask Maps es otro movimiento: Google moviéndose hacia el *usuario final*. Hay que separar
+los dos papeles:
+
+| Google como… | Veredicto | Por qué |
+|---|---|---|
+| **proveedor** (Places, Routes, Isochrones) | sigue siendo **validación** | commoditiza el cálculo, no el dato verificado (P7). Sin cambios. |
+| **superficie de respuesta** (Ask Maps) | **amenaza de canal** | responde directo la pregunta del comprador, en una superficie cerrada a la que no se entra con `schema.org` |
+
+**Lo que le hace a esta migración: la reencuadra, no la reordena.** El plan se justificó por fragilidad
+operativa (el P1 del 08-jul), costo por llamada y el norte de poseer la capa. Todo eso sigue igual. Lo
+que se agrega es que depender de Google dejó de ser solo una cuenta que se paga: es **alimentar con
+llamadas a quien va a responderle a nuestro usuario**. La razón de fondo ya estaba escrita en la Fase 3
+punto 2b de este mismo doc —*los términos de Google Maps Platform no permiten guardar el contenido de
+Places*— y hoy tiene filo: un derivado que no se puede persistir no es un activo, es una suscripción.
+
+**Exposición residual, nombrada.** La **Fase 2 sigue abierta**: `_ruta_a_pie()` (`app/rutas.py:187`,
+Routes) y `recorrido_zona()` (orquesta Places+Routes) son el último cordón umbilical. Sigue **sin ser
+urgente por quema** —40 inmuebles demo, 0 corredores reales—, pero el argumento para cerrarla ya no es
+de costo. Es un argumento distinto del que nunca alcanzó para priorizarla; que sea distinto no lo
+vuelve automáticamente ganador contra la adopción (`PLAN_Producto_6meses_2026-07.md` §0.5).
+
+**El golpe real no va a las APIs: va al foso sobre el foso.** Las contribuciones conversacionales son
+el **mismo mecanismo** que la Fase 3 punto 3 (`entorno_curacion` → `pois_vivos`, construido el
+2026-08-04): un humano corrige el mapa y la corrección se propaga. Google lo desplegó con 500M de
+colaboradores; nosotros lo tenemos con **0 curaciones enganchadas** (`vivos_con_overlay ==
+operativos_origen` = 8.489, verificado el 2026-08-04). Tenemos el mejor mecanismo y nada de
+combustible; ellos, el mecanismo más débil y combustible infinito.
+
+La diferencia defendible no es el mecanismo sino la **proveniencia**: la nuestra tiene nombre, fecha y
+método declarado; la de ellos es multitud anónima revisada por sistemas automáticos, sin proveniencia
+visible para quien lee la respuesta. Y esa diferencia **hoy no se puede demostrar**, porque nadie ha
+caminado la muestra de 42 puntos (`ESTUDIO_Habitabilidad_Medida_Quito_2026-08.md` §5). Después de este
+anuncio, salir a terreno es la palanca más alta del repositorio — y no es una tarea de código.
+
+**El orden geográfico juega a favor.** La superficie competidora aterriza primero en **México**, donde
+el registro `CIUDADES` todavía tiene Puebla y Mazatlán como comentarios sin coordenadas, y tarde (o en
+inglés) en **Quito**, donde sí hay capa. **No es razón para apurar el bbox de México**: es razón para
+que el argumento en la mesa mexicana sea el dato verificado, no la cobertura.
+
+**Lo que NO cambia de rumbo.** El hallazgo del Paso 0 de [`PLAN_Capa_Citable.md`](PLAN_Capa_Citable.md)
+sobrevive y sale reforzado: la IA ya respondía bien sobre barrios famosos —Ask Maps la hizo responder
+mejor— y sobre lo específico, no documentado y verificable sigue ciega. La capa citable se apunta a los
+asistentes abiertos, donde citar funciona. **A Maps no se entra citando**; ahí el camino sería ser
+proveedor compatible con protocolo, y el UCP de hoy solo tiene consejos de *lodging* y comida —ninguna
+vertical de conocimiento local—, así que no es acción para Contexto todavía.
+
+> **Frase ancla (revisada):** *"Google dejó de vendernos el mapa y empezó a responder la pregunta.
+> Lo que no puede responder es si el local sigue abierto y quién fue a verlo."*
+
+*Proveniencia: blog oficial de Google, 2026-08-06. El consejo de UCP para comida (Block/Square,
+DoorDash, Google, Toast, Uber Eats) se anunció en `Universal-Commerce-Protocol/ucp` discussion #593,
+2026-07-16 — es gobernanza, no especificación. Registro cruzado en el Cerebro de Señales.*

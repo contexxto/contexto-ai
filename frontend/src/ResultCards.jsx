@@ -34,6 +34,17 @@ const encajeTono = (s) =>
     : s >= 55 ? { dot: 'var(--warning)', fg: 'var(--warning)' }
     : { dot: 'var(--coral)', fg: 'var(--coral)' }
 
+// ★ La EVIDENCIA detrás del porcentaje. El motor promedia solo las necesidades con señal
+// ("no castigamos lo que no sabemos"), así que un inmueble con ficha incompleta puede
+// puntuar MÁS alto que uno bien documentado. El orden ya lo corrige (app/orden.py); esto
+// lo hace VISIBLE: un 82% medido sobre 3 de 6 cosas no es el mismo 82% que sobre las 6.
+// Se calla cuando se midió todo — el asterisco solo aparece si hace falta.
+const sobreCuanto = (r) => {
+  const ev = r.encaje_evaluadas, decl = r.encaje_declaradas
+  if (!Number.isInteger(ev) || !Number.isInteger(decl) || decl <= 0 || ev >= decl) return null
+  return `calculado sobre ${ev} de las ${decl} cosas que pediste`
+}
+
 const cumpleTint = (c) =>
   c === 'alto' ? { bg: 'rgba(45,189,182,.12)', bd: 'rgba(45,189,182,.32)', fg: 'var(--accent)' }
     : c === 'parcial' ? { bg: 'rgba(229,192,106,.12)', bd: 'rgba(229,192,106,.34)', fg: 'var(--warning)' }
@@ -107,7 +118,8 @@ function ResultCard({ r, onOpen, activeId, onActive, seleccionado, onToggleCompa
           <span style={{ position: 'absolute', top: 8, right: 8, display: 'inline-flex', alignItems: 'center',
                          gap: 5, padding: '3px 9px', borderRadius: 999, fontSize: '.68rem', fontWeight: 800,
                          background: 'rgba(14,13,19,.82)', color: encajeTono(r.encaje).fg, backdropFilter: 'blur(4px)' }}
-                title="Encaje con lo que pediste — calculado por nuestro motor sobre tus necesidades declaradas, no sobre quién eres.">
+                title={'Encaje con lo que pediste — calculado por nuestro motor sobre tus necesidades declaradas, '
+                       + 'no sobre quién eres.' + (sobreCuanto(r) ? ` Este está ${sobreCuanto(r)}.` : '')}>
             <span style={{ width: 7, height: 7, borderRadius: 999, background: encajeTono(r.encaje).dot }} />
             {r.encaje}%
           </span>
@@ -159,6 +171,11 @@ function ResultCard({ r, onOpen, activeId, onActive, seleccionado, onToggleCompa
               <span style={{ width: 8, height: 8, borderRadius: 999, background: encajeTono(r.encaje).dot }} />
               {r.encaje}% encaje contigo
             </div>
+            {sobreCuanto(r) && (
+              <div style={{ fontSize: '.66rem', color: C.muted, lineHeight: 1.25, marginTop: -1 }}>
+                {sobreCuanto(r)}
+              </div>
+            )}
             {r.encaje_razones?.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                 {r.encaje_razones.slice(0, 2).map((z, i) => {

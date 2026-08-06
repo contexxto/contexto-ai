@@ -328,13 +328,28 @@ def _dims_declaradas(preferencias: dict) -> list[str]:
     return out
 
 
+def peso_de(dimensiones) -> float:
+    """Peso total de un conjunto de dimensiones. Fuente ÚNICA de esa suma — la usan el
+    promedio del encaje y la COBERTURA, para que no puedan divergir."""
+    return sum(_PESOS[d] for d in (dimensiones or []) if d in _PESOS)
+
+
 def calcular_encaje(preferencias: dict, inmueble: dict) -> dict:
     """Encaje 0-100 de `inmueble` con las necesidades DECLARADAS en `preferencias`.
 
-    Devuelve {score, razones, dimensiones_declaradas, dimensiones_evaluadas, duros_incumplidos}:
+    Devuelve {score, cobertura, razones, dimensiones_declaradas, dimensiones_evaluadas,
+    duros_incumplidos}:
       - score: int 0-100, o None si no hay NADA que puntuar honestamente (ninguna
         preferencia declarada, o ninguna con señal disponible en el inmueble). None ≠ 0:
         "no sé" no es "no encaja" — el frontend no debe pintar un "0%" falso.
+      - cobertura: 0.0-1.0 — qué FRACCIÓN DEL PESO declarado se pudo evaluar de verdad.
+        Es el `n` del score: un 100% sobre una sola dimensión de seis declaradas NO es
+        comparable con un 75% sobre las seis. El score solo dice qué tan bien calza lo
+        que sabemos; la cobertura dice cuánto sabemos. Sin ella, el promedio ponderado
+        PREMIA LA FICHA INCOMPLETA (un inmueble sin ruido/caminabilidad/parque puntúa
+        sobre uno bien documentado, porque se le promedia solo lo bueno que sí tiene) —
+        y con eso el sistema le enseña al corredor que hidratar mal conviene.
+        Quién la usa: `app.orden.ordenar_candidatos` (para el ORDEN, no para el número).
       - razones: lista explicable (dato + fuente). Incluye las 'sin_dato' (aporta=False)
         para ser honestos sobre lo que no sabemos, sin que afecten el número.
       - duros_incumplidos: las dimensiones de _REQUISITOS_DUROS que el inmueble NO cumple
@@ -342,7 +357,8 @@ def calcular_encaje(preferencias: dict, inmueble: dict) -> dict:
         a _TOPE_REQUISITO_DURO: no es lo que pediste, no puede lucir como un buen encaje.
 
     El promedio es ponderado SOLO sobre las dimensiones con señal (aporta=True): no
-    castigamos ni premiamos lo que el inmueble no reporta.
+    castigamos ni premiamos lo que el inmueble no reporta. El precio de esa honestidad es
+    que el número sube al bajar la evidencia — por eso `cobertura` viaja SIEMPRE con él.
     """
     declaradas = _dims_declaradas(preferencias)
     razones = [_SCORERS[dim](preferencias.get(dim), inmueble or {}) for dim in declaradas]
@@ -351,7 +367,8 @@ def calcular_encaje(preferencias: dict, inmueble: dict) -> dict:
              if r["dimension"] in _REQUISITOS_DUROS and r["s"] <= 0]
 
     if not evaluadas:
-        return {"score": None, "razones": razones, "duros_incumplidos": duros,
+        return {"score": None, "cobertura": 0.0, "razones": razones,
+                "duros_incumplidos": duros,
                 "dimensiones_declaradas": declaradas, "dimensiones_evaluadas": []}
 
     num = sum(r["s"] * _PESOS[r["dimension"]] for r in evaluadas)
@@ -359,8 +376,10 @@ def calcular_encaje(preferencias: dict, inmueble: dict) -> dict:
     score = max(0, min(100, round(100 * num / den)))
     if duros:
         score = min(score, _TOPE_REQUISITO_DURO)
+    peso_declarado = peso_de(declaradas)
     return {
         "score": score,
+        "cobertura": _clamp01(den / peso_declarado) if peso_declarado > 0 else 0.0,
         "razones": razones,
         "duros_incumplidos": duros,
         "dimensiones_declaradas": declaradas,

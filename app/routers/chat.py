@@ -20,6 +20,7 @@ from app.auth import CurrentUser, get_current_user, get_optional_user
 from app.config import settings
 from app.database import AsyncSessionLocal
 from app.encaje import calcular_encaje, delta_encaje, normalizar_tipo
+from app.orden import encaje_ajustado, ordenar_candidatos
 from app.entorno import limpiar_texto_servicios
 from app.entorno_curacion import aplicar_curacion, info_verificacion, parse_servicios
 from app.intencion import analizar_intencion
@@ -269,6 +270,16 @@ def _senales_encaje(row: dict, car: dict) -> dict:
     }
 
 
+def _ajustar_a_entero(enc: dict) -> int | None:
+    """El encaje del motor moderado por su evidencia, ya como entero 0-100 para pintar.
+
+    Es el ÚNICO número de encaje que sale al frontend y al bloque autoritativo, y por lo
+    tanto el único por el que se ordena (app/orden.py). None si no hubo nada que puntuar.
+    """
+    ajustado = encaje_ajustado(enc.get("score"), enc.get("cobertura"))
+    return None if ajustado is None else max(0, min(100, round(ajustado)))
+
+
 def _card_from_row(row: dict, preferencias: dict | None = None) -> dict:
     """Fila de DB → payload de tarjeta. Extrae specs y foto de `caracteristicas`."""
     car = row.get("caracteristicas")
@@ -319,7 +330,26 @@ def _card_from_row(row: dict, preferencias: dict | None = None) -> dict:
     # el motor pudo puntuar honestamente; si no, `encaje=None` y el frontend no pinta badge
     # (nada de un % inventado). Fair Housing: calcular_encaje solo lee necesidades.
     enc = calcular_encaje(preferencias, _senales_encaje(row, car)) if preferencias else None
-    card["encaje"] = enc["score"] if enc else None
+    # UN SOLO NÚMERO: el que se muestra ES el que ordena. El motor puntúa sobre lo que pudo
+    # medir (`score`), así que una ficha incompleta puede dar 100% con dos datos; ese número
+    # crudo NO puede ser el del badge, porque entonces el panel se ordenaría por un valor
+    # distinto del que la persona lee y la lista se vería desordenada (78% antes que 100%).
+    # `encaje_ajustado` modera el crudo por la evidencia que lo respalda — con cobertura
+    # total no lo toca. Así el carrusel SIEMPRE va de mayor a menor por el número visible.
+    # El crudo se conserva en `encaje_medido` (trazabilidad; no se pinta).
+    card["encaje"] = _ajustar_a_entero(enc) if enc else None
+    card["encaje_medido"] = enc["score"] if enc else None
+    # El `n` del encaje, en sus DOS formas, desde el MISMO resultado del motor para que no
+    # puedan divergir:
+    #   · `encaje_cobertura` (fracción de PESO) → la usa el ORDEN (app/orden.py): el peso es
+    #     lo que de verdad mueve el promedio, y el presupuesto pesa 1.5.
+    #   · `encaje_evaluadas` / `encaje_declaradas` (CONTEOS) → los usa lo que se MUESTRA (la
+    #     tarjeta y el bloque autoritativo): las personas cuentan cosas, no ponderaciones.
+    #     "calculado sobre 3 de las 6 cosas que pediste" es una frase que se entiende; "56%
+    #     de cobertura ponderada" no.
+    card["encaje_cobertura"] = enc["cobertura"] if enc else None
+    card["encaje_evaluadas"] = len(enc["dimensiones_evaluadas"]) if enc else None
+    card["encaje_declaradas"] = len(enc["dimensiones_declaradas"]) if enc else None
     # Razones ORDENADAS POR LO QUE MÁS PESA EN LA DECISIÓN, no por el orden interno de las
     # dimensiones: primero lo que rompe un requisito duro ("es una casa, no un departamento"),
     # después el dinero (la línea que el modelo debe copiar tal cual), y luego el resto. Van
@@ -563,19 +593,16 @@ async def construir_panel(messages, *, preferencias: dict | None = None) -> dict
         del_tipo = [i for i in orden if _tipo_de(i) in (pedido, None)]
         orden = del_tipo or orden
     cards = [_card_from_row(by_id[i], preferencias) for i in orden]
-    # ORDENAR POR ENCAJE (bug real detectado en vivo, demo Mazatlán 2026-07-03): antes se
-    # devolvía en el orden crudo de la búsqueda espacial/similitud, NO por qué tan bien
-    # encajaba con lo que el usuario pidió — la peor opción (37% de encaje, fuera de
-    # presupuesto, zona ruidosa) aparecía PRIMERA en el carrusel del mapa, contradiciendo la
-    # curaduría que prometemos ("1-3 mejores opciones primero", nunca listas sin criterio).
-    # Reordena por encaje descendente SOLO si hay algo que ordenar (alguna tarjeta con
-    # encaje real); sin preferencias declaradas, todas son None y el sort es un no-op
-    # (estable) que preserva el orden espacial/similitud original tal cual — no se inventa
-    # un ranking donde no hay necesidad declarada que puntuar. Las tarjetas sin encaje
-    # puntuable (None: falta señal, no "no encaja") degradan al final, nunca desaparecen ni
-    # se muestran como 0% falso.
-    if any(c["encaje"] is not None for c in cards):
-        cards.sort(key=lambda c: c["encaje"] if c["encaje"] is not None else -1, reverse=True)
+    # ORDENAR (bug real detectado en vivo, demo Mazatlán 2026-07-03): antes se devolvía en
+    # el orden crudo de la búsqueda espacial/similitud, NO por qué tan bien encajaba con lo
+    # que el usuario pidió — la peor opción (37% de encaje, fuera de presupuesto, zona
+    # ruidosa) aparecía PRIMERA en el carrusel del mapa, contradiciendo la curaduría que
+    # prometemos ("1-3 mejores opciones primero", nunca listas sin criterio).
+    # El criterio (léxico: requisitos duros → encaje ajustado por cobertura → estable) vive
+    # en app/orden.py, puro y testeable. Sin preferencias declaradas es un no-op que preserva
+    # el orden espacial/similitud tal cual — no se inventa un ranking donde no hay necesidad
+    # declarada que puntuar.
+    cards = ordenar_candidatos(cards)
     # Si el modelo declaró una prioridad distinta (con motivo, vía tool_priorizar_opcion),
     # el PANEL se mueve con él: la promesa es que prosa y tarjetas cuenten lo mismo.
     prioritario, motivo = _priorizado_por_el_modelo(messages)

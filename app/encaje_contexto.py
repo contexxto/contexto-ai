@@ -103,6 +103,28 @@ def _necesidades(preferencias: dict) -> str:
     return " · ".join(partes)
 
 
+def _sobre_cuanto(c: dict) -> list[str]:
+    """SOBRE CUÁNTAS necesidades se calculó ese porcentaje — la evidencia detrás del número.
+
+    Un 100% sobre una necesidad de seis y un 75% sobre las seis se leen igual en pantalla y
+    NO son lo mismo. La tarjeta ya lo dice ("calculado sobre 3 de las 6 cosas que pediste");
+    si el modelo no lo viera, escribiría "encaja perfecto contigo" al lado de una tarjeta que
+    declara medio dato — exactamente la divergencia prosa↔tarjeta que este módulo existe para
+    cerrar. Se calla cuando se midió todo: ahí el número no necesita asterisco.
+    """
+    ev, decl = c.get("encaje_evaluadas"), c.get("encaje_declaradas")
+    # `bool` es subclase de `int` en Python: sin excluirlo, un True se cuela como conteo y
+    # el bloque le dicta al modelo «calculado sobre True de las 6 cosas» (lo cazó el test).
+    def _conteo(v) -> bool:
+        return isinstance(v, int) and not isinstance(v, bool)
+
+    if not _conteo(ev) or not _conteo(decl) or decl <= 0 or ev >= decl:
+        return []
+    return [f"MEDIDO SOBRE {ev} DE {decl} DE SUS NECESIDADES → di «calculado sobre {ev} de "
+            f"las {decl} cosas que pediste»; PROHIBIDO «encaja perfecto/del todo contigo» y "
+            f"afirmar lo que NO se midió (las razones de abajo son todo lo que se sabe)"]
+
+
 def _linea_opcion(c: dict, tope, por_mes: bool) -> str:
     """Una opción del panel: nombre · monto · encaje · veredicto de presupuesto.
 
@@ -114,6 +136,7 @@ def _linea_opcion(c: dict, tope, por_mes: bool) -> str:
     trozos = [_nombre(c), _monto(c.get("precio"), por_mes)]
     enc = c.get("encaje")
     trozos.append(f"{enc}% de encaje" if enc is not None else "sin encaje puntuable")
+    trozos += _sobre_cuanto(c)
     est = estado_presupuesto(tope, c.get("precio")) if tope else None
     if est:
         if est["dentro"]:

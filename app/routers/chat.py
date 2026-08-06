@@ -1451,6 +1451,17 @@ def activo_de_session(session_id: str) -> str | None:
     return None
 
 
+def _uuid_valido(valor: str | None) -> str | None:
+    """Normaliza un activo_id que viene de FUERA (el agente o el cliente). El LLM puede
+    alucinar un id: si no es un UUID, lo descartamos en vez de escribirlo en la fila."""
+    if not valor:
+        return None
+    try:
+        return str(uuid.UUID(str(valor).strip()))
+    except (ValueError, AttributeError, TypeError):
+        return None
+
+
 async def _corredor_de_activo(db, activo_id: str | None) -> tuple[str | None, dict | None]:
     """Email + suscripción push del corredor dueño de un inmueble (para notificarle).
     Resuelve dueño directo (owner_user_id) o dueño de la agencia (owner_agency_id)."""
@@ -1552,24 +1563,39 @@ async def transcript_de_sesion(session_id: str) -> list[dict]:
 async def registrar_handoff(
     session_id: str,
     *,
+    activo_id: str | None = None,
     lead_user_id: str | None = None,
     lead_email: str | None = None,
     quien: str = "Un interesado",
 ) -> dict:
     """Registra el handoff de una sesión y notifica al corredor dueño del inmueble.
     Lógica ÚNICA compartida por el endpoint HTTP (botón del frontend) y por la tool del
-    agente (tool_connect_with_broker) — patrón API-first: el agente cierra sin un botón."""
-    activo_id = activo_de_session(session_id)
+    agente (tool_connect_with_broker) — patrón API-first: el agente cierra sin un botón.
+
+    activo_id explícito: las conversaciones que NO vienen de un QR no llevan el inmueble
+    en el session_id, y sin él el handoff moría en silencio — nadie notificado y el lead
+    invisible en el CRM. Quien conoce el inmueble (el agente que lo acaba de recomendar,
+    o el botón del frontend) lo pasa aquí. El del session_id manda si existe: viene del
+    QR escaneado, que es evidencia más fuerte que la inferencia del agente."""
+    activo_id = activo_de_session(session_id) or _uuid_valido(activo_id)
     async with AsyncSessionLocal() as db:
         await ensure_handoff_tables(db)
         await db.execute(text(
             "INSERT INTO handoff_sesion (session_id, activo_id, estado, lead_user_id, lead_email) "
             "VALUES (:s, :a, 'solicitado', :u, :e) ON CONFLICT (session_id) DO UPDATE "
             "SET actualizado_en = now(), "
+            # El inmueble puede llegar en un turno POSTERIOR ("sí, ese departamento"):
+            # si la fila ya existía sin él, lo enganchamos ahora en vez de perderlo.
+            "    activo_id = COALESCE(handoff_sesion.activo_id, EXCLUDED.activo_id), "
             "    lead_user_id = COALESCE(EXCLUDED.lead_user_id, handoff_sesion.lead_user_id), "
             "    lead_email = COALESCE(EXCLUDED.lead_email, handoff_sesion.lead_email)"),
             {"s": session_id, "a": activo_id, "u": lead_user_id, "e": lead_email})
         await db.commit()
+        # Relee el inmueble EFECTIVO: si la fila ya traía uno, el COALESCE de arriba lo
+        # conservó y hay que notificar a ESE corredor, no al que acabamos de proponer.
+        activo_id = (await db.execute(
+            text("SELECT activo_id::text FROM handoff_sesion WHERE session_id = :s"),
+            {"s": session_id})).scalar() or activo_id
         # WhatsApp del corredor (si lo cargó) → habilita el botón "Continuar por WhatsApp".
         wsp = await _whatsapp_de_activo(db, activo_id)
     # Avisa al corredor: un lead caliente quiere hablar (lo más valioso del embudo).
@@ -1586,16 +1612,21 @@ async def registrar_handoff(
 @limiter.limit("20/minute")
 async def solicitar_handoff(
     request: Request, session_id: str,
+    # Conversación sin QR: el frontend manda el inmueble que el usuario tiene en pantalla.
+    # Opcional — sin él el comportamiento es el de antes.
+    activo_id: str | None = None,
     user: CurrentUser | None = Depends(get_optional_user),
 ) -> dict:
     quien = (user.nombre or user.email) if user else "Un interesado"
     res = await registrar_handoff(
         session_id,
+        activo_id=activo_id,
         lead_user_id=user.user_id if user else None,
         lead_email=user.email if user else None,
         quien=quien,
     )
     return {"ok": True, "estado": res["estado"], "identificado": bool(user),
+            "activo_id": res.get("activo_id"),
             "corredor_whatsapp": res.get("corredor_whatsapp")}
 
 

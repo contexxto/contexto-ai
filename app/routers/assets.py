@@ -700,10 +700,20 @@ async def _leads_de_activo(db: AsyncSession, activo_id: str, direccion: str | No
     handoff_map: dict[str, dict] = {}
     try:
         await ensure_handoff_tables(db)
+        # Dos fuentes, no una: el patrón del session_id (leads que llegaron por QR) Y la
+        # columna activo_id (conversaciones normales, donde el inmueble se enganchó al
+        # pedir corredor). Sin lo segundo, un lead que pidió corredor desde el chat de la
+        # home no aparecía en NINGÚN CRM — se perdía en el pico de intención.
         h_rows = (await db.execute(
-            text("SELECT session_id, estado, lead_email FROM handoff_sesion WHERE session_id LIKE :p"),
-            {"p": f"qr-{activo_id}-%"},
+            text("SELECT session_id, estado, lead_email FROM handoff_sesion "
+                 "WHERE session_id LIKE :p OR activo_id = CAST(:a AS uuid)"),
+            {"p": f"qr-{activo_id}-%", "a": str(activo_id)},
         )).mappings().all()
+        # Los que no vienen del QR no están en thread_ids: añádelos para que se listen.
+        conocidos = set(thread_ids)
+        thread_ids = list(thread_ids) + [
+            r["session_id"] for r in h_rows if r["session_id"] not in conocidos
+        ]
         handoff_map = {r["session_id"]: {"estado": r["estado"], "email": r["lead_email"]} for r in h_rows}
     except Exception:  # noqa: BLE001
         await db.rollback()  # OBLIGATORIO: no dejar la sesión de request abortada (get_db commit → 500)

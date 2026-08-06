@@ -533,7 +533,7 @@ async def tool_analyze_investment(activo_id: str) -> str:
 
 
 @tool
-async def tool_connect_with_broker(config: RunnableConfig) -> str:
+async def tool_connect_with_broker(config: RunnableConfig, activo_id: str | None = None) -> str:
     """
     Connect the interested user with the HUMAN broker who owns the property, IN-CHAT.
 
@@ -543,7 +543,14 @@ async def tool_connect_with_broker(config: RunnableConfig) -> str:
     transfers the conversation (consent + data minimization). The owning broker is
     notified and can reply to the lead inside Contexto.
 
-    Takes NO arguments from you — the session is resolved automatically from context.
+    Args:
+        activo_id: UUID of the property the user is interested in. PASS IT whenever you
+            know which one it is — it is what routes the lead to the broker who owns it.
+            Use the exact id from a previous tool result; NEVER invent one. Omit it only
+            if the user has not settled on a property yet. If the user names the property
+            in a LATER turn ("sí, ese departamento"), call this tool AGAIN with the id:
+            that attaches it to the request you already registered.
+
     Never invent the broker's phone or email; the connection happens through this tool.
     """
     session_id = ((config or {}).get("configurable") or {}).get("thread_id")
@@ -553,16 +560,19 @@ async def tool_connect_with_broker(config: RunnableConfig) -> str:
     # arriba crearía un ciclo. Mismo patrón que tool_analyze_location/_investment.
     from app.routers.chat import registrar_handoff
     try:
-        res = await registrar_handoff(session_id)
+        res = await registrar_handoff(session_id, activo_id=activo_id)
     except Exception as e:  # noqa: BLE001 — un fallo de handoff no debe tumbar el turno
         return json.dumps({"ok": False, "message": f"No pude registrar la conexión ({type(e).__name__})."})
     if not res.get("activo_id"):
-        # Sesión no ligada a un inmueble (no vino por QR): el corredor no se resuelve solo.
+        # Sin inmueble no hay corredor a quien avisar: la solicitud queda registrada pero
+        # NADIE fue notificado. El mensaje es explícito para que el agente no le prometa
+        # al usuario que ya lo están atendiendo — antes lo hacía, y era falso.
         return json.dumps({
-            "ok": True, "estado": "solicitado", "con_inmueble": False,
-            "message": ("Registré la solicitud, pero esta conversación no está ligada a un inmueble "
-                        "específico. Dile al usuario que un corredor lo contactará y pídele el "
-                        "inmueble o la zona de interés para enrutarlo bien."),
+            "ok": True, "estado": "solicitado", "con_inmueble": False, "corredor_avisado": False,
+            "message": ("Registré la solicitud, pero SIN inmueble no hay corredor a quien avisar: "
+                        "todavía NO se ha notificado a nadie. NO le digas al usuario que ya tiene "
+                        "su solicitud un corredor. Pídele cuál de los inmuebles que viste le "
+                        "interesa y vuelve a llamar a esta herramienta con su activo_id."),
         })
     return json.dumps({
         "ok": True, "estado": "solicitado", "con_inmueble": True,

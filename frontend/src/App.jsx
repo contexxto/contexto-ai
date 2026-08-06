@@ -893,6 +893,17 @@ export default function App() {
     subscribeUserPush(true)
   }, [subscribeUserPush])
 
+  // Inmueble candidato de una conversación SIN QR: el primero de las tarjetas del último
+  // mensaje que trajo resultados. Es lo que el usuario tiene delante cuando pide corredor,
+  // y lo que enruta el lead a su dueño. Null si aún no se ha mostrado ninguno.
+  const activoCandidato = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const r = messages[i]?.results
+      if (Array.isArray(r) && r.length && r[0]?.id) return r[0].id
+    }
+    return null
+  }, [messages])
+
   // Handoff en vivo: el lead pide hablar con el corredor (dentro de Contexto).
   // Requiere registro (correo/Google) → identidad + poder avisarle. Si no hay
   // sesión, abrimos el registro y reintentamos el handoff al autenticarse.
@@ -903,7 +914,11 @@ export default function App() {
       return
     }
     try {
-      const { data } = await axios.post(`${API_BASE}/api/v1/chat/${sessionId}/handoff`, {}, { headers: apiHeaders() })
+      // Fuera del flujo de QR el inmueble NO viaja en el session_id: mandamos el candidato
+      // que el usuario tiene en pantalla, o el corredor no se resuelve y el lead se pierde.
+      const { data } = await axios.post(
+        `${API_BASE}/api/v1/chat/${sessionId}/handoff`, {},
+        { params: activoCandidato ? { activo_id: activoCandidato } : undefined, headers: apiHeaders() })
       if (data?.corredor_whatsapp) setCorredorWhatsapp(data.corredor_whatsapp)
       setModoCorredor(true)
       setMessages(prev => [...prev, {
@@ -914,17 +929,19 @@ export default function App() {
       // Suscribe al lead a Web Push para recibir notificación nativa cuando el corredor responda.
       subscribeToPush(sessionId)
     } catch { setError('No se pudo conectar con el corredor en este momento.') }
-  }, [sessionId, session, subscribeToPush])
+  }, [sessionId, session, subscribeToPush, activoCandidato])
 
   // Tras registrarse, continúa el handoff que quedó pendiente.
   useEffect(() => {
     if (session && handoffPendiente) { setHandoffPendiente(false); iniciarHandoff() }
   }, [session, handoffPendiente, iniciarHandoff])
 
-  // Sondeo del handoff (solo en sesiones de QR): trae respuestas del corredor
-  // y, si el corredor ya entró, activa el modo corredor aunque el lead recargue.
+  // Sondeo del handoff: trae respuestas del corredor y, si el corredor ya entró, activa
+  // el modo corredor aunque el lead recargue. Antes solo corría en sesiones de QR — con
+  // el handoff disponible en la conversación normal, ahí el lead nunca habría visto las
+  // respuestas. Ahora corre también cuando el handoff ya está en marcha (modoCorredor).
   useEffect(() => {
-    if (!deepLinkId || anuncioMode) return
+    if ((!deepLinkId && !modoCorredor) || anuncioMode) return
     let vivo = true
     const tick = async () => {
       try {
@@ -1652,7 +1669,11 @@ export default function App() {
       <div style={{
         padding:'14px 0 18px', flexShrink:0,
       }}>
-        {deepLinkId && (
+        {/* Antes esto era solo `deepLinkId`: el botón de corredor existía únicamente en el
+            chat del QR. La conversación normal (la mayoría) se quedaba sin salida al humano
+            en el pico de intención. Ahora también aparece cuando ya hay un inmueble
+            candidato en pantalla — que es lo que enruta el lead a su dueño. */}
+        {(deepLinkId || activoCandidato) && (
           modoCorredor ? (
             <>
               <div style={{ display:'flex', alignItems:'center', gap:8, margin:'0 0 8px', padding:'8px 14px',

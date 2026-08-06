@@ -62,10 +62,30 @@ def test_pin_lleva_lo_del_mapa_no_precio():
     p = ms["pines"][0]
     # `verificado_en` acompaña a `fresco` desde la migración 023: el halo dice QUE se
     # verificó y la fecha dice CUÁNDO — sin ella la insignia no envejece nunca.
-    assert set(p) == {"id", "lat", "lon", "encaje", "fresco", "verificado_en",
-                      "badge", "direccion", "tipo_activo"}
+    assert set(p) == {"id", "lat", "lon", "encaje", "encaje_evaluadas", "encaje_declaradas",
+                      "fresco", "verificado_en", "badge", "direccion", "tipo_activo"}
     assert "precio" not in p  # guardrail del SPEC: el pin NUNCA lleva precio
     assert p["encaje"] == 80 and p["badge"]["emoji"] == "🌳"
+
+
+def test_el_pin_lleva_la_evidencia_del_encaje():
+    # El arco afirma un grado de encaje; sin los conteos el mapa repetiría el número de la
+    # tarjeta SIN su asterisco, y el caption/aria-label no podrían decir sobre cuánto se midió.
+    ms = _map_seed_from_cards([_card("a", -0.18, -78.48, encaje=73,
+                                     encaje_evaluadas=2, encaje_declaradas=5)])
+    p = ms["pines"][0]
+    assert (p["encaje"], p["encaje_evaluadas"], p["encaje_declaradas"]) == (73, 2, 5)
+
+
+def test_sin_preferencias_el_pin_no_inventa_evidencia():
+    # Sin necesidades declaradas no hay encaje ni conteos: el mapa no pinta arco (capa
+    # 'encaje' ausente) y no puede afirmar nada sobre cuánto se midió.
+    ms = _map_seed_from_cards([_card("a", -0.18, -78.48, encaje=None,
+                                     encaje_evaluadas=None, encaje_declaradas=None)])
+    p = ms["pines"][0]
+    assert p["encaje"] is None
+    assert p["encaje_evaluadas"] is None and p["encaje_declaradas"] is None
+    assert "encaje" not in ms["capas"]
 
 
 def test_capas_reflejan_lo_presente():

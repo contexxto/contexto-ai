@@ -659,6 +659,12 @@ def _map_seed_from_cards(cards: list[dict], prev_mode: str | None = None) -> dic
             "lat": c.get("lat"),
             "lon": c.get("lon"),
             "encaje": c.get("encaje"),
+            # La EVIDENCIA del encaje viaja con el pin, igual que `verificado_en` viaja con
+            # el halo: el arco afirma un grado de encaje y el caption lo enuncia, así que
+            # ambos necesitan poder decir sobre cuánto se midió. Sin esto el mapa repite el
+            # número de la tarjeta sin su asterisco.
+            "encaje_evaluadas": c.get("encaje_evaluadas"),
+            "encaje_declaradas": c.get("encaje_declaradas"),
             "fresco": bool(c.get("fresco")),
             # La fecha viaja con el pin: el halo dice QUE se verificó, la fecha dice
             # CUÁNDO. Un halo sin fecha envejece sin avisar.

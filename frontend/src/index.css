@@ -119,11 +119,24 @@ html[data-theme="light"] {
    app. Probado: `overflow: clip` NO lo evita (el viewport se sigue desplazando por
    programa), así que la defensa real es no mover nunca el documento — mover el contenedor.
    Ver el auto-scroll en App.jsx. */
+/* --app-h: la altura del shell. NO es 100dvh a secas.
+   El index.html declara `viewport-fit=cover`, así que la app dibuja DETRÁS de las barras
+   del sistema y `dvh` incluye esa franja. Medido en el Android de Carlos: 100dvh = 806px
+   con solo 750px visibles — 56px que se salían de pantalla (primero empujando el header
+   fuera al desplazarse el documento; luego, ya sin desplazamiento, recortando la barra de
+   escribir). `env(safe-area-inset-bottom)` es exactamente esa franja de la barra de
+   navegación, y es lo que hay que descontar.
+   Se intentó antes por JS (visualViewport.height) y se descartó: se quedaba en 0 si corría
+   antes de que hubiera medida, y confundía un viewport pequeño con el teclado abierto. */
+:root {
+  --app-h: calc(100dvh - env(safe-area-inset-bottom, 0px));
+}
+
 body {
   /* Fondo plano estilo ASI:One — sin grid ni aura (la marca "aura" vive en el contenido) */
   background-color: var(--bg);
   color: var(--text);
-  height: 100dvh;
+  height: var(--app-h, 100dvh);
   overflow: hidden;
   font-family: var(--font-body);
   font-weight: 400;

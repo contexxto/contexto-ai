@@ -1205,7 +1205,7 @@ export default function App() {
     // no tiene chat activo todavía — eso solo pasa al tocar el CTA "Chat").
     if (anuncioMapaOpen) {
       return (
-        <div style={{ height:'100dvh', display:'flex', flexDirection:'column' }}>
+        <div style={{ height:'var(--app-h, 100dvh)', display:'flex', flexDirection:'column' }}>
           <div style={{ padding:'8px 16px' }}>
             <button onClick={() => setAnuncioMapaOpen(false)} style={{
               background:'none', border:'1px solid var(--border)', borderRadius:8,
@@ -1255,7 +1255,7 @@ export default function App() {
   // Visor público de conversación compartida (solo lectura)
   if (shareToken) {
     return (
-      <div style={{ height:'100dvh', maxWidth:820, margin:'0 auto', padding:isMobile ? '0 16px' : '0 24px',
+      <div style={{ height:'var(--app-h, 100dvh)', maxWidth:820, margin:'0 auto', padding:isMobile ? '0 16px' : '0 24px',
                     display:'flex', flexDirection:'column' }}>
         <header style={{ display:'flex', alignItems:'center', gap:10, padding:'16px 0 12px', flexShrink:0 }}>
           <img src={sphereLogo} alt="Contexto AI" width={32} height={32} />
@@ -1347,7 +1347,7 @@ export default function App() {
   // el sidebar de la app (como la home) en vez de un takeover suelto — así estas vistas mantienen
   // el mismo diseño gráfico. La vista va en el área de contenido, con barra superior (toggle + volver).
   const shellWrap = (content) => (
-    <div style={{ display:'flex', height:'100dvh' }}>
+    <div style={{ display:'flex', height:'var(--app-h, 100dvh)' }}>
       {!isMobile && !sidebarCollapsed && (
         <Sidebar
           sessionId={sessionId}
@@ -1394,7 +1394,7 @@ export default function App() {
           </div>
         </>
       )}
-      <div style={{ flex:1, minWidth:0, height:'100dvh', overflow:'hidden', display:'flex', flexDirection:'column' }}>
+      <div style={{ flex:1, minWidth:0, height:'var(--app-h, 100dvh)', overflow:'hidden', display:'flex', flexDirection:'column' }}>
         {/* Barra superior SOLO cuando hace falta el toggle: en desktop colapsado el RAIL ya
             trae el suyo → sin esto quedaban DOS toggles a la vez ("tres columnas" fantasma). */}
         {(isMobile || !sidebarCollapsed) && (
@@ -1445,7 +1445,7 @@ export default function App() {
   }
 
   return (
-    <div style={{ display:'flex', height:'100dvh' }}>
+    <div style={{ display:'flex', height:'var(--app-h, 100dvh)' }}>
       {/* Aviso de versión nueva (auto-update de la PWA): flota sobre todo hasta que el usuario actualiza. */}
       {swUpdate && (
         <div style={{ position:'fixed', left:'50%', top:'calc(env(safe-area-inset-top, 0px) + 64px)',
@@ -1515,9 +1515,9 @@ export default function App() {
         onDragLeave={e => { if (e.currentTarget === e.target) setDragOver(false) }}
         onDrop={handleDrop}
         style={{ flex:1, minWidth:0, position:'relative',
-                 height:'100dvh', overflow:'hidden' }}>
+                 height:'var(--app-h, 100dvh)', overflow:'hidden' }}>
       <div style={{ width:'100%', maxWidth:1280, margin:'0 auto', display:'flex', flexDirection:'column',
-                    height:'100dvh', minHeight:0, padding:isMobile ? '0 14px' : '0 32px' }}>
+                    height:'var(--app-h, 100dvh)', minHeight:0, padding:isMobile ? '0 14px' : '0 32px' }}>
 
       {dragOver && (
         <div style={{

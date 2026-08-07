@@ -49,7 +49,7 @@ export default function AnuncioView({ id, onChat, onBack, onExpandMap }) {
   useEffect(() => { setActiveIdx(0) }, [id])
 
   const root = {
-    position: 'fixed', inset: 0, height: '100dvh', display: 'flex', flexDirection: 'column',
+    position: 'fixed', inset: 0, height: 'var(--app-h, 100dvh)', display: 'flex', flexDirection: 'column',
     background: `radial-gradient(120% 80% at 50% 0%, ${C.panel} 0%, ${C.bg} 60%)`,
     color: C.text, overflow: 'hidden',
     fontFamily: 'Inter, system-ui, sans-serif',

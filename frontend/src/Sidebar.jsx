@@ -364,7 +364,7 @@ export function RailNav({ user, onNew, onPublish, onMap, onReview, onCRM, onUpgr
   const corredor = user?.rol === 'corredor' || user?.rol === 'inmobiliaria'
   return (
     <div style={{
-      width: 56, flexShrink: 0, height: '100dvh', display: 'flex', flexDirection: 'column',
+      width: 56, flexShrink: 0, height: 'var(--app-h, 100dvh)', display: 'flex', flexDirection: 'column',
       alignItems: 'center', gap: 4, padding: '10px 0', background: C.surface,
       borderRight: `1px solid ${C.border}`,
     }}>

@@ -119,15 +119,17 @@ html[data-theme="light"] {
    app. Probado: `overflow: clip` NO lo evita (el viewport se sigue desplazando por
    programa), así que la defensa real es no mover nunca el documento — mover el contenedor.
    Ver el auto-scroll en App.jsx. */
-/* --app-h: la altura del shell. NO es 100dvh a secas.
-   El index.html declara `viewport-fit=cover`, así que la app dibuja DETRÁS de las barras
-   del sistema y `dvh` incluye esa franja. Medido en el Android de Carlos: 100dvh = 806px
-   con solo 750px visibles — 56px que se salían de pantalla (primero empujando el header
-   fuera al desplazarse el documento; luego, ya sin desplazamiento, recortando la barra de
-   escribir). `env(safe-area-inset-bottom)` es exactamente esa franja de la barra de
-   navegación, y es lo que hay que descontar.
-   Se intentó antes por JS (visualViewport.height) y se descartó: se quedaba en 0 si corría
-   antes de que hubiera medida, y confundía un viewport pequeño con el teclado abierto. */
+/* --app-h: la altura del shell, en un solo sitio (la usan App, Sidebar, AnuncioView y
+   QueEs). El index.html declara `viewport-fit=cover`, así que la app dibuja DETRÁS de las
+   barras del sistema: donde el navegador exponga el inset de la barra de navegación, hay
+   que descontarlo o el shell mide de más y recorta la barra de escribir.
+   Ojo con el historial: se sospechó que `100dvh` medía de más en la PWA de Android, y se
+   llegó a fijar esta altura por JS con innerHeight. Medido después en el aparato real:
+   innerHeight, dvh y svh valen todos 750 y los insets son 0 — la causa era otra (un
+   scrollIntoView que desplazaba el documento, ver App.jsx). El JS se retiró por no
+   sostenerse en evidencia y por escribir valores pasajeros malos que hacían saltar el
+   layout. Si algún día aparece un aparato donde estas medidas NO coincidan, la sonda
+   está en el commit 354a2cb. */
 :root {
   --app-h: calc(100dvh - env(safe-area-inset-bottom, 0px));
 }

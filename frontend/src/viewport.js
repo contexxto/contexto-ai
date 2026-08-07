@@ -17,9 +17,21 @@
  */
 export function instalarAlturaVisible() {
   const raiz = document.documentElement
+  let anterior = null      // lectura previa, para exigir confirmación
+  let aplicado = null      // lo último que llegamos a escribir
   const aplicar = () => {
     const alto = Math.round(window.innerHeight)
+    // Un 0 deja el shell sin altura y la app en blanco: sin medida fiable, no tocamos
+    // nada y manda el cálculo del CSS.
     if (!(alto > 0)) return
+    // Dos lecturas seguidas iguales antes de escribir. innerHeight da valores pasajeros
+    // malos (medido: alternaba 812 y 650 en el mismo viewport), y escribirlos encogía el
+    // shell de golpe. En un teléfono eso sería un salto visible al rotar o al abrir el
+    // teclado. Una lectura solitaria no cambia nada; una sostenida, sí.
+    const confirmada = alto === anterior
+    anterior = alto
+    if (!confirmada || alto === aplicado) return
+    aplicado = alto
     raiz.style.setProperty('--app-h', `${alto}px`)
   }
   aplicar()

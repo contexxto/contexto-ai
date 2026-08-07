@@ -7,6 +7,9 @@ import ErrorBoundary from './ErrorBoundary.jsx'
 // Afina --app-h con la altura visible medida. El CSS ya trae un cálculo razonable; esto
 // lo corrige donde el navegador no expone el inset de la barra del sistema. Ver viewport.js.
 import { instalarAlturaVisible } from './viewport.js'
+// TEMPORAL — sonda del recorte de la barra de abajo en la PWA instalada. Se enciende con
+// 5 toques rápidos o /?debug=1; apagada no pinta nada. Quitar al cerrar el bug.
+import DebugViewport from './DebugViewport.jsx'
 
 instalarAlturaVisible()
 
@@ -24,6 +27,7 @@ createRoot(document.getElementById('root')).render(
             onLogin={() => window.location.assign('/?login=1')}
             onBroker={() => window.location.assign('/?corredor=1')} />
         : <App />}
+      <DebugViewport />{/* siempre montado: escucha el gesto y graba la bitácora */}
     </ErrorBoundary>
   </StrictMode>,
 )

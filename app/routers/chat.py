@@ -298,6 +298,7 @@ def _card_from_row(row: dict, preferencias: dict | None = None) -> dict:
         "precio": float(precio) if precio is not None else None,
         "imagen_url": foto,
         "caminabilidad": row.get("caminabilidad"),
+        "caminabilidad_fuente": row.get("caminabilidad_fuente"),
         # Coordenadas para el Mapa Vivo (modo ZONA): los resultados leídos como espacio.
         "lat": float(row["lat"]) if row.get("lat") is not None else None,
         "lon": float(row["lon"]) if row.get("lon") is not None else None,
@@ -371,6 +372,10 @@ async def _fetch_cards_rows(ids: list[str]) -> tuple[list, dict] | None:
             a.tipo_activo,
             a.imagen_url,
             a.walk_score AS caminabilidad,
+            -- Procedencia del walk_score ('osm' = comercios reales | 'heuristico' = estimado
+            -- por zona). Sin ella la tarjeta afirmaba "calculada sobre los comercios reales"
+            -- para TODOS, contradiciendo a la prosa cuando el score era heurístico.
+            a.walk_score_fuente AS caminabilidad_fuente,
             a.score_ruido_predictivo AS ruido,
             a.porcentaje_cobertura_vegetal AS vegetacion,
             a.servicios_cercanos,

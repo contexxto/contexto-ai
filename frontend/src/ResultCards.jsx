@@ -28,6 +28,18 @@ function precioTexto(r) {
 // Tonos del design system (planos, sin glow), alineados con el coloreo por encaje del mapa:
 // fuerte → teal de marca, parcial → ámbar (--warning), bajo → coral. `fg` usa --accent
 // (teal consciente del tema) para leerse en claro y oscuro.
+// Procedencia de la caminabilidad ('osm' = comercios reales | 'heuristico'/ausente =
+// estimación por zona). El pie decía SIEMPRE "calculada sobre los comercios reales",
+// incluso cuando la prosa del agente admitía "estimación por zona, sin contrastar":
+// el mismo número con dos afirmaciones opuestas en la misma pantalla. El texto ahora
+// sale del dato, no de una constante optimista.
+const caminabilidadCopy = (fuente) =>
+  fuente === 'osm'
+    ? { pie: 'Caminabilidad calculada sobre los comercios reales de la zona — no un número de terceros.',
+        tip: 'Caminabilidad calculada sobre los comercios reales de la zona (OSM) — no un número de terceros.' }
+    : { pie: 'Caminabilidad estimada por zona — todavía sin contrastar con los comercios del sector.',
+        tip: 'Caminabilidad estimada por zona: aún no está contrastada con los comercios reales del sector.' }
+
 const encajeTono = (s) =>
   s == null ? null
     : s >= 80 ? { dot: 'var(--teal)', fg: 'var(--accent)' }
@@ -117,7 +129,7 @@ function ResultCard({ r, onOpen, activeId, onActive, seleccionado, onToggleCompa
           <span style={{ position: 'absolute', bottom: 8, left: 8, display: 'inline-flex', alignItems: 'center',
                          gap: 4, padding: '4px 9px', borderRadius: 999, fontSize: '.68rem', fontWeight: 700,
                          background: 'rgba(45,189,182,.92)', color: '#0E0D13' }}
-                title="Caminabilidad calculada sobre los comercios reales de la zona (OSM) — no un número de terceros.">
+                title={caminabilidadCopy(r.caminabilidad_fuente).tip}>
             <Footprints size={12} /> {r.caminabilidad}
           </span>
         )}
@@ -158,6 +170,16 @@ function ResultCard({ r, onOpen, activeId, onActive, seleccionado, onToggleCompa
                           color: encajeTono(r.encaje).fg }}>
               <span style={{ width: 8, height: 8, borderRadius: 999, background: encajeTono(r.encaje).dot }} />
               {r.encaje}% encaje contigo
+              {/* El denominador, o el número miente por omisión: un "100% encaje contigo"
+                  salido de UNA dimensión declarada ("es un departamento") se lee como
+                  coincidencia total. El score es correcto; lo que faltaba era sobre cuánto
+                  se calculó. Va en gris y sin negrita: acompaña al número, no compite. */}
+              {r.encaje_razones?.length > 0 && (
+                <span style={{ fontWeight: 500, fontSize: '.7rem', color: 'var(--text-dim)' }}>
+                  · sobre {r.encaje_razones.length}{' '}
+                  {r.encaje_razones.length === 1 ? 'criterio que diste' : 'criterios que diste'}
+                </span>
+              )}
             </div>
             {r.encaje_razones?.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
@@ -331,9 +353,15 @@ export default function ResultCards({ results, onOpen, activeId, activeOrigin, o
           </>
         )}
       </div>
+      {/* El pie cubre TODA la grilla, así que solo puede afirmar "comercios reales" si lo es
+          para todas las tarjetas visibles. Con una sola estimada, se usa la frase prudente:
+          es preferible quedarse corto en una tarjeta que sobreafirmar en el resto. */}
       <div style={{ fontSize: '.7rem', color: C.muted, marginTop: 2, display: 'flex', alignItems: 'center', gap: 5 }}>
         <Footprints size={12} color={C.teal} />
-        Caminabilidad calculada sobre los comercios reales de la zona — no un número de terceros.
+        {caminabilidadCopy(
+          results.every(r => r.caminabilidad == null || r.caminabilidad_fuente === 'osm')
+            ? 'osm' : 'heuristico'
+        ).pie}
       </div>
     </div>
   )

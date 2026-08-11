@@ -1813,7 +1813,13 @@ export default function App() {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => {
-              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() }
+              // isComposing: en teclados predictivos de móvil (y en IME) Enter confirma
+              // la palabra que se está componiendo. Sin esta guarda, ese Enter enviaba
+              // la pregunta a medias — el usuario perdía el turno y quedaba escrito mal.
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault()
+                sendMessage()
+              }
             }}
             placeholder="Pregúntame lo que sea…"
             disabled={loading}

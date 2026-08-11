@@ -675,106 +675,30 @@ export default function App() {
       ? `${userText}\n\n[Contexto del sistema: la ubicación GPS del usuario es lat=${g.lat}, lon=${g.lon}. REGLA: usa estas coordenadas con tool_analyze_location SOLO si el usuario pregunta por "aquí" / "mi zona" / "donde estoy" SIN nombrar otro lugar. Si el usuario nombra un sector, barrio o dirección específicos (p. ej. "La Carolina", "Cumbayá", una calle), GEOCODIFICA ESE lugar con tool_geocode_address y analiza ESE punto — NO uses estas coordenadas y NUNCA llames al lugar analizado con el nombre que pidió el usuario si no coinciden. Para inmuebles registrados, usa tool_search_nearby_assets.]`
       : userText
 
-    // El turno tarda ~18s de punta a punta. Esperarlo entero deja la pantalla muerta;
-    // por SSE el usuario ve la herramienta arrancar en ~2s y la prosa fluyendo detrás.
-    // Si el stream falla ANTES de escribir nada, caemos al POST bloqueante de siempre:
-    // peor latencia, pero jamás una pantalla rota.
-    const msgId = crypto.randomUUID()
-    const hora = () => new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })
-    let escribio = false
-
-    const parcheaMensaje = (id, cambio) => setMessages(prev => prev.map(
-      m => m.id === id ? { ...m, ...cambio } : m))
-
-    // Camino de respaldo: el POST bloqueante de siempre, intacto.
-    const enviarBloqueante = async () => {
+    try {
       const { data } = await axios.post(`${API_BASE}/api/v1/chat/`, {
         message: apiMessage,
         session_id: sessionId,
       }, { headers: apiHeaders() })
-      setMessages(prev => [...prev, {
-        id: msgId, role: 'ai', content: data.reply, time: hora(),
+
+      // Capture tool calls from response (non-streaming path shows count only)
+      const aiMsg = {
+        id: crypto.randomUUID(), role: 'ai', content: data.reply,
+        time: new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }),
         toolCalls: data.tool_calls_made > 0
           ? Array(data.tool_calls_made).fill('tool_called')
           : [],
         results: Array.isArray(data.results) ? data.results : [],
         // Directiva de mapa del turno (SPEC_Mapa_Vivo): el mapa la interpreta. Puede ser null.
         mapSeed: data.map_seed || null,
-      }])
+      }
+      setMessages(prev => [...prev, aiMsg])
       lastAiRef.current = data.reply || ''
-    }
-
-    try {
-      const resp = await fetch(`${API_BASE}/api/v1/chat/?stream=true`, {
-        method: 'POST',
-        headers: { ...apiHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: apiMessage, session_id: sessionId }),
-      })
-      if (!resp.ok || !resp.body) throw new Error(`stream HTTP ${resp.status}`)
-
-      const reader = resp.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      let texto = ''
-      const parchea = (cambio) => parcheaMensaje(msgId, cambio)
-
-      for (;;) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-
-        // SSE: los eventos se separan por línea en blanco. El resto queda en el buffer
-        // porque un chunk de red puede partir un evento por la mitad.
-        const partes = buffer.split('\n\n')
-        buffer = partes.pop() ?? ''
-
-        for (const parte of partes) {
-          const linea = parte.split('\n').find(l => l.startsWith('data: '))
-          if (!linea) continue
-          let ev
-          try { ev = JSON.parse(linea.slice(6)) } catch { continue }
-
-          if (ev.token) {
-            texto += ev.token
-            if (!escribio) {
-              escribio = true
-              setLoading(false)   // ya hay algo que mirar: fuera el spinner
-              setMessages(prev => [...prev, {
-                id: msgId, role: 'ai', content: texto, time: hora(),
-                toolCalls: [], results: [], mapSeed: null, streaming: true,
-              }])
-            } else {
-              parchea({ content: texto })
-            }
-          } else if (ev.panel) {
-            parchea({
-              results: Array.isArray(ev.panel.results) ? ev.panel.results : [],
-              // Directiva de mapa del turno (SPEC_Mapa_Vivo). Puede ser null.
-              mapSeed: ev.panel.map_seed || null,
-            })
-          }
-        }
-      }
-
-      if (!escribio) throw new Error('stream sin tokens')
-      parchea({ streaming: false })
-      lastAiRef.current = texto
-    } catch {
-      if (escribio) {
-        // Se cortó a mitad de la escritura: conservamos lo escrito y avisamos.
-        parcheaMensaje(msgId, { streaming: false })
-        setError('La respuesta se cortó a medias. Vuelve a preguntar 🔄')
-      } else {
-        // El stream no llegó a escribir nada: reintento por el POST bloqueante.
-        try {
-          await enviarBloqueante()
-        } catch (err) {
-          setError(
-            err.response?.data?.detail
-            ?? 'No pudimos conectar en este momento. Reintenta en unos segundos 🔄'
-          )
-        }
-      }
+    } catch (err) {
+      setError(
+        err.response?.data?.detail
+        ?? 'No pudimos conectar en este momento. Reintenta en unos segundos 🔄'
+      )
     } finally {
       setLoading(false)
       setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 100)

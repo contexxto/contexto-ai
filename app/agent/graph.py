@@ -4,6 +4,7 @@ Topology: user message → llm_node (reason + tool calls) → tool_node → llm_
 """
 import os
 import ssl
+from datetime import datetime, timedelta, timezone
 
 import anthropic
 import httpx
@@ -613,6 +614,29 @@ COMPORTAMIENTO OPERATIVO:
       (zona con pocos datos mapeados), sin inventar.
 """)
 
+# Ecuador no tiene horario de verano: el offset fijo -05:00 es exacto y no depende
+# de que el host tenga la base tzdata (en Windows no viene).
+_TZ_ECUADOR = timezone(timedelta(hours=-5))
+
+
+def _bloque_fecha() -> str:
+    """Ancla temporal del system prompt.
+
+    Sin esto el modelo calcula las antigüedades contra su propio presente asumido
+    (el corte de entrenamiento), no contra hoy: una ficha con impermeabilización de
+    ago/2024 salía descrita como "hace ~6 meses". Afecta a todo lo que dependa de
+    la edad de un dato — el umbral de 8 años de impermeabilización, el cableado,
+    la cisterna — así que se inyecta en cada llamada, no al importar el módulo.
+    """
+    hoy = datetime.now(_TZ_ECUADOR)
+    return (
+        f"FECHA DE HOY: {hoy:%Y-%m-%d} (hora de Ecuador).\n"
+        "Toda antigüedad que menciones ('hace X meses', 'hace X años', 'reciente') se calcula "
+        "contra ESTA fecha y ninguna otra. Antes de escribir un 'hace X', haz la resta contra "
+        "ella. Si no te da con certeza, escribe solo la fecha absoluta (p. ej. 'ago/2024') y "
+        "omite el 'hace X' — una fecha sola nunca miente, una antigüedad mal calculada sí."
+    )
+
 
 def _build_graph() -> StateGraph:
     # 1. Crear el cliente Anthropic con SSL explícito
@@ -641,8 +665,11 @@ def _build_graph() -> StateGraph:
         # instrucción del sistema, no algo que el usuario dijo, y así no contamina ni el
         # historial compartido ni el insumo del extractor de preferencias.
         contexto = (state.get("encaje_contexto") or "").strip()
-        system = (SystemMessage(content=f"{SYSTEM_PROMPT.content}\n\n{contexto}")
-                  if contexto else SYSTEM_PROMPT)
+        system = SystemMessage(
+            content="\n\n".join(
+                p for p in (SYSTEM_PROMPT.content, _bloque_fecha(), contexto) if p
+            )
+        )
         messages = [system] + state["messages"]
         response = await llm.ainvoke(messages)
         # Guardrail Fair Housing (observabilidad): flaguea si la salida emite un

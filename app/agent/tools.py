@@ -6,6 +6,7 @@ Both tools connect directly to the async engine to remain framework-agnostic
 import asyncio
 import json
 import re
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -20,6 +21,96 @@ from app.database import AsyncSessionLocal
 from app.entorno import limpiar_texto_servicios
 from app.entorno_curacion import aplicar_curacion
 from app.estilo_vida import evaluar_concepto_estilo_vida
+
+
+# Ecuador no tiene horario de verano: offset fijo, sin depender de tzdata.
+_TZ_ECUADOR = timezone(timedelta(hours=-5))
+
+_MESES_ABREV = ("ene", "feb", "mar", "abr", "may", "jun",
+                "jul", "ago", "sep", "oct", "nov", "dic")
+
+# Campos de la ficha cuya antigüedad el agente narra en prosa.
+_CAMPOS_FECHA_FICHA = (
+    "ultimo_mantenimiento_cisterna",
+    "ultima_impermeabilizacion_techo",
+    "ultima_pintura_fachada",
+    "ultimo_cambio_cableado_electrico",
+)
+
+
+def _a_fecha(valor: Any) -> date | None:
+    """Normaliza a `date` lo que venga de la fila (date, datetime o texto ISO)."""
+    if isinstance(valor, datetime):
+        return valor.date()
+    if isinstance(valor, date):
+        return valor
+    if isinstance(valor, str) and valor.strip():
+        try:
+            return datetime.fromisoformat(valor.strip()[:19]).date()
+        except ValueError:
+            return None
+    return None
+
+
+def _antiguedad(valor: Any) -> dict[str, Any] | None:
+    """Antigüedad ya resuelta, lista para que el agente la copie.
+
+    El modelo no debe restar fechas: con solo el ancla temporal en el prompt seguía
+    fallando una de cada cuatro (ene/2025 salía como "hace ~7 meses" en vez de 19).
+    Un prompt orienta una resta; no la garantiza. Acá se calcula y el agente narra.
+    """
+    f = _a_fecha(valor)
+    if f is None:
+        return None
+
+    hoy = datetime.now(_TZ_ECUADOR).date()
+    meses = (hoy.year - f.year) * 12 + (hoy.month - f.month)
+    if hoy.day < f.day:
+        meses -= 1
+    meses = max(meses, 0)
+
+    años, resto = divmod(meses, 12)
+    if años and resto:
+        hace = f"{años} año{'s' if años > 1 else ''} y {resto} mes{'es' if resto > 1 else ''}"
+    elif años:
+        hace = f"{años} año{'s' if años > 1 else ''}"
+    elif meses:
+        hace = f"{meses} mes{'es' if meses > 1 else ''}"
+    else:
+        hace = "menos de un mes"
+
+    return {
+        "fecha": f"{_MESES_ABREV[f.month - 1]}/{f.year}",
+        "meses": meses,
+        "hace": hace,
+    }
+
+
+def _con_antiguedades(row: dict[str, Any]) -> dict[str, Any]:
+    """Añade a la fila la antigüedad ya calculada de cada fecha de la ficha."""
+    calculadas = {
+        campo: dato
+        for campo in _CAMPOS_FECHA_FICHA
+        if (dato := _antiguedad(row.get(campo))) is not None
+    }
+    if año := row.get("año_construccion"):
+        try:
+            edad = max(datetime.now(_TZ_ECUADOR).year - int(año), 0)
+            calculadas["año_construccion"] = {
+                "fecha": str(año),
+                "meses": edad * 12,
+                "hace": f"{edad} año{'s' if edad != 1 else ''}",
+            }
+        except (TypeError, ValueError):
+            pass
+
+    if calculadas:
+        row["antiguedad_calculada"] = calculadas
+        row["antiguedad_calculada_nota"] = (
+            "Antigüedades ya calculadas contra la fecha de hoy. Usa el campo 'hace' "
+            "TAL CUAL — no vuelvas a restar fechas ni lo redondees."
+        )
+    return row
 
 
 async def _fetch_rows(query: str, params: dict) -> list[dict[str, Any]]:
@@ -298,7 +389,7 @@ async def tool_fetch_asset_lifecycle_specs(activo_id: str) -> str:
     if curaciones:
         row["servicios_cercanos"] = aplicar_curacion(row.get("servicios_cercanos"), curaciones)
 
-    return json.dumps({"specs": _limpiar_servicios_en(row)}, default=str)
+    return json.dumps({"specs": _con_antiguedades(_limpiar_servicios_en(row))}, default=str)
 
 
 async def _geocode_google(address: str, key: str) -> dict | None:

@@ -631,10 +631,11 @@ def _bloque_fecha() -> str:
     hoy = datetime.now(_TZ_ECUADOR)
     return (
         f"FECHA DE HOY: {hoy:%Y-%m-%d} (hora de Ecuador).\n"
-        "Toda antigüedad que menciones ('hace X meses', 'hace X años', 'reciente') se calcula "
-        "contra ESTA fecha y ninguna otra. Antes de escribir un 'hace X', haz la resta contra "
-        "ella. Si no te da con certeza, escribe solo la fecha absoluta (p. ej. 'ago/2024') y "
-        "omite el 'hace X' — una fecha sola nunca miente, una antigüedad mal calculada sí."
+        "Si la ficha del inmueble trae 'antiguedad_calculada', ESA es la fuente: copia su campo "
+        "'hace' tal cual y no vuelvas a restar nada. Solo cuando no venga calculada, calcula "
+        "contra la fecha de hoy; y si no te da con certeza, escribe solo la fecha absoluta "
+        "(p. ej. 'ago/2024') y omite el 'hace X' — una fecha sola nunca miente, una antigüedad "
+        "mal calculada sí."
     )
 
 

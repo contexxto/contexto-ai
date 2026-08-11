@@ -651,6 +651,11 @@ def _build_graph() -> StateGraph:
         model=settings.llm_model,
         temperature=0.2,
         max_tokens=2048,
+        # Sin esto, `_agenerate` llama a messages.create() sin stream y astream_events
+        # nunca emite `on_chat_model_stream`: el SSE del chat corría 12-23s y terminaba
+        # sin un solo token. Con el flag, ainvoke pasa por _astream y agrega — mismo
+        # resultado final, pero el turno sí emite tokens mientras se escribe.
+        streaming=True,
     )
 
     # 3. Inyectar el cliente SSL en el cached_property ANTES de bind_tools.

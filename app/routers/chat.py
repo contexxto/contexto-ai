@@ -777,6 +777,29 @@ def _ultima_respuesta(messages) -> str:
     )
 
 
+def _texto_del_chunk(chunk) -> str:
+    """Texto de un chunk del modelo, venga como string o como bloques tipados.
+
+    Con herramientas atadas, Anthropic NO manda `content` como str: manda una lista
+    de bloques, p. ej. `[{'text': 'S', 'type': 'text', 'index': 0}]`. El filtro
+    original exigía `isinstance(content, str)` y por eso descartaba en silencio el
+    100% de los tokens: el SSE emitía tool_call y done, nunca prosa.
+
+    Solo se extraen los bloques de tipo `text`; los `input_json_delta` de una llamada
+    a herramienta jamás deben acabar en la burbuja del usuario.
+    """
+    contenido = getattr(chunk, "content", None)
+    if isinstance(contenido, str):
+        return contenido
+    if isinstance(contenido, list):
+        return "".join(
+            b.get("text", "")
+            for b in contenido
+            if isinstance(b, dict) and b.get("type") == "text"
+        )
+    return ""
+
+
 async def _stream_agent(message: str, session_id: str) -> AsyncIterator[str]:
     """Streams agent token chunks como Server-Sent Events, con memoria de sesión.
 
@@ -809,10 +832,9 @@ async def _stream_agent(message: str, session_id: str) -> AsyncIterator[str]:
         kind = event.get("event")
 
         if kind == "on_chat_model_stream":
-            chunk = event["data"].get("chunk")
-            if chunk and hasattr(chunk, "content") and isinstance(chunk.content, str):
-                if chunk.content:
-                    yield f"data: {json.dumps({'token': chunk.content, 'session_id': session_id})}\n\n"
+            texto = _texto_del_chunk(event["data"].get("chunk"))
+            if texto:
+                yield f"data: {json.dumps({'token': texto, 'session_id': session_id})}\n\n"
 
         elif kind == "on_tool_start":
             tool_name = event.get("name", "")

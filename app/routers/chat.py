@@ -778,8 +778,21 @@ def _ultima_respuesta(messages) -> str:
 
 
 async def _stream_agent(message: str, session_id: str) -> AsyncIterator[str]:
-    """Streams agent token chunks como Server-Sent Events, con memoria de sesión."""
+    """Streams agent token chunks como Server-Sent Events, con memoria de sesión.
+
+    Emite, en orden: `tool_call` (al arrancar cada herramienta), `token` (la prosa),
+    `panel` (tarjetas + map_seed, lo mismo que devuelve el camino no-stream) y `done`.
+    El `panel` es lo que faltaba para que el front pudiera abandonar el POST bloqueante:
+    sin él, streamear dejaba al usuario con prosa y sin ficha.
+    """
     config = _langgraph_config(session_id)
+    # Modo del lente del turno ANTERIOR: se lee ANTES de arrancar, porque el input
+    # reinicia spatial_context (mismo motivo que en el camino no-stream).
+    try:
+        _prev = await agent_graph.compiled_graph.aget_state(config)
+        prev_mode = ((_prev.values or {}).get("spatial_context") or {}).get("focus_mode")
+    except Exception:  # noqa: BLE001 — sin estado previo → sin continuidad, no error
+        prev_mode = None
     input_state: AgentState = {
         "messages": [HumanMessage(content=message)],
         "spatial_context": {},
@@ -807,17 +820,46 @@ async def _stream_agent(message: str, session_id: str) -> AsyncIterator[str]:
 
     # Instrumentar la intención (Fase 0): tras el stream, lee el estado final del hilo y
     # persiste. Best-effort — jamás rompe el stream (cubre el flujo del QR-lead si usa SSE).
+    resultados: list = []
+    map_seed = None
     try:
         _st = await agent_graph.compiled_graph.aget_state(config)
         _valores = (_st.values or {}) if (_st and _st.values) else {}
         _msgs = _valores.get("messages", [])
         asyncio.create_task(registrar_intencion(session_id, _msgs))
+
+        # Mismas tarjetas que el nodo `encaje` ya armó (las que describe la prosa que
+        # acabamos de emitir); solo se reconstruyen si el nodo no corrió o degradó.
+        resultados = _valores.get("cards")
+        if not isinstance(resultados, list) or not resultados:
+            resultados = await build_result_cards(_msgs)
+        map_seed = _map_seed_from_cards(resultados, prev_mode)
+
         # El stream es el camino que usa la gente de verdad: si la auditoría de prosa solo
         # cubriera el no-stream, mediríamos el turno que casi nadie ejecuta.
-        _auditar_prosa(session_id, _ultima_respuesta(_msgs), _valores)
+        _auditar_prosa(session_id, _ultima_respuesta(_msgs),
+                       {**_valores, "cards": resultados})
+
+        if map_seed:
+            try:
+                await agent_graph.compiled_graph.aupdate_state(
+                    config,
+                    {"spatial_context": {"focus_mode": map_seed["modo"],
+                                         "bbox": map_seed["foco"]["bbox"],
+                                         "capas": map_seed["capas"]}},
+                )
+            except Exception:  # noqa: BLE001 — persistir el foco es un extra
+                pass
     except Exception:  # noqa: BLE001 — instrumentar jamás rompe el stream
         pass
 
+    # El panel va ANTES del done: el front lo aplica al mensaje que ya terminó de escribirse.
+    yield (
+        "data: "
+        + json.dumps({"panel": {"results": resultados or [], "map_seed": map_seed}},
+                     default=str)
+        + "\n\n"
+    )
     yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
 
 

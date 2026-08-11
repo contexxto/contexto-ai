@@ -16,7 +16,7 @@ Reglas: cada pieza pasa el criterio de calidad §6 y los NEVER §8 de
 | 5 | 8 de cada 10 leads se pierden por seguimiento, no por talento | Post página | borrador 2026-07-27 |
 | 6 | La conversación dejó de ser gratis | Post página | borrador 2026-07-30 |
 | 7 | Los geo-datos se volvieron gratis; la verdad local, no | Post página | borrador 2026-07-30 |
-| 8 | El orden de un marketplace no se vende | Post página | pendiente |
+| 8 | El orden de un marketplace no se vende | Post página | borrador 2026-08-06 |
 | 9 | El comprador informal no tiene copiloto | Artículo largo | borrador 2026-07-21 |
 | 10 | Construyendo la máquina de verificación — capítulo 1 | Video YouTube | pendiente |
 | 11 | Medimos la ciudad con un círculo (corrección publicada) | Artículo largo | borrador 2026-08-04 |
@@ -175,3 +175,22 @@ La pieza fundacional de vocabulario — el "punto de luz" de la marca hecho text
   (ed.2): *"Medimos la ciudad con un círculo. Nos equivocamos hasta en un 471%."* — artículo largo,
   cuota de agosto. El ángulo no son los números sino **publicar la corrección del propio método**
   (honestidad de asteriscos demostrada, no enunciada). Añadida como #11 al backlog.
+- 2026-08-06 — Séptima corrida del despacho automatizado: sin novedad de cosecha desde last_run
+  (2026-08-03, ni Senales-Brain ni Corredor-Brain hidrataron de nuevo antes de este corte) →
+  pieza 8 pasada a borrador (backlog, siguiente pendiente en orden; única entregada esta vez —
+  #10 queda fuera por falta de formato aplicable en Nate-Herk-Brain, ver sugerencia en
+  `DESPACHO_2026-08-06.md`). Con esto el backlog v0 queda **agotado salvo #10** (video); las
+  próximas corridas dependen casi enteramente de cosecha fresca.
+- 2026-08-11 — Octava corrida del despacho automatizado: **2 piezas nuevas fuera de backlog**,
+  ninguna del backlog cubierta (backlog sigue agotado salvo #10). Ambas de prioridad 1º
+  (tesis reforzada con implicación directa Contexto), desde la ingesta manual fuera de corrida
+  de Senales-Brain del 2026-08-06 (primeras fuentes PRIMARIAS del corpus): (1)
+  [[Los geo-datos base se commoditizan, el foso es la frescura local]] tensionada por primera
+  vez en su mitad "frescura" (per Miriam Daniel, Google, blog oficial) y reformulada como "dato
+  con responsable" (proveniencia); (2) [[El copiloto fiduciario del comprador informal no existe
+  en LATAM]] reforzada con el argumento de incentivo económico del portal (per Edmund Keith,
+  OnlineMarketplaces.com) — tratada íntegro bajo el candado NEVER 9
+  (ver `contenido/despachos/DESPACHO_2026-08-11.md`). Pendiente: confirmar si Corredor-Brain
+  corrió su hidratación W7 (esperada lunes 2026-08-10, no aparecía en su `log.md` al cierre de
+  esta corrida) — candidata de prioridad 2º si trae táctica 🟢 nueva. #10 (video) sigue sin
+  tocar.

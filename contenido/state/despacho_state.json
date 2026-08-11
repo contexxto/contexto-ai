@@ -1,5 +1,5 @@
 {
-  "last_run": "2026-08-03",
+  "last_run": "2026-08-11",
   "despachos": [
     {
       "fecha": "2026-07-14",
@@ -73,6 +73,29 @@
         "Senales-Brain tesis: El modelo es commodity, el foso es el andamiaje agentico y el dato propio (reforzada con Yardi/RealPage)",
         "Senales-Brain source: Yardi abre su registro a Claude, RealPage compra Cherre para poseer el suyo",
         "Corredor-Brain tactic: Seguimiento a contactos huérfanos (orphan) — per Gary Keller"
+      ]
+    },
+    {
+      "fecha": "2026-08-06",
+      "piezas": [],
+      "fuentes": [
+        "Senales-Brain hidratación completada: 4 señales nuevas ingeridas (Gam Dias/Whaber, Booking/Whaber, CertiPro/Contexto, AMPI/Contexto) + tesis reforzada copiloto",
+        "CertiPro: falla criterio §6.3, §6.6 (opinión sin sustancia, no contenido guardarble) → radar interno",
+        "AMPI México: falla criterio §6.3, §6.6 (anuncio institucional sin métricas, no educativo) → radar interno",
+        "Backlog #8 cubierto en corrida anterior (2026-08-06 primera pasada)"
+      ]
+    },
+    {
+      "fecha": "2026-08-11",
+      "piezas": [
+        "El foso ya no es el dato más fresco; es el dato con responsable",
+        "Por qué el portal no puede resolver el lado del comprador"
+      ],
+      "fuentes": [
+        "Senales-Brain ingesta manual 2026-08-06: Ask Maps ejecuta el comercio agéntico y crowdsourcea la frescura (per Miriam Daniel, VP & GM Google Maps, blog oficial — primera fuente primaria de tesis geo-datos)",
+        "Senales-Brain tesis: Los geo-datos base se commoditizan, el foso es la frescura local (tensionada y reformulada 2026-08-06: foso = proveniencia, no solo frescura)",
+        "Senales-Brain source: Los portales inmobiliarios deben cambiar de lado al comprador para competir con la IA (per Edmund Keith, OnlineMarketplaces.com, ingested 2026-08-06)",
+        "Senales-Brain tesis: El copiloto fiduciario del comprador informal no existe en LATAM (reforzada con argumento de incentivo económico 2026-08-06)"
       ]
     }
   ]

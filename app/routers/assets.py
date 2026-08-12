@@ -1230,17 +1230,16 @@ async def responder_lead(
     # desde la propia notificación si abre, como en cualquier app de mensajería.
     if len(vista) > 120:
         vista = vista[:120] + "…"
+    # SIN correo: ya quedó en la campana del interesado, y el push es el aviso inmediato.
+    # Si no lo lee en unas horas, el rescate manda UN correo (app/rescate_avisos.py).
     disparar(send_notification(
-        email=(h_row or {}).get("lead_email"),
+        email=None,
         push_subscription=(h_row or {}).get("push_subscription"),
         title=f"💬 {corredor_nombre} te respondió",
         body=vista,
         url=destino,
-        email_subject=f"💬 {corredor_nombre} te respondió en Contexto AI",
         # Un aviso por conversación: los mensajes del mismo hilo se reemplazan.
         tag=f"conv-{session_id}",
-        # Y como mucho un correo cada 30 min por hilo: seis turnos ya no son seis correos.
-        email_clave=f"lead:{session_id}",
     ))
 
     return {"ok": True}

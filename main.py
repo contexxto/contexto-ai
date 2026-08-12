@@ -24,10 +24,15 @@ async def lifespan(app: FastAPI):
     # Cron de reenganche: tarea de fondo DENTRO de la app (no un servicio aparte).
     # Barre leads dormidos y avisa al corredor por push+email. Ver app/reenganche_cron.
     from app.reenganche_cron import iniciar_cron, detener_cron
+    from app.rescate_avisos import iniciar_rescate, detener_rescate
     iniciar_cron()
+    # Rescate: el ÚNICO correo que genera una conversación, y solo si el aviso lleva
+    # horas sin leer en la campana. Ver app/rescate_avisos.py.
+    iniciar_rescate()
     yield
     print("Contexto AI API apagando...")
     await detener_cron()
+    await detener_rescate()
     await shutdown_checkpointer()
 
 

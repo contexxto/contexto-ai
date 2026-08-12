@@ -1323,6 +1323,9 @@ _HANDOFF_DDL = [
     "creada_en timestamptz NOT NULL DEFAULT now(), leida_en timestamptz)",
     "CREATE INDEX IF NOT EXISTS ix_notif_user ON notificacion (destinatario_user_id, creada_en DESC)",
     "CREATE INDEX IF NOT EXISTS ix_notif_sesion ON notificacion (destinatario_session, creada_en DESC)",
+    # Marca del correo de rescate (ver app/rescate_avisos.py): sin ella, cada barrido
+    # reenviaria el mismo aviso sin leer una y otra vez.
+    "ALTER TABLE notificacion ADD COLUMN IF NOT EXISTS rescate_en timestamptz",
 ]
 _handoff_ready = False
 
@@ -1669,12 +1672,13 @@ def _notificar_corredor(activo_id: str | None, title: str, body: str,
         if not email and not subs:
             return
         from app.notifications import send_notification
+        # SIN correo: la conversacion vive en la campana (ya registrada arriba) y en el
+        # push. Si el aviso sigue sin leer en unas horas, el rescate manda UN correo
+        # (app/rescate_avisos.py). El correo queda para novedades y reenganche.
         await send_notification(
-            email=email, push_subscription=subs,
+            email=None, push_subscription=subs,
             title=title, body=body, url="/?crm=1",
-            email_subject=title,
             tag=f"lead-{session_id}" if session_id else None,
-            email_clave=f"corredor:{email}:{session_id}" if (email and session_id) else None,
         )
 
     from app.notifications import disparar

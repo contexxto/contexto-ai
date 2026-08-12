@@ -23,6 +23,7 @@ import ReviewStation from './ReviewStation'
 import CRM from './CRM'
 import ErrorBoundary from './ErrorBoundary'
 import Sidebar, { RailNav } from './Sidebar'
+import Campana from './Campana'
 import sphereLogo from './assets/sphere.svg'
 
 // Carga diferida ROBUSTA ante deploys. Si el chunk falla al descargarse (típico cuando un
@@ -1691,6 +1692,18 @@ export default function App() {
           <div style={{ fontWeight:800, fontSize:isMobile ? '1rem' : '1.05rem', letterSpacing:'-.3px' }}>
             Contexto
           </div>
+        </div>
+        {/* Campana a la derecha, espejo del toggle de la izquierda. Es el canal de avisos
+            que no depende de permisos del navegador ni de que nadie revise su correo. */}
+        <div style={{ position:'absolute', right:0, top:'50%', transform:'translateY(-50%)' }}>
+          <Campana
+            sessionId={sessionId}
+            onAbrir={(n) => {
+              // El aviso trae la conversación de origen: se retoma esa, no otra.
+              if (n.session_id && n.session_id !== sessionId) switchSession(n.session_id)
+              setView('chat')
+            }}
+          />
         </div>
       </header>
 

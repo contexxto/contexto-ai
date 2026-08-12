@@ -1200,21 +1200,34 @@ async def responder_lead(
     except Exception:  # noqa: BLE001
         addr = None
 
-    await db.commit()
-
-    # Notifica al lead (fire-and-forget: no bloquea la respuesta al corredor).
-    # La URL tiene que devolverlo a ESTA conversación. /a/{activo_id} solo sirve si la
-    # sesión nació del QR (ahí el id se reconstruye desde la url); en una conversación
-    # normal creaba una sesión DISTINTA y el interesado aterrizaba en un chat vacío, sin
-    # el mensaje que venía a leer. /?s={session_id} la retoma tal cual.
-    from app.notifications import send_notification, disparar
-    corredor_nombre = getattr(user, "nombre", None) or "El corredor"
-    inmueble_txt = f" sobre {addr}" if addr else ""
+    # Destino del aviso: tiene que devolver al interesado a ESTA conversación. /a/{id}
+    # solo sirve si la sesión nació del QR (ahí el session_id se reconstruye desde la
+    # url); en una conversación normal creaba una sesión DISTINTA y aterrizaba en un chat
+    # vacío. /?s={session_id} la retoma tal cual. Lo usan la campana Y el push/correo.
     destino = (f"/a/{activo_id}" if session_id.startswith(f"qr-{activo_id}-")
                else f"/?s={session_id}")
+    corredor_nombre = getattr(user, "nombre", None) or "El corredor"
+    vista = payload.texto.strip()
+
+    # Campana del interesado: se registra SIEMPRE, aunque el push o el correo no salgan
+    # (permiso denegado, remitente mal configurado, freno anti-spam). Es el único canal
+    # que no depende de nada externo.
+    from app.routers.chat import registrar_notificacion
+    lead_uid = (await db.execute(text(
+        "SELECT lead_user_id::text FROM handoff_sesion WHERE session_id = :s"),
+        {"s": session_id})).scalar()
+    await registrar_notificacion(
+        db, titulo=f"{corredor_nombre} te respondió", cuerpo=vista[:160], url=destino,
+        session_id=session_id, user_id=lead_uid,
+        destinatario_session=None if lead_uid else session_id)
+
+    await db.commit()
+
+    # Y ahora los canales de fuera (fire-and-forget: no bloquean la respuesta al corredor).
+    from app.notifications import send_notification, disparar
+    inmueble_txt = f" sobre {addr}" if addr else ""
     # El cuerpo lleva el mensaje, no un "tienes algo nuevo": así el interesado decide
     # desde la propia notificación si abre, como en cualquier app de mensajería.
-    vista = payload.texto.strip()
     if len(vista) > 120:
         vista = vista[:120] + "…"
     disparar(send_notification(

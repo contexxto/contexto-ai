@@ -3,6 +3,7 @@ import axios from 'axios'
 import { Users, RefreshCw, Flame, MapPin, Sparkles, BarChart3, Compass,
          TrendingUp, Clock, AlertTriangle, ChevronRight } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
+import Campana from './Campana'
 import { LeadChat } from './LeadsPanel'
 import CRMChat from './CRMChat'
 import AnalisisPanel from './AnalisisPanel'
@@ -380,6 +381,15 @@ export default function CRM() {
             </button>
           </>
         )}
+        {/* Campana del corredor: sus avisos ligados a la cuenta, no a una conversación.
+            Al tocar uno, abre al interesado que lo originó. */}
+        <Campana
+          onAbrir={(n) => {
+            const l = (d?.leads || []).find((x) => x.session_id === n.session_id)
+            if (l) { setSel(l); setAsistente(null); setAnalisis(false) }
+            else cargar()   // aún no está en la lista cargada → refresca y que aparezca
+          }}
+        />
         <button onClick={() => cargar()} title="Actualizar"
           style={{ marginLeft: d && d.total > 0 ? 0 : 'auto', background: 'none', border: 'none', color: C.muted, cursor: 'pointer',
                    transform: loading ? 'rotate(180deg)' : 'none', transition: 'transform .4s' }}>

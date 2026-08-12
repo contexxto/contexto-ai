@@ -1312,6 +1312,17 @@ _HANDOFF_DDL = [
     "SELECT user_id, subscription->>'endpoint', subscription FROM push_usuario "
     "WHERE subscription IS NOT NULL AND subscription->>'endpoint' IS NOT NULL "
     "ON CONFLICT (user_id, endpoint) DO NOTHING",
+    # Campana de notificaciones DENTRO de la app. El push y el correo son canales de
+    # fuera: dependen de que el usuario conceda permisos o revise su bandeja. La campana
+    # no depende de nada — es la que garantiza que un aviso no se pierda.
+    # destinatario_user_id: corredores y leads con cuenta. destinatario_session: leads
+    # anónimos, que no tienen a quién ligarse salvo su propia conversación.
+    "CREATE TABLE IF NOT EXISTS notificacion ("
+    "id bigserial PRIMARY KEY, destinatario_user_id uuid, destinatario_session text, "
+    "titulo text NOT NULL, cuerpo text, url text, session_id text, "
+    "creada_en timestamptz NOT NULL DEFAULT now(), leida_en timestamptz)",
+    "CREATE INDEX IF NOT EXISTS ix_notif_user ON notificacion (destinatario_user_id, creada_en DESC)",
+    "CREATE INDEX IF NOT EXISTS ix_notif_sesion ON notificacion (destinatario_session, creada_en DESC)",
 ]
 _handoff_ready = False
 
@@ -1646,6 +1657,15 @@ def _notificar_corredor(activo_id: str | None, title: str, body: str,
             if not aid:
                 return
             email, subs = await _corredor_de_activo(db, aid)
+            # La campana se llena SIEMPRE, aunque el push o el correo no salgan.
+            dueno = (await db.execute(text(
+                "SELECT COALESCE(a.owner_user_id, ag.owner_user)::text FROM activos_inmutables a "
+                "LEFT JOIN agencies ag ON ag.id = a.owner_agency_id WHERE a.id = CAST(:id AS uuid)"),
+                {"id": aid})).scalar()
+            if dueno:
+                await registrar_notificacion(db, titulo=title, cuerpo=body, url="/?crm=1",
+                                             session_id=session_id, user_id=dueno)
+                await db.commit()
         if not email and not subs:
             return
         from app.notifications import send_notification
@@ -1659,6 +1679,79 @@ def _notificar_corredor(activo_id: str | None, title: str, body: str,
 
     from app.notifications import disparar
     disparar(_run())
+
+
+async def registrar_notificacion(
+    db, *, titulo: str, cuerpo: str, url: str, session_id: str | None = None,
+    user_id: str | None = None, destinatario_session: str | None = None,
+) -> None:
+    """Deja el aviso en la campana. Best-effort: un fallo aquí jamás rompe el mensaje que
+    lo origina — pero se registra SIEMPRE, aunque el push y el correo se omitan o se
+    frenen, porque la campana es el único canal que no depende de permisos ni bandejas."""
+    if not (user_id or destinatario_session):
+        return
+    try:
+        await db.execute(text(
+            "INSERT INTO notificacion (destinatario_user_id, destinatario_session, "
+            "titulo, cuerpo, url, session_id) VALUES (:u, :ds, :t, :c, :url, :s)"),
+            {"u": user_id, "ds": destinatario_session, "t": titulo,
+             "c": cuerpo, "url": url, "s": session_id})
+    except Exception as exc:  # noqa: BLE001
+        log.warning("No se pudo registrar la notificación: %s", exc)
+
+
+@router.get("/notificaciones", summary="Campana: avisos del usuario (o de su sesión)")
+@limiter.limit("60/minute")
+async def listar_notificaciones(
+    request: Request,
+    session_id: str | None = None,
+    user: CurrentUser | None = Depends(get_optional_user),
+) -> dict:
+    """Avisos del destinatario, más recientes primero, con el contador de no leídos.
+
+    Se consulta por usuario Y por sesión a la vez: un corredor los tiene ligados a su
+    cuenta, y un interesado sin registrarse solo tiene su conversación.
+    """
+    if not user and not session_id:
+        return {"items": [], "no_leidas": 0}
+    async with AsyncSessionLocal() as db:
+        await ensure_handoff_tables(db)
+        filas = (await db.execute(text(
+            "SELECT id, titulo, cuerpo, url, session_id, creada_en, leida_en "
+            "FROM notificacion "
+            "WHERE (:u IS NOT NULL AND destinatario_user_id = CAST(:u AS uuid)) "
+            "   OR (:s IS NOT NULL AND destinatario_session = :s) "
+            "ORDER BY creada_en DESC LIMIT 30"),
+            {"u": user.user_id if user else None, "s": session_id})).mappings().all()
+    return {
+        "items": [{
+            "id": f["id"], "titulo": f["titulo"], "cuerpo": f["cuerpo"], "url": f["url"],
+            "session_id": f["session_id"], "creada_en": f["creada_en"].isoformat(),
+            "leida": f["leida_en"] is not None,
+        } for f in filas],
+        "no_leidas": sum(1 for f in filas if f["leida_en"] is None),
+    }
+
+
+@router.post("/notificaciones/leidas", summary="Campana: marcar avisos como leídos")
+@limiter.limit("60/minute")
+async def marcar_notificaciones_leidas(
+    request: Request,
+    session_id: str | None = None,
+    user: CurrentUser | None = Depends(get_optional_user),
+) -> dict:
+    """Marca como leídos TODOS los avisos del destinatario. Se llama al abrir la campana."""
+    if not user and not session_id:
+        return {"ok": True, "marcadas": 0}
+    async with AsyncSessionLocal() as db:
+        await ensure_handoff_tables(db)
+        r = await db.execute(text(
+            "UPDATE notificacion SET leida_en = now() WHERE leida_en IS NULL AND "
+            "((:u IS NOT NULL AND destinatario_user_id = CAST(:u AS uuid)) "
+            " OR (:s IS NOT NULL AND destinatario_session = :s))"),
+            {"u": user.user_id if user else None, "s": session_id})
+        await db.commit()
+    return {"ok": True, "marcadas": r.rowcount}
 
 
 def _texto(content) -> str:

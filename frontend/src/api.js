@@ -1,5 +1,8 @@
 // Headers compartidos para todas las llamadas al backend.
 // Incluye la llave del backend (X-API-Key) y, si hay sesión, el Bearer token del usuario.
+import axios from 'axios'
+import { supabase } from './supabaseClient'
+
 export const API_BASE = import.meta.env.VITE_API_URL ?? ''
 const API_KEY = import.meta.env.VITE_API_KEY ?? ''
 
@@ -13,3 +16,39 @@ export function apiHeaders() {
     ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
   }
 }
+
+// ── Recuperación de token caducado ──────────────────────────────────────────
+// El token de Supabase vive ~1h. Cuando caduca, la app SEGUÍA pareciendo conectada
+// mientras todas las llamadas al backend devolvían 401 en silencio: el CRM del corredor
+// sondeaba la conversación una vez por minuto y recibía 401 sin decir nada, y al intentar
+// responder salía "No se pudo enviar. Revisa tu conexión" — que no era la conexión.
+// (Visto en los logs de Render: una tanda de 401 seguidos sobre /leads/…/conversacion.)
+//
+// Ante un 401, se renueva la sesión UNA vez y se reintenta la petición. Si la renovación
+// falla de verdad (refresh token muerto), se propaga el 401 y el usuario tendrá que
+// entrar de nuevo — pero eso ya es un caso legítimo, no un token caducado sin más.
+let renovando = null   // una sola renovación en vuelo aunque fallen 5 llamadas a la vez
+
+axios.interceptors.response.use(undefined, async (error) => {
+  const cfg = error?.config
+  if (error?.response?.status !== 401 || !cfg || cfg.__reintentado || !supabase) throw error
+  cfg.__reintentado = true   // un solo reintento: nunca un bucle contra el backend
+  // OJO: hay que quedarse con la promesa en una constante local. Si se lee la variable
+  // compartida DESPUÉS del await, otra petición pudo haberla puesto en null al terminar
+  // su renovación y esta se quedaría sin token.
+  let enCurso = renovando
+  if (!enCurso) {
+    enCurso = renovando = supabase.auth.refreshSession()
+      .then(({ data }) => {
+        const t = data?.session?.access_token || null
+        setAccessToken(t)
+        return t
+      })
+      .catch(() => null)
+      .finally(() => { renovando = null })
+  }
+  const token = await enCurso
+  if (!token) throw error
+  cfg.headers = { ...(cfg.headers || {}), Authorization: `Bearer ${token}` }
+  return axios(cfg)
+})

@@ -1364,12 +1364,27 @@ async def ensure_lead_actividad(db) -> None:
 
 
 async def marcar_actividad_lead(session_id: str) -> None:
-    """Registra 'ahora' como última interacción de un QR-lead. Best-effort y no
-    bloqueante: si algo falla, el chat nunca se rompe. Solo aplica a sesiones QR
-    (las que nacen del inmueble = las que tienen un corredor dueño a quien reenganchar)."""
-    if not session_id.startswith("qr-"):
-        return
+    """Registra 'ahora' como última interacción de un lead ligado a un inmueble.
+    Best-effort y no bloqueante: si algo falla, el chat nunca se rompe.
+
+    Se aplica a toda sesión con inmueble resoluble, no solo a las de QR. Antes salía en
+    seco si el session_id no empezaba por 'qr-', y las conversaciones normales quedaban
+    SIN registro de actividad: el CRM mostraba "0 Activos" con una conversación en vivo,
+    el tramo de recencia del orden no se activaba (justo para los leads que venía a
+    destacar) y el reenganche nunca los consideraba."""
     activo = activo_de_session(session_id)
+    if not activo:
+        # Conversación normal: el inmueble se engancha en handoff_sesion al pedir corredor.
+        try:
+            async with AsyncSessionLocal() as db:
+                await ensure_handoff_tables(db)
+                activo = (await db.execute(text(
+                    "SELECT activo_id::text FROM handoff_sesion WHERE session_id = :s"),
+                    {"s": session_id})).scalar()
+        except Exception:  # noqa: BLE001
+            activo = None
+    if not activo:
+        return   # sin inmueble no hay corredor a quien atribuir la actividad
     try:
         async with AsyncSessionLocal() as db:
             await ensure_lead_actividad(db)

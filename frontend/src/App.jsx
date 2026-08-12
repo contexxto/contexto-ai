@@ -917,10 +917,24 @@ export default function App() {
         if (perm !== 'granted') return null
       }
       const reg = await navigator.serviceWorker.ready
-      const existing = await reg.pushManager.getSubscription()
+      const clave = urlBase64ToUint8Array(vapidKey)
+      let existing = await reg.pushManager.getSubscription()
+      // Si la suscripción guardada se creó con OTRA clave VAPID, no sirve: el servidor no
+      // puede firmarle nada y cada envío falla. Y no basta con ignorarla — subscribe()
+      // lanza InvalidStateError si ya hay una con distinta clave. Hay que darla de baja.
+      // Sin esto, rotar la clave del servidor NO arregla nada en los aparatos ya
+      // registrados: se quedan con la vieja para siempre.
+      if (existing) {
+        const actual = new Uint8Array(existing.options?.applicationServerKey || [])
+        const misma = actual.length === clave.length && actual.every((b, i) => b === clave[i])
+        if (!misma) {
+          try { await existing.unsubscribe() } catch { /* ya no existía */ }
+          existing = null
+        }
+      }
       const sub = existing || await reg.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(vapidKey),
+        applicationServerKey: clave,
       })
       return sub.toJSON()
     } catch (e) {

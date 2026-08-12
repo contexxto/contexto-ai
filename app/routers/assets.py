@@ -1108,6 +1108,34 @@ class CorredorMsg(BaseModel):
     texto: str = Field(..., min_length=1, max_length=2000)
 
 
+async def _assert_sesion_del_activo(db: AsyncSession, session_id: str, activo_id) -> None:
+    """La sesión tiene que pertenecer a ESTE inmueble. Dos orígenes válidos:
+
+      1. El session_id lleva el inmueble dentro (qr-{activo}-{device}): llegó por QR.
+      2. handoff_sesion.activo_id apunta a él: conversación normal donde el inmueble se
+         enganchó al pedir corredor.
+
+    Antes solo valía (1), asi que a un lead sin QR el corredor no podia ni leer la
+    conversacion ni responderle: ambos endpoints devolvian 403 y el panel mostraba
+    "Sin mensajes todavía". El vinculo de (2) lo crea el propio interesado al pedir
+    corredor, y quien llama ya paso por _assert_owner — no abre nada de otro corredor.
+    """
+    if session_id.startswith(f"qr-{activo_id}-"):
+        return
+    from app.routers.chat import ensure_handoff_tables
+    try:
+        await ensure_handoff_tables(db)
+        ligado = (await db.execute(text(
+            "SELECT 1 FROM handoff_sesion WHERE session_id = :s AND activo_id = :a"),
+            {"s": session_id, "a": str(activo_id)})).scalar()
+    except Exception:  # noqa: BLE001 — tablas aún no creadas
+        await db.rollback()   # no dejar la sesión de request abortada
+        ligado = None
+    if not ligado:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="La sesión no es de este inmueble.")
+
+
 @router.get(
     "/{activo_id}/leads/{session_id}/conversacion",
     summary="Conversación completa de un interesado (para el corredor)",
@@ -1118,8 +1146,7 @@ async def lead_conversacion(
     user: CurrentUser = Depends(get_current_user), db: AsyncSession = Depends(get_db),
 ) -> dict:
     await _assert_owner(db, activo_id, user)
-    if not session_id.startswith(f"qr-{activo_id}-"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="La sesión no es de este inmueble.")
+    await _assert_sesion_del_activo(db, session_id, activo_id)
     from app.routers.chat import transcript_de_sesion, ensure_handoff_tables
     trans = await transcript_de_sesion(session_id)
     try:
@@ -1145,8 +1172,7 @@ async def responder_lead(
     user: CurrentUser = Depends(get_current_user), db: AsyncSession = Depends(get_db),
 ) -> dict:
     await _assert_owner(db, activo_id, user)
-    if not session_id.startswith(f"qr-{activo_id}-"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="La sesión no es de este inmueble.")
+    await _assert_sesion_del_activo(db, session_id, activo_id)
     from app.routers.chat import ensure_handoff_tables
     await ensure_handoff_tables(db)
     await db.execute(text(

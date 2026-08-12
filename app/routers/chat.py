@@ -1633,15 +1633,21 @@ async def transcript_de_sesion(session_id: str) -> list[dict]:
     except Exception:  # noqa: BLE001
         return []
     msgs = (state.values or {}).get("messages", []) if (state and state.values) else []
+    # str(m.content) dejaba el repr de Python cuando el content viene como lista de
+    # bloques — que es el caso normal del turno final tras usar tools. El corredor leía
+    # "[{'text': 'Departamento en...', 'type': 'text'}]" en vez de la respuesta. Mismo
+    # fallo que texto_de_content ya arreglaba en el guardrail; se reutiliza en vez de
+    # volver a escribirlo. Import diferido: crm_guardrails importa del grafo.
+    from app.agent.crm_guardrails import texto_de_content
     out: list[dict] = []
     for m in msgs:
         if isinstance(m, HumanMessage):
-            c = _CTX_RE.sub("", m.content if isinstance(m.content, str) else str(m.content)).strip()
+            c = _CTX_RE.sub("", texto_de_content(m.content)).strip()
             if c and not c.startswith("El usuario escaneó el QR"):
                 out.append({"autor": "lead", "texto": c})
         elif isinstance(m, AIMessage) and not getattr(m, "tool_calls", None):
-            c = m.content if isinstance(m.content, str) else str(m.content)
-            if c.strip():
+            c = texto_de_content(m.content).strip()
+            if c:
                 out.append({"autor": "agente", "texto": c})
     return out
 

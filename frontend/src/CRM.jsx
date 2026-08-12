@@ -4,6 +4,7 @@ import { Users, RefreshCw, Flame, MapPin, Sparkles, BarChart3, Compass,
          TrendingUp, Clock, AlertTriangle, ChevronRight, BellRing } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import Campana from './Campana'
+import { activarPush } from './push'
 import { LeadChat } from './LeadsPanel'
 import CRMChat from './CRMChat'
 import AnalisisPanel from './AnalisisPanel'
@@ -149,6 +150,13 @@ export default function CRM() {
       .then(({ data }) => setAvisos(data))
       .catch(() => setAvisos(null))   // sin diagnóstico no molestamos: mejor callar que alarmar
   }, [])
+  // Estado del permiso EN ESTE NAVEGADOR. Carlos: "nunca me ha saltado el permiso de
+  // notificaciones, ni en escritorio ni en el celular" — y no habia forma de verlo: el
+  // permiso solo se pedia al pulsar "CRM" en la barra lateral, asi que entrando por
+  // /?crm=1 o recargando no se pedia nunca, y el estado quedaba invisible para todos.
+  const [permiso, setPermiso] = useState(
+    () => (typeof Notification !== 'undefined' ? Notification.permission : 'no-soportado'))
+
   const problemas = useMemo(() => {
     if (!avisos) return []
     const p = []
@@ -427,6 +435,36 @@ export default function CRM() {
 
       {/* Salud de los avisos: si un canal está mal configurado el corredor cree que sus
           leads están avisados y no lo están. Solo aparece cuando algo está roto. */}
+      {/* Permiso de notificaciones de ESTE navegador. Va aparte del diagnóstico del
+          servidor: aquel mira la configuración, este mira el aparato que tienes delante.
+          Con un botón, porque pedir el permiso exige un gesto del usuario. */}
+      {permiso !== 'granted' && (
+        <div style={{ marginBottom: 12, flexShrink: 0, padding: '9px 14px', borderRadius: 12,
+                      display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+                      background: 'rgba(45,189,182,.10)', border: `1px solid ${C.teal}55`,
+                      color: C.tealHi, fontSize: '.8rem', lineHeight: 1.5 }}>
+          <span style={{ flex: 1, minWidth: 200 }}>
+            {permiso === 'denied'
+              ? '🔕 Bloqueaste las notificaciones en este navegador. Actívalas desde el candado de la barra de direcciones → Notificaciones → Permitir.'
+              : '🔔 Este navegador todavía no tiene permiso para avisarte cuando un interesado escriba.'}
+          </span>
+          {permiso !== 'denied' && (
+            <button
+              onClick={async () => {
+                const r = await activarPush()
+                setPermiso(r.permiso)
+                if (!r.ok && r.permiso === 'granted') {
+                  alert('Diste el permiso pero no se pudo registrar el dispositivo. Recarga e inténtalo otra vez.')
+                }
+              }}
+              style={{ padding: '7px 14px', borderRadius: 999, cursor: 'pointer', fontWeight: 700,
+                       border: 'none', background: C.tealHi, color: '#06201C', fontSize: '.8rem' }}>
+              Activar notificaciones
+            </button>
+          )}
+        </div>
+      )}
+
       {problemas.length > 0 && (
         <div style={{ marginBottom: 12, flexShrink: 0, padding: '9px 14px', borderRadius: 12,
                       background: 'rgba(232,184,75,.10)', border: '1px solid rgba(232,184,75,.35)',

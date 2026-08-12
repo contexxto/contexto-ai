@@ -118,6 +118,28 @@ export default function CRM() {
   const vistosRef = useRef(null)
   const [nuevos, setNuevos] = useState([])   // session_ids llegados desde que abriste
 
+  // Salud de los avisos. Un canal mal configurado falla EN SILENCIO en el servidor (un
+  // log.warning que nadie ve) y el corredor cree que sus leads están avisados cuando no
+  // lo están. Pasó: los correos al interesado nunca salieron porque el remitente seguía
+  // siendo el dominio de pruebas de Resend, que solo entrega al dueño de la cuenta.
+  const [avisos, setAvisos] = useState(null)
+  useEffect(() => {
+    axios.get(`${API_BASE}/api/v1/chat/diagnostico/notificaciones`, { headers: apiHeaders() })
+      .then(({ data }) => setAvisos(data))
+      .catch(() => setAvisos(null))   // sin diagnóstico no molestamos: mejor callar que alarmar
+  }, [])
+  const problemas = useMemo(() => {
+    if (!avisos) return []
+    const p = []
+    if (!avisos.push?.vapid_privada_configurada) p.push('el push está apagado (falta la clave VAPID en el servidor)')
+    else if (!avisos.push?.tus_dispositivos_registrados) p.push('no tienes ningún dispositivo registrado para push')
+    if (!avisos.email?.resend_configurado) p.push('el correo está apagado (falta la clave de Resend)')
+    else if (/resend\.dev/.test(avisos.email?.remitente || '')) {
+      p.push(`el remitente es el dominio de pruebas (${avisos.email.remitente}): solo entrega al dueño de la cuenta de Resend, no a tus interesados`)
+    }
+    return p
+  }, [avisos])
+
   async function cargar(silencioso = false) {
     if (!silencioso) setLoading(true)
     setErr(false)
@@ -364,6 +386,19 @@ export default function CRM() {
           <RefreshCw size={16} />
         </button>
       </div>
+
+      {/* Salud de los avisos: si un canal está mal configurado el corredor cree que sus
+          leads están avisados y no lo están. Solo aparece cuando algo está roto. */}
+      {problemas.length > 0 && (
+        <div style={{ marginBottom: 12, flexShrink: 0, padding: '9px 14px', borderRadius: 12,
+                      background: 'rgba(232,184,75,.10)', border: '1px solid rgba(232,184,75,.35)',
+                      color: '#E8B84B', fontSize: '.8rem', lineHeight: 1.5 }}>
+          ⚠️ <strong>Tus interesados no están recibiendo avisos.</strong>
+          <ul style={{ margin: '5px 0 0', paddingLeft: 18 }}>
+            {problemas.map((p, i) => <li key={i}>{p}</li>)}
+          </ul>
+        </div>
+      )}
 
       {/* Aviso de interesados nuevos. Sin esto, un lead que entra mientras miras la lista
           queda indistinguible de uno de hace un mes: el orden no considera la recencia. */}

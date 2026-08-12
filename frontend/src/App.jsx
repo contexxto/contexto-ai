@@ -534,6 +534,23 @@ export default function App() {
         setMessages(restored)
         const lastAi = [...restored].reverse().find(m => m.role === 'ai')
         lastAiRef.current = lastAi?.content || ''
+        // El historial del agente NO incluye lo hablado con el corredor: eso vive en
+        // handoff_mensaje. Sin esto, al recargar la conversación con el corredor
+        // DESAPARECÍA — el interesado veía el análisis del inmueble y nada más, como si
+        // nunca hubieran hablado. El flujo de QR ya lo restauraba; el normal no.
+        axios.get(`${API_BASE}/api/v1/chat/${sessionId}/handoff`, { headers: apiHeaders() })
+          .then(({ data: h }) => {
+            const hm = h?.mensajes || []
+            if (!hm.length) return
+            for (const m of hm) handoffSeenRef.current = Math.max(handoffSeenRef.current, m.id)
+            setMessages(prev => [...prev, ...hm.map((m) => ({
+              id: `h-${m.id}`,
+              role: m.autor === 'corredor' ? 'ai' : 'user',
+              content: m.autor === 'corredor' ? `👤 Corredor: ${m.texto}` : m.texto,
+              time: '', toolCalls: [],
+            }))])
+          })
+          .catch(() => { /* sin handoff en esta conversación: normal */ })
       })
       .catch(() => {}) // silent — no history yet
   }, [sessionId])

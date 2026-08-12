@@ -1723,8 +1723,11 @@ async def listar_notificaciones(
         filas = (await db.execute(text(
             "SELECT id, titulo, cuerpo, url, session_id, creada_en, leida_en "
             "FROM notificacion "
-            "WHERE (:u IS NOT NULL AND destinatario_user_id = CAST(:u AS uuid)) "
-            "   OR (:s IS NOT NULL AND destinatario_session = :s) "
+            # Los CAST no son adorno: con el parametro en NULL, Postgres no puede deducir
+            # su tipo en ":u IS NOT NULL" y revienta con AmbiguousParameterError — el
+            # endpoint devolvia 500 y la campana salia vacia sin decir nada.
+            "WHERE (CAST(:u AS uuid) IS NOT NULL AND destinatario_user_id = CAST(:u AS uuid)) "
+            "   OR (CAST(:s AS text) IS NOT NULL AND destinatario_session = CAST(:s AS text)) "
             "ORDER BY creada_en DESC LIMIT 30"),
             {"u": user.user_id if user else None, "s": session_id})).mappings().all()
     return {
@@ -1751,8 +1754,8 @@ async def marcar_notificaciones_leidas(
         await ensure_handoff_tables(db)
         r = await db.execute(text(
             "UPDATE notificacion SET leida_en = now() WHERE leida_en IS NULL AND "
-            "((:u IS NOT NULL AND destinatario_user_id = CAST(:u AS uuid)) "
-            " OR (:s IS NOT NULL AND destinatario_session = :s))"),
+            "((CAST(:u AS uuid) IS NOT NULL AND destinatario_user_id = CAST(:u AS uuid)) "
+            " OR (CAST(:s AS text) IS NOT NULL AND destinatario_session = CAST(:s AS text)))"),
             {"u": user.user_id if user else None, "s": session_id})
         await db.commit()
     return {"ok": True, "marcadas": r.rowcount}

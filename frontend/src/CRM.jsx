@@ -112,15 +112,44 @@ export default function CRM() {
     return () => { mq.removeEventListener('change', h); mq2.removeEventListener('change', h2) }
   }, [])
 
-  async function cargar() {
-    setLoading(true); setErr(false)
+  // Interesados ya vistos en esta sesión de CRM. Lo que NO esté aquí tras un sondeo es
+  // nuevo. Se llena en la primera carga: los que ya estaban al abrir no cuentan como
+  // novedad, solo los que llegan mientras miras.
+  const vistosRef = useRef(null)
+  const [nuevos, setNuevos] = useState([])   // session_ids llegados desde que abriste
+
+  async function cargar(silencioso = false) {
+    if (!silencioso) setLoading(true)
+    setErr(false)
     try {
       const { data } = await axios.get(`${API_BASE}/api/v1/assets/mine/leads`, { headers: apiHeaders() })
+      const ids = (data?.leads || []).map((l) => l.session_id)
+      if (vistosRef.current === null) {
+        vistosRef.current = new Set(ids)          // línea base: nada es "nuevo" al abrir
+      } else {
+        const recien = ids.filter((id) => !vistosRef.current.has(id))
+        if (recien.length) {
+          recien.forEach((id) => vistosRef.current.add(id))
+          setNuevos((prev) => [...new Set([...prev, ...recien])])
+        }
+      }
       setD(data)
-    } catch { setErr(true) } finally { setLoading(false) }
+    } catch { setErr(true) } finally { if (!silencioso) setLoading(false) }
   }
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { cargar() }, [])
+
+  // Sondeo: un lead que entra mientras el corredor mira el CRM no aparecía hasta recargar
+  // a mano, y el push no siempre llega (permiso denegado, otro aparato). Silencioso para
+  // no parpadear el spinner, y en pausa si la pestaña no está a la vista — no tiene
+  // sentido consultar cada 45s una pestaña que nadie mira.
+  useEffect(() => {
+    const tick = () => { if (document.visibilityState === 'visible') cargar(true) }
+    const iv = setInterval(tick, 45000)
+    document.addEventListener('visibilitychange', tick)   // al volver a la pestaña, al día
+    return () => { clearInterval(iv); document.removeEventListener('visibilitychange', tick) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const kpis = useMemo(() => {
     if (!d) return null
@@ -192,6 +221,10 @@ export default function CRM() {
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <span style={{ fontWeight: 700, fontSize: '.88rem' }}>{l.lead}</span>
+            {nuevos.includes(l.session_id) && (
+              <span style={{ fontSize: '.58rem', fontWeight: 800, color: '#06201C', padding: '2px 7px',
+                             borderRadius: 999, background: C.tealHi }}>NUEVO</span>
+            )}
             <span style={{ fontSize: '.58rem', fontWeight: 700, color: n.c, padding: '2px 7px', borderRadius: 999,
                            background: n.c + '18', border: `1px solid ${n.c}44` }}>{ESTADO_LBL[l.estado] || l.estado}</span>
             {l.reenganche && (
@@ -325,12 +358,27 @@ export default function CRM() {
             </button>
           </>
         )}
-        <button onClick={cargar} title="Actualizar"
+        <button onClick={() => cargar()} title="Actualizar"
           style={{ marginLeft: d && d.total > 0 ? 0 : 'auto', background: 'none', border: 'none', color: C.muted, cursor: 'pointer',
                    transform: loading ? 'rotate(180deg)' : 'none', transition: 'transform .4s' }}>
           <RefreshCw size={16} />
         </button>
       </div>
+
+      {/* Aviso de interesados nuevos. Sin esto, un lead que entra mientras miras la lista
+          queda indistinguible de uno de hace un mes: el orden no considera la recencia. */}
+      {nuevos.length > 0 && (
+        <button onClick={() => setNuevos([])}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', marginBottom: 12, flexShrink: 0,
+                   padding: '9px 14px', borderRadius: 12, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
+                   background: 'rgba(45,189,182,.12)', border: `1px solid ${C.teal}66`, color: C.tealHi,
+                   fontSize: '.84rem', fontWeight: 700 }}>
+          🔔 {nuevos.length === 1 ? 'Un interesado nuevo' : `${nuevos.length} interesados nuevos`}
+          <span style={{ fontWeight: 400, color: C.muted, marginLeft: 'auto', fontSize: '.78rem' }}>
+            marcar como visto
+          </span>
+        </button>
+      )}
 
       {/* KPIs */}
       {kpis && (

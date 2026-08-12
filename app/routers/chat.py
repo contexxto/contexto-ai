@@ -1033,7 +1033,7 @@ async def list_sessions(
             turnos = len(user_msgs)
             if user_msgs:
                 c = user_msgs[0].content
-                titulo_auto = _texto(c).strip()[:80]
+                titulo_auto = (c if isinstance(c, str) else str(c)).strip()[:80]
         except Exception:
             pass
         titulo = (r["titulo"] or None) or titulo_auto or "Conversación sin título"
@@ -1194,12 +1194,12 @@ async def get_shared(request: Request, token: str) -> dict:
         msgs = (state.values or {}).get("messages", []) if state else []
         for m in msgs:
             if isinstance(m, HumanMessage):
-                c = _texto(m.content)
+                c = m.content if isinstance(m.content, str) else str(m.content)
                 c = _CTX_RE.sub("", c).strip()           # oculta el [Contexto del sistema...]
                 if c:
                     out.append({"role": "user", "content": c})
             elif isinstance(m, AIMessage) and not getattr(m, "tool_calls", None):
-                c = _texto(m.content)
+                c = m.content if isinstance(m.content, str) else str(m.content)
                 if c.strip():
                     out.append({"role": "assistant", "content": c})
     except Exception:  # noqa: BLE001
@@ -1251,7 +1251,7 @@ async def get_session_history(session_id: str):
             turn_tool_msgs = []          # nuevo turno → reset
             history.append({
                 "role": "user",
-                "content": _texto(m.content),
+                "content": m.content if isinstance(m.content, str) else str(m.content),
                 "results": [],
             })
         elif isinstance(m, AIMessage) and getattr(m, "tool_calls", None):
@@ -1267,7 +1267,7 @@ async def get_session_history(session_id: str):
                 prev_mode = seed["modo"]
             history.append({
                 "role": "assistant",
-                "content": _texto(m.content),
+                "content": m.content if isinstance(m.content, str) else str(m.content),
                 "results": results,
                 "map_seed": seed,        # directiva de mapa del turno restaurado
             })
@@ -1626,21 +1626,6 @@ def _notificar_corredor(activo_id: str | None, title: str, body: str) -> None:
     _aio.create_task(_run())
 
 
-def _texto(content) -> str:
-    """Aplana el content de un mensaje (str O lista de bloques) al texto narrado.
-
-    Hacer str(content) sobre una lista deja el repr de Python en la pantalla del usuario
-    —"[{'text': '…', 'type': 'text', 'index': 0}]"— y el content ES una lista en el caso
-    normal del turno final tras usar tools. Pasó en el chat del interesado al recargar y
-    en la conversación compartida, que es pública.
-
-    OJO: no usar donde el content se parsea como JSON de una tool (esto descarta los
-    bloques que no son texto). Solo para lo que lee una persona.
-    """
-    from app.agent.crm_guardrails import texto_de_content   # diferido: evita el ciclo
-    return texto_de_content(content)
-
-
 async def transcript_de_sesion(session_id: str) -> list[dict]:
     """Transcripción usuario/asistente de la sesión (para que el corredor lea el hilo)."""
     try:
@@ -1821,7 +1806,7 @@ async def intencion_de_sesion(session_id: str, horas_inactividad: float | None =
     uso_inversion = False
     for m in messages:
         if isinstance(m, HumanMessage):
-            c = _texto(m.content)
+            c = m.content if isinstance(m.content, str) else str(m.content)
             c = _CTX_RE.sub("", c).strip()
             # El mensaje técnico del QR no es una señal del usuario; lo omitimos.
             if c and not c.startswith("El usuario escaneó el QR"):

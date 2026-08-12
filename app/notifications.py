@@ -32,16 +32,48 @@ RESEND_API_KEY = os.getenv("RESEND_API_KEY")
 FROM_EMAIL     = os.getenv("NOTIFY_FROM_EMAIL", "Contexto AI <onboarding@resend.dev>")
 APP_URL        = os.getenv("APP_URL", "https://contexxto.com").rstrip("/")
 
-# Private key: base64 de un PEM (scripts/gen_vapid.py). Soporta también PEM crudo.
-_VAPID_RAW = os.getenv("VAPID_PRIVATE_KEY", "")
-if _VAPID_RAW and not _VAPID_RAW.strip().startswith("-----"):
+def _normalizar_vapid(bruto: str) -> str | None:
+    """Devuelve el PEM de la clave privada, venga como venga de la variable de entorno.
+
+    Nace de un fallo real: el push llevaba dias sin salir con "ASN.1 parsing error:
+    invalid length" — la clave estaba puesta pero era ilegible. Pegar un PEM en una
+    variable de entorno lo estropea de formas conocidas: los saltos de linea se convierten
+    en la secuencia \\n literal, el panel añade comillas alrededor, o se cuela un espacio.
+    Se contemplan las tres, mas el base64 del PEM que produce scripts/gen_vapid.py.
+    """
+    if not bruto:
+        return None
+    v = bruto.strip().strip('"').strip("'")
+    if not v:
+        return None
+    if "-----" not in v:                      # base64 del PEM (formato de gen_vapid.py)
+        try:
+            v = base64.b64decode(v).decode()
+        except Exception:
+            log.warning("VAPID_PRIVATE_KEY no es base64 ni PEM — push deshabilitado")
+            return None
+    if "\\n" in v and "\n" not in v:          # PEM con los saltos escapados
+        v = v.replace("\\n", "\n")
+    return v
+
+
+def _vapid_utilizable(pem: str | None) -> tuple[bool, str]:
+    """¿La clave se puede CARGAR de verdad? Comprobar que la variable existe no basta —
+    el diagnostico decia "configurada" mientras cada envio fallaba."""
+    if not pem:
+        return False, "no configurada"
     try:
-        VAPID_PRIVATE_KEY: str | None = base64.b64decode(_VAPID_RAW).decode()
-    except Exception:
-        VAPID_PRIVATE_KEY = None
-        log.warning("VAPID_PRIVATE_KEY no es base64 válido — push deshabilitado")
-else:
-    VAPID_PRIVATE_KEY = _VAPID_RAW or None
+        from cryptography.hazmat.primitives.serialization import load_pem_private_key
+        load_pem_private_key(pem.encode(), password=None)
+        return True, "ok"
+    except Exception as exc:  # noqa: BLE001
+        return False, f"ilegible ({type(exc).__name__})"
+
+
+VAPID_PRIVATE_KEY: str | None = _normalizar_vapid(os.getenv("VAPID_PRIVATE_KEY", ""))
+VAPID_VALIDA, VAPID_DETALLE = _vapid_utilizable(VAPID_PRIVATE_KEY)
+if not VAPID_VALIDA:
+    log.warning("VAPID_PRIVATE_KEY %s — el push NO va a funcionar", VAPID_DETALLE)
 
 VAPID_EMAIL = os.getenv("VAPID_EMAIL", "mailto:contexxto.ai@gmail.com")
 

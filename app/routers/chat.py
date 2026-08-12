@@ -2117,7 +2117,10 @@ async def diagnostico_notificaciones(
             {"u": user.user_id})).scalar()
     return {
         "push": {
-            "vapid_privada_configurada": bool(N.VAPID_PRIVATE_KEY),
+            # No basta con que la variable exista: llevaba dias puesta y era ILEGIBLE,
+            # asi que este diagnostico decia "todo bien" mientras cada envio fallaba.
+            "vapid_privada_configurada": bool(N.VAPID_VALIDA),
+            "vapid_estado": N.VAPID_DETALLE,
             "vapid_email": N.VAPID_EMAIL,
             "tus_dispositivos_registrados": disp,
         },

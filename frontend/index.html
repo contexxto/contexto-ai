@@ -3,7 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/sphere-favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- SIN viewport-fit=cover a propósito. Con él, en la PWA instalada de Android el
+         viewport se extiende POR DEBAJO de la barra de navegación del sistema: innerHeight
+         (y dvh, y svh, y visualViewport) reportaban 750px cuando lo visible eran ~694, y la
+         fila de botones de la barra de escribir quedaba tapada por la barra del sistema.
+         Y no había forma de descontarlo: Chrome de Android reporta env(safe-area-inset-*)
+         en 0 incluso en modo instalado (medido en el aparato). Sin esta declaración el
+         navegador insetea el viewport él mismo, que es justo lo que hace falta. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#1C1C1C" />
 
     <!-- PWA: instalable en el teléfono (ícono en inicio, abre en / → directo al agente) -->

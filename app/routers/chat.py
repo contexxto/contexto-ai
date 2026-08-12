@@ -2127,3 +2127,40 @@ async def diagnostico_notificaciones(
         },
         "app_url": N.APP_URL,
     }
+
+
+@router.post(
+    "/diagnostico/push-prueba",
+    summary="Manda un push de prueba a TUS dispositivos y devuelve el resultado de cada uno",
+)
+@limiter.limit("6/minute")
+async def probar_push_propio(
+    request: Request,
+    user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """Cierra el agujero de diagnóstico del push: hasta ahora un envío fallido dejaba un
+    log.error que solo se ve entrando al panel de Render, y el usuario solo percibía
+    silencio — imposible distinguir "no se envió" de "se envió y no llegó".
+
+    Manda un push real a cada dispositivo registrado y devuelve, por dispositivo, si salió
+    o el error exacto del servicio de push. Si sale ok y NO llega al aparato, el problema
+    es de entrega (permiso revocado, suscripción vieja); si sale error, aquí está el motivo.
+    """
+    if user.rol not in ("corredor", "inmobiliaria"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Solo corredores/inmobiliarias.")
+    from app.notifications import probar_push, VAPID_PRIVATE_KEY
+    async with AsyncSessionLocal() as db:
+        await ensure_handoff_tables(db)
+        filas = (await db.execute(text(
+            "SELECT endpoint, subscription FROM push_dispositivo WHERE user_id = :u"),
+            {"u": user.user_id})).mappings().all()
+    if not filas:
+        return {"vapid_configurada": bool(VAPID_PRIVATE_KEY), "dispositivos": [],
+                "mensaje": "No tienes ningún dispositivo registrado. Abre el CRM y acepta "
+                           "el permiso de notificaciones."}
+    resultados = []
+    for f in filas:
+        ok, detalle = await probar_push(f["subscription"])
+        resultados.append({"endpoint": f["endpoint"][-24:], "ok": ok, "detalle": detalle})
+    return {"vapid_configurada": bool(VAPID_PRIVATE_KEY), "dispositivos": resultados}

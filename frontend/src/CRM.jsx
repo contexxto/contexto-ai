@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import axios from 'axios'
 import { Users, RefreshCw, Flame, MapPin, Sparkles, BarChart3, Compass,
-         TrendingUp, Clock, AlertTriangle, ChevronRight } from 'lucide-react'
+         TrendingUp, Clock, AlertTriangle, ChevronRight, BellRing } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import Campana from './Campana'
 import { LeadChat } from './LeadsPanel'
@@ -124,6 +124,26 @@ export default function CRM() {
   // lo están. Pasó: los correos al interesado nunca salieron porque el remitente seguía
   // siendo el dominio de pruebas de Resend, que solo entrega al dueño de la cuenta.
   const [avisos, setAvisos] = useState(null)
+  // Prueba de push bajo demanda: el servidor intenta el envío y DEVUELVE el error exacto
+  // de cada dispositivo, en vez de dejarlo en un log que solo se ve entrando a Render.
+  const [probando, setProbando] = useState(false)
+  async function probarPush() {
+    setProbando(true)
+    try {
+      const { data } = await axios.post(`${API_BASE}/api/v1/chat/diagnostico/push-prueba`, {},
+        { headers: apiHeaders() })
+      const ds = data?.dispositivos || []
+      if (!ds.length) { alert(data?.mensaje || 'No tienes dispositivos registrados.'); return }
+      const ok = ds.filter((d) => d.ok).length
+      const lineas = ds.map((d) => `• …${d.endpoint}: ${d.ok ? 'ENVIADO' : 'FALLÓ — ' + d.detalle}`)
+      const cola = ok
+        ? 'Si dice ENVIADO y no ves la notificación, el problema es de entrega en el aparato: permiso revocado o suscripción vieja.'
+        : 'Ninguno salió. El detalle de arriba dice por qué.'
+      alert([`Enviados a ${ok} de ${ds.length} dispositivo(s).`, ...lineas, cola].join('\n\n'))
+    } catch (e) {
+      alert('No se pudo probar: ' + (e?.response?.status ? `error ${e.response.status}` : e?.message))
+    } finally { setProbando(false) }
+  }
   useEffect(() => {
     axios.get(`${API_BASE}/api/v1/chat/diagnostico/notificaciones`, { headers: apiHeaders() })
       .then(({ data }) => setAvisos(data))
@@ -381,6 +401,14 @@ export default function CRM() {
             </button>
           </>
         )}
+        {/* Probar el push desde la propia app: hasta ahora, un envío fallido solo dejaba
+            rastro en los logs del servidor y desde fuera era imposible distinguir "no se
+            envió" de "se envió y no llegó al aparato". */}
+        <button onClick={probarPush} disabled={probando} title="Enviar una notificación de prueba a tus dispositivos"
+          style={{ background: 'none', border: 'none', color: C.muted,
+                   cursor: probando ? 'wait' : 'pointer', padding: 4, display: 'flex' }}>
+          <BellRing size={16} />
+        </button>
         {/* Campana del corredor: sus avisos ligados a la cuenta, no a una conversación.
             Al tocar uno, abre al interesado que lo originó. */}
         <Campana

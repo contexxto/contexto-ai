@@ -242,3 +242,46 @@ async def _olvidar_dispositivo(endpoint: str | None) -> None:
             await db.commit()
     except Exception as exc:  # noqa: BLE001
         log.warning("No se pudo olvidar el dispositivo: %s", exc)
+
+
+async def probar_push(subscription: dict) -> tuple[bool, str]:
+    """Intenta un push y DEVUELVE el resultado en vez de tragárselo en un log.
+
+    Existe porque diagnosticar "no me llega el push" desde fuera era imposible: el envío
+    falla en el servidor, deja un log.error que solo se ve entrando a Render, y el usuario
+    solo percibe silencio. Esto pone el error en la pantalla de quien prueba.
+    """
+    if not VAPID_PRIVATE_KEY:
+        return False, "VAPID_PRIVATE_KEY no configurada en el servidor"
+    if isinstance(subscription, str):
+        try:
+            subscription = json.loads(subscription)
+        except Exception:
+            return False, "La suscripción guardada no es JSON válido"
+    payload = json.dumps({
+        "title": "🔔 Prueba de notificación",
+        "body": "Si ves esto, el push funciona en este aparato.",
+        "url": "/?crm=1",
+        "icon": "/sphere-favicon.svg",
+        "tag": "prueba-push",
+    })
+    try:
+        from pywebpush import webpush
+
+        def _push() -> None:
+            webpush(
+                subscription_info=subscription,
+                data=payload,
+                vapid_private_key=VAPID_PRIVATE_KEY,
+                vapid_claims={"sub": VAPID_EMAIL},
+                ttl=60,
+            )
+
+        await asyncio.to_thread(_push)
+        return True, "enviado"
+    except Exception as exc:  # noqa: BLE001
+        estado = getattr(getattr(exc, "response", None), "status_code", None)
+        detalle = f"{type(exc).__name__}: {exc}"
+        if estado:
+            detalle = f"HTTP {estado} — {detalle}"
+        return False, detalle[:300]

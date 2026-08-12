@@ -805,11 +805,36 @@ async def _leads_de_activo(db: AsyncSession, activo_id: str, direccion: str | No
 
 
 def _funnel_y_orden(leads: list[dict]) -> dict:
+    from datetime import datetime, timezone
     from app.intencion import ESTADOS
     funnel = {e: 0 for e in ESTADOS}
     for ld in leads:
         funnel[ld["estado"]] = funnel.get(ld["estado"], 0) + 1
-    leads.sort(key=lambda x: (bool(x["handoff_estado"]), x["handoff_sugerido"], x["score"]), reverse=True)
+
+    # La recencia NO entraba en el orden: un lead recién llegado se ordenaba solo por score
+    # y caía en medio de la lista, indistinguible de uno de hace un mes. Con 16 interesados
+    # eso es un lead perdido en la práctica. Entra DESPUÉS de las señales de intención
+    # (quien pide corredor sigue mandando) y ANTES del score, que es el desempate.
+    ahora = datetime.now(timezone.utc)
+
+    def _reciente(ld: dict) -> bool:
+        v = ld.get("ultima_actividad")
+        if not v:
+            return False
+        try:
+            t = datetime.fromisoformat(v)
+            if t.tzinfo is None:
+                t = t.replace(tzinfo=timezone.utc)
+            return (ahora - t).total_seconds() < 24 * 3600
+        except (ValueError, TypeError):
+            return False
+
+    for ld in leads:
+        ld["reciente"] = _reciente(ld)
+    leads.sort(
+        key=lambda x: (bool(x["handoff_estado"]), x["handoff_sugerido"], x["reciente"], x["score"]),
+        reverse=True,
+    )
     return {"total": len(leads), "funnel": funnel, "leads": leads}
 
 

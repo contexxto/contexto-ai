@@ -47,6 +47,21 @@ VAPID_EMAIL = os.getenv("VAPID_EMAIL", "mailto:contexxto.ai@gmail.com")
 
 
 # ── API pública ──────────────────────────────────────────────────────────────
+# asyncio solo guarda una referencia DÉBIL a las tareas: una lanzada con create_task y
+# sin guardar puede ser recolectada a mitad de ejecución, y el aviso se pierde sin dejar
+# rastro (lo advierte la propia doc de asyncio). Todos los avisos son fire-and-forget, así
+# que se guarda la referencia hasta que termina.
+_tareas_vivas: set = set()
+
+
+def disparar(coro) -> None:
+    """Lanza una corrutina de aviso sin bloquear la respuesta HTTP, conservando la
+    referencia para que no la recolecte el GC a medias."""
+    tarea = asyncio.ensure_future(coro)
+    _tareas_vivas.add(tarea)
+    tarea.add_done_callback(_tareas_vivas.discard)
+
+
 async def send_notification(
     *,
     email: str | None,

@@ -1204,11 +1204,10 @@ async def responder_lead(
 
     # Notifica al lead (fire-and-forget: no bloquea la respuesta al corredor).
     # La URL /a/{activo_id} reanuda la conversación del handoff en su dispositivo.
-    import asyncio as _aio
-    from app.notifications import send_notification
+    from app.notifications import send_notification, disparar
     corredor_nombre = getattr(user, "nombre", None) or "El corredor"
     inmueble_txt = f" sobre {addr}" if addr else ""
-    _aio.create_task(send_notification(
+    disparar(send_notification(
         email=(h_row or {}).get("lead_email"),
         push_subscription=(h_row or {}).get("push_subscription"),
         title=f"💬 {corredor_nombre} te respondió",

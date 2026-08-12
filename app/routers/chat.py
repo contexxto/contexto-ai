@@ -1623,7 +1623,8 @@ def _notificar_corredor(activo_id: str | None, title: str, body: str) -> None:
             email_subject=title,
         )
 
-    _aio.create_task(_run())
+    from app.notifications import disparar
+    disparar(_run())
 
 
 def _texto(content) -> str:
@@ -1951,3 +1952,42 @@ async def registrar_push_usuario(
             )
         await db.commit()
     return {"ok": True, "push": bool(sub), "email": bool(user.email)}
+
+
+@router.get(
+    "/diagnostico/notificaciones",
+    summary="Qué canales de aviso están configurados en el servidor (sin exponer claves)",
+)
+@limiter.limit("10/minute")
+async def diagnostico_notificaciones(
+    request: Request,
+    user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """Existe porque diagnosticar "no me llega la notificación" era imposible desde fuera:
+    si falta VAPID_PRIVATE_KEY el push se omite con un log.warning y nadie se entera —
+    el correo sigue llegando, así que parece que "a veces funciona".
+
+    Devuelve SOLO booleanos y longitudes, nunca el valor de una clave. Restringido a
+    corredores/inmobiliarias para que no sea una huella pública de la infraestructura.
+    """
+    if user.rol not in ("corredor", "inmobiliaria"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Solo corredores/inmobiliarias.")
+    from app import notifications as N
+    async with AsyncSessionLocal() as db:
+        await ensure_handoff_tables(db)
+        disp = (await db.execute(text(
+            "SELECT count(*) FROM push_dispositivo WHERE user_id = :u"),
+            {"u": user.user_id})).scalar()
+    return {
+        "push": {
+            "vapid_privada_configurada": bool(N.VAPID_PRIVATE_KEY),
+            "vapid_email": N.VAPID_EMAIL,
+            "tus_dispositivos_registrados": disp,
+        },
+        "email": {
+            "resend_configurado": bool(N.RESEND_API_KEY),
+            "remitente": N.FROM_EMAIL,
+        },
+        "app_url": N.APP_URL,
+    }

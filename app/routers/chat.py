@@ -1298,6 +1298,20 @@ _HANDOFF_DDL = [
     # cuando un lead pide hablar o escribe. El email se captura del JWT al suscribirse.
     "CREATE TABLE IF NOT EXISTS push_usuario (user_id uuid PRIMARY KEY, "
     "email text, subscription jsonb, actualizado_en timestamptz DEFAULT now())",
+    # UN dispositivo por fila. push_usuario tiene user_id como PRIMARY KEY, así que solo
+    # cabía UNA suscripción por corredor: cada aparato que concedía permiso pisaba al
+    # anterior y el otro se quedaba sin push para siempre (por eso llegaba el correo pero
+    # no el aviso en la web). Se deja push_usuario para el EMAIL y los dispositivos van
+    # aquí, en vez de alterar la clave primaria de una tabla en producción.
+    "CREATE TABLE IF NOT EXISTS push_dispositivo (user_id uuid NOT NULL, endpoint text NOT NULL, "
+    "subscription jsonb NOT NULL, actualizado_en timestamptz DEFAULT now(), "
+    "PRIMARY KEY (user_id, endpoint))",
+    "CREATE INDEX IF NOT EXISTS ix_push_disp_user ON push_dispositivo (user_id)",
+    # Traspasa la suscripción que ya vivía en push_usuario (idempotente: si ya está, nada).
+    "INSERT INTO push_dispositivo (user_id, endpoint, subscription) "
+    "SELECT user_id, subscription->>'endpoint', subscription FROM push_usuario "
+    "WHERE subscription IS NOT NULL AND subscription->>'endpoint' IS NOT NULL "
+    "ON CONFLICT (user_id, endpoint) DO NOTHING",
 ]
 _handoff_ready = False
 
@@ -1531,26 +1545,29 @@ def _uuid_valido(valor: str | None) -> str | None:
         return None
 
 
-async def _corredor_de_activo(db, activo_id: str | None) -> tuple[str | None, dict | None]:
-    """Email + suscripción push del corredor dueño de un inmueble (para notificarle).
-    Resuelve dueño directo (owner_user_id) o dueño de la agencia (owner_agency_id)."""
+async def _corredor_de_activo(db, activo_id: str | None) -> tuple[str | None, list[dict]]:
+    """Email + suscripciones push del corredor dueño de un inmueble (para notificarle).
+    Resuelve dueño directo (owner_user_id) o dueño de la agencia (owner_agency_id).
+
+    Devuelve TODAS las suscripciones del corredor (teléfono, web, …), no una: antes solo
+    cabía un dispositivo por usuario y el aviso llegaba a uno solo, sin forma de saber cuál."""
     if not activo_id:
-        return None, None
+        return None, []
     try:
         owner = (await db.execute(text(
             "SELECT COALESCE(a.owner_user_id, ag.owner_user)::text AS owner "
             "FROM activos_inmutables a LEFT JOIN agencies ag ON ag.id = a.owner_agency_id "
             "WHERE a.id = :id"), {"id": activo_id})).scalar()
         if not owner:
-            return None, None
-        row = (await db.execute(text(
-            "SELECT email, subscription FROM push_usuario WHERE user_id = :u"),
-            {"u": owner})).mappings().first()
+            return None, []
+        email = (await db.execute(text(
+            "SELECT email FROM push_usuario WHERE user_id = :u"), {"u": owner})).scalar()
+        subs = (await db.execute(text(
+            "SELECT subscription FROM push_dispositivo WHERE user_id = :u"),
+            {"u": owner})).scalars().all()
     except Exception:  # noqa: BLE001 — tablas aún no creadas
-        return None, None
-    if not row:
-        return None, None
-    return row.get("email"), row.get("subscription")
+        return None, []
+    return email, [s for s in subs if s]
 
 
 _perfil_wsp_ready = False
@@ -1596,12 +1613,12 @@ def _notificar_corredor(activo_id: str | None, title: str, body: str) -> None:
     async def _run() -> None:
         async with AsyncSessionLocal() as db:
             await ensure_handoff_tables(db)
-            email, sub = await _corredor_de_activo(db, activo_id)
-        if not email and not sub:
+            email, subs = await _corredor_de_activo(db, activo_id)
+        if not email and not subs:
             return
         from app.notifications import send_notification
         await send_notification(
-            email=email, push_subscription=sub,
+            email=email, push_subscription=subs,
             title=title, body=body, url="/?crm=1",
             email_subject=title,
         )
@@ -1899,5 +1916,17 @@ async def registrar_push_usuario(
             ),
             {"u": user.user_id, "e": user.email, "s": json.dumps(sub) if sub else None},
         )
+        # El dispositivo va a su propia fila, identificado por endpoint: así el corredor
+        # recibe en el teléfono Y en la web a la vez, en vez de solo en el último que
+        # concedió permiso. Volver a suscribir el mismo aparato refresca su fila.
+        if sub:
+            await db.execute(
+                text(
+                    "INSERT INTO push_dispositivo (user_id, endpoint, subscription, actualizado_en) "
+                    "VALUES (:u, :ep, :s, now()) ON CONFLICT (user_id, endpoint) DO UPDATE SET "
+                    "  subscription = EXCLUDED.subscription, actualizado_en = now()"
+                ),
+                {"u": user.user_id, "ep": sub.get("endpoint"), "s": json.dumps(sub)},
+            )
         await db.commit()
     return {"ok": True, "push": bool(sub), "email": bool(user.email)}

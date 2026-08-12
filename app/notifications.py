@@ -50,7 +50,7 @@ VAPID_EMAIL = os.getenv("VAPID_EMAIL", "mailto:contexxto.ai@gmail.com")
 async def send_notification(
     *,
     email: str | None,
-    push_subscription: dict | None,
+    push_subscription: dict | list | None,
     title: str,
     body: str,
     url: str,
@@ -60,7 +60,10 @@ async def send_notification(
 
     Args:
         email: destino del correo (o None para omitir email).
-        push_subscription: PushSubscription JSON (o None para omitir push).
+        push_subscription: PushSubscription JSON, o una LISTA de ellas para avisar a
+             todos los dispositivos del destinatario (teléfono y web a la vez). Se
+             acepta el dict suelto porque el lead sigue teniendo un solo dispositivo
+             por sesión; el corredor manda lista.
         title: título corto (encabezado del email / título de la notificación).
         body: cuerpo del mensaje.
         url: ruta destino al tocar (ej. "/a/<uuid>" o "/?crm=1"). En el email se
@@ -72,10 +75,10 @@ async def send_notification(
         tasks.append(_send_email(
             to=email, subject=email_subject or title, title=title, body=body, url=url,
         ))
-    if push_subscription:
-        tasks.append(_send_push(
-            subscription=push_subscription, title=title, body=body, url=url,
-        ))
+    subs = push_subscription if isinstance(push_subscription, list) else [push_subscription]
+    for sub in subs:
+        if sub:
+            tasks.append(_send_push(subscription=sub, title=title, body=body, url=url))
     if tasks:
         await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -155,4 +158,28 @@ async def _send_push(*, subscription: dict, title: str, body: str, url: str) -> 
         await asyncio.to_thread(_push)
         log.info("Push enviado")
     except Exception as exc:
+        # 404/410 = el navegador se desuscribió (desinstaló la PWA, limpió datos…). Ese
+        # endpoint no revive: sin borrarlo, push_dispositivo acumula basura y cada aviso
+        # gasta un intento en un destino muerto.
+        estado = getattr(getattr(exc, "response", None), "status_code", None)
+        if estado in (404, 410):
+            await _olvidar_dispositivo(subscription.get("endpoint"))
+            log.info("Push: endpoint caducado (%s), dispositivo olvidado", estado)
+            return
         log.error("Error enviando push: %s", exc)
+
+
+async def _olvidar_dispositivo(endpoint: str | None) -> None:
+    """Borra un dispositivo cuyo endpoint ya no existe. Silencioso a propósito: esto
+    corre dentro de un fire-and-forget y no debe tumbar el aviso a los demás."""
+    if not endpoint:
+        return
+    try:
+        from sqlalchemy import text
+        from app.database import AsyncSessionLocal
+        async with AsyncSessionLocal() as db:
+            await db.execute(
+                text("DELETE FROM push_dispositivo WHERE endpoint = :e"), {"e": endpoint})
+            await db.commit()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("No se pudo olvidar el dispositivo: %s", exc)

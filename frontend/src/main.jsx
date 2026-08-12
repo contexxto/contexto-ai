@@ -4,9 +4,6 @@ import './index.css'
 import App from './App.jsx'
 import QueEs from './QueEs.jsx'
 import ErrorBoundary from './ErrorBoundary.jsx'
-// TEMPORAL — sonda del recorte de la barra de abajo. 5 toques rápidos la encienden;
-// apagada no pinta nada. Quitar al cerrar el bug.
-import DebugViewport from './DebugViewport.jsx'
 
 // Web de marketing (/que-es): página standalone. Se renderiza EN LUGAR de <App/>
 // (no dentro), así NO monta la maquinaria del app (sesión Supabase, carga de
@@ -22,7 +19,6 @@ createRoot(document.getElementById('root')).render(
             onLogin={() => window.location.assign('/?login=1')}
             onBroker={() => window.location.assign('/?corredor=1')} />
         : <App />}
-      <DebugViewport />{/* siempre montado: escucha el gesto y graba la bitácora */}
     </ErrorBoundary>
   </StrictMode>,
 )

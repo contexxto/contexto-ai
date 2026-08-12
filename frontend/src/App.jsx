@@ -356,7 +356,16 @@ export default function App() {
   const initialQ = new URLSearchParams(window.location.search).get('q')   // pregunta que llega desde un link compartido
   // Al abrir: chat nuevo y limpio (estilo Claude). Las conversaciones previas
   // quedan accesibles en el sidebar. Excepción: deep-link por QR (carga ese activo).
-  const [sessionId, setSessionId] = useState(() => deepLinkId ? qrSessionId(deepLinkId) : 'session-' + crypto.randomUUID())
+  // /?s={session_id} — retoma UNA conversación concreta. Lo usa el aviso "el corredor te
+  // respondió": sin esto el enlace abría /a/{inmueble}, que crea una sesión DISTINTA
+  // (qr-{inmueble}-{dispositivo}) y el interesado aterrizaba en un chat vacío, sin el
+  // mensaje que venía a leer.
+  const sesionDeUrl = (() => {
+    const s = new URLSearchParams(window.location.search).get('s')
+    return s && /^(session-|qr-)[\w-]{8,}$/.test(s) ? s : null
+  })()
+  const [sessionId, setSessionId] = useState(() =>
+    sesionDeUrl || (deepLinkId ? qrSessionId(deepLinkId) : 'session-' + crypto.randomUUID()))
   const [messages, setMessages]   = useState([])
   const [input, setInput]         = useState('')
   const [loading, setLoading]     = useState(false)
@@ -934,6 +943,33 @@ export default function App() {
   useEffect(() => {
     if (session && (rol === 'corredor' || rol === 'inmobiliaria')) subscribeUserPush(false)
   }, [session, rol, subscribeUserPush])
+
+  // Limpia el ?s= de la barra tras adoptarlo, y deja la conversación como la activa
+  // (si no, al recargar volvería a la sesión anterior guardada).
+  useEffect(() => {
+    if (!sesionDeUrl) return
+    localStorage.setItem(SESSION_KEY, sesionDeUrl)
+    window.history.replaceState({}, '', '/')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Reanuda el modo corredor al abrir una conversación que YA tiene handoff. Sin esto
+  // había un candado circular: el sondeo de respuestas exigía modoCorredor, que solo se
+  // ponía... desde el propio sondeo. Al recargar, el interesado no volvía a ver nunca
+  // los mensajes del corredor. Una sola consulta al cambiar de conversación.
+  useEffect(() => {
+    if (anuncioMode || modoCorredor) return
+    let vivo = true
+    axios.get(`${API_BASE}/api/v1/chat/${sessionId}/handoff`, { headers: apiHeaders() })
+      .then(({ data }) => {
+        if (!vivo || !data?.activo) return
+        setModoCorredor(true)
+        if (data?.corredor_whatsapp) setCorredorWhatsapp(data.corredor_whatsapp)
+      })
+      .catch(() => { /* sin handoff o sin red: silencioso */ })
+    return () => { vivo = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, anuncioMode])
 
   // Deep-link del corredor: una notificación de lead abre /?crm=1 → entra al CRM
   // en cuanto la sesión esté lista (con auth para poder cargar sus leads).

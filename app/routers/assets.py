@@ -1203,16 +1203,21 @@ async def responder_lead(
     await db.commit()
 
     # Notifica al lead (fire-and-forget: no bloquea la respuesta al corredor).
-    # La URL /a/{activo_id} reanuda la conversación del handoff en su dispositivo.
+    # La URL tiene que devolverlo a ESTA conversación. /a/{activo_id} solo sirve si la
+    # sesión nació del QR (ahí el id se reconstruye desde la url); en una conversación
+    # normal creaba una sesión DISTINTA y el interesado aterrizaba en un chat vacío, sin
+    # el mensaje que venía a leer. /?s={session_id} la retoma tal cual.
     from app.notifications import send_notification, disparar
     corredor_nombre = getattr(user, "nombre", None) or "El corredor"
     inmueble_txt = f" sobre {addr}" if addr else ""
+    destino = (f"/a/{activo_id}" if session_id.startswith(f"qr-{activo_id}-")
+               else f"/?s={session_id}")
     disparar(send_notification(
         email=(h_row or {}).get("lead_email"),
         push_subscription=(h_row or {}).get("push_subscription"),
         title=f"💬 {corredor_nombre} te respondió",
         body=f"Tienes un mensaje nuevo{inmueble_txt}. Ábrelo para continuar la conversación.",
-        url=f"/a/{activo_id}",
+        url=destino,
         email_subject=f"💬 {corredor_nombre} te respondió en Contexto AI",
     ))
 

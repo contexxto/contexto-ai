@@ -1212,13 +1212,22 @@ async def responder_lead(
     inmueble_txt = f" sobre {addr}" if addr else ""
     destino = (f"/a/{activo_id}" if session_id.startswith(f"qr-{activo_id}-")
                else f"/?s={session_id}")
+    # El cuerpo lleva el mensaje, no un "tienes algo nuevo": así el interesado decide
+    # desde la propia notificación si abre, como en cualquier app de mensajería.
+    vista = payload.texto.strip()
+    if len(vista) > 120:
+        vista = vista[:120] + "…"
     disparar(send_notification(
         email=(h_row or {}).get("lead_email"),
         push_subscription=(h_row or {}).get("push_subscription"),
         title=f"💬 {corredor_nombre} te respondió",
-        body=f"Tienes un mensaje nuevo{inmueble_txt}. Ábrelo para continuar la conversación.",
+        body=vista,
         url=destino,
         email_subject=f"💬 {corredor_nombre} te respondió en Contexto AI",
+        # Un aviso por conversación: los mensajes del mismo hilo se reemplazan.
+        tag=f"conv-{session_id}",
+        # Y como mucho un correo cada 30 min por hilo: seis turnos ya no son seis correos.
+        email_clave=f"lead:{session_id}",
     ))
 
     return {"ok": True}

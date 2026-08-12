@@ -1618,17 +1618,34 @@ async def _whatsapp_de_activo(db, activo_id: str | None) -> str | None:
         return None
 
 
-def _notificar_corredor(activo_id: str | None, title: str, body: str) -> None:
+def _notificar_corredor(activo_id: str | None, title: str, body: str,
+                        session_id: str | None = None) -> None:
     """Dispara (fire-and-forget) la notificación al corredor dueño del inmueble.
-    Abre directo en el CRM. No bloquea la respuesta HTTP."""
-    if not activo_id:
+    Abre directo en el CRM. No bloquea la respuesta HTTP.
+
+    session_id agrupa el aviso POR INTERESADO: el push de un lead reemplaza al anterior
+    del mismo lead (como un chat), pero nunca al de otro — la url es /?crm=1 para todos,
+    así que agrupar por url los solaparía. Y frena el correo a uno cada 30 minutos por
+    interesado: una conversación de seis turnos mandaba seis correos."""
+    if not activo_id and not session_id:
         return
-    import asyncio as _aio
 
     async def _run() -> None:
         async with AsyncSessionLocal() as db:
             await ensure_handoff_tables(db)
-            email, subs = await _corredor_de_activo(db, activo_id)
+            # El inmueble puede no venir en el session_id: en una conversación normal se
+            # engancha en handoff_sesion al pedir corredor. Sin esto, el corredor NUNCA se
+            # enteraba de que el interesado le respondía — el llamante pasaba
+            # activo_de_session(), que devuelve None fuera del flujo de QR, y salíamos aquí
+            # en silencio. Medido en la prueba de Carlos: 3 mensajes del interesado, 0 avisos.
+            aid = activo_id
+            if not aid and session_id:
+                aid = (await db.execute(text(
+                    "SELECT activo_id::text FROM handoff_sesion WHERE session_id = :s"),
+                    {"s": session_id})).scalar()
+            if not aid:
+                return
+            email, subs = await _corredor_de_activo(db, aid)
         if not email and not subs:
             return
         from app.notifications import send_notification
@@ -1636,6 +1653,8 @@ def _notificar_corredor(activo_id: str | None, title: str, body: str) -> None:
             email=email, push_subscription=subs,
             title=title, body=body, url="/?crm=1",
             email_subject=title,
+            tag=f"lead-{session_id}" if session_id else None,
+            email_clave=f"corredor:{email}:{session_id}" if (email and session_id) else None,
         )
 
     from app.notifications import disparar
@@ -1724,7 +1743,8 @@ async def registrar_handoff(
     # Avisa al corredor: un lead caliente quiere hablar (lo más valioso del embudo).
     _notificar_corredor(activo_id,
         "🔥 Un interesado quiere hablar contigo",
-        f"{quien} pidió hablar con el corredor. Ábrelo en tu CRM para responderle.")
+        f"{quien} pidió hablar con el corredor. Ábrelo en tu CRM para responderle.",
+        session_id=session_id)
     return {"ok": True, "estado": "solicitado", "activo_id": activo_id, "corredor_whatsapp": wsp}
 
 
@@ -1787,7 +1807,8 @@ async def handoff_mensaje_lead(
         preview = preview[:90] + "…"
     _notificar_corredor(activo_de_session(session_id),
         f"💬 {quien} te escribió",
-        preview)
+        preview,
+        session_id=session_id)
 
     return {"ok": True}
 

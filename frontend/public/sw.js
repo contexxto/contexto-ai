@@ -69,8 +69,11 @@ self.addEventListener('push', (event) => {
       icon,
       badge,
       data: { url: destUrl },
-      // Agrupa las notificaciones de la misma sesión (evita spam)
-      tag: destUrl,
+      // Agrupa por CONVERSACIÓN, como WhatsApp: los mensajes de un mismo hilo se
+      // reemplazan entre sí en vez de apilarse. El servidor manda el tag porque la url
+      // no siempre sirve: la del corredor es /?crm=1 para todos sus leads, así que
+      // agrupar por url haría que un interesado tapara el aviso de otro.
+      tag: data.tag ?? destUrl,
       renotify: true,
     })
   )

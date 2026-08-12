@@ -70,6 +70,9 @@ async def send_notification(
     body: str,
     url: str,
     email_subject: str | None = None,
+    tag: str | None = None,
+    email_clave: str | None = None,
+    email_minutos: int = 30,
 ) -> None:
     """Notifica a un destinatario por email Y push de forma concurrente.
 
@@ -84,18 +87,57 @@ async def send_notification(
         url: ruta destino al tocar (ej. "/a/<uuid>" o "/?crm=1"). En el email se
              antepone APP_URL; en push se usa relativa (el Service Worker resuelve).
         email_subject: asunto del correo (por defecto = title).
+        tag: identificador de AGRUPACIÓN del push. Los avisos con el mismo tag se
+             reemplazan entre sí en el aparato en vez de apilarse — el comportamiento de
+             cualquier app de mensajería. Debe ser por conversación. Si no se pasa, el
+             Service Worker agrupa por url.
+        email_clave: si se indica, el correo se manda como MUCHO una vez cada
+             `email_minutos` para esa clave. El push es instantáneo y gratis para el
+             usuario; el correo no: una conversación de seis turnos generaba seis correos.
+             El correo pasa a ser el aviso de "tienes algo pendiente", no una copia de
+             cada mensaje. Sin clave, se envía siempre (avisos puntuales, no de hilo).
+        email_minutos: ventana del freno anterior.
     """
     tasks = []
-    if email:
+    if email and (email_clave is None or await _email_permitido(email_clave, email_minutos)):
         tasks.append(_send_email(
             to=email, subject=email_subject or title, title=title, body=body, url=url,
         ))
     subs = push_subscription if isinstance(push_subscription, list) else [push_subscription]
     for sub in subs:
         if sub:
-            tasks.append(_send_push(subscription=sub, title=title, body=body, url=url))
+            tasks.append(_send_push(subscription=sub, title=title, body=body, url=url, tag=tag))
     if tasks:
         await asyncio.gather(*tasks, return_exceptions=True)
+
+
+async def _email_permitido(clave: str, minutos: int) -> bool:
+    """¿Toca mandar correo para esta clave, o ya se mandó hace poco?
+
+    Marca el envío en la MISMA sentencia que lo consulta: el INSERT … ON CONFLICT DO
+    UPDATE … WHERE devuelve fila solo si insertó o si el anterior ya caducó. Dos avisos
+    simultáneos no pueden colarse los dos, que es justo lo que pasaría comprobando y
+    escribiendo por separado.
+
+    Ante cualquier fallo devuelve True: perder un aviso es peor que mandar uno de más.
+    """
+    try:
+        from sqlalchemy import text
+        from app.database import AsyncSessionLocal
+        async with AsyncSessionLocal() as db:
+            await db.execute(text(
+                "CREATE TABLE IF NOT EXISTS aviso_email ("
+                "clave text PRIMARY KEY, enviado_en timestamptz NOT NULL DEFAULT now())"))
+            fila = (await db.execute(text(
+                "INSERT INTO aviso_email (clave, enviado_en) VALUES (:c, now()) "
+                "ON CONFLICT (clave) DO UPDATE SET enviado_en = now() "
+                "  WHERE aviso_email.enviado_en < now() - make_interval(mins => :m) "
+                "RETURNING 1"), {"c": clave, "m": minutos})).scalar()
+            await db.commit()
+            return fila is not None
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Freno de correo no disponible (%s) — se envía igual", exc)
+        return True
 
 
 # ── Email vía Resend ─────────────────────────────────────────────────────────
@@ -141,7 +183,7 @@ async def _send_email(*, to: str, subject: str, title: str, body: str, url: str)
 
 
 # ── Web Push vía pywebpush ───────────────────────────────────────────────────
-async def _send_push(*, subscription: dict, title: str, body: str, url: str) -> None:
+async def _send_push(*, subscription: dict, title: str, body: str, url: str, tag: str | None = None) -> None:
     if not VAPID_PRIVATE_KEY:
         log.warning("VAPID_PRIVATE_KEY no configurada — push omitido")
         return
@@ -157,6 +199,8 @@ async def _send_push(*, subscription: dict, title: str, body: str, url: str) -> 
         "body": body,
         "url": url,
         "icon": "/sphere-favicon.svg",
+        # Agrupa por conversación en el aparato (ver sw.js): un hilo, un aviso.
+        **({"tag": tag} if tag else {}),
     })
     try:
         from pywebpush import webpush  # lazy import

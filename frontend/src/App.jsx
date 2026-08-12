@@ -129,7 +129,12 @@ function ActBtn({ title, onClick, active, children }) {
 
 function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onOpenMap, isLast, sessionId, mapBboxRef }) {
   const isUser = msg.role === 'user'
-  const sustancioso = !isUser && ((msg.toolCalls?.length > 0) || (msg.content?.length > 450))
+  // Mensaje de un CORREDOR de carne y hueso, no del agente. Se pinta como respuesta
+  // (a la izquierda) pero NO lleva nada de la interfaz del agente: pulgares, escuchar,
+  // compartir ni el nudge. Pedir "¿te gustó esta respuesta?" sobre lo que escribió una
+  // persona ensucia la conversación y manda ese voto al feedback del modelo.
+  const esCorredor = !!msg.deCorredor
+  const sustancioso = !isUser && !esCorredor && ((msg.toolCalls?.length > 0) || (msg.content?.length > 450))
   const [speaking, setSpeaking] = useState(false)
   const [feedback, setFeedback] = useState(null)  // 'up' | 'down' | null
   // Sync lista⇄mapa (Mapa Vivo ZONA): {id, origen} del inmueble resaltado, compartido por
@@ -258,8 +263,8 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
         </div>
       )}
 
-      {/* ── Botones de acción ── */}
-      {!isUser && (
+      {/* ── Botones de acción (solo del agente: ver esCorredor) ── */}
+      {!isUser && !esCorredor && (
         <div style={{ paddingLeft: AVATAR_INDENT, display:'flex', alignItems:'center', gap:8, marginTop:6, flexWrap:'wrap' }}>
           {/* Compartir destacado */}
           <button onClick={onShare} title="Compartir esta conversación"
@@ -546,6 +551,7 @@ export default function App() {
             setMessages(prev => [...prev, ...hm.map((m) => ({
               id: `h-${m.id}`,
               role: m.autor === 'corredor' ? 'ai' : 'user',
+              deCorredor: m.autor === 'corredor',
               content: m.autor === 'corredor' ? `👤 Corredor: ${m.texto}` : m.texto,
               time: '', toolCalls: [],
             }))])
@@ -576,6 +582,7 @@ export default function App() {
             results: Array.isArray(m.results) ? m.results : [] }))
           const hmsgs = (h.mensajes || []).map((m) => ({
             id: `h-${m.id}`, role: m.autor === 'corredor' ? 'ai' : 'user',
+            deCorredor: m.autor === 'corredor',
             content: m.autor === 'corredor' ? `👤 Corredor: ${m.texto}` : m.texto, time: '', toolCalls: [] }))
           for (const m of (h.mensajes || [])) handoffSeenRef.current = Math.max(handoffSeenRef.current, m.id)
           setMessages([...base, ...hmsgs])
@@ -1052,7 +1059,7 @@ export default function App() {
       if (data?.corredor_whatsapp) setCorredorWhatsapp(data.corredor_whatsapp)
       setModoCorredor(true)
       setMessages(prev => [...prev, {
-        id: crypto.randomUUID(), role: 'ai',
+        id: crypto.randomUUID(), role: 'ai', deCorredor: true,   // aviso del sistema: sin interfaz del agente
         content: '🤝 Te conecté con el corredor. Escríbele aquí mismo — te responde en este chat, sin salir de Contexto.',
         time: new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }), toolCalls: [],
       }])
@@ -1096,7 +1103,7 @@ export default function App() {
         for (const m of (data.mensajes || [])) handoffSeenRef.current = Math.max(handoffSeenRef.current, m.id)
         if (nuevos.length) {
           setMessages(prev => [...prev, ...nuevos.map(m => ({
-            id: `h-${m.id}`, role: 'ai', content: `👤 Corredor: ${m.texto}`,
+            id: `h-${m.id}`, role: 'ai', deCorredor: true, content: `👤 Corredor: ${m.texto}`,
             time: new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }), toolCalls: [],
           }))])
         }

@@ -1004,7 +1004,19 @@ export default function App() {
       }])
       // Suscribe al lead a Web Push para recibir notificación nativa cuando el corredor responda.
       subscribeToPush(sessionId)
-    } catch { setError('No se pudo conectar con el corredor en este momento.') }
+    } catch (e) {
+      // El catch era ciego y se tragaba la causa: ante "no funciona" no quedaba NADA que
+      // mirar sin la consola del aparato. Ahora el propio mensaje dice qué pasó — el
+      // servidor respondió con un código, o no respondió (red / CORS / servicio caído).
+      const codigo = e?.response?.status
+      const detalle = e?.response?.data?.detail
+      setError(
+        codigo
+          ? `No se pudo conectar con el corredor (error ${codigo}${detalle ? `: ${detalle}` : ''}).`
+          : `No se pudo conectar con el corredor — el servidor no respondió (${e?.message || 'sin detalle'}).`
+      )
+      console.warn('handoff falló:', e)
+    }
   }, [sessionId, session, subscribeToPush, activoCandidato])
 
   // Tras registrarse, continúa el handoff que quedó pendiente.

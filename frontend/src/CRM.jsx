@@ -379,9 +379,14 @@ export default function CRM() {
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', color: C.text, padding: '0 16px 16px',
                   fontFamily: 'inherit' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 2px 12px', flexShrink: 0 }}>
+      {/* flexWrap es lo que evita que en el celular los chips empujen la campana, la
+          prueba de push y el recargar FUERA de pantalla: sin él, el corredor desde el
+          móvil no podía alcanzarlos. El título no se parte porque no encoge. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 2px 12px',
+                    flexShrink: 0, flexWrap: 'wrap' }}>
         <Users size={20} color={C.teal} />
-        <h1 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, letterSpacing: '-.02em' }}>Tu cartera</h1>
+        <h1 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, letterSpacing: '-.02em',
+                     whiteSpace: 'nowrap' }}>Tu cartera</h1>
         {d && d.total > 0 && (
           <>
             <button onClick={() => { setAnalisis((a) => !a); setAsistente(null); setLeadPuente(null) }} title="Análisis y reportería de tu cartera"

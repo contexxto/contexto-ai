@@ -1188,9 +1188,17 @@ async def responder_lead(
     h_row = (await db.execute(
         text("SELECT lead_email, push_subscription FROM handoff_sesion WHERE session_id = :s"),
         {"s": session_id})).mappings().first()
-    addr = (await db.execute(
-        text("SELECT direccion FROM activos_inmutables WHERE id = :id"),
-        {"id": str(activo_id)})).scalar()
+    # La columna es direccion_estandarizada; `direccion` NO existe. Esta consulta lanzaba
+    # UndefinedColumn y tumbaba TODO el endpoint: el corredor nunca pudo responder desde el
+    # CRM ("No se pudo enviar. Revisa tu conexión"). Latente hasta que alguien lo intentó.
+    # Va en su propio try: la dirección solo adorna el texto del aviso — que falle no puede
+    # costar el mensaje, que a estas alturas ya está guardado.
+    try:
+        addr = (await db.execute(
+            text("SELECT direccion_estandarizada FROM activos_inmutables WHERE id = :id"),
+            {"id": str(activo_id)})).scalar()
+    except Exception:  # noqa: BLE001
+        addr = None
 
     await db.commit()
 

@@ -1216,10 +1216,13 @@ async def responder_lead(
     lead_uid = (await db.execute(text(
         "SELECT lead_user_id::text FROM handoff_sesion WHERE session_id = :s"),
         {"s": session_id})).scalar()
+    # Se guardan LAS DOS referencias, no una: por usuario (así ve sus avisos desde
+    # cualquier conversación) y por sesión (así los ve aunque la petición no resuelva la
+    # autenticación). Guardar solo el usuario dejaba la campana vacía en cuanto el
+    # interesado abría otro chat — que es justo lo que pasó en la prueba.
     await registrar_notificacion(
         db, titulo=f"{corredor_nombre} te respondió", cuerpo=vista[:160], url=destino,
-        session_id=session_id, user_id=lead_uid,
-        destinatario_session=None if lead_uid else session_id)
+        session_id=session_id, user_id=lead_uid, destinatario_session=session_id)
 
     await db.commit()
 

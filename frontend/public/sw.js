@@ -62,7 +62,11 @@ self.addEventListener('push', (event) => {
   // El logo ACTUAL de la marca (los cuatro cuadros), no la esfera del favicon antiguo.
   // PNG y no SVG: Android renderiza mal el SVG en las notificaciones.
   const icon    = data.icon   ?? '/icon-192.png'
-  const badge   = '/icon-192.png'
+  // El BADGE (el iconito de la barra de estado) no es el icono: Android lo ENMASCARA,
+  // pinta de blanco todo pixel no transparente. Con icon-192.png, que tiene fondo oscuro
+  // opaco, salia un cuadrado blanco sin identidad. badge-96.png es la silueta del logo
+  // sobre fondo transparente, que es lo que ese formato pide.
+  const badge   = '/badge-96.png'
   const destUrl = data.url    ?? '/'
 
   event.waitUntil((async () => {

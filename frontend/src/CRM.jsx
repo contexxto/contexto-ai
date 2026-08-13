@@ -439,8 +439,6 @@ export default function CRM() {
         {/* Campana del corredor: sus avisos ligados a la cuenta, no a una conversación.
             Al tocar uno, abre al interesado que lo originó. */}
         <Campana
-          onProbar={probarPush}
-          probando={probando}
           onAbrir={(n) => {
             const l = (d?.leads || []).find((x) => x.session_id === n.session_id)
             if (l) { setSel(l); setAsistente(null); setAnalisis(false) }
@@ -509,6 +507,15 @@ export default function CRM() {
           <ul style={{ margin: '5px 0 0', paddingLeft: 18 }}>
             {problemas.map((p, i) => <li key={i}>{p}</li>)}
           </ul>
+          {/* La prueba de push vive AQUÍ y no en la bandeja: es una herramienta de
+              diagnóstico, y en la bandeja era una nota permanente sin sentido para quien
+              solo quiere leer sus avisos. Aquí solo aparece cuando hay algo que probar. */}
+          <button onClick={probarPush} disabled={probando}
+            style={{ marginTop: 8, padding: '6px 13px', borderRadius: 999, fontWeight: 700,
+                     border: '1px solid rgba(232,184,75,.5)', background: 'none',
+                     color: '#E8B84B', cursor: probando ? 'wait' : 'pointer', fontSize: '.78rem' }}>
+            {probando ? 'Probando…' : 'Enviar una notificación de prueba'}
+          </button>
         </div>
       )}
 

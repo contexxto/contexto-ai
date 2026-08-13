@@ -30,7 +30,7 @@ function haceCuanto(iso) {
   return `hace ${Math.floor(s / 86400)} d`
 }
 
-export default function Campana({ sessionId, onAbrir, onProbar, probando }) {
+export default function Campana({ sessionId, onAbrir }) {
   const [datos, setDatos] = useState({ hilos: [], no_leidas: 0 })
   const [abierta, setAbierta] = useState(false)
   const [movil, setMovil] = useState(() => window.innerWidth < ANCHO_MOVIL)
@@ -129,15 +129,6 @@ export default function Campana({ sessionId, onAbrir, onProbar, probando }) {
           )}
         </button>
       ))}
-      {onProbar && (
-        <button onClick={() => { setAbierta(false); onProbar() }} disabled={probando}
-          style={{ display: 'block', width: '100%', textAlign: 'left', marginTop: 4,
-                   padding: '11px 12px', borderTop: `1px solid ${C.borde}`, background: 'none',
-                   border: 'none', color: C.tenue, cursor: probando ? 'wait' : 'pointer',
-                   fontFamily: 'inherit', fontSize: '.78rem' }}>
-          {probando ? 'Probando…' : '¿No te llegan? Enviar una notificación de prueba'}
-        </button>
-      )}
     </>
   )
 

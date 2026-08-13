@@ -44,7 +44,16 @@ export default function Campana({ sessionId, onAbrir, onProbar, probando }) {
     const tick = () => { if (document.visibilityState === 'visible') cargar() }
     const iv = setInterval(tick, CADENCIA)
     document.addEventListener('visibilitychange', tick)   // al volver, al día
-    return () => { clearInterval(iv); document.removeEventListener('visibilitychange', tick) }
+    // AL INSTANTE: el Service Worker recibe el push y avisa a esta pestaña. El sondeo
+    // pasa a ser solo la red de seguridad (si no hay permiso de push, o el aviso llegó
+    // mientras la pestaña estaba cerrada).
+    const onSW = (e) => { if (e.data?.type === 'aviso-nuevo') cargar() }
+    navigator.serviceWorker?.addEventListener?.('message', onSW)
+    return () => {
+      clearInterval(iv)
+      document.removeEventListener('visibilitychange', tick)
+      navigator.serviceWorker?.removeEventListener?.('message', onSW)
+    }
   }, [cargar])
 
   // Cerrar al tocar fuera: sin esto el panel se queda abierto tapando la conversación.

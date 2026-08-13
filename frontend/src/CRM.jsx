@@ -212,7 +212,15 @@ export default function CRM() {
     const tick = () => { if (document.visibilityState === 'visible') cargar(true) }
     const iv = setInterval(tick, 45000)
     document.addEventListener('visibilitychange', tick)   // al volver a la pestaña, al día
-    return () => { clearInterval(iv); document.removeEventListener('visibilitychange', tick) }
+    // Y al instante cuando entra un push: el Service Worker avisa a la pestaña, así el
+    // lead nuevo no espera al siguiente sondeo.
+    const onSW = (e) => { if (e.data?.type === 'aviso-nuevo') cargar(true) }
+    navigator.serviceWorker?.addEventListener?.('message', onSW)
+    return () => {
+      clearInterval(iv)
+      document.removeEventListener('visibilitychange', tick)
+      navigator.serviceWorker?.removeEventListener?.('message', onSW)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

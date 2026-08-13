@@ -65,8 +65,14 @@ self.addEventListener('push', (event) => {
   const badge   = '/icon-192.png'
   const destUrl = data.url    ?? '/'
 
-  event.waitUntil(
-    self.registration.showNotification(title, {
+  event.waitUntil((async () => {
+    // Avisa a las pestañas ABIERTAS para que la campana se actualice al instante. Sin
+    // esto todo dependía del sondeo y un aviso podía tardar hasta 40 segundos en aparecer
+    // con la app delante — se siente roto aunque técnicamente funcione.
+    const abiertas = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    for (const c of abiertas) c.postMessage({ type: 'aviso-nuevo' })
+
+    await self.registration.showNotification(title, {
       body,
       icon,
       badge,
@@ -78,7 +84,7 @@ self.addEventListener('push', (event) => {
       tag: data.tag ?? destUrl,
       renotify: true,
     })
-  )
+  })())
 })
 
 self.addEventListener('notificationclick', (event) => {

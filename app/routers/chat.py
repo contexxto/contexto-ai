@@ -1740,23 +1740,74 @@ async def listar_notificaciones(
     }
 
 
+@router.get("/conversaciones", summary="Bandeja: avisos agrupados POR CONVERSACIÓN")
+@limiter.limit("60/minute")
+async def listar_conversaciones(
+    request: Request,
+    session_id: str | None = None,
+    user: CurrentUser | None = Depends(get_optional_user),
+) -> dict:
+    """La bandeja que ve el usuario: una fila por CONVERSACIÓN, no por aviso.
+
+    El sistema guardaba eventos y la campana los listaba en plano. Pero nadie piensa en
+    "siete avisos": piensa en "tres conversaciones con mensajes nuevos", como en cualquier
+    app de mensajería. Con varios corredores en paralelo —o varios interesados, del lado
+    del corredor— una lista de eventos es ruido en el que se pierde justo lo que importa.
+
+    Devuelve por hilo: el último mensaje, cuándo, y cuántos lleva sin leer. Y `no_leidas`
+    del total es el número de HILOS con algo nuevo, que es lo que debe marcar la campana.
+    """
+    if not user and not session_id:
+        return {"hilos": [], "no_leidas": 0}
+    async with AsyncSessionLocal() as db:
+        await ensure_handoff_tables(db)
+        filas = (await db.execute(text(
+            "SELECT session_id, titulo, cuerpo, url, creada_en, sin_leer FROM ("
+            "  SELECT session_id, titulo, cuerpo, url, creada_en, "
+            "         count(*) FILTER (WHERE leida_en IS NULL) OVER (PARTITION BY session_id) AS sin_leer, "
+            "         row_number() OVER (PARTITION BY session_id ORDER BY creada_en DESC) AS rn "
+            "  FROM notificacion "
+            "  WHERE (CAST(:u AS uuid) IS NOT NULL AND destinatario_user_id = CAST(:u AS uuid)) "
+            "     OR (CAST(:s AS text) IS NOT NULL AND destinatario_session = CAST(:s AS text)) "
+            ") t WHERE rn = 1 ORDER BY creada_en DESC LIMIT 40"),
+            {"u": user.user_id if user else None, "s": session_id})).mappings().all()
+    return {
+        "hilos": [{
+            "session_id": f["session_id"], "titulo": f["titulo"], "cuerpo": f["cuerpo"],
+            "url": f["url"], "creada_en": f["creada_en"].isoformat(),
+            "sin_leer": f["sin_leer"],
+        } for f in filas],
+        # Hilos con algo nuevo, no avisos sueltos: es lo que significa el número rojo.
+        "no_leidas": sum(1 for f in filas if f["sin_leer"] > 0),
+    }
+
+
 @router.post("/notificaciones/leidas", summary="Campana: marcar avisos como leídos")
 @limiter.limit("60/minute")
 async def marcar_notificaciones_leidas(
     request: Request,
     session_id: str | None = None,
+    hilo: str | None = None,
     user: CurrentUser | None = Depends(get_optional_user),
 ) -> dict:
-    """Marca como leídos TODOS los avisos del destinatario. Se llama al abrir la campana."""
+    """Marca avisos como leídos. Con `hilo`, SOLO los de esa conversación.
+
+    Antes marcaba todo al abrir la campana, incluidos hilos que no habías mirado — como si
+    WhatsApp diera por leídos todos los chats por abrir la lista. Ahora se marca al ABRIR
+    la conversación, que es cuando de verdad los leíste.
+
+    Sin `hilo` sigue marcando todo: lo usa el botón de "marcar todo como visto".
+    """
     if not user and not session_id:
         return {"ok": True, "marcadas": 0}
     async with AsyncSessionLocal() as db:
         await ensure_handoff_tables(db)
         r = await db.execute(text(
             "UPDATE notificacion SET leida_en = now() WHERE leida_en IS NULL AND "
+            "(CAST(:h AS text) IS NULL OR session_id = CAST(:h AS text)) AND "
             "((CAST(:u AS uuid) IS NOT NULL AND destinatario_user_id = CAST(:u AS uuid)) "
             " OR (CAST(:s AS text) IS NOT NULL AND destinatario_session = CAST(:s AS text)))"),
-            {"u": user.user_id if user else None, "s": session_id})
+            {"u": user.user_id if user else None, "s": session_id, "h": hilo})
         await db.commit()
     return {"ok": True, "marcadas": r.rowcount}
 

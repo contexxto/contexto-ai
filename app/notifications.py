@@ -377,10 +377,6 @@ def forma_vapid() -> dict:
     return info
 
 
-OPERADOR_EMAIL = os.getenv("NOTIFY_OPERATOR_EMAIL") or os.getenv(
-    "VAPID_EMAIL", "mailto:contexxto.ai@gmail.com").replace("mailto:", "")
-
-
 async def revisar_canales() -> list[str]:
     """Comprueba al arrancar que los canales de aviso sirven, y avisa AL OPERADOR.
 
@@ -389,9 +385,11 @@ async def revisar_canales() -> list[str]:
     servidor y no hay a quién reportar. Solo consigue desconfiar del producto en mitad de
     una negociación. El diagnóstico es del operador, no del usuario.
 
-    Se registra siempre en el log (visible en Render) y, si el correo funciona, se manda un
-    aviso. Si lo que está roto ES el correo, queda el log — por eso no se depende de un
-    solo canal para reportar.
+    Solo escribe en el log, que es donde mira un operador. NO manda correo: vigilar un
+    fallo no es arreglarlo, y las causas que esto detectaba ya están cerradas en el origen
+    (el formato de la clave se normaliza, la credencial se construye bien, las
+    suscripciones caducadas se borran solas). Queda como red de regresión, no como sistema
+    de alertas — y una red de regresión no necesita bandeja de entrada.
     """
     problemas: list[str] = []
     if not VAPID_VALIDA:
@@ -407,13 +405,4 @@ async def revisar_canales() -> list[str]:
         return []
     for p in problemas:
         log.error("CANAL DE AVISO ROTO — %s", p)
-    if RESEND_API_KEY and OPERADOR_EMAIL:
-        try:
-            await _send_email(
-                to=OPERADOR_EMAIL, subject="⚠️ Contexto: un canal de avisos está roto",
-                title="Revisa la configuración de notificaciones",
-                body=" · ".join(problemas), url="/",
-            )
-        except Exception as exc:  # noqa: BLE001 — avisar del fallo no puede tumbar el arranque
-            log.error("No se pudo avisar al operador: %s", exc)
     return problemas

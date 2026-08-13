@@ -136,7 +136,14 @@ export default function CRM() {
       const ds = data?.dispositivos || []
       if (!ds.length) { alert(data?.mensaje || 'No tienes dispositivos registrados.'); return }
       const ok = ds.filter((d) => d.ok).length
+      const f = data?.forma || {}
+      const radiografia = 'Clave del servidor: ' + [
+        `carga=${f.carga}`, `largo=${f.largo_crudo}`,
+        `base64=${f.decodifica_base64}`, `pem="${f.cabecera_pem}"`,
+        `decodificado=${f.largo_decodificado}`,
+      ].join(' · ')
       const lineas = ds.map((d) => `• …${d.endpoint}: ${d.ok ? 'ENVIADO' : 'FALLÓ — ' + d.detalle}`)
+      lineas.push(radiografia)
       const cola = ok
         ? 'Si dice ENVIADO y no ves la notificación, el problema es de entrega en el aparato: permiso revocado o suscripción vieja.'
         : 'Ninguno salió. El detalle de arriba dice por qué.'

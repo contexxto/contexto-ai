@@ -2121,6 +2121,9 @@ async def diagnostico_notificaciones(
             # asi que este diagnostico decia "todo bien" mientras cada envio fallaba.
             "vapid_privada_configurada": bool(N.VAPID_VALIDA),
             "vapid_estado": N.VAPID_DETALLE,
+            # Forma de la clave (longitudes y cabeceras, nunca el material): dice DONDE
+            # se rompe cuando "no se puede leer".
+            "vapid_forma": N.forma_vapid(),
             "vapid_email": N.VAPID_EMAIL,
             "tus_dispositivos_registrados": disp,
         },
@@ -2152,18 +2155,19 @@ async def probar_push_propio(
     if user.rol not in ("corredor", "inmobiliaria"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                             detail="Solo corredores/inmobiliarias.")
-    from app.notifications import probar_push, VAPID_PRIVATE_KEY
+    from app.notifications import probar_push, VAPID_PRIVATE_KEY, forma_vapid
     async with AsyncSessionLocal() as db:
         await ensure_handoff_tables(db)
         filas = (await db.execute(text(
             "SELECT endpoint, subscription FROM push_dispositivo WHERE user_id = :u"),
             {"u": user.user_id})).mappings().all()
     if not filas:
-        return {"vapid_configurada": bool(VAPID_PRIVATE_KEY), "dispositivos": [],
+        return {"vapid_configurada": bool(VAPID_PRIVATE_KEY), "forma": forma_vapid(), "dispositivos": [],
                 "mensaje": "No tienes ningún dispositivo registrado. Abre el CRM y acepta "
                            "el permiso de notificaciones."}
     resultados = []
     for f in filas:
         ok, detalle = await probar_push(f["subscription"])
         resultados.append({"endpoint": f["endpoint"][-24:], "ok": ok, "detalle": detalle})
-    return {"vapid_configurada": bool(VAPID_PRIVATE_KEY), "dispositivos": resultados}
+    return {"vapid_configurada": bool(VAPID_PRIVATE_KEY), "forma": forma_vapid(),
+            "dispositivos": resultados}

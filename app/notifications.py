@@ -317,3 +317,36 @@ async def probar_push(subscription: dict) -> tuple[bool, str]:
         if estado:
             detalle = f"HTTP {estado} — {detalle}"
         return False, detalle[:300]
+
+
+def forma_vapid() -> dict:
+    """Radiografía de la clave privada SIN revelarla: longitudes y cabeceras, nada de
+    material criptográfico. Existe porque "la clave no se puede leer" no dice DÓNDE se
+    rompe: si llega truncada, si no es base64, si decodifica a algo que no es un PEM, o
+    si es un PEM de un tipo que no sirve.
+    """
+    bruto = os.getenv("VAPID_PRIVATE_KEY", "") or ""
+    info = {
+        "largo_crudo": len(bruto),
+        "tiene_espacios_o_saltos": any(c in bruto for c in " \n\r\t"),
+        "empieza_con_pem": bruto.strip().startswith("-----"),
+        "decodifica_base64": None,
+        "largo_decodificado": None,
+        "cabecera_pem": None,
+        "carga": VAPID_DETALLE,
+    }
+    v = bruto.strip().strip('"').strip("'")
+    if v and not v.startswith("-----"):
+        try:
+            d = base64.b64decode(v).decode()
+            info["decodifica_base64"] = True
+            info["largo_decodificado"] = len(d)
+            primera = d.strip().splitlines()[0] if d.strip() else ""
+            info["cabecera_pem"] = primera[:40]      # "-----BEGIN EC PRIVATE KEY-----": no es secreto
+        except Exception as exc:  # noqa: BLE001
+            info["decodifica_base64"] = False
+            info["cabecera_pem"] = f"no decodifica ({type(exc).__name__})"
+    elif v:
+        primera = v.splitlines()[0]
+        info["cabecera_pem"] = primera[:40]
+    return info

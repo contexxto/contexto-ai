@@ -77,6 +77,31 @@ if not VAPID_VALIDA:
 
 VAPID_EMAIL = os.getenv("VAPID_EMAIL", "mailto:contexxto.ai@gmail.com")
 
+_credencial = None
+
+
+def credencial_vapid():
+    """El objeto Vapid que espera pywebpush, construido desde nuestro PEM.
+
+    AQUI estaba el fallo que tuvo el push muerto desde el principio. pywebpush documenta
+    `vapid_private_key: Vapid instance or path to vapid private key PEM`: una CADENA la
+    interpreta como una RUTA DE ARCHIVO, no como el contenido. Al no ser un fichero,
+    terminaba en Vapid.from_string(), que espera la clave en crudo — y reventaba con
+    "Could not deserialize key data … ASN.1 parsing error: invalid length".
+
+    O sea: la clave siempre fue valida (cryptography la carga sin problema), y el error
+    apuntaba a ella. Reproducido en local: from_string(PEM) falla con ese mismo mensaje,
+    from_pem(PEM) funciona.
+    """
+    global _credencial
+    if _credencial is None and VAPID_PRIVATE_KEY:
+        try:
+            from py_vapid import Vapid01
+            _credencial = Vapid01.from_pem(VAPID_PRIVATE_KEY.encode())
+        except Exception as exc:  # noqa: BLE001
+            log.error("No se pudo construir la credencial VAPID: %s", exc)
+    return _credencial
+
 
 # ── API pública ──────────────────────────────────────────────────────────────
 # asyncio solo guarda una referencia DÉBIL a las tareas: una lanzada con create_task y
@@ -241,7 +266,7 @@ async def _send_push(*, subscription: dict, title: str, body: str, url: str, tag
             webpush(
                 subscription_info=subscription,
                 data=payload,
-                vapid_private_key=VAPID_PRIVATE_KEY,
+                vapid_private_key=credencial_vapid(),
                 vapid_claims={"sub": VAPID_EMAIL},
                 ttl=86400,
             )
@@ -304,7 +329,7 @@ async def probar_push(subscription: dict) -> tuple[bool, str]:
             webpush(
                 subscription_info=subscription,
                 data=payload,
-                vapid_private_key=VAPID_PRIVATE_KEY,
+                vapid_private_key=credencial_vapid(),
                 vapid_claims={"sub": VAPID_EMAIL},
                 ttl=60,
             )

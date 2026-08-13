@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import axios from 'axios'
 import { Users, RefreshCw, Flame, MapPin, Sparkles, BarChart3, Compass,
-         TrendingUp, Clock, AlertTriangle, ChevronRight, BellRing } from 'lucide-react'
+         TrendingUp, Clock, AlertTriangle, ChevronRight } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import Campana from './Campana'
 import { activarPush } from './push'
@@ -428,17 +428,11 @@ export default function CRM() {
             </button>
           </>
         )}
-        {/* Probar el push desde la propia app: hasta ahora, un envío fallido solo dejaba
-            rastro en los logs del servidor y desde fuera era imposible distinguir "no se
-            envió" de "se envió y no llegó al aparato". */}
-        <button onClick={probarPush} disabled={probando} title="Enviar una notificación de prueba a tus dispositivos"
-          style={{ background: 'none', border: 'none', color: C.muted,
-                   cursor: probando ? 'wait' : 'pointer', padding: 4, display: 'flex' }}>
-          <BellRing size={16} />
-        </button>
         {/* Campana del corredor: sus avisos ligados a la cuenta, no a una conversación.
             Al tocar uno, abre al interesado que lo originó. */}
         <Campana
+          onProbar={probarPush}
+          probando={probando}
           onAbrir={(n) => {
             const l = (d?.leads || []).find((x) => x.session_id === n.session_id)
             if (l) { setSel(l); setAsistente(null); setAnalisis(false) }

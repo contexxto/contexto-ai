@@ -25,7 +25,7 @@ function haceCuanto(iso) {
   return `hace ${Math.floor(s / 86400)} d`
 }
 
-export default function Campana({ sessionId, onAbrir }) {
+export default function Campana({ sessionId, onAbrir, onProbar, probando }) {
   const [datos, setDatos] = useState({ items: [], no_leidas: 0 })
   const [abierta, setAbierta] = useState(false)
   const caja = useRef(null)
@@ -120,6 +120,19 @@ export default function Campana({ sessionId, onAbrir }) {
               </div>
             </button>
           ))}
+
+          {/* Probar el push vive AQUÍ, no en la cabecera: dos iconos de campana juntos no
+              se distinguen, y este es una herramienta de diagnóstico, no una acción del
+              día a día. Dentro del panel de avisos es donde se busca cuando no llega uno. */}
+          {onProbar && (
+            <button onClick={() => { setAbierta(false); onProbar() }} disabled={probando}
+              style={{ display: 'block', width: '100%', textAlign: 'left', marginTop: 4,
+                       padding: '9px 10px', borderTop: `1px solid ${C.borde}`, background: 'none',
+                       border: 'none', color: C.tenue, cursor: probando ? 'wait' : 'pointer',
+                       fontFamily: 'inherit', fontSize: '.76rem' }}>
+              {probando ? 'Probando…' : '¿No te llegan? Enviar una notificación de prueba'}
+            </button>
+          )}
         </div>
       )}
     </div>

@@ -128,6 +128,9 @@ export default function CRM() {
   // Prueba de push bajo demanda: el servidor intenta el envío y DEVUELVE el error exacto
   // de cada dispositivo, en vez de dejarlo en un log que solo se ve entrando a Render.
   const [probando, setProbando] = useState(false)
+  // El resultado va EN LA PÁGINA, no en un alert() del navegador: un cuadro del sistema
+  // con jerga técnica es justo lo que Carlos llamó "confuso".
+  const [resultadoPush, setResultadoPush] = useState(null)
   async function probarPush() {
     setProbando(true)
     try {
@@ -136,20 +139,24 @@ export default function CRM() {
       const ds = data?.dispositivos || []
       if (!ds.length) { alert(data?.mensaje || 'No tienes dispositivos registrados.'); return }
       const ok = ds.filter((d) => d.ok).length
+      // En lenguaje humano, y SIN detalle tecnico cuando todo va bien: el aparato, el
+      // endpoint y la forma de la clave no le dicen nada a un corredor. Solo aparecen si
+      // algo falla, que es cuando de verdad hacen falta.
+      if (ok === ds.length) {
+        setResultadoPush({ ok: true, texto: ds.length === 1
+          ? 'Notificación enviada. Debería aparecerte en unos segundos.'
+          : `Notificación enviada a tus ${ds.length} dispositivos. Debería aparecerte en unos segundos.` })
+        return
+      }
       const f = data?.forma || {}
-      const radiografia = 'Clave del servidor: ' + [
-        `carga=${f.carga}`, `largo=${f.largo_crudo}`,
-        `base64=${f.decodifica_base64}`, `pem="${f.cabecera_pem}"`,
-        `decodificado=${f.largo_decodificado}`,
-      ].join(' · ')
-      const lineas = ds.map((d) => `• …${d.endpoint}: ${d.ok ? 'ENVIADO' : 'FALLÓ — ' + d.detalle}`)
-      lineas.push(radiografia)
-      const cola = ok
-        ? 'Si dice ENVIADO y no ves la notificación, el problema es de entrega en el aparato: permiso revocado o suscripción vieja.'
-        : 'Ninguno salió. El detalle de arriba dice por qué.'
-      alert([`Enviados a ${ok} de ${ds.length} dispositivo(s).`, ...lineas, cola].join('\n\n'))
+      const detalle = ds.filter((d) => !d.ok).map((d) => `• …${d.endpoint}: ${d.detalle}`).join('\n')
+      const tecnico = `clave: ${f.carga} · largo ${f.largo_crudo} · base64 ${f.decodifica_base64} · ${f.cabecera_pem}`
+      setResultadoPush({ ok: false, texto:
+        (ok ? `Salió a ${ok} de ${ds.length} dispositivos.` : 'No se pudo enviar a ningún dispositivo.') +
+        `\n${detalle}\n${tecnico}` })
     } catch (e) {
-      alert('No se pudo probar: ' + (e?.response?.status ? `error ${e.response.status}` : e?.message))
+      setResultadoPush({ ok: false, texto: 'No se pudo probar: ' +
+        (e?.response?.status ? `error ${e.response.status}` : e?.message) })
     } finally { setProbando(false) }
   }
   useEffect(() => {
@@ -447,6 +454,21 @@ export default function CRM() {
 
       {/* Salud de los avisos: si un canal está mal configurado el corredor cree que sus
           leads están avisados y no lo están. Solo aparece cuando algo está roto. */}
+      {/* Resultado de la prueba de push, en la propia página y descartable. */}
+      {resultadoPush && (
+        <div style={{ marginBottom: 12, flexShrink: 0, padding: '9px 14px', borderRadius: 12,
+                      display: 'flex', alignItems: 'flex-start', gap: 12,
+                      background: resultadoPush.ok ? 'rgba(45,189,182,.10)' : 'rgba(232,184,75,.10)',
+                      border: `1px solid ${resultadoPush.ok ? C.teal + '55' : 'rgba(232,184,75,.35)'}`,
+                      color: resultadoPush.ok ? C.tealHi : '#E8B84B',
+                      fontSize: '.8rem', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+          <span style={{ flex: 1 }}>{resultadoPush.ok ? '🔔 ' : '⚠️ '}{resultadoPush.texto}</span>
+          <button onClick={() => setResultadoPush(null)} title="Cerrar"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit',
+                     fontSize: '1rem', lineHeight: 1, padding: 0 }}>×</button>
+        </div>
+      )}
+
       {/* Permiso de notificaciones de ESTE navegador. Va aparte del diagnóstico del
           servidor: aquel mira la configuración, este mira el aparato que tienes delante.
           Con un botón, porque pedir el permiso exige un gesto del usuario. */}

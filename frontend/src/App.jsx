@@ -370,6 +370,13 @@ export default function App() {
     const s = new URLSearchParams(window.location.search).get('s')
     return s && /^(session-|qr-)[\w-]{8,}$/.test(s) ? s : null
   })()
+  // ?a={inmueble} — CUÁL de los corredores de esa conversación. Una misma conversación
+  // puede tener un hilo abierto con el corredor de cada inmueble; sin este dato el aviso
+  // abría el más reciente, que puede ser el de otro corredor.
+  const hiloDeUrl = (() => {
+    const a = new URLSearchParams(window.location.search).get('a')
+    return a && /^[0-9a-f-]{36}$/i.test(a) ? a : null
+  })()
   const [sessionId, setSessionId] = useState(() =>
     sesionDeUrl || (deepLinkId ? qrSessionId(deepLinkId) : 'session-' + crypto.randomUUID()))
   const [messages, setMessages]   = useState([])
@@ -418,6 +425,12 @@ export default function App() {
   const handoffSeenRef = useRef(0)                          // último id de mensaje de handoff visto
   const [handoffPendiente, setHandoffPendiente] = useState(false)  // handoff esperando registro del lead
   const [corredorWhatsapp, setCorredorWhatsapp] = useState(null)   // WhatsApp del corredor (si lo cargó) → botón wa.me en el handoff
+  // Hilo abierto = (conversación, inmueble). `hiloSeleccionado` es la elección explícita
+  // (llegó por el aviso o por la bandeja) y por eso puede disparar una recarga; `hiloActivo`
+  // es el que confirma el servidor y es al que se le escribe.
+  const [hiloSeleccionado, setHiloSeleccionado] = useState(hiloDeUrl)
+  const [hiloActivo, setHiloActivo] = useState(hiloDeUrl)
+  const [hilosCorredor, setHilosCorredor] = useState([])   // todos los corredores de esta conversación
   const [session, setSession] = useState(null)            // sesión de Supabase | null
   const [authOpen, setAuthOpen] = useState(() => {        // modal login/registro (auto-abre desde la web: /?login=1 · /?corredor=1)
     const p = new URLSearchParams(window.location.search)
@@ -543,8 +556,11 @@ export default function App() {
         // handoff_mensaje. Sin esto, al recargar la conversación con el corredor
         // DESAPARECÍA — el interesado veía el análisis del inmueble y nada más, como si
         // nunca hubieran hablado. El flujo de QR ya lo restauraba; el normal no.
-        axios.get(`${API_BASE}/api/v1/chat/${sessionId}/handoff`, { headers: apiHeaders() })
+        axios.get(`${API_BASE}/api/v1/chat/${sessionId}/handoff`,
+          { params: hiloSeleccionado ? { activo_id: hiloSeleccionado } : undefined, headers: apiHeaders() })
           .then(({ data: h }) => {
+            if (h?.activo_id) setHiloActivo(h.activo_id)
+            setHilosCorredor(h?.hilos || [])
             const hm = h?.mensajes || []
             if (!hm.length) return
             for (const m of hm) handoffSeenRef.current = Math.max(handoffSeenRef.current, m.id)
@@ -559,7 +575,14 @@ export default function App() {
           .catch(() => { /* sin handoff en esta conversación: normal */ })
       })
       .catch(() => {}) // silent — no history yet
-  }, [sessionId])
+    // hiloSeleccionado en las dependencias: cambiar de corredor recarga la conversación
+    // ENTERA, que es justo lo que se espera al abrir el otro hilo desde la bandeja.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, hiloSeleccionado])
+
+  // Cambiar de hilo (o de conversación) reinicia el "último visto": los ids de mensaje
+  // son globales, así que un hilo con ids menores quedaría invisible tras mirar el otro.
+  useEffect(() => { handoffSeenRef.current = 0 }, [sessionId, hiloSeleccionado])
 
   // Deep link de QR (letrero inteligente): /a/{id}.
   // - Si el lead ya pidió corredor en este inmueble (handoff activo) → REANUDA esa
@@ -695,8 +718,10 @@ export default function App() {
     // Modo corredor: el mensaje va al corredor humano (in-platform), no al agente.
     if (modoCorredor) {
       try {
+        const hilo = hiloActivo || hiloSeleccionado
         await axios.post(`${API_BASE}/api/v1/chat/${sessionId}/handoff/mensaje`,
-          { texto: userText }, { headers: apiHeaders() })
+          { texto: userText },
+          { params: hilo ? { activo_id: hilo } : undefined, headers: apiHeaders() })
       } catch { setError('No se pudo enviar tu mensaje al corredor. Intenta de nuevo.') }
       return
     }
@@ -999,16 +1024,19 @@ export default function App() {
   useEffect(() => {
     if (anuncioMode || modoCorredor) return
     let vivo = true
-    axios.get(`${API_BASE}/api/v1/chat/${sessionId}/handoff`, { headers: apiHeaders() })
+    axios.get(`${API_BASE}/api/v1/chat/${sessionId}/handoff`,
+      { params: hiloSeleccionado ? { activo_id: hiloSeleccionado } : undefined, headers: apiHeaders() })
       .then(({ data }) => {
         if (!vivo || !data?.activo) return
         setModoCorredor(true)
+        if (data?.activo_id) setHiloActivo(data.activo_id)
+        setHilosCorredor(data?.hilos || [])
         if (data?.corredor_whatsapp) setCorredorWhatsapp(data.corredor_whatsapp)
       })
       .catch(() => { /* sin handoff o sin red: silencioso */ })
     return () => { vivo = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, anuncioMode])
+  }, [sessionId, anuncioMode, hiloSeleccionado])
 
   // Deep-link del corredor: una notificación de lead abre /?crm=1 → entra al CRM
   // en cuanto la sesión esté lista (con auth para poder cargar sus leads).
@@ -1071,6 +1099,8 @@ export default function App() {
         `${API_BASE}/api/v1/chat/${sessionId}/handoff`, {},
         { params: activoCandidato ? { activo_id: activoCandidato } : undefined, headers: apiHeaders() })
       if (data?.corredor_whatsapp) setCorredorWhatsapp(data.corredor_whatsapp)
+      // Puede ser un SEGUNDO corredor de la misma conversación: el hilo pasa a ser este.
+      if (data?.activo_id) { setHiloActivo(data.activo_id); setHiloSeleccionado(data.activo_id) }
       setModoCorredor(true)
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(), role: 'ai', deCorredor: true,   // aviso del sistema: sin interfaz del agente
@@ -1085,6 +1115,9 @@ export default function App() {
       // servidor respondió con un código, o no respondió (red / CORS / servicio caído).
       const codigo = e?.response?.status
       const detalle = e?.response?.data?.detail
+      // 409 = "falta saber qué inmueble": no es una avería, es una pregunta. Se muestra
+      // tal cual, en el idioma del usuario, sin códigos ni jerga.
+      if (codigo === 409 && detalle) { setError(detalle); return }
       setError(
         codigo
           ? `No se pudo conectar con el corredor (error ${codigo}${detalle ? `: ${detalle}` : ''}).`
@@ -1109,9 +1142,13 @@ export default function App() {
     const tick = async () => {
       try {
         const { data } = await axios.get(`${API_BASE}/api/v1/chat/${sessionId}/handoff`,
-          { params: { desde: handoffSeenRef.current }, headers: apiHeaders() })
+          { params: { desde: handoffSeenRef.current,
+                      ...(hiloSeleccionado ? { activo_id: hiloSeleccionado } : {}) },
+            headers: apiHeaders() })
         if (!vivo || !data?.activo) return
         if (!modoCorredor) setModoCorredor(true)
+        if (data?.activo_id) setHiloActivo(data.activo_id)
+        if (data?.hilos) setHilosCorredor(data.hilos)
         if (data?.corredor_whatsapp) setCorredorWhatsapp(data.corredor_whatsapp)
         const nuevos = (data.mensajes || []).filter(m => m.autor === 'corredor')
         for (const m of (data.mensajes || [])) handoffSeenRef.current = Math.max(handoffSeenRef.current, m.id)
@@ -1737,7 +1774,9 @@ export default function App() {
           <Campana
             sessionId={sessionId}
             onAbrir={(n) => {
-              // El aviso trae la conversación de origen: se retoma esa, no otra.
+              // El aviso trae el hilo entero: la conversación Y con cuál corredor. Sin el
+              // segundo dato, abrir el aviso de un corredor podía mostrar el chat del otro.
+              if (n.activo_id) setHiloSeleccionado(n.activo_id)
               if (n.session_id && n.session_id !== sessionId) switchSession(n.session_id)
               setView('chat')
             }}

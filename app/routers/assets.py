@@ -706,7 +706,8 @@ async def _leads_de_activo(db: AsyncSession, activo_id: str, direccion: str | No
         # home no aparecía en NINGÚN CRM — se perdía en el pico de intención.
         h_rows = (await db.execute(
             text("SELECT session_id, estado, lead_email FROM handoff_sesion "
-                 "WHERE session_id LIKE :p OR activo_id = CAST(:a AS uuid)"),
+                 "WHERE activo_id = CAST(:a AS uuid) "
+                 "   OR (session_id LIKE :p AND activo_id IS NULL)"),
             {"p": f"qr-{activo_id}-%", "a": str(activo_id)},
         )).mappings().all()
         # Los que no vienen del QR no están en thread_ids: añádelos para que se listen.
@@ -1152,11 +1153,17 @@ async def lead_conversacion(
     try:
         await ensure_handoff_tables(db)
         rows = (await db.execute(text(
-            "SELECT autor, texto FROM handoff_mensaje WHERE session_id = :s ORDER BY id ASC"),
-            {"s": session_id})).mappings().all()
+            "SELECT autor, texto FROM handoff_mensaje WHERE session_id = :s "
+            # Solo ESTE hilo: el corredor de un inmueble no puede leer lo que el interesado
+            # habla con el corredor de otro. El OR IS NULL rescata los mensajes anteriores
+            # a que existiera la columna.
+            "  AND (activo_id = CAST(:a AS uuid) OR activo_id IS NULL) ORDER BY id ASC"),
+            {"s": session_id, "a": str(activo_id)})).mappings().all()
         hmsgs = [{"autor": r["autor"], "texto": r["texto"]} for r in rows]
         estado = (await db.execute(text(
-            "SELECT estado FROM handoff_sesion WHERE session_id = :s"), {"s": session_id})).scalar()
+            "SELECT estado FROM handoff_sesion "
+            "WHERE session_id = :s AND activo_id = CAST(:a AS uuid)"),
+            {"s": session_id, "a": str(activo_id)})).scalar()
     except Exception:  # noqa: BLE001
         hmsgs, estado = [], None
     return {"transcript": trans, "handoff": hmsgs, "estado": estado}
@@ -1177,7 +1184,8 @@ async def responder_lead(
     await ensure_handoff_tables(db)
     await db.execute(text(
         "INSERT INTO handoff_sesion (session_id, activo_id, estado, corredor_id) "
-        "VALUES (:s, :a, 'activo', :u) ON CONFLICT (session_id) DO UPDATE "
+        "VALUES (:s, CAST(:a AS uuid), 'activo', :u) "
+        "ON CONFLICT (session_id, activo_id) DO UPDATE "
         "SET estado = 'activo', corredor_id = :u, actualizado_en = now()"),
         {"s": session_id, "a": str(activo_id), "u": user.user_id})
     await db.execute(text(
@@ -1186,8 +1194,11 @@ async def responder_lead(
         {"s": session_id, "t": payload.texto.strip(), "a": str(activo_id)})
 
     # Captura datos para notificación ANTES de cerrar la sesión de DB.
-    h_row = (await db.execute(
-        text("SELECT lead_email, push_subscription FROM handoff_sesion WHERE session_id = :s"),
+    h_row = (await db.execute(text(
+        "SELECT (array_agg(lead_email) FILTER (WHERE lead_email IS NOT NULL))[1] AS lead_email, "
+        "       (array_agg(push_subscription) FILTER (WHERE push_subscription IS NOT NULL))[1] "
+        "         AS push_subscription "
+        "  FROM handoff_sesion WHERE session_id = :s"),
         {"s": session_id})).mappings().first()
     # La columna es direccion_estandarizada; `direccion` NO existe. Esta consulta lanzaba
     # UndefinedColumn y tumbaba TODO el endpoint: el corredor nunca pudo responder desde el
@@ -1206,7 +1217,7 @@ async def responder_lead(
     # url); en una conversación normal creaba una sesión DISTINTA y aterrizaba en un chat
     # vacío. /?s={session_id} la retoma tal cual. Lo usan la campana Y el push/correo.
     destino = (f"/a/{activo_id}" if session_id.startswith(f"qr-{activo_id}-")
-               else f"/?s={session_id}")
+               else f"/?s={session_id}&a={activo_id}")
     corredor_nombre = getattr(user, "nombre", None) or "El corredor"
     vista = payload.texto.strip()
 
@@ -1215,7 +1226,8 @@ async def responder_lead(
     # que no depende de nada externo.
     from app.routers.chat import registrar_notificacion
     lead_uid = (await db.execute(text(
-        "SELECT lead_user_id::text FROM handoff_sesion WHERE session_id = :s"),
+        "SELECT lead_user_id::text FROM handoff_sesion "
+        "WHERE session_id = :s AND lead_user_id IS NOT NULL LIMIT 1"),
         {"s": session_id})).scalar()
     # Se guardan LAS DOS referencias, no una: por usuario (así ve sus avisos desde
     # cualquier conversación) y por sesión (así los ve aunque la petición no resuelva la
@@ -1223,7 +1235,8 @@ async def responder_lead(
     # interesado abría otro chat — que es justo lo que pasó en la prueba.
     await registrar_notificacion(
         db, titulo=f"{corredor_nombre} te respondió", cuerpo=vista[:160], url=destino,
-        session_id=session_id, user_id=lead_uid, destinatario_session=session_id)
+        session_id=session_id, user_id=lead_uid, destinatario_session=session_id,
+        activo_id=str(activo_id))
 
     await db.commit()
 

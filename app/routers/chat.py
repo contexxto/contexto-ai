@@ -1291,6 +1291,25 @@ _HANDOFF_DDL = [
     "ALTER TABLE handoff_sesion ADD COLUMN IF NOT EXISTS lead_user_id uuid",
     "ALTER TABLE handoff_sesion ADD COLUMN IF NOT EXISTS lead_email text",
     "ALTER TABLE handoff_sesion ADD COLUMN IF NOT EXISTS push_subscription jsonb",
+    # FASE 2 — un interesado, VARIOS corredores. La clave era solo session_id, asi que una
+    # conversacion solo podia entregarse a un inmueble: si le interesaba un segundo, el
+    # COALESCE conservaba el primero y el otro corredor nunca se enteraba. Ahora la clave
+    # es (session_id, activo_id): un hilo por inmueble dentro de la misma conversacion.
+    # Idempotente y defensiva: si la clave ya es compuesta, o si quedara alguna fila sin
+    # inmueble (que la clave no admite), NO hace nada en vez de romper el arranque.
+    """DO $mig$
+    DECLARE columnas int;
+    BEGIN
+      SELECT count(*) INTO columnas
+        FROM pg_constraint c, unnest(c.conkey) k
+       WHERE c.conrelid = 'handoff_sesion'::regclass AND c.contype = 'p';
+      IF columnas = 1 AND NOT EXISTS (SELECT 1 FROM handoff_sesion WHERE activo_id IS NULL) THEN
+        ALTER TABLE handoff_sesion DROP CONSTRAINT handoff_sesion_pkey;
+        ALTER TABLE handoff_sesion ALTER COLUMN activo_id SET NOT NULL;
+        ALTER TABLE handoff_sesion ADD CONSTRAINT handoff_sesion_pkey
+              PRIMARY KEY (session_id, activo_id);
+      END IF;
+    END $mig$;""",
     "CREATE TABLE IF NOT EXISTS handoff_mensaje (id bigserial PRIMARY KEY, "
     "session_id text, autor text, texto text, creado_en timestamptz DEFAULT now())",
     "CREATE INDEX IF NOT EXISTS ix_handoff_msg_sid ON handoff_mensaje (session_id, id)",
@@ -1334,6 +1353,13 @@ _HANDOFF_DDL = [
     # Marca del correo de rescate (ver app/rescate_avisos.py): sin ella, cada barrido
     # reenviaria el mismo aviso sin leer una y otra vez.
     "ALTER TABLE notificacion ADD COLUMN IF NOT EXISTS rescate_en timestamptz",
+    # FASE 2: dos corredores dentro de la MISMA conversación son dos hilos distintos en la
+    # bandeja. Agrupando solo por session_id se fundían en una fila y el interesado veía
+    # el último mensaje de uno pisando al del otro.
+    "ALTER TABLE notificacion ADD COLUMN IF NOT EXISTS activo_id uuid",
+    "UPDATE notificacion n SET activo_id = h.activo_id FROM handoff_sesion h "
+    "WHERE n.session_id = h.session_id AND n.activo_id IS NULL",
+    "CREATE INDEX IF NOT EXISTS ix_notif_hilo ON notificacion (session_id, activo_id)",
 ]
 _handoff_ready = False
 
@@ -1401,7 +1427,8 @@ async def marcar_actividad_lead(session_id: str) -> None:
             async with AsyncSessionLocal() as db:
                 await ensure_handoff_tables(db)
                 activo = (await db.execute(text(
-                    "SELECT activo_id::text FROM handoff_sesion WHERE session_id = :s"),
+                    "SELECT activo_id::text FROM handoff_sesion WHERE session_id = :s "
+                    "ORDER BY actualizado_en DESC NULLS LAST LIMIT 1"),
                     {"s": session_id})).scalar()
         except Exception:  # noqa: BLE001
             activo = None
@@ -1663,7 +1690,8 @@ def _notificar_corredor(activo_id: str | None, title: str, body: str,
             aid = activo_id
             if not aid and session_id:
                 aid = (await db.execute(text(
-                    "SELECT activo_id::text FROM handoff_sesion WHERE session_id = :s"),
+                    "SELECT activo_id::text FROM handoff_sesion WHERE session_id = :s "
+                    "ORDER BY actualizado_en DESC NULLS LAST LIMIT 1"),
                     {"s": session_id})).scalar()
             if not aid:
                 return
@@ -1675,7 +1703,8 @@ def _notificar_corredor(activo_id: str | None, title: str, body: str,
                 {"id": aid})).scalar()
             if dueno:
                 await registrar_notificacion(db, titulo=title, cuerpo=body, url="/?crm=1",
-                                             session_id=session_id, user_id=dueno)
+                                             session_id=session_id, user_id=dueno,
+                                             activo_id=aid)
                 await db.commit()
         if not email and not subs:
             return
@@ -1696,6 +1725,7 @@ def _notificar_corredor(activo_id: str | None, title: str, body: str,
 async def registrar_notificacion(
     db, *, titulo: str, cuerpo: str, url: str, session_id: str | None = None,
     user_id: str | None = None, destinatario_session: str | None = None,
+    activo_id: str | None = None,
 ) -> None:
     """Deja el aviso en la campana. Best-effort: un fallo aquí jamás rompe el mensaje que
     lo origina — pero se registra SIEMPRE, aunque el push y el correo se omitan o se
@@ -1705,9 +1735,10 @@ async def registrar_notificacion(
     try:
         await db.execute(text(
             "INSERT INTO notificacion (destinatario_user_id, destinatario_session, "
-            "titulo, cuerpo, url, session_id) VALUES (:u, :ds, :t, :c, :url, :s)"),
+            "titulo, cuerpo, url, session_id, activo_id) "
+            "VALUES (:u, :ds, :t, :c, :url, :s, CAST(:a AS uuid))"),
             {"u": user_id, "ds": destinatario_session, "t": titulo,
-             "c": cuerpo, "url": url, "s": session_id})
+             "c": cuerpo, "url": url, "s": session_id, "a": _uuid_valido(activo_id)})
     except Exception as exc:  # noqa: BLE001
         log.warning("No se pudo registrar la notificación: %s", exc)
 
@@ -1770,10 +1801,15 @@ async def listar_conversaciones(
     async with AsyncSessionLocal() as db:
         await ensure_handoff_tables(db)
         filas = (await db.execute(text(
-            "SELECT session_id, titulo, cuerpo, url, creada_en, sin_leer FROM ("
-            "  SELECT session_id, titulo, cuerpo, url, creada_en, "
-            "         count(*) FILTER (WHERE leida_en IS NULL) OVER (PARTITION BY session_id) AS sin_leer, "
-            "         row_number() OVER (PARTITION BY session_id ORDER BY creada_en DESC) AS rn "
+            "SELECT session_id, activo_id::text AS activo_id, titulo, cuerpo, url, "
+            "       creada_en, sin_leer FROM ("
+            "  SELECT session_id, activo_id, titulo, cuerpo, url, creada_en, "
+            # PARTITION por (conversación, inmueble): dos corredores de la misma
+            # conversación son dos filas, como dos chats en WhatsApp.
+            "         count(*) FILTER (WHERE leida_en IS NULL) "
+            "           OVER (PARTITION BY session_id, activo_id) AS sin_leer, "
+            "         row_number() OVER (PARTITION BY session_id, activo_id "
+            "                            ORDER BY creada_en DESC) AS rn "
             "  FROM notificacion "
             "  WHERE (CAST(:u AS uuid) IS NOT NULL AND destinatario_user_id = CAST(:u AS uuid)) "
             "     OR (CAST(:s AS text) IS NOT NULL AND destinatario_session = CAST(:s AS text)) "
@@ -1781,7 +1817,8 @@ async def listar_conversaciones(
             {"u": user.user_id if user else None, "s": session_id})).mappings().all()
     return {
         "hilos": [{
-            "session_id": f["session_id"], "titulo": f["titulo"], "cuerpo": f["cuerpo"],
+            "session_id": f["session_id"], "activo_id": f["activo_id"],
+            "titulo": f["titulo"], "cuerpo": f["cuerpo"],
             "url": f["url"], "creada_en": f["creada_en"].isoformat(),
             "sin_leer": f["sin_leer"],
         } for f in filas],
@@ -1796,6 +1833,7 @@ async def marcar_notificaciones_leidas(
     request: Request,
     session_id: str | None = None,
     hilo: str | None = None,
+    activo: str | None = None,
     user: CurrentUser | None = Depends(get_optional_user_estricto),
 ) -> dict:
     """Marca avisos como leídos. Con `hilo`, SOLO los de esa conversación.
@@ -1813,9 +1851,11 @@ async def marcar_notificaciones_leidas(
         r = await db.execute(text(
             "UPDATE notificacion SET leida_en = now() WHERE leida_en IS NULL AND "
             "(CAST(:h AS text) IS NULL OR session_id = CAST(:h AS text)) AND "
+            "(CAST(:a AS uuid) IS NULL OR activo_id = CAST(:a AS uuid)) AND "
             "((CAST(:u AS uuid) IS NOT NULL AND destinatario_user_id = CAST(:u AS uuid)) "
             " OR (CAST(:s AS text) IS NOT NULL AND destinatario_session = CAST(:s AS text)))"),
-            {"u": user.user_id if user else None, "s": session_id, "h": hilo})
+            {"u": user.user_id if user else None, "s": session_id, "h": hilo,
+             "a": _uuid_valido(activo)})
         await db.commit()
     return {"ok": True, "marcadas": r.rowcount}
 
@@ -1861,6 +1901,40 @@ async def transcript_de_sesion(session_id: str) -> list[dict]:
     return out
 
 
+async def _hilo_de_sesion(db, session_id: str, activo_id: str | None = None) -> str | None:
+    """El inmueble del hilo pedido, o el del hilo más reciente de esta conversación.
+
+    Desde la Fase 2 una misma conversación puede tener un hilo con el corredor de cada
+    inmueble. Quién sabe cuál está abierto es el cliente (la bandeja lo pasa en la URL);
+    si no lo dice —o pide uno que no existe— se cae al más reciente, que es el que el
+    interesado acaba de estar mirando."""
+    pedido = _uuid_valido(activo_id)
+    if pedido:
+        row = (await db.execute(text(
+            "SELECT activo_id::text FROM handoff_sesion "
+            "WHERE session_id = :s AND activo_id = CAST(:a AS uuid)"),
+            {"s": session_id, "a": pedido})).scalar()
+        if row:
+            return row
+    return (await db.execute(text(
+        "SELECT activo_id::text FROM handoff_sesion WHERE session_id = :s "
+        "ORDER BY actualizado_en DESC NULLS LAST LIMIT 1"), {"s": session_id})).scalar()
+
+
+async def _hilos_de_sesion(db, session_id: str) -> list[dict]:
+    """Todos los corredores con los que habla esta conversación (para elegir hilo)."""
+    rows = (await db.execute(text(
+        "SELECT h.activo_id::text AS activo_id, h.estado, "
+        "       a.direccion_estandarizada AS direccion, "
+        "       (SELECT count(*) FROM handoff_mensaje m "
+        "         WHERE m.session_id = h.session_id AND m.activo_id = h.activo_id) AS mensajes "
+        "  FROM handoff_sesion h "
+        "  LEFT JOIN activos_inmutables a ON a.id = h.activo_id "
+        " WHERE h.session_id = :s ORDER BY h.actualizado_en DESC NULLS LAST"),
+        {"s": session_id})).mappings().all()
+    return [dict(r) for r in rows]
+
+
 async def registrar_handoff(
     session_id: str,
     *,
@@ -1879,24 +1953,23 @@ async def registrar_handoff(
     o el botón del frontend) lo pasa aquí. El del session_id manda si existe: viene del
     QR escaneado, que es evidencia más fuerte que la inferencia del agente."""
     activo_id = activo_de_session(session_id) or _uuid_valido(activo_id)
+    if not activo_id:
+        # Sin inmueble no hay corredor a quien entregar el lead. Antes se guardaba una fila
+        # sin inmueble que no llegaba a nadie; ahora se dice en voz alta y quien llama
+        # (la tool del agente o el endpoint) le pregunta al usuario CUÁL le interesa.
+        return {"ok": False, "estado": None, "activo_id": None, "corredor_whatsapp": None}
     async with AsyncSessionLocal() as db:
         await ensure_handoff_tables(db)
         await db.execute(text(
             "INSERT INTO handoff_sesion (session_id, activo_id, estado, lead_user_id, lead_email) "
-            "VALUES (:s, :a, 'solicitado', :u, :e) ON CONFLICT (session_id) DO UPDATE "
+            "VALUES (:s, CAST(:a AS uuid), 'solicitado', :u, :e) "
+            # Un hilo POR INMUEBLE: pedir un segundo corredor ya no pisa al primero.
+            "ON CONFLICT (session_id, activo_id) DO UPDATE "
             "SET actualizado_en = now(), "
-            # El inmueble puede llegar en un turno POSTERIOR ("sí, ese departamento"):
-            # si la fila ya existía sin él, lo enganchamos ahora en vez de perderlo.
-            "    activo_id = COALESCE(handoff_sesion.activo_id, EXCLUDED.activo_id), "
             "    lead_user_id = COALESCE(EXCLUDED.lead_user_id, handoff_sesion.lead_user_id), "
             "    lead_email = COALESCE(EXCLUDED.lead_email, handoff_sesion.lead_email)"),
             {"s": session_id, "a": activo_id, "u": lead_user_id, "e": lead_email})
         await db.commit()
-        # Relee el inmueble EFECTIVO: si la fila ya traía uno, el COALESCE de arriba lo
-        # conservó y hay que notificar a ESE corredor, no al que acabamos de proponer.
-        activo_id = (await db.execute(
-            text("SELECT activo_id::text FROM handoff_sesion WHERE session_id = :s"),
-            {"s": session_id})).scalar() or activo_id
         # WhatsApp del corredor (si lo cargó) → habilita el botón "Continuar por WhatsApp".
         wsp = await _whatsapp_de_activo(db, activo_id)
     # Avisa al corredor: un lead caliente quiere hablar (lo más valioso del embudo).
@@ -1927,6 +2000,11 @@ async def solicitar_handoff(
         lead_email=user.email if user else None,
         quien=quien,
     )
+    if not res.get("ok"):
+        # Sin inmueble no se registró NADA. Devolver 200 aquí hacía que la app anunciara
+        # "te conecté con el corredor" sobre un handoff que no existía y que nadie recibió.
+        raise HTTPException(409, "Para conectarte con un corredor necesito saber qué "
+                                 "inmueble te interesa. Dímelo y te conecto.")
     return {"ok": True, "estado": res["estado"], "identificado": bool(user),
             "activo_id": res.get("activo_id"),
             "corredor_whatsapp": res.get("corredor_whatsapp")}
@@ -1943,21 +2021,29 @@ class HandoffMsg(BaseModel):
 @limiter.limit("40/minute")
 async def handoff_mensaje_lead(
     request: Request, session_id: str, payload: HandoffMsg,
+    activo_id: str | None = None,
     user: CurrentUser | None = Depends(get_optional_user),
 ) -> dict:
     async with AsyncSessionLocal() as db:
         await ensure_handoff_tables(db)
+        # ¿A QUÉ corredor le escribe? Al de este inmueble si el cliente lo dice (la bandeja
+        # lo sabe), si no al del hilo más reciente. Antes se escribía "a la sesión" y con
+        # dos hilos abiertos el mensaje aterrizaba donde el corredor equivocado.
+        hilo = await _hilo_de_sesion(db, session_id, activo_id)
+        if hilo is None:
+            raise HTTPException(409, "Todavía no hay un corredor asignado a esta conversación.")
         await db.execute(text(
             "INSERT INTO handoff_sesion (session_id, activo_id, estado, lead_user_id, lead_email) "
-            "VALUES (:s, :a, 'solicitado', :u, :e) ON CONFLICT (session_id) DO UPDATE SET "
+            "VALUES (:s, CAST(:a AS uuid), 'solicitado', :u, :e) "
+            "ON CONFLICT (session_id, activo_id) DO UPDATE SET "
             "    lead_user_id = COALESCE(EXCLUDED.lead_user_id, handoff_sesion.lead_user_id), "
             "    lead_email = COALESCE(EXCLUDED.lead_email, handoff_sesion.lead_email)"),
-            {"s": session_id, "a": activo_de_session(session_id),
+            {"s": session_id, "a": hilo,
              "u": user.user_id if user else None, "e": user.email if user else None})
         await db.execute(text(
             "INSERT INTO handoff_mensaje (session_id, autor, texto, activo_id) "
-            "VALUES (:s, 'lead', :t, (SELECT activo_id FROM handoff_sesion WHERE session_id = :s))"),
-            {"s": session_id, "t": payload.texto.strip()})
+            "VALUES (:s, 'lead', :t, CAST(:a AS uuid))"),
+            {"s": session_id, "t": payload.texto.strip(), "a": hilo})
         await db.commit()
 
     # Avisa al corredor que el lead le escribió (con vista previa del mensaje).
@@ -1965,7 +2051,7 @@ async def handoff_mensaje_lead(
     preview = payload.texto.strip()
     if len(preview) > 90:
         preview = preview[:90] + "…"
-    _notificar_corredor(activo_de_session(session_id),
+    _notificar_corredor(hilo,
         f"💬 {quien} te escribió",
         preview,
         session_id=session_id)
@@ -1978,24 +2064,36 @@ async def handoff_mensaje_lead(
     summary="Estado + mensajes del handoff (el interesado consulta respuestas del corredor)",
 )
 @limiter.limit("120/minute")
-async def estado_handoff(request: Request, session_id: str, desde: int = 0) -> dict:
+async def estado_handoff(request: Request, session_id: str, desde: int = 0,
+                         activo_id: str | None = None) -> dict:
+    vacio = {"activo": False, "estado": None, "mensajes": [],
+             "corredor_whatsapp": None, "activo_id": None, "hilos": []}
     async with AsyncSessionLocal() as db:
         try:
+            hilo = await _hilo_de_sesion(db, session_id, activo_id)
+            if hilo is None:
+                return vacio
             est = (await db.execute(text(
-                "SELECT estado FROM handoff_sesion WHERE session_id = :s"),
-                {"s": session_id})).scalar()
+                "SELECT estado FROM handoff_sesion "
+                "WHERE session_id = :s AND activo_id = CAST(:a AS uuid)"),
+                {"s": session_id, "a": hilo})).scalar()
             if est is None:
-                return {"activo": False, "estado": None, "mensajes": [], "corredor_whatsapp": None}
+                return vacio
             rows = (await db.execute(text(
                 "SELECT id, autor, texto FROM handoff_mensaje "
-                "WHERE session_id = :s AND id > :d ORDER BY id ASC"),
-                {"s": session_id, "d": desde})).mappings().all()
+                # Solo los de ESTE hilo. El OR IS NULL rescata mensajes anteriores a que
+                # existiera la columna: preferimos mostrarlos de más que perderlos.
+                "WHERE session_id = :s AND id > :d "
+                "  AND (activo_id = CAST(:a AS uuid) OR activo_id IS NULL) ORDER BY id ASC"),
+                {"s": session_id, "d": desde, "a": hilo})).mappings().all()
             # Se resuelve en cada sondeo para que el botón de WhatsApp sobreviva a un
             # reload del interesado (el POST /handoff no se re-dispara al recargar).
-            wsp = await _whatsapp_de_activo(db, activo_de_session(session_id))
+            wsp = await _whatsapp_de_activo(db, hilo)
+            hilos = await _hilos_de_sesion(db, session_id)
         except Exception:  # noqa: BLE001 — tablas aún no existen
-            return {"activo": False, "estado": None, "mensajes": [], "corredor_whatsapp": None}
-    return {"activo": True, "estado": est, "corredor_whatsapp": wsp,
+            return vacio
+    return {"activo": True, "estado": est, "corredor_whatsapp": wsp, "activo_id": hilo,
+            "hilos": hilos,
             "mensajes": [{"id": r["id"], "autor": r["autor"], "texto": r["texto"]} for r in rows]}
 
 
@@ -2040,7 +2138,8 @@ async def intencion_de_sesion(session_id: str, horas_inactividad: float | None =
     try:
         async with AsyncSessionLocal() as db:
             est = (await db.execute(text(
-                "SELECT estado FROM handoff_sesion WHERE session_id = :s"), {"s": session_id})).scalar()
+                "SELECT estado FROM handoff_sesion WHERE session_id = :s LIMIT 1"),
+                {"s": session_id})).scalar()
             pidio_corredor = est is not None
             if pidio_corredor:
                 hmsgs = (await db.execute(text(

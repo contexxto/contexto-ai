@@ -655,15 +655,15 @@ async def tool_connect_with_broker(config: RunnableConfig, activo_id: str | None
     except Exception as e:  # noqa: BLE001 — un fallo de handoff no debe tumbar el turno
         return json.dumps({"ok": False, "message": f"No pude registrar la conexión ({type(e).__name__})."})
     if not res.get("activo_id"):
-        # Sin inmueble no hay corredor a quien avisar: la solicitud queda registrada pero
-        # NADIE fue notificado. El mensaje es explícito para que el agente no le prometa
-        # al usuario que ya lo están atendiendo — antes lo hacía, y era falso.
+        # Sin inmueble no hay corredor a quien avisar y NO se guarda nada: cada hilo de
+        # handoff es (conversación, inmueble). El mensaje es explícito para que el agente
+        # no le prometa al usuario que ya lo están atendiendo — antes lo hacía, y era falso.
         return json.dumps({
-            "ok": True, "estado": "solicitado", "con_inmueble": False, "corredor_avisado": False,
-            "message": ("Registré la solicitud, pero SIN inmueble no hay corredor a quien avisar: "
-                        "todavía NO se ha notificado a nadie. NO le digas al usuario que ya tiene "
-                        "su solicitud un corredor. Pídele cuál de los inmuebles que viste le "
-                        "interesa y vuelve a llamar a esta herramienta con su activo_id."),
+            "ok": False, "estado": None, "con_inmueble": False, "corredor_avisado": False,
+            "message": ("NO se registró nada: sin saber QUÉ inmueble le interesa no hay corredor "
+                        "a quien avisar. NO le digas al usuario que ya tiene su solicitud un "
+                        "corredor. Pregúntale cuál de los inmuebles que viste le interesa y vuelve "
+                        "a llamar a esta herramienta con su activo_id."),
         })
     return json.dumps({
         "ok": True, "estado": "solicitado", "con_inmueble": True,

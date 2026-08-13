@@ -79,14 +79,16 @@ export default function Campana({ sessionId, onAbrir }) {
   // que no miraste es como si WhatsApp vaciara todos los contadores por abrir la lista.
   const abrirHilo = async (h) => {
     setAbierta(false)
+    const mismoHilo = (x) => x.session_id === h.session_id && x.activo_id === h.activo_id
     setDatos((d) => ({
-      hilos: d.hilos.map((x) => (x.session_id === h.session_id ? { ...x, sin_leer: 0 } : x)),
+      hilos: d.hilos.map((x) => (mismoHilo(x) ? { ...x, sin_leer: 0 } : x)),
       no_leidas: Math.max(0, d.no_leidas - (h.sin_leer > 0 ? 1 : 0)),
     }))
     onAbrir?.(h)
     try {
       await axios.post(`${API_BASE}/api/v1/chat/notificaciones/leidas`, {}, {
-        params: { hilo: h.session_id, ...(sessionId ? { session_id: sessionId } : {}) },
+        params: { hilo: h.session_id, ...(h.activo_id ? { activo: h.activo_id } : {}),
+                  ...(sessionId ? { session_id: sessionId } : {}) },
         headers: apiHeaders(),
       })
     } catch { cargar() }   // si falló, que el contador vuelva a la verdad del servidor
@@ -102,7 +104,7 @@ export default function Campana({ sessionId, onAbrir }) {
         </div>
       )}
       {datos.hilos.map((h) => (
-        <button key={h.session_id} onClick={() => abrirHilo(h)}
+        <button key={`${h.session_id}-${h.activo_id || ''}`} onClick={() => abrirHilo(h)}
           style={{ display: 'flex', gap: 10, alignItems: 'flex-start', width: '100%', textAlign: 'left',
                    cursor: 'pointer', background: h.sin_leer ? 'rgba(45,189,182,.08)' : 'transparent',
                    border: 'none', borderRadius: 10, padding: movil ? '13px 12px' : '9px 10px',

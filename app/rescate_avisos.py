@@ -114,7 +114,8 @@ async def _correo_de(db, user_id: str | None, session_id: str | None) -> str | N
             return correo
     if session_id:
         return (await db.execute(text(
-            "SELECT lead_email FROM handoff_sesion WHERE session_id = :s"),
+            "SELECT lead_email FROM handoff_sesion "
+            "WHERE session_id = :s AND lead_email IS NOT NULL LIMIT 1"),
             {"s": session_id})).scalar()
     return None
 

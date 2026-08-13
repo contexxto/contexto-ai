@@ -29,6 +29,11 @@ async def lifespan(app: FastAPI):
     # Rescate: el ÚNICO correo que genera una conversación, y solo si el aviso lleva
     # horas sin leer en la campana. Ver app/rescate_avisos.py.
     iniciar_rescate()
+    # Los canales de aviso se comprueban AL ARRANCAR y se reporta al OPERADOR, no al
+    # usuario: un corredor no puede arreglar una clave del servidor ni tiene a quién
+    # reportarla. Ver app/notifications.revisar_canales.
+    from app.notifications import revisar_canales, disparar as _disparar
+    _disparar(revisar_canales())
     yield
     print("Contexto AI API apagando...")
     await detener_cron()

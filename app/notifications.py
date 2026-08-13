@@ -375,3 +375,45 @@ def forma_vapid() -> dict:
         primera = v.splitlines()[0]
         info["cabecera_pem"] = primera[:40]
     return info
+
+
+OPERADOR_EMAIL = os.getenv("NOTIFY_OPERATOR_EMAIL") or os.getenv(
+    "VAPID_EMAIL", "mailto:contexxto.ai@gmail.com").replace("mailto:", "")
+
+
+async def revisar_canales() -> list[str]:
+    """Comprueba al arrancar que los canales de aviso sirven, y avisa AL OPERADOR.
+
+    Esto vivía como una franja ámbar en el CRM del corredor, y estaba mal: un corredor que
+    lee "tus interesados no están recibiendo avisos" no puede hacer nada con eso — no es su
+    servidor y no hay a quién reportar. Solo consigue desconfiar del producto en mitad de
+    una negociación. El diagnóstico es del operador, no del usuario.
+
+    Se registra siempre en el log (visible en Render) y, si el correo funciona, se manda un
+    aviso. Si lo que está roto ES el correo, queda el log — por eso no se depende de un
+    solo canal para reportar.
+    """
+    problemas: list[str] = []
+    if not VAPID_VALIDA:
+        problemas.append(f"Push apagado: la clave VAPID está {VAPID_DETALLE}.")
+    if not RESEND_API_KEY:
+        problemas.append("Correo apagado: falta RESEND_API_KEY.")
+    elif "resend.dev" in FROM_EMAIL:
+        problemas.append(
+            f"El remitente es el dominio de pruebas ({FROM_EMAIL}): Resend solo entrega al "
+            "dueño de la cuenta, así que los interesados NO reciben nada.")
+    if not problemas:
+        log.info("Canales de aviso OK (push y correo configurados).")
+        return []
+    for p in problemas:
+        log.error("CANAL DE AVISO ROTO — %s", p)
+    if RESEND_API_KEY and OPERADOR_EMAIL:
+        try:
+            await _send_email(
+                to=OPERADOR_EMAIL, subject="⚠️ Contexto: un canal de avisos está roto",
+                title="Revisa la configuración de notificaciones",
+                body=" · ".join(problemas), url="/",
+            )
+        except Exception as exc:  # noqa: BLE001 — avisar del fallo no puede tumbar el arranque
+            log.error("No se pudo avisar al operador: %s", exc)
+    return problemas

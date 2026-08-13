@@ -183,6 +183,25 @@ async def get_optional_user(
         return None
 
 
+async def get_optional_user_estricto(
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+) -> CurrentUser | None:
+    """Invitado si NO hay token; 401 si el token existe pero no vale.
+
+    get_optional_user trata igual "no hay token" y "el token caducó": devuelve None y el
+    endpoint responde como si fueras un invitado. Para el chat está bien —un visitante sin
+    cuenta debe poder usarlo— pero para lo que es TUYO es un fallo silencioso: la bandeja
+    devolvia vacia y parecia que los avisos se habian borrado, cuando lo que pasaba es que
+    el servidor ya no sabia quien eras. Y sin 401, el frontend nunca renovaba la sesion.
+
+    Úsala donde una respuesta vacía sea indistinguible de "no tienes nada".
+    """
+    if not _extract_token(authorization):
+        return None            # invitado de verdad: sin credencial que renovar
+    return await get_current_user(authorization, db)   # token malo → 401, y el cliente renueva
+
+
 def require_roles(*roles: str):
     """Dependencia que exige que el usuario tenga uno de los roles dados."""
     async def _dep(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:

@@ -16,7 +16,7 @@ from sqlalchemy import text
 
 from app.agent import graph as agent_graph
 from app.agent.state import AgentState
-from app.auth import CurrentUser, get_current_user, get_optional_user
+from app.auth import get_optional_user_estricto, CurrentUser, get_current_user, get_optional_user
 from app.config import settings
 from app.database import AsyncSessionLocal
 from app.encaje import calcular_encaje, delta_encaje, normalizar_tipo
@@ -1709,7 +1709,7 @@ async def registrar_notificacion(
 async def listar_notificaciones(
     request: Request,
     session_id: str | None = None,
-    user: CurrentUser | None = Depends(get_optional_user),
+    user: CurrentUser | None = Depends(get_optional_user_estricto),
 ) -> dict:
     """Avisos del destinatario, más recientes primero, con el contador de no leídos.
 
@@ -1745,7 +1745,7 @@ async def listar_notificaciones(
 async def listar_conversaciones(
     request: Request,
     session_id: str | None = None,
-    user: CurrentUser | None = Depends(get_optional_user),
+    user: CurrentUser | None = Depends(get_optional_user_estricto),
 ) -> dict:
     """La bandeja que ve el usuario: una fila por CONVERSACIÓN, no por aviso.
 
@@ -1788,7 +1788,7 @@ async def marcar_notificaciones_leidas(
     request: Request,
     session_id: str | None = None,
     hilo: str | None = None,
-    user: CurrentUser | None = Depends(get_optional_user),
+    user: CurrentUser | None = Depends(get_optional_user_estricto),
 ) -> dict:
     """Marca avisos como leídos. Con `hilo`, SOLO los de esa conversación.
 

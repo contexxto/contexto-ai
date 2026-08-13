@@ -59,8 +59,10 @@ self.addEventListener('push', (event) => {
 
   const title   = data.title  ?? 'Contexto AI'
   const body    = data.body   ?? 'Tienes un mensaje nuevo.'
-  const icon    = data.icon   ?? '/sphere-favicon.svg'
-  const badge   = '/sphere-favicon.svg'
+  // El logo ACTUAL de la marca (los cuatro cuadros), no la esfera del favicon antiguo.
+  // PNG y no SVG: Android renderiza mal el SVG en las notificaciones.
+  const icon    = data.icon   ?? '/icon-192.png'
+  const badge   = '/icon-192.png'
   const destUrl = data.url    ?? '/'
 
   event.waitUntil(

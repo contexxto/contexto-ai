@@ -255,7 +255,7 @@ async def _send_push(*, subscription: dict, title: str, body: str, url: str, tag
         "title": title,
         "body": body,
         "url": url,
-        "icon": "/sphere-favicon.svg",
+        "icon": "/icon-192.png",   # logo actual de la marca
         # Agrupa por conversación en el aparato (ver sw.js): un hilo, un aviso.
         **({"tag": tag} if tag else {}),
     })
@@ -319,7 +319,7 @@ async def probar_push(subscription: dict) -> tuple[bool, str]:
         "title": "🔔 Prueba de notificación",
         "body": "Si ves esto, el push funciona en este aparato.",
         "url": "/?crm=1",
-        "icon": "/sphere-favicon.svg",
+        "icon": "/icon-192.png",   # logo actual de la marca
         "tag": "prueba-push",
     })
     try:

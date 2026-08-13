@@ -1294,6 +1294,14 @@ _HANDOFF_DDL = [
     "CREATE TABLE IF NOT EXISTS handoff_mensaje (id bigserial PRIMARY KEY, "
     "session_id text, autor text, texto text, creado_en timestamptz DEFAULT now())",
     "CREATE INDEX IF NOT EXISTS ix_handoff_msg_sid ON handoff_mensaje (session_id, id)",
+    # A qué INMUEBLE pertenece cada mensaje. Hoy sobra —una conversación solo puede tener
+    # un corredor— pero es el cimiento para que pueda tener varios: sin esta columna, dos
+    # corredores en la misma conversación verían los mensajes del otro, que es peor que la
+    # limitación que se quiere quitar. Aditiva: nadie la lee todavía.
+    "ALTER TABLE handoff_mensaje ADD COLUMN IF NOT EXISTS activo_id uuid",
+    "UPDATE handoff_mensaje m SET activo_id = h.activo_id FROM handoff_sesion h "
+    "WHERE m.session_id = h.session_id AND m.activo_id IS NULL AND h.activo_id IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS ix_handoff_msg_hilo ON handoff_mensaje (session_id, activo_id, id)",
     # Suscripción push + email de usuarios autenticados (corredores) → notificarles
     # cuando un lead pide hablar o escribe. El email se captura del JWT al suscribirse.
     "CREATE TABLE IF NOT EXISTS push_usuario (user_id uuid PRIMARY KEY, "
@@ -1947,7 +1955,8 @@ async def handoff_mensaje_lead(
             {"s": session_id, "a": activo_de_session(session_id),
              "u": user.user_id if user else None, "e": user.email if user else None})
         await db.execute(text(
-            "INSERT INTO handoff_mensaje (session_id, autor, texto) VALUES (:s, 'lead', :t)"),
+            "INSERT INTO handoff_mensaje (session_id, autor, texto, activo_id) "
+            "VALUES (:s, 'lead', :t, (SELECT activo_id FROM handoff_sesion WHERE session_id = :s))"),
             {"s": session_id, "t": payload.texto.strip()})
         await db.commit()
 

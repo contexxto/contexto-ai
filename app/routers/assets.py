@@ -1181,8 +1181,9 @@ async def responder_lead(
         "SET estado = 'activo', corredor_id = :u, actualizado_en = now()"),
         {"s": session_id, "a": str(activo_id), "u": user.user_id})
     await db.execute(text(
-        "INSERT INTO handoff_mensaje (session_id, autor, texto) VALUES (:s, 'corredor', :t)"),
-        {"s": session_id, "t": payload.texto.strip()})
+        "INSERT INTO handoff_mensaje (session_id, autor, texto, activo_id) "
+        "VALUES (:s, 'corredor', :t, CAST(:a AS uuid))"),
+        {"s": session_id, "t": payload.texto.strip(), "a": str(activo_id)})
 
     # Captura datos para notificación ANTES de cerrar la sesión de DB.
     h_row = (await db.execute(

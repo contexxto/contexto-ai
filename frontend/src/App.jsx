@@ -431,6 +431,16 @@ export default function App() {
   const [hiloSeleccionado, setHiloSeleccionado] = useState(hiloDeUrl)
   const [hiloActivo, setHiloActivo] = useState(hiloDeUrl)
   const [hilosCorredor, setHilosCorredor] = useState([])   // todos los corredores de esta conversación
+  // El interesado pidió volver a hablar con Contexto. Sin esta marca el sondeo lo devolvía
+  // al corredor en el siguiente tick: había un candado: entrar un corredor era de una sola
+  // dirección y la conversación con el agente quedaba muerta para siempre.
+  const [prefiereAgente, setPrefiereAgente] = useState(false)
+  // El historial y el sondeo pueden traer el MISMO mensaje si se cruzan; se fusiona por id
+  // para que no salga dos veces (y para no repetir claves de React).
+  const fusionarHandoff = (prev, nuevos) => {
+    const ya = new Set(prev.map((m) => m.id))
+    return [...prev, ...nuevos.filter((m) => !ya.has(m.id))]
+  }
   const [session, setSession] = useState(null)            // sesión de Supabase | null
   const [authOpen, setAuthOpen] = useState(() => {        // modal login/registro (auto-abre desde la web: /?login=1 · /?corredor=1)
     const p = new URLSearchParams(window.location.search)
@@ -564,13 +574,13 @@ export default function App() {
             const hm = h?.mensajes || []
             if (!hm.length) return
             for (const m of hm) handoffSeenRef.current = Math.max(handoffSeenRef.current, m.id)
-            setMessages(prev => [...prev, ...hm.map((m) => ({
+            setMessages(prev => fusionarHandoff(prev, hm.map((m) => ({
               id: `h-${m.id}`,
               role: m.autor === 'corredor' ? 'ai' : 'user',
               deCorredor: m.autor === 'corredor',
               content: m.autor === 'corredor' ? `👤 Corredor: ${m.texto}` : m.texto,
               time: '', toolCalls: [],
-            }))])
+            }))))
           })
           .catch(() => { /* sin handoff en esta conversación: normal */ })
       })
@@ -579,6 +589,21 @@ export default function App() {
     // ENTERA, que es justo lo que se espera al abrir el otro hilo desde la bandeja.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, hiloSeleccionado])
+
+  // Con quién habla ahora mismo, y a quién más tiene abierto.
+  const hiloAbierto = hilosCorredor.find((h) => h.activo_id === (hiloActivo || hiloSeleccionado)) || null
+  const otrosHilos = hilosCorredor.filter((h) => h.activo_id !== (hiloActivo || hiloSeleccionado))
+  const nombreCorto = (d) => {
+    if (!d) return 'el inmueble'
+    const base = String(d).split(',')[0].trim()
+    return base.length > 26 ? base.slice(0, 25) + '…' : base
+  }
+  const volverAlAgente = () => { setPrefiereAgente(true); setModoCorredor(false) }
+  const abrirHiloCorredor = (a) => {
+    setPrefiereAgente(false)
+    if (a) { setHiloSeleccionado(a); setHiloActivo(a) }
+    setModoCorredor(true)
+  }
 
   // Cambiar de hilo (o de conversación) reinicia el "último visto": los ids de mensaje
   // son globales, así que un hilo con ids menores quedaría invisible tras mirar el otro.
@@ -1022,7 +1047,7 @@ export default function App() {
   // ponía... desde el propio sondeo. Al recargar, el interesado no volvía a ver nunca
   // los mensajes del corredor. Una sola consulta al cambiar de conversación.
   useEffect(() => {
-    if (anuncioMode || modoCorredor) return
+    if (anuncioMode || modoCorredor || prefiereAgente) return
     let vivo = true
     axios.get(`${API_BASE}/api/v1/chat/${sessionId}/handoff`,
       { params: hiloSeleccionado ? { activo_id: hiloSeleccionado } : undefined, headers: apiHeaders() })
@@ -1137,7 +1162,7 @@ export default function App() {
   // el handoff disponible en la conversación normal, ahí el lead nunca habría visto las
   // respuestas. Ahora corre también cuando el handoff ya está en marcha (modoCorredor).
   useEffect(() => {
-    if ((!deepLinkId && !modoCorredor) || anuncioMode) return
+    if ((!deepLinkId && !modoCorredor && !hilosCorredor.length) || anuncioMode) return
     let vivo = true
     const tick = async () => {
       try {
@@ -1146,17 +1171,18 @@ export default function App() {
                       ...(hiloSeleccionado ? { activo_id: hiloSeleccionado } : {}) },
             headers: apiHeaders() })
         if (!vivo || !data?.activo) return
-        if (!modoCorredor) setModoCorredor(true)
+        if (!modoCorredor && !prefiereAgente) setModoCorredor(true)
         if (data?.activo_id) setHiloActivo(data.activo_id)
-        if (data?.hilos) setHilosCorredor(data.hilos)
+        if (data?.hilos) setHilosCorredor((prev) =>
+          JSON.stringify(prev) === JSON.stringify(data.hilos) ? prev : data.hilos)
         if (data?.corredor_whatsapp) setCorredorWhatsapp(data.corredor_whatsapp)
         const nuevos = (data.mensajes || []).filter(m => m.autor === 'corredor')
         for (const m of (data.mensajes || [])) handoffSeenRef.current = Math.max(handoffSeenRef.current, m.id)
         if (nuevos.length) {
-          setMessages(prev => [...prev, ...nuevos.map(m => ({
+          setMessages(prev => fusionarHandoff(prev, nuevos.map(m => ({
             id: `h-${m.id}`, role: 'ai', deCorredor: true, content: `👤 Corredor: ${m.texto}`,
             time: new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }), toolCalls: [],
-          }))])
+          }))))
         }
       } catch { /* silencioso */ }
     }
@@ -1164,7 +1190,10 @@ export default function App() {
     tick()
     return () => { vivo = false; clearInterval(iv) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deepLinkId, anuncioMode, sessionId, modoCorredor])
+    // hilosCorredor.LENGTH, no el array: el sondeo lo reescribe en cada tick y con el
+    // array en las dependencias el intervalo se destruiría y recrearía cada vez.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkId, anuncioMode, sessionId, modoCorredor, hilosCorredor.length, hiloSeleccionado])
 
   // "Analiza dónde estás": pide la ubicación y dispara el análisis del lugar (global).
   const analizarMiUbicacion = useCallback(() => {
@@ -1887,20 +1916,52 @@ export default function App() {
             chat del QR. La conversación normal (la mayoría) se quedaba sin salida al humano
             en el pico de intención. Ahora también aparece cuando ya hay un inmueble
             candidato en pantalla — que es lo que enruta el lead a su dueño. */}
-        {(deepLinkId || activoCandidato) && (
+        {(deepLinkId || activoCandidato || modoCorredor || hilosCorredor.length > 0) && (
           modoCorredor ? (
             <>
-              <div style={{ display:'flex', alignItems:'center', gap:8, margin:'0 0 8px', padding:'8px 14px',
+              {/* Con QUIÉN habla. Con varios corredores abiertos, "hablas con el corredor"
+                  a secas no dice nada: el interesado no sabía a cuál le estaba escribiendo. */}
+              <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap',
+                            margin:'0 0 8px', padding:'8px 14px',
                             borderRadius:14, fontSize:'.78rem', color:'var(--teal)',
                             background:'rgba(45,189,182,.10)', border:'1px solid rgba(45,189,182,.3)' }}>
-                🤝 Estás hablando con el corredor — te responde aquí mismo.
+                <span style={{ flex:1, minWidth:140 }}>
+                  🤝 Hablas con el corredor{hiloAbierto?.direccion ? ' de ' : ''}
+                  {hiloAbierto?.direccion && <b>{nombreCorto(hiloAbierto.direccion)}</b>}
+                  {' '}— te responde aquí mismo.
+                </span>
+                {/* Caso 7: entrar un corredor era de una sola dirección. Ahora se vuelve. */}
+                <button onClick={volverAlAgente}
+                  style={{ padding:'5px 11px', borderRadius:999, cursor:'pointer', fontSize:'.72rem',
+                           fontWeight:700, background:'transparent', color:'var(--teal)',
+                           border:'1px solid rgba(45,189,182,.45)' }}>
+                  Volver a Contexto
+                </button>
               </div>
+              {otrosHilos.length > 0 && (
+                <div style={{ display:'flex', gap:6, flexWrap:'wrap', alignItems:'center', margin:'0 0 8px' }}>
+                  <span style={{ fontSize:'.72rem', color:'var(--text-muted)' }}>Tus otros corredores:</span>
+                  {otrosHilos.map((h) => (
+                    <button key={h.activo_id} onClick={() => abrirHiloCorredor(h.activo_id)}
+                      style={{ padding:'5px 11px', borderRadius:999, cursor:'pointer', fontSize:'.72rem',
+                               fontWeight:600, background:'var(--surface-1)', color:'var(--text)',
+                               border:'1px solid var(--border)' }}>
+                      💬 {nombreCorto(h.direccion)}
+                    </button>
+                  ))}
+                </div>
+              )}
               {/* Canal donde la gente ya está: si el corredor cargó su WhatsApp, el
                   interesado puede seguir la conversación ahí. Aditivo — el chat
                   in-platform de arriba sigue funcionando. */}
               {corredorWhatsapp && (
+                /* El enlace salía como /a/null en cualquier conversación que no viniera de
+                   un QR (deepLinkId es null ahí): el interesado le mandaba al corredor un
+                   link roto de su propio inmueble. Ahora sale del hilo abierto. */
                 <a href={`https://wa.me/${corredorWhatsapp}?text=${encodeURIComponent(
-                     `Hola, vi tu inmueble en Contexto y me interesa: ${window.location.origin}/a/${deepLinkId}`)}`}
+                     (deepLinkId || hiloActivo || hiloSeleccionado)
+                       ? `Hola, vi tu inmueble en Contexto y me interesa: ${window.location.origin}/a/${deepLinkId || hiloActivo || hiloSeleccionado}`
+                       : 'Hola, vi tu inmueble en Contexto y me interesa.')}`}
                    target="_blank" rel="noopener noreferrer"
                    style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:7, margin:'0 0 8px',
                             padding:'10px 14px', borderRadius:14, textDecoration:'none', fontSize:'.82rem',
@@ -1909,6 +1970,20 @@ export default function App() {
                 </a>
               )}
             </>
+          ) : hilosCorredor.length > 0 ? (
+            /* Volvió a hablar con Contexto, pero sus corredores siguen ahí: una fila para
+               retomar cada conversación sin tener que pasar por la campana. */
+            <div style={{ display:'flex', gap:6, justifyContent:'center', flexWrap:'wrap', margin:'0 0 8px' }}>
+              {hilosCorredor.map((h) => (
+                <button key={h.activo_id} onClick={() => abrirHiloCorredor(h.activo_id)}
+                  style={{ display:'flex', alignItems:'center', gap:7, padding:'7px 14px',
+                           borderRadius:999, cursor:'pointer', fontSize:'.78rem', fontWeight:600,
+                           background:'rgba(45,189,182,.10)', border:'1px solid rgba(45,189,182,.3)',
+                           color:'var(--teal)' }}>
+                  🤝 Seguir con el corredor de {nombreCorto(h.direccion)}
+                </button>
+              ))}
+            </div>
           ) : (
             <div style={{ display:'flex', gap:8, justifyContent:'center', flexWrap:'wrap', margin:'0 0 8px' }}>
               <button onClick={iniciarHandoff}

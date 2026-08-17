@@ -12,8 +12,12 @@ reacciona a eso. Es el mismo criterio que `marcar_actividad_lead`.
 La clasificación del canal es determinista y vive en `app/llegada.py` (puro, testeable).
 Aquí solo se persiste.
 """
-from __future__ import annotations
 
+# OJO: este módulo NO lleva `from __future__ import annotations`, y es a propósito.
+# Con él, las anotaciones se vuelven cadenas y FastAPI recibe un ForwardRef en vez del
+# modelo: degrada `cuerpo: LlegadaIn` a parámetro de QUERY y el endpoint responde 422 a
+# todas las llamadas. Lo destapó la primera prueba real contra el backend; ningún test
+# unitario lo veía porque ninguno llamaba al endpoint. Ningún router del repo lo usa.
 import logging
 import uuid as _uuid
 

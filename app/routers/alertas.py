@@ -14,8 +14,10 @@ Best-effort en la escritura de la demanda, estricto en el correo: si el contacto
 guarda, la persona tiene que enterarse (le prometimos avisarle); si la demanda falla, la
 alerta igual vale y no vamos a perder el correo por eso.
 """
-from __future__ import annotations
 
+# Sin `from __future__ import annotations` a propósito: convierte las anotaciones en
+# cadenas y FastAPI degrada el modelo del cuerpo a parámetro de QUERY (422 en toda
+# llamada). Ver la nota equivalente en visitas.py.
 import json
 import logging
 import re
@@ -49,6 +51,11 @@ _DDL = [
     "session_id text NOT NULL, criterio jsonb NOT NULL, criterio_texto text, "
     "hubo_match boolean NOT NULL, motivo text, activo_id uuid, "
     "creado_en timestamptz NOT NULL DEFAULT now())",
+    # Un reintento NO cuenta dos veces: la demanda no cubierta es un reporte que se
+    # enseña, y un doble envío la inflaba (verificado en vivo: 3 POST → 1 contacto y
+    # 3 demandas). Un criterio distinto en la misma sesión SÍ crea otra fila.
+    "CREATE UNIQUE INDEX IF NOT EXISTS demanda_unica_por_criterio "
+    "ON demanda (contacto_id, criterio)",
     "CREATE INDEX IF NOT EXISTS contacto_creado_en_idx ON contacto (creado_en DESC)",
     "CREATE INDEX IF NOT EXISTS contacto_session_idx ON contacto (session_id)",
     "CREATE INDEX IF NOT EXISTS demanda_sin_match_idx ON demanda (creado_en DESC) "
@@ -138,7 +145,8 @@ async def crear_alerta(request: Request, cuerpo: AlertaIn) -> dict:
                 await db.execute(
                     text("INSERT INTO demanda (contacto_id, session_id, criterio, "
                          "criterio_texto, hubo_match, motivo, activo_id) "
-                         "VALUES (:cid, :s, CAST(:cr AS jsonb), :ct, :hm, :mo, CAST(:a AS uuid))"),
+                         "VALUES (:cid, :s, CAST(:cr AS jsonb), :ct, :hm, :mo, CAST(:a AS uuid)) "
+                         "ON CONFLICT (contacto_id, criterio) DO NOTHING"),
                     {"cid": contacto_id, "s": cuerpo.session_id,
                      "cr": json.dumps(cuerpo.criterio or {}, ensure_ascii=False),
                      "ct": cuerpo.criterio_texto, "hm": bool(cuerpo.hubo_match),

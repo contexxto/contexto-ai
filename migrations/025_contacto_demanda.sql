@@ -65,6 +65,16 @@ CREATE TABLE IF NOT EXISTS demanda (
     creado_en     timestamptz NOT NULL DEFAULT now()
 );
 
+-- La MISMA petición no cuenta dos veces. `contacto` ya era idempotente, pero cada
+-- reintento creaba otra `demanda` — y como la demanda no cubierta es el reporte que se
+-- le enseña a un promotor, un reintento de red inflaba el activo. Lo destapó la primera
+-- prueba real: 3 POST idénticos dejaron 1 contacto y 3 demandas.
+-- Nota: en jsonb el orden de claves no cuenta, así que la igualdad es la semántica
+-- correcta. Un criterio DISTINTO en la misma sesión sí crea otra demanda, que es lo que
+-- se quiere: alguien puede pedir aviso de departamentos y después también de casas.
+CREATE UNIQUE INDEX IF NOT EXISTS demanda_unica_por_criterio
+    ON demanda (contacto_id, criterio);
+
 CREATE INDEX IF NOT EXISTS contacto_creado_en_idx ON contacto (creado_en DESC);
 CREATE INDEX IF NOT EXISTS contacto_session_idx   ON contacto (session_id);
 

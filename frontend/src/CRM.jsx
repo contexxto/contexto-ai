@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import axios from 'axios'
 import { Users, RefreshCw, Flame, MapPin, Sparkles, BarChart3, Compass,
-         TrendingUp, Clock, AlertTriangle, ChevronRight } from 'lucide-react'
+         TrendingUp, Clock, AlertTriangle, ChevronRight, Bell } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import Campana from './Campana'
 import { activarPush } from './push'
@@ -169,18 +169,54 @@ export default function CRM() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // ── VENTANA DE PERÍODO ────────────────────────────────────────────────────────────
+  // Antes el CRM mostraba SIEMPRE todo, o sea la CARTERA. "Qué pasó esta semana" es otra
+  // pregunta, y sin ventana no se podía hacer. Se filtra por `primera_actividad` (cuándo
+  // ENTRÓ el interesado), no por la última: mover a alguien de período porque volvió a
+  // escribir haría que el conteo del mes pasado cambiara solo.
+  const [periodo, setPeriodo] = useState('todo')   // todo | hoy | semana | mes
+  const PERIODOS = [['todo', 'Todo'], ['hoy', 'Hoy'], ['semana', 'Semana'], ['mes', 'Mes']]
+  const DIAS = { hoy: 1, semana: 7, mes: 30 }
+
+  const enVentana = (l, dias, desplazamiento = 0) => {
+    if (!dias) return true
+    const t = Date.parse(l?.primera_actividad || '')
+    if (Number.isNaN(t)) return desplazamiento === 0   // sin fecha: solo cuenta en el actual
+    const ahora = Date.now(), dia = 86400000
+    const fin = ahora - desplazamiento * dias * dia
+    return t <= fin && t > fin - dias * dia
+  }
+
   const kpis = useMemo(() => {
     if (!d) return null
-    const L = d.leads || []
-    const pid = L.filter((l) => l.handoff_estado || l.handoff_sugerido).length
+    const todos = d.leads || []
+    const dias = DIAS[periodo] || 0
+    const L = todos.filter((l) => enVentana(l, dias))
+    // El período ANTERIOR de igual largo: la base del delta.
+    const prev = dias ? todos.filter((l) => enVentana(l, dias, 1)) : []
+    const cuenta = (arr, f) => arr.filter(f).length
+    const pide = (l) => l.handoff_estado || l.handoff_sugerido
+
+    // Un delta solo existe si hubo período anterior CON DATOS. Sin eso no se muestra ▲0:
+    // un cero afirmaría "no cambió" donde lo cierto es "no hay con qué comparar" — la
+    // misma regla que el reparto aplica a las llegadas sin registro.
+    const hayBase = dias > 0 && prev.length > 0
+    const delta = (ahora, antes) => (hayBase ? ahora - antes : null)
+
     return {
-      total: d.total,
-      pide: pid,
-      conversion: d.total ? Math.round((pid / d.total) * 100) : 0,
-      activos: L.filter((l) => l.frescura === 'activo').length,
-      reenganchar: L.filter((l) => l.reenganche).length,
+      total: L.length,
+      totalDelta: delta(L.length, prev.length),
+      pide: cuenta(L, pide),
+      pideDelta: delta(cuenta(L, pide), cuenta(prev, pide)),
+      activos: cuenta(L, (l) => l.frescura === 'activo'),
+      reenganchar: cuenta(L, (l) => l.reenganche),
+      // La TASA se calcula pero solo se muestra con N suficiente (ver kpiCard): con 12
+      // leads, seis puntos de variación son UN lead. Es ruido vestido de señal, y la
+      // disciplina del lift ("acumulando N") ya lo sabe.
+      conversion: L.length ? Math.round((cuenta(L, pide) / L.length) * 100) : null,
+      n: L.length,
     }
-  }, [d])
+  }, [d, periodo])
 
   const leads = useMemo(() => {
     const L = d?.leads || []   // total>0 con leads ausente (respuesta parcial) no debe white-screenear la lista
@@ -210,13 +246,23 @@ export default function CRM() {
   // Vuelve al HUB (cierra lead/agente/lista/filtro).
   const maxFunnel = useMemo(() => (d ? Math.max(1, ...RAIL.map((e) => d.funnel?.[e] || 0)) : 1), [d])
 
-  const kpiCard = (icon, val, label, color) => (
+  // `delta` es null cuando NO hay período anterior con datos: entonces no se pinta nada.
+  // Mostrar ▲0 ahí afirmaría "no cambió" donde lo cierto es "no hay con qué comparar".
+  const kpiCard = (icon, val, label, color, delta = null) => (
     <div style={{ flex: 1, minWidth: 148, border: `1px solid ${C.line}`, borderRadius: 16, padding: '13px 15px',
                   background: 'var(--surface-1)', display: 'flex', alignItems: 'center', gap: 12 }}>
       <div style={{ width: 40, height: 40, borderRadius: 12, display: 'grid', placeItems: 'center',
                     background: color + '18', color, flexShrink: 0 }}>{icon}</div>
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: '1.4rem', fontWeight: 800, lineHeight: 1 }}>{val}</div>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 7 }}>
+          <span style={{ fontSize: '1.4rem', fontWeight: 800, lineHeight: 1 }}>{val}</span>
+          {delta != null && delta !== 0 && (
+            <span style={{ fontSize: '.72rem', fontWeight: 700,
+                           color: delta > 0 ? C.tealHi : '#E0685A' }}>
+              {delta > 0 ? '▲' : '▼'}{Math.abs(delta)}
+            </span>
+          )}
+        </div>
         <div style={{ fontSize: '.72rem', color: C.muted, marginTop: 3 }}>{label}</div>
       </div>
     </div>
@@ -253,7 +299,11 @@ export default function CRM() {
           </div>
           <div style={{ fontSize: '.67rem', color: C.muted, marginTop: 3, display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
             <MapPin size={10} color={C.teal} style={{ flexShrink: 0 }} />
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.direccion || 'Inmueble'} · {l.fuente || 'QR'}</span>
+            {/* Sin canal se dice 'desconocido', NO 'QR'. El backend dejó de mentir en F0
+                (antes `fuente` era la constante 'QR' para todos) y este respaldo lo
+                reintroducía: una respuesta parcial o una caché vieja afirmaba un canal
+                que nadie midió. */}
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.direccion || 'Inmueble'} · {l.fuente || 'canal desconocido'}</span>
           </div>
         </div>
         <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
@@ -444,13 +494,73 @@ export default function CRM() {
         </button>
       )}
 
-      {/* KPIs */}
+      {/* ★ LO QUE ESPERA — la primera línea, y la única que es TRABAJO. Un tablero es una
+          sala de espera: una tabla que alguien lee antes de decidir. Esto va arriba y las
+          métricas quedan debajo como justificación, no al revés.
+          Enuncia HECHOS del embudo, nunca urgencia fabricada — la misma frontera que
+          `detectar_promesa_inflada` impone del lado del comprador. Y cuando no hay nada
+          esperando lo dice: un CRM que siempre encuentra una urgencia deja de ser creíble. */}
+      {d?.pendiente && (
+        <div style={{
+          display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 14, flexShrink: 0,
+          padding: '12px 15px', borderRadius: 14,
+          background: d.pendiente.hay_pendiente ? 'rgba(45,189,182,.10)' : 'var(--surface-1)',
+          border: `1px solid ${d.pendiente.hay_pendiente ? 'rgba(45,189,182,.32)' : C.line}`,
+        }}>
+          <Bell size={17} color={d.pendiente.hay_pendiente ? C.tealHi : C.muted}
+                style={{ flexShrink: 0, marginTop: 1 }} />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: '.9rem', fontWeight: 700, lineHeight: 1.35,
+                          color: d.pendiente.hay_pendiente ? C.text : C.muted }}>
+              {d.pendiente.frase}
+            </div>
+            {d.pendiente.hay_pendiente && (
+              <div style={{ fontSize: '.72rem', color: C.muted, marginTop: 3 }}>
+                Ordenado por a quién responder primero.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Ventana de período: el CRM mostraba siempre TODO, o sea la cartera. "Qué pasó
+          esta semana" es otra pregunta y no se podía hacer. */}
+      {kpis && (
+        <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexShrink: 0, flexWrap: 'wrap' }}>
+          {PERIODOS.map(([k, etiqueta]) => (
+            <button key={k} onClick={() => setPeriodo(k)}
+              style={{ padding: '4px 11px', borderRadius: 999, cursor: 'pointer',
+                       fontSize: '.74rem', fontWeight: 700, fontFamily: 'inherit',
+                       background: periodo === k ? 'rgba(45,189,182,.16)' : 'transparent',
+                       border: `1px solid ${periodo === k ? 'rgba(45,189,182,.38)' : C.line}`,
+                       color: periodo === k ? C.tealHi : C.muted }}>
+              {etiqueta}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* KPIs — la justificación, debajo del pendiente. */}
       {kpis && (
         <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexShrink: 0, flexWrap: 'wrap' }}>
-          {kpiCard(<Users size={20} />, kpis.total, 'Interesados', C.teal)}
-          {kpiCard(<TrendingUp size={20} />, `${kpis.conversion}%`, 'Piden corredor', C.tealHi)}
+          {kpiCard(<Users size={20} />, kpis.total, 'Interesados', C.teal, kpis.totalDelta)}
+          {kpiCard(<TrendingUp size={20} />, kpis.pide, 'Piden corredor', C.tealHi, kpis.pideDelta)}
           {kpiCard(<Clock size={20} />, kpis.activos, 'Activos', C.teal)}
           {kpiCard(<AlertTriangle size={20} />, kpis.reenganchar, 'Por reenganchar', '#E8B84B')}
+        </div>
+      )}
+
+      {/* La TASA de conversión, con su N y con piso. Con 12 leads, seis puntos de
+          variación son UN lead: es ruido vestido de señal. Por debajo del piso se dice
+          que aún se está acumulando, igual que la métrica de lift. */}
+      {kpis && (
+        <div style={{ fontSize: '.74rem', color: C.muted, marginTop: -8, marginBottom: 14,
+                      flexShrink: 0 }}>
+          {kpis.n >= 30
+            ? <>Tasa de handoff: <strong style={{ color: C.text }}>{kpis.conversion}%</strong>{' '}
+                sobre {kpis.n} interesados.</>
+            : <>Tasa de handoff: acumulando ({kpis.n} de 30 interesados). Con menos, una
+                variación de puntos es un solo lead.</>}
         </div>
       )}
 

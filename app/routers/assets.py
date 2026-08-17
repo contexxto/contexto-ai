@@ -946,7 +946,13 @@ async def mine_leads(
     # llegadas devuelve `hay_registro: false`), así que nunca rompe el CRM.
     activos = await _activos_del_corredor(db, user.user_id, user.agency_id)
     reparto = await _reparto_del_corredor(db, [a["id"] for a in activos], leads)
-    return {**_funnel_y_orden(leads), "reparto": reparto}
+    # LO QUE ESPERA va primero en la pantalla y por eso viaja con el embudo: es la única
+    # parte del CRM que es trabajo y no sala de espera. Lo compone el motor (app/pendiente.py)
+    # con su frase ya redactada, para que la pantalla y el Estratega no puedan contar
+    # cosas distintas del mismo embudo.
+    from app.pendiente import componer_pendiente
+    return {**_funnel_y_orden(leads), "reparto": reparto,
+            "pendiente": componer_pendiente(leads)}
 
 
 class CRMChatReq(BaseModel):

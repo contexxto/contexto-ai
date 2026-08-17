@@ -63,12 +63,31 @@ const firmaPines = (pins) =>
     // `verificado_en` entra en la firma: un corredor puede re-verificar un POI sin que
     // `fresco` cambie (ya estaba en true), y sin esto el caption seguiria mostrando la
     // fecha vieja.
-    return `${p.id}@${p.lat},${p.lon}#${p.fresco ? 1 : 0}:${p.verificado_en || ''}=${p.encaje ?? ''}~${poi ? poi.emoji + poi.minutos : ''}`
+    // La cobertura entra en la firma por el mismo motivo que `verificado_en`: el
+    // aria-label se escribe al DIBUJAR (imperativo), así que si el corredor completa la
+    // ficha y el % no cambia, el pin seguiría anunciando la evidencia vieja.
+    return `${p.id}@${p.lat},${p.lon}#${p.fresco ? 1 : 0}:${p.verificado_en || ''}=${p.encaje ?? ''}` +
+           `/${p.encaje_evaluadas ?? ''}-${p.encaje_declaradas ?? ''}~${poi ? poi.emoji + poi.minutos : ''}`
   }).join('|')
 
 // 'AAAA-MM-DD' → '4 ago'. Se construye con Date.UTC para que la fecha no retroceda un
 // dia en zonas al oeste de UTC (Quito es UTC-5): `new Date('2026-08-04')` se interpreta
 // como medianoche UTC y al formatearlo en local mostraria el 3.
+// ★ Evidencia del encaje — la misma regla que la tarjeta (ResultCards.sobreCuanto): el
+// arco afirma un grado de encaje sobre lo que se PUDO medir, y cuando no se midió todo hay
+// que decirlo. Se calla si se midió todo: el asterisco solo aparece si hace falta.
+//
+// Dos redacciones del MISMO dato, por espacio disponible, no por criterio:
+//   · `corta` para el caption — una tira de una línea que en móvil truncaba la frase larga
+//     a "· calculado s…", que es ruido sin información;
+//   · `larga` para el aria-label, donde no hay límite de ancho y el lector de pantalla
+//     merece la oración completa (la misma que muestra la tarjeta).
+const evidenciaEncaje = (p) => {
+  const ev = p?.encaje_evaluadas, decl = p?.encaje_declaradas
+  if (!Number.isInteger(ev) || !Number.isInteger(decl) || decl <= 0 || ev >= decl) return null
+  return { corta: `medido ${ev} de ${decl}`, larga: `calculado sobre ${ev} de las ${decl} cosas que pediste` }
+}
+
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
 const fechaCorta = (iso) => {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '')
@@ -279,7 +298,10 @@ export default function MapSeed({ results, mapSeed, onOpen, onExpand, isLast, ac
           const aria = [p.direccion || p.tipo_activo || 'Inmueble']
           if (poi) aria.push(`${poi.texto} a ~${poi.minutos} min a pie`)
           aria.push(p.fresco ? 'entorno verificado por el corredor' : 'entorno según el mapa')
-          if (p.encaje != null) aria.push(`${p.encaje}% de encaje con lo que pediste`)
+          if (p.encaje != null) {
+            const ev = evidenciaEncaje(p)
+            aria.push(`${p.encaje}% de encaje con lo que pediste${ev ? `, ${ev.larga}` : ''}`)
+          }
           el.setAttribute('aria-label', aria.join(', '))
           // Sync lista⇄mapa: hover/leave del pin resalta su tarjeta (y al revés) y enciende
           // el caption capturable de abajo. Reemplaza al title nativo (que no se captura en
@@ -391,6 +413,22 @@ export default function MapSeed({ results, mapSeed, onOpen, onExpand, isLast, ac
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {activo.direccion || activo.tipo_activo || 'Inmueble'}
             </span>
+            {/* El arco del pin YA codifica el encaje, pero el caption nunca lo enunciaba:
+                un barrido no es un número. Aquí se dice, y con su evidencia cuando no se
+                midió todo — misma frase que la tarjeta, para que mapa y lista no cuenten
+                cosas distintas del mismo inmueble. */}
+            {/* Forma CORTA: en 375px la frase larga se truncaba a "· calculado s…" — ruido
+                sin información. El aria-label y la tarjeta llevan la oración completa. */}
+            {activo.encaje != null && (
+              <span style={{ flexShrink: 0, fontWeight: 700, color: C.tealHi }}>
+                {activo.encaje}%
+                {evidenciaEncaje(activo) && (
+                  <span style={{ fontWeight: 500, color: C.muted }}>
+                    {' · '}{evidenciaEncaje(activo).corta}
+                  </span>
+                )}
+              </span>
+            )}
             {/* La fecha es parte de la afirmación, no un adorno: "verificado" a secas
                 no envejece y una revisión de hace ocho meses se lee igual que la de
                 ayer. Con fecha, el comprador la descuenta solo. */}

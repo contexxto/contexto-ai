@@ -55,16 +55,24 @@ def _match_lead(leads: list[dict], referencia: str) -> dict | None:
 async def tool_stats_embudo(config: RunnableConfig) -> str:
     """Devuelve el estado ACTUAL del embudo de interesados de TODOS los inmuebles del corredor:
     total, conteo por etapa, cuántos calientes/dormidos/por-reenganchar, y los interesados más
-    calientes con su dirección. Son cifras REALES computadas por el sistema. NO recibe argumentos:
-    el corredor se resuelve del contexto de sesión."""
+    calientes con su dirección. Incluye el REPARTO del embudo (cuántos llegaron a sus fichas,
+    cuántos conversaron, cuántos se fueron sin escribir) — la cifra de cartera NUNCA va sola.
+    Son cifras REALES computadas por el sistema. NO recibe argumentos: el corredor se resuelve
+    del contexto de sesión."""
     from app.database import AsyncSessionLocal
-    from app.routers.assets import _leads_del_corredor, _funnel_y_orden
+    from app.routers.assets import (_activos_del_corredor, _funnel_y_orden,
+                                    _leads_del_corredor, _reparto_del_corredor)
 
     owner_user_id, owner_agency_id = _owner(config)
     if not owner_user_id:
         return json.dumps({"error": "Sin contexto de corredor."})
     async with AsyncSessionLocal() as db:
         leads = await _leads_del_corredor(db, owner_user_id, owner_agency_id)
+        # El REPARTO va en la misma llamada y sobre los MISMOS activos: si el Estratega
+        # pudiera leer el total sin el reparto, volveríamos al número que cuenta solo a
+        # los sobrevivientes — que es el defecto que esta fase existe para cerrar.
+        activos = await _activos_del_corredor(db, owner_user_id, owner_agency_id)
+        reparto = await _reparto_del_corredor(db, [a["id"] for a in activos], leads)
     data = _funnel_y_orden(leads)
 
     calientes = [
@@ -79,13 +87,21 @@ async def tool_stats_embudo(config: RunnableConfig) -> str:
     dormidos = sum(1 for l in data["leads"] if l.get("frescura") in ("dormido", "frio_profundo"))
 
     return json.dumps({
+        # OJO al nombre: son DISPOSITIVOS que conversaron, no personas. El mismo humano en
+        # el teléfono y en el portátil cuenta dos veces, y quien entra en incógnito otra.
         "total_interesados": data["total"],
         "por_etapa": {k: v for k, v in data["funnel"].items() if v},
         "calientes_o_piden_corredor": calientes,
         "dormidos": dormidos,
         "por_reenganchar": por_reenganchar,
+        # ★ El reparto: el embudo COMPLETO, no solo los sobrevivientes. Trae su propia
+        # frase redactada porque pedirle al modelo que la componga no basta (la lección
+        # del conteo de presupuesto en encaje_contexto.py).
+        "reparto": reparto,
+        "_frase_obligatoria": reparto.get("_frase_obligatoria"),
         "_proveniencia": "Cifras reales del sistema. 'score' es heurístico (estimación); "
-                         "'pidió corredor' y las etapas son eventos verificados del motor de intención.",
+                         "'pidió corredor' y las etapas son eventos verificados del motor de intención. "
+                         "'total_interesados' cuenta DISPOSITIVOS que conversaron, no personas.",
     }, ensure_ascii=False)
 
 

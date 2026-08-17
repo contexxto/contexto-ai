@@ -861,24 +861,70 @@ def _funnel_y_orden(leads: list[dict]) -> dict:
     return {"total": len(leads), "funnel": funnel, "leads": leads}
 
 
+async def _reparto_del_corredor(db: AsyncSession, activo_ids: list[str],
+                                leads: list[dict]) -> dict:
+    """El embudo COMPLETO del corredor: llegadas → conversaciones → piden corredor.
+
+    El CRM contaba solo el escalón final (los que conversaron y quedaron atribuidos a uno
+    de sus inmuebles). Quien llegó a su ficha y se fue sin escribir no aparecía en ningún
+    lado. Con la tabla `visita` (F0) los dos escalones de arriba por fin se pueden contar.
+
+    Degradable: sin tabla de visitas o sin registro, devuelve el reparto SIN registro —
+    que dice "no hay dato", no "cero". Nunca lanza: un embudo incompleto no vale un CRM
+    caído.
+    """
+    from app.embudo import componer_reparto
+
+    interesados = len(leads or [])
+    handoffs = sum(1 for ld in (leads or []) if ld.get("handoff_estado"))
+    if not activo_ids:
+        return componer_reparto(interesados=interesados, piden_corredor=handoffs)
+    try:
+        from app.routers.visitas import ensure_visita
+        await ensure_visita(db)
+        row = (await db.execute(
+            text("SELECT count(*) AS llegadas, count(DISTINCT session_id) AS sesiones, "
+                 "       min(creado_en)::date::text AS desde "
+                 "FROM visita WHERE activo_id::text = ANY(:ids)"),
+            {"ids": activo_ids})).mappings().first() or {}
+    except Exception:  # noqa: BLE001 — sin F0 desplegado el CRM sigue, solo que sin reparto
+        await db.rollback()  # OBLIGATORIO: no dejar la sesión de request abortada
+        return componer_reparto(interesados=interesados, piden_corredor=handoffs)
+
+    return componer_reparto(
+        llegadas=row.get("llegadas"), sesiones_que_llegaron=row.get("sesiones"),
+        interesados=interesados, piden_corredor=handoffs, desde=row.get("desde"),
+    )
+
+
 async def _leads_del_corredor(
     db: AsyncSession, owner_user_id: str, owner_agency_id: str | None = None
 ) -> list[dict]:
     """Todos los interesados de TODOS los inmuebles del corredor (o su agencia).
     Scoping SIEMPRE por owner (nunca por argumento del LLM) — reusable por el endpoint
     del CRM y por las tools del agente del corredor (CRM Vivo). Ver docs/DISENO_CRM_Vivo.md."""
+    rows = await _activos_del_corredor(db, owner_user_id, owner_agency_id)
+    all_leads: list[dict] = []
+    for r in rows:
+        all_leads.extend(await _leads_de_activo(db, r["id"], r["direccion"]))
+    return all_leads
+
+
+async def _activos_del_corredor(
+    db: AsyncSession, owner_user_id: str, owner_agency_id: str | None = None
+) -> list[dict]:
+    """Los inmuebles del corredor (o su agencia). Extraído para que el REPARTO del embudo
+    pueda contar llegadas sobre las mismas fichas que producen los leads — si cada uno
+    resolviera sus activos por su cuenta, los dos escalones podrían medir universos
+    distintos y el reparto dejaría de cuadrar."""
     params: dict = {"u": owner_user_id}
     where = "owner_user_id = :u"
     if owner_agency_id:
         where += " OR owner_agency_id = :a"
         params["a"] = owner_agency_id
-    rows = (await db.execute(
+    return [dict(r) for r in (await db.execute(
         text(f"SELECT id::text AS id, direccion_estandarizada AS direccion "
-             f"FROM activos_inmutables WHERE {where}"), params)).mappings().all()
-    all_leads: list[dict] = []
-    for r in rows:
-        all_leads.extend(await _leads_de_activo(db, r["id"], r["direccion"]))
-    return all_leads
+             f"FROM activos_inmutables WHERE {where}"), params)).mappings().all()]
 
 
 @router.get(

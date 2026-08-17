@@ -2,7 +2,7 @@
 
 ### Documento ancla · se itera EN ESTE MISMO doc con cada aprendizaje
 
-**Creado:** 2026-08-06 · **Estado:** F0 y F1 construidas · F2-F5 sin construir · **Dueño:** Carlos + Contexto
+**Creado:** 2026-08-06 · **Estado:** F0 y F1 construidas · F2 parcial · F3-F5 sin construir · **Dueño:** Carlos + Contexto
 
 <!-- estado-verificable
 codigo:
@@ -21,6 +21,9 @@ codigo:
   existe: app/puerta.py::detectar_solicitud_contacto
   existe: app/routers/alertas.py::crear_alerta
   existe: frontend/src/PuertaAlerta.jsx
+  existe: app/embudo.py::componer_reparto
+  existe: app/routers/assets.py::_reparto_del_corredor
+  no-existe: migrations/026_asignacion.sql
 datos:
   2026-08-06: el correo de un interesado existe SOLO en handoff_sesion.lead_email — no hay otra puerta de identidad en todo el sistema
   2026-08-06: el chat del comprador usa get_optional_user — anónimo funciona; la unidad del lead es localStorage['contexto_ai_device_id']
@@ -268,7 +271,38 @@ Convierte *"no tengo nada que te calce"* de callejón sin salida en captura hone
 **Compuerta:** N alertas creadas con inventario real, y el reporte de demanda no cubierta con
 contenido enseñable a un promotor.
 
-### F2 · Dejar de mentir — el CRM cuenta el universo completo
+### F2 · Dejar de mentir — el CRM cuenta el universo completo ⚠️ PARCIAL (2026-08-06)
+
+**Construido — el reparto, que era la mitad valiosa y la desbloqueó F0:**
+
+- ✅ `app/embudo.py` (puro) — el embudo completo del corredor: **llegadas → conversaron →
+  piden corredor**, con `se_fueron_sin_escribir`. Es el número que antes no existía en
+  ninguna parte.
+- ✅ `_reparto_del_corredor` cuenta llegadas sobre **los mismos activos** que producen los
+  leads (`_activos_del_corredor`, extraído para que no puedan medir universos distintos).
+- ✅ `tool_stats_embudo` devuelve `reparto` + una **`_frase_obligatoria` ya redactada**, y
+  el prompt del Estratega la exige. No se le pide al modelo que la componga: se le
+  entrega, que es la lección del conteo de presupuesto de `encaje_contexto.py`.
+- ✅ **Proveniencia del conteo:** son *dispositivos que conversaron*, no personas. El
+  mismo humano en el teléfono y en el portátil cuenta dos veces.
+- ✅ **La ventana se declara siempre.** El registro nació con F0, así que sin llegadas
+  registradas el reparto dice *"todavía no hay registro"* — nunca lo traduce a un cero,
+  que afirmaría que no entró nadie. Misma regla que `encaje.score = None`.
+- ✅ Si la resta sale negativa (las dos fuentes se cuentan distinto: `visita` por sesión,
+  el embudo por dispositivo) el campo **se omite** en vez de publicar una explicación mala.
+- ✅ Los tests de scope se **fortalecieron**, no se aflojaron: además del WHERE owner, hoy
+  se afirma que `_leads_del_corredor` no tiene SQL propio y que el reparto se alimenta de
+  los activos del owner.
+
+**Lo que sigue sin construir de F2:**
+
+- ❌ Tabla `asignacion` con **dueño congelado** al handoff. Es el refactor de esquema, y
+  pesa cuando haya varios canales y varios corredores por conversación — todavía no.
+- ❌ El CRM **visual** no muestra el reparto: hoy solo llega al Estratega.
+- ❌ El control duro (un detector de que la frase se nombró) queda diferido, igual que
+  `MODO_BLOQUEO`: sin tráfico no hay con qué calibrarlo.
+
+### F2 · lo que se planificó
 
 - Tabla `asignacion`: lead↔activo↔dueño, con **dueño congelado** al handoff (snapshot, no
   puntero).
@@ -412,6 +446,13 @@ otras sesiones o dos migraciones van a chocar.
 
 ## Changelog (iterar aquí)
 
+- **2026-08-06 — v0.4 · F2 PARCIAL (el reparto)** — `app/embudo.py` + `_reparto_del_corredor`
+  + `reparto` y `_frase_obligatoria` en `tool_stats_embudo` + la regla en el prompt del
+  Estratega. El CRM deja de contar solo a los sobrevivientes: la cifra de cartera ya no
+  puede viajar sola. Y el conteo se rotula como **dispositivos**, no personas. 17 tests
+  nuevos; los de scope se fortalecieron al extraer `_activos_del_corredor` (el WHERE owner
+  cambió de función, y el test lo cazó de inmediato). **Falta de F2:** `asignacion` con
+  dueño congelado, el reparto en el CRM visual, y el control duro de que la frase se nombre.
 - **2026-08-06 — v0.3 · F1 CONSTRUIDA** — `app/puerta.py` (decisión pura: 5 reglas de
   no-presión + 2 líneas rojas como código), directiva `puerta` en el panel (patrón
   `map_seed`), marca de "ya ofrecida" al EMITIR, `detectar_solicitud_contacto` como control

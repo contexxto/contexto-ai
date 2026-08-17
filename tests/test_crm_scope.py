@@ -124,13 +124,33 @@ def test_owner_fuente_solo_configurable():
     assert "configurable" in src
 
 
-def test_leads_del_corredor_filtra_por_owner():
-    from app.routers.assets import _leads_del_corredor
-    src = inspect.getsource(_leads_del_corredor)
+def test_activos_del_corredor_filtra_por_owner():
+    """El WHERE owner vive aquí desde que el REPARTO del embudo (F2) necesitó los mismos
+    activos que producen los leads. Extraerlo fue lo correcto —un solo punto de verdad—
+    pero mueve la invariante de seguridad a esta función, así que se vigila aquí."""
+    from app.routers.assets import _activos_del_corredor
+    src = inspect.getsource(_activos_del_corredor)
     assert 'where = "owner_user_id = :u"' in src            # filtro de user SIEMPRE presente
     assert '{"u": owner_user_id}' in src                    # :u se liga al owner del JWT
     assert 'where += " OR owner_agency_id = :a"' in src      # agencia solo AGREGA
     assert "WHERE {where}" in src                            # no hay SELECT sin WHERE owner
+
+
+def test_leads_del_corredor_no_puede_saltarse_el_filtro():
+    """Y `_leads_del_corredor` DELEGA: no puede resolver activos por su cuenta. Si alguien
+    le devuelve su propio SELECT, este test se pone rojo antes de que llegue a producción."""
+    from app.routers.assets import _leads_del_corredor
+    src = inspect.getsource(_leads_del_corredor)
+    assert "await _activos_del_corredor(db, owner_user_id, owner_agency_id)" in src
+    assert "activos_inmutables" not in src   # cero SQL propio: la única fuente es la de arriba
+
+
+def test_el_reparto_se_alimenta_de_los_activos_del_owner():
+    """El REPARTO cuenta llegadas sobre una lista de activos que recibe. Si esa lista no
+    saliera de `_activos_del_corredor`, un corredor podría ver el embudo de otro."""
+    src = inspect.getsource(tool_stats_embudo.coroutine or tool_stats_embudo.func)
+    assert "activos = await _activos_del_corredor(db, owner_user_id, owner_agency_id)" in src
+    assert '_reparto_del_corredor(db, [a["id"] for a in activos], leads)' in src
 
 
 def test_timeline_cadena_de_custodia():

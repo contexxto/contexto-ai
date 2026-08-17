@@ -2,7 +2,7 @@
 
 ### Documento ancla · se itera EN ESTE MISMO doc con cada aprendizaje
 
-**Creado:** 2026-08-06 · **Estado:** F0 y F1 construidas · F2 parcial · F3-F5 sin construir · **Dueño:** Carlos + Contexto
+**Creado:** 2026-08-06 · **Estado:** F0, F1 y F2 construidas · F3 parcial · F4-F5 sin construir · **Dueño:** Carlos + Contexto
 
 <!-- estado-verificable
 codigo:
@@ -25,6 +25,7 @@ codigo:
   existe: app/routers/assets.py::_reparto_del_corredor
   existe: migrations/026_asignacion.sql
   existe: app/routers/chat.py::_congelar_asignacion
+  existe: frontend/src/intencionesEntrada.js
 datos:
   2026-08-06: el correo de un interesado existe SOLO en handoff_sesion.lead_email — no hay otra puerta de identidad en todo el sistema
   2026-08-06: el chat del comprador usa get_optional_user — anónimo funciona; la unidad del lead es localStorage['contexto_ai_device_id']
@@ -333,7 +334,41 @@ Esa última cierra la frontera: **agregado siempre, individuo solo cuando el ind
 **Compuerta:** el Estratega no puede cerrar una jugada de la semana sin nombrar el segundo
 número.
 
-### F3 · Atraer — "Antes de decidir"
+### F3 · Atraer — "Antes de decidir" ⚠️ PARCIAL (2026-08-17)
+
+**Construido — el conjunto de entradas y la corrección de Fair Housing:**
+
+- ✅ `frontend/src/intencionesEntrada.js` — **fuente única** de los textos. Cada intención
+  rinde como chip, como página indexable (AEO) y como guion del canal; repetirlos en el
+  Launcher los desincronizaba.
+- ✅ **El defecto de Fair Housing, cerrado.** El chip "Para mi familia" inyectaba en boca
+  del usuario *«tranquilo, con colegios y parque cerca»* — tres proxies en una línea. Lo
+  fino: `detectar_steering` está calibrado para **no** marcar la cita del usuario, así que
+  el sistema lavaba su propio encuadre por la única puerta que el guardrail deja abierta.
+  Reemplazado por **"Con área verde cerca"**: sirve a la misma persona sin nombrarla, y
+  `area_verde` **sí** está en la whitelist del motor.
+- ✅ "Mi presupuesto" pedía un veredicto (*"dime qué me conviene"*) → **"Dentro de mi
+  presupuesto"**, que declara el dato.
+- ✅ **"¿Podría vivir aquí un año?"** — la entrada del producto. No es un tip: es la
+  pregunta que el Place Graph responde y ningún portal contesta.
+- ✅ `QueEs.jsx` usaba "Para mi familia" como ejemplo de venta: prometía en la página
+  pública justo lo que el motor tiene prohibido puntuar. Corregido.
+- ✅ 11 tests que lo vigilan, incluido que **ninguna intención siembre clase protegida**
+  ni pida un veredicto, y que lo que se promete exista en `encaje.DIMENSIONES`.
+
+**Lo que falta de F3, y por qué no lo escribí yo:**
+
+- ❌ **Los chips procedimentales** (*"¿qué pasos tiene comprar en Quito?"*, *"¿qué reviso
+  antes de firmar?"*, *"¿qué gastos hay además del canon?"*). Necesitan un **corpus con
+  fuente citable**: escribir el procedimiento inmobiliario ecuatoriano desde el
+  conocimiento del modelo sería exactamente la afirmación-sin-fuente que todo el proyecto
+  persigue, y en el terreno donde más caro sale (legal y tributario). Requiere contenido
+  que Carlos pueda validar — o que salga del arrendatario (F5).
+- ❌ **La compuerta (tasa de clic por chip)** sigue sin instrumentar. Los textos son
+  constantes canónicas, así que se puede contar por el primer mensaje de cada conversación
+  sin esquema nuevo; falta escribir esa consulta.
+
+### F3 · lo que se planificó
 
 Cuatro a seis entradas en la home, **procedimentales, nunca evaluativas**:
 
@@ -461,6 +496,17 @@ otras sesiones o dos migraciones van a chocar.
 
 ## Changelog (iterar aquí)
 
+- **2026-08-17 — v0.6 · F3 PARCIAL ("Antes de decidir") + el defecto de Fair Housing
+  cerrado** — `intencionesEntrada.js` como fuente única; "Para mi familia" (que inyectaba
+  tres proxies en boca del usuario) reemplazado por "Con área verde cerca"; "Mi
+  presupuesto" deja de pedir un veredicto; se agrega "¿Podría vivir aquí un año?", la
+  entrada del producto; `QueEs.jsx` deja de prometer en la página de venta lo que el motor
+  no puede puntuar. 11 tests. **Falta:** los chips procedimentales, que necesitan corpus
+  con fuente citable, y la compuerta de tasa de clic.
+- **2026-08-17 — v0.5 · F2 COMPLETA** — `asignacion` con dueño congelado (snapshot, no
+  puntero; sin FK a propósito) + el reparto en el CRM visual. Verificado contra Postgres:
+  cambia el mandato y la entrega de ayer sigue siendo de quien la recibió. Se escribe pero
+  todavía no se lee — cambiar la fuente de verdad hoy vaciaría los CRM.
 - **2026-08-06 — v0.4 · F2 PARCIAL (el reparto)** — `app/embudo.py` + `_reparto_del_corredor`
   + `reparto` y `_frase_obligatoria` en `tool_stats_embudo` + la regla en el prompt del
   Estratega. El CRM deja de contar solo a los sobrevivientes: la cifra de cartera ya no

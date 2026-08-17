@@ -1,28 +1,21 @@
 import { useState } from 'react'
-import { MapPin, Map, Home, Train, Wallet, Building2, Sparkles } from 'lucide-react'
+import { MapPin, Map, CalendarClock, Train, Trees, Wallet, Building2, Sparkles } from 'lucide-react'
+import { INTENCIONES, FILAS } from './intencionesEntrada'
 
 // ── Launcher (pantalla inicial limpia, estilo ASI:One) ──────────────────────
 // Presentational: sin estado de negocio. Recibe callbacks y dispara las MISMAS
 // acciones que ya existían en App (sendMessage / analizarMiUbicacion / mapa /
 // upgrade). Reemplaza el hero del estado vacío. Superficies planas, cero glow.
 
-// Chips de intención → cada uno mapea a una acción real del app.
-const CHIPS = [
-  { icon: MapPin,    label: 'Analiza mi zona',     action: 'geo' },
-  { icon: Map,       label: 'Explorar el mapa',    action: 'map' },
-  { icon: Home,      label: 'Para mi familia',     action: 'send',
-    intent: '🏡 Busco para mi familia: tranquilo, con colegios y parque cerca' },
-  { icon: Train,     label: 'Cerca del Metro',     action: 'send',
-    intent: '🚇 Quiero vivir cerca del Metro o de mi trabajo' },
-  { icon: Wallet,    label: 'Mi presupuesto',      action: 'send',
-    intent: '💰 Dime qué me conviene para mi presupuesto' },
-  { icon: Building2, label: 'Soy corredor',        action: 'broker' },
-  { icon: Sparkles,  label: 'El aura de un lugar', action: 'send',
-    intent: '¿Qué es el aura de un lugar y cómo la lees en Contexto?' },
-]
-
-// Filas escalonadas 2-2-2-1 (como ASI:One).
-const ROWS = [[0, 1], [2, 3], [4, 5], [6]]
+// Los textos viven en ./intencionesEntrada (fuente única): cada intención rinde también
+// como página indexable y como guion del canal, y repetirlos aquí los desincronizaba.
+// Aquí solo se les pone cara.
+const ICONO = {
+  zona: MapPin, mapa: Map, 'vivir-un-ano': CalendarClock, transporte: Train,
+  'area-verde': Trees, presupuesto: Wallet, corredor: Building2, aura: Sparkles,
+}
+const CHIPS = INTENCIONES.map((i) => ({ ...i, icon: ICONO[i.id] || Sparkles }))
+const ROWS = FILAS
 
 function Chip({ icon: Icon, label, onClick }) {
   const [hover, setHover] = useState(false)
@@ -48,9 +41,9 @@ function Chip({ icon: Icon, label, onClick }) {
 
 export default function Launcher({ onSend, onAnalyzeLocation, onOpenMap, onBroker, geoLoading, isMobile }) {
   const fire = (c) => {
-    if (c.action === 'geo') onAnalyzeLocation()
-    else if (c.action === 'map') onOpenMap()
-    else if (c.action === 'broker') onBroker()
+    if (c.accion === 'geo') onAnalyzeLocation()
+    else if (c.accion === 'map') onOpenMap()
+    else if (c.accion === 'broker') onBroker()
     else onSend(c.intent)
   }
 

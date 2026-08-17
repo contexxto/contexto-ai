@@ -92,7 +92,12 @@ export default function QueEs({ onStart, onBroker, onLogin }) {
           <div className="pillar">
             <div className="ic"><Target className="lu" size={22} /></div>
             <h3>Encaja con tu intención</h3>
-            <p>“Para mi familia”, “cerca del metro”, “según mi presupuesto” → un <b>% de encaje contigo</b>, no un ranking genérico para todos.</p>
+            {/* Los ejemplos son NECESIDADES declaradas, no rasgos de quien pregunta: el
+                encaje se keyea a qué buscas, nunca a quién eres (encaje.DIMENSIONES es una
+                whitelist cerrada). Decía “Para mi familia”, que es estado familiar —
+                clase protegida— y prometía en la página de venta justo lo que el motor
+                tiene prohibido puntuar. */}
+            <p>“Cerca del metro”, “con área verde cerca”, “dentro de mi presupuesto” → un <b>% de encaje contigo</b>, no un ranking genérico para todos.</p>
           </div>
           <div className="pillar">
             <div className="ic"><ShieldCheck className="lu" size={22} /></div>

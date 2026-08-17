@@ -2,7 +2,7 @@
 
 ### Documento ancla · se itera EN ESTE MISMO doc con cada aprendizaje
 
-**Creado:** 2026-08-06 · **Estado:** decisión tomada · nada construido · **Dueño:** Carlos + Contexto
+**Creado:** 2026-08-06 · **Estado:** F0 construida · F1-F5 sin construir · **Dueño:** Carlos + Contexto
 
 <!-- estado-verificable
 codigo:
@@ -12,14 +12,14 @@ codigo:
   existe: app/routers/chat.py::_map_seed_from_cards
   existe: app/routers/chat.py::share_session
   existe: frontend/src/ShareConversation.jsx
-  no-existe: migrations/024_visita.sql
-  no-existe: app/routers/visitas.py
-  no-existe: app/routers/chat.py::registrar_visita
+  existe: migrations/024_visita.sql
+  existe: app/llegada.py::clasificar_canal
+  existe: app/routers/visitas.py::registrar_visita
+  existe: frontend/src/App.jsx::registrarLlegada
   no-existe: app/agent/crm_guardrails.py::detectar_solicitud_contacto
 datos:
   2026-08-06: el correo de un interesado existe SOLO en handoff_sesion.lead_email — no hay otra puerta de identidad en todo el sistema
-  2026-08-06: no hay captura de utm ni de document.referrer en ningún punto del repo (único match: un atributo rel="noopener noreferrer")
-  2026-08-06: el chat del comprador usa get_optional_user — anónimo funciona; la unidad del lead es localStorage['contexto_ai_session_id']
+  2026-08-06: el chat del comprador usa get_optional_user — anónimo funciona; la unidad del lead es localStorage['contexto_ai_device_id']
 -->
 
 > **Idea en una línea.** No hay onboarding en la puerta: la puerta es la conversación. El rol
@@ -178,18 +178,37 @@ estrategia.
 El arco: **ver → retener → dejar de mentir → atraer → cerrar fugas → expandir.**
 Si una compuerta no se cumple, no se pasa a la siguiente.
 
-### F0 · Ver — instrumentar la llegada
+### F0 · Ver — instrumentar la llegada ✅ CONSTRUIDA (2026-08-06)
 
-Puramente aditivo: no refactoriza nada.
+Puramente aditiva: no refactorizó nada.
 
-- Tabla `visita`: superficie, `activo_id` nullable, canal, utm, referrer, device_key,
-  session_id, marca de tiempo.
-- Captura de UTM + `document.referrer`, persistida en la sesión.
-- **Registro del escaneo**: una fila al cargar `/a/{id}`, escriba o no.
-- `fuente` deja de estar hardcodeada a `"QR"`.
+- ✅ Tabla `visita` (`migrations/024_visita.sql`) — log **append-only**, una fila por
+  llegada. La deduplicación se hace al consultar, no al escribir: dos escaneos del mismo
+  letrero en un día **son** dos escaneos.
+- ✅ `app/llegada.py` — módulo puro que clasifica el canal desde (superficie, utm,
+  referrer), con lista **cerrada** de canales y superficies, igual que `DIMENSIONES`.
+- ✅ `POST /api/v1/visitas` (`app/routers/visitas.py`) — best-effort: registrar una visita
+  nunca puede romper la página que la persona vino a ver.
+- ✅ **Registro del escaneo**: `registrarLlegada` se dispara en el MONTAJE, antes de que
+  nadie escriba. Una vez por (sesión × superficie × inmueble), marcado en `sessionStorage`
+  para que un re-render o el doble montaje de StrictMode no infle el conteo.
+- ✅ `fuente` deja de ser `"QR"` hardcodeado: sale del canal de la **primera** llegada de
+  la sesión. Sin registro previo → `"desconocido"`, que es la verdad.
 
-**Compuerta:** responder por semana y por canal — *¿cuántos escaneos? ¿cuántos conversaron?
-¿cuántos anclaron? ¿cuántos pidieron corredor?* Hoy solo se sabe el último.
+**Lo que la clasificación asume, y hay que saberlo al leer el reporte:**
+- `directo` significa **"no sabemos"**, no "vino solo". Es el cajón de lo no medido, y ahí
+  cae el escaneo de un QR (llega sin referrer y sin utm).
+- `mensajeria` va a **subestimar siempre**: una app que abre el navegador normalmente no
+  manda referrer. El reenvío por WhatsApp se verá como `directo`.
+- `motor_respuesta` va **antes** que `buscador` a propósito: `gemini.google.com` contiene
+  `google.`, y confundirlos borraría justo la señal que se quiere medir.
+
+**Compuerta (pendiente, necesita tráfico):** responder por semana y por canal — *¿cuántos
+escaneos? ¿cuántos conversaron? ¿cuántos anclaron? ¿cuántos pidieron corredor?*
+
+**Deuda declarada:** el QR impreso no lleva marca de canal, así que un escaneo es
+indistinguible de alguien que teclea la URL. Se cierra añadiendo un parámetro al enlace que
+genera `_generar_letrero_png` — los letreros ya impresos seguirán cayendo en `directo`.
 
 **Efecto lateral que vale el doble:** las tres asimetrías del QR (dedup, actividad, `fuente`)
 existen porque el canal vive en el prefijo de un string. Con `visita` pasa a ser una columna y
@@ -357,6 +376,15 @@ otras sesiones o dos migraciones van a chocar.
 
 ## Changelog (iterar aquí)
 
+- **2026-08-06 — v0.2 · F0 CONSTRUIDA** — `migrations/024_visita.sql` (log append-only),
+  `app/llegada.py` (clasificador puro, listas cerradas, referrer minimizado sin query),
+  `POST /api/v1/visitas` best-effort, `registrarLlegada` en el montaje del frontend, y
+  `fuente` del CRM tomada del canal real en vez de la constante `"QR"`. 40 tests nuevos.
+  El bloque `estado-verificable` de este doc se puso **rojo al construir** (afirmaba
+  `no-existe: migrations/024_visita.sql`) — funcionó como debía y se actualizó aquí. Un
+  test cazó de paso un fallo del clasificador: `utm_source` trae **nombres** (`youtube`),
+  no hosts (`youtube.com`), y reusar el mapa de hosts mandaba todo el tráfico etiquetado a
+  `referido`; ahora `_FUENTES` va aparte.
 - **2026-08-06 — v0.1** — Doc creado desde la auditoría de llegadas (§3, verificada contra el
   código el mismo día) + la investigación de casos externos (Duolingo, progressive profiling,
   portales). **Decisión dura tomada:** no hay onboarding en la puerta; una sola puerta suave;

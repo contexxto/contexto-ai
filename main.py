@@ -11,7 +11,7 @@ from app.agent.graph import setup_checkpointer, shutdown_checkpointer, get_check
 from app.config import settings
 from app.database import AsyncSessionLocal
 from app.limiter import limiter
-from app.routers import assets, auth, chat, ingest, match, review, vision
+from app.routers import assets, auth, chat, ingest, match, review, vision, visitas
 
 
 @asynccontextmanager
@@ -68,6 +68,7 @@ app.include_router(vision.router)
 app.include_router(ingest.router)
 app.include_router(review.router)
 app.include_router(match.router)
+app.include_router(visitas.router)
 
 
 @app.get("/robots.txt", include_in_schema=False)

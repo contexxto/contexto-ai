@@ -88,6 +88,47 @@ function getDeviceId() {
 // Sesión del QR: única por (inmueble × dispositivo).
 const qrSessionId = (id) => `qr-${id}-${getDeviceId()}`
 
+// ── Registro de LLEGADA (F0 · PLAN_Onboarding_Ecosistema) ───────────────────────────
+// Se dispara al CARGAR, antes de que la persona escriba nada: así el escaneo de un QR
+// se cuenta aunque la conversación nunca empiece — hoy esa señal (alguien parado frente
+// al inmueble, con el letrero delante) se descartaba sin dejar contador.
+//
+// DOS candados, porque protegen de cosas distintas (verificado en el navegador):
+//
+//   1. `yaRegistrada` (ámbito de MÓDULO) — el doble montaje. Con StrictMode el efecto
+//      corre dos veces y `useState(() => 'session-' + crypto.randomUUID())` genera un id
+//      NUEVO en el segundo montaje: la marca de abajo no coincide y se contaba dos veces
+//      la misma llegada. El ámbito de módulo es exactamente "una carga de página", que es
+//      la unidad correcta de una llegada.
+//   2. `sessionStorage` — la recarga de una sesión ESTABLE. El `session_id` del QR es
+//      determinista (`qr-{activo}-{dispositivo}`), así que recargar la ficha volvería a
+//      contar un escaneo que no ocurrió.
+//
+// Silencioso por diseño: un fallo al registrar NO puede afectar a la página que la
+// persona vino a ver. Sin catch visible, sin reintento, sin estado.
+let yaRegistrada = false
+
+function registrarLlegada({ sessionId, activoId, superficie }) {
+  if (yaRegistrada) return
+  yaRegistrada = true
+  const marca = `contexto_llegada_${sessionId}_${superficie}_${activoId || 'sin-inmueble'}`
+  try {
+    if (sessionStorage.getItem(marca)) return
+    sessionStorage.setItem(marca, '1')
+  } catch { /* modo privado sin storage: se registra igual, mejor de más que de menos */ }
+  const q = new URLSearchParams(window.location.search)
+  axios.post(`${API_BASE}/api/v1/visitas`, {
+    session_id: sessionId,
+    activo_id: activoId || null,
+    superficie,
+    utm_source: q.get('utm_source'), utm_medium: q.get('utm_medium'),
+    utm_campaign: q.get('utm_campaign'), utm_content: q.get('utm_content'),
+    // El backend le quita la query antes de guardarlo (ahí viajan tokens y búsquedas).
+    referrer: document.referrer || null,
+    device_key: getDeviceId(),
+  }, { headers: apiHeaders() }).catch(() => {})
+}
+
 // renderMarkdown se movió a ./markdown.js (compartido con el CRM Vivo). Ver import arriba.
 
 // ── Sub-components ──────────────────────────────────────────
@@ -670,6 +711,18 @@ export default function App() {
     // agente se dispara desde el CTA, no en el montaje.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (deepLinkId && !anuncioMode) loadFromDeepLink(deepLinkId)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // LLEGADA (F0): se registra en el MONTAJE, no al escribir. Es la única forma de contar
+  // al que escanea el letrero y se va sin decir nada — que es la mayoría, y era la señal
+  // más fuerte que el sistema tiraba a la basura.
+  useEffect(() => {
+    registrarLlegada({
+      sessionId,
+      activoId: deepLinkId,
+      superficie: deepLinkId ? 'anuncio' : shareToken ? 'conversacion_compartida' : 'home',
+    })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

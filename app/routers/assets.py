@@ -735,6 +735,26 @@ async def _leads_de_activo(db: AsyncSession, activo_id: str, direccion: str | No
         await db.rollback()  # OBLIGATORIO: no dejar la sesión de request abortada (get_db commit → 500)
         actividad_map = {}
 
+    # CANAL REAL de cada sesión (F0). Antes `fuente` era la constante 'QR' para todos —
+    # incluidos los leads que NO vinieron de un QR, que se listan aquí desde el fix del
+    # 2026-08-05. El único campo que decía por dónde entró un lead era una constante que
+    # mentía, justo antes de invertir en campañas. Se toma la PRIMERA llegada de la sesión:
+    # el canal que la originó, no el último clic.
+    canal_map: dict[str, str] = {}
+    try:
+        from app.routers.visitas import ensure_visita
+        await ensure_visita(db)
+        c_rows = (await db.execute(
+            text("SELECT DISTINCT ON (session_id) session_id, canal FROM visita "
+                 "WHERE activo_id = CAST(:a AS uuid) OR session_id LIKE :p "
+                 "ORDER BY session_id, creado_en ASC"),
+            {"a": str(activo_id), "p": f"qr-{activo_id}-%"},
+        )).mappings().all()
+        canal_map = {r["session_id"]: r["canal"] for r in c_rows}
+    except Exception:  # noqa: BLE001 — sin tabla de visitas el CRM degrada, no se cae
+        await db.rollback()  # OBLIGATORIO: no dejar la sesión de request abortada
+        canal_map = {}
+
     # Novedad verificada del inmueble (refuerza el ángulo del reenganche si aplica).
     novedades: list[dict] = []
     try:
@@ -788,7 +808,9 @@ async def _leads_de_activo(db: AsyncSession, activo_id: str, direccion: str | No
         lead = {
             "session_id": sid, "activo_id": str(activo_id), "direccion": direccion,
             "lead": email or f"Lead #{device[:4]}",
-            "email": email, "fuente": "QR",
+            # 'desconocido' cuando la sesión es anterior al registro de llegadas: es la
+            # verdad, y es mejor que heredar el 'QR' fijo que este campo tenía antes.
+            "email": email, "fuente": canal_map.get(sid, "desconocido"),
             "estado": a["estado"], "nivel": a["nivel"], "score": a["score"],
             "mensajes": a.get("turnos") or 0,
             "resumen": a["resumen"], "razones": a["razones"],

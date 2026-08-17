@@ -9,6 +9,7 @@ import Auth from './Auth'
 import MisPublicaciones from './MisPublicaciones'
 import ConvierteteCorredor from './ConvierteteCorredor'
 import ShareConversation from './ShareConversation'
+import PuertaAlerta from './PuertaAlerta'
 import AnuncioView from './AnuncioView'
 import ResultCards from './ResultCards'
 import DeltaEncaje from './DeltaEncaje'
@@ -301,6 +302,17 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
               <DeltaEncaje data={delta} loading={deltaLoading} onClose={() => setComparar([])} />
             </>
           )}
+        </div>
+      )}
+
+      {/* ★ PUERTA SUAVE — "¿te aviso cuando aparezca algo así?". Bloque PROPIO, no dentro
+          del panel de tarjetas: el caso que más la necesita es el callejón honesto, donde
+          no hay ninguna tarjeta que mostrar. Y va DESPUÉS de la respuesta y del panel, que
+          se leen completos aunque nadie deje nada — nunca es una condición para ver algo.
+          Cuándo aparece lo decidió el motor (app/puerta.py); aquí solo se pinta. */}
+      {!isUser && msg.puerta && (
+        <div style={{ paddingLeft: AVATAR_INDENT, width: '100%', boxSizing: 'border-box' }}>
+          <PuertaAlerta puerta={msg.puerta} sessionId={sessionId} />
         </div>
       )}
 
@@ -837,6 +849,9 @@ export default function App() {
         results: Array.isArray(data.results) ? data.results : [],
         // Directiva de mapa del turno (SPEC_Mapa_Vivo): el mapa la interpreta. Puede ser null.
         mapSeed: data.map_seed || null,
+        // Directiva de PUERTA SUAVE. null en la enorme mayoría de los turnos: se abre solo
+        // en el callejón honesto o si la persona lo pidió (app/puerta.py).
+        puerta: data.puerta || null,
       }])
       lastAiRef.current = data.reply || ''
     }
@@ -888,6 +903,7 @@ export default function App() {
               results: Array.isArray(ev.panel.results) ? ev.panel.results : [],
               // Directiva de mapa del turno (SPEC_Mapa_Vivo). Puede ser null.
               mapSeed: ev.panel.map_seed || null,
+              puerta: ev.panel.puerta || null,
             })
           }
         }

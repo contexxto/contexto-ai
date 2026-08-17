@@ -2,7 +2,7 @@
 
 ### Documento ancla · se itera EN ESTE MISMO doc con cada aprendizaje
 
-**Creado:** 2026-08-06 · **Estado:** F0 construida · F1-F5 sin construir · **Dueño:** Carlos + Contexto
+**Creado:** 2026-08-06 · **Estado:** F0 y F1 construidas · F2-F5 sin construir · **Dueño:** Carlos + Contexto
 
 <!-- estado-verificable
 codigo:
@@ -16,7 +16,11 @@ codigo:
   existe: app/llegada.py::clasificar_canal
   existe: app/routers/visitas.py::registrar_visita
   existe: frontend/src/App.jsx::registrarLlegada
-  no-existe: app/agent/crm_guardrails.py::detectar_solicitud_contacto
+  existe: migrations/025_contacto_demanda.sql
+  existe: app/puerta.py::evaluar_puerta
+  existe: app/puerta.py::detectar_solicitud_contacto
+  existe: app/routers/alertas.py::crear_alerta
+  existe: frontend/src/PuertaAlerta.jsx
 datos:
   2026-08-06: el correo de un interesado existe SOLO en handoff_sesion.lead_email — no hay otra puerta de identidad en todo el sistema
   2026-08-06: el chat del comprador usa get_optional_user — anónimo funciona; la unidad del lead es localStorage['contexto_ai_device_id']
@@ -214,7 +218,39 @@ genera `_generar_letrero_png` — los letreros ya impresos seguirán cayendo en 
 existen porque el canal vive en el prefijo de un string. Con `visita` pasa a ser una columna y
 las tres se disuelven.
 
-### F1 · Retener — la identidad y la primera puerta suave
+### F1 · Retener — la identidad y la primera puerta suave ✅ CONSTRUIDA (2026-08-06)
+
+- ✅ `app/puerta.py` (puro) — **decide** la puerta. Las cinco reglas de no-presión y las
+  dos líneas rojas están aquí como código, no como intención. `evaluar_puerta` **no
+  recibe score ni nivel**: es imposible por construcción atarla al motor de intención, y
+  hay un test que afirma esa firma.
+- ✅ La directiva viaja en `ChatResponse.puerta` y en el panel del stream, igual que
+  `map_seed`. El modelo narra; el motor autoriza.
+- ✅ **La marca de "ya ofrecida" se escribe al EMITIRLA**, no cuando la persona responde.
+  Es la regla 3 en su forma estricta: si la ignoró, tampoco vuelve. Dejarlo en manos del
+  frontend habría significado reofrecer a quien no contesta.
+- ✅ `detectar_solicitud_contacto` — el control hermano: que el modelo pida contacto en
+  prosa es una violación detectable. Alta precisión: *"el corredor te escribirá a tu
+  correo"* (legítimo tras un handoff) **no** se marca.
+- ✅ `migrations/025_contacto_demanda.sql` — `contacto` (la identidad, de la alerta o del
+  handoff) y **`demanda`** (qué pidió + `hubo_match`). Las filas con `hubo_match = false`
+  son la demanda no cubierta de Quito: el activo de esta fase.
+- ✅ `POST /api/v1/alertas` — idempotente (`ON CONFLICT`), hereda el canal de la primera
+  `visita` de la sesión (el pago de F0), y **falla hacia el cliente** si no puede guardar:
+  le prometimos avisarle, callarlo sería la promesa incumplida que esto evita.
+- ✅ `PuertaAlerta.jsx` — bloque propio, **no dentro del panel de tarjetas**: el caso que
+  más la necesita es el callejón honesto, donde no hay ninguna tarjeta.
+
+**El nombre.** El plan decía tabla `lead`; se llama `contacto`. `LEAD` es palabra clave en
+PostgreSQL y no vale el riesgo por un nombre — y `contacto` dice mejor lo que es.
+
+**Deuda declarada:** `demanda.criterio` guarda solo claves de la whitelist de `encaje.py`
+(`criterio_whitelist`), porque el extractor puede emitir un `perfil` u otro atributo de la
+persona y persistirlo dejaría en la base justo lo que la whitelist mantiene fuera del
+scoring. Falta el **envío** del aviso: hoy la demanda queda registrada y nadie escribe
+todavía — eso es otro sistema, con su propia puerta de aprobación (§7).
+
+### F1 · lo que se planificó
 
 La alerta necesita dónde guardar un correo, y hoy el único sitio es una tabla de handoff. Eso
 fuerza la tabla `lead` — mejor que nazca motivada por una funcionalidad que por una abstracción.
@@ -376,6 +412,14 @@ otras sesiones o dos migraciones van a chocar.
 
 ## Changelog (iterar aquí)
 
+- **2026-08-06 — v0.3 · F1 CONSTRUIDA** — `app/puerta.py` (decisión pura: 5 reglas de
+  no-presión + 2 líneas rojas como código), directiva `puerta` en el panel (patrón
+  `map_seed`), marca de "ya ofrecida" al EMITIR, `detectar_solicitud_contacto` como control
+  hermano, `migrations/025_contacto_demanda.sql`, `POST /api/v1/alertas` idempotente y
+  `PuertaAlerta.jsx`. 40 tests nuevos. Verificado en el navegador: la puerta renderiza, el
+  "no" la cierra de un clic sin re-preguntar, y el fallo al guardar muestra el error en vez
+  de perderse en silencio. Tabla `lead` renombrada a `contacto` (`LEAD` es palabra clave en
+  PostgreSQL).
 - **2026-08-06 — v0.2 · F0 CONSTRUIDA** — `migrations/024_visita.sql` (log append-only),
   `app/llegada.py` (clasificador puro, listas cerradas, referrer minimizado sin query),
   `POST /api/v1/visitas` best-effort, `registrarLlegada` en el montaje del frontend, y

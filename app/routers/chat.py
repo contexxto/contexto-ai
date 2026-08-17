@@ -101,6 +101,51 @@ class ChatResponse(BaseModel):
     # espacial; el frontend RENDERIZA. Separa la capa de razonamiento de la visual, igual que
     # results separa lo que ve el LLM de lo que renderiza la tarjeta. None si no hay pines geo.
     map_seed: dict | None = None
+    # ★ Directiva de PUERTA SUAVE (docs/PLAN_Onboarding_Ecosistema §6). Igual que map_seed:
+    # el backend DECIDE y el frontend RENDERIZA. Que viaje como directiva —y no como una
+    # instrucción en el prompt— es lo que hace imposible que el modelo se ponga insistente
+    # por su cuenta: la puerta no es texto que él escriba. None = no corresponde ofrecer
+    # nada, que es el caso por defecto y el más frecuente.
+    puerta: dict | None = None
+
+
+def _puerta_del_turno(estado: dict, cards: list, mensajes) -> dict | None:
+    """La directiva de puerta del turno, o None. Best-effort: jamás rompe la respuesta.
+
+    Lee del estado lo que el nodo `encaje` ya calculó (preferencias declaradas) y el
+    último texto del usuario. NO recibe score ni nivel de intención: la línea roja del §6
+    es que el motor de intención no puede disparar la captura de correo.
+    """
+    from app.puerta import evaluar_puerta
+    try:
+        ultimo = ""
+        for m in reversed(list(mensajes or [])):
+            if getattr(m, "type", "") == "human":
+                ultimo = m.content if isinstance(m.content, str) else ""
+                break
+        return evaluar_puerta(
+            preferencias=estado.get("preferencias") or {},
+            cards=cards or [],
+            ya_ofrecida=bool(estado.get("puerta_ofrecida")),
+            pidio_corredor=bool(estado.get("handoff_pedido")),
+            texto_usuario=ultimo,
+        )
+    except Exception:  # noqa: BLE001 — ofrecer una puerta jamás vale un turno roto
+        return None
+
+
+async def _marcar_puerta_ofrecida(config: dict) -> None:
+    """Deja escrito que la puerta YA se ofreció en este hilo.
+
+    Se llama al EMITIRLA, no cuando la persona responde. Es la regla 3 del §6 ("una vez")
+    en su forma estricta: si la ignoró, tampoco vuelve. Dejar esta marca en manos del
+    frontend habría significado que quien no contesta recibe la oferta otra vez — que es
+    exactamente el comportamiento de acoso que esta puerta existe para no tener.
+    """
+    try:
+        await agent_graph.compiled_graph.aupdate_state(config, {"puerta_ofrecida": True})
+    except Exception:  # noqa: BLE001 — sin la marca se reofrece una vez; no vale romper el turno
+        log.warning("no se pudo marcar la puerta como ofrecida")
 
 
 def _langgraph_config(session_id: str) -> dict:
@@ -882,6 +927,7 @@ async def _stream_agent(message: str, session_id: str) -> AsyncIterator[str]:
     # persiste. Best-effort — jamás rompe el stream (cubre el flujo del QR-lead si usa SSE).
     resultados: list = []
     map_seed = None
+    puerta = None
     try:
         _st = await agent_graph.compiled_graph.aget_state(config)
         _valores = (_st.values or {}) if (_st and _st.values) else {}
@@ -894,6 +940,11 @@ async def _stream_agent(message: str, session_id: str) -> AsyncIterator[str]:
         if not isinstance(resultados, list) or not resultados:
             resultados = await build_result_cards(_msgs)
         map_seed = _map_seed_from_cards(resultados, prev_mode)
+        # El stream es el camino que usa la gente de verdad — si la puerta solo saliera por
+        # el no-stream, no se ofrecería nunca donde importa.
+        puerta = _puerta_del_turno(_valores, resultados, _msgs)
+        if puerta:
+            await _marcar_puerta_ofrecida(config)
 
         # El stream es el camino que usa la gente de verdad: si la auditoría de prosa solo
         # cubriera el no-stream, mediríamos el turno que casi nadie ejecuta.
@@ -916,7 +967,8 @@ async def _stream_agent(message: str, session_id: str) -> AsyncIterator[str]:
     # El panel va ANTES del done: el front lo aplica al mensaje que ya terminó de escribirse.
     yield (
         "data: "
-        + json.dumps({"panel": {"results": resultados or [], "map_seed": map_seed}},
+        + json.dumps({"panel": {"results": resultados or [], "map_seed": map_seed,
+                                "puerta": puerta}},
                      default=str)
         + "\n\n"
     )
@@ -1002,12 +1054,17 @@ async def chat(
         except Exception:  # noqa: BLE001 — persistir el foco es un extra; jamás rompe el chat
             pass
 
+    puerta = _puerta_del_turno(final_state, results, messages)
+    if puerta:
+        await _marcar_puerta_ofrecida(config)
+
     return ChatResponse(
         reply=reply,
         session_id=payload.session_id,
         tool_calls_made=tool_calls,
         results=results,
         map_seed=map_seed,
+        puerta=puerta,
     )
 
 

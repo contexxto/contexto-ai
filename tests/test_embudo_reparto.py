@@ -123,3 +123,30 @@ def test_la_tool_del_estratega_expone_el_reparto_y_su_frase():
     from app.agent.crm_graph import SYSTEM_PROMPT_ESTRATEGA
     prompt = SYSTEM_PROMPT_ESTRATEGA.content
     assert "REPARTO NO SE OMITE" in prompt and "_frase_obligatoria" in prompt
+
+
+def test_el_crm_visual_tambien_recibe_el_reparto():
+    """El endpoint del CRM lo devuelve JUNTO al embudo, no en una llamada aparte: si
+    hubiera que pedirlo por separado, la pantalla podría pintar el total sin él — que es
+    el número-sobre-universo-truncado que F2 vino a cerrar."""
+    import inspect
+
+    from app.routers import assets
+
+    src = inspect.getsource(assets.mine_leads)
+    assert "_reparto_del_corredor" in src
+    assert '"reparto": reparto' in src
+
+
+def test_la_pantalla_no_traduce_sin_registro_a_un_cero():
+    """El contrato visual: sin registro se dice, y el 'se fueron sin escribir' solo se
+    resalta si hubo pérdida (un cero ahí es legítimo y no merece énfasis)."""
+    from pathlib import Path
+
+    crm = (Path(__file__).resolve().parents[1] / "frontend" / "src" / "CRM.jsx"
+           ).read_text(encoding="utf-8")
+    assert "d.reparto.hay_registro ?" in crm
+    assert "Todavía no hay registro de llegadas" in crm
+    assert "d.reparto.se_fueron_sin_escribir > 0" in crm
+    # Y la proveniencia: son dispositivos, no personas.
+    assert "dispositivos, no personas" in crm

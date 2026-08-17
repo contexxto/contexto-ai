@@ -2025,6 +2025,65 @@ async def _hilos_de_sesion(db, session_id: str) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+_ASIGNACION_DDL = [
+    "CREATE TABLE IF NOT EXISTS asignacion ("
+    "id bigserial PRIMARY KEY, session_id text NOT NULL, activo_id uuid NOT NULL, "
+    "owner_user_id uuid, owner_agency_id uuid, "
+    "origen text NOT NULL DEFAULT 'handoff', canal text, "
+    "creado_en timestamptz NOT NULL DEFAULT now(), "
+    "CONSTRAINT asignacion_sesion_activo_unica UNIQUE (session_id, activo_id))",
+    "CREATE INDEX IF NOT EXISTS asignacion_owner_idx ON asignacion (owner_user_id, creado_en DESC)",
+    "CREATE INDEX IF NOT EXISTS asignacion_agency_idx ON asignacion (owner_agency_id, creado_en DESC) "
+    "WHERE owner_agency_id IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS asignacion_session_idx ON asignacion (session_id)",
+]
+_asignacion_lista = False
+
+
+async def _congelar_asignacion(db, session_id: str, activo_id: str) -> None:
+    """Guarda QUIÉN era el dueño del inmueble en el momento de la entrega.
+
+    Snapshot, no puntero. Hoy el dueño de un lead se resuelve en vivo contra
+    `activos_inmutables`, así que el día que un corredor pierde un mandato todos sus
+    leads históricos se mudan con el inmueble: su CRM se vacía de conversaciones que sí
+    atendió y la métrica de lift se reescribe hacia atrás. Un cambio de mandato no puede
+    reescribir el pasado.
+
+    SE ESCRIBE, TODAVÍA NO SE LEE (ver migrations/026_asignacion.sql): el CRM sigue
+    resolviendo por `activos_inmutables` hasta que esta tabla acumule historia. Cambiar
+    la fuente de verdad hoy vaciaría los CRM, porque los handoffs anteriores no tienen
+    fila aquí.
+
+    Best-effort: una asignación perdida no vale un handoff roto — el handoff ya se
+    registró y el corredor ya fue notificado antes de llegar aquí.
+    """
+    global _asignacion_lista
+    try:
+        if not _asignacion_lista:
+            for ddl in _ASIGNACION_DDL:
+                await db.execute(text(ddl))
+            await db.commit()
+            _asignacion_lista = True
+        await db.execute(text(
+            "INSERT INTO asignacion (session_id, activo_id, owner_user_id, owner_agency_id, origen, canal) "
+            "SELECT :s, a.id, a.owner_user_id, a.owner_agency_id, 'handoff', "
+            "       (SELECT v.canal FROM visita v WHERE v.session_id = :s "
+            "        ORDER BY v.creado_en ASC LIMIT 1) "
+            "FROM activos_inmutables a WHERE a.id = CAST(:a AS uuid) "
+            # La PRIMERA entrega manda: si el mandato cambia y el mismo interesado vuelve
+            # a pedir corredor por el mismo inmueble, no se reescribe a quién se le
+            # entregó la vez que sí ocurrió.
+            "ON CONFLICT ON CONSTRAINT asignacion_sesion_activo_unica DO NOTHING"),
+            {"s": session_id, "a": activo_id})
+        await db.commit()
+    except Exception as exc:  # noqa: BLE001
+        try:
+            await db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        log.warning("asignacion no congelada (%s): %s", type(exc).__name__, exc)
+
+
 async def registrar_handoff(
     session_id: str,
     *,
@@ -2060,6 +2119,7 @@ async def registrar_handoff(
             "    lead_email = COALESCE(EXCLUDED.lead_email, handoff_sesion.lead_email)"),
             {"s": session_id, "a": activo_id, "u": lead_user_id, "e": lead_email})
         await db.commit()
+        await _congelar_asignacion(db, session_id, activo_id)
         # WhatsApp del corredor (si lo cargó) → habilita el botón "Continuar por WhatsApp".
         wsp = await _whatsapp_de_activo(db, activo_id)
     # Avisa al corredor: un lead caliente quiere hablar (lo más valioso del embudo).

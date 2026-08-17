@@ -23,7 +23,8 @@ codigo:
   existe: frontend/src/PuertaAlerta.jsx
   existe: app/embudo.py::componer_reparto
   existe: app/routers/assets.py::_reparto_del_corredor
-  no-existe: migrations/026_asignacion.sql
+  existe: migrations/026_asignacion.sql
+  existe: app/routers/chat.py::_congelar_asignacion
 datos:
   2026-08-06: el correo de un interesado existe SOLO en handoff_sesion.lead_email — no hay otra puerta de identidad en todo el sistema
   2026-08-06: el chat del comprador usa get_optional_user — anónimo funciona; la unidad del lead es localStorage['contexto_ai_device_id']
@@ -294,13 +295,27 @@ contenido enseñable a un promotor.
   se afirma que `_leads_del_corredor` no tiene SQL propio y que el reparto se alimenta de
   los activos del owner.
 
+**Construido en la segunda pasada:**
+
+- ✅ **El reparto en el CRM visual** (`/mine/leads` lo devuelve, `CRM.jsx` lo pinta). Va
+  **debajo de los KPI y en tono secundario a propósito**: es el contexto de esas cifras,
+  no un KPI más. Los KPI cuentan sobrevivientes; el reparto dice a quién no se contaba.
+  Y el "se fueron sin escribir" solo se resalta si hubo pérdida — un cero ahí es legítimo
+  y no merece énfasis.
+- ✅ **`asignacion` con dueño congelado** (`migrations/026`, `_congelar_asignacion`).
+  Snapshot, no puntero: se copia `owner_user_id` del activo en el momento de la entrega y
+  esa fila no se mueve. **Sin FK a propósito** — una FK con `ON UPDATE` arrastraría el
+  cambio y volvería a atar el pasado al presente. La primera entrega manda
+  (`ON CONFLICT DO NOTHING`), y hereda el canal de la primera `visita`.
+
 **Lo que sigue sin construir de F2:**
 
-- ❌ Tabla `asignacion` con **dueño congelado** al handoff. Es el refactor de esquema, y
-  pesa cuando haya varios canales y varios corredores por conversación — todavía no.
-- ❌ El CRM **visual** no muestra el reparto: hoy solo llega al Estratega.
-- ❌ El control duro (un detector de que la frase se nombró) queda diferido, igual que
-  `MODO_BLOQUEO`: sin tráfico no hay con qué calibrarlo.
+- ⚠️ `asignacion` **se escribe pero todavía no se lee.** Cambiar la fuente de verdad del
+  CRM hoy **vaciaría los CRM**: los handoffs anteriores a la migración no tienen fila, y
+  desaparecerían de la vista de todos. Primero se acumula historia; el cambio de lectura
+  es su propio paso, con su propia migración de datos. Hay un test que lo vigila.
+- ❌ El control duro (un detector de que la frase del reparto se nombró) queda diferido,
+  igual que `MODO_BLOQUEO`: sin tráfico no hay con qué calibrarlo.
 
 ### F2 · lo que se planificó
 

@@ -940,7 +940,13 @@ async def mine_leads(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     leads = await _leads_del_corredor(db, user.user_id, user.agency_id)
-    return _funnel_y_orden(leads)
+    # El REPARTO viaja con el embudo, no en un endpoint aparte: si hubiera que pedirlo
+    # por separado, la pantalla podría pintar el total sin él — que es exactamente el
+    # número-sobre-universo-truncado que F2 vino a cerrar. Degrada solo (sin registro de
+    # llegadas devuelve `hay_registro: false`), así que nunca rompe el CRM.
+    activos = await _activos_del_corredor(db, user.user_id, user.agency_id)
+    reparto = await _reparto_del_corredor(db, [a["id"] for a in activos], leads)
+    return {**_funnel_y_orden(leads), "reparto": reparto}
 
 
 class CRMChatReq(BaseModel):

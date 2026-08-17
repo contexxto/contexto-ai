@@ -454,6 +454,42 @@ export default function CRM() {
         </div>
       )}
 
+      {/* ★ EL REPARTO — los KPI de arriba cuentan a los SOBREVIVIENTES: quienes conversaron
+          y quedaron ligados a un inmueble suyo. Quien llegó a su ficha y se fue sin escribir
+          no estaba en ninguna parte, y esa cifra pasaba todos los guardrails porque no era
+          falsa: era verdadera sobre un universo truncado. Va DEBAJO y en tono secundario a
+          propósito — es el contexto de los KPI, no un KPI más. */}
+      {d?.reparto && (
+        <div style={{ marginTop: -6, marginBottom: 14, fontSize: '.76rem', color: C.muted,
+                      lineHeight: 1.45, flexShrink: 0 }}>
+          {d.reparto.hay_registro ? (
+            <>
+              <strong style={{ color: C.text, fontWeight: 700 }}>
+                {d.reparto.sesiones_que_llegaron}
+              </strong>{' '}llegaron a tus fichas
+              {d.reparto.desde && <> desde el {d.reparto.desde}</>}
+              {' · '}
+              <strong style={{ color: C.text, fontWeight: 700 }}>{d.reparto.interesados}</strong>
+              {' '}conversaron
+              {/* El número que antes no existía. Solo se subraya si de verdad hubo pérdida:
+                  un cero aquí es un cero legítimo y no merece énfasis. */}
+              {d.reparto.se_fueron_sin_escribir > 0 && (
+                <> · <strong style={{ color: '#E8B84B', fontWeight: 700 }}>
+                  {d.reparto.se_fueron_sin_escribir}
+                </strong>{' '}entraron y se fueron sin escribir</>
+              )}
+            </>
+          ) : (
+            /* Sin registro NO se traduce a cero: un cero afirmaría que no entró nadie. */
+            <>Todavía no hay registro de llegadas a tus fichas.</>
+          )}
+          <div style={{ fontSize: '.7rem', marginTop: 2, opacity: .8 }}>
+            Se cuentan dispositivos, no personas: el mismo interesado en el teléfono y en el
+            computador aparece dos veces.
+          </div>
+        </div>
+      )}
+
       {err &&<div style={{ color: '#E0685A', fontSize: '.85rem' }}>⚠️ No se pudieron cargar los interesados.</div>}
       {!d && !err && <div style={{ color: C.muted, padding: '24px 0', textAlign: 'center' }}>Cargando…</div>}
 

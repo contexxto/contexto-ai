@@ -9,7 +9,9 @@ si el modelo igual desobedece, quede registrado en vez de llegar intacto a la pe
 Cada caso va en pareja — la prosa que MINTIÓ y la prosa HONESTA equivalente — porque un
 guardián que también castiga la respuesta correcta se desactiva a la semana.
 """
-from app.verificacion_prosa import resumen, verificar_prosa
+import logging
+
+from app.verificacion_prosa import CONTADORES, registrar, resumen, verificar_prosa
 
 _PREFS = {"operacion": "arriendo", "tipo_inmueble": "departamento", "presupuesto_max": 700}
 
@@ -126,6 +128,111 @@ def test_la_lista_en_el_orden_del_panel_pasa_limpio():
 def test_destacar_una_en_prosa_no_es_reordenar():
     # "Destacar «la más barata» en una frase aparte: SÍ" — regla del bloque.
     assert _codigos("La de Calle d290 es la más barata de las cuatro.") == []
+
+
+# ══ El GANCHO — la frase de cierre (graph.py regla 3: "1–3 opciones para seguir") ══════════
+def test_el_gancho_con_veredicto_de_zona_se_denuncia():
+    reply = ("Esta zona tiene mucha vida de barrio. ¿Quieres que te cuente por qué esta es "
+             "la zona ideal para tu familia?")
+    assert "gancho_steering" in _codigos(reply, cards=[])
+
+
+def test_el_steering_en_el_cuerpo_no_se_atribuye_al_gancho():
+    # Aísla el hallazgo a la frase de CIERRE: el veredicto vive en la primera oración; el
+    # gancho (la última, con "?") es limpio y no debe cazarse por asociación de turno.
+    reply = ("Esta es la zona ideal para tu familia. ¿Quieres que te muestre el encaje con "
+             "lo que buscas?")
+    assert "gancho_steering" not in _codigos(reply, cards=[])
+
+
+def test_el_gancho_steering_se_caza_sin_tarjetas_tambien():
+    # La razón de tocar el contrato de verificar_prosa: un turno 'explorando'/'identificado'
+    # (intencion.py) no tiene panel todavía, pero el gancho puede violar Fair Housing igual.
+    reply = "¿Quieres que te cuente por qué esta es la zona ideal para tu familia?"
+    v = verificar_prosa(reply, [], {}, None)
+    assert [x["codigo"] for x in v] == ["gancho_steering"]
+
+
+def test_el_gancho_con_metafora_de_vendedor_se_denuncia():
+    reply = ("El sector tiene buena conectividad. ¿Quieres que te cuente por qué el Metro "
+             "es tu as bajo la manga aquí?")
+    v = verificar_prosa(reply, [], {}, None)
+    assert [x["codigo"] for x in v] == ["gancho_hype"]
+    assert v[0]["gravedad"] == "media"
+
+
+def test_el_gancho_sobrio_sin_metafora_pasa_limpio():
+    reply = ("Tienes el Metro de Quito a ~8 min a pie — buena conexión al norte. ¿Quieres "
+             "que te muestre el encaje con tu presupuesto?")
+    assert verificar_prosa(reply, [], {}, None) == []
+
+
+def test_el_gancho_que_ofrece_una_descartada_se_denuncia():
+    reply = ("Estas cuatro encajan bien con lo que buscas. ¿Quieres que también te muestre "
+             "la de Calle d1130, aunque se pasa de tu tope?")
+    assert "gancho_descartada" in _codigos(reply, descartadas=_DESCARTADAS)
+
+
+def test_mencionar_que_hay_descartadas_sin_nombrarlas_en_el_gancho_pasa():
+    reply = ("Estas cuatro encajan bien. Hay 2 más que se pasan bastante de tu tope, no te "
+             "las pongo. ¿Prefieres que ajuste el radio o mantenemos el tope?")
+    assert _codigos(reply, descartadas=_DESCARTADAS) == []
+
+
+def test_sin_signo_de_pregunta_no_hay_gancho_detectable():
+    # Límite conocido y aceptado (ver docstring de `_gancho_texto`): el prompt también cierra
+    # sin '?' ("...o dime qué barrio buscas."), forma que esta heurística angosta no ve.
+    reply = "El Metro es tu as bajo la manga en esta zona. Cuéntame qué buscas y seguimos."
+    assert verificar_prosa(reply, [], {}, None) == []
+
+
+def test_el_gancho_convive_con_los_otros_chequeos_sobre_el_mismo_panel():
+    reply = ("El de $710 está justo en tu tope. ¿Quieres que también te muestre la de "
+             "Calle d1130, aunque se pasa de tu tope?")
+    codigos = set(_codigos(reply, descartadas=_DESCARTADAS))
+    assert {"presupuesto_suavizado", "gancho_descartada"} <= codigos
+
+
+# ══ Observabilidad — CONTADORES + registrar (espejo de crm_guardrails.registrar_guardrail) ══
+def test_registrar_cuenta_el_turno_y_el_gancho_detectado():
+    antes = dict(CONTADORES)
+    registrar([], "¿Quieres que te muestre el encaje con tu presupuesto?")
+    assert CONTADORES["turnos"] == antes["turnos"] + 1
+    assert CONTADORES["gancho_detectado"] == antes["gancho_detectado"] + 1
+
+
+def test_registrar_cuenta_el_turno_sin_contar_gancho_si_no_hay_signo_de_pregunta():
+    antes = dict(CONTADORES)
+    registrar([], "Son 4 opciones dentro de tu tope.")
+    assert CONTADORES["turnos"] == antes["turnos"] + 1
+    assert CONTADORES["gancho_detectado"] == antes["gancho_detectado"]  # sin '?', no cuenta
+
+
+def test_registrar_cuenta_una_vez_por_codigo_no_una_vez_por_hit():
+    # Dos montos inventados en el mismo turno son DOS hits del mismo código; el contador
+    # mide en cuántos TURNOS aparece la violación, no cuántas veces se repite en uno solo
+    # (mismo criterio que crm_guardrails.registrar_guardrail).
+    reply = "También hay uno de $650 y otro de $890 en la misma cuadra."
+    v = verificar_prosa(reply, _PANEL, _PREFS)
+    assert len(v) == 2 and {x["codigo"] for x in v} == {"cifra_sin_procedencia"}
+    antes = dict(CONTADORES)
+    registrar(v, reply)
+    assert CONTADORES["cifra_sin_procedencia"] == antes["cifra_sin_procedencia"] + 1
+
+
+def test_registrar_loguea_una_linea_por_codigo(caplog):
+    reply = "¿Quieres que te cuente por qué esta es la zona ideal para tu familia?"
+    v = verificar_prosa(reply, [], {}, None)
+    with caplog.at_level(logging.WARNING, logger="prosa"):
+        registrar(v, reply, session="s1")
+    linea = next(r for r in caplog.records if r.name == "prosa")
+    assert "gancho_steering" in linea.getMessage() and "s1" in linea.getMessage()
+
+
+def test_registrar_no_loguea_nada_en_un_turno_limpio(caplog):
+    with caplog.at_level(logging.WARNING, logger="prosa"):
+        registrar([], "Son 4 opciones dentro de tu tope.")
+    assert [r for r in caplog.records if r.name == "prosa"] == []
 
 
 # ══ Contratos del módulo ═══════════════════════════════════════════════════════════════

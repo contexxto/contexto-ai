@@ -27,7 +27,7 @@ from app.intencion import analizar_intencion
 from app.limiter import limiter
 from app.preferencias import extraer_preferencias
 from app.rutas import verificacion_de_entorno
-from app.verificacion_prosa import resumen as resumen_prosa, verificar_prosa
+from app.verificacion_prosa import registrar as registrar_prosa, verificar_prosa
 
 router = APIRouter(prefix="/api/v1/chat", tags=["Chat — Agente Conversacional"])
 
@@ -839,14 +839,16 @@ def _auditar_prosa(session_id: str, reply: str, valores: dict | None) -> None:
     prosa desobedece —la batalla Hiinmo fue una auditoría manual de 3 corridas—, y bloquear sin
     esa cifra apuesta el turno de un usuario real a una corazonada. Primero se mide; el día que
     la tasa lo justifique, el interruptor está aquí.
+
+    El log y los CONTADORES por-código viven en `verificacion_prosa.registrar` (mismo patrón
+    que `crm_guardrails.registrar_guardrail`), no aquí — así el módulo se queda dueño de su
+    propia observabilidad y los evals pueden leerla sin pasar por el router.
     """
     try:
         v = valores or {}
         violaciones = verificar_prosa(reply, v.get("cards"), v.get("preferencias"),
                                       v.get("descartadas"))
-        if violaciones:
-            log_prosa.warning("la prosa se aparta del motor · sesion=%s · %s",
-                              session_id, resumen_prosa(violaciones))
+        registrar_prosa(violaciones, reply, session=session_id)
     except Exception as exc:  # noqa: BLE001 — el guardián jamás puede tumbar el turno
         log_prosa.warning("verificacion_prosa fallo (%s: %s)", type(exc).__name__, exc)
 

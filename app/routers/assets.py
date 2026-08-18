@@ -206,7 +206,7 @@ async def asset_qr(activo_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> 
     if not exists:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Activo no encontrado.")
 
-    url = f"{settings.public_app_url.rstrip('/')}/a/{activo_id}"
+    url = _url_del_qr(activo_id)
     qr = segno.make(url, error="h")  # alta corrección → tolera desgaste del letrero
     buff = io.BytesIO()
     qr.save(buff, kind="svg", scale=8, border=2, dark="#0E0D13", light="#ffffff")
@@ -242,6 +242,23 @@ _FUENTES_REGULAR = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "C:/Windows/Fonts/arial.ttf",
 ]
+
+
+def _url_del_qr(activo_id) -> str:
+    """La URL que va DENTRO del QR impreso, con su marca de canal.
+
+    Sin la marca, un escaneo llega sin referrer y sin utm — exactamente igual que alguien
+    tecleando la dirección — y cae en `directo`, el cajón de lo no medido. Era la deuda
+    que F0 dejó declarada: la señal más fuerte del sistema (una persona parada frente al
+    inmueble, con el letrero delante) era la única que no se podía distinguir.
+
+    `app/llegada.py` reconoce el marcador y la clasifica como canal `qr`.
+
+    OJO: los letreros YA IMPRESOS no la llevan y seguirán cayendo en `directo`. No es un
+    error del conteo: es que de esos escaneos, honestamente, no sabemos.
+    """
+    base = f"{settings.public_app_url.rstrip('/')}/a/{activo_id}"
+    return f"{base}?utm_source=letrero&utm_medium=qr"
 
 
 def _fuente_letrero(size: int, negrita: bool = False):
@@ -364,7 +381,7 @@ async def _generar_letrero_png(
     y += 8
     draw.text((60, y), "Escanea para conocer este lugar", font=_fuente_letrero(38, True), fill=_INK)
     y += 66
-    url = f"{settings.public_app_url.rstrip('/')}/a/{activo_id}"
+    url = _url_del_qr(activo_id)
     qr = segno.make(url, error="h")
     qr_buf = io.BytesIO()
     qr.save(qr_buf, kind="png", scale=10, border=1, dark="#111018", light="#ffffff")

@@ -98,9 +98,45 @@ def test_navegacion_propia_no_es_una_llegada_nueva():
 def test_sin_ninguna_senal_es_directo_y_eso_significa_no_sabemos():
     assert clasificar_canal() == "directo"
     assert clasificar_canal(referrer="", utm_source="", utm_medium="") == "directo"
-    # El escaneo de un QR llega así: sin referrer y sin utm. Por eso 'directo' NO puede
-    # leerse como un logro de marketing — es el cajón de lo no medido.
+    # Un letrero YA IMPRESO (anterior a la marca) llega así, y sigue cayendo en 'directo'.
+    # No es un error del conteo: de esos escaneos, honestamente, no sabemos.
     assert clasificar_canal(superficie="anuncio") == "directo"
+
+
+# ── El letrero físico: la señal más fuerte, y la última que se podía medir (F4) ─────
+
+def test_el_qr_del_letrero_se_distingue_de_directo():
+    """La deuda que F0 dejó declarada. Alguien parado frente al inmueble, con el letrero
+    delante, es la señal más fuerte del sistema — y era la única indistinguible de teclear
+    la URL."""
+    assert clasificar_canal(superficie="anuncio", utm_source="letrero",
+                            utm_medium="qr") == "qr"
+
+
+@pytest.mark.parametrize("medio", ["qr", "letrero", "lona", "pendon", "cartel"])
+def test_los_marcadores_fisicos_de_lonas_y_pendones(medio):
+    """LINDEN lista 'lonas y pendones' entre sus seis fuentes de leads y su CRM las
+    colapsa todas en 'WEB'. Aquí se distinguen."""
+    assert clasificar_canal(utm_medium=medio) == "qr"
+
+
+def test_lo_fisico_gana_al_medio_de_pago():
+    """Si un letrero se usa dentro de una campaña impresa, sigue siendo el letrero lo que
+    la persona tuvo delante. El orden de precedencia lo afirma."""
+    assert clasificar_canal(utm_source="letrero", utm_medium="cpc") == "qr"
+
+
+def test_la_url_impresa_lleva_la_marca():
+    """Contrato con el generador del letrero: si alguien quita el parámetro, el QR vuelve
+    a ser indistinguible de una URL tecleada y el canal 'qr' deja de existir en los datos."""
+    from app.routers.assets import _url_del_qr
+
+    url = _url_del_qr("11111111-2222-3333-4444-555555555555")
+    assert "/a/11111111-2222-3333-4444-555555555555" in url
+    assert "utm_source=letrero" in url and "utm_medium=qr" in url
+    # Y el pathname sigue siendo el que el frontend usa para anclar el inmueble: el
+    # `deepLinkId` matchea solo el path, así que la query no rompe el anclaje.
+    assert url.split("?")[0].endswith("/a/11111111-2222-3333-4444-555555555555")
 
 
 def test_el_canal_siempre_sale_de_la_lista_cerrada():

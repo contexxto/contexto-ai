@@ -44,6 +44,7 @@ SUPERFICIES: tuple[str, ...] = (
 )
 
 CANALES: tuple[str, ...] = (
+    "qr",               # el letrero físico: alguien estaba PARADO frente al inmueble
     "campana",          # utm de pago: alguien compró este clic
     "motor_respuesta",  # ChatGPT/Perplexity/Gemini/Copilot — LA tesis AEO, por fin medible
     "buscador",         # Google/Bing/DuckDuckGo — orgánico clásico
@@ -53,6 +54,15 @@ CANALES: tuple[str, ...] = (
     "propio",           # navegación dentro de contexto, no es una llegada nueva
     "directo",          # sin referrer y sin utm → NO SABEMOS. No es un logro.
 )
+
+# Marcadores FÍSICOS: los imprime el propio sistema en el letrero, así que son la única
+# evidencia deliberada que tenemos de un canal del mundo real. Sin ellos, un escaneo llega
+# sin referrer y sin utm — indistinguible de alguien tecleando la URL — y cae en `directo`,
+# que es el cajón de lo no medido. Era la deuda declarada de F0.
+#
+# Van ANTES que el medio de pago: si un letrero se usa en una campaña impresa, sigue siendo
+# el letrero lo que la persona tuvo delante.
+_FISICOS = re.compile(r"\b(qr|letrero|lona|pendon|pendón|cartel)\b")
 
 _LIM_UTM = 200      # topes defensivos: la URL la controla quien la escribe, no nosotros
 _LIM_REFERRER = 500
@@ -137,7 +147,13 @@ def clasificar_canal(*, superficie: str | None = None, utm_source=None, utm_medi
     medium = (_texto(utm_medium, _LIM_UTM) or "").lower()
     source = (_texto(utm_source, _LIM_UTM) or "").lower()
 
-    # 1) Evidencia fuerte: la campaña se declara a sí misma.
+    # 1) Evidencia FÍSICA: el marcador lo imprimió el propio sistema en el letrero. Es la
+    # señal más fuerte que existe —esa persona estaba parada frente al inmueble— y hasta
+    # hoy se perdía en `directo`.
+    if _FISICOS.search(medium) or _FISICOS.search(source):
+        return "qr"
+
+    # 2) Evidencia fuerte: la campaña se declara a sí misma.
     if medium and _MEDIOS_PAGOS.search(medium):
         return "campana"
     if source or medium:
@@ -148,7 +164,7 @@ def clasificar_canal(*, superficie: str | None = None, utm_source=None, utm_medi
                 return canal
         return "referido"
 
-    # 2) Evidencia media: el navegador dice de dónde viene.
+    # 3) Evidencia media: el navegador dice de dónde viene.
     limpio = limpiar_referrer(referrer)
     if limpio:
         host = limpio.split("/", 1)[0]
@@ -160,7 +176,7 @@ def clasificar_canal(*, superficie: str | None = None, utm_source=None, utm_medi
                 return canal
         return "referido"
 
-    # 3) Sin evidencia. El cajón honesto.
+    # 4) Sin evidencia. El cajón honesto.
     return "directo"
 
 

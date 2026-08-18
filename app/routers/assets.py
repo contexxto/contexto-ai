@@ -1011,7 +1011,9 @@ async def crm_chat(
                             detail="El CRM Vivo es para corredores/inmobiliarias.")
     from langchain_core.messages import AIMessage, HumanMessage
     from app.agent.crm_graph import compiled_crm_graph
+    from app.agent.crm_guardrails import tool_jsons_del_turno
     from app.agent.panel_seed import derivar_panel_seed
+    from app.agent.siguiente import derivar_siguiente
     sid = _crm_thread(user.user_id, payload.lead, payload.modo)   # hilo por agente/lead, derivado del JWT
     # El owner sale del JWT y viaja en config → las tools scopean por él, nunca el LLM.
     # modo: elige el agente (copiloto táctico / estratega de cartera). corredor_nombre: para firmar.
@@ -1034,7 +1036,14 @@ async def crm_chat(
     # (FSM del lente). Solo el Estratega la emite; None para el Copiloto o sin señal clara. El frontend
     # re-enfoca el AnalisisPanel con ella (números SIEMPRE de /metricas/lift; la directiva no inventa).
     panel_seed = derivar_panel_seed(payload.message, modo=payload.modo)
-    return {"reply": reply, "session_id": sid, "panel_seed": panel_seed}
+    # Siguiente paso sugerido (Fase 1, CRM_Vivo): plantilla fija anclada a lo que las tools DE ESTE
+    # TURNO ya trajeron — nunca a todo el hilo (ver docstring de siguiente.py). Best-effort: un fallo
+    # aquí jamás debe tumbar la respuesta que el corredor sí recibió.
+    try:
+        siguiente = derivar_siguiente(tool_jsons_del_turno(msgs))
+    except Exception:  # noqa: BLE001
+        siguiente = None
+    return {"reply": reply, "session_id": sid, "panel_seed": panel_seed, "siguiente": siguiente}
 
 
 @router.get(

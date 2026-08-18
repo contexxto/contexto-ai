@@ -38,6 +38,10 @@ function CRMChat({ onClose, lead, modo = 'copiloto', onPanelSeed } = {}, ref) {
   const esEstratega = modo === 'estratega'
   const [msgs, setMsgs] = useState([])   // { autor: 'corredor'|'crm', texto }
   const [texto, setTexto] = useState('')
+  // El SIGUIENTE PASO sugerido: solo del ÚLTIMO turno (no por-mensaje) — igual que panel_seed,
+  // es un valor lateral del turno más reciente, no historial. Se limpia al enviar y al reiniciar
+  // para que nunca quede colgado un chip de una respuesta que ya no es la última.
+  const [siguiente, setSiguiente] = useState(null)
   const [enviando, setEnviando] = useState(false)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(null)
@@ -91,7 +95,7 @@ function CRMChat({ onClose, lead, modo = 'copiloto', onPanelSeed } = {}, ref) {
     const t = (t0 ?? texto).trim()
     if (!t || enviando || enviandoLatch.current) return   // latch síncrono: cierra el doble-clic del mismo tick
     enviandoLatch.current = true
-    setTexto(''); setError(null); setEnviando(true)
+    setTexto(''); setError(null); setEnviando(true); setSiguiente(null)   // limpia el chip del turno anterior
     setMsgs(prev => [...prev, { autor: 'corredor', texto: t }])
     try {
       const { data } = await axios.post(`${API_BASE}/api/v1/assets/crm/chat`,
@@ -101,6 +105,9 @@ function CRMChat({ onClose, lead, modo = 'copiloto', onPanelSeed } = {}, ref) {
       // El kickoff NO re-enfoca (el dashboard ya abre en la North Star por defecto); las preguntas sí. Se
       // llama CADA turno (aun con panel_seed null) para que el padre pueda caducar el puente al Copiloto.
       if (!esKickoff && onPanelSeed) onPanelSeed(data.panel_seed || null)
+      // Siguiente paso sugerido (Fase 1, CRM_Vivo): plantilla fija que el backend deriva de las
+      // tools de ESTE turno (ver app/agent/siguiente.py) — null es una respuesta válida y frecuente.
+      setSiguiente(data.siguiente || null)
     } catch {
       setError('No se pudo consultar. Intenta de nuevo.')
     } finally {
@@ -114,7 +121,7 @@ function CRMChat({ onClose, lead, modo = 'copiloto', onPanelSeed } = {}, ref) {
     // de doble-click (que si no re-postearía dos kickoffs al hilo recién reseteado).
     if (enviando || reiniciando.current) return
     reiniciando.current = true
-    setMsgs([]); setError(null); setTexto('')
+    setMsgs([]); setError(null); setTexto(''); setSiguiente(null)
     try {
       await axios.delete(`${API_BASE}/api/v1/assets/crm/thread`,
         { params: { ...(leadRef ? { lead: leadRef } : {}), modo }, headers: apiHeaders() })
@@ -248,6 +255,16 @@ function CRMChat({ onClose, lead, modo = 'copiloto', onPanelSeed } = {}, ref) {
             </div>
           )
         })}
+        {/* El SIGUIENTE PASO sugerido (Fase 1, CRM_Vivo): solo tras el ÚLTIMO turno, nunca mientras
+            se envía uno nuevo — así no queda un chip de una respuesta que ya no es la más reciente. */}
+        {!enviando && siguiente && (
+          <button onClick={() => enviar(siguiente)} disabled={enviando}
+            style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: 5,
+                     fontSize: '.74rem', padding: '5px 11px', borderRadius: 999, cursor: 'pointer',
+                     background: 'rgba(45,189,182,.1)', border: `1px dashed ${C.tealHi}`, color: C.tealHi }}>
+            <span aria-hidden="true">→</span> {siguiente}
+          </button>
+        )}
         {enviando && <div style={{ alignSelf: 'flex-start', color: C.muted, fontSize: '.78rem', padding: '2px 4px' }}>{esEstratega ? 'Analizando…' : 'Pensando…'}</div>}
         <div ref={finRef} />
       </div>

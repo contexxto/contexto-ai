@@ -810,7 +810,9 @@ async def setup_checkpointer() -> None:
     try:
         _pool = AsyncConnectionPool(
             conninfo=conn_str,
-            max_size=10,
+            # Comparte techo con el pool de SQLAlchemy contra el límite de 15 del
+            # Session Pooler de Supabase — no subir sin bajar el otro. Ver app/config.py.
+            max_size=settings.checkpointer_pool_size,
             open=False,
             kwargs={
                 "autocommit": True,        # requerido por AsyncPostgresSaver
@@ -827,7 +829,20 @@ async def setup_checkpointer() -> None:
         compiled_graph = _graph_builder.compile(checkpointer=checkpointer)
         print("  Checkpointer Postgres (Supabase) ACTIVO — sesiones persistentes")
     except Exception as exc:  # noqa: BLE001
-        print(f"  [WARN] Postgres checkpointer no disponible ({exc}); usando MemorySaver")
+        # GRITAR, no susurrar. Esta degradación NO rompe nada visible: la app sigue
+        # respondiendo 200 en todo, pero sin historial — los títulos caen al genérico
+        # "Conversación sin título" y las conversaciones no abren. El 2026-08-18 corrió
+        # así en producción sin que nadie lo notara hasta revisar los logs a mano.
+        # La causa típica es el techo de 15 del Session Pooler: si el deploy reinicia
+        # mientras otro cliente (¡incluido el backend LOCAL!) tiene tomadas las
+        # conexiones, este pool no abre y el grafo arranca sin memoria.
+        print("=" * 72)
+        print("  MEMORIA ROTA — checkpointer Postgres NO disponible; usando MemorySaver.")
+        print("  Las conversaciones NO persisten: sin títulos y sin historial.")
+        print(f"  Causa: {exc}")
+        print("  Si es EMAXCONNSESSION: revisa quién más tiene conexiones abiertas y")
+        print("  REINICIA el servicio — no se arregla solo. Ver app/config.py.")
+        print("=" * 72)
 
 
 async def shutdown_checkpointer() -> None:

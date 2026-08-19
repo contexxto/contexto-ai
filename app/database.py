@@ -3,13 +3,15 @@ from sqlalchemy.orm import DeclarativeBase
 
 from app.config import settings
 
+# pool_size/max_overflow NO son libres: comparten techo con el pool del checkpointer
+# contra el límite de 15 del Session Pooler de Supabase. Ver app/config.py.
 engine = create_async_engine(
     settings.database_url,
     echo=False,
     pool_pre_ping=True,
-    pool_size=3,
-    max_overflow=2,
-    pool_recycle=3600,
+    pool_size=settings.db_pool_size,
+    max_overflow=settings.db_max_overflow,
+    pool_recycle=3600,  # el pooler corta conexiones ociosas; no las reutilices muertas
 )
 
 AsyncSessionLocal = async_sessionmaker(

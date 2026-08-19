@@ -18,6 +18,17 @@ services:
         value: claude-sonnet-4-5-20250929
       - key: SSL_VERIFY
         value: "true"
+      # Conexiones a Postgres — TECHO COMPARTIDO de 15 (Session Pooler de Supabase).
+      # DOS pools tiran contra él: SQLAlchemy (DB_POOL_SIZE + DB_MAX_OVERFLOW) y el
+      # checkpointer de LangGraph (CHECKPOINTER_POOL_SIZE). Suma actual: 4+2+6 = 12.
+      # Pasarse NO falla ruidosamente: el checkpointer no abre y el grafo corre en
+      # memoria — la app responde 200 pero sin historial. Ver app/config.py.
+      - key: DB_POOL_SIZE
+        value: "4"
+      - key: DB_MAX_OVERFLOW
+        value: "2"
+      - key: CHECKPOINTER_POOL_SIZE
+        value: "6"
       # Isócronas peatonales — motor propio Valhalla (private service de abajo).
       # NO es un valor fijo: los private services de Render creados a mano (no por
       # sync de Blueprint) reciben una dirección interna con sufijo aleatorio

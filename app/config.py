@@ -30,6 +30,21 @@ class Settings(BaseSettings):
     # para evitar problemas de IPv6. Si está presente, tiene precedencia.
     database_url_override: str = ""
 
+    # ── Conexiones a Postgres — TECHO COMPARTIDO, no dos presupuestos ──────────
+    # El Session Pooler de Supabase corta en 15 clientes POR PROYECTO, y contra ese
+    # mismo techo tiran DOS pools independientes: el de SQLAlchemy (datos) y el del
+    # AsyncPostgresSaver de LangGraph (checkpointer, en app/agent/graph.py). Sumarlos
+    # por encima de 15 no falla ruidosamente: el checkpointer NO abre y el grafo se
+    # degrada a MemorySaver en silencio — la app responde 200 en todo, pero sin
+    # historial (títulos genéricos, conversaciones que no abren). Pasó en el deploy
+    # del 2026-08-18, ver docs/INCIDENTE_2026-08-18_Pools.md.
+    # Suma por defecto: (4+2) + 6 = 12, con 3 de margen para el resto.
+    # OJO: dev local ataca la MISMA Supabase que producción — con ambos arriba se
+    # duplica el consumo. Bajar estos valores en el .env local si conviven.
+    db_pool_size: int = 4
+    db_max_overflow: int = 2
+    checkpointer_pool_size: int = 6
+
     # Seguridad — Fase 3
     # ALLOWED_ORIGINS: lista separada por comas de orígenes permitidos
     # API_KEY: clave que el frontend debe enviar en header X-API-Key

@@ -72,7 +72,19 @@ export function renderMarkdown(text) {
       out.push(`<li>${inline(m[1])}</li>`); i++; continue
     }
 
-    if (t === '') { closeList(); i++; continue }
+    // Línea en blanco: NO corta la lista si el siguiente bloque sigue siendo del mismo tipo
+    // (el agente separa los ítems con blancos; cortar aquí reiniciaba la numeración en 1.)
+    if (t === '') {
+      if (list) {
+        let j = i + 1
+        while (j < lines.length && lines[j].trim() === '') j++
+        const next = j < lines.length ? lines[j].trim() : ''
+        const sameList = list === 'ol' ? /^\d+[.)]\s+\S/.test(next)
+                                       : /^[*\-]\s+\S/.test(next) && !/^[-*]?\s*(✅|⚠)️?\s*\S/.test(next)
+        if (sameList) { i = j; continue }
+      }
+      closeList(); i++; continue
+    }
 
     closeList()
     out.push(`<p>${inline(t)}</p>`)

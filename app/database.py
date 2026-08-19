@@ -61,9 +61,17 @@ def opciones_de_engine(url: str) -> dict:
             # inútiles en el servidor. La advertencia del dialecto es explícita en esto.
             "poolclass": NullPool,
             "connect_args": {
-                # Ambos viajan en connect_args: el DBAPI adaptado los saca de ahí
-                # (AsyncAdapt_asyncpg_dbapi.connect). No son kwargs del engine.
-                "prepared_statement_cache_size": 0,
+                # ── HAY DOS CACHÉS, y hacen falta los dos en 0. Aprendido a golpes el
+                # 2026-08-19: con solo el primero, asyncpg sigue preparando statements por
+                # su cuenta y PgBouncer devuelve su error clásico ("if you have no option
+                # of avoiding the use of pgbouncer, set statement_cache_size to 0").
+                # No falla al arrancar: falla al primer uso real de la app.
+                "prepared_statement_cache_size": 0,   # el caché de SQLAlchemy — lo saca
+                                                      # AsyncAdapt_asyncpg_dbapi.connect
+                "statement_cache_size": 0,            # el caché INTERNO de asyncpg —
+                                                      # sigue de largo hasta asyncpg.connect
+                # Y aun con los cachés apagados, los nombres se enumeran: únicos por
+                # statement para que dos clientes multiplexados no reclamen el mismo.
                 "prepared_statement_name_func": lambda: f"__asyncpg_{uuid4()}__",
             },
         }

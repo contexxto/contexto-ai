@@ -807,6 +807,10 @@ async def setup_checkpointer() -> None:
     global compiled_graph, _pool, _checkpointer
 
     conn_str = _checkpointer_conn_str()
+    # Misma decisión por PUERTO que en app/database.py, y con la misma función, para que
+    # los dos pools no puedan quedar en modos distintos contra la misma base.
+    from app.database import es_pooler_de_transaccion
+    _transaccion = es_pooler_de_transaccion(conn_str)
     try:
         _pool = AsyncConnectionPool(
             conninfo=conn_str,
@@ -824,7 +828,16 @@ async def setup_checkpointer() -> None:
             open=False,
             kwargs={
                 "autocommit": True,        # requerido por AsyncPostgresSaver
-                "prepare_threshold": 0,    # evita prepared statements (pooler Supabase)
+                # OJO con la semántica, que es CONTRAINTUITIVA y estuvo mal documentada
+                # aquí hasta el 2026-08-19 ("evita prepared statements" — hacía lo
+                # contrario). Según psycopg: 0 = preparar SIEMPRE, desde la primera
+                # ejecución; None = prepared statements DESACTIVADOS.
+                #   · Session Pooler (5432): la conexión es tuya, preparar conviene.
+                #   · Transaction Pooler (6543): PgBouncer multiplexa, así que dos
+                #     clientes reclaman el mismo nombre fijo (_pg3_0) y salta
+                #     `prepared statement "_pg3_0" already exists`. El pool no abre, el
+                #     grafo cae a MemorySaver y te quedas sin historial — reproducido.
+                "prepare_threshold": None if _transaccion else 0,
                 "row_factory": dict_row,   # el saver espera filas tipo dict
             },
         )

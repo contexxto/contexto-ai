@@ -101,7 +101,15 @@ async def tool_stats_embudo(config: RunnableConfig) -> str:
         "_frase_obligatoria": reparto.get("_frase_obligatoria"),
         "_proveniencia": "Cifras reales del sistema. 'score' es heurístico (estimación); "
                          "'pidió corredor' y las etapas son eventos verificados del motor de intención. "
-                         "'total_interesados' cuenta DISPOSITIVOS que conversaron, no personas.",
+                         "'total_interesados' cuenta DISPOSITIVOS que conversaron, no personas. "
+                         # Sin esta frase el modelo ve 'por_etapa: {dormido: 1}' junto a
+                         # 'dormidos: 4', las toma por contradictorias y ESPECULA para
+                         # reconciliarlas ("probablemente algunos estén en otras etapas") —
+                         # incertidumbre inventada sobre algo que el sistema sabe con certeza.
+                         "'dormidos' NO es la etapa 'dormido': se mide por FRESCURA (sin "
+                         "actividad reciente) y es independiente de la etapa, así que un "
+                         "mismo interesado puede estar en 'intención' y contar como dormido. "
+                         "Por eso los dos números difieren sin contradecirse.",
     }, ensure_ascii=False)
 
 

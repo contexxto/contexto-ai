@@ -33,10 +33,14 @@ if not DB_URL:
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import text
+from sqlalchemy.pool import NullPool
 
 
 async def main():
-    engine = create_async_engine(DB_URL, echo=False)
+    # NullPool: este script usa UNA conexión secuencial. Con el pool por defecto de
+    # SQLAlchemy (5+10) podría reclamar 15 — el techo ENTERO del Session Pooler de
+    # Supabase — y dejar sin conexiones al backend de producción, que comparte proyecto.
+    engine = create_async_engine(DB_URL, echo=False, poolclass=NullPool)
     Session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with Session() as db:

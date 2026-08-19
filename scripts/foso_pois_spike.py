@@ -51,6 +51,7 @@ import duckdb
 import requests
 import urllib3
 from sqlalchemy import create_engine, text
+from sqlalchemy.pool import NullPool
 
 urllib3.disable_warnings()  # verify=False para Overpass (SSL corporativo local)
 
@@ -424,7 +425,9 @@ def main():
               "(si no, borraríamos la ciudad y la dejaríamos vacía).")
         sys.exit(1)
 
-    eng = create_engine(SYNC_URL, echo=False)
+    # NullPool: una conexión secuencial. Ver la nota en scripts/asignar_corredor.py —
+    # con el pool por defecto este script solo podría agotar el techo de Supabase.
+    eng = create_engine(SYNC_URL, echo=False, poolclass=NullPool)
     with eng.begin() as db:
         print("── 3) Cargando a pois_propios ──", flush=True)
         for stmt in DDL.strip().split(";"):

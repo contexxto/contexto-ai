@@ -55,6 +55,7 @@ API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "").strip()
 import httpx  # noqa: E402
 from sqlalchemy import text  # noqa: E402
 from sqlalchemy.ext.asyncio import create_async_engine  # noqa: E402
+from sqlalchemy.pool import NullPool  # noqa: E402
 
 ENDPOINT = "https://routes.googleapis.com/directions/v2:computeRoutes"
 TZ_QUITO = timezone(timedelta(hours=-5))
@@ -84,7 +85,9 @@ def proximo_martes_pico() -> str:
 async def _leer_inventario(limite: int) -> list[dict]:
     if not DB_URL:
         sys.exit("❌ Falta DATABASE_URL_OVERRIDE en el .env.")
-    engine = create_async_engine(DB_URL, echo=False)
+    # NullPool: una conexión secuencial. Ver la nota en scripts/asignar_corredor.py —
+    # con el pool por defecto este script solo podría agotar el techo de Supabase.
+    engine = create_async_engine(DB_URL, echo=False, poolclass=NullPool)
     try:
         async with engine.connect() as db:
             filas = (await db.execute(text("""

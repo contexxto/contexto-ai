@@ -810,6 +810,14 @@ async def setup_checkpointer() -> None:
     try:
         _pool = AsyncConnectionPool(
             conninfo=conn_str,
+            # min_size=1 NO es un detalle: es lo que decide si la app arranca con memoria.
+            # `open(wait=True)` bloquea hasta conseguir min_size conexiones, y el default de
+            # psycopg_pool es 4. El 2026-08-18 produccion no consiguio esas 4 en 10 s
+            # ("pool initialization incomplete after 10 sec") y arranco con MemorySaver:
+            # una hora y media sin historial. Pidiendo UNA para arrancar, el pool crece
+            # despues bajo demanda hasta max_size, y el arranque deja de ser un todo-o-nada
+            # contra un techo que puede estar ocupado por otro cliente.
+            min_size=1,
             # Comparte techo con el pool de SQLAlchemy contra el límite de 15 del
             # Session Pooler de Supabase — no subir sin bajar el otro. Ver app/config.py.
             max_size=settings.checkpointer_pool_size,
@@ -820,7 +828,8 @@ async def setup_checkpointer() -> None:
                 "row_factory": dict_row,   # el saver espera filas tipo dict
             },
         )
-        await _pool.open(wait=True, timeout=10)
+        # 30 s (no 10): un arranque lento es molesto; arrancar sin memoria es un incidente.
+        await _pool.open(wait=True, timeout=30)
 
         checkpointer = AsyncPostgresSaver(_pool)
         await checkpointer.setup()  # CREATE TABLE checkpoints/checkpoint_writes/...

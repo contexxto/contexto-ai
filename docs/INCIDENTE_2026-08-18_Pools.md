@@ -57,15 +57,48 @@ No fue el agotamiento de conexiones — fue que **la degradación no falla ruido
 Un servicio caído se nota en un minuto. Un servicio que responde 200 sin memoria puede
 correr días. Las alarmas de salud (`/health` → 200) no lo detectan por diseño.
 
+## Corrección al diagnóstico de arriba (auditoría del 2026-08-19)
+
+**La primera versión de este documento culpaba por igual a los dos pools. Era impreciso**, y
+la imprecisión importaba porque escondía el modo de fallo real:
+
+`AsyncConnectionPool` no reclama `max_size` al arrancar: `open(wait=True)` bloquea hasta
+conseguir **`min_size`**, cuyo default en psycopg_pool es **4**. O sea, el checkpointer solo
+necesitaba 4 conexiones y no las consiguió en 10 segundos. Quien se había comido el techo
+era el pool de SQLAlchemy, con su máximo de 30.
+
+Dos consecuencias que la primera versión no veía:
+
+- **Bajar el checkpointer de 10 a 6 apenas influyó.** Lo que resolvió el incidente fue
+  bajar SQLAlchemy de 30 a 6. El límite superior del checkpointer nunca fue el problema.
+- **El modo de fallo seguía vivo tras el "arreglo".** Con `min_size=4` y `timeout=10`
+  intactos, cualquier presión sobre el techo durante un arranque reproduce el incidente
+  igual. Corregido en el commit de esta auditoría: `min_size=1` (arranca con una y crece
+  bajo demanda) y `timeout=30`.
+
 ## Correcciones aplicadas
 
 1. **Los dos pools bajan a un presupuesto común:** 4 + 2 (SQLAlchemy) + 6 (checkpointer)
    = **12**, con 3 de margen. Configurables por entorno (`DB_POOL_SIZE`,
    `DB_MAX_OVERFLOW`, `CHECKPOINTER_POOL_SIZE`) y declarados en `render.yaml`.
-2. **`pool_recycle=3600`** en SQLAlchemy: el pooler corta conexiones ociosas y no sirve
-   reutilizarlas muertas.
-3. **La degradación ahora grita** (banner de 72 caracteres en el arranque, con la causa y
+   ⚠️ Verificar en Render → Environment que esas variables estén realmente aplicadas: el
+   servicio tiene variables que NO están en `render.yaml` (p. ej. `ALLOWED_ORIGINS`), señal
+   de que se configuran a mano. Si no están, produccion corre con los defaults del código
+   —que coinciden— pero la declaración del blueprint es decorativa.
+2. **El arranque del checkpointer deja de ser todo-o-nada:** `min_size=1` + `timeout=30`.
+   Esta es la corrección que de verdad cierra el modo de fallo (ver la sección anterior).
+3. **Los scripts sueltos dejan de poder agotar el techo solos:** `scripts/asignar_corredor.py`,
+   `spike_commute_hora_pico.py` y `foso_pois_spike.py` abrían engines con el pool por
+   defecto de SQLAlchemy (5+10 = **15**, el techo entero). Pasan a `NullPool` — usan una
+   conexión secuencial y no tienen por qué reservar más.
+4. **La degradación ahora grita** (banner de 72 caracteres en el arranque, con la causa y
    qué hacer), en vez de una línea `[WARN]` perdida entre el ruido de startup.
+5. **`/health` reporta el modo de la memoria** (`"memoria": "postgres" | "volatil"`), para
+   que un chequeo externo distinga "vivo" de "vivo pero amnésico". Sigue devolviendo 200
+   aun degradado a propósito — ver el docstring del endpoint.
+6. `pool_recycle=3600` en SQLAlchemy. **Nota honesta:** `pool_pre_ping=True` ya cubría el
+   caso de conexiones muertas; esto es redundante. Se deja porque no estorba, pero no
+   cuenta como parte del arreglo.
 
 ## Pendiente (no resuelto aquí)
 
@@ -73,6 +106,10 @@ correr días. Las alarmas de salud (`/health` → 200) no lo detectan por diseñ
   Supabase, así que con ambos arriba el consumo se duplica. Las salidas reales son el
   **pooler en modo transacción** (puerto 6543, admite muchos más clientes) o un proyecto
   de Supabase separado para desarrollo. Decisión pendiente.
-- **Una alarma que detecte esto.** Hoy `/health` devuelve 200 con la memoria rota. Debería
-  reportar el modo del checkpointer, para que un chequeo externo pueda distinguir
-  "vivo" de "vivo pero amnésico".
+- **Nadie lee `/health`.** El endpoint ya reporta el modo de la memoria, pero sin un
+  chequeo externo que alerte sobre `status != "healthy"` el dato sigue siendo algo que hay
+  que ir a mirar — que es exactamente lo que falló el 2026-08-18.
+- **El solape de deploys no está medido.** Render levanta la instancia nueva mientras la
+  vieja sirve, así que durante esa ventana conviven dos presupuestos (12 + 12) contra el
+  techo de 15. El deploy del 19-08 pasó sin incidente, pero con el backend local apagado;
+  no se ha probado el caso con presión real.

@@ -13,9 +13,16 @@
 # este workflow lee el JSON, no el código de estado.
 #
 # LÍMITES, dichos de frente:
-#  · El cron de GitHub deriva. Pide cada 15 min; en la práctica pasan 25-35. Sirve para
-#    "me entero en media hora", no para "me entero en un minuto". Aun así, frente a las
-#    1h26m que costó la vez que pasó, es la diferencia que importa.
+#  · El cron de GitHub NO se cumple: lo estrangula. Medido sobre 60 corridas del keepalive
+#    (18-19 ago 2026, mismo cron de facto): mediana 34 min, p90 49 min, MÁXIMO 109 min.
+#    Lo que hay que prometer es el p90, no la mediana. Y el máximo importa: casi dos horas
+#    es del mismo orden que la 1h26m del incidente, así que en su peor caso este vigía NO
+#    habría ayudado gran cosa. Típicamente sí (34 min contra 86), pero no siempre.
+#    El estrangulamiento además VARÍA con el tiempo: una medición de principios de agosto
+#    dio mediana de 89 min. No tomes estos números como estables.
+#  · Si hace falta detección en minutos y no en decenas de minutos, esto no basta: la
+#    salida es un monitor externo (UptimeRobot y similares ofrecen chequeo por palabra
+#    clave en el cuerpo, que es justo lo que este workflow hace a mano).
 #  · Solo detecta lo que /health sabe mirar: base y checkpointer. No es monitoreo general.
 #  · El aviso llega por el correo de fallo de GitHub Actions. Si esos correos se filtran o
 #    se ignoran, esta alarma no existe. Nombre propio y distinto del keepalive

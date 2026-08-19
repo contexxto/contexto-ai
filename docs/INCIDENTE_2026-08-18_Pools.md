@@ -115,13 +115,13 @@ Dos consecuencias que la primera versión no veía:
   lee el CUERPO (no el código HTTP, que es 200 a propósito aun degradado) y falla el job
   —lo que dispara el correo de GitHub— si `status != "healthy"`, diciendo qué hacer según
   el caso. Distinto del keepalive, que solo despierta al servicio.
-  **Su límite honesto:** el cron de GitHub deriva (pide 15 min, en la práctica 25-35), así
-  que sirve para enterarse en media hora, no en un minuto. Frente a la 1h26m que costó la
-  vez que pasó, esa es la diferencia que importa. Y si los correos de Actions se filtran o
-  se ignoran, la alarma no existe.
-  *Nota:* se creía que el cron de GitHub "se descartaba" en este repo. Es falso — la API
-  muestra 797 corridas del keepalive, las últimas con `schedule`+`success`. Verificado
-  antes de construir encima.
+  **Su límite honesto, medido y no estimado** (60 corridas del keepalive, 18-19 ago):
+  GitHub estrangula el cron — mediana **34 min**, p90 **49 min**, máximo **109 min**.
+  Típicamente avisa mucho antes que las 1h26m que costó la vez que pasó, pero **en su peor
+  caso no habría ayudado gran cosa**. Y el estrangulamiento varía: una medición de
+  principios de agosto dio mediana de 89 min. Si hiciera falta detección en minutos, la
+  salida es un monitor externo con chequeo por palabra clave en el cuerpo.
+  Además, si los correos de GitHub Actions se filtran o se ignoran, la alarma no existe.
 - **El solape de deploys no está medido.** Render levanta la instancia nueva mientras la
   vieja sirve, así que durante esa ventana conviven dos presupuestos (12 + 12) contra el
   techo de 15. El deploy del 19-08 pasó sin incidente, pero con el backend local apagado;

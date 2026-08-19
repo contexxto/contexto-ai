@@ -80,7 +80,20 @@ async def robots_txt() -> PlainTextResponse:
 
 @app.get("/health", tags=["System"])
 async def health_check():
-    """Verifica que la API responde Y que la base de datos es alcanzable."""
+    """Responde la API + base alcanzable + MEMORIA (checkpointer) persistente.
+
+    Lo tercero existe por el incidente del 2026-08-18: el checkpointer puede caer a
+    MemorySaver al arrancar (típicamente por el techo de 15 del pooler) y la app sigue
+    respondiendo 200 en TODO, pero sin historial — conversaciones sin título que no
+    abren. Un chequeo que solo mira "¿responde?" no lo ve; corrió 1h26m sin detectarse.
+    Ver docs/INCIDENTE_2026-08-18_Pools.md.
+
+    Sigue devolviendo HTTP 200 aunque la memoria esté rota, A PROPÓSITO: `render.yaml`
+    apunta su healthCheckPath aquí, y fallar haría que Render reinicie en bucle justo
+    cuando faltan conexiones — empeorando la causa. Degradado-pero-sirviendo fue mejor
+    que caído. El aviso va en el CUERPO: un monitor externo debe alertar sobre
+    `status != "healthy"`, no sobre el código HTTP.
+    """
     db_ok = False
     try:
         async with AsyncSessionLocal() as session:
@@ -89,9 +102,13 @@ async def health_check():
     except Exception:
         db_ok = False
 
-    status = "healthy" if db_ok else "degraded"
+    # None = el pool Postgres no se montó y el grafo corre con MemorySaver.
+    memoria_ok = get_checkpointer() is not None
+
     return {
-        "status": status,
+        "status": "healthy" if (db_ok and memoria_ok) else "degraded",
         "service": "Contexto AI V2",
         "database": "up" if db_ok else "down",
+        # "volatil" = las conversaciones NO persisten; reiniciar el servicio.
+        "memoria": "postgres" if memoria_ok else "volatil",
     }

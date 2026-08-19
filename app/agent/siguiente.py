@@ -12,19 +12,33 @@ El corredor no tenía el equivalente: el Estratega y el Copiloto esperan a que p
 construida DESDE CERO como dato estructurado — nunca como prosa libre que un LLM podría
 inflar, prometer de más, o segmentar por clase protegida.
 
-── Las tres reglas que lo hacen seguro ─────────────────────────────────────────────────
-1. PLANTILLAS FIJAS, nunca prosa libre. El único slot variable ({nombre}) sale del propio
-   JSON de `tool_timeline_de_lead` — la MISMA tool que ya lo calculó — nunca del LLM ni del
-   cliente. El test adversarial de `test_siguiente.py` prueba cada plantilla contra
-   `evaluar_salida_crm`, el mismo guardián del CRM.
+── Lo que lo hace seguro ───────────────────────────────────────────────────────────────
+1. PLANTILLAS FIJAS, nunca prosa libre. Hoy ninguna lleva slots variables: son literales.
+   El test adversarial de `test_siguiente.py` prueba cada una contra `evaluar_salida_crm`,
+   el mismo guardián del CRM. Si alguna vez vuelve a haber un slot, su valor debe salir del
+   propio tool_json — jamás del LLM ni del cliente.
 2. VERBOS, no cifras. Ninguna plantilla afirma un número ("¿a cuáles de los dormidos
    escribo?", no "¿a los 12 dormidos?") — así queda estructuralmente fuera de la clase de
    riesgo `cifra_cartera` que ese guardián vigila.
-3. SIN GATE EXPLÍCITO de modo/owner: cada regla ancla a la HUELLA de un tool_json concreto,
-   y el Estratega ni siquiera tiene `tool_timeline_de_lead` en su lista de tools
-   (`ESTRATEGA_TOOLS`) — la regla del timeline es hermética por construcción, igual que el
-   scope de owner en `crm_tools.py`. No hace falta preguntarle a quién le habla: el tool_json
-   correcto solo puede aparecer si el modo correcto lo llamó.
+3. SIN GATE EXPLÍCITO de modo/owner: cada regla ancla a la HUELLA de un tool_json concreto.
+   No hace falta preguntarle a quién le habla: el tool_json correcto solo puede aparecer si
+   el modo correcto llamó a esa tool.
+
+── Por qué NO hay una regla para el timeline de un lead (retirada el 2026-08-19) ───────
+La hubo, y funcionaba: con `tool_timeline_de_lead` + `reenganche_sugerido` proponía
+"Redáctame el mensaje para retomar a {nombre}". Se verificó en producción y salía bien.
+Se retiró por REDUNDANTE, no por rota. En la pantalla del Copiloto, cuando ese chip
+aparecía, el corredor ya tenía delante otras dos rutas al mismo sitio:
+  · el recuadro "REENGANCHE SUGERIDO · APORTA VALOR", con el mensaje YA redactado y su
+    botón "Usar en la respuesta" — o sea, el resultado servido, no una pregunta que lleva
+    a él;
+  · el chip permanente del Copiloto "Prepárame un mensaje para retomar a {nombre}".
+Un tercer botón que dice lo mismo con otro verbo no añade: resta claridad en un panel
+estrecho. La lección para futuras reglas: mirar la PANTALLA donde va a aparecer, no solo
+la huella que deja la tool. Esta regla se diseñó desde el backend y por eso duplicaba algo
+que la interfaz ya resolvía mejor.
+Quedan las reglas de CARTERA, donde el chip sí aporta: aparece porque la tool ACABA de
+reportar algo, frente a los chips permanentes del Estratega, que son genéricos.
 
 ── Por qué SOLO el turno actual (`tool_jsons_del_turno`, no `..._de_conversacion`) ─────
 El Estratega suele traer la cartera UNA vez al abrir (kickoff) y luego referenciar esos
@@ -58,35 +72,23 @@ def _es_stats_embudo(d: dict) -> bool:
     return "total_interesados" in d and "reparto" in d
 
 
-def _es_timeline(d: dict) -> bool:
-    """Huella de `tool_timeline_de_lead`: única tool del CRM que trae AMBAS claves juntas."""
-    return "lead" in d and "transcript" in d
-
-
 def derivar_siguiente(tool_jsons: list[str]) -> str | None:
     """El próximo mensaje que el corredor podría enviar, listo para mandar tal cual si hace
     clic — o None si el turno no dejó ninguna apertura clara. Ver el docstring del módulo
-    para las tres reglas que lo hacen seguro y por qué no hace falta un parámetro `modo`.
+    para qué lo hace seguro y por qué no hace falta un parámetro `modo`.
 
-    PRECEDENCIA, de más a menos específico: un interesado NOMBRADO con reenganche listo es
-    más accionable que una cifra de cartera; y "no hay registro" es un nudge de SETUP (menos
-    urgente turno a turno que "a quién le escribo") — por eso va último.
+    PRECEDENCIA: "a quién le escribo" gana a "cómo configuro el registro". La segunda es un
+    nudge de SETUP — importa una vez, no turno a turno — así que cede ante cualquier cosa
+    accionable hoy.
     """
     dicts = _parsear(tool_jsons)
 
-    # 1) Un interesado NOMBRADO con reenganche ya redactado por el motor — lo más específico.
-    for d in dicts:
-        if _es_timeline(d) and d.get("reenganche_sugerido"):
-            nombre = (d.get("lead") or "").strip()
-            if nombre:
-                return f"Redáctame el mensaje para retomar a {nombre}"
-
-    # 2) Cartera con dormidos — accionable, sin nombrar a nadie todavía.
+    # 1) Cartera con dormidos — accionable ahora.
     for d in dicts:
         if _es_stats_embudo(d) and (d.get("dormidos") or 0) > 0:
             return "¿A cuáles de los dormidos les escribo primero?"
 
-    # 3) Sin registro de llegadas — nudge de SETUP, el menos urgente de los tres.
+    # 2) Sin registro de llegadas — nudge de SETUP, cede ante lo anterior.
     for d in dicts:
         if _es_stats_embudo(d) and (d.get("reparto") or {}).get("hay_registro") is False:
             return "¿Cómo empiezo a registrar las llegadas?"

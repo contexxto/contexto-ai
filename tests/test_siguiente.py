@@ -57,21 +57,31 @@ def test_sin_registro_de_llegadas_sugiere_activarlo():
     assert v == "¿Cómo empiezo a registrar las llegadas?"
 
 
-def test_timeline_con_reenganche_sugiere_redactar_con_el_nombre_de_la_tool():
-    v = derivar_siguiente([_timeline(lead="Lead #ba0a", reenganche_sugerido="Hola, vi que...")])
-    assert v == "Redáctame el mensaje para retomar a Lead #ba0a"
+# ══ El timeline NO sugiere nada (regla retirada el 2026-08-19) ════════════════════════
+# Hubo una regla que con reenganche_sugerido proponía "Redáctame el mensaje para retomar a
+# {nombre}". Funcionaba y se verificó en producción; se retiró por REDUNDANTE: en la
+# pantalla del Copiloto competía con el recuadro que YA sirve el mensaje redactado y con un
+# chip permanente que decía lo mismo. Ver el docstring de app/agent/siguiente.py.
+# Estos tests existen para que no vuelva por descuido.
+def test_el_timeline_con_reenganche_no_sugiere_nada():
+    assert derivar_siguiente([_timeline(lead="Lead #ba0a", reenganche_sugerido="Hola, vi que...")]) is None
 
 
-def test_timeline_sin_reenganche_no_sugiere_redactar():
-    assert derivar_siguiente([_timeline(reenganche_sugerido=None)]) is None
-
-
-# ══ Precedencia (más específico gana) ═══════════════════════════════════════════════════
-def test_el_timeline_nombrado_gana_sobre_los_dormidos_de_cartera():
+def test_el_timeline_no_le_gana_a_la_cartera_porque_ya_no_compite():
+    """Antes esta combinación devolvía la del timeline. Ahora manda la cartera."""
     v = derivar_siguiente([_stats(dormidos=5), _timeline(lead="Lead #7c2f", reenganche_sugerido="Hola")])
-    assert v == "Redáctame el mensaje para retomar a Lead #7c2f"
+    assert v == "¿A cuáles de los dormidos les escribo primero?"
 
 
+def test_ninguna_plantilla_nombra_a_un_interesado():
+    """Sin slots variables no hay forma de colar un nombre —ni del LLM ni del cliente— en
+    la sugerencia. Si alguien reintroduce una plantilla con {nombre}, que sea a conciencia."""
+    for tool_jsons in ([_stats(dormidos=4)], [_stats(dormidos=0, hay_registro=False)]):
+        v = derivar_siguiente(tool_jsons)
+        assert v and "#" not in v and "@" not in v
+
+
+# ══ Precedencia ═══════════════════════════════════════════════════════════════════════
 def test_dormidos_gana_sobre_sin_registro_dentro_del_mismo_json():
     v = derivar_siguiente([_stats(dormidos=2, hay_registro=False)])
     assert v == "¿A cuáles de los dormidos les escribo primero?"
@@ -86,8 +96,10 @@ def test_una_lista_o_un_numero_en_vez_de_objeto_no_tumba_nada():
     assert derivar_siguiente([json.dumps([1, 2, 3]), json.dumps(42)]) is None
 
 
-def test_nombre_vacio_no_produce_una_sugerencia_rota():
+def test_un_timeline_cualquiera_es_inerte():
+    """Ni con nombre ni sin él: el timeline ya no participa."""
     assert derivar_siguiente([_timeline(lead="", reenganche_sugerido="Hola")]) is None
+    assert derivar_siguiente([_timeline(lead="Lead #ba0a", reenganche_sugerido=None)]) is None
 
 
 def test_el_playbook_no_se_confunde_con_stats_ni_timeline():
@@ -101,7 +113,6 @@ def test_ninguna_plantilla_dispara_evaluar_salida_crm():
     casos = [
         [_stats(dormidos=4)],
         [_stats(dormidos=0, hay_registro=False)],
-        [_timeline(lead="Lead #ba0a", reenganche_sugerido="Hola, vi que...")],
     ]
     for tool_jsons in casos:
         v = derivar_siguiente(tool_jsons)

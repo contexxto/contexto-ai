@@ -16,6 +16,8 @@ Lo que estos tests fijan:
 
 Sin base de datos: se mockea tanto la sesión como el checkpointer.
 """
+import asyncio
+import time
 from contextlib import asynccontextmanager
 
 import pytest
@@ -39,10 +41,16 @@ def db_arriba(monkeypatch):
 
 
 def _health(monkeypatch, *, checkpointer):
-    """Llama a /health con el checkpointer que se le indique (None = degradado a memoria)."""
+    """Llama a /health con el checkpointer que se le indique (None = degradado a memoria).
+
+    SIN `with`, a propósito: usar TestClient como gestor de contexto ejecuta el lifespan
+    de la app, que monta el checkpointer REAL contra la Supabase de producción — pool de
+    conexiones incluido, contra un techo de 15 que se comparte con el servicio en vivo.
+    Estas pruebas no necesitan nada de eso: falsean la sesión y el checkpointer. Sin
+    lifespan son herméticas, instantáneas, y no le quitan conexiones a producción.
+    """
     monkeypatch.setattr(main, "get_checkpointer", lambda: checkpointer)
-    with TestClient(main.app) as cliente:
-        return cliente.get("/health")
+    return TestClient(main.app).get("/health")
 
 
 def test_con_checkpointer_postgres_reporta_memoria_persistente(db_arriba, monkeypatch):
@@ -65,3 +73,58 @@ def test_degradado_sigue_devolviendo_200_a_proposito(db_arriba, monkeypatch):
     fallar aquí reinicia el servicio en bucle justo cuando escasean las conexiones —
     que es la causa del problema. Degradado-pero-sirviendo > caído."""
     assert _health(monkeypatch, checkpointer=None).status_code == 200
+
+
+# ══ El sondeo va acotado ══════════════════════════════════════════════════════════════
+# Una base que CUELGA (no que falla) dejaría a /health esperando el timeout del pool —
+# 30 s por defecto — y Render acabaría reiniciando por health check vencido: el mismo
+# bucle que se evita devolviendo 200, entrando por la otra puerta.
+def test_una_base_colgada_no_cuelga_el_chequeo(monkeypatch):
+    """El caso que motiva el corte: la base no responde nunca."""
+    async def _nunca_responde():
+        # 5 s, no 3600: si alguien quita el corte, esta prueba debe FALLAR (tarda de más),
+        # no COLGARSE. Un test que cuelga en CI se ve como un timeout opaco; uno que falla
+        # dice qué se rompió.
+        await asyncio.sleep(5)
+
+    monkeypatch.setattr(main, "_sondear_db", _nunca_responde)
+    monkeypatch.setattr(main, "TIMEOUT_SONDEO_DB_S", 0.05)  # el test no espera 3 s
+
+    t0 = time.monotonic()
+    r = _health(monkeypatch, checkpointer=object())
+    tardanza = time.monotonic() - t0
+
+    assert r.status_code == 200, "aun con la base colgada debe contestar, no vencer"
+    assert tardanza < 2.0, f"el sondeo no se corto: tardo {tardanza:.1f}s"
+
+
+def test_una_base_colgada_se_reporta_como_saturada_no_como_caida(monkeypatch):
+    """`timeout` y `down` llevan a diagnósticos distintos: saturada vs inalcanzable.
+    Distinguirlas es justo lo que faltó el 2026-08-18."""
+    async def _nunca_responde():
+        # 5 s, no 3600: si alguien quita el corte, esta prueba debe FALLAR (tarda de más),
+        # no COLGARSE. Un test que cuelga en CI se ve como un timeout opaco; uno que falla
+        # dice qué se rompió.
+        await asyncio.sleep(5)
+
+    monkeypatch.setattr(main, "_sondear_db", _nunca_responde)
+    monkeypatch.setattr(main, "TIMEOUT_SONDEO_DB_S", 0.05)
+    cuerpo = _health(monkeypatch, checkpointer=object()).json()
+    assert cuerpo["database"] == "timeout"
+    assert cuerpo["status"] == "degraded"
+
+
+def test_una_base_inalcanzable_se_reporta_como_caida(monkeypatch):
+    async def _explota():
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(main, "_sondear_db", _explota)
+    cuerpo = _health(monkeypatch, checkpointer=object()).json()
+    assert cuerpo["database"] == "down"
+    assert cuerpo["status"] == "degraded"
+
+
+def test_el_timeout_es_muy_menor_que_el_del_pool(monkeypatch):
+    """Si alguien lo sube a 30 s, el sondeo vuelve a poder colgarse tanto como el pool y
+    esta protección deja de existir. 5 s ya es demasiado para un `SELECT 1`."""
+    assert 0 < main.TIMEOUT_SONDEO_DB_S <= 5.0

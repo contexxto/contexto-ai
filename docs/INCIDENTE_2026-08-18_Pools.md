@@ -102,10 +102,15 @@ Dos consecuencias que la primera versión no veía:
 
 ## Pendiente (no resuelto aquí)
 
-- **El techo de 15 sigue siendo el techo.** Dev local y producción comparten proyecto de
-  Supabase, así que con ambos arriba el consumo se duplica. Las salidas reales son el
-  **pooler en modo transacción** (puerto 6543, admite muchos más clientes) o un proyecto
-  de Supabase separado para desarrollo. Decisión pendiente.
+- ~~**El techo de 15 sigue siendo el techo.**~~ **Resuelto para desarrollo el 2026-08-19:**
+  `app/database.py` detecta el puerto y aplica la configuración que toca. Apuntando el
+  `.env` local al **6543** (Transaction Pooler), PgBouncer multiplexa y la competencia con
+  producción desaparece de raíz, en vez de repartirse un techo que no daba (5 + 12 = 17
+  contra 15). Producción sigue en 5432 sin cambios.
+  Probado de extremo a extremo contra el pooler real, no solo en tests: 6 consultas
+  parametrizadas repetidas + 1 sobre `profiles`, sin colisión de prepared statements.
+  **Para adoptarlo, cambia el puerto en tu `.env` local.** Con el 6543, los tres valores
+  de pool documentados en `.env.example` dejan de importar (NullPool no agrupa).
 - **Nadie lee `/health`.** El endpoint ya reporta el modo de la memoria, pero sin un
   chequeo externo que alerte sobre `status != "healthy"` el dato sigue siendo algo que hay
   que ir a mirar — que es exactamente lo que falló el 2026-08-18.

@@ -136,6 +136,13 @@ La pieza fundacional de vocabulario — el "punto de luz" de la marca hecho text
 - 2026-07-14 — Primera corrida del despacho automatizado: piezas 1 y 3 pasadas a borrador
   (ver `contenido/despachos/DESPACHO_2026-07-14.md`). Sin novedad de cosecha que compitiera
   por selección en esta corrida.
+- 2026-08-18 — Novena corrida del despacho automatizado: 2 piezas nuevas fuera-de-backlog,
+  ambas de prioridad 1º (tesis reforzadas con implicación directa Contexto), desde cosecha
+  Senales-Brain 2026-08-18: (1) [[El dato con responsable]] — HomeSelf AI como ejecutor de
+  gobernanza auditable, refuerza [[El modelo es commodity...]]; (2) [[Google ejecuta; otros
+  responden]] — Gemini Maps+Search como validación de "foso=ejecución", refuerza [[Los
+  geo-datos base...]] reformulada. Backlog v0 queda COMPLETAMENTE AGOTADO salvo #10 (video,
+  sin formato). (ver `contenido/despachos/DESPACHO_2026-08-18.md`).
 - 2026-07-20 — Segunda corrida del despacho automatizado: pieza 2 pasada a borrador (backlog,
   prioridad 3º) + 1 pieza nueva fuera de backlog desde tesis fresca de Senales-Brain
   ("Las redes sociales son el segundo frente de tierra rentada", confirmada 2026-07-15)

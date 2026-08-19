@@ -1,5 +1,5 @@
 {
-  "last_run": "2026-08-11",
+  "last_run": "2026-08-18",
   "despachos": [
     {
       "fecha": "2026-07-14",
@@ -96,6 +96,17 @@
         "Senales-Brain tesis: Los geo-datos base se commoditizan, el foso es la frescura local (tensionada y reformulada 2026-08-06: foso = proveniencia, no solo frescura)",
         "Senales-Brain source: Los portales inmobiliarios deben cambiar de lado al comprador para competir con la IA (per Edmund Keith, OnlineMarketplaces.com, ingested 2026-08-06)",
         "Senales-Brain tesis: El copiloto fiduciario del comprador informal no existe en LATAM (reforzada con argumento de incentivo económico 2026-08-06)"
+      ]
+    },
+    {
+      "fecha": "2026-08-18",
+      "piezas": [
+        "El dato con responsable",
+        "Google ejecuta; otros responden"
+      ],
+      "fuentes": [
+        "Senales-Brain ingesta 2026-08-18: HomeSelf AI construye Verified Property Records para que la IA confie (refuerza tesis [[El modelo es commodity...]])",
+        "Senales-Brain ingesta 2026-08-18: Gemini API combina Google Maps y Search en un mismo tool call (refuerza tesis [[Los geo-datos base...]] reformulada como foso=ejecución)"
       ]
     }
   ]

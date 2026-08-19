@@ -1,3 +1,10 @@
+# ⚠️ ESTE ARCHIVO NO ES LA FUENTE DE VERDAD DE LAS VARIABLES DE ENTORNO.
+# Verificado el 2026-08-19 en el panel: el servicio corre con variables configuradas A MANO
+# (API_KEY, SUPABASE_URL, ALLOWED_ORIGINS, RESEND_API_KEY, GOOGLE_MAPS_API_KEY, VAPID_*,
+# VOYAGE_API_KEY... ninguna aparece aquí abajo). Declarar algo en este blueprint NO lo
+# aplica al servicio. Sirve como documentación de la forma esperada del despliegue y para
+# recrearlo desde cero, pero si necesitas que una variable exista en producción, ponla en
+# Render → Environment. Antes de suponer que un valor de aquí está vigente, compruébalo ahí.
 services:
   - type: web
     name: contexto-ai-api
@@ -23,6 +30,11 @@ services:
       # checkpointer de LangGraph (CHECKPOINTER_POOL_SIZE). Suma actual: 4+2+6 = 12.
       # Pasarse NO falla ruidosamente: el checkpointer no abre y el grafo corre en
       # memoria — la app responde 200 pero sin historial. Ver app/config.py.
+      # Los valores de abajo COINCIDEN con los defaults de app/config.py, así que el
+      # comportamiento es el mismo estén o no aplicadas. Se declaran igual para que
+      # existan en el panel como PALANCA DE INCIDENTE: bajar el pool desde Environment y
+      # reiniciar toma menos de un minuto; hacerlo por commit exige un build de Docker
+      # (~6 min) — la diferencia importa cuando el techo ya está saturado.
       - key: DB_POOL_SIZE
         value: "4"
       - key: DB_MAX_OVERFLOW

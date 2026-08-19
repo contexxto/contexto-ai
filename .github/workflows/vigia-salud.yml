@@ -1,0 +1,83 @@
+# Vigía de salud: el que AVISA. Distinto del keepalive, que solo despierta al servicio y
+# mira el código HTTP.
+#
+# POR QUÉ EXISTE (2026-08-18): el backend puede quedar "vivo pero amnésico" — el
+# checkpointer no logra abrir su pool al arrancar, el grafo cae a MemorySaver y la app
+# responde **200 en TODO**, /health incluido, pero sin historial: conversaciones sin título
+# que no abren. Corrió así 1h26m y se detectó de casualidad, leyendo logs a mano por otra
+# cosa. Un chequeo que solo pregunta "¿responde?" nunca lo habría visto.
+# Ver docs/INCIDENTE_2026-08-18_Pools.md.
+#
+# La clave: /health devuelve 200 A PROPÓSITO aunque esté degradado (fallar haría que Render
+# reinicie en bucle justo cuando faltan conexiones). El aviso vive en el CUERPO. Por eso
+# este workflow lee el JSON, no el código de estado.
+#
+# LÍMITES, dichos de frente:
+#  · El cron de GitHub deriva. Pide cada 15 min; en la práctica pasan 25-35. Sirve para
+#    "me entero en media hora", no para "me entero en un minuto". Aun así, frente a las
+#    1h26m que costó la vez que pasó, es la diferencia que importa.
+#  · Solo detecta lo que /health sabe mirar: base y checkpointer. No es monitoreo general.
+#  · El aviso llega por el correo de fallo de GitHub Actions. Si esos correos se filtran o
+#    se ignoran, esta alarma no existe. Nombre propio y distinto del keepalive
+#    justamente para que su asunto se distinga del ruido.
+name: vigia-salud
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  revisar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Leer /health y fallar si NO está sano
+        run: |
+          set -uo pipefail
+          URL="https://contexto-ai-oregon.onrender.com/health"
+
+          # --max-time alto: Render en cold start puede tardar. Un servicio lento no es
+          # un servicio enfermo, y una falsa alarma entrena a ignorar las verdaderas.
+          cuerpo=$(curl -s --max-time 90 "$URL") || cuerpo=""
+
+          if [ -z "$cuerpo" ]; then
+            echo "::error title=API inalcanzable::$URL no respondió en 90 s."
+            echo "Ni siquiera devolvió cuerpo: el servicio está caído o Render no lo levanta."
+            exit 1
+          fi
+
+          echo "respuesta: $cuerpo"
+
+          estado=$(echo "$cuerpo"   | grep -o '"status":"[^"]*"'   | cut -d'"' -f4)
+          memoria=$(echo "$cuerpo"  | grep -o '"memoria":"[^"]*"'  | cut -d'"' -f4)
+          basedatos=$(echo "$cuerpo"| grep -o '"database":"[^"]*"' | cut -d'"' -f4)
+
+          if [ "$estado" = "healthy" ]; then
+            echo "OK — status=healthy · memoria=$memoria · database=$basedatos"
+            exit 0
+          fi
+
+          # A partir de aquí, algo está degradado. El mensaje tiene que decir QUÉ HACER,
+          # no solo que algo pasa: quien lo lea puede estar viéndolo a las 3 de la mañana.
+          echo "::error title=Contexto degradado::status=$estado · memoria=$memoria · database=$basedatos"
+
+          if [ "$memoria" = "volatil" ]; then
+            echo "MEMORIA ROTA: el checkpointer corre en memoria. Las conversaciones NO"
+            echo "persisten — títulos genéricos y conversaciones que no abren. Los datos"
+            echo "siguen en la tabla checkpoints; lo que falla es el proceso."
+            echo "QUÉ HACER: Render → contexto-ai-oregon → Manual Deploy → Restart service."
+            echo "Antes de reiniciar, apaga cualquier backend LOCAL: comparte el techo de"
+            echo "15 conexiones del pooler y es lo que impide al checkpointer arrancar."
+          fi
+
+          if [ "$basedatos" = "timeout" ]; then
+            echo "BASE SATURADA: responde, pero no contesta un SELECT 1 en 3 s. Típicamente"
+            echo "alguien se está comiendo las conexiones (backend local, un script, un"
+            echo "deploy solapado). Revisa quién más está conectado antes de reiniciar."
+          elif [ "$basedatos" = "down" ]; then
+            echo "BASE INALCANZABLE: no se pudo conectar. Revisa el estado de Supabase y"
+            echo "que DATABASE_URL_OVERRIDE siga siendo válida."
+          fi
+
+          exit 1

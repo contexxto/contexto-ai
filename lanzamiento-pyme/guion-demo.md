@@ -1,7 +1,7 @@
 # guion de demo — 10 minutos para una inmobiliaria PYME
 
 > **Contexto AI · 2026-07-08** · Para que Carlos lo presente en frío a una inmobiliaria PYME (Ecuador/LATAM).
-> **Anclado en:** [`docs/MODELO_Shopify_Inmobiliario_PYME.md`](../docs/MODELO_Shopify_Inmobiliario_PYME.md) (la escalera y las líneas rojas) · [`docs/PRODUCTO_Encaje_Financiero_Neutral.md`](../docs/PRODUCTO_Encaje_Financiero_Neutral.md) (la capa financiera neutral) · [`docs/ANALISIS_Oportunidades_Habi_Sierra_2026-07.md`](../docs/ANALISIS_Oportunidades_Habi_Sierra_2026-07.md) (el enemigo: los portales) · [`docs/branding/LINEA_GRAFICA_CRED_Storefronts.md`](../docs/branding/LINEA_GRAFICA_CRED_Storefronts.md) + `Contexto_AI_Brand/BRAND.md` (voz) · [`lanzamiento-pyme/naming.md`](naming.md) (nombre).
+> **Anclado en:** [`docs/MODELO_Shopify_Inmobiliario_PYME.md`](../docs/MODELO_Shopify_Inmobiliario_PYME.md) (la escalera y las líneas rojas) · [`docs/PRODUCTO_Encaje_Financiero_Neutral.md`](../docs/PRODUCTO_Encaje_Financiero_Neutral.md) (la capa financiera neutral) · [`docs/ANALISIS_Oportunidades_Habi_Sierra_2026-07.md`](../docs/ANALISIS_Oportunidades_Habi_Sierra_2026-07.md) (el enemigo: los portales) · [`docs/branding/LINEA_GRAFICA_CRED_Storefronts.md`](../docs/branding/LINEA_GRAFICA_CRED_Storefronts.md) + [`docs/estrategia/VOZ_AEO_CONTEXTO.md`](../docs/estrategia/VOZ_AEO_CONTEXTO.md) (voz) · [`lanzamiento-pyme/naming.md`](naming.md) (nombre).
 > **Insumo en pantalla:** `storefront-demo.html` (el storefront de ejemplo del paquete). Este guion está escrito contra sus beats esperados — ajusta los clics exactos al archivo final cuando esté listo.
 
 ---

@@ -1,7 +1,7 @@
 # naming — torneo de nombres para la oferta "Shopify inmobiliario"
 
 > **Contexto AI · 2026-07-08** · Oferta a nombrar: *storefronts para inmobiliarias PYME con la verdad de Contexto debajo* (ver [`docs/MODELO_Shopify_Inmobiliario_PYME.md`](../docs/MODELO_Shopify_Inmobiliario_PYME.md)).
-> **Insumos:** línea gráfica [`docs/branding/LINEA_GRAFICA_CRED_Storefronts.md`](../docs/branding/LINEA_GRAFICA_CRED_Storefronts.md) + `cred-reference/styleguide.json`; voz de marca `Contexto_AI_Brand/BRAND.md`; filosofía [`PHILOSOPHY_Aura_Cartografica.md`](../docs/branding/PHILOSOPHY_Aura_Cartografica.md).
+> **Insumos:** línea gráfica [`docs/branding/LINEA_GRAFICA_CRED_Storefronts.md`](../docs/branding/LINEA_GRAFICA_CRED_Storefronts.md) + `cred-reference/styleguide.json`; voz de marca [`docs/estrategia/VOZ_AEO_CONTEXTO.md`](../docs/estrategia/VOZ_AEO_CONTEXTO.md); filosofía [`PHILOSOPHY_Aura_Cartografica.md`](../docs/branding/PHILOSOPHY_Aura_Cartografica.md).
 
 ---
 
@@ -163,7 +163,7 @@ Este torneo es preliminar. Para fijar el nombre, Carlos (o quien delegue) debe:
 ## Fuentes de los insumos de marca
 - Modelo: [`docs/MODELO_Shopify_Inmobiliario_PYME.md`](../docs/MODELO_Shopify_Inmobiliario_PYME.md) · Mapa competitivo: [`docs/ANALISIS_Oportunidades_Habi_Sierra_2026-07.md`](../docs/ANALISIS_Oportunidades_Habi_Sierra_2026-07.md)
 - Línea gráfica: [`docs/branding/LINEA_GRAFICA_CRED_Storefronts.md`](../docs/branding/LINEA_GRAFICA_CRED_Storefronts.md) + `cred-reference/styleguide.json`
-- Voz/tagline: `Contexto_AI_Brand/BRAND.md` · Filosofía: [`docs/branding/PHILOSOPHY_Aura_Cartografica.md`](../docs/branding/PHILOSOPHY_Aura_Cartografica.md)
+- Voz: [`docs/estrategia/VOZ_AEO_CONTEXTO.md`](../docs/estrategia/VOZ_AEO_CONTEXTO.md) · Tagline e identidad: [`docs/Contexto_Brand_Kit_2026_v1.docx`](../docs/Contexto_Brand_Kit_2026_v1.docx) · Filosofía: [`docs/branding/PHILOSOPHY_Aura_Cartografica.md`](../docs/branding/PHILOSOPHY_Aura_Cartografica.md)
 - Chequeos de dominio: `nslookup` (DNS, preliminar, 2026-07-08). Colisiones: WebSearch acotado a inmobiliaria/proptech (preliminar, no registral).
 
 > **Recordatorio final:** ninguno de estos nombres está decidido. `Cimiento` es el **nombre provisional de trabajo** por ser el ganador del torneo — la elección es de Carlos, tras la verificación del §6.

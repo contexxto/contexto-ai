@@ -1,5 +1,9 @@
 /* ==========================================================================
-   CONTEXTO AI · DESIGN TOKENS · Aura Direction (identidad oficial aprobada)
+   CONTEXTO · DESIGN TOKENS
+   Estos tokens son la fuente de verdad visual del producto y del sitio de
+   marca. Espejo documentado en docs/Contexto_Brand_Kit_2026_v1.docx.
+   (Antes decía "Aura Direction · identidad oficial aprobada": esa direccion
+   se retiro junto con el logo de la esfera el 2026-08-19.)
    Fuentes: cargadas vía <link> en index.html (no @import aquí — el @import creaba
    una cadena render-blocking: CSS → descubrir import → otra ronda de red).
    ========================================================================== */
@@ -58,6 +62,7 @@
   --error-text:  #F85149;
 
   --accent:      #2DBDB6;
+  --teal-text:   #2DBDB6;  /* teal cuando es TEXTO o BORDE — ver bloque claro */
   --user-bg:     #1A7A76;
   --ai-bg:       #232323;
 
@@ -113,6 +118,9 @@ html[data-theme="light"] {
      superficie clara más oscura: así sirven en todo el tema, no solo sobre
      blanco. */
   --accent:           #1C746F;  /* era #14A79F — 2.98:1, no pasaba AA */
+  --teal-text:        #1C746F;  /* --teal como texto/borde daba 2.32:1 en claro.
+                                   El relleno sigue siendo --teal: ahi no hay
+                                   requisito de contraste. */
   --teal-on-light:    #1C746F;  /* 5.56:1 sobre blanco · 4.51:1 sobre --surface-3 */
   --warning-on-light: #846317;  /* 5.56:1 · 4.50:1  — la etiqueta ESTIMADO */
   --coral-on-light:   #C03424;  /* 5.59:1 · 4.53:1 */
@@ -183,7 +191,7 @@ body::before { content: none; }
   transition: border-color .2s, box-shadow .2s, transform .2s;
 }
 .qp:hover {
-  border-color: var(--teal);
+  border-color: var(--teal-text);
   box-shadow: 0 0 18px rgba(45, 189, 182, 0.25);
   transform: translateY(-1px);
 }
@@ -229,7 +237,7 @@ div:focus, div:focus-visible { outline: none; }
 .ai-content hr { border: none; height: 0; margin: 1.4rem 0; }
 .ai-content code {
   background: var(--surface-2); padding: 1px 5px; border-radius: 4px;
-  font-size: .84em; color: var(--teal); font-family: var(--font-mono);
+  font-size: .84em; color: var(--teal-text); font-family: var(--font-mono);
 }
 
 /* Tarjeta de ENCAJE (markdown.js): anotaciones ✅/⚠️ legibles en ambos temas.

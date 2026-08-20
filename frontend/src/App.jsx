@@ -1558,10 +1558,10 @@ export default function App() {
         <header style={{ display:'flex', alignItems:'center', gap:10, padding:'16px 0 12px', flexShrink:0 }}>
           <img src={sphereLogo} alt="Contexto" width={32} height={32} />
           <div>
-            <div style={{ fontWeight:800 }}>Contexto <span style={{ color:'var(--teal)' }}>AI</span></div>
+            <div style={{ fontWeight:800 }}>Contexto <span style={{ color:'var(--teal-text)' }}>AI</span></div>
             <div style={{ fontSize:'.72rem', color:'var(--text-muted)' }}>Conversación compartida · solo lectura</div>
           </div>
-          <a href="/" style={{ marginLeft:'auto', fontSize:'.8rem', color:'var(--teal)',
+          <a href="/" style={{ marginLeft:'auto', fontSize:'.8rem', color:'var(--teal-text)',
                                textDecoration:'none', border:'1px solid rgba(45,189,182,.3)',
                                borderRadius:999, padding:'6px 14px' }}>Abrir Contexto AI</a>
         </header>
@@ -1616,7 +1616,7 @@ export default function App() {
               </button>
             </form>
             <div style={{ fontSize:'.72rem', color:'var(--text-muted)', textAlign:'center', marginTop:8 }}>
-              Gratis · sin registro · <a href="/" style={{ color:'var(--teal)', textDecoration:'none' }}>Conoce Contexto AI</a>
+              Gratis · sin registro · <a href="/" style={{ color:'var(--teal-text)', textDecoration:'none' }}>Conoce Contexto AI</a>
             </div>
           </div>
         )}
@@ -1822,7 +1822,7 @@ export default function App() {
           position:'absolute', inset:0, zIndex:50, display:'flex', flexDirection:'column',
           alignItems:'center', justifyContent:'center', gap:10,
           background:'rgba(14,13,19,.92)', border:'2px dashed var(--teal)', borderRadius:14,
-          color:'var(--teal)', fontSize:'1.05rem', fontWeight:600, pointerEvents:'none',
+          color:'var(--teal-text)', fontSize:'1.05rem', fontWeight:600, pointerEvents:'none',
         }}>
           <MapPin size={36} />
           Suelta tu foto para encontrar inmuebles parecidos
@@ -1969,7 +1969,7 @@ export default function App() {
             position:'fixed', bottom:90, right:24, width:36, height:36,
             borderRadius:'50%', background:'var(--surface-2)', border:'none',
             boxShadow:'var(--shadow-md)',
-            cursor:'pointer', color:'var(--teal)', display:'flex',
+            cursor:'pointer', color:'var(--teal-text)', display:'flex',
             alignItems:'center', justifyContent:'center', zIndex:10,
           }}
         >
@@ -1992,7 +1992,7 @@ export default function App() {
                   a secas no dice nada: el interesado no sabía a cuál le estaba escribiendo. */}
               <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap',
                             margin:'0 0 8px', padding:'8px 14px',
-                            borderRadius:14, fontSize:'.78rem', color:'var(--teal)',
+                            borderRadius:14, fontSize:'.78rem', color:'var(--teal-text)',
                             background:'rgba(45,189,182,.10)', border:'1px solid rgba(45,189,182,.3)' }}>
                 <span style={{ flex:1, minWidth:140 }}>
                   🤝 Hablas con el corredor{hiloAbierto?.direccion ? ' de ' : ''}
@@ -2002,7 +2002,7 @@ export default function App() {
                 {/* Caso 7: entrar un corredor era de una sola dirección. Ahora se vuelve. */}
                 <button onClick={volverAlAgente}
                   style={{ padding:'5px 11px', borderRadius:999, cursor:'pointer', fontSize:'.72rem',
-                           fontWeight:700, background:'transparent', color:'var(--teal)',
+                           fontWeight:700, background:'transparent', color:'var(--teal-text)',
                            border:'1px solid rgba(45,189,182,.45)' }}>
                   Volver a Contexto
                 </button>
@@ -2048,7 +2048,7 @@ export default function App() {
                   style={{ display:'flex', alignItems:'center', gap:7, padding:'7px 14px',
                            borderRadius:999, cursor:'pointer', fontSize:'.78rem', fontWeight:600,
                            background:'rgba(45,189,182,.10)', border:'1px solid rgba(45,189,182,.3)',
-                           color:'var(--teal)' }}>
+                           color:'var(--teal-text)' }}>
                   🤝 Seguir con el corredor de {nombreCorto(h.direccion)}
                 </button>
               ))}
@@ -2058,7 +2058,7 @@ export default function App() {
               <button onClick={iniciarHandoff}
                 style={{ display:'flex', alignItems:'center', gap:7, padding:'7px 14px',
                          borderRadius:999, cursor:'pointer', fontSize:'.78rem', fontWeight:600,
-                         background:'rgba(45,189,182,.10)', border:'1px solid rgba(45,189,182,.3)', color:'var(--teal)' }}>
+                         background:'rgba(45,189,182,.10)', border:'1px solid rgba(45,189,182,.3)', color:'var(--teal-text)' }}>
                 🤝 Hablar con el corredor
               </button>
               <button onClick={async () => { if (await subscribeLeadContacto(sessionId)) setReengancheOptIn(true) }}
@@ -2179,7 +2179,7 @@ export default function App() {
           </div>
         </div>
         {listening && (
-          <div style={{ marginTop:8, fontSize:'.72rem', color:'var(--teal)',
+          <div style={{ marginTop:8, fontSize:'.72rem', color:'var(--teal-text)',
                         padding:'0 4px', textAlign:'center' }}>
             🎤 Escuchando… habla ahora
           </div>

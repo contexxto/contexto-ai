@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import axios from 'axios'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { Maximize2, X } from 'lucide-react'
+import { Maximize2, X, Sparkles, Footprints, MapPin } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import { intentHue } from './intentHue'
 import { ATRIBUCION } from './atribucion'
@@ -299,7 +299,7 @@ export default function AuraSingleMap({ activoId, tipoActivo, onExpandMap }) {
                            gap: 5, padding: '4px 10px', borderRadius: 999, fontSize: '.7rem', fontWeight: 700,
                            background: 'rgba(14,13,19,.7)', color: hue.accent, backdropFilter: 'blur(4px)',
                            border: `1px solid ${hue.glow}`, pointerEvents: 'none' }}>
-              ✦ Su aura · a pie
+              <Sparkles size={13} style={{ verticalAlign: '-2px', marginRight: 5 }} />Su aura · a pie
             </span>
             {/* El mapa chico es deliberadamente estatico (interactive:false, no compite con
                 el scroll de la pagina) — este boton es la unica entrada al Mapa Vivo completo
@@ -315,9 +315,9 @@ export default function AuraSingleMap({ activoId, tipoActivo, onExpandMap }) {
           </div>
           {pois.length > 0 && <PoiPills pois={pois} hue={hue} />}
           <div style={{ fontSize: '.66rem', color: C.muted, marginTop: 8 }}>
-            {(data?.rutas?.length ?? 0) > 0 && <>🚶 Rutas reales a pie: <b style={{ color: '#8A8694' }}>Google Routes</b> · </>}
+            {(data?.rutas?.length ?? 0) > 0 && <><Footprints size={12} style={{ verticalAlign: '-2px', marginRight: 5 }} />Rutas reales a pie: <b style={{ color: '#8A8694' }}>Google Routes</b> · </>}
             {(data?.isocronas?.length ?? 0) > 0 && <>Isócrona: <b style={{ color: '#8A8694' }}>motor propio</b> · </>}
-            📍 Pines según Google Maps · tiempos a pie estimados (~80 m/min, terreno plano)
+            <MapPin size={12} style={{ verticalAlign: '-2px', marginRight: 5 }} />Pines según Google Maps · tiempos a pie estimados (~80 m/min, terreno plano)
           </div>
         </>
       )}

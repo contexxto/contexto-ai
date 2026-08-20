@@ -234,7 +234,7 @@ function ResultCard({ r, onOpen, activeId, onActive, seleccionado, onToggleCompa
             style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 4,
                      padding: '2px 8px', borderRadius: 999, fontSize: '.62rem', fontWeight: 700,
                      background: 'rgba(45,189,182,.12)', border: `1px solid ${C.teal}`, color: C.accent }}>
-            ✓ Verificado por el corredor
+            <Check size={12} style={{ verticalAlign: '-2px', marginRight: 5 }} />Verificado por el corredor
           </span>
         )}
         {/* ★ Encaje / intención: los POIs verificados más cercanos, con su tiempo a pie.

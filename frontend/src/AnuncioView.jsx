@@ -1,10 +1,6 @@
 import { useState, useEffect, lazy, Suspense } from 'react'
 import axios from 'axios'
-import {
-  MapPin, MessageCircle, ShieldCheck, Footprints, Trees, Volume2,
-  BedDouble, Bath, Car, Ruler, Check, TrendingUp, AlertTriangle, ArrowLeft,
-  ChevronLeft, ChevronRight,
-} from 'lucide-react'
+import { MapPin, MessageCircle, ShieldCheck, Footprints, Trees, Volume2, BedDouble, Bath, Car, Ruler, Check, TrendingUp, AlertTriangle, ArrowLeft, ChevronLeft, ChevronRight, Sparkles, Wrench } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import sphereLogo from './assets/sphere.svg'
 
@@ -236,7 +232,7 @@ export default function AnuncioView({ id, onChat, onBack, onExpandMap }) {
           </div>
           {fmtTrafico(d.scores?.trafico) ? (
             <div style={{ fontSize: '.72rem', color: C.muted, marginTop: 8 }}>
-              🚗 Tráfico histórico estimado: {fmtTrafico(d.scores.trafico)}
+              <Car size={13} style={{ verticalAlign: '-2px', marginRight: 5 }} />Tráfico histórico estimado: {fmtTrafico(d.scores.trafico)}
             </div>
           ) : null}
           {d.conectividad && (
@@ -246,7 +242,7 @@ export default function AnuncioView({ id, onChat, onBack, onExpandMap }) {
             </div>
           )}
           {d.servicios_cercanos && (
-            <div style={{ fontSize: '.78rem', color: C.muted, marginTop: 8 }}>📍 {d.servicios_cercanos}</div>
+            <div style={{ fontSize: '.78rem', color: C.muted, marginTop: 8 }}><MapPin size={12} style={{ verticalAlign: '-2px', marginRight: 5 }} />{d.servicios_cercanos}</div>
           )}
 
           {/* Mapa Vivo — AURA-SINGLE: el inmueble re-centrado en su entorno, cálido.
@@ -270,7 +266,7 @@ export default function AnuncioView({ id, onChat, onBack, onExpandMap }) {
               )}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
                 {AMB.filter(([k]) => car[k]).map(([k, lbl]) => (
-                  <span key={k} style={chip(true)}>✓ {lbl}</span>
+                  <span key={k} style={chip(true)}><Check size={12} style={{ verticalAlign: '-2px', marginRight: 5 }} />{lbl}</span>
                 ))}
                 {(car.amenidades_edificio || []).map((a) => <span key={a} style={chip(true)}>{a}</span>)}
               </div>
@@ -280,7 +276,7 @@ export default function AnuncioView({ id, onChat, onBack, onExpandMap }) {
                 </div>
               )}
               {car.ideal_para && (
-                <div style={{ marginTop: 8, fontSize: '.82rem', color: C.text }}>✨ Ideal para: {car.ideal_para}</div>
+                <div style={{ marginTop: 8, fontSize: '.82rem', color: C.text }}><Sparkles size={13} style={{ verticalAlign: '-2px', marginRight: 5 }} />Ideal para: {car.ideal_para}</div>
               )}
             </>
           )}
@@ -305,7 +301,7 @@ export default function AnuncioView({ id, onChat, onBack, onExpandMap }) {
                 <Fila k="Fachada" v={d.ficha.ultima_pintura_fachada} />
               </div>
               {d.ficha.descripcion_mejoras && (
-                <div style={{ marginTop: 10, fontSize: '.78rem', color: C.muted }}>🔧 {d.ficha.descripcion_mejoras}</div>
+                <div style={{ marginTop: 10, fontSize: '.78rem', color: C.muted }}><Wrench size={12} style={{ verticalAlign: '-2px', marginRight: 5 }} />{d.ficha.descripcion_mejoras}</div>
               )}
             </div>
           ) : (

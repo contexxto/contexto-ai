@@ -1,8 +1,5 @@
 import { useState } from 'react'
-import {
-  MapPin, Target, ShieldCheck, Compass, Footprints, BadgeCheck, Users,
-  RefreshCw, Layers, Camera, Building2, Volume2, Clock, ArrowRight, Sun, Moon,
-} from 'lucide-react'
+import { MapPin, Target, ShieldCheck, Compass, Footprints, BadgeCheck, Users, RefreshCw, Layers, Camera, Building2, Volume2, Clock, ArrowRight, Sun, Moon, Check } from 'lucide-react'
 import { getTheme, toggleTheme } from './theme'
 import './QueEs.css'
 
@@ -138,7 +135,7 @@ export default function QueEs({ onStart, onBroker, onLogin }) {
           </div>
           <div className="art">
             <div className="bubble-q">¿Cómo es vivir aquí con niños?</div>
-            <div className="bubble-a">Caminabilidad 94 · colegio a ~7 min a pie · parque a ~4 min ✓</div>
+            <div className="bubble-a">Caminabilidad 94 · colegio a ~7 min a pie · parque a ~4 min<Check size={12} style={{ verticalAlign: '-2px', marginLeft: 5 }} /></div>
           </div>
         </div>
 

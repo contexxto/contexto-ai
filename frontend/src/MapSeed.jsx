@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { MapPin, Maximize2 } from 'lucide-react'
+import { MapPin, Maximize2, Sparkles } from 'lucide-react'
 import { intentHue } from './intentHue'
 import { ATRIBUCION } from './atribucion'
 
@@ -159,7 +159,7 @@ function Leyenda({ algunoFresco, algunEncaje }) {
           }} /> el arco = % de encaje con lo que pediste
         </span>
       )}
-      <span>📍 tiempos a pie estimados (~80 m/min)</span>
+      <span><MapPin size={12} style={{ verticalAlign: '-2px', marginRight: 5 }} />tiempos a pie estimados (~80 m/min)</span>
     </div>
   )
 }
@@ -386,7 +386,7 @@ export default function MapSeed({ results, mapSeed, onOpen, onExpand, isLast, ac
           <span style={{ ...headerChip, pointerEvents: 'none',
                          ...(warm && hue ? { color: hue.accent, border: `1px solid ${hue.glow}` } : {}) }}>
             {warm
-              ? <>✨ {pins.length} {pins.length === 1 ? 'candidato' : 'candidatos'}</>
+              ? <><Sparkles size={13} style={{ verticalAlign: '-2px', marginRight: 5 }} />{pins.length} {pins.length === 1 ? 'candidato' : 'candidatos'}</>
               : <><MapPin size={12} /> {pins.length} en el mapa</>}
           </span>
           {/* "Ampliar" es un botón real (no fall-through), para que abrir el mapa sea
@@ -409,7 +409,7 @@ export default function MapSeed({ results, mapSeed, onOpen, onExpand, isLast, ac
             color: C.text, fontSize: '.72rem', fontWeight: 600,
             boxShadow: '0 4px 16px rgba(0,0,0,.45)',
           }}>
-            <span style={{ flexShrink: 0 }}>📍</span>
+            <span style={{ flexShrink: 0, display: 'inline-flex' }}><MapPin size={13} /></span>
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {activo.direccion || activo.tipo_activo || 'Inmueble'}
             </span>

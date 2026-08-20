@@ -68,24 +68,16 @@ C_CORAL = "#E0685A"
 C_TEXT = "#EDEBF2"
 C_MUTED = "#9C99AC"
 
-# Logo Sphere incrustado (mismo de logo/sphere-mark-256.svg), escalado vía width/height.
+# Mark de Contexto incrustado. Geometría idéntica a
+# frontend/src/assets/sphere.svg, que es la que usa la app.
+# Reemplazó a la esfera de la marca anterior (2026-08-19); no tiene
+# gradientes, así que {uid} ya no hace falta pero se acepta por compatibilidad.
 SPHERE_SVG = """
-<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 256 256" fill="none">
-  <defs>
-    <radialGradient id="sg{uid}" cx="0.35" cy="0.35" r="0.65">
-      <stop offset="0%" stop-color="#5EEAD4"/><stop offset="40%" stop-color="#2DBDB6"/>
-      <stop offset="70%" stop-color="#E0685A" stop-opacity="0.5"/><stop offset="100%" stop-color="#0E0D13" stop-opacity="0.9"/>
-    </radialGradient>
-    <radialGradient id="sgw{uid}" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0%" stop-color="#2DBDB6" stop-opacity="0.2"/><stop offset="100%" stop-color="#2DBDB6" stop-opacity="0"/>
-    </radialGradient>
-    <filter id="sb{uid}"><feGaussianBlur in="SourceGraphic" stdDeviation="5.12"/></filter>
-  </defs>
-  <circle cx="128" cy="128" r="119.04" fill="url(#sgw{uid})"/>
-  <circle cx="128" cy="128" r="89.6" fill="url(#sg{uid})"/>
-  <ellipse cx="106.24" cy="98.56" rx="38.528" ry="46.592" fill="rgba(94,234,212,0.12)" filter="url(#sb{uid})"/>
-  <path d="M76.928 153.984 Q128 110.976, 179.072 140.544" stroke="rgba(224,104,90,0.35)" stroke-width="8.96" fill="none" filter="url(#sb{uid})"/>
-  <circle cx="128" cy="128" r="89.6" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="0.5"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 24 24" fill="none">
+  <rect x="3" y="3" width="7" height="7" rx="1.6" fill="#5EEAD4"/>
+  <rect x="14" y="3" width="7" height="7" rx="1.6" fill="#3A3D44"/>
+  <rect x="3" y="14" width="7" height="7" rx="1.6" fill="#3A3D44"/>
+  <circle cx="17.5" cy="17.5" r="4" fill="#5EEAD4"/>
 </svg>"""
 
 

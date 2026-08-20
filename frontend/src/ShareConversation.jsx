@@ -28,7 +28,7 @@ export default function ShareConversation({ sessionId, onClose }) {
       // En escritorio mostramos el enlace copiable inline (no la bandeja del SO).
       const esTactil = window.matchMedia?.('(pointer: coarse)').matches
       if (esTactil && navigator.share) {
-        try { await navigator.share({ title: 'Contexto AI', url }) } catch { /* cancelado */ }
+        try { await navigator.share({ title: 'Contexto', url }) } catch { /* cancelado */ }
       }
     } catch (e) {
       setError(e?.response?.data?.detail || 'No se pudo crear el enlace. ¿Iniciaste sesión?')

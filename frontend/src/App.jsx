@@ -238,7 +238,7 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
       {/* ── Fila: avatar + burbuja de texto ── */}
       <div style={{ display:'flex', gap:10, alignSelf:'stretch', justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
         {!isUser && (
-          <img src={sphereLogo} alt="Contexto AI" width={32} height={32}
+          <img src={sphereLogo} alt="Contexto" width={32} height={32}
                style={{ flexShrink:0, display:'block' }} />
         )}
         <div style={{ maxWidth:'78%' }}>
@@ -387,7 +387,7 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
 function Thinking() {
   return (
     <div style={{ display:'flex', gap:10, marginBottom:16 }}>
-      <img src={sphereLogo} alt="Contexto AI" width={32} height={32}
+      <img src={sphereLogo} alt="Contexto" width={32} height={32}
            style={{ flexShrink:0, display:'block', filter:'drop-shadow(0 0 8px rgba(45,189,182,.45))' }} />
       <div style={{
         padding:'14px 16px', borderRadius:'4px 18px 18px 18px',
@@ -1556,7 +1556,7 @@ export default function App() {
       <div style={{ height:'var(--app-h, 100dvh)', maxWidth:820, margin:'0 auto', padding:isMobile ? '0 16px' : '0 24px',
                     display:'flex', flexDirection:'column' }}>
         <header style={{ display:'flex', alignItems:'center', gap:10, padding:'16px 0 12px', flexShrink:0 }}>
-          <img src={sphereLogo} alt="Contexto AI" width={32} height={32} />
+          <img src={sphereLogo} alt="Contexto" width={32} height={32} />
           <div>
             <div style={{ fontWeight:800 }}>Contexto <span style={{ color:'var(--teal)' }}>AI</span></div>
             <div style={{ fontSize:'.72rem', color:'var(--text-muted)' }}>Conversación compartida · solo lectura</div>
@@ -1860,7 +1860,7 @@ export default function App() {
           </div>
         )}
         <div style={{ display:'flex', alignItems:'center', gap:9 }}>
-          <img src={sphereLogo} alt="Contexto AI" width={isMobile ? 26 : 30} height={isMobile ? 26 : 30}
+          <img src={sphereLogo} alt="Contexto" width={isMobile ? 26 : 30} height={isMobile ? 26 : 30}
                style={{ display:'block', flexShrink:0 }} />
           <div style={{ fontWeight:800, fontSize:isMobile ? '1rem' : '1.05rem', letterSpacing:'-.3px' }}>
             Contexto

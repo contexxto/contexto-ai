@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Contexto AI — Generador de QRs y letreros imprimibles para activos reales.
+Contexto — Generador de QRs y letreros imprimibles para activos reales.
 
 QUÉ HACE
   Por cada activo genera:
@@ -9,7 +9,7 @@ QUÉ HACE
     3. out/index.html             → hoja de contactos para imprimir TODO en lote
 
   El QR codifica el enlace permanente al inmueble. Al escanearlo, el visitante
-  abre el agente de Contexto AI con ese activo ya cargado (Shazam inmobiliario).
+  abre el agente de Contexto con ese activo ya cargado (Shazam inmobiliario).
 
 DE DÓNDE SACA LOS ACTIVOS
   - Por defecto: consulta la API en vivo  GET {api}/api/v1/assets/geojson
@@ -92,17 +92,15 @@ def _qr_svg_inline(url: str, scale: int = 6) -> str:
 
 
 def _wordmark() -> str:
-    return (
-        f'<span style="font-weight:800;letter-spacing:-.02em">Contexto</span>'
-        f'<span style="font-weight:800;background:linear-gradient(90deg,{C_TEAL_HI},{C_CORAL});'
-        f'-webkit-background-clip:text;background-clip:text;color:transparent;margin-left:.12em">AI</span>'
-    )
+    # Solo "Contexto". El lockup con "AI" en gradiente era de la marca
+    # anterior, retirada el 2026-08-19.
+    return '<span style="font-weight:800;letter-spacing:-.02em">Contexto</span>'
 
 
 def _letrero_card(activo: dict, app_url: str, uid: str) -> str:
     """Una tarjeta (letrero) imprimible para un activo. Reutilizable en el índice y suelta."""
     aid = activo["id"]
-    direccion = escape(activo.get("direccion") or "Inmueble en Contexto AI")
+    direccion = escape(activo.get("direccion") or "Inmueble en Contexto")
     deep = f"{app_url.rstrip('/')}/a/{aid}"
     qr = _qr_svg_inline(deep)
     return f"""
@@ -125,7 +123,7 @@ _PAGE_CSS = f"""
 * {{ box-sizing: border-box; margin: 0; padding: 0; }}
 body {{
   background: {C_BG};
-  font-family: "Plus Jakarta Sans", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  font-family: "Geist", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
   color: {C_TEXT};
   display: flex; flex-wrap: wrap; gap: 18px;
   justify-content: center; padding: 24px;
@@ -175,7 +173,8 @@ def _html_doc(title: str, body: str) -> str:
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{escape(title)}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>{_PAGE_CSS}</style>
 </head><body>
 {body}
@@ -269,7 +268,7 @@ def main() -> None:
 
     # 3) Índice / hoja de contactos (imprime todos los letreros de una)
     (out / "index.html").write_text(
-        _html_doc("Contexto AI · Letreros para imprimir", "\n".join(cards)), encoding="utf-8"
+        _html_doc("Contexto · Letreros para imprimir", "\n".join(cards)), encoding="utf-8"
     )
 
     print("\n──────── RESUMEN ────────")

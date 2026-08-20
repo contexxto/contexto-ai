@@ -80,7 +80,7 @@ function popupHTML(p) {
   const verRutas = p.servicios_cercanos
     ? `<button class="ctx-rutas-btn" data-id="${esc(p.id)}" style="margin-top:9px;width:100%;padding:7px;border:none;border-radius:9px;cursor:pointer;font-weight:700;font-size:11.5px;background:linear-gradient(90deg,#1A7A76,#2DBDB6);color:#0E0D13">🚶 Ver rutas a pie</button>`
     : ''
-  return `<div style="font-family:'Plus Jakarta Sans',sans-serif;min-width:230px;max-width:280px">
+  return `<div style="font-family:var(--font-body);min-width:230px;max-width:280px">
     <div style="font-weight:700;font-size:13px;color:#F0ECE6;margin-bottom:6px">${esc(p.direccion || 'Activo')}</div>
     <div style="display:inline-block;font-size:10px;font-family:'IBM Plex Mono',monospace;padding:1px 7px;border-radius:999px;background:rgba(45,189,182,.12);color:${ruidoColor};border:1px solid ${ruidoColor}55;margin-bottom:6px">ruido ${esc(p.ruido || '—')}</div>${encajeChip}
     <div style="font-size:9.5px;color:#6E6A7A;margin:-2px 0 6px">ruido / vegetación: estimación por zona (heurístico), no medición</div>
@@ -343,7 +343,7 @@ export default function MapView({ seedIds, encajeById } = {}) {
   }
   function marcadorEtiqueta(coords, etiqueta, color) {
     const el = document.createElement('div')
-    el.style.cssText = `background:${color};color:#0E0D13;font-weight:800;font-size:11px;padding:3px 9px;border-radius:999px;font-family:'Plus Jakarta Sans',sans-serif;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.45)`
+    el.style.cssText = `background:${color};color:#0E0D13;font-weight:800;font-size:11px;padding:3px 9px;border-radius:999px;font-family:var(--font-body);white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.45)`
     el.textContent = etiqueta || ''
     capasRef.current.markers.push(new maplibregl.Marker({ element: el }).setLngLat(coords).addTo(mapRef.current))
   }
@@ -700,7 +700,7 @@ export default function MapView({ seedIds, encajeById } = {}) {
               rutaIds.push(...capas)
               r.coords.forEach(c => bounds.extend(c))
               const el = document.createElement('div')
-              el.style.cssText = `background:${RUTA_COL[i % 3]};color:#0E0D13;font-weight:800;font-size:11px;padding:3px 9px;border-radius:999px;font-family:'Plus Jakarta Sans',sans-serif;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.45)`
+              el.style.cssText = `background:${RUTA_COL[i % 3]};color:#0E0D13;font-weight:800;font-size:11px;padding:3px 9px;border-radius:999px;font-family:var(--font-body);white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.45)`
               el.textContent = `🚶 ${r.duracion_min} min · ${r.nombre}`
               rutaMarkers.push(new maplibregl.Marker({ element: el }).setLngLat(r.destino).addTo(map))
             })

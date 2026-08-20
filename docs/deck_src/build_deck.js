@@ -5,7 +5,7 @@ const A = (f) => path.join(__dirname, f);
 const BG = "0E0D13", SURF = "16151E", SURF2 = "1E1D28", BORDER = "2E2D3A";
 const TEAL = "2DBDB6", TEALB = "5EEAD4", GOLD = "E5C06A";
 const TEXT = "F0ECE6", MID = "A8A3B3", DIM = "6B6778";
-const FT = "Plus Jakarta Sans", FB = "Calibri";
+const FT = "Geist", FB = "Calibri";
 
 const p = new pptxgen();
 p.defineLayout({ name: "W", width: 13.333, height: 7.5 });

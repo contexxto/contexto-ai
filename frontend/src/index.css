@@ -47,7 +47,7 @@
   --text:        #FFFFFF;
   --text-mid:    #C9C9C9;
   --text-muted:  #C9C9C9;   /* alias compat */
-  --text-dim:    #8C8C8C;
+  --text-dim:    #959595;
 
   --success:     #5EEAD4;
   --warning:     #E5C06A;
@@ -60,6 +60,11 @@
   --accent:      #2DBDB6;
   --user-bg:     #1A7A76;
   --ai-bg:       #232323;
+
+  /* En oscuro los acentos pasan AA cómodos (teal 7.36:1, warning 9.80:1),
+     así que no necesitan variante. El único que fallaba era --text-dim:
+     5.07:1 sobre --bg pero 4.04:1 sobre --surface-2, donde vive la metadata
+     de chips y tarjetas. Subido a #959595 → 4.53:1 en la superficie peor. */
 
   /* Mapa Vivo — overlays SIEMPRE oscuros (sobre teselas CARTO dark); NO se overridean en tema claro.
      Superficies del design system: --surface-1 (#282828 = rgb 40,40,40) para paneles/tarjetas,
@@ -98,9 +103,21 @@ html[data-theme="light"] {
   --text:        #09090B;
   --text-mid:    #52525B;
   --text-muted:  #52525B;
-  --text-dim:    #A1A1AA;
 
-  --accent:      #14A79F;
+  /* Contraste AA en tema claro (medido 2026-08-19). Los valores de marca
+     —#2DBDB6, #E5C06A, #E0685A— se diseñaron contra fondo oscuro y sobre
+     blanco caen a 2.3:1, 1.7:1 y 3.3:1. Se conservan intactos para rellenos,
+     donde no hay requisito de contraste, y estas variantes los reemplazan
+     cuando el color es TEXTO o BORDE. Mismo matiz y saturación, luminosidad
+     bajada hasta cumplir 4.5:1 contra --surface-3 (#E7E7EA), que es la
+     superficie clara más oscura: así sirven en todo el tema, no solo sobre
+     blanco. */
+  --accent:           #1C746F;  /* era #14A79F — 2.98:1, no pasaba AA */
+  --teal-on-light:    #1C746F;  /* 5.56:1 sobre blanco · 4.51:1 sobre --surface-3 */
+  --warning-on-light: #846317;  /* 5.56:1 · 4.50:1  — la etiqueta ESTIMADO */
+  --coral-on-light:   #C03424;  /* 5.59:1 · 4.53:1 */
+  --text-dim:         #676772;  /* era #A1A1AA — 2.56:1, ilegible */
+
   --ai-bg:       #F4F4F5;
   --error-bg:    #FEF2F2;
   --error-border:#FECACA;

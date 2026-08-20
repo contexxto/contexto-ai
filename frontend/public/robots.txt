@@ -1,4 +1,4 @@
-# Contexto AI — robots.txt
+# Contexto — robots.txt
 # Protección del foso de datos: bloquea crawlers de IA/entrenamiento y de
 # motores de respuesta para que NO ingieran el catastro ni las páginas de datos.
 

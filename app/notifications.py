@@ -10,8 +10,8 @@ Patrón: fire-and-forget desde asyncio.create_task (no bloquea la respuesta HTTP
 
 Variables de entorno necesarias:
   RESEND_API_KEY      → API key de resend.com (gratis hasta 3 000 emails/mes)
-  NOTIFY_FROM_EMAIL   → Remitente, ej.: "Contexto AI <notifs@tudominio.com>"
-                        Sin dominio propio usa "Contexto AI <onboarding@resend.dev>"
+  NOTIFY_FROM_EMAIL   → Remitente, ej.: "Contexto <notifs@tudominio.com>"
+                        Sin dominio propio usa "Contexto <onboarding@resend.dev>"
   APP_URL             → https://contexto-ai-six.vercel.app
   VAPID_PRIVATE_KEY   → base64(PEM) generado con scripts/gen_vapid.py
   VAPID_PUBLIC_KEY    → base64url del punto público (gen_vapid.py)
@@ -29,7 +29,7 @@ log = logging.getLogger(__name__)
 
 # ── Config ──────────────────────────────────────────────────────────────────
 RESEND_API_KEY = os.getenv("RESEND_API_KEY")
-FROM_EMAIL     = os.getenv("NOTIFY_FROM_EMAIL", "Contexto AI <onboarding@resend.dev>")
+FROM_EMAIL     = os.getenv("NOTIFY_FROM_EMAIL", "Contexto <onboarding@resend.dev>")
 APP_URL        = os.getenv("APP_URL", "https://contexxto.com").rstrip("/")
 
 def _normalizar_vapid(bruto: str) -> str | None:
@@ -220,10 +220,10 @@ async def _send_email(*, to: str, subject: str, title: str, body: str, url: str)
          style="display:inline-block;padding:12px 28px;border-radius:10px;
                 background:#2DBDB6;color:#0E0D13;font-weight:800;
                 text-decoration:none;font-size:.95rem">
-        Abrir Contexto AI →
+        Abrir Contexto →
       </a>
       <p style="margin-top:28px;font-size:.75rem;color:#9C99AC">
-        Contexto AI · Inteligencia inmobiliaria en Quito
+        Contexto · Inteligencia del lugar en Quito
       </p>
     </div>
     """

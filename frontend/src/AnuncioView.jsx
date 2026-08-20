@@ -111,7 +111,7 @@ export default function AnuncioView({ id, onChat, onBack, onExpandMap }) {
           </button>
         )}
         <img src={sphereLogo} width={24} height={24} alt="" style={{ filter: 'drop-shadow(0 0 6px rgba(45,189,182,.4))' }} />
-        <span style={{ fontWeight: 800, fontSize: '.95rem' }}>Contexto <span style={{ color: C.teal }}>AI</span></span>
+        <span style={{ fontWeight: 800, fontSize: '.95rem', letterSpacing: '-.02em' }}>Contexto</span>
         <span style={{ marginLeft: 'auto', fontSize: '.66rem', color: C.muted }}>Letrero inteligente</span>
       </div>
 

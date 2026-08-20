@@ -1558,12 +1558,12 @@ export default function App() {
         <header style={{ display:'flex', alignItems:'center', gap:10, padding:'16px 0 12px', flexShrink:0 }}>
           <img src={sphereLogo} alt="Contexto" width={32} height={32} />
           <div>
-            <div style={{ fontWeight:800 }}>Contexto <span style={{ color:'var(--teal-text)' }}>AI</span></div>
+            <div style={{ fontWeight:800, letterSpacing:'-.02em' }}>Contexto</div>
             <div style={{ fontSize:'.72rem', color:'var(--text-muted)' }}>Conversación compartida · solo lectura</div>
           </div>
           <a href="/" style={{ marginLeft:'auto', fontSize:'.8rem', color:'var(--teal-text)',
                                textDecoration:'none', border:'1px solid rgba(45,189,182,.3)',
-                               borderRadius:999, padding:'6px 14px' }}>Abrir Contexto AI</a>
+                               borderRadius:999, padding:'6px 14px' }}>Abrir Contexto</a>
         </header>
         <div style={{ flex:1, overflowY:'auto', WebkitOverflowScrolling:'touch', minHeight:0 }}>
         {sharedErr && (
@@ -1616,7 +1616,7 @@ export default function App() {
               </button>
             </form>
             <div style={{ fontSize:'.72rem', color:'var(--text-muted)', textAlign:'center', marginTop:8 }}>
-              Gratis · sin registro · <a href="/" style={{ color:'var(--teal-text)', textDecoration:'none' }}>Conoce Contexto AI</a>
+              Gratis · sin registro · <a href="/" style={{ color:'var(--teal-text)', textDecoration:'none' }}>Conoce Contexto</a>
             </div>
           </div>
         )}

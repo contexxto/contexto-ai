@@ -1,5 +1,5 @@
 /**
- * Service Worker — Contexto AI
+ * Service Worker — Contexto
  * 1) Notificaciones push nativas cuando el corredor responde al lead.
  * 2) PWA: instalabilidad (requiere un handler de fetch) + respaldo offline del shell.
  * Se registra en App.jsx al cargar la app.
@@ -57,7 +57,7 @@ self.addEventListener('push', (event) => {
   let data = {}
   try { data = event.data?.json() ?? {} } catch { /* ignore */ }
 
-  const title   = data.title  ?? 'Contexto AI'
+  const title   = data.title  ?? 'Contexto'
   const body    = data.body   ?? 'Tienes un mensaje nuevo.'
   // El logo ACTUAL de la marca (los cuatro cuadros), no la esfera del favicon antiguo.
   // PNG y no SVG: Android renderiza mal el SVG en las notificaciones.

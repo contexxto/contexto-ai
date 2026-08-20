@@ -1,14 +1,30 @@
 /* Shared base for all Contexto preview cards */
-@import url("../colors_and_type.css");
+
+/* Importaba "../colors_and_type.css", un archivo que nunca existio en el
+   repositorio (cero apariciones en el historial de git). El import fallaba
+   en silencio, ningun var() resolvia y las 16 paginas se renderizaban en
+   serif sobre fondo blanco — con los rotulos de tema mintiendo.
+   Ahora apunta a la fuente de verdad real, la misma que usa la app, para
+   que el set no pueda desincronizarse del producto. */
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap");
+@import url("../frontend/src/index.css");
 
 * { box-sizing: border-box; }
+
+/* index.css trae `body { height: 100dvh; overflow: hidden }`, que es correcto
+   para el shell de la app pero recortaria estas paginas a una sola pantalla
+   sin scroll. Aqui son documentos, no un shell: se revierte a alto natural. */
 html, body {
   margin: 0;
   padding: 0;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-body);
-  overflow: hidden;
+  height: auto;
+  min-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 .card {
   padding: 24px 28px;

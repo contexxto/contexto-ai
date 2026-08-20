@@ -72,6 +72,9 @@ No es un portal. No compite por inventario. Compite por **la verdad del lugar**.
 5. **Integración continua.** 771 pruebas que no bloquean ningún despliegue.
 6. **Fuente real de ruido.** La vía coherente: que el corredor mida decibelios con el móvil durante la visita.
 7. **Observabilidad.** Un incidente de 1h26m se descubrió *"por casualidad, mirando otra cosa"*.
+8. **Elegir entre dos productos.** Además de Contexto existe **AuraReal** — tiendas online para inmobiliarias PYME, con nombre, precio y prototipos decididos el 2026-07-09. En la base de datos: `agencies` = 0 filas. Dos negocios sin validar, dos pagadores distintos, un solo fundador.
+
+> **Lo que hay que decir antes de enseñar el deck:** la presentación de visión pone el sello ✓ sobre *"tubería 2023"*, *"cédula sí"* y *"ruido real 7pm"*. Esos cuatro campos son declarados por el corredor, no verificados — y el propio agente tiene **prohibido** llamarlos verificados. En un producto cuyo diferencial es la honestidad, esa diapositiva es el mayor riesgo reputacional que hay. Se arregla reescribiéndola, no construyendo nada.
 
 ---
 

@@ -45,6 +45,15 @@ Los tres hechos que ordenan todo lo demás:
 
 **Riesgo mayor:** que el equipo siga construyendo capacidad sobre una hipótesis de adopción no validada. Todo lo construido desde julio (CRM Vivo, reenganche, embudo, avisos, puerta suave, hilos de handoff) sirve a un volumen de leads que hoy es **10 handoffs en total**.
 
+> ### ⚠️ Segunda pasada — los anexos cambian el cuadro
+> La primera versión de este informe auditó solo código y datos. Al ampliar el alcance a los artefactos no-código del repositorio (**125 documentos, 28 prototipos HTML, 82 imágenes, un deck, un red-team**) aparecieron tres cosas que no se ven desde el código:
+>
+> 1. **Existe un segundo producto con luz verde del fundador y cero rastro en el sistema.** `AuraReal` — tiendas para inmobiliarias PYME, con nombre decidido, pricing decidido y prototipos construidos el 2026-07-09. En la base: `agencies` = 0 filas. **Dos negocios sin validar compitiendo por un solo fundador** (Anexo A.2, gap nuevo en §18).
+> 2. **La pieza que vende la honestidad es la que la rompe.** El deck de visión pone el sello ✓ sobre *"tubería 2023"*, *"cédula sí"* y *"ruido real 7pm"* — los campos exactos que el prompt del agente prohíbe llamar verificados (Anexo A.6, H-13).
+> 3. **El proyecto ya se auto-destruyó la tesis, y tenía razón.** `lanzamiento-pyme/red-team.md` documenta 15 hallazgos —foso portable, ceguera de demanda, competidor equivocado, foso copiable en semanas— y los datos de producción confirman los cuatro críticos (Anexo A.3).
+>
+> **La comparación completa entre lo que dice ser, lo que es y lo que podría ser está en el Anexo B.**
+
 ---
 
 ## 2. Qué es Contexto AI
@@ -666,6 +675,10 @@ La sección obligatoria. Cada fila es una afirmación que aparece en la document
 | **H-10** | *"Cada lugar tiene un aura"* | **No existe un índice de aura.** Hay marca, un modo de mapa, y **una función de 7 condicionales** que devuelve una de 6 frases. `[VERIFICADO — app/rutas.py:557]` |
 | **H-11** | *"API-first... el motor que la banca de inversión y las constructoras integran"* — `ESTRATEGIA_API_First.md` | La **arquitectura** sí es API-first (lógica pura consumida por agente y REST). La **plataforma** no existe: sin OAuth de terceros, sin webhooks, sin entorno de pruebas, sin documentación pública, sin claves autoservicio, y con Market API y Scoring API **no implementadas**. El propio documento lo secuencia bien (*"deja que el primer integrador hale la API a existir"*) — la narrativa externa no siempre lo hace. `[VERIFICADO]` |
 | **H-12** | *"39 activos → QR + letrero imprimible"* | El generador funciona. **Hay 26 sesiones de QR en producción y todas apuntan al mismo inmueble.** Un letrero impreso en la calle, no 39. `[VERIFICADO]` |
+| **H-13** | Deck de visión, diapositiva 8: *"Ficha verificada · Tubería renovada 2023 ✓ · Cédula sí ✓ · Impermeabilización al día ✓ · **Ruido real 7pm** · medio"* | **El deck pone el sello ✓ sobre los cuatro campos que el prompt prohíbe llamar verificados.** Regla 3: *"LA FICHA TÉCNICA ES DECLARADA, NO VERIFICADA… PROHIBIDO presentarlos como 'verificable', 'documentado', 'comprobado'"*. Y *"ruido real"* no existe: es una tabla fija de 7 sectores. **La pieza que vende la honestidad es la que la rompe.** `[VERIFICADO — deck leído del XML]` (Anexo A.6) |
+| **H-14** | `Contexto_AI_Brand/BRAND.md`, *"identidad oficial aprobada"*: *"capas de contexto real: ruido, **seguridad**, transporte, vegetación"* | **El producto rechaza "seguridad" a conciencia.** `app/estilo_vida.py`: *"un veredicto de 'zona segura' es subjetivo, no verificable, y es exactamente la clase de juicio que históricamente se ha usado para redlining"*. La identidad oficial vende una capa que la ética del producto prohíbe. `[VERIFICADO]` (Anexo A.5) |
+| **H-15** | Cuatro sistemas de diseño documentados como oficiales o de referencia | **El producto desplegado no usaba ninguno.** `BRAND.md` pide Plus Jakarta Sans y *"glow sutil"*; `preview/` define Space Grotesk + JetBrains Mono; el frontend real corre **Geist + IBM Plex Mono** y anota *"superficies planas, cero glow"* (`Launcher.jsx:8`). ✅ **Se resolvió durante esta auditoría**: el `Contexto_Brand_Kit_2026_v1` que apareció el 19-ago a las 22:31 sí describe el producto real — está *medido sobre producción, no diseñado*. Queda retirar `BRAND.md`. `[VERIFICADO]` (Anexo A.5) |
+| **H-16** | *"aurareal 360 — el 360 ES el producto"*, luz verde del fundador el 2026-07-09 | **Un segundo negocio completo (marca, precio, prototipos, piloto) que no existe en el código ni en los datos:** `agencies` = 0 filas, `owner_agency_id` nulo en los 40 activos, ninguna tienda desplegada. Seis semanas después de la luz verde. `[VERIFICADO]` (Anexo A.2) |
 
 > **Lo que hay que reconocerle al proyecto:** casi todas estas brechas ya están señaladas *dentro del propio repositorio* — en las auditorías de fallos silenciosos, en el reporte de hidratación, en las notas de degradación. **La cultura de honestidad interna es real y poco común.** El problema no es que el equipo se engañe: es que la narrativa externa se escribe desde lo construido, y lo construido se adelantó mucho a lo adoptado.
 
@@ -718,6 +731,10 @@ Los 10 más valiosos, ordenados por valor defendible.
 | 18 | **Sin incorporación.** Decisión consciente, pero el nuevo usuario no sabe qué puede pedir. | **MEDIO** | UX |
 | 19 | **Accesibilidad sin auditar** — cero evidencia de trabajo en accesibilidad. | **MEDIO** | UX |
 | 20 | **Sin control ni visibilidad de costes.** Ninguna cifra de gasto en Google/Anthropic/Voyage en ningún sitio. | **MEDIO** | NEGOCIO |
+| **21** | **Dos productos sin validar compiten por un solo fundador.** Contexto (app del comprador) y AuraReal (tiendas PYME, luz verde 2026-07-09) tienen pagadores, marcas y sistemas de diseño distintos. En datos: 1 inmueble real y `agencies` = 0. **No se cierra construyendo: se cierra eligiendo.** (Anexo A.2) | **CRÍTICO** | NEGOCIO |
+| **22** | **El material de venta contradice la doctrina del producto.** El deck marca ✓ sobre dato declarado y afirma *"ruido real"*; `BRAND.md` vende "seguridad" como capa. Es el riesgo reputacional más alto, porque el diferencial declarado ES la honestidad. (Anexo A.6, A.5) | **ALTO** | PRODUCTO |
+| **23** | **Los hallazgos críticos del red-team propio siguen abiertos en el negocio.** Se aplicaron al texto del pitch (julio); los datos de agosto confirman que el problema real —foso portable, cero demanda, competidor CRM— no se movió. (Anexo A.3) | **ALTO** | NEGOCIO |
+| **24** | **Cuatro sistemas de diseño y ninguno es el que corre.** Coste de confusión para cualquiera que se sume al equipo. (Anexo A.5) | **MEDIO** | UX |
 
 ---
 
@@ -977,4 +994,193 @@ En este orden, y sin funcionalidades nuevas:
 
 ---
 
-*Auditoría realizada el 2026-08-19 sin modificar un solo archivo del proyecto. Todas las consultas a la base fueron `SELECT`. Todas las sondas a producción fueron `GET`, salvo dos `POST` con cuerpo inválido para medir la puerta de autenticación sin escribir datos.*
+---
+
+# ANEXO A — Activos no-código
+
+> **Segunda pasada (2026-08-19, misma sesión).** La primera auditoría se limitó al código y a los datos, y despachó `mockups/`, `preview/`, `lanzamiento-pyme/`, `Contexto_AI_Brand/` y `contenido/` como *"no producto"*. **Fue un error de alcance.** Ahí vive la mitad de la historia: las decisiones de producto, las marcas, los prototipos, la investigación competitiva y —sobre todo— un segundo modelo de negocio completo que el código no refleja.
+
+## A.1 Inventario completo de lo no-código `[VERIFICADO]`
+
+| Tipo | Cuántos | Dónde | Qué son |
+|---|---:|---|---|
+| Documentos `.md` | **125** (94 en `docs/`) | `docs/`, `lanzamiento-pyme/`, `contenido/` | Especificaciones, auditorías, planes, estudios, preparación de reuniones |
+| Documentos `.docx` | **43** | `docs/` | Los mismos `.md` convertidos para enviar |
+| Imágenes | **82** (45 png · 28 svg · 9 jpg) | ver desglose abajo | Logos, capturas de referencia, visuales de contenido, arte del deck |
+| Prototipos `.html` | **28** | `preview/` (17), `lanzamiento-pyme/` (4), `mockups/` (3), `Contexto_AI_Brand/` (2), `docs/` (2) | Sistema de diseño, maquetas y la oferta PYME |
+| Presentación | 1 `.pptx` | `docs/DECK_Contexto_Vision_v0.pptx` | 12 diapositivas de visión |
+| Hoja de cálculo | 1 `.xlsx` | `docs/PREP_MAKLO_3Numeros.xlsx` | Preparación de negociación |
+| Datos `.json` / `.csv` | 4 + 4 | `docs/`, `scripts/` | Parroquias, estudio de habitabilidad, plantillas de corredor |
+| **Vídeo** | **0** | — | No hay ni un archivo de vídeo en el repositorio `[VERIFICADO]` |
+| **Cuadernos (notebooks)** | **0** | — | No hay `.ipynb` |
+
+**Las 82 imágenes, por origen:**
+
+| Carpeta | Nº | Qué es |
+|---|---:|---|
+| `docs/branding/cred-reference/screenshots/` | **24** | **Captura competitiva de cred.club** (ver A.4) |
+| `logo/` + `Contexto_AI_Brand/logo/` | 22 | Los mismos 11 SVG, **duplicados exactos** |
+| `contenido/despachos/visuals/` | 10 | Portadas de LinkedIn generadas por script |
+| `frontend/public/` + `src/assets/` | 12 | Iconos de la PWA, hero, esfera |
+| `docs/branding/` | 8 | Banners y portadas de artículo |
+| `docs/deck_src/` | 5 | Arte del deck, **generado por código** (`gen_assets.py`) |
+
+## A.2 🔴 El hallazgo mayor: existe un SEGUNDO producto, con nombre y precio
+
+`lanzamiento-pyme/` no es material suelto. Es **una línea de negocio entera, decidida por el fundador, con marca, precio, prototipos y su propio red-team** — y **no aparece en ninguna parte del código ni de los datos**.
+
+**Qué es:** *"Shopify inmobiliario"* — storefronts (tiendas online) para inmobiliarias PYME de Quito, con el motor de Contexto debajo. El pitch lo llama textualmente **"el caballo de Troya"**: la página bonita por fuera, la verdad verificada por dentro. `[VERIFICADO — `lanzamiento-pyme/pitch-onepager.md`]`
+
+**Decisiones del fundador ya tomadas** `[VERIFICADO]`:
+
+| Fecha | Decisión | Dónde consta |
+|---|---|---|
+| 2026-07-09 | **Nombre: `AuraReal`** (pendiente registro SENADI) | `naming.md`, `pitch-onepager.md` |
+| 2026-07-09 | **"El 360 ES el producto"** — la monetización es un SaaS mensual, no un fee por lead | `pricing-detalle.md` |
+| 2026-07-09 | **Luz verde a la Fase 1** (piloto manual con 1-3 inmobiliarias) | `FASE1_PILOTO.md` |
+| 2026-07-09 | La escalera colapsa a 3 escalones: tienda $0 → 360 SaaS → inmobiliaria | `pricing-detalle.md` |
+
+**Los artefactos:** un torneo de 12 nombres con chequeo de dominio y colisiones; un pitch one-pager; un detalle de pricing con unit economics y tres experimentos; un guion de demo; una convocatoria al piloto; un prompt maestro para generar la landing en Lovable; y **145 KB de prototipos HTML** (`landing.html`, `landing-v2.html`, `storefront-demo.html`, `recap.html`).
+
+**Estado real, en datos:** la tabla `agencies` tiene **0 filas**, `owner_agency_id` es nulo en los 40 activos, y no hay ninguna tienda desplegada. **La luz verde es del 9 de julio; seis semanas después no hay una sola inmobiliaria en el sistema.** `[VERIFICADO]`
+
+**Tres nombres conviviendo en los artefactos** — el prototipo no siguió a la decisión:
+
+| Artefacto | Nombre que usa |
+|---|---|
+| `storefront-demo.html` (título) | **Cimiento** ← el provisional, descartado el 09-jul |
+| `landing.html`, `landing-v2.html` (título) | **Aura** |
+| `recap.html`, `pitch-onepager.md`, `pricing-detalle.md` | **AuraReal** ← la decisión vigente |
+
+## A.3 🟢 El activo no-código más valioso: el red-team contra la propia tesis
+
+`lanzamiento-pyme/red-team.md` es, con diferencia, **el documento más valioso del repositorio para la conversación que viene** — porque el proyecto ya intentó destruir su propia tesis y dejó por escrito dónde se rompe.
+
+15 hallazgos, **6 críticos, todos marcados como aplicados**. Los cuatro que atacan el foso:
+
+| # | Hallazgo (literal) | Por qué importa |
+|---|---|---|
+| **C-9** | *"el foso se autodestruye: el dato verificado es del corredor (portable)... el corredor puede volcar ese mismo dato en un storefront competidor mañana"* | **Ataca el activo nº 1 de esta auditoría.** Si el dato verificado es del corredor y es portable, no es foso: es inventario prestado. |
+| **C-10** | *"el foso del portal no es el canal, es la agregación de compradores... el único influjo cierto es el QR del letrero (embudo diminuto)"* | Nombra el problema de la demanda que los datos confirman: 26 sesiones de QR, un letrero, 9 conversaciones en agosto. |
+| **C-11** | *"el competidor que ENTRA a Ecuador (LIDZ, Pulppo) es un CRM proptech para corredores — la misma categoría — que ya entrega dominio+marca+CRM+leads por defecto"* | **El enemigo real tiene nombre y no es un portal.** No aparece en ningún otro documento del repositorio. |
+| **C-12** | *"exageración del foso: 'toma años' sobre datos abiertos (copiable en semanas)"* | Coincide con el veredicto de §25: los POIs de Overture/OSM son el suelo, no el foso. |
+
+**Que este documento exista dice más del equipo que cualquier funcionalidad.** Que sus hallazgos críticos sigan siendo ciertos —C-9 y C-10 los confirman los datos de producción— dice que aplicar el arreglo *en el texto del pitch* no arregló el problema *en el negocio*.
+
+## A.4 Investigación competitiva y de diseño
+
+`docs/branding/cred-reference/` es una **extracción real de cred.club** (24 capturas + `brand.json` + `styleguide.json` + `sitemap.json` + `home.md.json`), hecha vía la API de Context.dev. `LINEA_GRAFICA_CRED_Storefronts.md` destila de ahí seis decisiones de diseño **extraídas, no supuestas**, y verifica que NeoPOP —el sistema de diseño de CRED— es Apache 2.0, o sea legalmente reutilizable. `[VERIFICADO]`
+
+Es investigación de diseño seria y con procedencia — la misma disciplina que el proyecto aplica a los datos de entorno, aplicada a la estética. **Está limitada a AuraReal por decisión explícita**; la app de Contexto conserva su propio sistema.
+
+## A.5 🟠 Cuatro sistemas de diseño, y el producto no usa ninguno de los documentados
+
+| Fuente | Tipografía | Color / efecto | Estado |
+|---|---|---|---|
+| `Contexto_AI_Brand/BRAND.md` — *"identidad oficial aprobada"* | **Plus Jakarta Sans** | Esfera teal→coral **con glow sutil** | ❌ No es lo que corre |
+| `preview/` (17 páginas de sistema de diseño) | **Space Grotesk + JetBrains Mono** | Paleta azul primaria | ❌ No es lo que corre |
+| `docs/branding/PHILOSOPHY_Aura_Cartografica.md` | — | Carbón + turquesa + dorado, **"sin sombras difusas"** | 🟡 Filosofía, aplicada a medias |
+| `docs/branding/LINEA_GRAFICA_CRED_Storefronts.md` | Gilroy + Overpass | Casi-monocromo cred.club | 🟡 Solo para AuraReal |
+| **`frontend/src/index.css` — lo que de verdad se sirve** | **Geist + IBM Plex Mono** | *"Superficies planas, cero glow"* (`Launcher.jsx:8`) | ✅ **Producción** |
+
+`[VERIFICADO]` — cuatro direcciones documentadas, tres tipografías distintas, y el producto desplegado no coincide con ninguno de los documentos. El `BRAND.md` que se declara *"identidad oficial aprobada"* pide explícitamente un glow que el código anota haber quitado a propósito.
+
+> ### ✅ Corrección en caliente — esto se resolvió durante la auditoría
+> A las **22:31 del 2026-08-19**, mientras se escribía este anexo, aparecieron en `docs/` dos archivos sin versionar: `Contexto_Brand_Kit_2026_v1.docx` y su `.pdf`. **No los produjo esta sesión.** Leído su XML: `[VERIFICADO]`
+>
+> - Se declara **`CONTEXTO · BRAND KIT · v2026.1 · Inteligencia del lugar`**.
+> - Su nota de método es exactamente la disciplina que este informe echaba en falta: *"La sección de color y tipografía **no se diseñó: se midió** sobre la app en producción (contexxto.com) el 19 de agosto de 2026 — 56 tokens, dos temas. Los contrastes WCAG están **calculados, no estimados**. Lo que aún no existe va marcado PENDIENTE; lo que es criterio y no medición va marcado PROPUESTA."*
+> - **Menciona Geist e IBM Plex** — o sea, coincide con lo que de verdad se sirve.
+> - **No menciona** Plus Jakarta Sans, Space Grotesk, "glow" ni **"seguridad"**.
+>
+> **Es el quinto documento de marca y el primero que describe el producto real.** Cierra H-15 (la divergencia tipográfica) y desactiva H-14 (la capa de "seguridad" vendida) **siempre que `BRAND.md` se retire o se marque como superado** — hoy los dos conviven y `BRAND.md` sigue diciendo *"identidad oficial aprobada"*.
+>
+> Lo dejo anotado en vez de reescribir el hallazgo, porque el hallazgo era cierto cuando se midió y la corrección es información útil: **muestra que el equipo aplica su propia doctrina —medir en vez de suponer, rotular lo pendiente— también fuera del código.**
+
+**Y una contradicción de fondo, no de estética:** `BRAND.md` describe el producto como *"capas de contexto real: ruido, **seguridad**, transporte, vegetación, vida de barrio"*. **El producto rechaza "seguridad" a conciencia** — `app/estilo_vida.py` lo documenta: *"no por falta de dato — SÍ hay POIs de UPC/policía — sino porque un veredicto de 'zona segura' es subjetivo, no verificable, y es exactamente la clase de juicio que históricamente se ha usado para redlining"*. **La identidad oficial vende una capa que la ética del producto prohíbe.**
+
+## A.6 🔴 El deck de visión vende como verificado lo que el prompt prohíbe llamar verificado
+
+`docs/DECK_Contexto_Vision_v0.pptx`, 12 diapositivas, leído directamente del XML. `[VERIFICADO]`
+
+Es la formulación más limpia de la narrativa: *"El que más arriesga es el que menos sabe"*, *"Toda la IA fue al lado de la oferta"*, *"Donde otros describen, nosotros verificamos"*, *"No vinimos a listar casas. Vinimos a cambiar de qué lado está la verdad."* Como pieza de posicionamiento es excelente.
+
+**Y tiene dos afirmaciones que el propio producto contradice:**
+
+| Diapositiva | Lo que muestra | Lo que dice el producto |
+|---|---|---|
+| **8** — *"Ficha verificada"* | `Tubería renovada 2023 ✓` · `Cédula sí ✓` · `Impermeabilización al día ✓` | **Regla 3 del prompt:** *"LA FICHA TÉCNICA ES DECLARADA, NO VERIFICADA... PROHIBIDO presentarlos como 'verificable', 'documentado', 'comprobado', 'estado real' o 'certificado'"*. El deck usa el sello ✓ sobre los cuatro campos que el agente tiene prohibido llamar verificados. |
+| **8** — *"**Ruido real 7pm** · medio"* | Presentado dentro del bloque "Ficha verificada" | **No existe ninguna fuente de ruido.** Es una tabla fija de 7 sectores de Quito (`app/scores_heuristicos.py`, 67 líneas). *"Ruido real"* es la afirmación menos sostenible de todo el material. |
+| **4** | *"Verificado en terreno · Tubería 2023 · Cédula sí"* | Mismo problema: lo que el corredor declara en un formulario se presenta como verificación de terreno. |
+| **6** | *"El motor: el loop del corredor — **más inteligente con cada cliente que lo toca**"* | 4 curaciones, un solo día, un solo corredor, un solo inmueble. El motor no ha girado. |
+
+**Esto no es una exageración de marketing menor.** El proyecto entero se define por distinguir dato medido de dato declarado — y su pieza de venta principal borra esa distinción justo en la diapositiva que la ilustra.
+
+## A.7 Otros artefactos
+
+| Artefacto | Estado |
+|---|---|
+| `contenido/` — máquina de contenido | **9 despachos, 16 piezas** generadas entre 2026-07-14 y 2026-08-18, todas borradores. La constitución prohíbe la publicación automatizada. Qué se publicó de verdad: `[NO VERIFICADO]` — el repositorio no lo registra. |
+| `mockups/` (3 HTML) | *"propuesta limpia"* de Home, Mapa Vivo y Estratega. Maquetas de exploración anteriores a la interfaz actual. **Deprecadas de hecho.** |
+| `preview/` (17 HTML) | Sistema de diseño navegable (color, tipografía, espaciado, elevación, tarjeta de inmueble). Bien hecho y **desalineado con el producto** (A.5). |
+| `docs/*.docx` (43) | Conversiones de los `.md` para enviar. **Riesgo conocido:** el 2026-08-18 se borró un `.docx` de junio porque *"contradecía al .md y se podía enviar por error"* (commit real). El riesgo sigue vivo con los otros 42. |
+| `docs/PREP_*` (4) + `NDA_Contexto_GrupoBolivar` + `Contexto_x_InmobIA_OnePager` | Artefactos comerciales de mesas reales: MAKLO, Grupo Bolívar, InmobIA, Algoritmo Studio, LINDEN. **La actividad comercial es mucho mayor que la actividad de producto.** |
+| `docs/CONCEPTO_Cuadra_Viva.md` | Concepto de agosto (vecinos que mejoran su manzana con dato medido). Sin código asociado. |
+
+---
+
+# ANEXO B — Lo que dice ser · lo que es · lo que podría ser
+
+> La comparación que pediste. Cada fila cita su evidencia. **Ninguna de las tres columnas es la correcta por sí sola** — el valor está en la distancia entre ellas.
+
+## B.1 La tabla
+
+| Dimensión | LO QUE DICE SER (deck, marca, docs) | LO QUE ES HOY (código + datos) | LO QUE PODRÍA SER (defendible) |
+|---|---|---|---|
+| **Identidad** | *"El sistema vivo de la verdad del lugar"* · *"La IA honesta para la decisión más grande de tu vida"* (deck 1, 5) | **Un motor de entorno a pie, con procedencia, envuelto en un agente honesto.** Cubre una ciudad, sirve 9 conversaciones al mes y tiene 1 inmueble real. | **La capa de verdad de entorno que otros productos consultan.** No el destino del usuario: el sustrato del que otros tiran. |
+| **El foso** | *"Un activo que compone solo... más inteligente con cada cliente que lo toca"* (deck 6) | **8.512 POIs propios (real) + 4 curaciones humanas (el mecanismo, sin girar).** Su tubería lleva rota desde el 08-18 y corre en un portátil. | **El único foso real es la frescura verificada con responsable.** Los POIs abiertos son el suelo; el corredor con foto, coordenada y fecha es el techo — si contribuye. |
+| **La verificación** | *"Ficha verificada · Tubería 2023 ✓ · **Ruido real 7pm** ✓"* (deck 8) | **Servicios, transporte y distancias: verificados de verdad.** Ficha técnica: **declarada**, y el prompt prohíbe llamarla verificada. Ruido, tráfico, vegetación: **tabla fija de 7 sectores**. | **Verificación con responsable identificable**, al estilo de lo que el propio despacho del 18-ago detectó en HomeSelf AI: *"Sara vio 500 m², abril 2026"*. Eso sí es defendible; el ✓ sin nombre detrás, no. |
+| **El bucle del corredor** | *"El loop de contribución del corredor **es el producto**"* (`CLAUDE.md`) | **4 curaciones, 2026-06-18, un corredor, un inmueble. Cero desde entonces.** | Un bucle que **paga al corredor en leads, no en promesas de dato**. La pregunta abierta: por qué contribuiría. |
+| **El competidor** | *"Los portales"* (Plusvalía, Properati) y *"constructores de webs"* (deck, pitch) | **Su propio red-team ya lo desmintió (C-11): el rival real es un CRM proptech —LIDZ, Pulppo— que ya da dominio, marca, CRM y leads.** Y Hiinmo tiene 28 agentes de distribución. | Competir donde el CRM no puede: **no en el canal, sino en el dato del entorno con procedencia**. El CRM no puede verificar una farmacia. |
+| **El pagador** | *"aurareal 360, SaaS mensual"* — inmobiliaria PYME (decisión 09-jul) | **`agencies` = 0 filas. 2 corredores. 0 ingresos comprobables.** | El pagador plausible es quien **sangra por el dato malo**: el que pierde una visita porque el mapa mentía. Puede no ser la PYME. |
+| **La demanda** | *"tu canal propio, tus leads son tuyos"* | **Su propio red-team lo desmintió (C-10): el foso del portal es la agregación de compradores, no el canal.** 10 dispositivos en agosto. | **El tráfico tendrá que venir del contenido y del canal, no del producto.** La máquina de despachos y el estudio de las 40 parroquias son la munición; hoy no están conectados a nada. |
+| **La marca** | *"Cada lugar tiene un aura"* · esfera teal→coral con glow (`BRAND.md`, *"oficial aprobada"*) | **Cuatro sistemas de diseño documentados; el producto no usa ninguno.** "Aura" = marca + un modo de mapa + **6 frases en 7 condicionales**. | *"Aura"* funciona como **promesa**, no como métrica. Nombrar lo medible (caminabilidad, alcanzable a pie) y dejar el adjetivo al usuario — que es la doctrina que el producto ya aplica bien. |
+| **El alcance** | *"API-first... el motor que la banca de inversión y las constructoras integran"* | **Una `API_KEY` global, sin OAuth, sin webhooks, sin documentación, sin facturación. Y una sola ciudad.** | **Herramienta para agentes de IA.** Las 9 herramientas ya tienen la forma de un servidor MCP. El cuello no es la interfaz: es la cobertura. |
+| **La ética** | *"Fair Housing por construcción, no por obligación"* (deck 10) | **Sustancialmente cierto** — 4 capas, lista blanca cerrada, esquema cerrado. **Con dos fugas:** `ideal_para: "Familia de 4 personas"` en producción, y `BRAND.md` vendiendo "seguridad" como capa. | **El activo mejor construido y peor explotado.** Es defensa legal, y en un mercado que empieza a auditar la IA, es argumento de venta. |
+
+## B.2 Las tres distancias, nombradas
+
+**Distancia 1 — Entre lo que dice y lo que es: el sello ✓ puesto sobre dato declarado.**
+No es que el proyecto exagere de forma difusa. Es concreto y localizable: el deck pone un ✓ sobre tubería, cédula, impermeabilización y *"ruido real"*, cuatro campos que el propio prompt del agente prohíbe llamar verificados. **La distancia no está en el producto —que es honesto— sino en el material que lo vende.** Es la brecha más fácil de cerrar de todo este informe: se arregla reescribiendo dos diapositivas, no construyendo nada.
+
+**Distancia 2 — Entre lo que es y lo que podría ser: el mecanismo de captura no ha girado.**
+Todo lo demás está construido. Lo único que separa a Contexto de ser lo que dice ser son **cuatro curaciones que nunca se convirtieron en cuarenta**. No falta código: falta la respuesta a por qué un corredor ocupado contribuiría. El propio red-team (C-9) ya avisó de que, aunque contribuya, el dato es portable — así que la respuesta tiene que incluir **por qué el dato vale más dentro de Contexto que fuera**.
+
+**Distancia 3 — Entre dos productos que compiten por el mismo fundador.**
+Contexto (app del comprador) y AuraReal (tiendas para PYME) son **dos negocios distintos, con dos pagadores distintos, dos marcas distintas y dos sistemas de diseño distintos**, decididos con seis semanas de diferencia y ambos sin validar. El código sirve al primero; las decisiones del fundador de julio apuntan al segundo; los datos no muestran movimiento en ninguno. **Esta es la distancia más cara**, porque no se cierra construyendo: se cierra eligiendo.
+
+## B.3 Lo que esta segunda pasada cambia del informe
+
+| Sección | Qué cambia |
+|---|---|
+| §17 Activos | **Sube uno nuevo al top:** `red-team.md`, por ser el único documento que ataca la tesis con nombres propios (LIDZ, Pulppo) y hallazgos que los datos confirman. |
+| §16 Realidad vs narrativa | **Tres contradicciones nuevas:** H-13 el deck marca ✓ sobre dato declarado; H-14 `BRAND.md` vende "seguridad", que el producto rechaza; H-15 cuatro sistemas de diseño y el producto no usa ninguno. |
+| §18 Gaps | **Uno nuevo, y es crítico:** dos productos sin validar compitiendo por un solo fundador (AuraReal con luz verde de julio y `agencies` = 0). |
+| §19 Qué NO hacer | **Se refuerza:** no construir el generador self-serve de AuraReal. El propio `MODELO §6` lo marca *"sin construir"* y el red-team ya quitó del pitch la promesa de *"en una hora"* por no ser medible. |
+| §25 Hipótesis estratégica | **Se confirma desde dentro:** C-12 dice lo mismo que §25 —el foso de datos abiertos es *"copiable en semanas"*— sin haberse leído el uno al otro. Dos análisis independientes con el mismo veredicto. |
+
+## B.4 La pregunta para la fase 2
+
+Si la siguiente conversación es destruir la tesis, estos son los tres puntos donde el propio repositorio ya la tiene rota — y valen más que cualquier objeción externa, porque vienen con evidencia de casa:
+
+1. **C-9 (portabilidad).** Si el dato verificado lo produce y lo posee el corredor, ¿qué impide que se lo lleve? Hoy: nada. **Y el pitch promete explícitamente que se lo puede llevar.**
+2. **C-10 (demanda).** Contexto es una herramienta del lado de la oferta que compite contra agregadores de demanda. 10 dispositivos en agosto lo confirman. ¿De dónde sale el tráfico?
+3. **C-11 (competidor).** LIDZ y Pulppo entran a Ecuador con la misma propuesta y capital. Aparecen **una sola vez en 125 documentos**, en un red-team de julio, y en ningún plan posterior.
+
+Y una cuarta que no está en ningún documento del repositorio, y que esta auditoría añade:
+
+4. **¿Contexto es un producto o es una capa?** Todo lo verificado como sólido —POIs con procedencia, isócronas propias, entorno con fuente, las 9 herramientas— es **infraestructura**. Todo lo verificado como débil —inventario, CRM, embudo, tiendas— es **producto**. El repositorio está construyendo un producto sobre una infraestructura que es mejor que él.
+
+---
+
+*Auditoría realizada el 2026-08-19 sin modificar un solo archivo del proyecto. Todas las consultas a la base fueron `SELECT`. Todas las sondas a producción fueron `GET`, salvo dos `POST` con cuerpo inválido para medir la puerta de autenticación sin escribir datos. Los anexos A y B son una segunda pasada del mismo día, ampliando el alcance del código a los artefactos no-código del repositorio.*

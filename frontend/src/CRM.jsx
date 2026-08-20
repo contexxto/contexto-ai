@@ -600,7 +600,7 @@ export default function CRM() {
         </div>
       )}
 
-      {err &&<div style={{ color: '#E0685A', fontSize: '.85rem' }}>⚠️ No se pudieron cargar los interesados.</div>}
+      {err &&<div style={{ color: '#E0685A', fontSize: '.85rem' }}><AlertTriangle size={14} style={{ verticalAlign: '-2px', marginRight: 5 }} />No se pudieron cargar los interesados.</div>}
       {!d && !err && <div style={{ color: C.muted, padding: '24px 0', textAlign: 'center' }}>Cargando…</div>}
 
       {/* Modo ANÁLISIS VIVO (chip "Análisis"): SPLIT — el Estratega a la izquierda re-enfoca el dashboard

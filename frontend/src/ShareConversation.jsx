@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import axios from 'axios'
-import { X, Lock, Globe, Check, Copy } from 'lucide-react'
+import { X, Lock, Globe, Check, Copy, AlertTriangle } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 
 const C = {
@@ -96,7 +96,7 @@ export default function ShareConversation({ sessionId, onClose }) {
           </div>
         ) : (
           <>
-            {error && <div style={{ color: '#E0685A', fontSize: '.82rem', marginBottom: 10 }}>⚠️ {error}</div>}
+            {error && <div style={{ color: '#E0685A', fontSize: '.82rem', marginBottom: 10 }}><AlertTriangle size={14} style={{ verticalAlign: '-2px', marginRight: 5 }} />{error}</div>}
             <button onClick={compartir} disabled={loading}
               style={{ width: '100%', padding: '12px', borderRadius: 12, border: 'none',
                        cursor: loading ? 'default' : 'pointer', fontWeight: 800, fontSize: '.92rem',

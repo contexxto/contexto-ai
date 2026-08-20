@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
-import { X, Users, RefreshCw, Flame, ArrowLeft, Send, MessageCircle, Sparkles, Copy, Check } from 'lucide-react'
+import { X, Users, RefreshCw, Flame, ArrowLeft, Send, MessageCircle, Sparkles, Copy, Check, AlertTriangle } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import { renderMarkdown } from './markdown'
 
@@ -79,7 +79,7 @@ export default function LeadsPanel({ activo, onClose }) {
             </div>
             <div style={{ fontSize: '.78rem', color: C.muted, marginBottom: 14 }}>{activo.direccion}</div>
 
-            {err && <div style={{ color: '#E0685A', fontSize: '.85rem' }}>⚠️ No se pudieron cargar los interesados.</div>}
+            {err && <div style={{ color: '#E0685A', fontSize: '.85rem' }}><AlertTriangle size={14} style={{ verticalAlign: '-2px', marginRight: 5 }} />No se pudieron cargar los interesados.</div>}
             {!d && !err && <div style={{ color: C.muted, padding: '24px 0', textAlign: 'center' }}>Cargando…</div>}
 
             {d && (
@@ -311,7 +311,7 @@ export function LeadChat({ activo, lead, onBack }) {
 
       {error && (
         <div style={{ color: '#E0685A', fontSize: '.76rem', textAlign: 'center', marginTop: 8, flexShrink: 0 }}>
-          ⚠️ {error}
+          <AlertTriangle size={14} style={{ verticalAlign: '-2px', marginRight: 5 }} />{error}
         </div>
       )}
 

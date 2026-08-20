@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import axios from 'axios'
-import { X } from 'lucide-react'
+import { X, AlertTriangle } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import sphereLogo from './assets/sphere.svg'
 
@@ -102,7 +102,7 @@ export default function ConvierteteCorredor({ onClose, onUpgraded }) {
           </div>
         )}
 
-        {error && <div style={{ color: C.coral, fontSize: '.82rem', marginTop: 14 }}>⚠️ {error}</div>}
+        {error && <div style={{ color: C.coral, fontSize: '.82rem', marginTop: 14 }}><AlertTriangle size={14} style={{ verticalAlign: '-2px', marginRight: 5 }} />{error}</div>}
 
         <button onClick={activar} disabled={loading}
           style={{

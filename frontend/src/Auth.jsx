@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { X } from 'lucide-react'
+import { X, AlertTriangle, Check } from 'lucide-react'
 import { supabase } from './supabaseClient'
 import sphereLogo from './assets/sphere.svg'
 
@@ -234,8 +234,8 @@ export default function Auth({ onClose, onAuthed, motivo = null, initialMode = '
             </div>
           )}
 
-          {error && <div style={{ color: C.coral, fontSize: '.82rem' }}>⚠️ {error}</div>}
-          {info && <div style={{ color: 'var(--accent)', fontSize: '.82rem' }}>✅ {info}</div>}
+          {error && <div style={{ color: C.coral, fontSize: '.82rem' }}><AlertTriangle size={14} style={{ verticalAlign: '-2px', marginRight: 5 }} />{error}</div>}
+          {info && <div style={{ color: 'var(--accent)', fontSize: '.82rem' }}><Check size={14} style={{ verticalAlign: '-2px', marginRight: 5 }} />{info}</div>}
 
           <button type="submit" disabled={loading}
             style={{

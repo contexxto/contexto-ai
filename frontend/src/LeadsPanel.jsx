@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
-import { X, Users, RefreshCw, Flame, ArrowLeft, Send, MessageCircle, Sparkles, Copy, Check, AlertTriangle } from 'lucide-react'
+import { X, Users, RefreshCw, Flame, ArrowLeft, Send, MessageCircle, Sparkles, Copy, Check, AlertTriangle, Thermometer, Snowflake, Moon } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import { renderMarkdown } from './markdown'
 
@@ -9,12 +9,19 @@ const C = {
   text: 'var(--text)', muted: 'var(--text-mid)', line: 'var(--border)',
 }
 const NIVEL = {
-  caliente: { c: '#E0685A', e: '🔥' }, tibio: { c: '#E8B84B', e: '🟡' }, frio: { c: '#5E9BE0', e: '🔵' },
+  caliente: { c: '#E0685A', Icon: Flame }, tibio: { c: '#E8B84B', Icon: Thermometer }, frio: { c: '#5E9BE0', Icon: Snowflake },
 }
+// Icono de temperatura del lead. Componente y no expresion inline para que
+// el JSX siga leyendose.
+const NivelIcon = ({ nivel, size = 13 }) => {
+  const N = NIVEL[nivel]
+  return N ? <N.Icon size={size} color={N.c} style={{ verticalAlign: '-2px' }} /> : null
+}
+
 const FRESCURA = {
   activo: { c: '#2DBDB6', lbl: 'Activo' },
-  dormido: { c: '#E8B84B', lbl: '😴 Dormido' },
-  frio_profundo: { c: '#5E9BE0', lbl: '❄️ Muy frío' },
+  dormido: { c: '#E8B84B', Icon: Moon, lbl: 'Dormido' },
+  frio_profundo: { c: '#5E9BE0', Icon: Snowflake, lbl: 'Muy frío' },
 }
 
 // "hace 3d" / "hace 5h" / "hace 12m" a partir de un ISO string.
@@ -109,7 +116,7 @@ export default function LeadsPanel({ activo, onClose }) {
                         <div key={i} style={{ border: `1px solid ${(pide || l.handoff_sugerido) ? n.c + '66' : C.line}`, borderRadius: 14,
                                               padding: '12px 13px', background: 'rgba(255,255,255,.03)' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                            <span style={{ fontSize: '1.2rem' }}>{n.e}</span>
+                            <n.Icon size={18} color={n.c} />
                             <div>
                               <div style={{ fontWeight: 700, fontSize: '.9rem' }}>{l.lead}</div>
                               <div style={{ fontSize: '.72rem', color: n.c, fontWeight: 700, textTransform: 'capitalize' }}>
@@ -134,7 +141,7 @@ export default function LeadsPanel({ activo, onClose }) {
                                 <span style={{ fontSize: '.6rem', fontWeight: 700, color: FRESCURA[l.frescura].c, padding: '2px 7px',
                                                borderRadius: 999, background: FRESCURA[l.frescura].c + '1A',
                                                border: `1px solid ${FRESCURA[l.frescura].c}44` }}>
-                                  {FRESCURA[l.frescura].lbl}
+                                  {FRESCURA[l.frescura].Icon && (() => { const I = FRESCURA[l.frescura].Icon; return <I size={12} style={{ verticalAlign: '-2px', marginRight: 4 }} /> })()}{FRESCURA[l.frescura].lbl}
                                 </span>
                               )}
                               {l.reenganche && (
@@ -253,11 +260,11 @@ export function LeadChat({ activo, lead, onBack }) {
             <span style={{ fontWeight: 800, fontSize: '1rem' }}>{lead.lead}</span>
             {fr && (
               <span style={{ fontSize: '.58rem', fontWeight: 700, color: fr.c, padding: '2px 7px', borderRadius: 999,
-                             background: fr.c + '18', border: `1px solid ${fr.c}44` }}>{fr.lbl}</span>
+                             background: fr.c + '18', border: `1px solid ${fr.c}44` }}>{fr.Icon && <fr.Icon size={11} style={{ verticalAlign: '-2px', marginRight: 4 }} />}{fr.lbl}</span>
             )}
           </div>
           <div style={{ fontSize: '.72rem', color: C.muted, marginTop: 2 }}>
-            {NIVEL[lead.nivel]?.e} {ESTADO_LBL[lead.estado]} · {lead.score}/100
+            <NivelIcon nivel={lead.nivel} /> {ESTADO_LBL[lead.estado]} · {lead.score}/100
             {lead.mensajes != null ? ` · 💬 ${lead.mensajes}` : ''}{ult ? ` · ${ult}` : ''}
           </div>
         </div>

@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import axios from 'axios'
-import { Users, RefreshCw, Flame, MapPin, Sparkles, BarChart3, Compass,
-         TrendingUp, Clock, AlertTriangle, ChevronRight, Bell } from 'lucide-react'
+import { Users, RefreshCw, Flame, MapPin, Sparkles, BarChart3, Compass, TrendingUp, Clock, AlertTriangle, ChevronRight, Bell, Thermometer, Snowflake, Moon, MessageCircle } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import Campana from './Campana'
 import { activarPush } from './push'
@@ -14,13 +13,13 @@ const C = {
   text: 'var(--text)', muted: 'var(--text-mid)', line: 'var(--border)',
 }
 const NIVEL = {
-  caliente: { c: '#E0685A', e: '🔥' }, tibio: { c: '#E8B84B', e: '🟡' }, frio: { c: '#5E9BE0', e: '🔵' },
+  caliente: { c: '#E0685A', Icon: Flame }, tibio: { c: '#E8B84B', Icon: Thermometer }, frio: { c: '#5E9BE0', Icon: Snowflake },
 }
 // Frescura del lead (hace cuánto no interactúa) → la que importa para reenganche.
 const FRESCURA = {
   activo: { c: '#2DBDB6', lbl: 'Activo' },
-  dormido: { c: '#E8B84B', lbl: '😴 Dormido' },
-  frio_profundo: { c: '#5E9BE0', lbl: '❄️ Muy frío' },
+  dormido: { c: '#E8B84B', Icon: Moon, lbl: 'Dormido' },
+  frio_profundo: { c: '#5E9BE0', Icon: Snowflake, lbl: 'Muy frío' },
 }
 const ESTADO_LBL = {
   anonimo: 'Anónimo', identificado: 'Identificado', explorando: 'Explorando',
@@ -307,7 +306,7 @@ export default function CRM() {
           </div>
         </div>
         <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-          <div style={{ fontSize: '.68rem', color: C.muted }}>💬 {l.mensajes ?? 0}</div>
+          <div style={{ fontSize: '.68rem', color: C.muted }}><MessageCircle size={12} style={{ verticalAlign: '-2px', marginRight: 5 }} />{l.mensajes ?? 0}</div>
           {(pide || l.handoff_sugerido) ? (
             <span style={{ fontSize: '.58rem', fontWeight: 700, color: n.c, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
               <Flame size={10} /> Contactar
@@ -315,7 +314,7 @@ export default function CRM() {
           ) : fr ? (
             <span style={{ fontSize: '.56rem', fontWeight: 700, color: fr.c, padding: '2px 7px', borderRadius: 999,
                            background: fr.c + '18', border: `1px solid ${fr.c}44`, whiteSpace: 'nowrap' }}>
-              {fr.lbl}{t ? ` · ${t}` : ''}
+              {fr.Icon && <fr.Icon size={12} style={{ verticalAlign: '-2px', marginRight: 4 }} />}{fr.lbl}{t ? ` · ${t}` : ''}
             </span>
           ) : t ? (
             <span style={{ fontSize: '.56rem', color: C.muted }}>{t}</span>
@@ -487,7 +486,7 @@ export default function CRM() {
                    padding: '9px 14px', borderRadius: 12, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
                    background: 'rgba(45,189,182,.12)', border: `1px solid ${C.teal}66`, color: C.tealHi,
                    fontSize: '.84rem', fontWeight: 700 }}>
-          🔔 {nuevos.length === 1 ? 'Un interesado nuevo' : `${nuevos.length} interesados nuevos`}
+          <Bell size={14} style={{ verticalAlign: '-2px', marginRight: 5 }} />{nuevos.length === 1 ? 'Un interesado nuevo' : `${nuevos.length} interesados nuevos`}
           <span style={{ fontWeight: 400, color: C.muted, marginLeft: 'auto', fontSize: '.78rem' }}>
             marcar como visto
           </span>

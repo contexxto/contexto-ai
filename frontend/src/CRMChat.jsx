@@ -193,7 +193,7 @@ function CRMChat({ onClose, lead, modo = 'copiloto', onPanelSeed } = {}, ref) {
         <div style={{ flexShrink: 0, marginBottom: 9, padding: '8px 10px', borderRadius: 12,
                       background: 'rgba(45,189,182,.08)', border: `1px solid ${C.line}` }}>
           <div style={{ fontSize: '.72rem', color: C.muted, display: 'flex', alignItems: 'center', gap: 5, marginBottom: 7 }}>
-            <span style={{ color: C.tealHi }}>🧭 Consultas de cartera</span>
+            <span style={{ color: C.tealHi }}><Compass size={13} style={{ verticalAlign: '-2px', marginRight: 5 }} />Consultas de cartera</span>
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {SUG_ESTRATEGA.map(s => (

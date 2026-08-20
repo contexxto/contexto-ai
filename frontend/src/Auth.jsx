@@ -1,14 +1,14 @@
 import { useState } from 'react'
-import { X, AlertTriangle, Check } from 'lucide-react'
+import { X, AlertTriangle, Check, User, Briefcase, Building2 } from 'lucide-react'
 import { supabase } from './supabaseClient'
 import sphereLogo from './assets/sphere.svg'
 
 const API_BASE = import.meta.env.VITE_API_URL ?? ''
 
 const ROLES = [
-  { id: 'cliente',      label: '👤 Busco inmueble', desc: 'Cliente — buscar y consultar' },
-  { id: 'corredor',     label: '🧑‍💼 Soy corredor',   desc: 'Publicar y gestionar mis inmuebles' },
-  { id: 'inmobiliaria', label: '🏢 Inmobiliaria',     desc: 'Agencia con varios corredores' },
+  { id: 'cliente',      Icon: User,      label: 'Busco inmueble', desc: 'Cliente — buscar y consultar' },
+  { id: 'corredor',     Icon: Briefcase, label: 'Soy corredor',   desc: 'Publicar y gestionar mis inmuebles' },
+  { id: 'inmobiliaria', Icon: Building2, label: 'Inmobiliaria',   desc: 'Agencia con varios corredores' },
 ]
 
 const C = {
@@ -208,7 +208,7 @@ export default function Auth({ onClose, onAuthed, motivo = null, initialMode = '
                       background: rol === r.id ? 'rgba(45,189,182,.14)' : 'var(--surface-2)',
                       border: `1px solid ${rol === r.id ? C.teal : C.line}`, color: C.text,
                     }}>
-                    <div style={{ fontWeight: 700, fontSize: '.9rem' }}>{r.label}</div>
+                    <div style={{ fontWeight: 700, fontSize: '.9rem', display: 'flex', alignItems: 'center', gap: 8 }}><r.Icon size={16} />{r.label}</div>
                     <div style={{ fontSize: '.74rem', color: C.muted }}>{r.desc}</div>
                   </button>
                 ))}

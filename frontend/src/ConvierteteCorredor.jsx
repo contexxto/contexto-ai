@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import axios from 'axios'
-import { X, AlertTriangle } from 'lucide-react'
+import { X, AlertTriangle, Briefcase, Building2 } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import sphereLogo from './assets/sphere.svg'
 
@@ -10,8 +10,8 @@ const C = {
 }
 
 const ROLES = [
-  { id: 'corredor', label: '🧑‍💼 Soy corredor', desc: 'Publicar y gestionar mis inmuebles' },
-  { id: 'inmobiliaria', label: '🏢 Inmobiliaria', desc: 'Agencia con varios corredores' },
+  { id: 'corredor', Icon: Briefcase, label: 'Soy corredor', desc: 'Publicar y gestionar mis inmuebles' },
+  { id: 'inmobiliaria', Icon: Building2, label: 'Inmobiliaria', desc: 'Agencia con varios corredores' },
 ]
 
 // Upgrade de rol cliente → corredor/inmobiliaria. El backend ya soporta el cambio
@@ -78,7 +78,7 @@ export default function ConvierteteCorredor({ onClose, onUpgraded }) {
                 background: rol === r.id ? 'rgba(45,189,182,.14)' : 'var(--surface-2)',
                 border: `1px solid ${rol === r.id ? C.teal : C.line}`, color: C.text,
               }}>
-              <div style={{ fontWeight: 700, fontSize: '.9rem' }}>{r.label}</div>
+              <div style={{ fontWeight: 700, fontSize: '.9rem', display: 'flex', alignItems: 'center', gap: 8 }}><r.Icon size={16} />{r.label}</div>
               <div style={{ fontSize: '.74rem', color: C.muted }}>{r.desc}</div>
             </button>
           ))}

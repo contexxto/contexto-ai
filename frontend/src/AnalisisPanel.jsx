@@ -112,7 +112,7 @@ export default function AnalisisPanel({ onVolver, panelSeed, onPreguntar } = {})
         </button>
       )}
       {loading && <div style={{ color: C.muted, padding: '30px 4px', textAlign: 'center' }}>Cargando análisis…</div>}
-      {!loading && (err || !data) && <div style={{ color: '#E0685A', padding: '30px 4px', textAlign: 'center' }}><AlertTriangle size={14} style={{ verticalAlign: '-2px', marginRight: 5 }} />No se pudo cargar el análisis.</div>}
+      {!loading && (err || !data) && <div style={{ color: 'var(--coral)', padding: '30px 4px', textAlign: 'center' }}><AlertTriangle size={14} style={{ verticalAlign: '-2px', marginRight: 5 }} />No se pudo cargar el análisis.</div>}
       {!loading && data && (
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14, padding: '2px' }}>
       {/* Lente vivo: en qué foco está el dashboard según la conversación del Estratega (SPEC_Analisis_Vivo). */}

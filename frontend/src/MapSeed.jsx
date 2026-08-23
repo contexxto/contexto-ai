@@ -24,7 +24,7 @@ const DARK_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.
 // Paleta fría de ZONA (#2DBDB6 = teal de la marca). El punto visible usa tealHi; los
 // halos usan rgba del mismo teal. (No tomamos tokens cálidos: ZONA es el modo frío.)
 const C = {
-  tealHi: '#5EEAD4', muted: '#9C99AC', text: '#EDEBF2',
+  tealHi: 'var(--teal-bright)', muted: '#9C99AC', text: '#EDEBF2',
   line: 'rgba(45,189,182,.22)', panel: '#1E1D28',
 }
 

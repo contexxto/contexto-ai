@@ -141,7 +141,7 @@ function CRMChat({ onClose, lead, modo = 'copiloto', onPanelSeed } = {}, ref) {
   useImperativeHandle(ref, () => ({ preguntar: (t) => enviarRef.current?.(t) }), [])
 
   const bubble = (autor) => autor === 'corredor'
-    ? { align: 'flex-end', bg: 'linear-gradient(90deg,#2DBDB6,#5EEAD4)', color: '#0E0D13', lbl: 'Tú' }
+    ? { align: 'flex-end', bg: 'linear-gradient(90deg,var(--teal),var(--teal-bright))', color: '#0E0D13', lbl: 'Tú' }
     : { align: 'flex-start', bg: 'var(--ai-bg)', color: C.text, lbl: titulo }
 
   return (
@@ -269,7 +269,7 @@ function CRMChat({ onClose, lead, modo = 'copiloto', onPanelSeed } = {}, ref) {
         <div ref={finRef} />
       </div>
 
-      {error && <div style={{ color: '#E0685A', fontSize: '.76rem', textAlign: 'center', marginTop: 8, flexShrink: 0 }}>⚠️ {error}</div>}
+      {error && <div style={{ color: 'var(--coral)', fontSize: '.76rem', textAlign: 'center', marginTop: 8, flexShrink: 0 }}>⚠️ {error}</div>}
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginTop: 10, flexShrink: 0,
                     background: 'var(--surface-2)', border: `1px solid ${C.line}`, borderRadius: 20, padding: 7 }}>

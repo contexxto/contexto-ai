@@ -20,7 +20,7 @@ import { ATRIBUCION } from './atribucion'
 // del basemap (CDN caído), nunca por ausencia de 'load'.
 const DARK_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
 const C = {
-  teal: '#2DBDB6', tealHi: '#5EEAD4', muted: '#9C99AC',
+  teal: 'var(--teal)', tealHi: 'var(--teal-bright)', muted: '#9C99AC',
   line: 'rgba(45,189,182,.22)', panel: '#1E1D28', text: '#EDEBF2',
 }
 

@@ -14,7 +14,7 @@ import { ATRIBUCION } from './atribucion'
 // acompaña ABAJO (DeltaEncaje). Degradable: si /aura falla, cae al aviso y queda la tabla.
 
 const DARK_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
-const HUE_A = { accent: '#5EEAD4', glow: 'rgba(94,234,212,.5)' }   // A — teal frío
+const HUE_A = { accent: 'var(--teal-bright)', glow: 'rgba(94,234,212,.5)' }   // A — teal frío
 const HUE_B = { accent: '#E8B84B', glow: 'rgba(232,184,75,.5)' }   // B — ámbar cálido
 const C = { panel: '#1E1D28', muted: '#9C99AC', text: '#EDEBF2', line: 'rgba(45,189,182,.22)' }
 

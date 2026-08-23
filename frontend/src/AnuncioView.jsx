@@ -8,8 +8,8 @@ import sphereLogo from './assets/sphere.svg'
 const AuraSingleMap = lazy(() => import('./AuraSingleMap'))
 
 const C = {
-  bg: '#16151E', panel: '#1E1D28', teal: '#2DBDB6', tealHi: '#5EEAD4',
-  coral: '#E0685A', gold: '#E8B84B', text: '#EDEBF2', muted: '#9C99AC',
+  bg: '#16151E', panel: '#1E1D28', teal: 'var(--teal)', tealHi: 'var(--teal-bright)',
+  coral: 'var(--coral)', gold: '#E8B84B', text: '#EDEBF2', muted: '#9C99AC',
   line: 'rgba(45,189,182,.22)',
 }
 

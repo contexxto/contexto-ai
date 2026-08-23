@@ -4,7 +4,7 @@ import { X, Lock, Globe, Check, Copy, AlertTriangle } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 
 const C = {
-  bg: '#16151E', panel: '#1E1D28', teal: '#2DBDB6', tealHi: '#5EEAD4',
+  bg: '#16151E', panel: '#1E1D28', teal: 'var(--teal)', tealHi: 'var(--teal-bright)',
   text: '#EDEBF2', muted: '#9C99AC', line: 'rgba(45,189,182,.22)',
 }
 
@@ -96,7 +96,7 @@ export default function ShareConversation({ sessionId, onClose }) {
           </div>
         ) : (
           <>
-            {error && <div style={{ color: '#E0685A', fontSize: '.82rem', marginBottom: 10 }}><AlertTriangle size={14} style={{ verticalAlign: '-2px', marginRight: 5 }} />{error}</div>}
+            {error && <div style={{ color: 'var(--coral)', fontSize: '.82rem', marginBottom: 10 }}><AlertTriangle size={14} style={{ verticalAlign: '-2px', marginRight: 5 }} />{error}</div>}
             <button onClick={compartir} disabled={loading}
               style={{ width: '100%', padding: '12px', borderRadius: 12, border: 'none',
                        cursor: loading ? 'default' : 'pointer', fontWeight: 800, fontSize: '.92rem',

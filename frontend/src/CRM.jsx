@@ -13,11 +13,11 @@ const C = {
   text: 'var(--text)', muted: 'var(--text-mid)', line: 'var(--border)',
 }
 const NIVEL = {
-  caliente: { c: '#E0685A', Icon: Flame }, tibio: { c: '#E8B84B', Icon: Thermometer }, frio: { c: '#5E9BE0', Icon: Snowflake },
+  caliente: { c: 'var(--coral)', Icon: Flame }, tibio: { c: '#E8B84B', Icon: Thermometer }, frio: { c: '#5E9BE0', Icon: Snowflake },
 }
 // Frescura del lead (hace cuánto no interactúa) → la que importa para reenganche.
 const FRESCURA = {
-  activo: { c: '#2DBDB6', lbl: 'Activo' },
+  activo: { c: 'var(--teal)', lbl: 'Activo' },
   dormido: { c: '#E8B84B', Icon: Moon, lbl: 'Dormido' },
   frio_profundo: { c: '#5E9BE0', Icon: Snowflake, lbl: 'Muy frío' },
 }
@@ -257,7 +257,7 @@ export default function CRM() {
           <span style={{ fontSize: '1.4rem', fontWeight: 800, lineHeight: 1 }}>{val}</span>
           {delta != null && delta !== 0 && (
             <span style={{ fontSize: '.72rem', fontWeight: 700,
-                           color: delta > 0 ? C.tealHi : '#E0685A' }}>
+                           color: delta > 0 ? C.tealHi : 'var(--coral)' }}>
               {delta > 0 ? '▲' : '▼'}{Math.abs(delta)}
             </span>
           )}
@@ -599,7 +599,7 @@ export default function CRM() {
         </div>
       )}
 
-      {err &&<div style={{ color: '#E0685A', fontSize: '.85rem' }}><AlertTriangle size={14} style={{ verticalAlign: '-2px', marginRight: 5 }} />No se pudieron cargar los interesados.</div>}
+      {err &&<div style={{ color: 'var(--coral)', fontSize: '.85rem' }}><AlertTriangle size={14} style={{ verticalAlign: '-2px', marginRight: 5 }} />No se pudieron cargar los interesados.</div>}
       {!d && !err && <div style={{ color: C.muted, padding: '24px 0', textAlign: 'center' }}>Cargando…</div>}
 
       {/* Modo ANÁLISIS VIVO (chip "Análisis"): SPLIT — el Estratega a la izquierda re-enfoca el dashboard

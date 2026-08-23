@@ -15,9 +15,9 @@ const QUITO = [-78.4825, -0.1807]
 
 const RUIDO_COLOR = [
   'match', ['get', 'ruido'],
-  'BAJO', '#2DBDB6',
+  'BAJO', 'var(--teal)',
   'MEDIO', '#E5C06A',
-  'ALTO', '#E0685A',
+  'ALTO', 'var(--coral)',
   '#969CA6',
 ]
 
@@ -32,8 +32,8 @@ const ENCAJE_COLOR = [
   'interpolate', ['linear'], ['coalesce', ['get', 'encaje'], -1],
   -1, '#6B6878',   // sin dato → gris, visible
   0, '#3A8F89',    // encaje bajo → teal atenuado pero NUNCA casi-invisible
-  50, '#2DBDB6',   // medio → teal de la marca
-  100, '#5EEAD4',  // alto → teal brillante
+  50, 'var(--teal)',   // medio → teal de la marca
+  100, 'var(--teal-bright)',  // alto → teal brillante
 ]
 
 // Chips de categoría (un toque = ilumina esa capa). Íconos lucide del design system.
@@ -70,15 +70,15 @@ function popupHTML(p) {
     `<div style="display:flex;justify-content:space-between;gap:12px;font-size:12px;margin:2px 0">
        <span style="color:#A8A3B3">${label}</span><span style="color:#F0ECE6;font-weight:600">${esc(val)}</span></div>`
   const block = (label, val) => !val ? '' :
-    `<div style="font-size:11px;margin-top:6px"><span style="color:#5EEAD4;font-weight:700">${label}</span>
+    `<div style="font-size:11px;margin-top:6px"><span style="color:var(--teal-bright);font-weight:700">${label}</span>
        <div style="color:#C9C6D6;line-height:1.5;margin-top:2px">${conTiempos(esc(val))}</div></div>`
-  const ruidoColor = { BAJO:'#2DBDB6', MEDIO:'#E5C06A', ALTO:'#E0685A' }[p.ruido] || '#969CA6'
+  const ruidoColor = { BAJO:'var(--teal)', MEDIO:'#E5C06A', ALTO:'var(--coral)' }[p.ruido] || '#969CA6'
   // Encaje del turno (si el mapa vino coloreado por encaje) — el diferenciador visible.
   const encajeChip = p.encaje != null
-    ? `<div style="display:inline-block;font-size:10px;font-family:'IBM Plex Mono',monospace;padding:1px 7px;border-radius:999px;background:rgba(94,234,212,.14);color:#5EEAD4;border:1px solid rgba(94,234,212,.4);margin:0 0 6px 5px">encaje ${esc(p.encaje)}%</div>`
+    ? `<div style="display:inline-block;font-size:10px;font-family:'IBM Plex Mono',monospace;padding:1px 7px;border-radius:999px;background:rgba(94,234,212,.14);color:var(--teal-bright);border:1px solid rgba(94,234,212,.4);margin:0 0 6px 5px">encaje ${esc(p.encaje)}%</div>`
     : ''
   const verRutas = p.servicios_cercanos
-    ? `<button class="ctx-rutas-btn" data-id="${esc(p.id)}" style="margin-top:9px;width:100%;padding:7px;border:none;border-radius:9px;cursor:pointer;font-weight:700;font-size:11.5px;background:linear-gradient(90deg,#1A7A76,#2DBDB6);color:#0E0D13">🚶 Ver rutas a pie</button>`
+    ? `<button class="ctx-rutas-btn" data-id="${esc(p.id)}" style="margin-top:9px;width:100%;padding:7px;border:none;border-radius:9px;cursor:pointer;font-weight:700;font-size:11.5px;background:linear-gradient(90deg,var(--teal-deep),var(--teal));color:#0E0D13">🚶 Ver rutas a pie</button>`
     : ''
   return `<div style="font-family:var(--font-body);min-width:230px;max-width:280px">
     <div style="font-weight:700;font-size:13px;color:#F0ECE6;margin-bottom:6px">${esc(p.direccion || 'Activo')}</div>
@@ -350,7 +350,7 @@ export default function MapView({ seedIds, encajeById } = {}) {
   // Punto "tú estás aquí" que late (estilo Google).
   function marcadorPulso(coords) {
     const el = document.createElement('div')
-    el.style.cssText = 'width:14px;height:14px;border-radius:50%;background:#F0ECE6;border:3px solid #2DBDB6'
+    el.style.cssText = 'width:14px;height:14px;border-radius:50%;background:#F0ECE6;border:3px solid var(--teal)'
     el.animate([{ boxShadow: '0 0 0 0 rgba(45,189,182,.45)' }, { boxShadow: '0 0 0 16px rgba(45,189,182,0)' }],
       { duration: 1800, iterations: Infinity, easing: 'ease-out' })
     capasRef.current.markers.push(new maplibregl.Marker({ element: el }).setLngLat(coords).addTo(mapRef.current))
@@ -376,11 +376,11 @@ export default function MapView({ seedIds, encajeById } = {}) {
       if (!mapRef.current) return
       if (esc.origen) marcadorPulso(esc.centro)
       if (esc.ruta?.coords?.length) {
-        const ids = agregarRutaAnimada(map, `tour-ruta-${i}`, esc.ruta.coords, esc.ruta.color || '#5EEAD4')
+        const ids = agregarRutaAnimada(map, `tour-ruta-${i}`, esc.ruta.coords, esc.ruta.color || 'var(--teal-bright)')
         capasRef.current.ids.push(...ids)
-        if (esc.ruta.destino) marcadorEtiqueta(esc.ruta.destino, esc.ruta.etiqueta, esc.ruta.color || '#5EEAD4')
+        if (esc.ruta.destino) marcadorEtiqueta(esc.ruta.destino, esc.ruta.etiqueta, esc.ruta.color || 'var(--teal-bright)')
       }
-      ;(esc.puntos || []).forEach(pt => marcadorEtiqueta(pt.coords, pt.etiqueta, pt.color || '#5EEAD4'))
+      ;(esc.puntos || []).forEach(pt => marcadorEtiqueta(pt.coords, pt.etiqueta, pt.color || 'var(--teal-bright)'))
     }, 650)
     // Auto-avance (salvo en la última escena).
     if (i < escenas.length - 1) tourTimer.current = setTimeout(() => irAEscena(escenas, i + 1), 7500)
@@ -397,12 +397,12 @@ export default function MapView({ seedIds, encajeById } = {}) {
     acciones.forEach((a, i) => {
       if (a.tipo === 'ruta' && a.coords?.length) {
         const id = `cmd-ruta-${i}`
-        const capas = agregarRutaAnimada(map, id, a.coords, a.color || '#5EEAD4')
+        const capas = agregarRutaAnimada(map, id, a.coords, a.color || 'var(--teal-bright)')
         capasRef.current.ids.push(...capas)
         a.coords.forEach(c => { bounds.extend(c); hay = true })
-        if (a.destino) marcadorEtiqueta(a.destino, a.etiqueta, a.color || '#5EEAD4')
+        if (a.destino) marcadorEtiqueta(a.destino, a.etiqueta, a.color || 'var(--teal-bright)')
       } else if (a.tipo === 'puntos' && a.items?.length) {
-        a.items.forEach(it => { marcadorEtiqueta(it.coords, it.etiqueta, it.color || a.color || '#5EEAD4'); bounds.extend(it.coords); hay = true })
+        a.items.forEach(it => { marcadorEtiqueta(it.coords, it.etiqueta, it.color || a.color || 'var(--teal-bright)'); bounds.extend(it.coords); hay = true })
       } else if (a.tipo === 'isocrona' && a.contornos?.length) {
         // Mapa Vivo 2C: el área REAL alcanzable a pie (Valhalla). El contorno mayor
         // va debajo; cada uno se pinta como relleno translúcido + borde punteado.
@@ -411,7 +411,7 @@ export default function MapView({ seedIds, encajeById } = {}) {
           const id = `cmd-iso-${i}-${c.minutos}`
           if (map.getSource(id)) return
           map.addSource(id, { type: 'geojson', data: { type: 'Feature', geometry: c.geometry } })
-          const col = c.minutos <= 15 ? '#5EEAD4' : '#2DBDB6'
+          const col = c.minutos <= 15 ? 'var(--teal-bright)' : 'var(--teal)'
           map.addLayer({ id: `${id}-fill`, type: 'fill', source: id,
             paint: { 'fill-color': col, 'fill-opacity': 0.16 } })
           map.addLayer({ id: `${id}-line`, type: 'line', source: id,
@@ -677,7 +677,7 @@ export default function MapView({ seedIds, encajeById } = {}) {
         const popup = new maplibregl.Popup({ closeButton: true, offset: 12, className: 'ctx-popup', maxWidth: '300px' })
 
         // --- Rutas a pie (Google Routes, vía backend) ---
-        const RUTA_COL = ['#5EEAD4', '#E5C06A', '#E0685A']
+        const RUTA_COL = ['var(--teal-bright)', '#E5C06A', 'var(--coral)']
         let rutaIds = []
         let rutaMarkers = []
         function clearRutas() {
@@ -890,8 +890,8 @@ export default function MapView({ seedIds, encajeById } = {}) {
               </span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 11, color: 'var(--map-faint)' }}>
                 {(modoEncaje
-                  ? [['Alto', '#5EEAD4'], ['Medio', '#2DBDB6'], ['Bajo', '#3A8F89']]
-                  : [['Bajo', '#2DBDB6'], ['Medio', '#E5C06A'], ['Alto', '#E0685A']]
+                  ? [['Alto', 'var(--teal-bright)'], ['Medio', 'var(--teal)'], ['Bajo', '#3A8F89']]
+                  : [['Bajo', 'var(--teal)'], ['Medio', '#E5C06A'], ['Alto', 'var(--coral)']]
                 ).map(([k, c]) => (
                   <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                     <span style={{ width: 9, height: 9, borderRadius: 999, background: c }} />{k}

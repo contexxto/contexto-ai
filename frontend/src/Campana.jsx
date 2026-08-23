@@ -124,7 +124,7 @@ export default function Campana({ sessionId, onAbrir }) {
           </div>
           {h.sin_leer > 0 && (
             <span style={{ flexShrink: 0, minWidth: 20, height: 20, padding: '0 6px', marginTop: 2,
-                           borderRadius: 999, background: '#E0685A', color: '#fff', fontSize: '.68rem',
+                           borderRadius: 999, background: 'var(--coral)', color: '#fff', fontSize: '.68rem',
                            fontWeight: 800, display: 'grid', placeItems: 'center' }}>
               {h.sin_leer > 9 ? '9+' : h.sin_leer}
             </span>
@@ -142,7 +142,7 @@ export default function Campana({ sessionId, onAbrir }) {
         <Bell size={20} />
         {datos.no_leidas > 0 && (
           <span style={{ position: 'absolute', top: -1, right: -2, minWidth: 16, height: 16,
-                         padding: '0 4px', borderRadius: 999, background: '#E0685A', color: '#fff',
+                         padding: '0 4px', borderRadius: 999, background: 'var(--coral)', color: '#fff',
                          fontSize: '.62rem', fontWeight: 800, display: 'grid', placeItems: 'center' }}>
             {datos.no_leidas > 9 ? '9+' : datos.no_leidas}
           </span>

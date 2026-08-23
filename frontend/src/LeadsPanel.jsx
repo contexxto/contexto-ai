@@ -9,7 +9,7 @@ const C = {
   text: 'var(--text)', muted: 'var(--text-mid)', line: 'var(--border)',
 }
 const NIVEL = {
-  caliente: { c: '#E0685A', Icon: Flame }, tibio: { c: '#E8B84B', Icon: Thermometer }, frio: { c: '#5E9BE0', Icon: Snowflake },
+  caliente: { c: 'var(--coral)', Icon: Flame }, tibio: { c: '#E8B84B', Icon: Thermometer }, frio: { c: '#5E9BE0', Icon: Snowflake },
 }
 // Icono de temperatura del lead. Componente y no expresion inline para que
 // el JSX siga leyendose.
@@ -19,7 +19,7 @@ const NivelIcon = ({ nivel, size = 13 }) => {
 }
 
 const FRESCURA = {
-  activo: { c: '#2DBDB6', lbl: 'Activo' },
+  activo: { c: 'var(--teal)', lbl: 'Activo' },
   dormido: { c: '#E8B84B', Icon: Moon, lbl: 'Dormido' },
   frio_profundo: { c: '#5E9BE0', Icon: Snowflake, lbl: 'Muy frío' },
 }
@@ -86,7 +86,7 @@ export default function LeadsPanel({ activo, onClose }) {
             </div>
             <div style={{ fontSize: '.78rem', color: C.muted, marginBottom: 14 }}>{activo.direccion}</div>
 
-            {err && <div style={{ color: '#E0685A', fontSize: '.85rem' }}><AlertTriangle size={14} style={{ verticalAlign: '-2px', marginRight: 5 }} />No se pudieron cargar los interesados.</div>}
+            {err && <div style={{ color: 'var(--coral)', fontSize: '.85rem' }}><AlertTriangle size={14} style={{ verticalAlign: '-2px', marginRight: 5 }} />No se pudieron cargar los interesados.</div>}
             {!d && !err && <div style={{ color: C.muted, padding: '24px 0', textAlign: 'center' }}>Cargando…</div>}
 
             {d && (
@@ -241,7 +241,7 @@ export function LeadChat({ activo, lead, onBack }) {
   }
 
   const bubble = (autor) => {
-    if (autor === 'corredor') return { align: 'flex-end', bg: 'linear-gradient(90deg,#2DBDB6,#5EEAD4)', color: '#0E0D13', lbl: 'Tú' }
+    if (autor === 'corredor') return { align: 'flex-end', bg: 'linear-gradient(90deg,var(--teal),var(--teal-bright))', color: '#0E0D13', lbl: 'Tú' }
     if (autor === 'agente') return { align: 'flex-start', bg: 'var(--ai-bg)', color: C.muted, lbl: 'Agente IA' }
     return { align: 'flex-start', bg: 'rgba(45,189,182,.10)', color: C.text, lbl: 'Interesado' }
   }
@@ -317,7 +317,7 @@ export function LeadChat({ activo, lead, onBack }) {
       </div>
 
       {error && (
-        <div style={{ color: '#E0685A', fontSize: '.76rem', textAlign: 'center', marginTop: 8, flexShrink: 0 }}>
+        <div style={{ color: 'var(--coral)', fontSize: '.76rem', textAlign: 'center', marginTop: 8, flexShrink: 0 }}>
           <AlertTriangle size={14} style={{ verticalAlign: '-2px', marginRight: 5 }} />{error}
         </div>
       )}

@@ -326,7 +326,7 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
             style={{
               display:'flex', alignItems:'center', gap:6, padding:'6px 13px', borderRadius:999,
               background:'rgba(45,189,182,.13)', border:'1px solid rgba(45,189,182,.42)',
-              color:'var(--teal-bright, #5EEAD4)', cursor:'pointer', fontSize:'.8rem', fontWeight:700,
+              color:'var(--teal-bright, var(--teal-bright))', cursor:'pointer', fontSize:'.8rem', fontWeight:700,
               transition:'all .14s',
             }}
             onMouseEnter={e => { e.currentTarget.style.background = 'rgba(45,189,182,.22)' }}
@@ -363,12 +363,12 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
             display:'flex', alignItems:'center', gap:12, flexWrap:'wrap',
           }}>
             <span style={{ flex:1, minWidth:190, fontSize:'.8rem', lineHeight:1.45, color:'var(--text-mid, #C9C6D6)' }}>
-              <MessageCircle size={13} style={{ verticalAlign: '-2px', marginRight: 5 }} /> ¿Le sirve a alguien que decide contigo? Compártelo con tu <strong style={{ color:'var(--teal-bright, #5EEAD4)' }}>pareja, corredor o cliente</strong>.
+              <MessageCircle size={13} style={{ verticalAlign: '-2px', marginRight: 5 }} /> ¿Le sirve a alguien que decide contigo? Compártelo con tu <strong style={{ color:'var(--teal-bright, var(--teal-bright))' }}>pareja, corredor o cliente</strong>.
             </span>
             <button onClick={onShare}
               style={{
                 display:'flex', alignItems:'center', gap:6, padding:'7px 14px', borderRadius:999,
-                background:'linear-gradient(90deg, #1A7A76, #2DBDB6)', border:'none',
+                background:'linear-gradient(90deg, var(--teal-deep), var(--teal))', border:'none',
                 color:'#0E0D13', cursor:'pointer', fontSize:'.8rem', fontWeight:800, whiteSpace:'nowrap',
               }}>
               <Share2 size={14}/> Compartir
@@ -1584,7 +1584,7 @@ export default function App() {
               <div style={{ maxWidth:'80%',
                             padding: m.role === 'user' ? '10px 14px' : 0,
                             borderRadius: m.role === 'user' ? '18px 18px 4px 18px' : 0,
-                            background: m.role === 'user' ? 'linear-gradient(135deg, #1A7A76, #2DBDB6)' : 'transparent',
+                            background: m.role === 'user' ? 'linear-gradient(135deg, var(--teal-deep), var(--teal))' : 'transparent',
                             color: m.role === 'user' ? '#fff' : 'inherit', fontSize:'.92rem', lineHeight:1.65 }}>
                 {m.role === 'user'
                   ? <span>{limpiarCtx(m)}</span>

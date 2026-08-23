@@ -4,7 +4,7 @@ import { Component } from 'react'
 // vez de tumbar toda la app (pantalla negra) mostramos un mensaje legible + el error
 // para diagnóstico. Los error boundaries deben ser class components (no hay hook).
 const C = {
-  bg: '#16151E', panel: '#1E1D28', teal: '#2DBDB6', tealHi: '#5EEAD4',
+  bg: '#16151E', panel: '#1E1D28', teal: 'var(--teal)', tealHi: 'var(--teal-bright)',
   text: '#EDEBF2', muted: '#9C99AC', line: 'rgba(45,189,182,.20)',
 }
 

@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } fro
 import axios from 'axios'
 import {
   Send, MapPin, RefreshCw, Trash2, Copy, CheckCheck, ChevronDown, PanelLeft,
-  Share2, Volume2, ThumbsUp, ThumbsDown, ArrowUpToLine, Plus, ArrowUp, AudioLines
+  Share2, Volume2, ThumbsUp, ThumbsDown, ArrowUpToLine, Plus, ArrowUp, AudioLines,
+  Wrench, MessageCircle, Handshake, Check, Bell, Mic
 } from 'lucide-react'
 import { supabase, authEnabled } from './supabaseClient'
 import Auth from './Auth'
@@ -245,7 +246,8 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
           {msg.toolCalls?.length > 0 && (
             <div style={{ marginBottom:6, fontSize:'.72rem', color:'var(--text-muted)',
                           display:'flex', alignItems:'center', gap:5 }}>
-              🔧 Analizado con {msg.toolCalls.length} herramienta{msg.toolCalls.length > 1 ? 's' : ''} del catastro
+              <Wrench size={12} />
+              Analizado con {msg.toolCalls.length} herramienta{msg.toolCalls.length > 1 ? 's' : ''} del catastro
             </div>
           )}
           <div style={{
@@ -361,7 +363,7 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
             display:'flex', alignItems:'center', gap:12, flexWrap:'wrap',
           }}>
             <span style={{ flex:1, minWidth:190, fontSize:'.8rem', lineHeight:1.45, color:'var(--text-mid, #C9C6D6)' }}>
-              💬 ¿Le sirve a alguien que decide contigo? Compártelo con tu <strong style={{ color:'var(--teal-bright, #5EEAD4)' }}>pareja, corredor o cliente</strong>.
+              <MessageCircle size={13} style={{ verticalAlign: '-2px', marginRight: 5 }} /> ¿Le sirve a alguien que decide contigo? Compártelo con tu <strong style={{ color:'var(--teal-bright, #5EEAD4)' }}>pareja, corredor o cliente</strong>.
             </span>
             <button onClick={onShare}
               style={{
@@ -589,7 +591,7 @@ export default function App() {
   const limpiarCtx = (m) => {
     if (m.role !== 'user' || !m.content) return m.content
     // Mensaje técnico del QR → texto amigable (no exponer la instrucción interna).
-    if (m.content.startsWith('El usuario escaneó el QR')) return '📍 Escaneé el QR de este inmueble. ¿Qué sabes de él?'
+    if (m.content.startsWith('El usuario escaneó el QR')) return 'Escaneé el QR de este inmueble. ¿Qué sabes de él?'
     const i = m.content.indexOf('[Contexto del sistema')
     return (i === -1 ? m.content : m.content.slice(0, i)).trim()
   }
@@ -631,7 +633,7 @@ export default function App() {
               id: `h-${m.id}`,
               role: m.autor === 'corredor' ? 'ai' : 'user',
               deCorredor: m.autor === 'corredor',
-              content: m.autor === 'corredor' ? `👤 Corredor: ${m.texto}` : m.texto,
+              content: m.autor === 'corredor' ? `Corredor: ${m.texto}` : m.texto,
               time: '', toolCalls: [],
             }))))
           })
@@ -684,7 +686,7 @@ export default function App() {
           const hmsgs = (h.mensajes || []).map((m) => ({
             id: `h-${m.id}`, role: m.autor === 'corredor' ? 'ai' : 'user',
             deCorredor: m.autor === 'corredor',
-            content: m.autor === 'corredor' ? `👤 Corredor: ${m.texto}` : m.texto, time: '', toolCalls: [] }))
+            content: m.autor === 'corredor' ? `Corredor: ${m.texto}` : m.texto, time: '', toolCalls: [] }))
           for (const m of (h.mensajes || [])) handoffSeenRef.current = Math.max(handoffSeenRef.current, m.id)
           setMessages([...base, ...hmsgs])
           setModoCorredor(true)
@@ -700,7 +702,7 @@ export default function App() {
 
     const t = new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })
     setMessages([{ id: crypto.randomUUID(), role:'user',
-      content:'📍 Escaneé el QR de este inmueble. ¿Qué sabes de él?', time:t, toolCalls:[] }])
+      content:'Escaneé el QR de este inmueble. ¿Qué sabes de él?', time:t, toolCalls:[] }])
     setLoading(true)
     try {
       const { data } = await axios.post(`${API_BASE}/api/v1/chat/`, {
@@ -714,7 +716,7 @@ export default function App() {
       axios.patch(`${API_BASE}/api/v1/chat/sessions/${sid}`,
         { titulo: '📍 Inmueble escaneado (QR)' }, { headers: apiHeaders() }).catch(() => {})
     } catch {
-      setError('No pudimos cargar este inmueble ahora mismo. Reintenta en un momento 🔄')
+      setError('No pudimos cargar este inmueble ahora mismo. Reintenta en un momento.')
     } finally { setLoading(false) }
   }, [])
 
@@ -789,7 +791,7 @@ export default function App() {
     if (lastAiRef.current && userText === lastAiRef.current.trim()) {
       setInput('')
       if (inputRef.current) inputRef.current.style.height = 'auto'
-      setError('Eso es la respuesta anterior 🙂 Escribe tu pregunta.')
+      setError('Eso es la respuesta anterior. Escribe tu pregunta.')
       return
     }
     const g = geoOverride || geo
@@ -916,7 +918,7 @@ export default function App() {
       if (escribio) {
         // Se cortó a mitad de la escritura: conservamos lo escrito y avisamos.
         parcheaMensaje(msgId, { streaming: false })
-        setError('La respuesta se cortó a medias. Vuelve a preguntar 🔄')
+        setError('La respuesta se cortó a medias. Vuelve a preguntar.')
       } else {
         // El stream no llegó a escribir nada: reintento por el POST bloqueante.
         try {
@@ -924,7 +926,7 @@ export default function App() {
         } catch (err) {
           setError(
             err.response?.data?.detail
-            ?? 'No pudimos conectar en este momento. Reintenta en unos segundos 🔄'
+            ?? 'No pudimos conectar en este momento. Reintenta en unos segundos.'
           )
         }
       }
@@ -1198,7 +1200,7 @@ export default function App() {
       setModoCorredor(true)
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(), role: 'ai', deCorredor: true,   // aviso del sistema: sin interfaz del agente
-        content: '🤝 Te conecté con el corredor. Escríbele aquí mismo — te responde en este chat, sin salir de Contexto.',
+        content: 'Te conecté con el corredor. Escríbele aquí mismo — te responde en este chat, sin salir de Contexto.',
         time: new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }), toolCalls: [],
       }])
       // Suscribe al lead a Web Push para recibir notificación nativa cuando el corredor responda.
@@ -1249,7 +1251,7 @@ export default function App() {
         for (const m of (data.mensajes || [])) handoffSeenRef.current = Math.max(handoffSeenRef.current, m.id)
         if (nuevos.length) {
           setMessages(prev => fusionarHandoff(prev, nuevos.map(m => ({
-            id: `h-${m.id}`, role: 'ai', deCorredor: true, content: `👤 Corredor: ${m.texto}`,
+            id: `h-${m.id}`, role: 'ai', deCorredor: true, content: `Corredor: ${m.texto}`,
             time: new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }), toolCalls: [],
           }))))
         }
@@ -1437,7 +1439,7 @@ export default function App() {
     setError(null)
     setMessages(prev => [...prev, {
       id: crypto.randomUUID(), role: 'user',
-      content: '🔎 Buscando inmuebles parecidos a la foto que subí…',
+      content: 'Buscando inmuebles parecidos a la foto que subí…',
       time: new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }), toolCalls: [],
     }])
     setLoading(true)
@@ -1598,7 +1600,7 @@ export default function App() {
           <div style={{ flexShrink:0, paddingBottom:16, paddingTop:10, background:'#0E0D13',
                         borderTop:'1px solid #1E1D28' }}>
             <div style={{ fontSize:'.82rem', color:'var(--teal-bright)', marginBottom:8, textAlign:'center' }}>
-              💬 Sigue tú la conversación con el agente
+              <MessageCircle size={13} style={{ verticalAlign: '-2px', marginRight: 5 }} /> Sigue tú la conversación con el agente
             </div>
             <form
               onSubmit={(e) => { e.preventDefault(); const t = shareInput.trim(); if (t) window.location.assign('/?q=' + encodeURIComponent(t)) }}
@@ -1995,7 +1997,7 @@ export default function App() {
                             borderRadius:14, fontSize:'.78rem', color:'var(--teal-text)',
                             background:'rgba(45,189,182,.10)', border:'1px solid rgba(45,189,182,.3)' }}>
                 <span style={{ flex:1, minWidth:140 }}>
-                  🤝 Hablas con el corredor{hiloAbierto?.direccion ? ' de ' : ''}
+                  <Handshake size={13} style={{ verticalAlign: '-2px', marginRight: 5 }} /> Hablas con el corredor{hiloAbierto?.direccion ? ' de ' : ''}
                   {hiloAbierto?.direccion && <b>{nombreCorto(hiloAbierto.direccion)}</b>}
                   {' '}— te responde aquí mismo.
                 </span>
@@ -2015,7 +2017,7 @@ export default function App() {
                       style={{ padding:'5px 11px', borderRadius:999, cursor:'pointer', fontSize:'.72rem',
                                fontWeight:600, background:'var(--surface-1)', color:'var(--text)',
                                border:'1px solid var(--border)' }}>
-                      💬 {nombreCorto(h.direccion)}
+                      <MessageCircle size={13} style={{ verticalAlign: '-2px', marginRight: 5 }} /> {nombreCorto(h.direccion)}
                     </button>
                   ))}
                 </div>
@@ -2035,7 +2037,8 @@ export default function App() {
                    style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:7, margin:'0 0 8px',
                             padding:'10px 14px', borderRadius:14, textDecoration:'none', fontSize:'.82rem',
                             fontWeight:800, background:'#25D366', color:'#0B141A' }}>
-                  💬 Continuar por WhatsApp
+                  <MessageCircle size={14} />
+                  Continuar por WhatsApp
                 </a>
               )}
             </>
@@ -2049,7 +2052,8 @@ export default function App() {
                            borderRadius:999, cursor:'pointer', fontSize:'.78rem', fontWeight:600,
                            background:'rgba(45,189,182,.10)', border:'1px solid rgba(45,189,182,.3)',
                            color:'var(--teal-text)' }}>
-                  🤝 Seguir con el corredor de {nombreCorto(h.direccion)}
+                  <Handshake size={14} />
+                  Seguir con el corredor de {nombreCorto(h.direccion)}
                 </button>
               ))}
             </div>
@@ -2059,7 +2063,8 @@ export default function App() {
                 style={{ display:'flex', alignItems:'center', gap:7, padding:'7px 14px',
                          borderRadius:999, cursor:'pointer', fontSize:'.78rem', fontWeight:600,
                          background:'rgba(45,189,182,.10)', border:'1px solid rgba(45,189,182,.3)', color:'var(--teal-text)' }}>
-                🤝 Hablar con el corredor
+                <Handshake size={14} />
+                Hablar con el corredor
               </button>
               <button onClick={async () => { if (await subscribeLeadContacto(sessionId)) setReengancheOptIn(true) }}
                 disabled={reengancheOptIn}
@@ -2068,7 +2073,7 @@ export default function App() {
                          borderRadius:999, cursor: reengancheOptIn ? 'default' : 'pointer', fontSize:'.78rem', fontWeight:600,
                          background: reengancheOptIn ? 'rgba(232,184,75,.16)' : 'rgba(232,184,75,.10)',
                          border:'1px solid rgba(232,184,75,.35)', color:'#E8B84B' }}>
-                {reengancheOptIn ? '✅ Te avisaremos' : '🔔 Avísame de novedades verificadas'}
+                {reengancheOptIn ? <><Check size={13} /> Te avisaremos</> : <><Bell size={13} /> Avísame de novedades verificadas</>}
               </button>
             </div>
           )
@@ -2181,7 +2186,7 @@ export default function App() {
         {listening && (
           <div style={{ marginTop:8, fontSize:'.72rem', color:'var(--teal-text)',
                         padding:'0 4px', textAlign:'center' }}>
-            🎤 Escuchando… habla ahora
+            <Mic size={13} style={{ verticalAlign: '-2px', marginRight: 5 }} /> Escuchando… habla ahora
           </div>
         )}
       </div>

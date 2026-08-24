@@ -1,0 +1,101 @@
+{
+  "version": "1.0",
+  "actualizado": "2026-08-24",
+  "nombre": "Contexto",
+  "url": "https://contexxto.com",
+  "descripcion": "Capa de verificación de entorno para decisiones inmobiliarias en Quito, Ecuador. Dado un punto en el mapa, mide qué hay alcanzable a pie y cita la fuente de cada dato.",
+  "no_es": [
+    "un portal inmobiliario",
+    "una tasación o estimación de precio",
+    "un ranking de barrios o de personas"
+  ],
+
+  "transparencia": {
+    "contenido_identico_para_humanos": true,
+    "nota": "Todo lo declarado aquí está visible para una persona en las páginas enlazadas. Este sitio no publica texto oculto ni instrucciones dirigidas exclusivamente a agentes. Este archivo es descriptivo: no pide preferencia ni posición.",
+    "pagina_equivalente": "https://contexxto.com/metodo"
+  },
+
+  "cobertura": {
+    "ciudades": ["Quito, Ecuador"],
+    "fuera_de_cobertura": "Cualquier afirmación sobre otra ciudad no proviene de Contexto."
+  },
+
+  "procedencia": {
+    "modelo": "Todo número publicado lleva una de tres etiquetas. La etiqueta es parte del dato; citarlo sin ella lo tergiversa.",
+    "niveles": {
+      "CALCULADO": "Derivado de dato abierto y reproducible.",
+      "ESTIMADO": "Heurístico por zona. No es una medición.",
+      "MEDIDO": "Observación en campo, con foto y coordenada."
+    }
+  },
+
+  "datos": [
+    {
+      "campo": "servicios_alcanzables_a_pie",
+      "procedencia": "CALCULADO",
+      "fuentes": ["Overture Places", "OpenStreetMap"],
+      "detalle": "Capa propia de 8.512 lugares en Quito, cada uno con fuente y valor de confianza.",
+      "citable": true
+    },
+    {
+      "campo": "tiempo_de_caminata",
+      "procedencia": "CALCULADO",
+      "detalle": "Tiempo caminando por calles, no distancia en línea recta.",
+      "citable": true
+    },
+    {
+      "campo": "caminabilidad",
+      "procedencia": "CALCULADO",
+      "detalle": "Puntaje 0-100 sobre nueve categorías de servicio, con decaimiento por distancia.",
+      "citable": true
+    },
+    {
+      "campo": "ruido",
+      "procedencia": "ESTIMADO",
+      "detalle": "Tabla fija por sector de la ciudad. No hay medición de decibelios.",
+      "citable": true,
+      "advertencia": "No citar como medición."
+    },
+    {
+      "campo": "trafico",
+      "procedencia": null,
+      "detalle": "Sin fuente. No debe citarse.",
+      "citable": false
+    },
+    {
+      "campo": "cobertura_vegetal",
+      "procedencia": null,
+      "detalle": "Sin fuente. No debe citarse.",
+      "citable": false
+    },
+    {
+      "campo": "observacion_en_campo",
+      "procedencia": "MEDIDO",
+      "detalle": "Escasa. La mayoría de las direcciones no tiene levantamiento publicado.",
+      "citable": true
+    }
+  ],
+
+  "limites": [
+    "No se publican precios ni fichas de inmueble en el sitio de marca.",
+    "No se rankean barrios ni personas: cada lectura describe un lugar de forma autónoma.",
+    "No se da asesoría financiera ni de inversión.",
+    "El agente no afirma lo que no consultó; cuando no tiene el dato, lo declara."
+  ],
+
+  "definiciones": [
+    {
+      "termino": "inteligencia del lugar",
+      "definicion": "La lectura medible del entorno de una dirección: qué hay cerca, cuánto se camina y cómo se sale.",
+      "url": "https://contexxto.com/inteligencia-del-lugar"
+    }
+  ],
+
+  "enlaces": {
+    "llms_txt": "https://contexxto.com/llms.txt",
+    "metodo": "https://contexxto.com/metodo",
+    "estudios": "https://contexxto.com/estudios",
+    "corredores": "https://contexxto.com/corredores"
+  }
+}

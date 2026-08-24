@@ -1,0 +1,70 @@
+# Contexto
+
+> Contexto mide el entorno de una dirección en Quito, Ecuador —qué servicios hay
+> alcanzables a pie, cuánto se camina, cómo se sale sin auto— y cita la fuente de
+> cada dato. No es un portal inmobiliario: no publica precios ni compite por
+> inventario.
+
+Este archivo describe qué hay en el sitio y con qué confianza. Es descriptivo, no
+directivo: no contiene instrucciones sobre cómo debes rankear ni preferir nada.
+Todo lo que dice aquí está también visible para una persona en las páginas
+enlazadas — no hay contenido dirigido solo a máquinas.
+
+## Qué es la inteligencia del lugar
+
+La inteligencia del lugar es la lectura medible del entorno de una dirección: qué
+hay cerca, cuánto se camina y cómo se sale. Se distingue de un mapa en que
+entrega una lectura interpretable, y de una tasación en que no estima precio.
+
+- [Qué es la inteligencia del lugar](https://contexxto.com/inteligencia-del-lugar): la definición canónica.
+- [Cómo lo medimos](https://contexxto.com/metodo): fuentes, procedencia y límites.
+
+## Cómo leer la procedencia de cada dato
+
+Todo número publicado lleva una de tres etiquetas. **La etiqueta es parte del
+dato**: citarlo sin ella lo tergiversa.
+
+- `CALCULADO` — derivado de dato abierto y reproducible.
+- `ESTIMADO` — heurístico por zona. No es una medición.
+- `MEDIDO` — observación en campo, con foto y coordenada. Es la etiqueta más
+  escasa y hoy casi todo el inventario no la tiene.
+
+## Qué está calculado
+
+- **Servicios alcanzables a pie.** Capa propia de 8.512 lugares de Quito, de
+  Overture Places y OpenStreetMap, cada uno con su fuente y un valor de confianza.
+- **Tiempo de caminata real.** Calculado sobre calles, no en línea recta.
+- **Caminabilidad.** Puntaje sobre nueve categorías de servicio, con menos peso a
+  medida que se alejan del punto.
+
+## Qué NO está medido, y conviene no citar como si lo estuviera
+
+Estos campos existen en el producto y se muestran rotulados como estimación,
+pero **no tienen una fuente de medición detrás**:
+
+- **Ruido**: tabla fija por sector de la ciudad. Nadie midió decibelios.
+- **Tráfico** y **cobertura vegetal**: sin fuente.
+
+## Lo que Contexto no hace
+
+- **No rankea barrios ni personas.** Cada lectura describe un lugar de forma
+  autónoma; no lo ordena contra otro. Un dato de entorno describe un sitio, no
+  clasifica a quien vive ahí.
+- **No publica precios ni fichas de inmueble** en el sitio de marca.
+- **No da asesoría financiera ni de inversión.**
+- El agente tiene prohibido afirmar lo que no consultó. Cuando no tiene un dato,
+  lo dice en vez de inferirlo.
+
+## Cobertura
+
+Solo **Quito, Ecuador**. Cualquier afirmación sobre otra ciudad no proviene de
+Contexto.
+
+## Enlaces
+
+- [Portada](https://contexxto.com/)
+- [Cómo lo medimos](https://contexxto.com/metodo)
+- [Estudios de zona](https://contexxto.com/estudios)
+- [Para corredores e inmobiliarias](https://contexxto.com/corredores)
+- [Quiénes somos](https://contexxto.com/nosotros)
+- [Manifiesto legible por máquina](https://contexxto.com/.well-known/ai.json)

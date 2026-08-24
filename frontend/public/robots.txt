@@ -1,57 +1,103 @@
 # Contexto — robots.txt
-# Protección del foso de datos: bloquea crawlers de IA/entrenamiento y de
-# motores de respuesta para que NO ingieran el catastro ni las páginas de datos.
+#
+# El foso es el DATO POR DIRECCIÓN (/a/ y /s/), no la explicación del método.
+# Bloquear la explicación no protege nada y cuesta descubrimiento. Por eso los
+# agentes se separan en dos grupos:
+#
+#   ENTRENAMIENTO → bloqueo total. No hay razón para regalar el corpus.
+#   RESPUESTA     → pueden leer marca y método; el catastro sigue cerrado.
+#
+# Excepción transversal: /llms.txt y /.well-known/ quedan legibles para TODOS,
+# incluso para los bloqueados. Ese manifiesto es el que declara qué NO debe
+# citarse (tráfico y cobertura vegetal no tienen fuente). Un agente que no puede
+# leerlo es más peligroso, no menos.
+#
+# Nota: los nombres de estos agentes cambian con el tiempo. Revisar cuando se
+# toque este archivo — un agente nuevo cae en "User-agent: *" por omisión.
 
-# --- Crawlers de IA / answer engines (bloqueo total) ---
+# ─── Crawlers de ENTRENAMIENTO (bloqueo total, salvo el manifiesto) ───
 User-agent: GPTBot
-Disallow: /
-
-User-agent: OAI-SearchBot
-Disallow: /
-
-User-agent: ChatGPT-User
+Allow: /llms.txt
+Allow: /.well-known/
 Disallow: /
 
 User-agent: ClaudeBot
+Allow: /llms.txt
+Allow: /.well-known/
 Disallow: /
 
 User-agent: anthropic-ai
-Disallow: /
-
-User-agent: Claude-Web
-Disallow: /
-
-User-agent: PerplexityBot
-Disallow: /
-
-User-agent: Perplexity-User
+Allow: /llms.txt
+Allow: /.well-known/
 Disallow: /
 
 User-agent: Google-Extended
-Disallow: /
-
-User-agent: CCBot
-Disallow: /
-
-User-agent: Bytespider
-Disallow: /
-
-User-agent: Amazonbot
+Allow: /llms.txt
+Allow: /.well-known/
 Disallow: /
 
 User-agent: Applebot-Extended
+Allow: /llms.txt
+Allow: /.well-known/
+Disallow: /
+
+User-agent: CCBot
+Allow: /llms.txt
+Allow: /.well-known/
+Disallow: /
+
+User-agent: Bytespider
+Allow: /llms.txt
+Allow: /.well-known/
 Disallow: /
 
 User-agent: meta-externalagent
+Allow: /llms.txt
+Allow: /.well-known/
+Disallow: /
+
+User-agent: Amazonbot
+Allow: /llms.txt
+Allow: /.well-known/
 Disallow: /
 
 User-agent: FacebookBot
+Allow: /llms.txt
+Allow: /.well-known/
 Disallow: /
 
 User-agent: DataForSeoBot
+Allow: /llms.txt
+Allow: /.well-known/
 Disallow: /
 
-# --- Buscadores normales (SEO): inicio permitido, páginas de datos bloqueadas ---
+# ─── Motores de RESPUESTA (que puedan citar el método, nunca el catastro) ───
+User-agent: OAI-SearchBot
+Disallow: /a/
+Disallow: /s/
+Allow: /
+
+User-agent: ChatGPT-User
+Disallow: /a/
+Disallow: /s/
+Allow: /
+
+User-agent: Claude-Web
+Disallow: /a/
+Disallow: /s/
+Allow: /
+
+User-agent: PerplexityBot
+Disallow: /a/
+Disallow: /s/
+Allow: /
+
+User-agent: Perplexity-User
+Disallow: /a/
+Disallow: /s/
+Allow: /
+
+# ─── Buscadores normales (SEO): inicio permitido, páginas de datos bloqueadas ───
 User-agent: *
 Disallow: /a/
 Disallow: /s/

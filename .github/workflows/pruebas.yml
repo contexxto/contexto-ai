@@ -1,0 +1,78 @@
+# Gate de pruebas: el que BLOQUEA. Distinto del keepalive (que despierta) y del
+# vigía de salud (que avisa cuando ya está roto en producción).
+#
+# POR QUÉ EXISTE (2026-08-24, E0.5 del Trust Gate): hasta hoy el repositorio tenía
+# 796 pruebas que corrían en segundos y no bloqueaban absolutamente nada. Ningún
+# workflow ejecutaba pytest, y `main` despliega solo a Render (~4 min de build
+# Docker). O sea: un commit que rompiera el motor de encaje llegaba a producción
+# sin que nadie se enterara hasta que un usuario lo notara. La auditoría lo listó
+# como uno de los cuatro P0 y el roadmap lo tenía desde junio (§1.6).
+#
+# LO QUE ESTE WORKFLOW SÍ HACE:
+#  · Corre la suite completa en cada push a main y en cada pull request.
+#  · Marca el commit en rojo si algo falla. Ese estado es visible en GitHub y es
+#    la señal que puede consumir una branch protection rule.
+#
+# LO QUE ESTE WORKFLOW NO HACE, dicho de frente:
+#  · NO detiene por sí solo el auto-deploy de Render. Render observa la rama
+#    directamente; GitHub Actions no es su portero. Para que un fallo aquí impida
+#    el despliegue hay que activarlo EN EL PANEL de Render:
+#        Settings → Build & Deploy → "Wait for CI to pass before deploying" (on)
+#    Sin ese interruptor, esto informa pero no bloquea. Queda como paso pendiente
+#    del gate, y es de consola, no de código.
+#  · NO protege main de un push directo. Eso es una branch protection rule en
+#    GitHub → Settings → Branches, marcando este check como requerido.
+#
+# POR QUÉ LAS VARIABLES DUMMY DE POSTGRES: app/config.py declara postgres_db,
+# postgres_user y postgres_password SIN valor por defecto, así que instanciar
+# Settings() sin ellas revienta con ValidationError. En local eso lo resuelve el
+# .env; en CI no hay .env. Verificado el 2026-08-24 sobre un worktree limpio: sin
+# estas tres variables, 27 archivos de test ni siquiera llegan a recolectarse.
+# Con ellas, la suite pasa entera. No apuntan a ninguna base: las pruebas son
+# offline y no abren conexión — solo necesitan que la configuración valide.
+name: pruebas
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      # Valores inertes. Ver la nota de arriba: hacen validar a Settings(), no
+      # conectan a nada. Si algún día una prueba necesita una base real, eso es
+      # un servicio de PostgreSQL en este job, no un secreto aquí.
+      POSTGRES_DB: test
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+
+    steps:
+      - name: Traer el código
+        uses: actions/checkout@v4
+
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          # Coincide con el Dockerfile (python:3.11-slim). Si el runtime de
+          # producción sube de versión, esta línea sube con él.
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Correr la suite
+        # Sin --maxfail: queremos el parte completo de lo que se rompió, no el
+        # primer fallo. La suite entera tarda segundos.
+        run: python -m pytest -q

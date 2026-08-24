@@ -22,13 +22,17 @@ def test_qr_svg_inline_es_svg():
     assert "<?xml" not in svg  # inline → sin declaración XML
 
 
-def test_sphere_escala_y_uid_unico():
+def test_sphere_escala_y_sin_ids_colisionables():
     a = gq._sphere(44, "0")
     b = gq._sphere(44, "1")
-    assert 'width="44"' in a
-    # ids con uid distinto evitan colisión al poner varias esferas en una página
-    assert "sg0" in a and "sg1" in b
-    assert "sg0" not in b
+    assert 'width="44"' in a and 'height="44"' in a
+    assert a.lstrip().startswith("<svg") and a.rstrip().endswith("</svg>")
+    # El mark del Brand Kit v2026.1 (commit 32d6110, 2026-08-20) es plano: sin
+    # <defs> ni gradientes, así que no hay ids que puedan colisionar al repetir
+    # el mark en una página. Esa colisión era justo lo que el uid evitaba en la
+    # marca anterior; hoy el parámetro se conserva por firma y no altera la salida.
+    assert 'id="' not in a
+    assert a == b
 
 
 def test_letrero_incrusta_deeplink_y_direccion():

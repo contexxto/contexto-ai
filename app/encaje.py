@@ -199,14 +199,36 @@ def _score_tranquilidad(_decl, inm) -> dict:
                   f"Buscabas tranquilidad · ruido estimado {ruido.lower()}", "estimación por sector")
 
 
+# Procedencia de la caminabilidad, traducida del valor que guarda
+# activos_inmutables.walk_score_fuente. Hasta el 2026-08-24 este scorer afirmaba
+# "OpenStreetMap" para TODOS los inmuebles, sin consultar nada: cuando Overpass no
+# respondía y el score quedaba en la estimación por zona, el motor seguía reclamando
+# una medición que no existía. La ficha del anuncio (routers/assets._scores_fuente) ya
+# distinguía bien desde su lado, así que el mismo activo daba dos verdades distintas
+# según por dónde se mirara. Es el P0 de procedencia de la auditoría.
+_FUENTE_CAMINABLE = {
+    "osm": "OpenStreetMap",        # contada sobre comercios reales
+    "heuristico": "estimación por zona",
+}
+# Sin procedencia registrada no se afirma medición: se degrada a estimación, que es el
+# lado seguro. Coincide con la regla que ya sigue el alta de activos
+# (routers/assets.create_asset: "origen opaco del payload → el anuncio degrada a
+# estimación").
+_FUENTE_CAMINABLE_DESCONOCIDA = "estimación por zona"
+
+
 def _score_caminable(_decl, inm) -> dict:
     ws = _num(inm.get("walk_score"))
     if ws is None:
         return _razon("caminable", "sin_dato", None,
                       "Buscabas caminable · sin caminabilidad calculada aquí", None, aporta=False)
     s = _clamp01(ws / 100)
+    fuente = _FUENTE_CAMINABLE.get(
+        (inm.get("walk_score_fuente") or "").strip().lower(),
+        _FUENTE_CAMINABLE_DESCONOCIDA,
+    )
     return _razon("caminable", _nivel(s), s,
-                  f"Buscabas caminable · caminabilidad {int(ws)}/100", "OpenStreetMap")
+                  f"Buscabas caminable · caminabilidad {int(ws)}/100", fuente)
 
 
 def _score_transporte(_decl, inm) -> dict:

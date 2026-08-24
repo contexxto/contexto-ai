@@ -305,6 +305,12 @@ def _senales_encaje(row: dict, car: dict) -> dict:
     return {
         "tipo_activo": row.get("tipo_activo"),
         "walk_score": row.get("caminabilidad"),
+        # La procedencia viaja CON el número. Sin ella, encaje._score_caminable no puede
+        # saber si el walk_score se midió sobre comercios reales o quedó en la estimación
+        # por zona — y hasta el 2026-08-24 resolvía esa ignorancia afirmando "OpenStreetMap"
+        # para todos. La card de al lado (_card_from_row) ya recibía este mismo dato, así
+        # que el motor y la ficha se contradecían sobre el mismo activo.
+        "walk_score_fuente": row.get("caminabilidad_fuente"),
         "ruido": row.get("ruido"),
         "vegetacion": row.get("vegetacion"),
         "precio": row.get("precio"),

@@ -174,10 +174,11 @@ def test_la_violacion_de_integridad_no_se_degrada_a_legacy():
 
 
 def test_mismo_input_y_mismo_session_id_dan_la_misma_decision(monkeypatch):
-    """Salvo lo inyectado como volátil: `created_at` se congela para que la comparación
-    sea del contenido y no del reloj."""
+    """Salvo lo inyectado como volátil: `created_at` y el ámbito se congelan para que la
+    comparación sea del contenido y no del reloj ni del generador de ids."""
     monkeypatch.setattr(assembler, "_ahora_utc", lambda: __import__("datetime").datetime(
         2026, 8, 25, 12, 0, 0, tzinfo=__import__("datetime").timezone.utc))
+    monkeypatch.setattr(assembler, "_nuevo_scope_id", lambda: "scope-fijo")
 
     creados = []
     original = assembler.assemble_decision_context_v0
@@ -194,19 +195,58 @@ def test_mismo_input_y_mismo_session_id_dan_la_misma_decision(monkeypatch):
     assert [d.model_dump(mode="json") for d in creados] == primera
 
 
-def test_el_decision_id_distingue_sesion_y_candidato(monkeypatch):
-    """Dos turnos distintos no comparten identidad de decisión, y dentro de un turno cada
-    candidato tiene la suya."""
-    creados = []
+def _espiar(monkeypatch, creados):
     original = assembler.assemble_decision_context_v0
     monkeypatch.setattr(
         assembler, "assemble_decision_context_v0",
         lambda **kw: creados.append(original(**kw)) or creados[-1],
     )
+
+
+def test_cada_candidato_del_turno_tiene_su_propia_identidad(monkeypatch):
+    creados = []
+    _espiar(monkeypatch, creados)
     _panel(monkeypatch, ["a", "b"], [_row("a", precio=300), _row("b", precio=690)])
     ids = [d.decision_id for d in creados]
     assert len(set(ids)) == len(ids), "dos candidatos compartieron decision_id"
-    assert all(i.startswith("s-real:") for i in ids)
+
+
+def test_dos_turnos_sobre_la_misma_propiedad_no_comparten_identidad(monkeypatch):
+    """EL DEFECTO QUE ESTO CIERRA. Con `decision_id = session:property`, la misma
+    propiedad en la misma sesión recibía la misma identidad en turnos distintos —aunque
+    cambiaran preferencias, ranking o evidencia—, y E2.3 va a colgar afirmaciones de esa
+    identidad. Dos decisiones distintas no pueden ser una sola.
+    """
+    rows = [_row("a", precio=300)]
+
+    primero = []
+    _espiar(monkeypatch, primero)
+    _panel(monkeypatch, ["a"], rows, prefs=PREFS)
+
+    segundo = []
+    _espiar(monkeypatch, segundo)
+    _panel(monkeypatch, ["a"], rows, prefs={**PREFS, "presupuesto_max": 2000})
+
+    assert primero[0].decision_id != segundo[0].decision_id, (
+        "la misma propiedad en la misma sesión reusó decision_id entre turnos"
+    )
+    assert primero[0].buyer.buyer_id == segundo[0].buyer.buyer_id, (
+        "la SESIÓN sí es la misma: lo que cambia es la instancia de decisión"
+    )
+
+
+def test_todo_el_panel_comparte_ambito_e_instante(monkeypatch):
+    """Las decisiones de un panel son el MISMO evento lógico."""
+    creados = []
+    _espiar(monkeypatch, creados)
+    _panel(monkeypatch, ["a", "b", "c"],
+           [_row("a", precio=300), _row("b", precio=690), _row("c", precio=500)])
+
+    ambitos = {d.decision_id.rsplit(":", 1)[0] for d in creados}
+    assert len(ambitos) == 1, f"un mismo panel produjo varios ámbitos: {ambitos}"
+    assert len({d.created_at for d in creados}) == 1, (
+        "las decisiones del mismo panel llevan instantes distintos: no son el mismo evento"
+    )
 
 
 # ── nada de identidad persistente ───────────────────────────────────────────────

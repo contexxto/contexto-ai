@@ -37,6 +37,7 @@ from app.entorno import limpiar_texto_servicios
 from app.entorno_curacion import aplicar_curacion, info_verificacion, parse_servicios
 from app.orden import encaje_ajustado, ordenar_candidatos
 from app.preferencias import extraer_preferencias
+import uuid
 from datetime import datetime, timezone
 
 from app.decision.context import (
@@ -563,14 +564,24 @@ async def construir_panel(messages, *, session_id: str, preferencias: dict | Non
     # Y el ranking se mete DENTRO del contrato que F1 congeló, que es quien lo porta. Una
     # decisión por candidato evaluado, todas compartiendo el mismo orden: es la decisión
     # del turno, no una opinión por tarjeta.
+    # UN ensamblado, UNA identidad y UN instante. Las decisiones de este panel son el
+    # MISMO evento lógico, así que comparten `created_at` y derivan su id del mismo
+    # ámbito.
+    #
+    # Antes esto era `f"{session_id}:{id}"`, y tenía un defecto real: la misma propiedad
+    # en la misma sesión recibía el mismo `decision_id` en turnos distintos, aunque
+    # cambiaran las preferencias, el ranking o la evidencia. Dos decisiones distintas con
+    # una sola identidad — y E2.3 va a colgar afirmaciones de esa identidad.
+    scope = _nuevo_scope_id()
+    instante = _ahora_utc()
     decisiones = [
         assemble_decision_context_v0(
             row=by_id[c["id"]],
             preferencias=preferencias,
             encaje=_encaje_de(by_id[c["id"]], preferencias),
             session_id=session_id,
-            decision_id=f"{session_id}:{c['id']}",
-            created_at=_ahora_utc(),
+            decision_id=f"{scope}:{c['id']}",
+            created_at=instante,
             ranking=ranking,
         )
         for c in cards
@@ -612,6 +623,16 @@ def _encaje_de(row: dict, preferencias: dict | None) -> dict | None:
 def _ahora_utc() -> datetime:
     """Aparte para que las pruebas puedan congelarlo sin tocar el resto del panel."""
     return datetime.now(timezone.utc)
+
+
+def _nuevo_scope_id() -> str:
+    """Identidad del ENSAMBLADO — una por llamada a `construir_panel`.
+
+    No se persiste, no entra en ningún store y no es F6: es solo lo que hace que dos
+    decisiones distintas sobre la misma propiedad no compartan identidad. Aparte para que
+    las pruebas puedan inyectarla y conservar el determinismo.
+    """
+    return uuid.uuid4().hex
 
 
 async def build_result_cards(messages, *, session_id: str, preferencias: dict | None = None) -> list[dict]:

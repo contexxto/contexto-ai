@@ -47,7 +47,11 @@ for _s in (sys.stdout, sys.stderr):
         pass
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_API = "https://contexto-ai.onrender.com"
+
+# El servicio de Render ya se renombró una vez (contexto-ai → contexto-ai-oregon) y este
+# default quedó clavado apuntando al vacío. Manda el entorno (CONTEXTO_API_URL, el mismo
+# nombre que usa evals/run_evals.py); el literal es solo el respaldo verificado.
+DEFAULT_API = os.environ.get("CONTEXTO_API_URL", "https://contexto-ai-oregon.onrender.com").rstrip("/")
 
 
 def _num(v, cast, default=None):

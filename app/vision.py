@@ -109,8 +109,11 @@ async def fetch_image_jpeg_b64(url: str) -> str:
     verify = settings.ssl_verify.lower() != "false"
     # Muchos CDNs (Wikimedia, etc.) bloquean clientes sin User-Agent de navegador.
     headers = {
+        # El +URL del User-Agent es a dónde mira el operador de un CDN cuando decide si
+        # bloquearnos; apuntaba al host de Render, que además de no explicar nada ya está
+        # muerto (503). El sitio de marca sí identifica quién scrapea.
         "User-Agent": (
-            "Mozilla/5.0 (compatible; ContextoAI/2.0; +https://contexto-ai.onrender.com)"
+            "Mozilla/5.0 (compatible; ContextoAI/2.0; +https://contexxto.com)"
         ),
         "Accept": "image/*",
     }

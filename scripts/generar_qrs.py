@@ -31,7 +31,8 @@ USO
   python scripts/generar_qrs.py --csv scripts/activos.csv
 
   Flags:
-    --api        Base URL de la API (default: https://contexto-ai.onrender.com)
+    --api        Base URL de la API
+                 (default: $CONTEXTO_API_URL, o https://contexto-ai-oregon.onrender.com)
     --app-url    Base URL pública del frontend para el deep-link
                  (default: https://contexto-ai-six.vercel.app)
     --csv        Lee activos de un CSV (id,direccion) en vez de la API
@@ -40,6 +41,7 @@ USO
 """
 import argparse
 import csv
+import os
 import sys
 from html import escape
 from pathlib import Path
@@ -56,7 +58,12 @@ for _stream in (sys.stdout, sys.stderr):
 
 ROOT = Path(__file__).resolve().parent.parent
 
-DEFAULT_API = "https://contexto-ai.onrender.com"
+# El servicio de Render ya se renombró una vez (contexto-ai → contexto-ai-oregon) y este
+# default quedó clavado apuntando al vacío: 503 silencioso, sin activos, sin QRs. Ahora
+# manda el entorno (CONTEXTO_API_URL, el mismo nombre que usa evals/run_evals.py) y el
+# literal es solo el respaldo verificado — para que el próximo renombrado se arregle sin
+# tocar código.
+DEFAULT_API = os.environ.get("CONTEXTO_API_URL", "https://contexto-ai-oregon.onrender.com").rstrip("/")
 DEFAULT_APP = "https://contexto-ai-six.vercel.app"
 
 # Paleta Aura

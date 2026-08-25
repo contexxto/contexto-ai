@@ -75,7 +75,7 @@ def _panel(monkeypatch, ids, rows, prefs, extra_tools=()):
 
     monkeypatch.setattr(assembler, "_fetch_cards_rows", fake_fetch)
     return asyncio.run(
-        chat.construir_panel(_turno("consulta", ids, extra_tools), preferencias=prefs)
+        chat.construir_panel(_turno("consulta", ids, extra_tools), preferencias=prefs, session_id="s-test")
     )
 
 
@@ -137,7 +137,7 @@ def test_A2_sin_candidatos_devuelve_panel_vacio(monkeypatch):
         return ([], {})
 
     monkeypatch.setattr(assembler, "_fetch_cards_rows", fake_fetch)
-    panel = asyncio.run(chat.construir_panel(_turno("hola", []), preferencias={}))
+    panel = asyncio.run(chat.construir_panel(_turno("hola", []), preferencias={}, session_id="s-test"))
     assert panel == {"cards": [], "descartadas": [], "preferencias": {}, "priorizado": (None, None)}
 
 
@@ -379,7 +379,7 @@ def test_L2_una_priorizacion_de_un_turno_viejo_no_manda_hoy(monkeypatch):
 
     monkeypatch.setattr(assembler, "_fetch_cards_rows", fake_fetch)
     msgs = viejo + _turno("ahora", ids)
-    panel = asyncio.run(chat.construir_panel(msgs, preferencias=_PREFS_COMPLETAS))
+    panel = asyncio.run(chat.construir_panel(msgs, preferencias=_PREFS_COMPLETAS, session_id="s-test"))
     assert panel["priorizado"] == (None, None)
 
 
@@ -393,7 +393,7 @@ def test_M_si_la_db_falla_el_turno_no_se_rompe(monkeypatch):
         return None
 
     monkeypatch.setattr(assembler, "_fetch_cards_rows", fake_fetch)
-    panel = asyncio.run(chat.construir_panel(_turno("consulta", ["x"]), preferencias={"a": 1}))
+    panel = asyncio.run(chat.construir_panel(_turno("consulta", ["x"]), preferencias={"a": 1}, session_id="s-test"))
     assert panel == {"cards": [], "descartadas": [], "preferencias": {"a": 1}, "priorizado": (None, None)}
 
 
@@ -403,7 +403,7 @@ def test_M2_una_excepcion_del_fetch_tambien_degrada(monkeypatch):
 
     monkeypatch.setattr(assembler, "_fetch_cards_rows", fake_fetch)
     with pytest.raises(RuntimeError):
-        asyncio.run(chat.construir_panel(_turno("consulta", ["x"]), preferencias={}))
+        asyncio.run(chat.construir_panel(_turno("consulta", ["x"]), preferencias={}, session_id="s-test"))
 
 
 # ── El bloque autoritativo: byte a byte ──────────────────────────────────────────

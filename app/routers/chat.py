@@ -472,7 +472,7 @@ async def _stream_agent(message: str, session_id: str) -> AsyncIterator[str]:
         # acabamos de emitir); solo se reconstruyen si el nodo no corrió o degradó.
         resultados = _valores.get("cards")
         if not isinstance(resultados, list) or not resultados:
-            resultados = await build_result_cards(_msgs)
+            resultados = await build_result_cards(_msgs, session_id=session_id)
         map_seed = _map_seed_from_cards(resultados, prev_mode)
         # El stream es el camino que usa la gente de verdad — si la puerta solo saliera por
         # el no-stream, no se ofrecería nunca donde importa.
@@ -569,7 +569,7 @@ async def chat(
     # reconstruyen si el nodo no corrió o degradó — el turno nunca se queda sin panel.
     results = final_state.get("cards")
     if not isinstance(results, list) or not results:
-        results = await build_result_cards(messages)
+        results = await build_result_cards(messages, session_id=payload.session_id)
     # Se audita contra `results` —lo que de verdad se devuelve— y no contra el estado, para que
     # el veredicto sea sobre lo que la persona verá aunque el panel se haya reconstruido arriba.
     _auditar_prosa(payload.session_id, reply,
@@ -881,7 +881,8 @@ async def get_session_history(session_id: str):
         elif isinstance(m, AIMessage) and getattr(m, "tool_calls", None):
             pass                         # paso intermedio de planificación — ignorar
         elif isinstance(m, AIMessage):
-            results = await build_result_cards(turn_tool_msgs, preferencias=preferencias)
+            results = await build_result_cards(turn_tool_msgs, session_id=session_id,
+                                              preferencias=preferencias)
             # Encadena el modo del turno anterior (histéresis del lente) igual que el turno EN
             # VIVO (que lee spatial_context.focus_mode). Sin esto, la recarga recomputa cada
             # turno SIN continuidad y el mapa puede caer de ZONA a AURAS, "saltando" respecto de

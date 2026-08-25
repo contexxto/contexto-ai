@@ -56,7 +56,7 @@ def _panel(monkeypatch, ids, rows, prefs=PREFS):
         return (rows, {})
 
     monkeypatch.setattr(assembler, "_fetch_cards_rows", fake_fetch)
-    return asyncio.run(assembler.construir_panel(_turno(ids), preferencias=prefs))
+    return asyncio.run(assembler.construir_panel(_turno(ids), preferencias=prefs, session_id="s-test"))
 
 
 # ── Autoridad 1 · el orden lo decide el core, la tarjeta lo sigue ───────────────

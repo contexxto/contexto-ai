@@ -37,7 +37,14 @@ from app.entorno import limpiar_texto_servicios
 from app.entorno_curacion import aplicar_curacion, info_verificacion, parse_servicios
 from app.orden import encaje_ajustado, ordenar_candidatos
 from app.preferencias import extraer_preferencias
-from app.decision.context import decidir_ranking, decidir_sobre_presupuesto
+from datetime import datetime, timezone
+
+from app.decision.context import (
+    assemble_decision_context_v0,
+    decidir_ranking,
+    decidir_sobre_presupuesto,
+    proyectar_cards,
+)
 from app.rutas import verificacion_de_entorno
 
 _SEARCH_TOOLS = {"tool_search_nearby_assets", "tool_find_assets_by_text"}
@@ -440,7 +447,7 @@ def _priorizado_por_el_modelo(messages) -> tuple[str | None, str | None]:
     return aid, motivo
 
 
-async def construir_panel(messages, *, preferencias: dict | None = None) -> dict:
+async def construir_panel(messages, *, session_id: str, preferencias: dict | None = None) -> dict:
     """El PANEL del turno: {cards, descartadas, preferencias, priorizado}.
 
     Fuente ÚNICA de lo que la persona verá y de lo que el modelo lee como contexto
@@ -553,8 +560,24 @@ async def construir_panel(messages, *, preferencias: dict | None = None) -> dict
     # Que sea una proyección y no un sort paralelo es lo que hace imposible que diverjan:
     # una tarjeta no puede acabar en una posición que el ranking no le dio.
     ranking = decidir_ranking(cards, prioritario=prioritario)
-    por_id = {c["id"]: c for c in cards}
-    cards = [por_id[e.property_id] for e in ranking]
+    # Y el ranking se mete DENTRO del contrato que F1 congeló, que es quien lo porta. Una
+    # decisión por candidato evaluado, todas compartiendo el mismo orden: es la decisión
+    # del turno, no una opinión por tarjeta.
+    decisiones = [
+        assemble_decision_context_v0(
+            row=by_id[c["id"]],
+            preferencias=preferencias,
+            encaje=_encaje_de(by_id[c["id"]], preferencias),
+            session_id=session_id,
+            decision_id=f"{session_id}:{c['id']}",
+            created_at=_ahora_utc(),
+            ranking=ranking,
+        )
+        for c in cards
+    ]
+    # La presentación obedece al OBJETO, no a un tuple suelto. Si no hubo candidatos no
+    # hay decisión que obedecer y el orden es el que ya trae el ranking vacío.
+    cards = proyectar_cards(cards, decisiones[0]) if decisiones else cards
 
     # El veredicto de presupuesto también se decide UNA vez, en el core, y el corte lo
     # consume. Antes `_recortar_grid` volvía a comparar precio contra tope: dos sitios
@@ -571,7 +594,27 @@ async def construir_panel(messages, *, preferencias: dict | None = None) -> dict
     }
 
 
-async def build_result_cards(messages, *, preferencias: dict | None = None) -> list[dict]:
+def _encaje_de(row: dict, preferencias: dict | None) -> dict | None:
+    """El mismo resultado del motor que ya alimenta la tarjeta. Se recalcula desde la fila
+    en vez de guardarse en la card porque la card es presentación: leer de ahí la entrada
+    de la decisión invertiría otra vez la autoridad, esta vez por la puerta de atrás."""
+    if not preferencias:
+        return None
+    car = row.get("caracteristicas")
+    if isinstance(car, str):
+        try:
+            car = json.loads(car)
+        except Exception:  # noqa: BLE001
+            car = {}
+    return calcular_encaje(preferencias, _senales_encaje(row, car if isinstance(car, dict) else {}))
+
+
+def _ahora_utc() -> datetime:
+    """Aparte para que las pruebas puedan congelarlo sin tocar el resto del panel."""
+    return datetime.now(timezone.utc)
+
+
+async def build_result_cards(messages, *, session_id: str, preferencias: dict | None = None) -> list[dict]:
     """Solo las tarjetas visibles del turno (la vista que consume el endpoint y el historial).
     El panel completo —con lo descartado y la priorización— está en `construir_panel`."""
-    return (await construir_panel(messages, preferencias=preferencias))["cards"]
+    return (await construir_panel(messages, session_id=session_id, preferencias=preferencias))["cards"]

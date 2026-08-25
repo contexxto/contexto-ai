@@ -260,7 +260,7 @@ def test_el_panel_real_no_corona_la_ficha_incompleta(monkeypatch):
                     name="tool_find_assets_by_text", tool_call_id="t1"),
         AIMessage(content="Encontré estas opciones."),
     ]
-    cards = asyncio.run(chat.build_result_cards(messages))
+    cards = asyncio.run(chat.build_result_cards(messages, session_id="s-test"))
     por_id = {c["id"]: c for c in cards}
 
     # En CRUDO la incompleta puntúa más (se le promedia solo lo bueno que sí tiene)...
@@ -317,7 +317,7 @@ def test_el_panel_se_lee_de_mayor_a_menor_encaje(monkeypatch):
                     name="tool_find_assets_by_text", tool_call_id="t1"),
         AIMessage(content="Encontré estas."),
     ]
-    panel = asyncio.run(chat.construir_panel(messages))
+    panel = asyncio.run(chat.construir_panel(messages, session_id="s-test"))
     visibles = [c["encaje"] for c in panel["cards"]]
 
     assert len(visibles) >= 2, "el caso necesita al menos dos tarjetas para probar el orden"

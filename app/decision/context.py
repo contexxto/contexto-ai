@@ -80,6 +80,20 @@ _DECIMALES = 6
 dos inmuebles distintos no colisionen."""
 
 
+class SessionIdAusente(ValueError):
+    """No hay identidad de ejecución, así que no se puede nombrar a quién se le decide.
+
+    `BuyerContextRefV0.buyer_id` es obligatorio desde F1. Rellenarlo con
+    `"session:unknown"`, un UUID nuevo o cualquier otro relleno produciría un
+    `DecisionContextV0` que valida y no corresponde a nadie — el mismo error que
+    `place_id`, en otro campo.
+
+    OJO CON LA DISTINCIÓN: `session_id` es la identidad de la EJECUCIÓN conversacional,
+    no la del comprador. La segunda llega en F3 y sustituirá a esta. Propagarla ahora no
+    adelanta F3; evita que la decisión real lleve una referencia ficticia.
+    """
+
+
 class EncajeSinVersion(ValueError):
     """El motor produjo un resultado pero no dijo bajo qué reglas.
 
@@ -192,6 +206,11 @@ def assemble_decision_context_v0(
     `EncajeSinVersion` si el motor puntuó sin declarar bajo qué reglas. Los dos son el
     mismo principio: el objeto no puede afirmar más de lo que sostiene su evidencia.
     """
+    if not isinstance(session_id, str) or not session_id.strip():
+        raise SessionIdAusente(
+            f"session_id={session_id!r}: sin identidad de ejecución no se puede construir "
+            "el buyer_id de la decisión. No se inventa un valor por defecto."
+        )
     place_id = place_id_de_punto(row.get("lat"), row.get("lon"))
 
     return DecisionContextV0(

@@ -80,7 +80,7 @@ def _cards(monkeypatch, ids, rows, preferencias):
     async def fake_fetch(_ids):
         return (rows, {})
     monkeypatch.setattr(assembler, "_fetch_cards_rows", fake_fetch)
-    return asyncio.run(chat.build_result_cards([_tool_msg(ids)], preferencias=preferencias))
+    return asyncio.run(chat.build_result_cards([_tool_msg(ids)], preferencias=preferencias, session_id="s-test"))
 
 
 def test_filtra_a_arriendo_cuando_el_usuario_lo_declara(monkeypatch):

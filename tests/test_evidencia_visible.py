@@ -95,7 +95,7 @@ def _panel(monkeypatch, rows, prefs):
                     name="tool_find_assets_by_text", tool_call_id="t1"),
         AIMessage(content="Encontré estas opciones."),
     ]
-    return asyncio.run(chat.build_result_cards(messages))
+    return asyncio.run(chat.build_result_cards(messages, session_id="s-test"))
 
 
 def test_la_tarjeta_lleva_los_conteos(monkeypatch):

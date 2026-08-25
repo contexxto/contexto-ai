@@ -138,14 +138,13 @@ class Operator(StrEnum):
     NOT_EXISTS = "not_exists"
 
 
-class CriterionStatus(StrEnum):
-    """De dónde salió el criterio y si sigue vigente.
+class CriterionOrigin(StrEnum):
+    """DE DÓNDE salió el criterio. Eje epistemológico.
 
-    Esto SÍ es un enum cerrado, a diferencia de `stage`, y la diferencia tiene razón:
-    `stage` es una hipótesis sobre cómo decide la gente —necesita evidencia de uso para
-    cerrarse—, mientras que esto es un hecho sobre nuestros propios datos. Que un
-    criterio lo dijera la persona o lo dedujéramos nosotros no depende de aprender nada
-    del mercado: ya lo sabemos al escribirlo.
+    Separado del ciclo de vida a propósito: son preguntas independientes. Un criterio
+    inferido puede seguir vigente y uno declarado puede estar retirado; con un solo enum
+    (`stated | inferred | retracted`) esas dos combinaciones no se podían expresar —
+    retirar un criterio borraba de dónde había salido.
     """
 
     STATED = "stated"
@@ -155,10 +154,25 @@ class CriterionStatus(StrEnum):
     """Lo dedujimos de otra cosa. Mismo espíritu que `heuristic_estimate` en E1.1: puede
     entrar, pero no disfrazado de declaración."""
 
+
+class CriterionStatus(StrEnum):
+    """SI SIGUE VIGENTE. Eje de ciclo de vida.
+
+    Ambos ejes son enums cerrados en V0 —a diferencia de `stage`— y la asimetría tiene
+    razón: `stage` es una hipótesis sobre cómo decide la gente y necesita evidencia de
+    uso para cerrarse; esto son hechos sobre nuestros propios datos, que ya conocemos al
+    escribirlos.
+    """
+
+    ACTIVE = "active"
     RETRACTED = "retracted"
-    """Estuvo vigente y ya no. Se conserva en vez de borrarse porque saber que alguien
-    descartó un criterio es información, y borrarlo hace que el sistema vuelva a
-    proponer lo que ya rechazó."""
+    """Estuvo vigente y ya no. **Permanece en el contexto** con su `criterion_id` y su
+    evidencia intactos: saber que alguien descartó un criterio es información, y
+    borrarlo hace que el sistema vuelva a proponer lo que ya rechazó.
+
+    No debe considerarse activo para decisiones futuras. Quién aplica esa exclusión, y
+    cómo se pasa de `ACTIVE` a `RETRACTED`, es Buyer Harness — aquí no hay historial,
+    ni updater, ni resolución de conflictos."""
 
 
 CriterionValue = bool | int | float | str | tuple[str | int | float, ...] | None
@@ -195,9 +209,22 @@ class DecisionCriterionV0(_Base):
     unit: str | None = Field(default=None, min_length=1)
     """Unidad del valor: `"m2"`, `"minutes"`, `"USD"`. `None` cuando no aplica."""
 
-    status: CriterionStatus
+    origin: CriterionOrigin
+    """De dónde salió. Sin default: declararlo es obligatorio, por la misma razón que
+    `observed_at` no tiene default en E1.1 — un origen por omisión sería una afirmación
+    que nadie tomó."""
+
+    status: CriterionStatus = CriterionStatus.ACTIVE
+    """Si sigue vigente. `ACTIVE` por defecto porque es el estado normal y no afirma
+    nada falso; retirar un criterio es el acto excepcional y se escribe."""
+
     evidence: tuple[EvidenceRefV0, ...] = ()
     """Procedencia, con la primitiva de E1.1. Regla 4: no hay un segundo sistema."""
+
+    @property
+    def esta_activo(self) -> bool:
+        """Lectura, no evaluación: quién decide qué hacer con esto es Decision Core."""
+        return self.status is CriterionStatus.ACTIVE
 
     @model_validator(mode="after")
     def _el_valor_encaja_con_el_operador(self) -> DecisionCriterionV0:

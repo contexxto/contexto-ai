@@ -15,6 +15,7 @@ from app.contracts.buyer_v0 import (
     CONTRACT_VERSION,
     BuyerContextV0,
     CommuteAnchor,
+    CriterionOrigin,
     CriterionStatus,
     DecisionCriterionV0,
     Direction,
@@ -62,7 +63,7 @@ def _criterio(**cambios):
         dimension="bedrooms",
         operator=Operator.GTE,
         value=3,
-        status=CriterionStatus.STATED,
+        origin=CriterionOrigin.STATED,
     )
     base.update(cambios)
     return DecisionCriterionV0(**base)
@@ -209,18 +210,49 @@ def test_un_criterio_pertenece_a_una_lista_de_valores():
     assert c.value == ("Cumbayá", "La Floresta")
 
 
-def test_el_criterio_distingue_lo_declarado_de_lo_deducido():
-    """Mismo espíritu que `heuristic_estimate` en E1.1: lo inferido puede entrar, pero
-    no disfrazado de declaración."""
-    assert _criterio(status=CriterionStatus.INFERRED).status is CriterionStatus.INFERRED
-    assert {s.value for s in CriterionStatus} == {"stated", "inferred", "retracted"}
+def test_origen_y_ciclo_de_vida_son_ejes_independientes():
+    """Con un solo enum (`stated|inferred|retracted`) estas dos combinaciones no se
+    podían expresar: retirar un criterio borraba de dónde había salido."""
+    assert {o.value for o in CriterionOrigin} == {"stated", "inferred"}
+    assert {s.value for s in CriterionStatus} == {"active", "retracted"}
+
+    inferido_vigente = _criterio(origin=CriterionOrigin.INFERRED)
+    assert inferido_vigente.origin is CriterionOrigin.INFERRED
+    assert inferido_vigente.esta_activo is True
+
+    declarado_retirado = _criterio(
+        origin=CriterionOrigin.STATED, status=CriterionStatus.RETRACTED
+    )
+    assert declarado_retirado.origin is CriterionOrigin.STATED
+    assert declarado_retirado.esta_activo is False
 
 
-def test_un_criterio_retirado_se_conserva_en_vez_de_borrarse():
-    """Saber que alguien descartó un criterio es información; borrarlo hace que el
-    sistema vuelva a proponer lo que ya rechazó."""
-    c = _criterio(status=CriterionStatus.RETRACTED)
-    assert c.status is CriterionStatus.RETRACTED
+def test_el_origen_hay_que_declararlo():
+    """Sin default, por la misma razón que `observed_at` en E1.1: un origen por omisión
+    sería una afirmación que nadie tomó."""
+    with pytest.raises(ValidationError, match="origin"):
+        DecisionCriterionV0(
+            criterion_id="c-1", dimension="bedrooms", operator=Operator.GTE, value=3
+        )
+
+
+def test_un_criterio_retirado_se_conserva_entero():
+    """Permanece en el contexto con su id y su evidencia: saber que alguien descartó un
+    criterio es información, y borrarlo hace que el sistema vuelva a proponer lo que ya
+    rechazó."""
+    c = _criterio(status=CriterionStatus.RETRACTED, evidence=(_evidencia(),))
+    b = _comprador(hard_constraints=(c,))
+    guardado = b.hard_constraints[0]
+    assert guardado.criterion_id == "c-1"
+    assert guardado.evidence
+    assert guardado.esta_activo is False
+
+
+def test_el_contrato_no_gestiona_el_ciclo_de_vida():
+    """Cómo se pasa de ACTIVE a RETRACTED es Buyer Harness: aquí no hay historial, ni
+    updater, ni resolución de conflictos."""
+    for prohibido in ("retract", "activate", "resolve_conflict", "merge"):
+        assert not hasattr(DecisionCriterionV0, prohibido)
 
 
 def test_la_evidencia_del_criterio_viaja_dentro_del_criterio():
@@ -270,18 +302,25 @@ def test_stage_admite_no_saber():
     assert _comprador().stage is None
 
 
-def test_la_ortogonalidad_con_el_embudo_queda_documentada_no_forzada():
-    """CONSECUENCIA HONESTA de abrir el vocabulario: mientras `stage` sea `str`, nada
-    impide escribir aquí un estado del embudo comercial. La separación entre el eje de
-    DECISIÓN (este) y el de VENTA (`app/intencion.py`) está documentada en el módulo
-    pero el tipo ya no la puede hacer cumplir. Esa garantía vuelve cuando se cierre el
-    vocabulario. Esta prueba existe para que la pérdida quede registrada y no se
-    descubra por sorpresa."""
-    from app.intencion import ESTADOS
+def test_un_stage_en_blanco_no_es_un_stage():
+    """Abierto no es lo mismo que vacío: si no hay señal, el valor es `None`."""
+    with pytest.raises(ValidationError):
+        _comprador(stage="")
 
-    assert "enganchado" in ESTADOS
-    # No falla: el contrato lo acepta. Ese es justo el punto.
-    assert _comprador(stage="enganchado").stage == "enganchado"
+
+def test_la_documentacion_fija_que_stage_es_el_eje_de_decision():
+    """La ortogonalidad con `app/intencion.py` ya no la puede forzar el tipo —es el
+    precio, asumido, de no congelar una hipótesis sin evidencia—, así que tiene que
+    estar escrita donde alguien la lea antes de rellenar el campo.
+
+    Esta prueba se cae si alguien borra esa explicación del módulo.
+    """
+    import app.contracts.buyer_v0 as modulo
+
+    doc = (modulo.__doc__ or "").lower()
+    assert "intencion.py" in doc
+    assert "ortogonal" in doc or "no el calor comercial" in doc
+    assert "decisión" in doc
 
 
 # ── regla 4: una sola procedencia ────────────────────────────────────────────────

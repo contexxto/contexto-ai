@@ -1,0 +1,30 @@
+..........
+  [afirmaciones] 8 doc(s) afirman estado sin bloque verificable:
+    · docs\ANEXO_MAKLO_Operacion_Demanda_Meta.md
+    · docs\DESIGN_faseB_vision_embeddings.md
+    · docs\DESIGN_ingesta_visual_pgvector.md
+    · docs\DISENO_Brief_Intake_Multimodal.md
+    · docs\DISENO_Capa_Inversion.md
+    · docs\REPORTE_FaseB_Completa.md
+    · docs\SPEC_Foso_Capa_de_Datos.md
+    · docs\WORKFLOW_Conversacion_Capsulas.md
+.............................................................. [  7%]
+........................................................................ [ 15%]
+........................................................................ [ 22%]
+........................................................................ [ 30%]
+........................................................................ [ 37%]
+........................................................................ [ 45%]
+........................................................................ [ 52%]
+........................................................................ [ 60%]
+........................................................................ [ 67%]
+........................................................................ [ 75%]
+........................................................................ [ 83%]
+........................................................................ [ 90%]
+........................................................................ [ 98%]
+.................                                                        [100%]
+============================== warnings summary ===============================
+tests/test_crm_agent.py: 10 warnings
+  C:\Users\DETPC\Desktop\Contexto-AI\.venv\Lib\site-packages\langchain_core\tools\base.py:1079: PydanticDeprecatedSince20: The `__fields__` attribute is deprecated, use `model_fields` instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.10/migration/
+    fields = getattr(cls, "model_fields", {}) or getattr(cls, "__fields__", {})
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html

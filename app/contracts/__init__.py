@@ -29,6 +29,7 @@ from app.contracts.buyer_v0 import (
 from app.contracts.buyer_v0 import (
     BuyerContextV0,
     CommuteAnchor,
+    CriterionOrigin,
     CriterionStatus,
     DecisionCriterionV0,
     Direction,
@@ -67,6 +68,7 @@ __all__ = [
     "Objective",
     "Direction",
     "Operator",
+    "CriterionOrigin",
     "CriterionStatus",
     "DecisionCriterionV0",
     "TravelMode",

@@ -117,10 +117,14 @@ def test_lo_que_no_existe_todavia_se_declara_ausente():
     assert d.trace_id is None, "no hay instrumentación (F6)"
     assert d.recommended_next_action is None, "el flujo actual no emite una acción tipada"
     assert d.explanation is None, "todavía no hay prosa que verificar (E2.4)"
-    assert d.eligibility is None and d.match is None, "sin evidencia que citar (E2.3)"
-    assert d.strengths == () and d.tradeoffs == () and d.uncertainties == ()
+    assert d.eligibility is None and d.match is None, "sin evidencia que citar (F3/F5)"
+    assert d.strengths == () and d.tradeoffs == (), "exigirían evidence_refs resolubles (F4/F5)"
     assert d.ranking == (), "la autoridad del ranking es el segundo subpaso"
     assert d.anchor_ids == (), "no hay anclas de trayecto hasta F3"
+    # `uncertainties` YA NO está aquí: desde E2.3a es lo único que sí se emite, porque es
+    # la única afirmación del contrato cuya evidencia puede estar vacía con verdad. Su
+    # cobertura se prueba en `test_cobertura_de_evidencia.py`.
+    assert d.uncertainties, "una decisión sin evidencia resoluble tiene que decirlo (E2.3a)"
 
 
 # ── objective: solo el mapeo inequívoco ──────────────────────────────────────────

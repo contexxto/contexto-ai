@@ -733,9 +733,11 @@ def _build_graph() -> StateGraph:
                                             construir_panel)
         from app.decision.context import (CoordenadasAusentes, EncajeSinVersion,
                                           SessionIdAusente)
+        from app.decision.evidencia import DimensionSinProcedencia
 
         # Integridad semántica: producirían un DecisionContext que valida y es falso.
-        _INTEGRIDAD_DE_LA_DECISION = (SessionIdAusente, CoordenadasAusentes, EncajeSinVersion)
+        _INTEGRIDAD_DE_LA_DECISION = (SessionIdAusente, CoordenadasAusentes,
+                                      EncajeSinVersion, DimensionSinProcedencia)
 
         messages = state.get("messages") or []
         if not _collect_asset_ids(messages, limit=_MAX_CARDS * 2):
@@ -757,8 +759,9 @@ def _build_graph() -> StateGraph:
             session_id = (config.get("configurable") or {}).get("thread_id")
             panel = await construir_panel(messages, session_id=session_id, preferencias=prefs)
         except _INTEGRIDAD_DE_LA_DECISION:
-            # Estas TRES no se degradan en silencio. Un session_id ausente, unas coordenadas
-            # que no existen o un motor que no declara su versión no son "no pude armar el
+            # Estas CUATRO no se degradan en silencio. Un session_id ausente, unas
+            # coordenadas que no existen, un motor que no declara su versión o una dimensión
+            # que mueve la decisión sin fila de procedencia (E2.3a) no son "no pude armar el
             # panel": son condiciones que harían FALSO el DecisionContext si se rellenaran.
             # Seguir por el camino legacy las convertiría en invisibles, que es justo el modo
             # de fallo que F0 se pasó cerrando. Se propagan con su nombre.

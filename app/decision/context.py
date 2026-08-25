@@ -64,6 +64,7 @@ from app.contracts.decision_v0 import (
     PlaceContextRefV0,
     PropertyContextRefV0,
 )
+from app.decision.evidencia import derivar_incertidumbres
 from app.encaje import SCORE_VERSION
 from app.orden import ordenar_candidatos
 
@@ -230,11 +231,18 @@ def assemble_decision_context_v0(
         # El ranking autoritativo del turno. Lo comparten todas las decisiones de un
         # mismo panel: es el orden que se decidió una vez, no una opinión por candidato.
         ranking=ranking,
-        # Lo de abajo llega en subpasos posteriores y por eso queda vacío, no forzado:
-        #   · eligibility/match  → E2.3, cuando haya evidencia que citar
-        #   · strengths/tradeoffs→ E2.3; fabricarlos ahora exigiría evidence_refs inventadas
-        #   · explanation        → E2.4, y solo después de que exista prosa que verificar
-        #   · anchor_ids         → F3, cuando el comprador tenga anclas de verdad
+        # E2.3a — el hueco de evidencia, registrado en vez de disimulado. Hoy sale una
+        # incertidumbre por CADA razón que movió la decisión, porque la tabla de
+        # procedencia demostró que ninguna tiene una referencia resoluble de punta a
+        # punta. Es la mitad de E2.3 que sí se puede cumplir sin inventar provenance.
+        uncertainties=derivar_incertidumbres(encaje),
+        # Lo de abajo sigue vacío, y ahora por una razón demostrada y no por orden de
+        # trabajo: las cuatro exigen `evidence_refs` no vacías —`ViolationV0` lo tiene
+        # congelado desde E1.5— y no existe todavía dónde resolverlas.
+        #   · eligibility.violations / match.dimensions → F5 (propiedad) y F3 (comprador)
+        #   · strengths / tradeoffs                     → F4 (lugar) y F5 (propiedad)
+        #   · explanation → E2.4, y solo después de que exista prosa que verificar
+        #   · anchor_ids  → F3, cuando el comprador tenga anclas de verdad
     )
 
 

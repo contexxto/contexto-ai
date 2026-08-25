@@ -1,280 +1,203 @@
-# E2.3 — Tabla de procedencia · razón legacy → ¿EvidenceRefV0 posible?
+# E2.3a — Tabla de procedencia · qué parte de la decisión se puede demostrar
 
-**Fase:** F2 · E2.3 · **paso previo obligatorio, sin código**
-**Base:** `feat/decision-core-v0 = 1e501d7`
+**Fase:** F2 · E2.3a · **Base:** `feat/decision-core-v0`
 **Regla de oro:** si no se puede construir un `EvidenceRefV0` **verdadero** desde datos que
 ya existen, la salida es `insufficient_evidence` o ausencia de claim. Nunca fabricar
 procedencia para conservar una razón legacy.
 
-`YES_NOW` significa *"puedo construirlo hoy con evidencia real y resoluble"*, **no**
-*"puedo fabricar un objeto que valide"*. Esa distinción es toda la tabla.
+---
+
+## 0. Las dos columnas que hay que separar
+
+La primera versión de esta tabla clasificó la caminabilidad como `YES_NOW` y se contradijo
+tres párrafos después. El error fue mezclar dos preguntas distintas bajo una sola columna:
+
+| Pregunta | Qué significa |
+|---|---|
+| **¿Construible?** | ¿Sé armar un `EvidenceRefV0` honesto con los datos que hay? |
+| **¿Resoluble en runtime?** | ¿Puede la decisión **citarlo** contra algo que exista al decidir? |
+
+`DecisionContextV0` guarda `evidence_id`, no objetos: la evidencia vive en los contextos
+referenciados. Una evidencia construible pero no resoluble produce una **referencia rota
+emitida a propósito** — que es peor que no emitirla, porque valida.
+
+Con las columnas separadas, el resultado real es:
+
+> **Hoy hay cero razones materiales con evidencia resoluble de punta a punta.**
+> No una. Cero.
 
 ---
 
-## 0. Dos hallazgos que condicionan TODAS las filas
+## 1. Los tres hallazgos de infraestructura
 
-Antes de la tabla, porque cambian su lectura entera.
+### 1.1 Los timestamps existen en la base y se descartan en el `SELECT`
 
-### 0.1 Los timestamps existen en la base y se descartan en el `SELECT`
-
-El `SELECT` de `_fetch_cards_rows` devuelve `id, direccion, tipo_activo, imagen_url,
-caminabilidad, caminabilidad_fuente, ruido, vegetacion, servicios_cercanos, conectividad,
-lat, lon, caracteristicas, operacion, precio` (+ `verificado_en_terreno`, §0.3).
-
-No es que el dato no exista. Es que **se lo usa para ordenar y luego se lo tira**, dos veces
-con el mismo patrón:
+No es que el dato no tenga fecha. Se la usa para ordenar y se la tira. Mismo patrón, dos
+veces:
 
 | Timestamp | Existe en | Uso actual | ¿Llega a la decisión? |
 |---|---|---|---|
-| `fecha_publicacion` | `transacciones_temporales` | `ORDER BY … DESC LIMIT 1` del `LATERAL` | ✗ no se selecciona |
-| `creado_en` | `entorno_curacion` | `ORDER BY creado_en DESC` en `_fetch_curaciones_batch` | ✗ no se selecciona |
+| `fecha_publicacion` | `transacciones_temporales` | `ORDER BY … LIMIT 1` del `LATERAL` | ✗ no se selecciona |
+| `creado_en` | `entorno_curacion` | `ORDER BY creado_en DESC` | ✗ no se selecciona |
 
-`created_at`/`updated_at` de `activos_inmutables` tampoco se seleccionan.
+`created_at` / `updated_at` de `activos_inmutables` tampoco se seleccionan.
 
-Consecuencia: para el precio y para la curación, `EvidenceRefV0.observed_at` sería `None`
-**no porque el dato no tenga fecha, sino porque la query la descarta**. Lo único disponible
-sería `retrieved_at` = el instante del ensamblado: *no sabemos de cuándo es el dato, solo
-cuándo lo miramos*.
+Reparable —dos columnas en dos `SELECT`— pero es cambio de comportamiento en la capa de
+datos y **F2 es paridad**. Va como deuda, no como arreglo dentro de E2.3a.
 
-Esto es reparable —son dos columnas en dos `SELECT`— pero **es cambio de comportamiento en
-la capa de datos, y F2 es paridad**. Va como deuda, no como arreglo dentro de E2.3.
+### 1.2 Las preferencias son extracción de un LLM, sin traza a la declaración
 
-### 0.3 Existe UN timestamp real, y no respalda ninguna razón
+`extraer_preferencias` (`app/preferencias.py:145`) devuelve `_sanitizar(block.input)`: un
+dict plano. No conserva qué frase produjo qué campo, ni el índice del mensaje, ni la
+confianza del extractor.
 
-`verificacion_de_entorno(ids)` (`app/rutas.py:247`) devuelve `{activo_id: 'AAAA-MM-DD'}`:
-la fecha en que **un corredor pisó físicamente** algún lugar de ese entorno
-(`max(pois_vivos.verificado_en)` dentro del radio). Y **sí llega a la fila**, como
+Que `preferencias["presupuesto_max"] == 700` **no demuestra que la persona dijera 700**.
+Un `EvidenceRefV0` con `USER_DECLARED` afirmaría que *la persona lo declaró*; lo que
+tenemos es que *un modelo lo extrajo*. Son cosas distintas y el enum ya distingue: el
+segundo caso es `HEURISTIC_ESTIMATE`, con `limitations` obligatoria.
+
+**Ninguna preferencia puede citarse hoy como `USER_DECLARED`.** Lo cierra F3.
+
+### 1.3 Existe UN timestamp verdadero, y no respalda ninguna razón
+
+`verificacion_de_entorno` (`app/rutas.py:247`) devuelve `{activo_id: 'AAAA-MM-DD'}`: cuándo
+un corredor **pisó físicamente** algún lugar de ese entorno. Y sí llega a la fila, como
 `row["verificado_en_terreno"]`.
 
-Es, en todo el flujo, la única procedencia que califica limpio:
-`source_type=OWN_MEASUREMENT`, con `observed_at` **verdadero**.
+Es la única procedencia del flujo con `observed_at` real. Con dos matices que son parte de
+la evidencia, no notas al pie:
 
-Con dos matices que son parte de la evidencia, no notas al pie:
-
-- Es **de entorno, no del inmueble**: la insignia se propaga por proximidad — el corredor
-  verifica la farmacia parado en A y B enfrente la hereda. Eso es `limitations`, obligatorio.
-- **No respalda ninguna de las 17 razones.** Es una insignia de tarjeta, no una dimensión
-  de `encaje.py`. La evidencia más fuerte que tenemos hoy no sostiene ningún claim del panel.
-
-### 0.2 Las preferencias son extracción de un LLM, sin traza a la declaración
-
-`extraer_preferencias(mensajes_usuario)` llama al modelo con una tool y devuelve
-`_sanitizar(block.input)`: un dict plano. **No conserva qué frase produjo qué campo**, ni
-el índice del mensaje, ni la confianza del extractor.
-
-Esto importa mucho más de lo que parece. Que `preferencias["presupuesto_max"] == 700`
-**no demuestra** que la persona dijera "700". Pudo decir "hasta setecientos", "unos 700",
-"no más de 700 pero puedo estirarme", o el modelo pudo inferirlo de un contexto más largo.
-
-Un `EvidenceRefV0` con `source_type=USER_DECLARED` afirmaría que **la persona lo declaró**.
-Lo que tenemos es que **un modelo lo extrajo**. Son cosas distintas, y `SourceType` ya
-tiene el valor correcto para la segunda: `HEURISTIC_ESTIMATE` — con su `limitations`
-obligatoria.
-
-**Ninguna preferencia puede citarse hoy como `USER_DECLARED`.** Resolverlo es F3 (Buyer
-Harness), donde la extracción conserve la declaración que la originó.
+- Es **de entorno y se propaga por proximidad** — el corredor verifica la farmacia parado
+  en A y B enfrente hereda la insignia. Eso es `limitations`, obligatoria.
+- **No respalda ninguna de las 17 razones.** Es insignia de tarjeta, no dimensión de
+  scoring. La evidencia más fuerte que tenemos no sostiene ningún claim del panel.
 
 ---
 
-## 1. La tabla
+## 2. La tabla
 
-Las ocho dimensiones de `app/encaje.py::DIMENSIONES`, cada una con sus razones reales.
+| # | Dimensión | Dato exacto | Origen real | ¿Construible? | ¿Resoluble hoy? | Estado E2.3a | Cierra |
+|---|---|---|---|---|---|---|---|
+| 1 | `tipo_inmueble` | `tipo_activo` vs pref | operador declara | ⚠️ sin `source_id` | ✗ | `YES_BUT_LATER` | **F5** |
+| 2 | `presupuesto_max` | `precio` vs pref | proveedor / LLM | ⚠️ precio sí, tope no | ✗ | `YES_BUT_LATER` | **F5 + F3** |
+| 3 | `caminable` | `walk_score` + `walk_score_fuente` | Contexto sobre OSM | ✅ **sí** | ✗ | `YES_BUT_LATER` | **F4** |
+| 4 | `transporte` | regex sobre `conectividad` | Routes **o** OSM | ✗ fuente indistinguible | ✗ | `YES_BUT_LATER` | **F4** |
+| 5 | `area_verde` | regex sobre `servicios_cercanos` | OSM + curación | ✗ | ✗ | `YES_BUT_LATER` | **F4** |
+| 6 | `dormitorios` | `caracteristicas` JSONB | corredor | ⚠️ | ✗ | `YES_BUT_LATER` | **F5** |
+| 7 | `acepta_mascotas` | `caracteristicas` JSONB | corredor | ⚠️ | ✗ | `YES_BUT_LATER` | **F5** |
+| 8 | `tranquilidad` | `score_ruido_predictivo` | **nadie** | ✗ | ✗ | `INSUFFICIENT` | — |
+| — | vegetación, tráfico | — | E0.4 los retiró | — | — | `NO_CLAIM` | — |
+| ★ | `verificado_en_terreno` | `max(pois_vivos.verificado_en)` | corredor en terreno | ✅ **sí, con fecha** | ✗ | sin claim al que colgarse | **F4** |
 
-### 1.1 `tipo_inmueble` — requisito duro
+**La fila 3 es la que cambió.** Se sabe construir —`walk_score_fuente` es procedencia real,
+el arreglo de E0.3— pero tendría que citarse contra un `PlaceContextV0` que no se ensambla
+en runtime. Construible ≠ resoluble.
 
-| | |
-|---|---|
-| **Razón legacy** | *"Es un departamento, como pediste"* / *"Es una casa, no un departamento"* |
-| **Dato exacto** | `row.tipo_activo` normalizado vs `preferencias.tipo_inmueble` normalizado |
-| **Dónde vive hoy** | `activos_inmutables.tipo_activo` (columna tipada) |
-| **Quién lo afirmó** | El inventario propio. Lo cargó un corredor o el seed. |
-| **Naturaleza** | Declaración del proveedor sobre su propio activo |
-| **Timestamp** | ✗ ninguno (§0.1) |
-| **¿Evidencia del dato o del cálculo?** | Del **cálculo**. La comparación es determinista y verificable; que el activo *sea* un departamento es una declaración sin verificar. |
-| **`EvidenceRefV0` posible** | **YES_BUT_LATER** |
-| **Por qué no ahora** | `source_type=OPERATOR_DECLARED` sería correcto, pero `source_id` debería apuntar al registro del inmueble — y esa identidad la da `PropertyContextV0`, que no se ensambla en runtime hasta F5. Citar un `evidence_id` que no resuelve contra nada es una referencia rota a propósito. |
-| **Tratamiento** | La razón se conserva como texto legacy. **Sin claim material en `DecisionContextV0`** hasta F5. |
+Dos notas que no conviene que pasen de largo: la razón de **mayor peso (1.5) es la de
+procedencia más débil**, y es la que el bloque autoritativo manda copiar literal. Y la fila
+4 colapsa Google Routes y OSM en la misma palabra, `"mapa"`, demasiado vaga para un
+`provider`.
 
-### 1.2 `presupuesto_max`
+### 2.1 Dos clasificaciones de `SourceType`, corregidas
 
-| | |
-|---|---|
-| **Razón legacy** | *"Dentro de tu presupuesto ($380 ≤ $700)"* / *"Sobre tu tope por $10"* |
-| **Dato exacto** | `row.precio` (de `transacciones_temporales`, la vigente) vs `preferencias.presupuesto_max` |
-| **Dónde vive hoy** | `transacciones_temporales.precio`, vía `LATERAL` con `estado_anuncio='ACTIVO'` |
-| **Quién lo afirmó** | El **precio**: el proveedor. El **tope**: extracción LLM (§0.2). |
-| **Naturaleza** | Precio = declaración del proveedor · Tope = inferencia del modelo |
-| **Timestamp** | ✗ `fecha_publicacion` existe en la tabla pero **no se selecciona** |
-| **¿Evidencia del dato o del cálculo?** | La aritmética es verificable y determinista. **Ninguno de sus dos inputs tiene procedencia trazable hoy.** |
-| **`EvidenceRefV0` posible** | **YES_BUT_LATER** (precio) · **NO como `USER_DECLARED`** (tope) |
-| **Nota fuerte** | Es la razón que el bloque autoritativo pide copiar literal, y la de mayor peso (1.5). Que su procedencia sea la más débil de las ocho es exactamente el tipo de asimetría que conviene tener escrita. |
-| **Tratamiento** | Razón legacy intacta. Sin claim material hasta que exista `PropertyContextV0` en runtime (F5) y traza de declaración (F3). |
+| Dato | Clasificación anterior | Correcta | Por qué |
+|---|---|---|---|
+| `walk_score` medido | `PUBLIC_DATASET` | **`OWN_MEASUREMENT`** | El contrato lo define como *"calculado por Contexto sobre dato primario"*. OSM es el dato primario subyacente; **no es quien produjo el 82/100**. Exige `methodology`. |
+| `walk_score` heurístico | `HEURISTIC_ESTIMATE` | **`HEURISTIC_ESTIMATE`** ✓ | Sin cambio. Exige `limitations`. |
+| `verificado_en_terreno` | `OWN_MEASUREMENT` | **`OPERATOR_DECLARED`** | Lo declaró un corredor —que *"tiene interés comercial en el resultado"*— y Contexto solo lo propagó por proximidad. El enum no tiene `OPERATOR_OBSERVED`; `OPERATOR_DECLARED` con metodología y limitación explícitas es lo conservador. |
 
-### 1.3 `caminable`
-
-| | |
-|---|---|
-| **Razón legacy** | *"Buscabas caminable · caminabilidad 82/100"*, con `fuente` = `"OpenStreetMap"` o `"estimación por zona"` |
-| **Dato exacto** | `row.caminabilidad` (0-100) + `row.caminabilidad_fuente` ∈ {`osm`, `heuristico`, `NULL`} |
-| **Dónde vive hoy** | `activos_inmutables.walk_score` + `walk_score_fuente` |
-| **Quién lo afirmó** | Medición propia sobre dataset público (OSM), **o** heurística de zona |
-| **Naturaleza** | **Depende de la fila.** Es la única dimensión que ya distingue medición de estimación — el arreglo de E0.3. |
-| **Timestamp** | ✗ ninguno |
-| **¿Evidencia del dato o del cálculo?** | Del dato: `walk_score_fuente` es procedencia real, registrada por el sistema que la calculó. |
-| **`EvidenceRefV0` posible** | **YES_NOW** ⭐ — la única |
-| **Cómo** | `osm` → `PUBLIC_DATASET` + `provider="osm"` + `methodology="walk_score sobre red peatonal OSM"`. `heuristico`/`NULL` → `HEURISTIC_ESTIMATE` + `limitations=("no es medición sobre red…",)`. `observed_at=None` (OSM no dice de cuándo). `retrieved_at` = instante del ensamblado. |
-| **Dónde se resuelve el id** | Aquí está el matiz: la evidencia **pertenece a `PlaceContextV0`**, que tampoco se ensambla en runtime. Se puede *construir* honestamente hoy; **no hay dónde resolverla**. |
-| **Tratamiento** | Ver §2: es la fila que decide la forma de E2.3. |
-
-### 1.4 `transporte`
-
-| | |
-|---|---|
-| **Razón legacy** | *"masivo a ~7 min a pie"*, `fuente="mapa"` |
-| **Dato exacto** | `_transporte_min(row.conectividad)` — minutos parseados del texto |
-| **Dónde vive hoy** | `activos_inmutables.conectividad`, **texto libre** |
-| **Quién lo afirmó** | Google Routes (si el texto trae `(19 min a pie)`) o distancia OSM ÷ 80 m/min |
-| **Naturaleza** | Medición de proveedor **o** derivación heurística — **y el texto no siempre lo distingue** |
-| **Timestamp** | ✗ ninguno |
-| **¿Evidencia del dato o del cálculo?** | Del cálculo. El input es **prosa parseada con regex**, no un campo tipado. |
-| **`EvidenceRefV0` posible** | **YES_BUT_LATER**, y con reserva |
-| **La reserva** | `"mapa"` es una fuente demasiado vaga para `provider`. Google Routes y OSM no son lo mismo y hoy se colapsan en la misma palabra. Distinguirlos exige tipar `conectividad`, que es F4. |
-| **Tratamiento** | Razón legacy intacta. Sin claim material. **Registrar como deuda**: la fuente real existe pero está enterrada en texto. |
-
-### 1.5 `area_verde`
-
-| | |
-|---|---|
-| **Razón legacy** | *"parque a ~4 min a pie"*, `fuente="mapa"` · o `INSUFICIENTE` |
-| **Dato exacto** | `_min_a_pie(row.servicios_cercanos, _EMOJI_PARQUE)` |
-| **Dónde vive hoy** | `activos_inmutables.servicios_cercanos`, texto de OSM ya curado por el corredor |
-| **Quién lo afirmó** | OSM + posible curación humana (Catastro Vivo) |
-| **Naturaleza** | Dataset público, con overlay humano cuando existe |
-| **Timestamp** | ✗ para el dato usado. `entorno_curacion.creado_en` existe pero **no se selecciona** (§0.1); el POI base de OSM no tiene fecha |
-| **¿Evidencia del dato o del cálculo?** | Mixto: el parque medido es dato; los minutos son derivación (`distancia ÷ 80`) |
-| **`EvidenceRefV0` posible** | **YES_BUT_LATER** |
-| **Matiz** | Es la dimensión **más cerca** de tener `observed_at` verdadero: la fecha de curación ya está en la base y solo hace falta seleccionarla. Pero hoy la razón se arma desde `servicios_cercanos` (texto), no desde la curación — así que ni siquiera ese arreglo bastaría sin tipar los POIs (F4). |
-| **Tratamiento** | Razón legacy intacta. Sin claim material. E0.4 ya la sacó del scoring cuando solo hay `vegetacion`. |
-
-### 1.6 `dormitorios`
-
-| | |
-|---|---|
-| **Razón legacy** | *"N dormitorios"*, `fuente="ficha del inmueble"` |
-| **Dato exacto** | `caracteristicas.num_dormitorios` |
-| **Dónde vive hoy** | JSONB `caracteristicas` — **sin tipar, 25 llaves observadas** |
-| **Quién lo afirmó** | El corredor que cargó la ficha |
-| **Naturaleza** | Declaración del operador, sin verificar |
-| **Timestamp** | ✗ ninguno |
-| **¿Evidencia del dato o del cálculo?** | Del cálculo. El input viene del mismo JSONB que en F1 se documentó con **un precio que contradecía la transacción**. |
-| **`EvidenceRefV0` posible** | **YES_BUT_LATER** |
-| **Tratamiento** | Sin claim material. `PropertyContextV0` ya tipa esto (`PropertyAttribute`); F5 lo hará real. |
-
-### 1.7 `acepta_mascotas`
-
-| | |
-|---|---|
-| **Razón legacy** | *"Acepta mascotas"* / *"No acepta mascotas"*, `fuente="ficha del inmueble"` |
-| **Dato exacto** | `caracteristicas.acepta_mascotas` (bool) |
-| **Resto** | Idéntico a §1.6 |
-| **`EvidenceRefV0` posible** | **YES_BUT_LATER** |
-| **Nota** | Es la dimensión que en producción llevó al modelo a priorizar una opción con motivo declarado. Un booleano de un JSONB sin tipar sosteniendo una recomendación es, en sí mismo, algo que conviene tener anotado. |
-
-### 1.8 `tranquilidad` (ruido)
-
-| | |
-|---|---|
-| **Razón legacy** | *"Buscabas tranquilidad · no tenemos medición de ruido aquí"* → `INSUFICIENTE`, `fuente=None`, `aporta=False` |
-| **Dato exacto** | `row.ruido` = `score_ruido_predictivo`, `String(10)` con valores tipo `"BAJO"` |
-| **Quién lo afirmó** | Nadie: es un **campo predictivo sin medición** detrás |
-| **`EvidenceRefV0` posible** | **INSUFFICIENT** |
-| **Tratamiento** | **Ya es correcto y no se toca.** E0.4 lo sacó del scoring y le dejó su estado explícito. En `DecisionContextV0` corresponde `UncertaintyV0` —que admite `evidence_refs=()`— y **nunca** un `StrengthV0`. |
-
-### 1.9 Vegetación y tráfico — sin razón propia
-
-`row.vegetacion` (`porcentaje_cobertura_vegetal`) y `volumen_trafico_historico` **ya no
-generan razón**: E0.4 los retiró. `volumen_trafico_historico` está además en `0` para todo
-el inventario.
-
-| **`EvidenceRefV0` posible** | **NO_CLAIM** |
-|---|---|
-| **Tratamiento** | No aparecen en `DecisionContextV0` ni como incertidumbre, salvo que la persona declare la dimensión — y entonces como `UncertaintyV0`, igual que el ruido. |
+No afecta ninguna razón hoy. Se fija ahora para que no quede como precedente al llegar F4.
 
 ---
 
-### 1.10 `verificado_en_terreno` — evidencia sin razón
+## 3. Desviación del Plan, declarada
 
-Detallado en §0.3. Dato real, medición propia, con fecha verdadera. **No hay ninguna razón
-legacy que lo cite**: es insignia de tarjeta, no dimensión de scoring.
+El Execution Plan de F2 pedía esta cadena:
 
-| **`EvidenceRefV0` posible** | **YES_NOW** — y es el único caso donde `observed_at` no sería `None` |
+```
+rows → DecisionContextV0 → cards actuales + bloque autoritativo del prompt
+```
+
+El estado real, verificado en el código:
+
+| Flecha | Estado |
 |---|---|
-| **Tratamiento** | Nada que hacer en E2.3: no hay claim al que colgarlo. Queda anotado como **la primera evidencia lista** para cuando exista un claim que la necesite (F4/F5). |
+| `DecisionContext → cards` | **PASS** — `proyectar_cards` obedece al `ranking` del contrato |
+| `DecisionContext → bloque autoritativo` | **TODAVÍA NO** |
+
+`construir_panel` construye la lista `decisiones`, usa una para proyectar las cards y
+**no las devuelve en el panel**: el retorno es `{cards, descartadas, preferencias,
+priorizado}`. El bloque que ve el modelo se sigue armando desde ahí, no desde el contrato.
+
+Decir antes **"E2.2 CLOSED / PASS"** fue más fuerte de lo que el texto literal del Plan
+permitía. Esta tabla explica por qué la segunda flecha no se puede cerrar limpio: el
+`DecisionContext` todavía no puede llevar las razones materiales sin inventar
+`evidence_refs`.
+
+**No es deuda técnica: es una dependencia arquitectónica descubierta por evidencia.** Va
+al reporte de F2 sin maquillar.
 
 ---
 
-## 2. El hallazgo que decide la forma de E2.3
+## 4. Qué hace E2.3a, entonces
 
-Contando sobre las razones legacy: **una** es `YES_NOW` (caminabilidad), **seis**
-`YES_BUT_LATER`, **una** `INSUFFICIENT`, **dos** `NO_CLAIM`. Fuera de las razones queda una
-segunda `YES_NOW` (§1.10) que no respalda ningún claim.
+El Plan no pide "poner refs donde se pueda". Pide que **cada razón material pueda
+referenciar evidencia estructurada o declarar que no hay suficiente**. Omitir del contrato
+las seis dimensiones que sí afectan la decisión incumpliría la segunda mitad.
 
-Y la única `YES_NOW` tiene un problema propio: la evidencia de caminabilidad **pertenece a
-`PlaceContextV0`**, que no se ensambla en runtime. `DecisionContextV0.evidence_refs` guarda
-`evidence_id`, y el diseño de F1 dice explícitamente que **la evidencia vive en los
-contextos referenciados** — la decisión los cita, no los almacena.
+`UncertaintyV0` es la única afirmación cuya evidencia puede estar vacía, y lo es
+exactamente por esto. Así que:
 
-Hoy no existe ese sitio. Las tres opciones y por qué descarto dos:
+```
+para cada razón MATERIAL que participó en la decisión:
+    evidencia resoluble  → claim material + evidence_refs
+    sin evidencia        → UncertaintyV0 que registra el hueco
+```
 
-| Opción | Veredicto |
+Lo que la incertidumbre afirma **no** es "no sabemos el valor" — el sistema lo conoce y lo
+usó. Afirma algo más preciso e incómodo: *conocemos el valor que movió la decisión, pero
+todavía no podemos probar de dónde salió.*
+
+`impact` se **deriva del motor**, no se fija a ojo:
+
+| | Regla | Dimensiones hoy |
+|---|---|---|
+| `HIGH` | el hueco puede cambiar elegibilidad o sacar una opción de la vista | `tipo_inmueble` (requisito duro → topa a 49 < umbral 60 del panel), `presupuesto_max` (gobierna el corte de `_recortar_grid`) |
+| `MEDIUM` | mueve score y ranking, no elegibilidad | el resto, cuando `aporta=True` |
+| `LOW` | no altera la decisión hoy | cualquiera con `aporta=False` |
+
+`HIGH` se deriva de `encaje._REQUISITOS_DUROS`, no de una lista paralela: agregar un
+requisito duro allá sube el impacto acá solo, y hay un test que lo fija.
+
+**No se emiten** `eligibility.violations`, `match.dimensions`, `strengths` ni `tradeoffs`:
+las cuatro exigen `evidence_refs` no vacía —`ViolationV0` lo tiene congelado desde E1.5— y
+no hay dónde resolverlas.
+
+### El gate
+
+> Ninguna razón que afectó la decisión puede quedar simultáneamente **sin `evidence_refs`
+> resolubles Y sin incertidumbre correspondiente.**
+
+Está escrito sobre la disyunción, no sobre el estado de hoy: cuando F4 haga resoluble la
+caminabilidad, esa dimensión migra al primer camino y el gate sigue pasando sin tocarlo.
+
+Resultado medido hoy:
+
+```
+afirmaciones materiales con evidencia = 0
+incertidumbres que explican el hueco  = N (una por razón)
+```
+
+Eso no es un fracaso de E2.3. Es la primera vez que el sistema sabe de forma estructurada
+qué parte de su propia decisión todavía no puede demostrar.
+
+---
+
+## 5. Deuda por destino
+
+| Destino | Qué cierra |
 |---|---|
-| Construir un "registry temporal" de evidencia en `app/decision/` | ❌ Es infraestructura nueva no autorizada, y crearía un cuarto sitio donde vive la evidencia. Justo lo que F1 evitó. |
-| Emitir `evidence_refs` con ids que hoy no resuelven contra nada | ❌ Referencias rotas producidas conscientemente. El propio prompt de F2 lo prohíbe. |
-| **Ensamblar `PlaceContextV0` en runtime para la caminabilidad** | ⚠️ Es **F4**. Fuera del alcance de F2. |
-
-**Conclusión: E2.3, tal como se especificó, no se puede completar dentro del alcance de
-F2 sin violar una de sus propias reglas.**
-
----
-
-## 3. Lo que sí se puede hacer en E2.3, y lo propongo
-
-No es "no hacer nada". Hay dos cosas honestas y con valor:
-
-**3.1 · Las incertidumbres SÍ se pueden emitir hoy.** `UncertaintyV0` admite
-`evidence_refs=()` precisamente porque una incertidumbre suele existir **porque faltan
-datos**. Las razones que hoy salen con estado `INSUFICIENTE` o `sin_dato` pueden
-convertirse en `DecisionContextV0.uncertainties` **sin fabricar nada**: son el caso donde
-la ausencia de evidencia es el contenido, no un obstáculo.
-
-Con su `impact` del vocabulario del Blueprint — y ahí sí hay un juicio que tomar, porque
-`impact` es obligatorio.
-
-**3.2 · `eligibility.violations` es representable.** Los `duros_incumplidos` que ya calcula
-el motor son una violación de criterio real… pero `ViolationV0` exige `evidence_refs` **no
-vacía** (congelado en E1.5). Con la §1.1 en `YES_BUT_LATER`, **tampoco se puede emitir
-hoy**.
-
-Así que queda **solo 3.1**: emitir incertidumbres, que es la parte que no necesita
-procedencia.
-
----
-
-## 4. Recomendación
-
-**Redefinir E2.3 a lo que el alcance de F2 permite hacer con verdad:**
-
-1. **Emitir `uncertainties`** desde las razones sin evidencia (`INSUFICIENTE`, `sin_dato`),
-   con su `impact`. Cero procedencia fabricada.
-2. **No emitir** `strengths`, `tradeoffs`, `match.dimensions` ni `eligibility.violations`:
-   los cuatro exigen `evidence_refs` no vacía y hoy no hay dónde resolverla.
-3. **Registrar la tabla como deuda con fase asignada:** seis dimensiones esperan F4/F5.
-4. **Dejar `evidence_refs` vacío en toda la decisión**, y que eso sea el resultado
-   *correcto* de E2.3 — no un pendiente.
-
-La alternativa —mover E2.3 entera después de F4/F5— también es defendible. **No la tomo
-yo.**
-
-Lo que no haría en ningún caso es emitir un `StrengthV0` con un `evidence_id` que no
-resuelve, para que la fase "cierre". Sería la cuarta de la misma familia que
-`place_id`, `score_version` y `decision_id`: un objeto que valida, y es falso.
+| **F3** — Buyer Harness | Traza declaración → preferencia. Hoy ninguna preferencia es `USER_DECLARED`. |
+| **F4** — Place | `PlaceContextV0` en runtime: caminabilidad (ya construible), transporte, área verde, ruido, verificación de terreno. Tipar `conectividad` y los POIs. |
+| **F5** — Property | `PropertyContextV0` en runtime: tipo, precio, dormitorios, mascotas. Tipar `caracteristicas`. |
+| **Capa de datos** | Seleccionar `fecha_publicacion` y `entorno_curacion.creado_en` para que `observed_at` deje de ser `None` por descarte. |

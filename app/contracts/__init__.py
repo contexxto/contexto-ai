@@ -9,8 +9,8 @@ cada contrato lleva su versión dentro del objeto y ninguno se reescribe en siti
 regla nueva que rompa compatibilidad crea un `v1`, no muta el `v0`.
 
 Estado (2026-08-25):
-  · E1.1 `EvidenceRefV0` — hecho, en `evidence_v0.py`
-  · E1.2 `BuyerContextV0`    — pendiente
+  · E1.1 `EvidenceRefV0`     — hecho, en `evidence_v0.py`
+  · E1.2 `BuyerContextV0`    — hecho, en `buyer_v0.py`
   · E1.3 `PropertyContextV0` — pendiente
   · E1.4 `PlaceContextV0`    — pendiente
   · E1.5 `DecisionContextV0` — pendiente
@@ -18,8 +18,30 @@ Estado (2026-08-25):
 
 Esta fase es de contratos, no de integración: nada de aquí cambia todavía el
 comportamiento del producto.
+
+Regla de alcance de F1: si una decisión adicional no hace falta para representar el
+contrato y probarlo, no se congela en V0. No se inventa infraestructura futura.
 """
 
+from app.contracts.buyer_v0 import (
+    CONTRACT_VERSION as BUYER_CONTEXT_V0_VERSION,
+)
+from app.contracts.buyer_v0 import (
+    BuyerContextV0,
+    CommuteAnchor,
+    Direction,
+    FieldEvidence,
+    Financial,
+    Mobility,
+    Money,
+    Objective,
+    PlacePreference,
+    PropertyRequirements,
+    Stage,
+    Tradeoff,
+    TravelMode,
+    UnresolvedQuestion,
+)
 from app.contracts.evidence_v0 import (
     CONTRACT_VERSION as EVIDENCE_REF_V0_VERSION,
 )
@@ -31,9 +53,26 @@ from app.contracts.evidence_v0 import (
 )
 
 __all__ = [
+    # E1.1 — evidencia
     "EvidenceRefV0",
     "EVIDENCE_REF_V0_VERSION",
     "SourceType",
     "PersistencePolicy",
     "ahora",
+    # E1.2 — comprador
+    "BuyerContextV0",
+    "BUYER_CONTEXT_V0_VERSION",
+    "Objective",
+    "Stage",
+    "Direction",
+    "TravelMode",
+    "Money",
+    "Financial",
+    "PropertyRequirements",
+    "CommuteAnchor",
+    "Mobility",
+    "PlacePreference",
+    "Tradeoff",
+    "UnresolvedQuestion",
+    "FieldEvidence",
 ]

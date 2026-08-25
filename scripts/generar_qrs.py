@@ -31,8 +31,8 @@ USO
   python scripts/generar_qrs.py --csv scripts/activos.csv
 
   Flags:
-    --api        Base URL de la API
-                 (default: $CONTEXTO_API_URL, o https://contexto-ai-oregon.onrender.com)
+    --api        Base URL de la API. Si no lo pasas: CONTEXTO_API_URL del shell, si no
+                 la del .env, si no https://contexto-ai-oregon.onrender.com
     --app-url    Base URL pública del frontend para el deep-link
                  (default: https://contexto-ai-six.vercel.app)
     --csv        Lee activos de un CSV (id,direccion) en vez de la API
@@ -48,6 +48,7 @@ from pathlib import Path
 
 import httpx
 import segno
+from dotenv import dotenv_values
 
 # La consola de Windows (cp1252) no puede imprimir emojis → forzamos UTF-8.
 for _stream in (sys.stdout, sys.stderr):
@@ -63,7 +64,19 @@ ROOT = Path(__file__).resolve().parent.parent
 # manda el entorno (CONTEXTO_API_URL, el mismo nombre que usa evals/run_evals.py) y el
 # literal es solo el respaldo verificado — para que el próximo renombrado se arregle sin
 # tocar código.
-DEFAULT_API = os.environ.get("CONTEXTO_API_URL", "https://contexto-ai-oregon.onrender.com").rstrip("/")
+#
+# Precedencia: --api  >  variable de shell  >  .env  >  el respaldo de abajo.
+# El shell gana sobre el .env para poder apuntar a otra API en una corrida suelta sin
+# editar el archivo. El .env se lee anclado a ROOT y no al cwd (igual que
+# subir_y_generar_payload.py), para que el script funcione desde cualquier carpeta.
+# Ojo con el encadenado de `or`: .env.example trae la variable declarada pero VACÍA, y
+# una cadena vacía tiene que caer al respaldo, no ganar como valor.
+_ENV = dotenv_values(ROOT / ".env")
+DEFAULT_API = (
+    os.environ.get("CONTEXTO_API_URL")
+    or _ENV.get("CONTEXTO_API_URL")
+    or "https://contexto-ai-oregon.onrender.com"
+).rstrip("/")
 DEFAULT_APP = "https://contexto-ai-six.vercel.app"
 
 # Paleta Aura

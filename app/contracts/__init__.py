@@ -12,7 +12,7 @@ Estado (2026-08-25):
   · E1.1 `EvidenceRefV0`     — hecho, en `evidence_v0.py`
   · E1.2 `BuyerContextV0`    — hecho, en `buyer_v0.py`
   · E1.3 `PropertyContextV0` — hecho, en `property_v0.py`
-  · E1.4 `PlaceContextV0`    — pendiente
+  · E1.4 `PlaceContextV0`    — hecho, en `place_v0.py`
   · E1.5 `DecisionContextV0` — pendiente
   · E1.6 `DecisionTraceV0`   — pendiente
 
@@ -42,10 +42,23 @@ from app.contracts.buyer_v0 import (
     PlacePreference,
     PropertyRequirements,
     Tradeoff,
-    TravelMode,
     UnresolvedQuestion,
 )
-from app.contracts.common_v0 import ContractBase, Money
+from app.contracts.place_v0 import (
+    CONTRACT_VERSION as PLACE_CONTEXT_V0_VERSION,
+)
+from app.contracts.place_v0 import (
+    GeoPoint,
+    IsochroneV0,
+    MeasureStatus,
+    NamedMeasureV0,
+    NearbyPlaceV0,
+    NearestTransitV0,
+    PlaceContextV0,
+    PlaceMeasureV0,
+    TravelToAnchorV0,
+)
+from app.contracts.common_v0 import ContractBase, Money, TravelMode
 from app.contracts.evidence_v0 import (
     CONTRACT_VERSION as EVIDENCE_REF_V0_VERSION,
 )
@@ -109,7 +122,19 @@ __all__ = [
     "InventoryClass",
     "PropertyProvenanceV0",
     "Quality",
+    # E1.4 — lugar
+    "PlaceContextV0",
+    "PLACE_CONTEXT_V0_VERSION",
+    "PlaceMeasureV0",
+    "MeasureStatus",
+    "GeoPoint",
+    "NearestTransitV0",
+    "NearbyPlaceV0",
+    "TravelToAnchorV0",
+    "IsochroneV0",
+    "NamedMeasureV0",
     # compartidos
     "ContractBase",
     "Money",
+    "TravelMode",
 ]

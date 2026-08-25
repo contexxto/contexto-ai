@@ -12,6 +12,7 @@ compartirse algún día.
 from __future__ import annotations
 
 from decimal import Decimal
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -34,3 +35,14 @@ class Money(ContractBase):
     amount: Decimal = Field(gt=0)
     currency: str = Field(pattern=r"^[A-Z]{3}$")
     """ISO 4217 en mayúsculas: `USD`, `MXN`."""
+
+
+class TravelMode(StrEnum):
+    """Cómo se recorre una distancia. Aquí porque lo usan el comprador (sus anclas de
+    trayecto) y el lugar (los trayectos y las isócronas)."""
+
+    WALK = "walk"
+    TRANSIT = "transit"
+    DRIVE = "drive"
+    BIKE = "bike"
+    UNKNOWN = "unknown"

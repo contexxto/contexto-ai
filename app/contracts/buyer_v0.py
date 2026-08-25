@@ -83,7 +83,7 @@ from typing import Any, Literal
 from pydantic import Field, field_validator, model_validator
 
 from app.contracts.common_v0 import ContractBase as _Base
-from app.contracts.common_v0 import Money
+from app.contracts.common_v0 import Money, TravelMode
 from app.contracts.evidence_v0 import EvidenceRefV0
 
 CONTRACT_VERSION = "buyer-context-v0"
@@ -260,14 +260,6 @@ class DecisionCriterionV0(_Base):
                     f"recibió {type(v).__name__}"
                 )
         return self
-
-
-class TravelMode(StrEnum):
-    WALK = "walk"
-    TRANSIT = "transit"
-    DRIVE = "drive"
-    BIKE = "bike"
-    UNKNOWN = "unknown"
 
 
 class Financial(_Base):

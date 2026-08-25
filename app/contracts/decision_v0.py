@@ -43,17 +43,47 @@ por `anchor_id`**. Nunca por `anchor_label`, que es presentación y puede cambia
 cambie el ancla.
 
 ──────────────────────────────────────────────────────────────────────────────────
-POR QUÉ NO HAY UN `evidence[]` AQUÍ
+LA EVIDENCIA SE CITA, NO SE COPIA
 ──────────────────────────────────────────────────────────────────────────────────
 
-La evidencia vive en los contextos referenciados: cada medida del lugar lleva la suya,
-cada criterio del comprador la suya, y el registro del inmueble la suya. Copiarla aquí
-la duplicaría y convertiría este objeto en el snapshot que se decidió que no fuera.
+Cada afirmación material de la decisión —una violación, una dimensión de encaje, una
+fortaleza, un tradeoff— lleva `evidence_refs`: una lista de `evidence_id`, no de
+`EvidenceRefV0` completos. El reparto es:
+
+    DecisionContext            dice QUÉ evidencia sustenta cada afirmación
+    Buyer/Property/Place       CONTIENEN la evidencia
+    DecisionTrace (E1.6)       registra qué evidencia se usó al ejecutar
+
+Copiar los objetos enteros aquí los duplicaría, y un duplicado se desincroniza: en
+cuanto alguien corrija una `EvidenceRefV0` en su contexto, la copia de la decisión
+seguiría afirmando lo viejo. Citar por id no tiene ese problema.
+
+Una referencia rota —un `evidence_id` que no existe— **no se detecta aquí**. Resolver
+contra un store es F2/F6, igual que la validación de `anchor_id`.
+
+Las afirmaciones materiales EXIGEN al menos una referencia. Una fortaleza sin evidencia
+es "este barrio es tranquilo" sin nada detrás, que es el defecto que E0.4 cerró. La
+excepción es `uncertainties`: una incertidumbre puede existir precisamente **porque
+faltan datos**, así que ahí `evidence_refs` es opcional — y cuando la hay, sirve para
+mostrar evidencia parcial o contradictoria.
 
 `score_version` sí está, porque no vive en ningún otro sitio: es la regla bajo la que se
 decidió. Es el mismo campo que E0.4 introdujo en `calcular_encaje()` como `"encaje-v0"`,
 y existe por la misma razón — dos números producidos por reglas distintas no son
 comparables, y sin registrar la regla nadie puede saberlo después.
+
+──────────────────────────────────────────────────────────────────────────────────
+AUSENTE NO ES VACÍO
+──────────────────────────────────────────────────────────────────────────────────
+
+`eligibility` y `match` son opcionales, y la distinción es la misma que E1.4 congeló
+para las dimensiones del lugar:
+
+    eligibility = None              no se evaluó la elegibilidad
+    eligibility.violations = ()     se evaluó y no se encontró ninguna violación
+
+Sin esa diferencia, "no lo miramos" y "lo miramos y está limpio" serían el mismo dato, y
+el segundo es una afirmación mucho más fuerte que el primero.
 """
 
 from __future__ import annotations
@@ -114,6 +144,109 @@ class PlaceContextRefV0(_Base):
     contract_version: Literal["place-context-v0"] = PLACE_V0
 
 
+def _refs_utilizables(v: tuple[str, ...]) -> tuple[str, ...]:
+    """Un `evidence_id` en blanco no cita nada, y uno repetido no cita dos veces."""
+    if any(not r.strip() for r in v):
+        raise ValueError("un evidence_id vacío no referencia ninguna evidencia")
+    repetidos = {r for r in v if v.count(r) > 1}
+    if repetidos:
+        raise ValueError(f"evidence_id repetido: {sorted(repetidos)}")
+    return v
+
+
+class _AfirmacionMaterial(_Base):
+    """Base de las afirmaciones que sostienen una decisión.
+
+    Todas exigen al menos una `evidence_refs`. Ver la cabecera: una afirmación material
+    sin evidencia es exactamente el defecto que cerró E0.4.
+    """
+
+    evidence_refs: tuple[str, ...] = Field(min_length=1)
+    """`evidence_id` de `EvidenceRefV0` que viven en los contextos referenciados."""
+
+    @field_validator("evidence_refs")
+    @classmethod
+    def _validar_refs(cls, v: tuple[str, ...]) -> tuple[str, ...]:
+        return _refs_utilizables(v)
+
+
+class ViolationV0(_AfirmacionMaterial):
+    """Un criterio duro del comprador que esta opción no cumple."""
+
+    criterion_id: str = Field(min_length=1)
+    """El `criterion_id` de `DecisionCriterionV0` (E1.2). Referencia por id estable, no
+    por el texto de la restricción."""
+
+
+class MatchDimensionV0(_AfirmacionMaterial):
+    """Una dimensión en la que se comparó la opción contra lo que la persona pidió.
+
+    Sin `score` ni `weight`: cuánto pesa cada dimensión es del Decision Harness. Aquí
+    solo se registra que la dimensión participó y con qué respaldo.
+    """
+
+    dimension: str = Field(min_length=1)
+
+
+class StrengthV0(_AfirmacionMaterial):
+    """Algo que juega a favor de esta opción."""
+
+    dimension: str = Field(min_length=1)
+    statement: str | None = Field(default=None, min_length=1)
+    """Presentación. La afirmación estructural es `dimension` + su evidencia."""
+
+
+class DecisionTradeoffV0(_AfirmacionMaterial):
+    """Lo que esta opción concreta obliga a ceder, y a cambio de qué.
+
+    Distinto del `Tradeoff` de E1.2: aquel es lo que la persona DIJO que aceptaría;
+    este es lo que esta opción realmente exige. Por eso no se reutiliza el tipo — y por
+    eso este módulo no importa el contrato del comprador.
+    """
+
+    gives_up: str = Field(min_length=1)
+    gains: str = Field(min_length=1)
+
+
+class UncertaintyV0(_Base):
+    """Algo que no se pudo resolver al decidir.
+
+    **La única afirmación cuya evidencia es opcional**, y por una razón concreta: una
+    incertidumbre suele existir precisamente porque FALTAN datos. Exigirle evidencia
+    sería exigirle que demuestre lo que no tiene. Cuando sí hay algo —evidencia parcial
+    o contradictoria— se cita, y ahí es donde más aporta.
+    """
+
+    statement: str = Field(min_length=1)
+    evidence_refs: tuple[str, ...] = ()
+
+    @field_validator("evidence_refs")
+    @classmethod
+    def _validar_refs(cls, v: tuple[str, ...]) -> tuple[str, ...]:
+        return _refs_utilizables(v)
+
+
+class EligibilityV0(_Base):
+    """Si la opción supera los criterios duros.
+
+    Que este objeto exista significa que la elegibilidad SE EVALUÓ. `violations` vacío
+    significa que se evaluó y no se encontró nada — ver "ausente no es vacío" en la
+    cabecera.
+    """
+
+    violations: tuple[ViolationV0, ...] = ()
+
+    @property
+    def sin_violaciones(self) -> bool:
+        return not self.violations
+
+
+class MatchV0(_Base):
+    """Las dimensiones en las que se comparó la opción."""
+
+    dimensions: tuple[MatchDimensionV0, ...] = ()
+
+
 class DecisionContextV0(_Base):
     """Los insumos de una decisión, por referencia."""
 
@@ -129,6 +262,16 @@ class DecisionContextV0(_Base):
     score_version: str = Field(min_length=1)
     """Bajo qué reglas se decidió. Ver la cabecera: dos números producidos por reglas
     distintas no son comparables."""
+
+    eligibility: EligibilityV0 | None = None
+    """`None` = no se evaluó la elegibilidad. Ver "ausente no es vacío"."""
+
+    match: MatchV0 | None = None
+    """`None` = no se comparó por dimensiones."""
+
+    strengths: tuple[StrengthV0, ...] = ()
+    tradeoffs: tuple[DecisionTradeoffV0, ...] = ()
+    uncertainties: tuple[UncertaintyV0, ...] = ()
 
     anchor_ids: tuple[str, ...] = ()
     """Las anclas de trayecto que participaron, **por id**. Vacío es válido: hay

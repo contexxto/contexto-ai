@@ -17,8 +17,15 @@ from app.contracts.decision_v0 import (
     CONTRACT_VERSION,
     BuyerContextRefV0,
     DecisionContextV0,
+    DecisionTradeoffV0,
+    EligibilityV0,
+    MatchDimensionV0,
+    MatchV0,
     PlaceContextRefV0,
     PropertyContextRefV0,
+    StrengthV0,
+    UncertaintyV0,
+    ViolationV0,
     json_schema,
 )
 
@@ -50,9 +57,9 @@ def test_no_contiene_los_contextos_completos():
     explican por qué no están.
     """
     embebidos = set(json_schema().get("$defs", {}))
-    assert embebidos == {
-        "BuyerContextRefV0", "PropertyContextRefV0", "PlaceContextRefV0"
-    }, f"modelos embebidos inesperados: {embebidos}"
+    for entero in ("BuyerContextV0", "PropertyContextV0", "PlaceContextV0"):
+        assert entero not in embebidos, f"{entero} viajando entero dentro de la decisión"
+    assert {"BuyerContextRefV0", "PropertyContextRefV0", "PlaceContextRefV0"} <= embebidos
 
 
 def test_tampoco_los_importa():
@@ -263,3 +270,139 @@ def test_la_decision_no_se_edita_despues_de_creada():
 def test_no_se_aceptan_campos_extra():
     with pytest.raises(ValidationError):
         _decision(buyer_context={"todo": "el objeto"})
+
+
+# ── la evidencia se cita, no se copia ────────────────────────────────────────────
+
+
+def _con_afirmaciones(**cambios):
+    base = dict(
+        eligibility=EligibilityV0(
+            violations=(ViolationV0(criterion_id="c-1", evidence_refs=("ev-1",)),)
+        ),
+        match=MatchV0(
+            dimensions=(MatchDimensionV0(dimension="bedrooms", evidence_refs=("ev-2",)),)
+        ),
+        strengths=(
+            StrengthV0(
+                dimension="parque",
+                statement="parque medido a 314 m",
+                evidence_refs=("ev-3",),
+            ),
+        ),
+        tradeoffs=(
+            DecisionTradeoffV0(
+                gives_up="10 minutos más de trayecto",
+                gains="un dormitorio más",
+                evidence_refs=("ev-4",),
+            ),
+        ),
+        uncertainties=(UncertaintyV0(statement="no hay medición de ruido aquí"),),
+    )
+    base.update(cambios)
+    return _decision(**base)
+
+
+def test_una_afirmacion_material_conserva_sus_evidence_ids():
+    d = _con_afirmaciones()
+    assert d.eligibility.violations[0].evidence_refs == ("ev-1",)
+    assert d.match.dimensions[0].evidence_refs == ("ev-2",)
+    assert d.strengths[0].evidence_refs == ("ev-3",)
+    assert d.tradeoffs[0].evidence_refs == ("ev-4",)
+
+
+def test_no_se_embeben_evidence_ref_completos():
+    """Copiar los objetos enteros los duplicaría, y un duplicado se desincroniza: si
+    alguien corrige una EvidenceRefV0 en su contexto, la copia seguiría afirmando lo
+    viejo. Se comprueba sobre la estructura del esquema, no sobre su texto."""
+    embebidos = set(json_schema().get("$defs", {}))
+    assert "EvidenceRefV0" not in embebidos
+    for ruta in ("ViolationV0", "MatchDimensionV0", "StrengthV0", "DecisionTradeoffV0"):
+        refs = json_schema()["$defs"][ruta]["properties"]["evidence_refs"]
+        assert refs["items"]["type"] == "string", f"{ruta} embebe objetos, no ids"
+
+
+def test_una_afirmacion_material_exige_evidencia():
+    """Una fortaleza sin evidencia es "este barrio es tranquilo" sin nada detrás."""
+    with pytest.raises(ValidationError):
+        StrengthV0(dimension="tranquilidad", evidence_refs=())
+    with pytest.raises(ValidationError):
+        ViolationV0(criterion_id="c-1", evidence_refs=())
+    with pytest.raises(ValidationError):
+        MatchDimensionV0(dimension="area", evidence_refs=())
+    with pytest.raises(ValidationError):
+        DecisionTradeoffV0(gives_up="a", gains="b", evidence_refs=())
+
+
+def test_una_incertidumbre_puede_existir_sin_evidencia():
+    """Suele existir precisamente porque FALTAN datos: exigirle evidencia sería exigirle
+    que demuestre lo que no tiene."""
+    u = UncertaintyV0(statement="no hay medición de ruido en este punto")
+    assert u.evidence_refs == ()
+
+
+def test_una_incertidumbre_puede_citar_evidencia_parcial_o_contradictoria():
+    u = UncertaintyV0(
+        statement="dos fuentes dan superficies distintas",
+        evidence_refs=("ev-5", "ev-6"),
+    )
+    assert len(u.evidence_refs) == 2
+
+
+def test_un_evidence_id_vacio_o_repetido_no_cita_nada():
+    with pytest.raises(ValidationError, match="no referencia ninguna evidencia"):
+        StrengthV0(dimension="parque", evidence_refs=("  ",))
+    with pytest.raises(ValidationError, match="evidence_id repetido"):
+        StrengthV0(dimension="parque", evidence_refs=("ev-1", "ev-1"))
+
+
+def test_evidence_refs_no_se_confunde_con_trace_id():
+    """La trazabilidad de la ejecución es de DecisionTraceV0 (E1.6), no de aquí."""
+    props = set(json_schema()["properties"])
+    assert "trace_id" not in props
+    assert not hasattr(DecisionContextV0, "trace_id")
+    d = _con_afirmaciones()
+    assert d.strengths[0].evidence_refs == ("ev-3",)
+
+
+def test_las_referencias_de_evidencia_sobreviven_el_ida_y_vuelta():
+    original = _con_afirmaciones()
+    crudo = original.model_dump(mode="json")
+    assert crudo["eligibility"]["violations"][0]["evidence_refs"] == ["ev-1"]
+    assert crudo["strengths"][0]["evidence_refs"] == ["ev-3"]
+    assert DecisionContextV0.model_validate(crudo) == original
+
+
+def test_una_referencia_rota_no_se_valida_aqui():
+    """Resolver contra un store es F2/F6."""
+    d = _decision(
+        strengths=(StrengthV0(dimension="parque", evidence_refs=("ev-que-no-existe",)),)
+    )
+    assert d.strengths[0].evidence_refs == ("ev-que-no-existe",)
+
+
+def test_una_violacion_referencia_el_criterio_por_id():
+    """Por el `criterion_id` estable de E1.2, no por el texto de la restricción."""
+    v = ViolationV0(criterion_id="c-sin-escalones", evidence_refs=("ev-1",))
+    assert v.criterion_id == "c-sin-escalones"
+
+
+def test_ausente_no_es_lo_mismo_que_vacio():
+    """`eligibility=None` = no se evaluó. `violations=()` = se evaluó y está limpio. La
+    segunda es una afirmación mucho más fuerte."""
+    sin_evaluar = _decision()
+    evaluado_limpio = _decision(eligibility=EligibilityV0())
+
+    assert sin_evaluar.eligibility is None
+    assert evaluado_limpio.eligibility is not None
+    assert evaluado_limpio.eligibility.sin_violaciones is True
+
+    crudo_a = sin_evaluar.model_dump(mode="json")
+    crudo_b = evaluado_limpio.model_dump(mode="json")
+    assert crudo_a["eligibility"] is None
+    assert crudo_b["eligibility"] == {"violations": []}
+
+
+def test_las_dimensiones_de_encaje_no_traen_peso_ni_puntaje():
+    campos = set(MatchDimensionV0.model_fields)
+    assert campos == {"dimension", "evidence_refs"}

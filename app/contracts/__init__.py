@@ -65,8 +65,15 @@ from app.contracts.decision_v0 import (
 from app.contracts.decision_v0 import (
     BuyerContextRefV0,
     DecisionContextV0,
+    DecisionTradeoffV0,
+    EligibilityV0,
+    MatchDimensionV0,
+    MatchV0,
     PlaceContextRefV0,
     PropertyContextRefV0,
+    StrengthV0,
+    UncertaintyV0,
+    ViolationV0,
 )
 from app.contracts.evidence_v0 import (
     CONTRACT_VERSION as EVIDENCE_REF_V0_VERSION,
@@ -148,6 +155,13 @@ __all__ = [
     "BuyerContextRefV0",
     "PropertyContextRefV0",
     "PlaceContextRefV0",
+    "EligibilityV0",
+    "ViolationV0",
+    "MatchV0",
+    "MatchDimensionV0",
+    "StrengthV0",
+    "DecisionTradeoffV0",
+    "UncertaintyV0",
     # compartidos
     "ContractBase",
     "Money",

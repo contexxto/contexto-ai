@@ -75,6 +75,21 @@ _DECIMALES = 6
 dos inmuebles distintos no colisionen."""
 
 
+class EncajeSinVersion(ValueError):
+    """El motor produjo un resultado pero no dijo bajo qué reglas.
+
+    Se levanta en vez de caer al `SCORE_VERSION` actual, y la razón es la misma que
+    gobierna `place_id`: un objeto válido no puede afirmar más de lo que sostiene su
+    evidencia. Etiquetar como `encaje-v0` un resultado que perdió su versión sería
+    inventar la procedencia del número — y dos scores producidos por reglas distintas
+    dejarían de poder distinguirse, que es justo lo que `score_version` existe para
+    impedir.
+
+    `encaje=None` es otra cosa y sí es legítimo: no hubo motor, así que la versión que
+    corresponde es la del motor actual.
+    """
+
+
 class CoordenadasAusentes(ValueError):
     """No hay `lat`/`lon` válidos, así que no se puede nombrar el lugar sin inventarlo.
 
@@ -110,6 +125,30 @@ def place_id_de_punto(lat, lon) -> str:
     return f"{_PLACE_ID_PREFIJO}:{digest}"
 
 
+def _score_version_de(encaje: dict | None) -> str:
+    """Bajo qué reglas se puntuó. Sin normalizar en silencio.
+
+        encaje is None   →  no hubo motor; la versión es la del motor actual
+        encaje existe    →  tiene que traer la suya, explícita
+        falta o vacía    →  EncajeSinVersion
+        difiere          →  se USA la que dice, no la que esperábamos
+
+    Lo último importa tanto como lo anterior: si un día el motor devuelve `encaje-v1`, la
+    decisión debe registrar `encaje-v1`. Coercionarlo al valor esperado convertiría un
+    cambio de reglas en un dato invisible.
+    """
+    if encaje is None:
+        return SCORE_VERSION
+    version = encaje.get("score_version")
+    if not isinstance(version, str) or not version.strip():
+        raise EncajeSinVersion(
+            f"el resultado del motor no trae score_version (recibido: {version!r}). No se "
+            f"asume '{SCORE_VERSION}': etiquetar un score con una versión que no declaró "
+            "es inventar su procedencia."
+        )
+    return version
+
+
 def _objetivo_desde(preferencias: dict | None) -> Objective:
     """`preferencias.operacion` → `Objective`. Solo el mapeo inequívoco.
 
@@ -143,7 +182,9 @@ def assemble_decision_context_v0(
     único volátil del objeto— para que `mismos insumos → mismo objeto serializado` se
     pueda probar sin normalizar media estructura después.
 
-    Levanta `CoordenadasAusentes` si la fila no permite nombrar el lugar. Ver la cabecera.
+    Levanta `CoordenadasAusentes` si la fila no permite nombrar el lugar, y
+    `EncajeSinVersion` si el motor puntuó sin declarar bajo qué reglas. Los dos son el
+    mismo principio: el objeto no puede afirmar más de lo que sostiene su evidencia.
     """
     place_id = place_id_de_punto(row.get("lat"), row.get("lon"))
 
@@ -160,7 +201,7 @@ def assemble_decision_context_v0(
             property_id=str(row["id"]),
         ),
         place=PlaceContextRefV0(place_id=place_id),
-        score_version=(encaje or {}).get("score_version") or SCORE_VERSION,
+        score_version=_score_version_de(encaje),
         # Lo de abajo llega en subpasos posteriores y por eso queda vacío, no forzado:
         #   · ranking            → segundo subpaso de E2.2, cuando la autoridad se invierta
         #   · eligibility/match  → E2.3, cuando haya evidencia que citar

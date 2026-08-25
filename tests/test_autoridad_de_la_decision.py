@@ -219,3 +219,102 @@ def test_sin_preferencias_el_ranking_no_inventa_scores(monkeypatch):
     cards = [assembler._card_from_row(r, None) for r in rows]
     for e in assembler.decidir_ranking(cards):
         assert e.score is None and e.score_version is None
+
+
+# ── Autoridad 3 · el portador es DecisionContextV0, no un tuple suelto ──────────
+#
+# Las pruebas de arriba demuestran que la presentación obedece al core. Estas demuestran
+# algo más estrecho y más importante: que quien manda es EL OBJETO que F1 congeló, y no
+# una estructura paralela que resulta llevar la misma información. Sin esto acabaríamos
+# con dos cores —uno tipado que documenta y otro funcional que decide— y en cuanto dos
+# cosas describen lo mismo, divergen.
+
+
+def _decision_con(ranking_ids, **cambios):
+    from app.decision.context import assemble_decision_context_v0
+
+    fila = _row(ranking_ids[0])
+    base = dict(
+        row=fila,
+        preferencias=None,
+        encaje=None,
+        session_id="s-1",
+        decision_id="d-1",
+        created_at=AHORA,
+        ranking=tuple(
+            RankingEntryV0(provider_id=PROVIDER_ID_LOCAL, property_id=pid, rank=i)
+            for i, pid in enumerate(ranking_ids, start=1)
+        ),
+    )
+    base.update(cambios)
+    return assemble_decision_context_v0(**base)
+
+
+def test_el_ranking_vive_dentro_del_contrato_de_f1():
+    d = _decision_con(["B", "A"])
+    assert [e.property_id for e in d.ranking] == ["B", "A"]
+    assert [e.rank for e in d.ranking] == [1, 2]
+
+
+def test_la_presentacion_obedece_a_decision_ranking(monkeypatch):
+    """LA VERSIÓN FUERTE DE LA PRUEBA DE AUTORIDAD.
+
+        DecisionContextV0.ranking = [B, A]
+        cards base                = [A, B]
+        → presentación            = [B, A]
+
+    No es un tuple que casualmente lleva el orden: es el objeto congelado en F1, el mismo
+    al que E2.3 le colgará la evidencia.
+    """
+    from app.decision.context import proyectar_cards
+
+    cards = [_card("A"), _card("B")]
+    decision = _decision_con(["B", "A"])
+    assert [c["id"] for c in proyectar_cards(cards, decision)] == ["B", "A"]
+
+
+def test_la_proyeccion_no_decide_nada():
+    """Estructural: no llama al criterio de orden ni recalcula nada. Recibe el resultado,
+    nunca al decisor."""
+    import ast
+    import inspect
+    import textwrap
+
+    from app.decision.context import proyectar_cards
+
+    arbol = ast.parse(textwrap.dedent(inspect.getsource(proyectar_cards)))
+    llamadas = {
+        n.func.id for n in ast.walk(arbol)
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+    }
+    for prohibida in ("ordenar_candidatos", "decidir_ranking", "decidir_sobre_presupuesto"):
+        assert prohibida not in llamadas, f"la proyección llamó a {prohibida}: eso es decidir"
+
+    firma = inspect.signature(proyectar_cards)
+    assert set(firma.parameters) == {"cards", "decision"}, (
+        "la proyección recibió algo más que las tarjetas y la decisión — con preferencias "
+        "o precios delante, podría volver a decidir"
+    )
+
+
+def test_una_tarjeta_que_el_ranking_no_nombra_no_aparece():
+    from app.decision.context import proyectar_cards
+
+    cards = [_card("A"), _card("B"), _card("fantasma")]
+    assert [c["id"] for c in proyectar_cards(cards, _decision_con(["B", "A"]))] == ["B", "A"]
+
+
+def test_un_ranking_que_nombra_lo_inexistente_no_revienta():
+    """Degradación honesta: el ranking puede citar algo que el fetch no trajo."""
+    from app.decision.context import proyectar_cards
+
+    assert [c["id"] for c in proyectar_cards([_card("A")], _decision_con(["B", "A"]))] == ["A"]
+
+
+def _card(rid):
+    return assembler._card_from_row(_row(rid), None)
+
+
+from datetime import datetime, timezone  # noqa: E402
+
+AHORA = datetime(2026, 8, 25, 12, 0, 0, tzinfo=timezone.utc)

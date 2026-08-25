@@ -179,6 +179,7 @@ def assemble_decision_context_v0(
     session_id: str,
     decision_id: str,
     created_at: datetime,
+    ranking: tuple[RankingEntryV0, ...] = (),
 ) -> DecisionContextV0:
     """Un `DecisionContextV0` desde el cálculo determinista que ya existe.
 
@@ -207,8 +208,10 @@ def assemble_decision_context_v0(
         ),
         place=PlaceContextRefV0(place_id=place_id),
         score_version=_score_version_de(encaje),
+        # El ranking autoritativo del turno. Lo comparten todas las decisiones de un
+        # mismo panel: es el orden que se decidió una vez, no una opinión por candidato.
+        ranking=ranking,
         # Lo de abajo llega en subpasos posteriores y por eso queda vacío, no forzado:
-        #   · ranking            → segundo subpaso de E2.2, cuando la autoridad se invierta
         #   · eligibility/match  → E2.3, cuando haya evidencia que citar
         #   · strengths/tradeoffs→ E2.3; fabricarlos ahora exigiría evidence_refs inventadas
         #   · explanation        → E2.4, y solo después de que exista prosa que verificar
@@ -285,3 +288,21 @@ def decidir_sobre_presupuesto(
         for c in cards
         if c.get("precio") is not None and c["precio"] > limite
     )
+
+
+def proyectar_cards(
+    cards: list[dict], decision: DecisionContextV0
+) -> list[dict]:
+    """Ordena las tarjetas SEGÚN `decision.ranking`. La presentación obedece al objeto.
+
+    Es la costura que convierte `DecisionContextV0` en el portador real de la autoridad,
+    y no solo en su documentación tipada. Antes de esto había dos cores: uno tipado que
+    describía la decisión y otro funcional que la tomaba — y en cuanto dos cosas
+    describen lo mismo, divergen.
+
+    Esta función **no decide nada**: no llama al criterio de orden, no mira precios y no
+    conoce las preferencias. Recibe el resultado, nunca al decisor. Una tarjeta que el
+    ranking no nombra no aparece; el ranking no puede nombrar una tarjeta que no existe.
+    """
+    por_id = {str(c["id"]): c for c in cards}
+    return [por_id[e.property_id] for e in decision.ranking if e.property_id in por_id]

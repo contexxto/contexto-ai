@@ -93,3 +93,21 @@ def test_avisar_sin_configuracion_no_falla(foso, monkeypatch, capsys):
     monkeypatch.delenv("ALERTA_OPS_EMAIL", raising=False)
     assert foso.avisar_ops("asunto", "detalle") is False
     assert "Aviso NO enviado" in capsys.readouterr().out
+
+
+def test_el_corte_por_credencial_no_ocurre_al_importar(foso, monkeypatch):
+    """Regresión del PR #119: el módulo llamaba a sys.exit(1) al importarse.
+
+    Que la fixture `foso` haya podido cargar el módulo ya es media prueba, y es la
+    mitad que solo se ve en CI: allí no hay .env, y antes del arreglo eso mataba la
+    recolección de este archivo entero —ocho pruebas que ni siquiera abren una
+    conexión—. En el portátil del fundador nunca falló, que es justo por lo que hacía
+    falta el gate.
+
+    La otra mitad es que el corte SIGA existiendo, solo que corrido al momento de
+    ejecutar. Sin esto, el arreglo podría haber sido borrar la comprobación.
+    """
+    monkeypatch.setattr(foso, "DB_URL", "")
+    with pytest.raises(SystemExit) as salida:
+        foso.exigir_credencial_de_base()
+    assert salida.value.code == 1

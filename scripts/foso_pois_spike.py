@@ -42,11 +42,36 @@ if env_path.exists():
             os.environ.setdefault(k.strip(), v.strip())
 
 DB_URL = os.getenv("DATABASE_URL_OVERRIDE", "").strip()
-if not DB_URL:
-    print("❌ DATABASE_URL_OVERRIDE no está en el .env."); sys.exit(1)
-SYNC_URL = DB_URL.replace("postgresql+asyncpg://", "postgresql+psycopg://")
-if "sslmode" not in SYNC_URL:
-    SYNC_URL += ("&" if "?" in SYNC_URL else "?") + "sslmode=require"
+
+
+def _a_sincrona(url: str) -> str:
+    """psycopg en vez de asyncpg (este script es sincrono) y TLS obligatorio."""
+    sync = url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
+    if "sslmode" not in sync:
+        sync += ("&" if "?" in sync else "?") + "sslmode=require"
+    return sync
+
+
+SYNC_URL = _a_sincrona(DB_URL) if DB_URL else ""
+
+
+def exigir_credencial_de_base() -> None:
+    """Corta antes de tocar nada si no hay credencial. Al CORRER, no al importar.
+
+    Hasta el 2026-08-24 este corte vivia en el cuerpo del modulo, asi que importar el
+    archivo mataba al interprete. En el portatil del fundador no se notaba —el .env
+    tiene la variable—, pero en CI no hay .env: las ocho pruebas de
+    tests/test_overture_release.py, que solo miran que release se elige y no abren
+    ninguna conexion, ni siquiera llegaban a recolectarse. Lo cazo la primera corrida
+    del gate de pruebas (PR #119, E0.5 del Trust Gate).
+
+    Efecto secundario del arreglo, y es el que importa: --solo-avisar ya no necesita
+    la credencial. Antes, si el refresco fallaba PORQUE faltaba DATABASE_URL_OVERRIDE,
+    el aviso moria por la misma causa que intentaba reportar.
+    """
+    if not DB_URL:
+        print("❌ DATABASE_URL_OVERRIDE no está en el .env.")
+        sys.exit(1)
 
 import duckdb
 import requests
@@ -665,6 +690,9 @@ if __name__ == "__main__":
             f"Revisar el log más reciente en logs\\refresco_pois_{CIUDAD}_*.log",
         )
         sys.exit(0)
+    # El corte por credencial ausente vive aqui, no en el cuerpo del modulo: ver
+    # exigir_credencial_de_base(). Va DESPUES de --solo-avisar a proposito.
+    exigir_credencial_de_base()
     try:
         main()
     except SystemExit:

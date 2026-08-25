@@ -86,16 +86,19 @@ def test_estado_sin_sesion_no_lanza(monkeypatch):
 
 # ── Happy path: delta coherente con lo declarado ─────────────────────────────────────
 def test_happy_delta_gana_el_que_encaja(monkeypatch):
-    rows = [_mk_row("A", precio=650), _mk_row("B", precio=950, ruido="ALTO")]
-    _patch(monkeypatch, {"tranquilidad": True, "presupuesto_max": 800}, rows)
+    # Tras E0.4 el ruido ya no distingue (no puntúa), así que la dimensión que separa
+    # a A de B es la caminabilidad, que sí se mide. El presupuesto no cambió.
+    rows = [_mk_row("A", precio=650, caminabilidad=95),
+            _mk_row("B", precio=950, caminabilidad=30)]
+    _patch(monkeypatch, {"caminable": True, "presupuesto_max": 800}, rows)
     res = asyncio.run(chat.comparar_inmuebles("s", "A", "B"))
     assert res["ok"] is True
     assert len(res["cards"]) == 2
     d = res["delta"]
     assert set(d) >= {"a", "b", "dimensiones"}
     por = {x["dimension"]: x for x in d["dimensiones"]}
-    # A gana ambas: ruido BAJO vs ALTO, y precio 650≤800 vs 950 sobre presupuesto.
-    assert por["tranquilidad"]["gana"] == "a"
+    # A gana ambas: caminabilidad 95 vs 30, y precio 650≤800 vs 950 sobre presupuesto.
+    assert por["caminable"]["gana"] == "a"
     assert por["presupuesto_max"]["gana"] == "a"
     # Las cards salen en orden (id_a, id_b) para calzar con delta.a / delta.b.
     assert res["cards"][0]["id"] == "A" and res["cards"][1]["id"] == "B"

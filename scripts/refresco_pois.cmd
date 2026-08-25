@@ -14,7 +14,15 @@ REM    0 = las dos fuentes respondieron  -> listo
 REM    2 = una fuente caida (reintentable, datos viejos intactos)
 REM    1 = error duro -> no se reintenta, hay que mirar el log
 REM
-REM  CUANDO CORRE: tarea de Windows "Refresco POIs Contexto", lunes 17:00.
+REM  ⚠️ YA NO ES EL MECANISMO PRINCIPAL (2026-08-24, C-A del Trust Gate).
+REM  El refresco programado vive ahora en .github/workflows/refresco-pois.yml, que
+REM  corre en un runner gestionado y no depende de que este PC esté encendido. Este
+REM  .cmd se conserva para correr el refresco A MANO en local, que sigue siendo útil
+REM  para depurar. Si se deja además la tarea de Windows activa, se duplica el trabajo
+REM  sin ganar nada: el workflow tiene concurrency para no pisarse consigo mismo, pero
+REM  no sabe de esta máquina. Recomendación: desactivar la tarea programada de Windows.
+REM
+REM  CUANDO CORRÍA: tarea de Windows "Refresco POIs Contexto", lunes 17:00.
 REM  Esa hora NO es arbitraria -- el lunes es el dia cargado de la maquina:
 REM    09:31 hydrate-nate-herk | 11:26 hydrate-corredor | 13:05 hydrate-senales
 REM    (~60 min medidos) | 15:00 radar-competidores | 15:01 despacho-contexto
@@ -72,5 +80,16 @@ for %%i in (1 2 3) do (
 :fin
 echo.>> "%LOG%"
 echo ==== FIN · codigo final: !RC! ====>> "%LOG%"
+
+REM  AVISO (2026-08-24, E0.2 del Trust Gate): hasta hoy el fallo terminaba aqui, en
+REM  un log que nadie abre. Asi fue como el release de Overture pudo quedar semanas
+REM  apuntando a un prefijo borrado sin que nadie se enterara. Si tras los reintentos
+REM  seguimos en rojo, se manda un correo. Necesita RESEND_API_KEY y ALERTA_OPS_EMAIL
+REM  en el .env; sin ellas el script lo dice por consola y no falla.
+if not "!RC!"=="0" (
+    echo    avisando por correo...>> "%LOG%"
+    "%PY%" "%~dp0foso_pois_spike.py" %CIUDAD% --solo-avisar "codigo !RC!">> "%LOG%" 2>&1
+)
+
 set "FINAL=!RC!"
 endlocal & exit /b %FINAL%

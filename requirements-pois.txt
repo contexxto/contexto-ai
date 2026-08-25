@@ -1,0 +1,13 @@
+# Dependencias del refresco de pois_propios (scripts/foso_pois_spike.py).
+#
+# Aparte de requirements.txt A PROPÓSITO: duckdb pesa y el backend no lo usa. Render
+# no tiene por qué instalarlo para servir la API; solo lo necesita quien corre el
+# refresco — hoy el runner de GitHub Actions (.github/workflows/refresco-pois.yml).
+#
+# Hasta el 2026-08-24 estas versiones no estaban declaradas en ninguna parte: vivían
+# en el venv del portátil del fundador. Mientras el refresco corriera solo ahí eso
+# funcionaba; para sacarlo de esa máquina hay que escribirlas.
+duckdb==1.5.4
+requests==2.34.2
+sqlalchemy[asyncio]==2.0.36
+psycopg[binary]==3.2.3

@@ -46,14 +46,16 @@ def _mensajes_de_un_turno(user_text, ids):
     ]
 
 
-def _patch_prefs_tranquilidad_presupuesto(monkeypatch):
+def _patch_prefs_caminable_presupuesto(monkeypatch):
     # Réplica fiel del comportamiento real de extraer_preferencias (como en
     # test_history_encaje.py): solo extrae lo que el texto realmente declara.
+    # Antes de E0.4 esta réplica extraía tranquilidad; se cambió a caminable porque
+    # el ruido dejó de puntuar y ya no puede ordenar nada (D3).
     async def fake_prefs(textos):
         junto = " ".join(textos).lower()
         prefs = {}
-        if "tranquilo" in junto:
-            prefs["tranquilidad"] = True
+        if "camin" in junto:
+            prefs["caminable"] = True
         if "800" in junto:
             prefs["presupuesto_max"] = 800
         return prefs
@@ -68,18 +70,20 @@ def _patch_fetch(monkeypatch, rows):
 
 def test_tarjetas_se_reordenan_por_encaje_descendente(monkeypatch):
     # Repro exacta del bug de la demo: la búsqueda espacial trae primero al inmueble caro y
-    # ruidoso (peor encaje) y al final al barato y silencioso (mejor encaje) — el orden
-    # crudo NO debe sobrevivir cuando el usuario declaró lo que le importa.
+    # mal conectado a pie (peor encaje) y al final al barato y caminable (mejor encaje) — el
+    # orden crudo NO debe sobrevivir cuando el usuario declaró lo que le importa.
+    # El eje era ruido hasta E0.4; ahora es caminabilidad, que sí tiene fuente. El defecto
+    # que este test blinda es el mismo: el orden espacial no puede ganarle al encaje.
     rows = [
-        _mk_row("caro_ruidoso", precio=1130, ruido="ALTO"),   # peor encaje: fuera de presupuesto + ruido alto
-        _mk_row("medio", precio=550, ruido="MEDIO"),
-        _mk_row("barato_silencioso", precio=380, ruido="BAJO"),  # mejor encaje: dentro de presupuesto + silencioso
+        _mk_row("caro_incomodo", precio=1130, caminabilidad=25),  # peor: fuera de presupuesto + poco caminable
+        _mk_row("medio", precio=550, caminabilidad=60),
+        _mk_row("barato_caminable", precio=380, caminabilidad=95),  # mejor: dentro de presupuesto + caminable
     ]
     _patch_fetch(monkeypatch, rows)
-    _patch_prefs_tranquilidad_presupuesto(monkeypatch)
+    _patch_prefs_caminable_presupuesto(monkeypatch)
 
-    texto = "Busco departamento tranquilo, hasta 800 al mes"
-    messages = _mensajes_de_un_turno(texto, ["caro_ruidoso", "medio", "barato_silencioso"])
+    texto = "Busco departamento caminable, hasta 800 al mes"
+    messages = _mensajes_de_un_turno(texto, ["caro_incomodo", "medio", "barato_caminable"])
 
     cards = asyncio.run(chat.build_result_cards(messages))
 
@@ -87,13 +91,13 @@ def test_tarjetas_se_reordenan_por_encaje_descendente(monkeypatch):
     assert encajes == sorted(encajes, reverse=True), (
         f"las tarjetas deben venir ordenadas de mayor a menor encaje, llegaron: {encajes}"
     )
-    # La peor opción (fuera de presupuesto, ruido alto) NO debe encabezar el carrusel —
+    # La peor opción (fuera de presupuesto, poco caminable) NO debe encabezar el carrusel —
     # exactamente el defecto que se vio en vivo.
-    assert cards[0]["id"] == "barato_silencioso"
+    assert cards[0]["id"] == "barato_caminable"
     # Y desde el fallo 3 de BATALLA_Hiinmo (2026-07-31) ya ni siquiera aparece: $1.130 contra
-    # un tope de $800 y ruido alto no es "la última opción", es ruido en pantalla. El panel se
-    # corta por encaje/presupuesto (ver chat._recortar_grid).
-    assert [c["id"] for c in cards] == ["barato_silencioso", "medio"]
+    # un tope de $800 no es "la última opción", es ruido en pantalla. El panel se corta por
+    # encaje/presupuesto (ver chat._recortar_grid).
+    assert [c["id"] for c in cards] == ["barato_caminable", "medio"]
 
 
 def test_sin_preferencias_declaradas_preserva_el_orden_espacial(monkeypatch):
@@ -120,13 +124,13 @@ def test_tarjeta_sin_encaje_puntuable_degrada_al_final_no_desaparece(monkeypatch
     # en ESE inmueble) no debe saltar al frente ni desaparecer: degrada al final, sin
     # inventar un 0% ni un ranking falso.
     rows = [
-        _mk_row("sin_senal", precio=None, ruido=None),  # nada que puntuar para tranquilidad/presupuesto
-        _mk_row("buen_encaje", precio=380, ruido="BAJO"),
+        _mk_row("sin_senal", precio=None, caminabilidad=None),  # nada que puntuar para caminable/presupuesto
+        _mk_row("buen_encaje", precio=380, caminabilidad=95),
     ]
     _patch_fetch(monkeypatch, rows)
-    _patch_prefs_tranquilidad_presupuesto(monkeypatch)
+    _patch_prefs_caminable_presupuesto(monkeypatch)
 
-    texto = "Busco departamento tranquilo, hasta 800 al mes"
+    texto = "Busco departamento caminable, hasta 800 al mes"
     messages = _mensajes_de_un_turno(texto, ["sin_senal", "buen_encaje"])
 
     cards = asyncio.run(chat.build_result_cards(messages))

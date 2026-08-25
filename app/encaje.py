@@ -68,6 +68,29 @@ _TOPE_REQUISITO_DURO = 49
 
 _RUIDO_S = {"BAJO": 1.0, "MEDIO": 0.5, "ALTO": 0.0}
 
+# ── Versión del scoring ─────────────────────────────────────────────────────────────
+# Dos corridas del motor solo son comparables si comparten esta cadena. Sin ella, un
+# cambio de pesos o de dimensiones altera todos los números en silencio y ningún
+# histórico —ni el benchmark— sabe cuál de las dos versiones produjo qué.
+#
+# SUBIRLA es obligatorio cuando cambie cualquiera de estas cosas:
+#   · el conjunto DIMENSIONES o _PESOS,
+#   · la fórmula del promedio o el tope de requisito duro,
+#   · qué dimensiones aportan al número (aporta=True/False),
+#   · la escala de cualquier scorer.
+# NO hace falta subirla por cambiar un texto explicativo o el rótulo de una fuente.
+#
+# v0 es la primera versión nombrada, y nace ya sin las heurísticas sin fuente: el
+# scoring anterior —el que sí dejaba puntuar el ruido de una tabla de 7 sectores— no
+# tuvo versión nunca, y por eso no hay forma de comparar contra él salvo por fecha.
+SCORE_VERSION = "encaje-v0"
+
+# Estado de una dimensión que TIENE un valor pero no una fuente que lo sostenga.
+# No es lo mismo que 'sin_dato' (no hay número): aquí el número existe y se decidió
+# no dejarlo mover el ranking. La distinción importa para el DecisionContext y para
+# poder decirle al usuario "no lo sabemos" en vez de inventarle precisión.
+INSUFICIENTE = "insufficient_evidence"
+
 
 def _clamp01(x: float) -> float:
     return 0.0 if x < 0 else 1.0 if x > 1 else x
@@ -189,14 +212,44 @@ def _score_tipo_inmueble(decl, inm) -> dict:
 
 
 def _score_tranquilidad(_decl, inm) -> dict:
+    """El ruido NO mueve el ranking (D3 del Plan 1.0, 2026-08-24).
+
+    Su única fuente es scores_heuristicos.scores_para: una tabla de 7 sectores de Quito
+    escrita a mano, más un desplazamiento derivado del hash de la dirección. No hay
+    medición detrás, y sin embargo esta dimensión pesaba 1.0 en el promedio — el motor
+    puntuaba sobre un dato inventado. Como la factualidad es justo una de las métricas
+    del benchmark, dejarlo dentro haría que midiéramos en parte la calidad de una
+    invención.
+
+    La dimensión se conserva visible a propósito: el comprador que pide tranquilidad
+    merece un "no lo sabemos" antes que un número inventado o un silencio. Vuelve a
+    puntuar el día que exista una medición real (D3 deja abierto ese camino).
+    """
     ruido = inm.get("ruido")
     ruido = ruido.upper() if isinstance(ruido, str) else ruido  # BAJO/MEDIO/ALTO, tolerante a caja
     if ruido not in _RUIDO_S:
         return _razon("tranquilidad", "sin_dato", None,
                       "Buscabas tranquilidad · sin dato de ruido aquí", None, aporta=False)
-    s = _RUIDO_S[ruido]
-    return _razon("tranquilidad", _nivel(s), s,
-                  f"Buscabas tranquilidad · ruido estimado {ruido.lower()}", "estimación por sector")
+    return _razon("tranquilidad", INSUFICIENTE, None,
+                  "Buscabas tranquilidad · no tenemos medición de ruido aquí", None, aporta=False)
+
+
+# Procedencia de la caminabilidad, traducida del valor que guarda
+# activos_inmutables.walk_score_fuente. Hasta el 2026-08-24 este scorer afirmaba
+# "OpenStreetMap" para TODOS los inmuebles, sin consultar nada: cuando Overpass no
+# respondía y el score quedaba en la estimación por zona, el motor seguía reclamando
+# una medición que no existía. La ficha del anuncio (routers/assets._scores_fuente) ya
+# distinguía bien desde su lado, así que el mismo activo daba dos verdades distintas
+# según por dónde se mirara. Es el P0 de procedencia de la auditoría.
+_FUENTE_CAMINABLE = {
+    "osm": "OpenStreetMap",        # contada sobre comercios reales
+    "heuristico": "estimación por zona",
+}
+# Sin procedencia registrada no se afirma medición: se degrada a estimación, que es el
+# lado seguro. Coincide con la regla que ya sigue el alta de activos
+# (routers/assets.create_asset: "origen opaco del payload → el anuncio degrada a
+# estimación").
+_FUENTE_CAMINABLE_DESCONOCIDA = "estimación por zona"
 
 
 def _score_caminable(_decl, inm) -> dict:
@@ -205,8 +258,12 @@ def _score_caminable(_decl, inm) -> dict:
         return _razon("caminable", "sin_dato", None,
                       "Buscabas caminable · sin caminabilidad calculada aquí", None, aporta=False)
     s = _clamp01(ws / 100)
+    fuente = _FUENTE_CAMINABLE.get(
+        (inm.get("walk_score_fuente") or "").strip().lower(),
+        _FUENTE_CAMINABLE_DESCONOCIDA,
+    )
     return _razon("caminable", _nivel(s), s,
-                  f"Buscabas caminable · caminabilidad {int(ws)}/100", "OpenStreetMap")
+                  f"Buscabas caminable · caminabilidad {int(ws)}/100", fuente)
 
 
 def _score_transporte(_decl, inm) -> dict:
@@ -221,17 +278,25 @@ def _score_transporte(_decl, inm) -> dict:
 
 
 def _score_area_verde(_decl, inm) -> dict:
-    # Preferimos el parque concreto (min a pie); si no, la cobertura vegetal del sector.
+    """El parque concreto SÍ puntúa; la cobertura vegetal del sector NO (D3).
+
+    Esta dimensión tiene dos caminos y solo uno tiene fuente. `parque_min` sale del
+    mapa —un parque real, con minutos a pie medidos— y se queda. `vegetacion` sale de
+    la misma tabla de 7 sectores que el ruido, y se va del promedio.
+
+    Por eso la dimensión no se retira entera: hacerlo tiraría un dato bueno junto con
+    el malo, y el comprador que pide verde perdería la única señal defendible que
+    teníamos para él.
+    """
     pmin = _num(inm.get("parque_min"))
     if pmin is not None:
         s = (1.0 if pmin <= 5 else 0.7 if pmin <= 10 else 0.4 if pmin <= 20 else 0.2)
         return _razon("area_verde", _nivel(s), s,
                       f"Buscabas verde · parque a ~{int(pmin)} min a pie", "mapa")
-    veg = _num(inm.get("vegetacion"))
-    if veg is not None:
-        s = _clamp01(veg / 100)
-        return _razon("area_verde", _nivel(s), s,
-                      f"Buscabas verde · cobertura vegetal ~{int(veg)}%", "estimación por sector")
+    if _num(inm.get("vegetacion")) is not None:
+        return _razon("area_verde", INSUFICIENTE, None,
+                      "Buscabas verde · sin parque medido cerca; la cobertura vegetal del "
+                      "sector es una estimación y no la contamos", None, aporta=False)
     return _razon("area_verde", "sin_dato", None,
                   "Buscabas verde · sin dato de áreas verdes aquí", None, aporta=False)
 
@@ -337,8 +402,10 @@ def peso_de(dimensiones) -> float:
 def calcular_encaje(preferencias: dict, inmueble: dict) -> dict:
     """Encaje 0-100 de `inmueble` con las necesidades DECLARADAS en `preferencias`.
 
-    Devuelve {score, cobertura, razones, dimensiones_declaradas, dimensiones_evaluadas,
-    duros_incumplidos}:
+    Devuelve {score, cobertura, razones, score_version, dimensiones_declaradas,
+    dimensiones_evaluadas, duros_incumplidos}:
+      - score_version: qué versión del motor produjo este número. Dos corridas solo son
+        comparables si coincide (ver SCORE_VERSION).
       - score: int 0-100, o None si no hay NADA que puntuar honestamente (ninguna
         preferencia declarada, o ninguna con señal disponible en el inmueble). None ≠ 0:
         "no sé" no es "no encaja" — el frontend no debe pintar un "0%" falso.
@@ -368,7 +435,7 @@ def calcular_encaje(preferencias: dict, inmueble: dict) -> dict:
 
     if not evaluadas:
         return {"score": None, "cobertura": 0.0, "razones": razones,
-                "duros_incumplidos": duros,
+                "duros_incumplidos": duros, "score_version": SCORE_VERSION,
                 "dimensiones_declaradas": declaradas, "dimensiones_evaluadas": []}
 
     num = sum(r["s"] * _PESOS[r["dimension"]] for r in evaluadas)
@@ -382,6 +449,7 @@ def calcular_encaje(preferencias: dict, inmueble: dict) -> dict:
         "cobertura": _clamp01(den / peso_declarado) if peso_declarado > 0 else 0.0,
         "razones": razones,
         "duros_incumplidos": duros,
+        "score_version": SCORE_VERSION,
         "dimensiones_declaradas": declaradas,
         "dimensiones_evaluadas": [r["dimension"] for r in evaluadas],
     }

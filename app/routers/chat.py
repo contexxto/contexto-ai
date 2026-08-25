@@ -45,9 +45,30 @@ _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
 def verify_api_key(api_key: str | None = Security(_api_key_header)) -> None:
-    """Valida el header X-API-Key. Si API_KEY no está configurada, permite todo (dev)."""
+    """Valida el header X-API-Key.
+
+    Sin API_KEY configurada: en dev local no restringe (comodidad), pero en producción
+    RECHAZA. Hasta el 2026-08-24 abría en ambos casos, y eso convertía a una variable
+    ausente en una puerta abierta silenciosa: bastaba vaciar API_KEY en el panel para
+    desproteger de golpe todas las rutas que dependen de esta guardia —incluida, desde
+    E0.1, la escritura del catastro— sin un solo error en los logs y sin que ninguna
+    prueba lo notara.
+
+    Se devuelve 503 y no 401 a propósito: quien llama no hizo nada mal, es el servidor
+    el que está mal configurado. Es el mismo criterio que ya usa app/auth.py cuando le
+    falta SUPABASE_URL.
+    """
     configured = settings.api_key
     if not configured:
+        if settings.es_produccion:
+            log.error(
+                "API_KEY no está configurada y esto es producción: se rechaza la petición "
+                "en vez de dejar la ruta abierta. Configurar API_KEY en el entorno."
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Servicio mal configurado: falta la credencial del servidor.",
+            )
         return  # dev local: sin restricción
     # Comparación en tiempo constante → no filtra la llave por timing.
     if not api_key or not secrets.compare_digest(api_key, configured):
@@ -305,6 +326,12 @@ def _senales_encaje(row: dict, car: dict) -> dict:
     return {
         "tipo_activo": row.get("tipo_activo"),
         "walk_score": row.get("caminabilidad"),
+        # La procedencia viaja CON el número. Sin ella, encaje._score_caminable no puede
+        # saber si el walk_score se midió sobre comercios reales o quedó en la estimación
+        # por zona — y hasta el 2026-08-24 resolvía esa ignorancia afirmando "OpenStreetMap"
+        # para todos. La card de al lado (_card_from_row) ya recibía este mismo dato, así
+        # que el motor y la ficha se contradecían sobre el mismo activo.
+        "walk_score_fuente": row.get("caminabilidad_fuente"),
         "ruido": row.get("ruido"),
         "vegetacion": row.get("vegetacion"),
         "precio": row.get("precio"),

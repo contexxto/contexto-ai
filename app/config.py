@@ -1,3 +1,5 @@
+import os
+
 from dotenv import dotenv_values
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -76,6 +78,30 @@ class Settings(BaseSettings):
     # Vacío = se permite cualquier host (modo pruebas). En producción real, fijar
     # al bucket de Supabase Storage. Ej: "images.unsplash.com,xxxx.supabase.co"
     ingest_allowed_image_hosts: str = ""
+
+    # Entorno de ejecución. Vacío = se infiere (ver es_produccion). Ponerlo a mano solo
+    # para forzar: ENVIRONMENT=production o ENVIRONMENT=dev.
+    environment: str = ""
+
+    @property
+    def es_produccion(self) -> bool:
+        """Si esto corre sirviendo a gente real.
+
+        Existe para que una configuración AUSENTE no abra una puerta. Sin esto,
+        verify_api_key trata "API_KEY vacía" como dev local y deja pasar a cualquiera:
+        basta borrar la variable en el panel para desproteger la escritura del catastro
+        sin un solo error en los logs.
+
+        La inferencia usa RENDER, que Render inyecta solo en todos sus servicios. Se
+        prefiere a una variable propia justamente porque no hay que acordarse de
+        ponerla: si algún día se despliega en otro sitio, lo peor que pasa es que haya
+        que declarar ENVIRONMENT=production a mano — un fallo ruidoso al arrancar, no
+        una puerta abierta en silencio.
+        """
+        declarado = (self.environment or "").strip().lower()
+        if declarado:
+            return declarado.startswith("prod")
+        return os.getenv("RENDER", "").strip().lower() in ("true", "1", "yes")
 
     @property
     def database_url(self) -> str:

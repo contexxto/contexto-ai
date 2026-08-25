@@ -22,6 +22,7 @@ NOTA: TODO SINCRONO (DuckDB + asyncio crashea el GIL en Windows). requests con v
 para Overpass (inspeccion SSL corporativa local, mismo criterio que SSL_VERIFY=false).
 """
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -41,11 +42,36 @@ if env_path.exists():
             os.environ.setdefault(k.strip(), v.strip())
 
 DB_URL = os.getenv("DATABASE_URL_OVERRIDE", "").strip()
-if not DB_URL:
-    print("❌ DATABASE_URL_OVERRIDE no está en el .env."); sys.exit(1)
-SYNC_URL = DB_URL.replace("postgresql+asyncpg://", "postgresql+psycopg://")
-if "sslmode" not in SYNC_URL:
-    SYNC_URL += ("&" if "?" in SYNC_URL else "?") + "sslmode=require"
+
+
+def _a_sincrona(url: str) -> str:
+    """psycopg en vez de asyncpg (este script es sincrono) y TLS obligatorio."""
+    sync = url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
+    if "sslmode" not in sync:
+        sync += ("&" if "?" in sync else "?") + "sslmode=require"
+    return sync
+
+
+SYNC_URL = _a_sincrona(DB_URL) if DB_URL else ""
+
+
+def exigir_credencial_de_base() -> None:
+    """Corta antes de tocar nada si no hay credencial. Al CORRER, no al importar.
+
+    Hasta el 2026-08-24 este corte vivia en el cuerpo del modulo, asi que importar el
+    archivo mataba al interprete. En el portatil del fundador no se notaba —el .env
+    tiene la variable—, pero en CI no hay .env: las ocho pruebas de
+    tests/test_overture_release.py, que solo miran que release se elige y no abren
+    ninguna conexion, ni siquiera llegaban a recolectarse. Lo cazo la primera corrida
+    del gate de pruebas (PR #119, E0.5 del Trust Gate).
+
+    Efecto secundario del arreglo, y es el que importa: --solo-avisar ya no necesita
+    la credencial. Antes, si el refresco fallaba PORQUE faltaba DATABASE_URL_OVERRIDE,
+    el aviso moria por la misma causa que intentaba reportar.
+    """
+    if not DB_URL:
+        print("❌ DATABASE_URL_OVERRIDE no está en el .env.")
+        sys.exit(1)
 
 import duckdb
 import requests
@@ -55,7 +81,65 @@ from sqlalchemy.pool import NullPool
 
 urllib3.disable_warnings()  # verify=False para Overpass (SSL corporativo local)
 
-OVERTURE = "s3://overturemaps-us-west-2/release/2026-06-17.0/theme=places/type=place/*"
+OVERTURE_BUCKET = "overturemaps-us-west-2"
+OVERTURE_LIST_URL = f"https://{OVERTURE_BUCKET}.s3.amazonaws.com/"
+
+# Release de respaldo. Solo se usa si el descubrimiento falla por red, y es probable
+# que para entonces ya no exista: ver la advertencia de abajo.
+OVERTURE_RELEASE_FALLBACK = "2026-08-19.0"
+
+
+def _releases_disponibles() -> list[str]:
+    """Los releases que Overture tiene publicados AHORA, de más viejo a más nuevo.
+
+    Se listan por la API de S3 (un GET con delimiter, no una descarga) en vez de por
+    glob de DuckDB: glob no enumera prefijos y devuelve cero filas.
+    """
+    resp = requests.get(
+        OVERTURE_LIST_URL,
+        params={"list-type": "2", "prefix": "release/", "delimiter": "/"},
+        timeout=30,
+        verify=False,  # mismo criterio que Overpass: inspección SSL corporativa local
+    )
+    resp.raise_for_status()
+    hallados = re.findall(r"<Prefix>release/([^<]+?)/</Prefix>", resp.text)
+    return sorted(r for r in hallados if re.fullmatch(r"\d{4}-\d{2}-\d{2}\.\d+", r))
+
+
+def overture_release() -> str:
+    """El release vigente. OVERTURE_RELEASE en el entorno lo fija a mano si hace falta.
+
+    POR QUÉ SE DESCUBRE Y NO SE FIJA (2026-08-24, E0.2 del Trust Gate): hasta hoy esta
+    ruta tenía escrito 'release/2026-06-17.0'. Overture NO conserva los releases
+    viejos —el 2026-08-24 el bucket solo ofrecía 2026-07-22.0 y 2026-08-19.0—, así que
+    el que estaba fijado había dejado de existir y la consulta leía un prefijo vacío.
+    La tubería no estaba desactualizada: estaba rota, y en silencio, porque cero filas
+    no es un error para DuckDB.
+
+    Fijar un release es por eso una bomba de tiempo con la mecha ya encendida: funciona
+    hasta que Overture rota, y entonces falla sin ruido. Preferimos preguntar.
+    """
+    fijado = os.getenv("OVERTURE_RELEASE", "").strip()
+    if fijado:
+        return fijado
+    try:
+        disponibles = _releases_disponibles()
+    except Exception as exc:  # noqa: BLE001 — red caída: seguimos con el respaldo
+        print(f"⚠️  No se pudo listar los releases de Overture ({type(exc).__name__}: {exc}).")
+        print(f"    Se intentará con el respaldo {OVERTURE_RELEASE_FALLBACK}, que puede haber sido rotado.")
+        return OVERTURE_RELEASE_FALLBACK
+    if not disponibles:
+        raise RuntimeError(
+            "Overture no publicó ningún release con formato de fecha en "
+            f"{OVERTURE_LIST_URL}release/. Puede haber cambiado la disposición del bucket."
+        )
+    # max() y no [-1]: elegir el más nuevo no puede depender de que el listado llegue
+    # ordenado. Como los nombres son YYYY-MM-DD.N, el orden lexicográfico es el cronológico.
+    return max(disponibles)
+
+
+def overture_glob(release: str) -> str:
+    return f"s3://{OVERTURE_BUCKET}/release/{release}/theme=places/type=place/*"
 
 # ── Registro de mercados ────────────────────────────────────────────────────────
 # Cada entrada ata el SLUG de ciudad a su bbox. Van juntos a propósito: así es
@@ -119,6 +203,8 @@ def _normalizar(p: dict) -> dict:
 
 def pull_overture() -> list[dict]:
     """Places del bbox de Quito en nuestras 6 categorías, confianza ≥ CONF_MIN."""
+    release = overture_release()
+    print(f"   Overture release: {release}")
     leaf_list = "', '".join(LEAF_TO_CAT.keys())
     con = duckdb.connect()
     try:
@@ -127,7 +213,7 @@ def pull_overture() -> list[dict]:
             SELECT id AS overture_id, names.primary AS nombre, categories.primary AS cat_leaf,
                    confidence, ST_Y(geometry) AS lat, ST_X(geometry) AS lon,
                    addresses[1].freeform AS direccion, brand.names.primary AS marca, operating_status
-            FROM read_parquet('{OVERTURE}')
+            FROM read_parquet('{overture_glob(release)}')
             WHERE bbox.xmin BETWEEN {BBOX['xmin']} AND {BBOX['xmax']}
               AND bbox.ymin BETWEEN {BBOX['ymin']} AND {BBOX['ymax']}
               AND confidence > {CONF_FLOOR}
@@ -138,6 +224,16 @@ def pull_overture() -> list[dict]:
         raw = [dict(zip(cols, r)) for r in con.execute(q).fetchall()]
     finally:
         con.close()
+
+    # Cero filas de Overture NO es un resultado válido: el bbox de un mercado activo
+    # siempre tiene comercios. Si esto pasa, o el release se rotó bajo nuestros pies o
+    # cambió el esquema — y sin este corte el script seguiría hasta el cierre de POIs
+    # dando la corrida por buena, que es exactamente como el fallo pasó desapercibido.
+    if not raw:
+        raise RuntimeError(
+            f"Overture devolvió 0 filas para el release {release} y el bbox de {CIUDAD}. "
+            "No se continúa: una recarga con cero POIs cerraría los existentes por ausencia."
+        )
     out = []
     for r in raw:
         cat = LEAF_TO_CAT.get(r["cat_leaf"])
@@ -516,6 +612,51 @@ def main():
     _salir(osm_ok)
 
 
+def avisar_ops(asunto: str, detalle: str) -> bool:
+    """Manda un aviso operativo por Resend. Devuelve si se envió.
+
+    POR QUÉ EXISTE (2026-08-24, E0.2 del Trust Gate): los códigos de salida de _salir()
+    ya tenían señal desde el 2026-07-28, pero nadie los mira. La tarea de Windows escribe
+    en logs\\ y ahí se queda. La prueba de que eso no basta es este mismo Trust Gate: el
+    release de Overture llevaba semanas apuntando a un prefijo borrado y el fallo no
+    llegó a ninguna parte.
+
+    Se envía con requests, síncrono y a propósito: este script no puede usar asyncio
+    (DuckDB + asyncio revienta el GIL en Windows, ver la cabecera del módulo), así que
+    no se importa app.notifications.
+
+    Sin RESEND_API_KEY o sin ALERTA_OPS_EMAIL no falla: informa por consola y sigue. Un
+    aviso que no se puede mandar no debe convertirse en un segundo problema.
+    """
+    api_key = os.getenv("RESEND_API_KEY", "").strip()
+    destino = os.getenv("ALERTA_OPS_EMAIL", "").strip()
+    if not api_key or not destino:
+        falta = "RESEND_API_KEY" if not api_key else "ALERTA_OPS_EMAIL"
+        print(f"⚠️  Aviso NO enviado (falta {falta}). El detalle era:\n{detalle}")
+        return False
+    remitente = os.getenv("NOTIFY_FROM_EMAIL", "Contexto <onboarding@resend.dev>")
+    try:
+        resp = requests.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={
+                "from": remitente,
+                "to": [d.strip() for d in destino.split(",") if d.strip()],
+                "subject": asunto,
+                "text": detalle,
+            },
+            timeout=20,
+            verify=False,
+        )
+        resp.raise_for_status()
+        print(f"📧 Aviso enviado a {destino}.")
+        return True
+    except Exception as exc:  # noqa: BLE001 — avisar nunca debe tumbar el refresco
+        print(f"⚠️  No se pudo enviar el aviso ({type(exc).__name__}: {exc}).")
+        print(detalle)
+        return False
+
+
 def _salir(osm_ok: bool):
     """Código de salida con SEÑAL, para que la tarea programada no corra a ciegas.
 
@@ -535,4 +676,34 @@ def _salir(osm_ok: bool):
 
 
 if __name__ == "__main__":
-    main()
+    # Modo aviso puro: refresco_pois.cmd lo invoca cuando agota sus reintentos, para que
+    # una tubería caída deje de ser un log que nadie abre. No toca red de datos ni base.
+    if "--solo-avisar" in sys.argv:
+        # El motivo es lo que venga DESPUÉS de la bandera; el primer argumento suelto es
+        # el slug de la ciudad y tomarlo daría un aviso que dice "Motivo: quito".
+        _tras = sys.argv[sys.argv.index("--solo-avisar") + 1:]
+        motivo = next((a for a in _tras if not a.startswith("--")), "motivo no indicado")
+        avisar_ops(
+            f"[Contexto] El refresco de POIs falló · {CIUDAD}",
+            f"La tarea semanal de pois_propios terminó sin éxito tras sus reintentos.\n\n"
+            f"Ciudad: {CIUDAD}\nMotivo/código: {motivo}\n\n"
+            f"Revisar el log más reciente en logs\\refresco_pois_{CIUDAD}_*.log",
+        )
+        sys.exit(0)
+    # El corte por credencial ausente vive aqui, no en el cuerpo del modulo: ver
+    # exigir_credencial_de_base(). Va DESPUES de --solo-avisar a proposito.
+    exigir_credencial_de_base()
+    try:
+        main()
+    except SystemExit:
+        raise  # _salir() ya dijo lo suyo con su código
+    except Exception as exc:  # noqa: BLE001
+        import traceback
+        detalle = traceback.format_exc()
+        print(f"\n❌ Error duro en el refresco de POIs: {type(exc).__name__}: {exc}")
+        avisar_ops(
+            f"[Contexto] Error duro en el refresco de POIs · {CIUDAD}",
+            f"El refresco de pois_propios se detuvo con un error no recuperable.\n"
+            f"No se reintenta: los datos viejos quedaron intactos.\n\n{detalle}",
+        )
+        sys.exit(1)

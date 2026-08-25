@@ -29,6 +29,7 @@ from app.entorno_curacion import (
     info_verificacion,
     parse_servicios,
 )
+from app.routers.chat import verify_api_key  # gate X-API-Key; vive en chat.py por historia, no por diseño
 from app.rutas import entorno_curable, verificacion_de_entorno
 from app.scores_heuristicos import scores_para
 from app.walk_score import (
@@ -2019,7 +2020,18 @@ async def save_caracteristicas(
     response_model=ActivoResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Registrar nuevo activo inmutable",
-    description="Inscribe una coordenada física permanente en el Catastro Vivo.",
+    description=(
+        "Inscribe una coordenada física permanente en el Catastro Vivo. "
+        "Requiere X-API-Key: escribe identidad permanente y encola enriquecimiento "
+        "con proveedores de pago."
+    ),
+    # Hasta el 2026-08-24 este endpoint aceptaba escritura anónima (P0 de la auditoría).
+    # No solo inserta en el catastro: encola _recompute_walk_score, que llama a Overpass
+    # y a Google Routes/Places — o sea, un desconocido podía hacernos gastar en APIs de
+    # terceros sin límite. Sus hermanos de ingesta (/ingest, /ingest/batch) ya exigían
+    # esta misma llave, y scripts/hidratar_activos.py:152 —el consumidor real— ya la
+    # enviaba: la credencial viajaba y nadie la miraba.
+    dependencies=[Depends(verify_api_key)],
 )
 async def create_asset(
     payload: ActivoCreateRequest,

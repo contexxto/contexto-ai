@@ -1,0 +1,117 @@
+# Refresco semanal de pois_propios — la capa propia de POIs (Overture + OSM).
+#
+# POR QUÉ EXISTE (2026-08-24, C-A del Trust Gate): hasta hoy esto corría como tarea
+# programada de Windows en el PC del fundador. Dos consecuencias, ambas ocurridas:
+#
+#   · Si la máquina está apagada, no hay refresco. Nadie se entera.
+#   · El fallo terminaba en logs\ y ahí moría. El 2026-08-18 la corrida abortó con
+#     IOException porque Overture había rotado el release que el script tenía fijado,
+#     salió con código 1 como debía... y ese log no lo abrió nadie hasta el 24.
+#
+# Se movió aquí y no a un servicio nuevo porque GitHub Actions ya cubre lo que hace
+# falta —programación, ejecución manual, secretos, logs, exit code y aviso— sin
+# construir infraestructura propia. El repositorio es público, así que los minutos
+# no se facturan.
+#
+# LÍMITE, dicho de frente: el cron de GitHub NO se cumple a la hora, lo estrangula.
+# Medido en este mismo repo sobre 60 corridas del keepalive: mediana 34 min de
+# retraso, p90 49 min, máximo 109 min. Para un refresco SEMANAL da igual; se anota
+# para que nadie lo lea como una garantía de puntualidad.
+name: refresco-pois
+
+on:
+  schedule:
+    # Lunes 22:00 UTC = 17:00 en Quito (-05:00). Es la misma hora que tenía la tarea
+    # de Windows, elegida para no pisarse con las hidrataciones de la mañana.
+    - cron: '0 22 * * 1'
+  workflow_dispatch:
+    inputs:
+      ciudad:
+        description: 'Slug del mercado a refrescar (registrado en CIUDADES)'
+        required: false
+        default: 'quito'
+
+# Dos refrescos a la vez sobre la misma tabla no tienen sentido: el segundo vería a
+# medias lo que escribe el primero. Se encolan, y no se cancela el que ya empezó.
+concurrency:
+  group: refresco-pois-${{ github.event.inputs.ciudad || 'quito' }}
+  cancel-in-progress: false
+
+jobs:
+  refrescar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      CIUDAD: ${{ github.event.inputs.ciudad || 'quito' }}
+      # Sin esto el script sale con código 1 antes de tocar nada.
+      DATABASE_URL_OVERRIDE: ${{ secrets.DATABASE_URL_OVERRIDE }}
+      # Para que un fallo avise en vez de quedarse en el log. Si faltan, el script lo
+      # dice por consola y no se rompe.
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      ALERTA_OPS_EMAIL: ${{ secrets.ALERTA_OPS_EMAIL }}
+      NOTIFY_FROM_EMAIL: ${{ secrets.NOTIFY_FROM_EMAIL }}
+      PYTHONUTF8: '1'
+
+    steps:
+      - name: Traer el código
+        uses: actions/checkout@v4
+
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: requirements-pois.txt
+
+      - name: Instalar dependencias del refresco
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-pois.txt
+
+      - name: Comprobar que hay credencial de base
+        # Falla temprano y con un mensaje claro. Sin esto, el error llega más tarde y
+        # disfrazado de otra cosa.
+        run: |
+          if [ -z "${DATABASE_URL_OVERRIDE}" ]; then
+            echo "::error::Falta el secreto DATABASE_URL_OVERRIDE. Configurarlo en Settings → Secrets → Actions."
+            exit 1
+          fi
+          echo "Credencial presente."
+
+      - name: Refrescar POIs
+        id: refresco
+        # Reintentos por Overpass, que es inestable: el 2026-07-27 devolvió 504 en sus
+        # dos endpoints, 2 de 3 veces seguidas. Misma lógica que tenía refresco_pois.cmd.
+        #   0 = las dos fuentes respondieron
+        #   2 = una fuente caída — reintentable, los datos viejos quedan intactos
+        #   1 = error duro — reintentar no ayuda
+        # La espera es de 10 min (el .cmd usaba 15): suficiente para la ventana de
+        # recuperación de Overpass sin estirar el job de más.
+        run: |
+          set +e
+          for intento in 1 2 3; do
+            echo "──── intento $intento de 3 · ciudad: ${CIUDAD} ────"
+            python scripts/foso_pois_spike.py "${CIUDAD}" --sin-validacion
+            rc=$?
+            echo "intento $intento terminó con código $rc"
+            if [ "$rc" = "0" ]; then break; fi
+            if [ "$rc" = "1" ]; then
+              echo "::error::Error duro en el refresco de POIs — no se reintenta."
+              break
+            fi
+            if [ "$intento" != "3" ]; then
+              echo "Fuente caída; esperando 10 min antes de reintentar…"
+              sleep 600
+            fi
+          done
+          echo "codigo=$rc" >> "$GITHUB_OUTPUT"
+          exit $rc
+
+      - name: Avisar del fallo
+        # El script ya avisa por su cuenta en el error duro, pero no en el código 2
+        # (porque se reintenta). Esto cubre el caso de agotar los tres intentos.
+        # Además, GitHub notifica por su cuenta los workflows fallidos al autor.
+        if: failure()
+        run: |
+          python scripts/foso_pois_spike.py "${CIUDAD}" --solo-avisar "codigo ${{ steps.refresco.outputs.codigo }}" || true

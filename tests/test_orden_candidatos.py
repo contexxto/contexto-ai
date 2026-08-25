@@ -153,10 +153,14 @@ def test_explicar_orden_deja_el_rastro_completo():
 # ── La cobertura que emite el motor de encaje es la que el orden consume ────────────
 
 def test_cobertura_del_motor_refleja_el_peso_evaluado():
+    # Las cuatro dimensiones declaradas son evaluables, así que una ficha completa llega
+    # a cobertura 1.0. Antes de E0.4 aquí figuraba tranquilidad; se cambió a transporte
+    # porque el ruido ya no se evalúa nunca y con él declarado el 1.0 es inalcanzable
+    # (ese efecto tiene su propio test más abajo).
     prefs = {"tipo_inmueble": "departamento", "presupuesto_max": 800,
-             "tranquilidad": True, "caminable": True}
-    completo = {"tipo_activo": "Departamento", "precio": 700, "ruido": "BAJO", "walk_score": 90}
-    parcial = {"tipo_activo": "Departamento", "precio": 700}  # sin ruido ni walk_score
+             "transporte": True, "caminable": True}
+    completo = {"tipo_activo": "Departamento", "precio": 700, "transporte_min": 8, "walk_score": 90}
+    parcial = {"tipo_activo": "Departamento", "precio": 700}  # sin transporte ni walk_score
 
     r_completo = calcular_encaje(prefs, completo)
     r_parcial = calcular_encaje(prefs, parcial)
@@ -176,6 +180,31 @@ def test_cobertura_del_motor_refleja_el_peso_evaluado():
 def test_sin_nada_evaluable_la_cobertura_es_cero_y_el_score_none():
     r = calcular_encaje({"tranquilidad": True}, {"tipo_activo": "Departamento"})
     assert r["score"] is None and r["cobertura"] == 0.0
+
+
+def test_declarar_tranquilidad_topa_la_cobertura_alcanzable():
+    """Efecto secundario de E0.4 que conviene tener escrito.
+
+    Como el ruido ya no se evalúa nunca, declararlo mete peso en el denominador de la
+    cobertura que ninguna ficha puede llenar. Consecuencia: cuando el comprador pide
+    tranquilidad, TODOS los inmuebles quedan moderados por evidencia, incluso los que
+    traen su ficha completa. El orden relativo entre ellos no cambia —el tope los afecta
+    a todos por igual—, pero los números absolutos bajan.
+
+    Es honesto: si no podemos evaluar algo que la persona pidió, nuestra confianza en el
+    match ES menor. Se documenta aquí para que el efecto no se descubra como sorpresa al
+    comparar scores antes y después del Trust Gate.
+    """
+    prefs = {"tipo_inmueble": "departamento", "presupuesto_max": 800, "tranquilidad": True}
+    ficha_impecable = {"tipo_activo": "Departamento", "precio": 700, "ruido": "BAJO"}
+
+    r = calcular_encaje(prefs, ficha_impecable)
+
+    # evaluado = tipo(1.0) + presupuesto(1.5) = 2.5 · declarado = 3.5
+    assert r["cobertura"] == pytest.approx(2.5 / 3.5)
+    assert r["cobertura"] < 1.0
+    assert encaje_ajustado(r["score"], r["cobertura"]) < r["score"]
+    assert "tranquilidad" not in r["dimensiones_evaluadas"]
 
 
 # ── Cableado real con el panel (el módulo puro puede estar bien y chat.py mal) ──────
@@ -213,15 +242,18 @@ def test_el_panel_real_no_corona_la_ficha_incompleta(monkeypatch):
     async def fake_fetch(_ids):
         return (rows, {})
 
+    # Todas evaluables: así la ficha completa puede llegar a cobertura 1.0 y la última
+    # aserción (no paga peaje) sigue teniendo sentido. Antes de E0.4 aquí iba
+    # tranquilidad, que hoy nunca se evalúa y le pondría un tope a cualquier ficha.
     async def fake_prefs(_textos):
         return {"tipo_inmueble": "departamento", "presupuesto_max": 800,
-                "tranquilidad": True, "caminable": True}
+                "transporte": True, "caminable": True}
 
     monkeypatch.setattr(chat, "_fetch_cards_rows", fake_fetch)
     monkeypatch.setattr(chat, "extraer_preferencias", fake_prefs)
 
     messages = [
-        HumanMessage(content="Departamento tranquilo y caminable, hasta 800"),
+        HumanMessage(content="Departamento con transporte cerca y caminable, hasta 800"),
         ToolMessage(content=_json.dumps({"assets": [{"id": "incompleta"}, {"id": "completa"}]}),
                     name="tool_find_assets_by_text", tool_call_id="t1"),
         AIMessage(content="Encontré estas opciones."),

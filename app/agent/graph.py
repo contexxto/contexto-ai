@@ -717,8 +717,11 @@ def _build_graph() -> StateGraph:
         # Import diferido: chat.py importa este módulo (grafo → tools), así que importarlo
         # arriba cerraría el ciclo. Mismo patrón que tool_connect_with_broker.
         from app.encaje_contexto import bloque_autoritativo
-        from app.routers.chat import (_collect_asset_ids, _MAX_CARDS, _user_texts,
-                                      construir_panel)
+        # F2/E2.1: el carril de decisión ya no pasa por el router. El import tardío se
+        # conserva —cerrar el ciclo arriba sigue siendo el problema que evita—, pero
+        # ahora apunta al Decision Core, que no sabe nada de HTTP.
+        from app.decision.assembler import (_collect_asset_ids, _MAX_CARDS, _user_texts,
+                                            construir_panel)
 
         messages = state.get("messages") or []
         if not _collect_asset_ids(messages, limit=_MAX_CARDS * 2):

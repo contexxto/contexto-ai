@@ -218,6 +218,8 @@ def test_el_panel_real_no_corona_la_ficha_incompleta(monkeypatch):
     from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
     from app.routers import chat
+    from app.decision import assembler
+    from app.decision import assembler
 
     def _row(rid, **over):
         row = {
@@ -249,8 +251,8 @@ def test_el_panel_real_no_corona_la_ficha_incompleta(monkeypatch):
         return {"tipo_inmueble": "departamento", "presupuesto_max": 800,
                 "transporte": True, "caminable": True}
 
-    monkeypatch.setattr(chat, "_fetch_cards_rows", fake_fetch)
-    monkeypatch.setattr(chat, "extraer_preferencias", fake_prefs)
+    monkeypatch.setattr(assembler, "_fetch_cards_rows", fake_fetch)
+    monkeypatch.setattr(assembler, "extraer_preferencias", fake_prefs)
 
     messages = [
         HumanMessage(content="Departamento con transporte cerca y caminable, hasta 800"),
@@ -279,6 +281,7 @@ def test_el_panel_se_lee_de_mayor_a_menor_encaje(monkeypatch):
     from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
     from app.routers import chat
+    from app.decision import assembler
 
     def _row(rid, **over):
         row = {"id": rid, "direccion": f"Dir {rid}", "tipo_activo": "Departamento",
@@ -306,8 +309,8 @@ def test_el_panel_se_lee_de_mayor_a_menor_encaje(monkeypatch):
         return {"tipo_inmueble": "departamento", "presupuesto_max": 800,
                 "tranquilidad": True, "caminable": True, "area_verde": True}
 
-    monkeypatch.setattr(chat, "_fetch_cards_rows", fake_fetch)
-    monkeypatch.setattr(chat, "extraer_preferencias", fake_prefs)
+    monkeypatch.setattr(assembler, "_fetch_cards_rows", fake_fetch)
+    monkeypatch.setattr(assembler, "extraer_preferencias", fake_prefs)
     messages = [
         HumanMessage(content="Departamento tranquilo, caminable, con verde, hasta 800"),
         ToolMessage(content=_json.dumps({"assets": [{"id": r["id"]} for r in rows]}),

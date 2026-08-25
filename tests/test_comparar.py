@@ -9,6 +9,7 @@ import asyncio
 import types
 
 from app.routers import chat
+from app.decision import assembler
 
 
 class _FakeState:
@@ -38,11 +39,11 @@ def _patch(monkeypatch, prefs, rows, *, state=None, fetched=...):
 
     async def fake_prefs(_textos):
         return prefs
-    monkeypatch.setattr(chat, "extraer_preferencias", fake_prefs)
+    monkeypatch.setattr(assembler, "extraer_preferencias", fake_prefs)
 
     async def fake_fetch(_ids):
         return (rows, {}) if fetched is ... else fetched
-    monkeypatch.setattr(chat, "_fetch_cards_rows", fake_fetch)
+    monkeypatch.setattr(assembler, "_fetch_cards_rows", fake_fetch)
 
 
 # ── Guardas (nunca lanza; degrada a ok:False) ────────────────────────────────────────

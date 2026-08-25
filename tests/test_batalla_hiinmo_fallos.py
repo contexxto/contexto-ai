@@ -27,6 +27,7 @@ from app.agent.tools import tool_priorizar_opcion
 from app.encaje import calcular_encaje, estado_presupuesto
 from app.encaje_contexto import bloque_autoritativo
 from app.routers import chat
+from app.decision import assembler
 
 
 # ── Utilidades: un turno real (Human → Tool(search) → AI) contra filas de catastro ──
@@ -56,7 +57,7 @@ def _turno(texto, ids, extra_tools=()):
 def _panel(monkeypatch, ids, rows, prefs):
     async def fake_fetch(_ids):
         return (rows, {})
-    monkeypatch.setattr(chat, "_fetch_cards_rows", fake_fetch)
+    monkeypatch.setattr(assembler, "_fetch_cards_rows", fake_fetch)
     return asyncio.run(chat.construir_panel(_turno("consulta", ids), preferencias=prefs))
 
 
@@ -282,7 +283,7 @@ def test_priorizar_mueve_el_panel_y_queda_declarado_en_el_bloque(monkeypatch):
 
     async def fake_fetch(_ids):
         return (rows, {})
-    monkeypatch.setattr(chat, "_fetch_cards_rows", fake_fetch)
+    monkeypatch.setattr(assembler, "_fetch_cards_rows", fake_fetch)
     msgs = _turno("consulta", [c["id"] for c in rows], extra_tools=[priorizacion])
     panel = asyncio.run(chat.construir_panel(msgs, preferencias=_PREFS_A))
 
@@ -307,7 +308,7 @@ def test_priorizacion_de_un_turno_viejo_no_manda_hoy(monkeypatch):
 
     async def fake_fetch(_ids):
         return (_INVENTARIO_A, {})
-    monkeypatch.setattr(chat, "_fetch_cards_rows", fake_fetch)
+    monkeypatch.setattr(assembler, "_fetch_cards_rows", fake_fetch)
     panel = asyncio.run(chat.construir_panel(msgs, preferencias=_PREFS_A))
     assert panel["priorizado"] == (None, None)
     assert panel["cards"][0]["id"] != "d550", "el panel volvió al orden del motor"

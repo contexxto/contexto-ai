@@ -22,7 +22,9 @@ def test_todo_lateral_de_transaccion_filtra_anuncio_activo():
     # 'FROM transacciones_temporales tt' marca el patron LATERAL de lectura de la transaccion
     # vigente (las escrituras/UPDATE usan la tabla SIN el alias tt). Cada LATERAL DEBE traer
     # el filtro de estado_anuncio: en estos modulos 'estado_anuncio' solo aparece en ese filtro.
-    for rel in ("app/agent/tools.py", "app/routers/chat.py"):
+    # El SQL de tarjetas se mudo a app/decision/assembler.py en F2/E2.1; el patron
+    # LATERAL viaja con el, no con el router.
+    for rel in ("app/agent/tools.py", "app/decision/assembler.py"):
         src = _src(rel)
         laterales = src.count("FROM transacciones_temporales tt")
         con_filtro = src.count("estado_anuncio")

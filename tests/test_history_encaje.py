@@ -14,6 +14,7 @@ import types
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.routers import chat
+from app.decision import assembler
 
 
 class _FakeState:
@@ -72,11 +73,11 @@ def _patch(monkeypatch, messages, rows):
         if "800" in junto:
             prefs["presupuesto_max"] = 800
         return prefs
-    monkeypatch.setattr(chat, "extraer_preferencias", fake_prefs)
+    monkeypatch.setattr(assembler, "extraer_preferencias", fake_prefs)
 
     async def fake_fetch(_ids):
         return (rows, {})
-    monkeypatch.setattr(chat, "_fetch_cards_rows", fake_fetch)
+    monkeypatch.setattr(assembler, "_fetch_cards_rows", fake_fetch)
     return llamadas
 
 

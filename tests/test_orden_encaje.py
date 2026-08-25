@@ -20,6 +20,7 @@ import json
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.routers import chat
+from app.decision import assembler
 
 
 def _mk_row(rid, **over):
@@ -59,13 +60,13 @@ def _patch_prefs_caminable_presupuesto(monkeypatch):
         if "800" in junto:
             prefs["presupuesto_max"] = 800
         return prefs
-    monkeypatch.setattr(chat, "extraer_preferencias", fake_prefs)
+    monkeypatch.setattr(assembler, "extraer_preferencias", fake_prefs)
 
 
 def _patch_fetch(monkeypatch, rows):
     async def fake_fetch(_ids):
         return (rows, {})
-    monkeypatch.setattr(chat, "_fetch_cards_rows", fake_fetch)
+    monkeypatch.setattr(assembler, "_fetch_cards_rows", fake_fetch)
 
 
 def test_tarjetas_se_reordenan_por_encaje_descendente(monkeypatch):
@@ -109,7 +110,7 @@ def test_sin_preferencias_declaradas_preserva_el_orden_espacial(monkeypatch):
 
     async def fake_prefs_vacio(_textos):
         return {}
-    monkeypatch.setattr(chat, "extraer_preferencias", fake_prefs_vacio)
+    monkeypatch.setattr(assembler, "extraer_preferencias", fake_prefs_vacio)
 
     messages = _mensajes_de_un_turno("¿Qué hay en este sector?", ["A", "B", "C"])
     cards = asyncio.run(chat.build_result_cards(messages))

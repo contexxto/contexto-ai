@@ -1,5 +1,16 @@
 # Dependencias SOLO de desarrollo/test (no se instalan en Render).
 # Uso:  python -m pip install -r requirements-dev.txt
 -r requirements.txt
+
+# La suite importa scripts/foso_pois_spike.py (tests/test_overture_release.py, ocho
+# pruebas sobre que release de Overture se elige), y ese script usa duckdb, requests y
+# psycopg. Render sigue SIN instalarlos: Render lee requirements.txt, no este archivo.
+# Pero CI y cualquiera que corra pytest si los necesitan.
+#
+# Sin esta linea el gate se cae con ModuleNotFoundError en la recoleccion, no en una
+# prueba. Paso en la segunda corrida del PR #119: en el portatil del fundador duckdb
+# estaba en el .venv de antes y no se notaba.
+-r requirements-pois.txt
+
 pytest==8.3.4
 pytest-asyncio==0.25.2

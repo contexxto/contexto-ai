@@ -66,6 +66,9 @@ jobs:
           cache-dependency-path: |
             requirements.txt
             requirements-dev.txt
+            # requirements-dev.txt lo incluye por referencia; si no esta aqui, cambiar
+            # las dependencias del refresco deja la cache rancia y sin avisar.
+            requirements-pois.txt
 
       - name: Instalar dependencias
         run: |

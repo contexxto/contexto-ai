@@ -72,5 +72,16 @@ for %%i in (1 2 3) do (
 :fin
 echo.>> "%LOG%"
 echo ==== FIN · codigo final: !RC! ====>> "%LOG%"
+
+REM  AVISO (2026-08-24, E0.2 del Trust Gate): hasta hoy el fallo terminaba aqui, en
+REM  un log que nadie abre. Asi fue como el release de Overture pudo quedar semanas
+REM  apuntando a un prefijo borrado sin que nadie se enterara. Si tras los reintentos
+REM  seguimos en rojo, se manda un correo. Necesita RESEND_API_KEY y ALERTA_OPS_EMAIL
+REM  en el .env; sin ellas el script lo dice por consola y no falla.
+if not "!RC!"=="0" (
+    echo    avisando por correo...>> "%LOG%"
+    "%PY%" "%~dp0foso_pois_spike.py" %CIUDAD% --solo-avisar "codigo !RC!">> "%LOG%" 2>&1
+)
+
 set "FINAL=!RC!"
 endlocal & exit /b %FINAL%

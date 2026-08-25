@@ -14,10 +14,10 @@ Estado (2026-08-25):
   · E1.3 `PropertyContextV0` — hecho, en `property_v0.py`
   · E1.4 `PlaceContextV0`    — hecho, en `place_v0.py`
   · E1.5 `DecisionContextV0` — hecho, en `decision_v0.py`
-  · E1.6 `DecisionTraceV0`   — pendiente
+  · E1.6 `DecisionTraceV0`   — hecho, en `trace_v0.py`
 
-Esta fase es de contratos, no de integración: nada de aquí cambia todavía el
-comportamiento del producto.
+Los seis quedan cerrados el 2026-08-25. Esta fase es de contratos, no de integración:
+nada de aquí cambia todavía el comportamiento del producto, y nadie los consume.
 
 Regla de alcance de F1: si una decisión adicional no hace falta para representar el
 contrato y probarlo, no se congela en V0. No se inventa infraestructura futura.
@@ -86,6 +86,19 @@ from app.contracts.evidence_v0 import (
 )
 from app.contracts.property_v0 import (
     CONTRACT_VERSION as PROPERTY_CONTEXT_V0_VERSION,
+)
+from app.contracts.trace_v0 import (
+    CONTRACT_VERSION as DECISION_TRACE_V0_VERSION,
+)
+from app.contracts.trace_v0 import (
+    CallStatus,
+    DecisionTraceV0,
+    DerivedFeatureV0,
+    FactUsedV0,
+    PolicyAppliedV0,
+    ProviderCallV0,
+    TraceRankingEntryV0,
+    TraceUncertaintyV0,
 )
 from app.contracts.property_v0 import (
     PROVIDER_TYPE_CONTEXTO,
@@ -162,6 +175,16 @@ __all__ = [
     "StrengthV0",
     "DecisionTradeoffV0",
     "UncertaintyV0",
+    # E1.6 — traza
+    "DecisionTraceV0",
+    "DECISION_TRACE_V0_VERSION",
+    "ProviderCallV0",
+    "CallStatus",
+    "FactUsedV0",
+    "DerivedFeatureV0",
+    "PolicyAppliedV0",
+    "TraceUncertaintyV0",
+    "TraceRankingEntryV0",
     # compartidos
     "ContractBase",
     "Money",

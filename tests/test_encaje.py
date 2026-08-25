@@ -5,20 +5,27 @@ Cubre: scoring por dimensión, honestidad (sin dato / sin declarar → None, nun
 Fair Housing POR CONSTRUCCIÓN: los atributos de la persona no pueden mover el encaje, y
 las razones generadas pasan el detector de steering (fair_housing.es_limpio).
 """
+import pytest
+
 from app.encaje import DIMENSIONES, calcular_encaje, delta_encaje
 from app.fair_housing import es_limpio
 
 
 # ── Scoring por dimensión ────────────────────────────────────────────────────────────
-def test_tranquilidad_ruido_bajo_es_encaje_alto():
-    r = calcular_encaje({"tranquilidad": True}, {"ruido": "BAJO"})
-    assert r["score"] == 100
-    assert r["razones"][0]["cumple"] == "alto"
+@pytest.mark.parametrize("ruido", ["BAJO", "MEDIO", "ALTO"])
+def test_tranquilidad_no_puntua_sin_medicion(ruido):
+    """E0.4 / D3 (2026-08-24): el ruido dejó de mover el ranking.
 
-
-def test_tranquilidad_ruido_alto_es_encaje_bajo():
-    r = calcular_encaje({"tranquilidad": True}, {"ruido": "ALTO"})
-    assert r["score"] == 0
+    Antes, ruido BAJO daba 100 y ALTO daba 0 — sobre una tabla de 7 sectores escrita
+    a mano (scores_heuristicos). Ahora la dimensión se explica pero no puntúa, así que
+    sin otra dimensión declarada no hay nada que promediar: score None, no un 0 falso.
+    """
+    r = calcular_encaje({"tranquilidad": True}, {"ruido": ruido})
+    assert r["score"] is None
+    razon = r["razones"][0]
+    assert razon["cumple"] == "insufficient_evidence"
+    assert razon["aporta"] is False
+    assert r["dimensiones_evaluadas"] == []
 
 
 def test_caminable_escala_con_walk_score():
@@ -31,12 +38,23 @@ def test_transporte_por_minutos_a_pie():
     assert calcular_encaje({"transporte": True}, {"transporte_min": 40})["score"] == 10
 
 
-def test_area_verde_prefiere_parque_concreto_sobre_vegetacion():
-    # Con parque a 4 min Y vegetación baja, gana el dato concreto del parque (alto).
+def test_area_verde_puntua_el_parque_medido_pero_no_la_vegetacion_estimada():
+    """E0.4 / D3: de los dos caminos de esta dimensión, solo sobrevive el que tiene fuente.
+
+    El parque concreto viene del mapa (minutos a pie reales) y sigue puntuando. La
+    cobertura vegetal sale de la misma tabla de sectores que el ruido y ya no cuenta,
+    aunque se sigue explicando.
+    """
+    # Con parque a 4 min Y vegetación baja, gana el dato concreto del parque.
     r = calcular_encaje({"area_verde": True}, {"parque_min": 4, "vegetacion": 10})
     assert r["score"] == 100
-    # Sin parque, cae a la cobertura vegetal del sector.
-    assert calcular_encaje({"area_verde": True}, {"vegetacion": 70})["score"] == 70
+    assert r["razones"][0]["fuente"] == "mapa"
+
+    # Sin parque, la vegetación NO rescata la dimensión: se explica y no puntúa.
+    solo_veg = calcular_encaje({"area_verde": True}, {"vegetacion": 70})
+    assert solo_veg["score"] is None
+    assert solo_veg["razones"][0]["cumple"] == "insufficient_evidence"
+    assert solo_veg["razones"][0]["aporta"] is False
 
 
 def test_presupuesto_dentro_vs_sobre():
@@ -106,10 +124,12 @@ def test_acepta_mascotas():
 
 # ── Ponderación y combinación ────────────────────────────────────────────────────────
 def test_promedio_ponderado_presupuesto_pesa_mas():
-    # tranquilidad(1.0)=1.0 + presupuesto(1.5)=0.0 → 1.0/2.5 = 40 (no 50): el peso del
+    # caminable(1.0)=1.0 + presupuesto(1.5)=0.0 → 1.0/2.5 = 40 (no 50): el peso del
     # presupuesto arrastra el promedio más que una dimensión equitativa.
-    r = calcular_encaje({"tranquilidad": True, "presupuesto_max": 500},
-                        {"ruido": "BAJO", "precio": 900})
+    # (Antes de E0.4 este caso usaba tranquilidad como la dimensión de peso 1.0; se
+    # cambió a caminable porque el ruido ya no puntúa, no porque la ponderación cambie.)
+    r = calcular_encaje({"caminable": True, "presupuesto_max": 500},
+                        {"walk_score": 100, "precio": 900})
     assert r["score"] == 40
 
 
@@ -153,8 +173,10 @@ def test_todas_declaradas_sin_senal_score_none():
 
 
 def test_score_siempre_en_rango():
-    for veg in (-50, 0, 50, 150, 999):
-        s = calcular_encaje({"area_verde": True}, {"vegetacion": veg})["score"]
+    # El clamping se prueba ahora sobre caminabilidad: tras E0.4 la vegetación no
+    # puntúa, así que ya no sirve para ejercitar el rango del promedio.
+    for ws in (-50, 0, 50, 150, 999):
+        s = calcular_encaje({"caminable": True}, {"walk_score": ws})["score"]
         assert 0 <= s <= 100
 
 
@@ -234,12 +256,15 @@ def test_walk_score_string_y_dormitorios_bool():
 
 # ── DELTA (modo COMPARAR) ────────────────────────────────────────────────────────────
 def test_delta_muestra_donde_gana_cada_uno():
-    prefs = {"tranquilidad": True, "transporte": True}
-    a = {"ruido": "BAJO", "transporte_min": 30}     # tranquilo pero transporte lejos
-    b = {"ruido": "ALTO", "transporte_min": 8}      # ruidoso pero transporte cerca
+    # Se compara sobre dimensiones con fuente. Antes de E0.4 este caso enfrentaba
+    # ruido contra transporte; el ruido ya no distingue a nadie, así que el
+    # contraste se hace con caminabilidad, que sí se mide.
+    prefs = {"caminable": True, "transporte": True}
+    a = {"walk_score": 95, "transporte_min": 30}    # se camina bien, transporte lejos
+    b = {"walk_score": 30, "transporte_min": 8}     # poco caminable, transporte cerca
     d = delta_encaje(prefs, a, b)
     por_dim = {x["dimension"]: x for x in d["dimensiones"]}
-    assert por_dim["tranquilidad"]["gana"] == "a"
+    assert por_dim["caminable"]["gana"] == "a"
     assert por_dim["transporte"]["gana"] == "b"
     assert d["a"]["score"] is not None and d["b"]["score"] is not None
 

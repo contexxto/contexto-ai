@@ -22,7 +22,13 @@ REM  para depurar. Si se deja además la tarea de Windows activa, se duplica el 
 REM  sin ganar nada: el workflow tiene concurrency para no pisarse consigo mismo, pero
 REM  no sabe de esta máquina. Recomendación: desactivar la tarea programada de Windows.
 REM
-REM  CUANDO CORRÍA: tarea de Windows "Refresco POIs Contexto", lunes 17:00.
+REM  LA TAREA DE WINDOWS NUNCA LLEGO A DISPARAR (comprobado 2026-08-24): la tarea
+REM  "Refresco POIs Contexto" reportaba SCHED_S_TASK_HAS_NOT_RUN, y las horas de los
+REM  logs no cuadran con su disparador (el del lunes 03-ago empieza 18:19, el del
+REM  martes 18-ago a las 09:04). Las cinco corridas con log se lanzaron A MANO. O sea
+REM  que el "refresco semanal" dependia de que alguien se acordara. De ahi C-A.
+REM
+REM  COMO ESTABA CONFIGURADA: tarea de Windows "Refresco POIs Contexto", lunes 17:00.
 REM  Esa hora NO es arbitraria -- el lunes es el dia cargado de la maquina:
 REM    09:31 hydrate-nate-herk | 11:26 hydrate-corredor | 13:05 hydrate-senales
 REM    (~60 min medidos) | 15:00 radar-competidores | 15:01 despacho-contexto

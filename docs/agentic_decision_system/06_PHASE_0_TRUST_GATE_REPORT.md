@@ -5,20 +5,26 @@
 **Plan de referencia:** `Contexto Agentic Decision System — Execution Plan 1.0`, FASE 0
 **Alcance autorizado:** E0.1–E0.5 únicamente. Sin Contracts, sin harnesses, sin features.
 
-> **Revisión 2** — reconciliado contra HEAD real. La revisión 1 reportaba `53f29a2`, 6 commits
-> y 829 tests: se escribió antes de commitearse a sí misma y antes de que E0.1 y C-A se
-> cerraran. Los números de este documento salen de `git` y de `pytest` ejecutados sobre el
-> HEAD que aparece abajo.
+> **Revisión 3 — FINAL.** Los cinco gates cerrados, mergeados a `main` y verificados contra
+> producción. La revisión 1 reportaba `53f29a2`/6 commits/829 tests y la 2 `1fb5e7e`/10/846;
+> ambas se escribieron antes de que E0.5 se pudiera probar de verdad. Los números de abajo
+> salen de `git`, de `pytest` y de la API de GitHub sobre el estado final.
 
 ---
 
 ## 0. Resumen
 
-**Cuatro de los cinco gates quedan cerrados con evidencia.** El quinto (E0.5) tiene el código
-hecho y verificado en local, y espera un paso que no puedo dar yo: abrir el PR que dispare el
-workflow, y activar dos interruptores de consola.
+**Los cinco gates cerrados con evidencia, mergeados a `main` y desplegados.**
 
-Además, **C-A queda resuelta**: el refresco de POIs ya no depende del PC del fundador.
+Lo que más vale de esta fase no es la lista de arreglos: es que **el gate encontró dos defectos
+en el propio trabajo del Trust Gate la primera vez que corrió**. Ambos compartían causa —código
+que solo funcionaba porque el portátil del fundador tenía cosas que el runner no tiene— y ambos
+habrían pasado inadvertidos sin CI. La afirmación "846 pruebas en verde" de la revisión 2 era
+cierta **solo en esa máquina**. Está detallado en §3.3, y es el argumento más fuerte de todo el
+documento a favor de que E0.5 existiera.
+
+Además, **C-A queda resuelta y probada**: el refresco de POIs corrió en un runner gestionado y
+escribió producción, con la correlación temporal medida.
 
 Recomendación en §9.
 
@@ -31,13 +37,21 @@ Recomendación en §9.
 | Repositorio | `C:\Users\DETPC\Desktop\Contexto-AI` · `github.com/contexxto/contexto-ai` (público) |
 | Rama local | `main` |
 | Commit inicial | `937f587f886783ad835cdf862eda30e4ea364848` |
-| **Commit final** | **`bdd4b68c434575dc9f4e7a122f344ddf0ff1f52c`** |
-| Commits creados | **9** |
-| Archivos cambiados | **21** (+1529 / −76) |
+| **Commit final en `main`** | **`eeff14c9547f09d527c93bd3d0ef2d21cc556fde`** (merge del PR #119) |
+| Commits creados | **12** (sin contar el merge) |
+| Archivos cambiados | **22** (+1669 / −81) |
 | Suite al empezar | 795 de 796 (**1 fallo preexistente**) |
-| **Suite al terminar** | **846 de 846**, exit 0, 58 archivos |
-| Estado en `origin/main` | **sin pushear** — ver §7 |
-| Rama remota temporal | `ci/trust-gate-f0`, publicada para validar el CI por PR |
+| **Suite al terminar** | **847 de 847**, exit 0, 58 archivos |
+| Estado en `origin/main` | **mergeado** vía PR #119, con `pytest` verde como condición |
+| Rama del PR | `ci/trust-gate-f0` (conservada como referencia) |
+| Protección de `main` | ruleset **`main protegida`**, `enforcement: active`, bypass vacía |
+| Gate de despliegue | Render `contexto-ai-oregon` → `Auto-Deploy: After CI Checks Pass` |
+
+> **Sobre la cifra de pruebas, para que nadie la persiga.** **847** es lo que había al cerrar F0
+> (`eeff14c`) y ese número **no se toca**: es la medición de esta fase. Si hoy ves **869**, no hay
+> contradicción que investigar — son los 22 tests de `tests/test_resolucion_api_url.py` que entraron
+> con el PR #121 (hotfix de la URL muerta), posterior a F0 y ajeno a él. `847 + 22 = 869`. La base
+> para FASE 1 es **869 sobre `30354cb`**, verificada en árbol limpio sin `.env`.
 
 ### `git status` al cierre
 
@@ -75,10 +89,15 @@ Para validar el CI sin usar `main` de conejillo, el HEAD se publicó en la rama 
 | `8a290ff` | — | `docs: reporte del Trust Gate` (revisión 1) |
 | `ea62b67` | E0.1 | `fix(seguridad): API_KEY ausente ya no abre las rutas en producción` |
 | `bdd4b68` | C-A | `ci: el refresco de POIs sale del PC del fundador` |
+| `1fb5e7e` | — | `docs: reporte del Trust Gate` (revisión 2) |
+| `3958c7a` | E0.5 | `fix(pois): el script no mata al intérprete al importarse` ← **lo encontró el gate** |
+| `6984b8b` | E0.5 | `fix(ci): el entorno de pruebas necesita las dependencias de scripts/` ← **ídem** |
+
+Los dos últimos no estaban planificados. Salieron de las dos primeras corridas del CI, en rojo.
 
 ---
 
-## 3. Dos hallazgos previos a tocar código
+## 3. Hallazgos
 
 ### 3.1 La suite no estaba verde en HEAD
 
@@ -95,18 +114,52 @@ Esto invirtió el orden: se ejecutó **E0.5 primero** para que E0.1–E0.4 salie
 §19 declara que E0.5 no tiene dependencias, así que adelantarla no viola ninguna. Decisión
 aprobada por el fundador antes de ejecutar.
 
+### 3.3 El gate cazó dos defectos del propio Trust Gate
+
+**Este es el hallazgo principal de la fase.** La primera vez que `pytest` corrió en un runner
+—PR #119, commit `1fb5e7e`, el mismo HEAD que la revisión 2 declaraba "846 en verde"— terminó en
+**rojo**. Dos veces seguidas, por dos causas distintas con la misma raíz.
+
+**Fallo 1 (`1fb5e7e`).** `scripts/foso_pois_spike.py` cortaba con `sys.exit(1)` en el **cuerpo del
+módulo** si faltaba `DATABASE_URL_OVERRIDE`. `tests/test_overture_release.py` importa ese módulo
+para probar qué release de Overture se elige —decisión pura, sin red ni base—. En el portátil del
+fundador el `.env` trae la variable y las ocho pruebas pasaban; en el runner no hay `.env`, así que
+el import mataba al intérprete y el archivo entero **ni se recolectaba**. Arreglado en `3958c7a`
+moviendo el corte a `exigir_credencial_de_base()`, que se llama al correr y no al importar.
+
+> Efecto secundario del arreglo, y es el que más importa: `--solo-avisar` ya no necesita la
+> credencial. Antes, si el refresco fallaba **porque** faltaba `DATABASE_URL_OVERRIDE`, el aviso
+> moría por la misma causa que intentaba reportar.
+
+**Fallo 2 (`3958c7a`).** El mismo módulo importa `duckdb` a nivel de módulo, y `duckdb` está fuera
+de `requirements.txt` **a propósito** (Render sirve la API y no tiene por qué instalarlo; vive en
+`requirements-pois.txt`). Como `requirements-dev.txt` era solo `requirements.txt` + pytest, el
+runner se quedaba sin `duckdb` y el archivo moría otra vez en la recolección, ahora con
+`ModuleNotFoundError`. Arreglado en `6984b8b` incluyendo `requirements-pois.txt` por referencia y
+metiéndolo en la clave de caché del workflow.
+
+**La raíz común:** las dos veces, código que funcionaba únicamente porque el `.venv` y el `.env`
+de una máquina concreta tenían algo que ningún otro entorno tiene. Es exactamente la clase de
+dependencia invisible que un gate de CI existe para matar, y la encontró en su primera corrida —
+sobre el trabajo de quien escribió el gate.
+
+**Lo que esto obliga a decir con todas las letras:** la afirmación *"846 pruebas en verde"* de la
+revisión 2 **era dependiente del entorno**. No estaba comprobada donde importa. La cifra buena,
+verificada en un árbol limpio sin `.env` y con las tres variables dummy de `pruebas.yml`, es
+**847 de 847**.
+
 ---
 
 ## 4. Estado por unidad
 
-| Unidad | Estado | Lo que falta |
+| Unidad | Estado | Evidencia |
 |---|---|---|
-| E0.1 — Proteger escritura de activos | ✅ **PASS** | — |
-| E0.2 — Refresh de POIs | ✅ **PASS** | — |
-| E0.3 — Procedencia de caminabilidad | ✅ **PASS** | — |
-| E0.4 — score_version + heurísticas fuera | ✅ **PASS** | — |
-| E0.5 — CI gate | ⚠️ **PENDIENTE** | abrir el PR + 2 interruptores |
-| C-A — Refresco fuera del PC del fundador | ✅ **RESUELTA** | configurar 4 secretos |
+| E0.1 — Proteger escritura de activos | ✅ **PASS** | 401 medido contra producción |
+| E0.2 — Refresh de POIs | ✅ **PASS** | corrida supervisada + corrida en runner |
+| E0.3 — Procedencia de caminabilidad | ✅ **PASS** | 11 pruebas de regresión |
+| E0.4 — score_version + heurísticas fuera | ✅ **PASS** | 16 pruebas de regresión |
+| E0.5 — CI gate | ✅ **PASS** | prueba negativa: merge bloqueado |
+| C-A — Refresco fuera del PC del fundador | ✅ **RESUELTA** | escritura correlacionada en el tiempo |
 
 ---
 
@@ -200,6 +253,33 @@ fue la señal, fue el destinatario: **el ruido murió en un log local que nadie 
 Datos de la tabla al empezar: `actualizado_en` máximo = **2026-08-11**. Así que la última corrida
 buena fue el 11 de agosto, y la tubería lleva rota desde el 18 — no "semanas", como decía la
 revisión 1.
+
+#### Corrección de la revisión 2: la tarea programada nunca corrió
+
+Al ir a deshabilitar la tarea de Windows *"Refresco POIs Contexto"* —último paso operativo de
+C-A— se descubrió que **nunca llegó a ejecutarse**. Las revisiones 1 y 2 de este documento la
+daban por el mecanismo activo del refresco semanal. No lo era.
+
+| Evidencia | Lectura |
+|---|---|
+| `LastTaskResult: 267011` (`SCHED_S_TASK_HAS_NOT_RUN`) y `LastRunTime` en el centinela `30/11/1999` | Windows dice que la tarea no se ejecutó nunca |
+| Disparador: lunes 17:00, `StartBoundary 2026-07-30T17:00` | debería haber disparado los lunes 3, 10, 17 y 24 de agosto |
+| Log del lunes 2026-08-03 | primer intento a las **18:19:59** — hora que no cuadra con las 17:00 |
+| Log del **martes** 2026-08-18 | primer intento a las **09:04:22** — ni el día ni la hora |
+| Lunes 10 y 17 de agosto | **sin log ninguno** |
+
+Las cinco corridas de las que hay log (2026-07-28, 08-03, 08-11, 08-18 y la supervisada de hoy)
+se lanzaron **a mano**. El "refresco semanal automático" no existía: dependía de que el fundador
+se acordara de correr el `.cmd`.
+
+**Esto no debilita C-A, la agrava.** El diagnóstico de partida —"depende del PC del fundador"— se
+quedaba corto: no dependía de la máquina, dependía de la memoria de una persona. Y explica por
+qué la tubería pudo quedar rota entre el 18 y el 24: no había nada programado que la reintentara.
+
+*Cautela sobre la certeza:* si la tarea se hubiera borrado y recreado en algún momento, el
+historial se reiniciaría y el `HAS_NOT_RUN` sería menos concluyente. Pero las horas de los logs no
+coinciden con el disparador en ningún caso, y faltan los dos lunes intermedios; ambas cosas
+apuntan a lo mismo con independencia del historial.
 
 **Solución, tres partes.**
 
@@ -331,7 +411,7 @@ caminabilidad o transporte.
 
 ---
 
-### E0.5 — CI gate ⚠️ PENDIENTE
+### E0.5 — CI gate ✅ PASS
 
 **Problema.** `.github/workflows/` tenía `keepalive.yml` y `vigia-salud.yml`. **Ninguno ejecutaba
 `pytest`.** 796 pruebas que corrían en segundos y no bloqueaban nada.
@@ -349,20 +429,92 @@ primera corrida por una razón ajena al código.
 **Verificado en local, en las dos direcciones:** suite sana → exit 0; con un test roto inyectado
 en un worktree desechable → **exit 1**, que es lo que pone el job en rojo.
 
-#### Por qué sigue PENDIENTE
+#### Las tres corridas reales
 
-1. **El workflow no se ha ejecutado nunca en GitHub.** Se publicó el HEAD en la rama
-   `ci/trust-gate-f0` para validarlo por PR sin usar `main` de conejillo, pero el workflow se
-   dispara en `push: [main]` y `pull_request: [main]` — **hace falta abrir el PR**:
-   → `https://github.com/contexxto/contexto-ai/pull/new/ci/trust-gate-f0`
-   (`gh` no está instalado en esta máquina, así que no puedo abrirlo yo.)
-2. **Este workflow no detiene el auto-deploy de Render por sí solo.** Render observa la rama;
-   Actions no es su portero. Faltan:
-   - **GitHub** → Settings → Branches → branch protection en `main` con el check `pruebas` requerido.
-   - **Render** → Settings → Build & Deploy → **"Wait for CI to pass before deploying"**.
+El workflow se validó por PR (#119) sobre la rama `ci/trust-gate-f0`, sin usar `main` de
+conejillo. **Las dos primeras terminaron en rojo** por defectos reales del propio trabajo —§3.3—.
+La tercera pasó.
 
-**No se considerará PASS** hasta comprobar que una prueba rota impide efectivamente el camino de
-despliegue — no solo que pone el commit en rojo.
+| Corrida | Commit | Resultado |
+|---|---|---|
+| 1ª | `1fb5e7e` | ❌ failure — `sys.exit(1)` al importar |
+| 2ª | `3958c7a` | ❌ failure — `duckdb` ausente en el runner |
+| 3ª | `6984b8b` | ✅ **success** |
+
+#### El nombre del check
+
+El status check se llama **`pytest`** (el nombre del *job*), no `pruebas` (el del *workflow*).
+Confirmado por la API antes de configurar nada:
+`GET /repos/contexxto/contexto-ai/commits/{sha}/check-runs` → `{"name": "pytest"}`.
+Marcar `pruebas` habría dejado el ruleset apuntando a un check inexistente — protección aparente
+y ningún bloqueo real.
+
+#### Las dos mitades del gate, activadas
+
+Actions **no es** el portero de Render. Hicieron falta dos interruptores de consola, ambos activos:
+
+1. **GitHub** → ruleset `main protegida`. Verificado por API:
+   ```
+   enforcement: active   ·   bypass_actors: []   ·   target: ~DEFAULT_BRANCH
+   rules: deletion | pull_request (0 aprobaciones)
+          required_status_checks -> ['pytest'], strict: true
+          non_fast_forward
+   ```
+   La **lista de excepciones vacía** no es un detalle: el fundador es el dueño del repositorio, y
+   con una regla *classic* se la habría saltado por defecto. Sin eso, la prueba negativa de abajo
+   no demostraría nada.
+
+2. **Render** (`contexto-ai-oregon`) → `Auto-Deploy` de **`On Commit`** a **`After CI Checks Pass`**.
+   Ese `On Commit` era el P0 en su forma más cruda: hasta el 2026-08-24, cualquier commit que
+   tocara `main` se desplegaba a producción sin que nadie mirara una sola prueba.
+
+#### Prueba negativa — la evidencia que convierte esto en PASS
+
+En vez de un `assert False` sintético se rompió **algo real**: se quitó `verify_api_key` de
+`POST /api/v1/assets/`, o sea se reintrodujo exactamente el P0 que cerró E0.1. Lo que había que
+demostrar no era que pytest sepa fallar, sino que **la red de regresión caza una regresión de
+seguridad y que la protección de rama impide mezclarla**.
+
+Commit `cc6e597` en la rama temporal `ci/prueba-negativa`, PR #120:
+
+| Comprobación | Resultado |
+|---|---|
+| Detección local previa | `tests/test_escritura_catastro_protegida.py` falla con *"POST /api/v1/assets/ quedó sin guardia"* |
+| `pytest` en el runner | ❌ **failure** a los 26 s |
+| Etiqueta del check en el PR | 🔒 **`Required`** |
+| Botón *Merge pull request* | **gris, no pulsable** |
+| `main` durante toda la prueba | `937f587` — **intacto** |
+| Producción | `healthy`, `database: up` — **ningún despliegue** |
+| PR #120 | **closed**, `merged: false` |
+| Rama `ci/prueba-negativa` | **borrada** |
+
+> **Nota metodológica.** La API devolvió `mergeable_state: unstable`, no `blocked`. Ese campo nació
+> con las protecciones *classic* y no refleja los rulesets con fiabilidad. **No se dio por buena esa
+> señal**: se comprobó por un lado que las reglas aplican de verdad
+> (`GET /repos/.../rules/branches/main` devuelve `required_status_checks -> ['pytest']`) y por otro
+> el estado en la interfaz, que es donde el bloqueo ocurre. Un PASS declarado sobre `unstable`
+> habría sido exactamente el tipo de afirmación cómoda que esta fase existe para no repetir.
+
+#### Una tercera prueba, no planeada
+
+Al ir a commitear **esta misma revisión del documento**, el intento de empujar directo a `main`
+—un push legítimo, desde la línea de comandos, sin PR— fue rechazado por el servidor:
+
+```
+remote: - Required status check "pytest" is expected.
+! [remote rejected] main -> main (push declined due to repository rule violations)
+```
+
+Vale más que las otras dos porque nadie la montó: no viene de la interfaz ni de un commit de
+mentira. El gate cerró el camino que hasta esta mañana estaba abierto de par en par, y lo hizo
+sobre quien lo construyó.
+
+#### Límite conocido, dicho de frente
+
+El gate protege **el backend en Render**. El frontend se despliega por **Vercel**, que es un carril
+aparte y **hoy no está atado a `pytest`**: durante la prueba negativa, Vercel construyó igualmente
+un *preview* de la rama rota. Es un entorno efímero y no producción, y el commit roto era de
+backend, así que no hubo impacto — pero **queda como hueco real fuera del alcance de F0**.
 
 ---
 
@@ -375,7 +527,7 @@ construir infraestructura, y el repositorio es público, así que los minutos no
 
 | Requisito | Cómo |
 |---|---|
-| Ejecución programada | `schedule: '0 22 * * 1'` — lunes 22:00 UTC = 17:00 en Quito, la misma hora que tenía la tarea de Windows |
+| Ejecución programada | `schedule: '0 22 * * 1'` — lunes 22:00 UTC = 17:00 en Quito, la hora que la tarea de Windows tenía configurada (aunque nunca llegara a dispararla; ver E0.2) |
 | Ejecución manual | `workflow_dispatch` con selector de ciudad |
 | Secretos | `DATABASE_URL_OVERRIDE`, `RESEND_API_KEY`, `ALERTA_OPS_EMAIL`, `NOTIFY_FROM_EMAIL` |
 | Logs | Consola de Actions, con los mismos mensajes del script |
@@ -384,6 +536,44 @@ construir infraestructura, y el repositorio es público, así que los minutos no
 
 Conserva la semántica de códigos (0 / 2 reintentable / 1 duro) y los reintentos por Overpass, con
 espera de 10 min en vez de 15.
+
+#### Corrida real en el runner — 2026-08-24
+
+Los cuatro secretos se configuraron en `Settings → Secrets → Actions` y el workflow se lanzó por
+`workflow_dispatch` sobre `main` (`eeff14c`), ciudad `quito`. Resultado: **success en 44 s**.
+
+**Esos 44 segundos no se dieron por buenos.** Un refresco real descarga Overture por DuckDB desde
+S3 y consulta Overpass; medio minuto era sospechosamente poco, y un job en verde no prueba que haya
+hecho el trabajo. Se fue a la base a comprobarlo, con foto antes y después:
+
+| | Antes | Después |
+|---|---|---|
+| Total Quito | 8.934 | **8.940** (+6) |
+| OSM | 5.670 | 5.676 |
+| Overture | 3.264 | 3.264 (sello actualizado) |
+| `parque` | 533 | **537** |
+| `supermercado` | 1.997 | **1.999** |
+| Prueba de servicio | 9 categorías | 9 categorías, mismas distancias |
+
+**La correlación temporal cierra el argumento:** la corrida fue de `02:37:47Z` a `02:38:31Z` y el
+`max(actualizado_en)` de la tabla quedó en `02:38:24Z` — **dentro de la ventana**. La escritura es
+del runner y de nadie más.
+
+Las distancias del inmueble de prueba no se movieron, y es lo correcto: son los POIs más cercanos
+por categoría y esos no cambiaron; los seis nuevos entraron más lejos. Ambas fuentes respondieron
+(código 0), así que los 44 s son simplemente el camino feliz —sin reintentos de Overpass, con la
+caché de pip caliente—. Los ~40 min del `.cmd` eran el peor caso, no el normal.
+
+**Consecuencia operativa:** la tarea de Windows *"Refresco POIs Contexto"* queda **deshabilitada**
+(no borrada: sirve de respaldo manual). `scripts/refresco_pois.cmd` se conserva para correr el
+refresco a mano en local, que sigue siendo útil para depurar.
+
+**La corrida en el runner es, por tanto, la primera vez que el refresco de POIs se ejecuta de
+forma realmente programada e independiente de una persona** — ver la corrección en E0.2 sobre la
+tarea de Windows, que nunca llegó a dispararse.
+
+*Aviso menor del runner:* `actions/checkout@v4` y `actions/setup-python@v5` corren sobre Node 20,
+que GitHub va a retirar. No rompe nada hoy; toca subir versiones más adelante.
 
 `requirements-pois.txt` aparte de `requirements.txt` a propósito: `duckdb` pesa y el backend no lo
 usa. **Estas versiones no estaban declaradas en ninguna parte** — vivían en el venv del portátil;
@@ -409,8 +599,8 @@ ejecutada. Ver arriba.
 **C-B · El protocolo pide `branch`; el repo no admite ramas locales.** Resuelto trabajando en
 `main` por pathspec, y publicando una rama remota para el PR sin tocar la local.
 
-**C-C · Auto-deploy sin gate.** Motivó el reorden de unidades. Se cierra con los dos interruptores
-de E0.5.
+**C-C · Auto-deploy sin gate.** Motivó el reorden de unidades. **Cerrada:** ruleset activo en
+GitHub + `After CI Checks Pass` en Render, ambos verificados con la prueba negativa.
 
 **C-D · La suite reportada como verde no lo estaba.** Corrige la evidencia del doc 01.
 
@@ -426,13 +616,22 @@ faltaba era que alguien lo leyera.
 
 ### Estado del despliegue
 
-**Los 9 commits están en `main` local, sin pushear.** La rama remota `ci/trust-gate-f0` tiene el
-mismo contenido, pero **no dispara deploy** (Render observa `main`).
+**Mergeado y desplegado.** PR #119 → `main` (`eeff14c`), con `pytest` verde como condición de
+merge. Render construyó y sirvió el código nuevo.
 
-**La corrida de POIs SÍ escribió en producción** — autorizada explícitamente. Es el único cambio
-de datos vivos de toda la fase.
+**Verificación funcional contra producción, no por confianza en el panel:** se sondeó
+`POST /api/v1/assets/` sin cuerpo y sin `X-API-Key` contra
+`https://contexto-ai-oregon.onrender.com`. Devolvió **401**. La distinción importa: con el código
+viejo habría devuelto 422 —la validación del cuerpo corre antes que una guardia inexistente—, así
+que el 401 prueba que **la dependencia de seguridad está viva en producción**. La sonda no escribe
+nada: la guardia corta antes.
 
-### Al desplegar, cambia el comportamiento observable
+`/health` → `{"status":"healthy","database":"up","memoria":"postgres"}`.
+
+**Dos escrituras en datos vivos** en toda la fase, ambas en `pois_propios` y ambas autorizadas: la
+corrida supervisada de E0.2 y la corrida en el runner de C-A.
+
+### Comportamiento observable que cambió
 
 | Cambio | Efecto |
 |---|---|
@@ -442,11 +641,24 @@ de datos vivos de toda la fase.
 | Razones nuevas en las tarjetas | Aparece *"no tenemos medición de ruido aquí"*. El frontend la pinta como cualquier razón no-alta; no requiere cambio de front. |
 | Procedencia de caminabilidad | Deja de decir "OpenStreetMap" donde el walk score es estimado. |
 
-### Configuración pendiente
+### Configuración aplicada
 
-**Secretos de GitHub Actions** (Settings → Secrets → Actions), para `refresco-pois`:
-- `DATABASE_URL_OVERRIDE` — **obligatorio**; sin él el job falla temprano y con mensaje claro.
-- `RESEND_API_KEY`, `ALERTA_OPS_EMAIL`, `NOTIFY_FROM_EMAIL` — para el aviso de fallo.
+**Secretos de GitHub Actions** — los cuatro cargados y verificados por la corrida real:
+
+| Secret | Clasificación | Origen |
+|---|---|---|
+| `DATABASE_URL_OVERRIDE` | 🔴 **obligatorio** — sin él el job falla en el step de comprobación | copiado de Render, misma base que sirve producción |
+| `RESEND_API_KEY` | 🟡 el refresco corre igual, pero el aviso no sale | Render |
+| `ALERTA_OPS_EMAIL` | 🟡 ídem — sin destinatario no hay a dónde escribir | `contexxto.ai@gmail.com` |
+| `NOTIFY_FROM_EMAIL` | 🟢 tiene default en el script | Render: `Contexto <avisos@contexxto.com>` |
+
+**Sobre el remitente.** El default del script es `onboarding@resend.dev`, el *sandbox* de Resend,
+que **solo entrega al correo dueño de la cuenta**: si el destinatario fuera otro, el aviso se
+rechazaría justo el día que hiciera falta. No aplica aquí — se verificó por DNS que `contexxto.com`
+está verificado en Resend (`resend._domainkey.contexxto.com` publica DKIM y `send.contexxto.com`
+publica `v=spf1 include:amazonses.com ~all`), así que el remitente real es válido y el destinatario
+puede ser cualquiera. **`NOTIFY_FROM_EMAIL` no debe apuntarse nunca a una dirección de Gmail:**
+Resend solo envía desde dominios verificables por DNS, y `gmail.com` no lo es.
 
 **Variables de entorno nuevas, todas opcionales** (documentadas en `.env.example`):
 `ALERTA_OPS_EMAIL`, `OVERTURE_RELEASE`, `ENVIRONMENT`.
@@ -464,27 +676,81 @@ de datos vivos de toda la fase.
 2. **La corrida de POIs cerró 511 registros de Overture.** Es soft (`operativo=false`),
    reversible, coincide con lo previsto y está lejos del umbral de alarma. Se anota porque es el
    único cambio de datos vivos de la fase.
-3. **El workflow `refresco-pois` no se ha ejecutado nunca en GitHub.** Está verificado por partes
-   (YAML válido, dependencias suficientes en venv limpio, script probado en corrida real), pero
-   su primera corrida en el runner sigue siendo su primera corrida. Conviene lanzarla a mano con
-   `workflow_dispatch` antes de confiar en el lunes.
+3. **El aviso por correo del refresco no se ha ejercitado nunca de extremo a extremo.** Las
+   credenciales están puestas y el dominio remitente verificado, pero el camino solo se recorre
+   cuando el refresco falla, y no ha fallado desde que existe. Se sabe que **no** se rompe sin
+   credenciales (hay prueba: `test_avisar_sin_configuracion_no_falla`); lo que no se ha visto es un
+   correo llegando. Queda como incógnita honesta.
+4. **El frontend en Vercel no está atado a `pytest`.** Ver el límite documentado en E0.5.
 
 ### Pendientes
 
 | # | Qué | Quién | Esfuerzo |
 |---|---|---|---|
-| 1 | Abrir el PR de `ci/trust-gate-f0` → dispara `pruebas` | Carlos | 1 clic |
-| 2 | GitHub → branch protection en `main`, check `pruebas` requerido | Carlos | minutos |
-| 3 | Render → "Wait for CI to pass before deploying" | Carlos | minutos |
-| 4 | Configurar los 4 secretos de Actions | Carlos | minutos |
-| 5 | Lanzar `refresco-pois` a mano una vez para estrenarlo | Carlos + Claude | ~5 min |
-| 6 | Desactivar la tarea de Windows "Refresco POIs Contexto" | Carlos | minutos |
+| 1 | Subir `actions/checkout` y `setup-python` cuando GitHub retire Node 20 | quien toque CI | minutos |
+| 2 | Decidir si el despliegue del frontend en Vercel debe tener gate | Carlos | decisión |
+| 3 | Borrar la rama `ci/trust-gate-f0` cuando ya no sirva de referencia | Carlos | 1 clic |
+
+Todo lo que bloqueaba F0 está hecho. Lo de arriba es higiene, no deuda del gate.
 
 ### Recomendaciones fuera de alcance, no ejecutadas
 
 - `@limiter.limit` en `POST /api/v1/assets/`, por consistencia con `/ingest`.
 - Mover `verify_api_key` de `app/routers/chat.py` a `app/auth.py`. Hoy cinco routers importan una
   guardia de seguridad desde un router de chat. Toca la frontera que el doc 02 quiere trazar.
+- ~~**URL muerta en scripts:** `scripts/generar_qrs.py` y `scripts/hidratar_activos.py` apuntan por
+  defecto a `https://contexto-ai.onrender.com`, que devuelve **503**. El servicio vivo es
+  `contexto-ai-oregon.onrender.com`. Detectado de paso al verificar producción.~~
+  **RESUELTO 2026-08-24:** ambos defaults se resuelven por entorno (`CONTEXTO_API_URL`) con el host
+  vivo de respaldo — el mismo patrón que ya usaba `evals/run_evals.py` —, de modo que un cambio de
+  hostname se corrija por entorno y no por código. De paso, el `+URL` del User-Agent del scraper
+  (`app/vision.py`) dejó de apuntar al host que devuelve 503 y ahora identifica al bot contra
+  `contexxto.com`. La regla de resolución quedó fijada en `tests/test_resolucion_api_url.py`.
+  Nota de evidencia: está verificado que el host viejo devuelve 503 y el nuevo 200; **no** está
+  verificado el mecanismo (un rename del servicio es una hipótesis, no un hecho observado), ni
+  cuánto tiempo llevaba roto.
+  **La causa estructural sigue viva:** los consumidores internos dependen de un hostname propiedad
+  del proveedor de infraestructura. Mientras no exista un endpoint canónico controlado por Contexto,
+  un cambio de hostname o de servicio puede volver a romperlos. Ver el registro (1) más abajo.
+
+- **Deuda: dos semánticas de precedencia conviviendo para el `.env`.** El tooling
+  (`scripts/*`, `evals/run_evals.py`) resuelve **shell no vacío > `.env` no vacío > respaldo**.
+  `app/config.py` hace lo contrario a propósito: carga el `.env` explícitamente **primero** porque
+  un shell con la variable en vacío —puesta por otro programa— le pisaba las claves al backend
+  (ver el comentario en su cabecera). Ninguna de las dos está mal en su contexto: el backend se
+  defiende de un entorno que no controla, el tooling quiere que un override de una corrida suelta
+  gane sin editar archivos. Queda **registrada para revisar**, no para unificar de oficio; decidir
+  cuál es la regla de la casa toca la frontera de configuración que el doc 02 quiere trazar.
+  Fuera del alcance del hotfix de la URL (2026-08-25).
+
+### Registrado el 2026-08-25 — anotado, NO ejecutado
+
+Cuatro puntos que salen del hotfix de la URL y de la revisión que lo aprobó. Ninguno se toca en
+ese trabajo; quedan aquí para que no dependan de la memoria de una sesión.
+
+1. **`api.contexxto.com` antes de Partner Layer.** Endpoint canónico controlado por Contexto como
+   custom domain de la API. Es la solución estructural: hoy los consumidores internos dependen de
+   un hostname del proveedor de infraestructura. **Recién con ese dominio en pie** corresponde
+   añadir (a) un test determinista que prohíba `*.onrender.com` en código operativo, (b) un smoke
+   post-deploy y (c) un health check sintético programado. Decisión explícita: **no** se añade un
+   smoke contra producción como status check bloqueante de cada PR — acoplaría el CI a la
+   disponibilidad de un tercero.
+2. **Evaluator requerido ausente ⇒ `ERROR`/`INVALID`, nunca `PASS` silencioso — antes del
+   Benchmark.** Del mismo linaje que el bug que este hotfix cerró en `run_evals.py`: cuando el
+   `.env` no se encontraba, el juez LLM se apagaba solo y la suite terminaba en verde con las
+   rúbricas de criterio sin evaluar. Un evaluador que falta tiene que romper la corrida, no
+   aprobarla por omisión.
+3. **Deuda de precedencia de `app/config.py`** — la del punto anterior a este bloque.
+4. ~~**Reconciliar este informe (06)** cuando termine la sesión que lo está modificando en paralelo.
+   Al 2026-08-25 hay commits sin publicar de otra sesión que reescriben este archivo, por lo que
+   las notas de arriba viven solo en `main` local y quedaron **fuera** del PR del hotfix
+   (`fix/contexto-api-url-viva`) para no arrastrar trabajo ajeno ni sembrarle conflictos.~~
+   **RESUELTO 2026-08-25.** Reconciliado y publicado contra `30354cb`. Las notas de la sesión del
+   hotfix se conservan **tal como las dejó**, sin mover ni reescribir: son observaciones acotadas y
+   con su propia distinción entre lo verificado y lo hipotético. Lo único que se añadió encima es
+   la nota del conteo de pruebas en §1. Se verificó archivo por archivo que entre `main` local y
+   `origin/main` **no difería ningún archivo de código** —solo este informe y
+   `scripts/refresco_pois.cmd`—, así que esta publicación no arrastra trabajo ajeno.
 
 ---
 
@@ -495,27 +761,51 @@ de datos vivos de toda la fase.
 | Escritura crítica anónima | ✅ resuelto |
 | Provenance contradictorio | ✅ resuelto |
 | Scoring contaminado por heurística sin fuente | ✅ resuelto |
-| Pipeline territorial no reproducible | ✅ **resuelto** — corrida completa verificada |
-| Tests sin gate | ⚠️ **pendiente** |
+| Pipeline territorial no reproducible | ✅ **resuelto** — corrida completa verificada, dos veces |
+| Tests sin gate | ✅ **resuelto** — merge bloqueado con prueba negativa |
 
-### `DO NOT ADVANCE` — por un solo gate, y a un clic de distancia
+### `ADVANCE TO CONTRACTS`
 
-Cuatro de los cinco están cerrados con evidencia reproducible, y C-A resuelta. El único que falta
-es E0.5, y no por falta de código: el workflow está escrito, verificado en local en ambas
-direcciones y esperando en la rama `ci/trust-gate-f0`.
+**Las cinco condiciones de fallo del Gate F0 están cerradas con evidencia reproducible**, el código
+está en `main` y desplegado, y las dos mitades del gate —GitHub y Render— quedaron probadas con una
+regresión de seguridad real, no con un `assert False`.
 
-**Para llegar a `ADVANCE TO CONTRACTS`:**
+La razón de fondo para avanzar no es que la lista esté completa. Es que **el sistema demostró que
+detecta problemas que sus autores no vieron.** El gate encontró dos defectos en el trabajo de la
+propia fase, en su primera y segunda corrida, y ambos eran del tipo que se escapa siempre: código
+que funciona en una máquina concreta. Antes de hoy, ese código habría llegado a producción sin que
+nadie se enterara — y de hecho llevaba semanas pasando con el release de Overture.
 
-1. Abrir el PR → `https://github.com/contexxto/contexto-ai/pull/new/ci/trust-gate-f0`
-   y confirmar que el check `pruebas` termina en verde.
-2. Activar la branch protection en GitHub y el gate de CI en Render.
-3. Comprobar que **una prueba rota impide el despliegue**, no solo que pinta el commit en rojo.
+Eso es exactamente lo que un Trust Gate debía comprar antes de dejar avanzar a Contracts: no una
+lista de arreglos, sino una razón medida para creerse el siguiente número que produzca el sistema.
 
-Hecho eso, actualizo este documento a `ADVANCE TO CONTRACTS` con la evidencia del CI.
+**Lo que NO cubre este PASS, para que nadie lo lea de más:**
+
+- El gate protege el backend en Render. **Vercel es un carril aparte y sigue sin gate.**
+- El aviso por correo del refresco **nunca se ha visto llegar**; solo está probado que su ausencia
+  no rompe nada.
+- `score_version = "encaje-v0"` marca la frontera: **cualquier número anterior a esta fase no es
+  comparable** con los de después.
 
 ---
 
 ## 10. Parada
 
-Según `00_START_HERE` §11, la ejecución **se detiene aquí**. No se inicia Contracts / Fase 1 hasta
-la revisión de Carlos y ChatGPT.
+Según `00_START_HERE` §11, la ejecución **se detiene aquí**. FASE 0 queda cerrada; **no se inicia
+Contracts / Fase 1** hasta la revisión de Carlos y ChatGPT y una autorización explícita.
+
+### Reproducir cualquier cifra de este documento
+
+| Afirmación | Comando o consulta |
+|---|---|
+| Suite en 847 | `python -m pytest --collect-only` sobre `eeff14c` |
+| Suite verde sin `.env` | `git worktree add --detach <tmp> eeff14c`, exportar `POSTGRES_DB/USER/PASSWORD=test`, `python -m pytest -q` |
+| Reglas activas sobre `main` | `GET /repos/contexxto/contexto-ai/rules/branches/main` |
+| Nombre del check | `GET /repos/contexxto/contexto-ai/commits/6984b8b/check-runs` |
+| Las tres corridas del PR #119 | `GET /repos/contexxto/contexto-ai/actions/runs?branch=ci/trust-gate-f0` |
+| Prueba negativa en rojo | `GET /repos/contexxto/contexto-ai/commits/cc6e597/check-runs` |
+| PR #120 sin mergear | `GET /repos/contexxto/contexto-ai/pulls/120` → `merged: false` |
+| E0.1 vivo en producción | `curl -X POST https://contexto-ai-oregon.onrender.com/api/v1/assets/` → 401 |
+| Ventana de la corrida del refresco | `GET /repos/contexxto/contexto-ai/actions/runs/32802129025` |
+| Escritura del runner en la base | `SELECT max(actualizado_en) FROM pois_propios WHERE ciudad='quito'` |
+| Dominio remitente verificado | `dig TXT resend._domainkey.contexxto.com` y `dig TXT send.contexxto.com` |

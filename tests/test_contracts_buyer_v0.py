@@ -22,7 +22,6 @@ from app.contracts.buyer_v0 import (
     FieldEvidence,
     Financial,
     Mobility,
-    Money,
     Objective,
     Operator,
     PlacePreference,
@@ -32,6 +31,7 @@ from app.contracts.buyer_v0 import (
     UnresolvedQuestion,
     json_schema,
 )
+from app.contracts.common_v0 import Money
 from app.contracts.evidence_v0 import (
     EvidenceRefV0,
     PersistencePolicy,

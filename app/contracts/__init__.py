@@ -11,7 +11,7 @@ regla nueva que rompa compatibilidad crea un `v1`, no muta el `v0`.
 Estado (2026-08-25):
   · E1.1 `EvidenceRefV0`     — hecho, en `evidence_v0.py`
   · E1.2 `BuyerContextV0`    — hecho, en `buyer_v0.py`
-  · E1.3 `PropertyContextV0` — pendiente
+  · E1.3 `PropertyContextV0` — hecho, en `property_v0.py`
   · E1.4 `PlaceContextV0`    — pendiente
   · E1.5 `DecisionContextV0` — pendiente
   · E1.6 `DecisionTraceV0`   — pendiente
@@ -45,6 +45,7 @@ from app.contracts.buyer_v0 import (
     TravelMode,
     UnresolvedQuestion,
 )
+from app.contracts.common_v0 import ContractBase, Money
 from app.contracts.evidence_v0 import (
     CONTRACT_VERSION as EVIDENCE_REF_V0_VERSION,
 )
@@ -53,6 +54,20 @@ from app.contracts.evidence_v0 import (
     PersistencePolicy,
     SourceType,
     ahora,
+)
+from app.contracts.property_v0 import (
+    CONTRACT_VERSION as PROPERTY_CONTEXT_V0_VERSION,
+)
+from app.contracts.property_v0 import (
+    PROVIDER_TYPE_CONTEXTO,
+    Location,
+    Media,
+    Operation,
+    PropertyAttribute,
+    PropertyContextV0,
+    Provenance,
+    Quality,
+    Transaction,
 )
 
 __all__ = [
@@ -81,4 +96,18 @@ __all__ = [
     "Tradeoff",
     "UnresolvedQuestion",
     "FieldEvidence",
+    # E1.3 — inmueble
+    "PropertyContextV0",
+    "PROPERTY_CONTEXT_V0_VERSION",
+    "PROVIDER_TYPE_CONTEXTO",
+    "Operation",
+    "Location",
+    "PropertyAttribute",
+    "Transaction",
+    "Media",
+    "Provenance",
+    "Quality",
+    # compartidos
+    "ContractBase",
+    "Money",
 ]

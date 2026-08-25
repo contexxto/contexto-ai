@@ -77,21 +77,16 @@ ambos. Decirlo aquí evita que alguien lea este módulo como una garantía que n
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 
+from app.contracts.common_v0 import ContractBase as _Base
+from app.contracts.common_v0 import Money
 from app.contracts.evidence_v0 import EvidenceRefV0
 
 CONTRACT_VERSION = "buyer-context-v0"
-
-
-class _Base(BaseModel):
-    """Config común: inmutable y sin campos extra. Ver E1.1 para el porqué del frozen."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
 
 
 class Objective(StrEnum):
@@ -273,15 +268,6 @@ class TravelMode(StrEnum):
     DRIVE = "drive"
     BIKE = "bike"
     UNKNOWN = "unknown"
-
-
-class Money(_Base):
-    """Importe con moneda. La moneda no es opcional: Contexto opera en Quito y mira
-    plazas en México, y un número suelto no dice si son 200 000 dólares o pesos."""
-
-    amount: Decimal = Field(gt=0)
-    currency: str = Field(pattern=r"^[A-Z]{3}$")
-    """ISO 4217 en mayúsculas: `USD`, `MXN`."""
 
 
 class Financial(_Base):

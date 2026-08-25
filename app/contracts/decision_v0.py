@@ -95,6 +95,7 @@ from pydantic import Field, field_validator, model_validator
 
 from app.contracts.buyer_v0 import CONTRACT_VERSION as BUYER_V0
 from app.contracts.common_v0 import ContractBase as _Base
+from app.contracts.common_v0 import Objective, RankingEntryV0
 from app.contracts.place_v0 import CONTRACT_VERSION as PLACE_V0
 from app.contracts.property_v0 import CONTRACT_VERSION as PROPERTY_V0
 
@@ -226,6 +227,26 @@ class UncertaintyV0(_Base):
         return _refs_utilizables(v)
 
 
+class ExplanationV0(_Base):
+    """El estado de la explicación que se le dio a la persona.
+
+    **No guarda la prosa.** La explicación se DERIVA de las afirmaciones materiales de
+    este mismo contrato —`strengths`, `tradeoffs`, `uncertainties`— y guardarla aquí la
+    duplicaría y la dejaría desincronizarse. Lo que sí importa registrar es si esa prosa
+    pasó por verificación, porque `app/verificacion_prosa.py` existe precisamente para
+    cazar afirmaciones que el dato no sostiene.
+    """
+
+    verification_status: str = Field(min_length=1)
+    """**Vocabulario abierto en V0**, y es una deuda declarada, no una preferencia.
+
+    El Blueprint define este campo pero no se pudo consultar su lista de valores en esta
+    sesión. `verificacion_prosa.py` no ayuda a cerrarlo: devuelve hallazgos con gravedad
+    (`alta`/`media`), no un estado de verificación. Inventar aquí un vocabulario sería
+    exactamente lo que se evitó con `stage`. **Debe cerrarse con el vocabulario del
+    Blueprint antes de que alguien escriba valores a mano.**"""
+
+
 class EligibilityV0(_Base):
     """Si la opción supera los criterios duros.
 
@@ -259,9 +280,36 @@ class DecisionContextV0(_Base):
     property: PropertyContextRefV0
     place: PlaceContextRefV0
 
+    objective: Objective = Objective.UNKNOWN
+    """Para qué se decidió. Mismo eje que declara el comprador; se copia el VALOR, no se
+    referencia el contexto, porque la decisión tiene que poder explicarse aunque el
+    comprador cambie de objetivo después."""
+
     score_version: str = Field(min_length=1)
     """Bajo qué reglas se decidió. Ver la cabecera: dos números producidos por reglas
     distintas no son comparables."""
+
+    ranking: tuple[RankingEntryV0, ...] = ()
+    """El ranking que produjo esta decisión, con la identidad estable
+    `(provider_id, property_id)`. Vacío es válido: hay decisiones sobre una sola opción.
+
+    Comparte tipo con la traza (E1.6) a propósito: son el mismo hecho visto desde dos
+    sitios, y duplicar el tipo habría permitido que divergieran."""
+
+    recommended_next_action: str | None = Field(default=None, min_length=1)
+    """Qué sugiere hacer el sistema. Texto abierto en V0 por la misma razón que
+    `PolicyAppliedV0.outcome`: no hay todavía un catálogo de acciones evidenciado.
+    `None` = la decisión no recomienda nada."""
+
+    explanation: ExplanationV0 | None = None
+    """`None` = no se generó explicación. Ver `ExplanationV0`."""
+
+    trace_id: str | None = Field(default=None, min_length=1)
+    """La ejecución que produjo esta decisión (`DecisionTraceV0.trace_id`).
+
+    Es una referencia, no una evidencia: **no se confunde con `evidence_refs`**. Aquéllas
+    dicen qué sustenta cada afirmación; esto dice qué ejecución la generó. `None` = la
+    decisión no quedó trazada."""
 
     eligibility: EligibilityV0 | None = None
     """`None` = no se evaluó la elegibilidad. Ver "ausente no es vacío"."""

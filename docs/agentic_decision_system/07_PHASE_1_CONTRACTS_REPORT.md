@@ -10,8 +10,15 @@
 
 ## 0. Resumen
 
-**Los seis contratos están cerrados, versionados y probados.** 262 pruebas propias; la
-suite completa pasa de 869 a **1 131**, exit 0, verificada en árbol limpio sin `.env`.
+**Los seis contratos están cerrados, versionados y probados contra el repositorio real.**
+290 pruebas propias; la suite completa pasa de 869 a **1 159**, exit 0, verificada en
+árbol limpio sin `.env`.
+
+> **Revisión 2.** La primera fue rechazada en revisión por cuatro motivos, los cuatro
+> correctos: C-F estaba mal formulada (§7), `transaction.availability` se dejó abierto
+> cuando el Blueprint sí lo define (§3, E1.3), faltaban ejemplos derivados de estructuras
+> reales del repo (§5), y `DecisionContextV0` no tenía cinco campos de su mínimo (§3,
+> E1.5). Los cuatro están corregidos y verificados mecánicamente.
 
 Lo que esta fase compró no son seis ficheros de Pydantic. Es que **las tres mentiras que
 FASE 0 tuvo que cazar a mano ahora son imposibles de construir**:
@@ -24,7 +31,7 @@ FASE 0 tuvo que cazar a mano ahora son imposibles de construir**:
 
 En F0 esas tres cosas se arreglaron. En F1 dejan de poder volver.
 
-**Recomendación en §9, con una condición.**
+**Recomendación en §9.**
 
 ---
 
@@ -35,11 +42,11 @@ En F0 esas tres cosas se arreglaron. En F1 dejan de poder volver.
 | Repositorio | `github.com/contexxto/contexto-ai` (público) |
 | Base | `e97afb2` (`origin/main` tras el merge del PR #122) |
 | Rama de trabajo | `feat/contracts-evidence-v0`, en worktree propio |
-| Commits | **12** |
-| Archivos | **16**, +5 033 líneas, 0 eliminadas |
+| Commits | **14** |
+| Archivos | **18**, ~+6 000 líneas, 0 eliminadas |
 | Suite antes | 869 |
-| **Suite después** | **1 131**, exit 0 |
-| Pruebas nuevas | **262** |
+| **Suite después** | **1 159**, exit 0 |
+| Pruebas nuevas | **290** |
 | Ubicación | `app/contracts/`, según `02_CURRENT_TO_TARGET_ARCHITECTURE.md` §5 |
 
 **Nada de lo entregado se consume todavía.** Ningún módulo de `app/` importa
@@ -60,11 +67,12 @@ cazó dos defectos que solo existían fuera del portátil del fundador.
 |---|---|---:|---:|---|
 | E1.1 | `EvidenceRefV0` | 321 | 36 | ✅ |
 | E1.2 | `BuyerContextV0` | 497 | 52 | ✅ |
-| E1.3 | `PropertyContextV0` | 354 | 48 | ✅ |
+| E1.3 | `PropertyContextV0` | 380 | 51 | ✅ |
 | E1.4 | `PlaceContextV0` | 320 | 45 | ✅ |
 | E1.5 | `DecisionContextV0` | 309 | 39 | ✅ |
 | E1.6 | `DecisionTraceV0` | 278 | 42 | ✅ |
-| — | `common_v0.py` (compartidos) | 52 | — | ✅ |
+| — | `common_v0.py` (compartidos) | 90 | — | ✅ |
+| — | **compatibilidad con el repo real** | — | **25** | ✅ |
 
 ---
 
@@ -185,8 +193,15 @@ restricción, no: un contrato no vigila prosa. Eso es `app/fair_housing.py` y ot
 - Aquí `unknown` **sí** es válido, a diferencia de E1.1: no se fabrica una evidencia, se
   declara que desconocemos una propiedad de un registro que existe.
 
-**Abierto.** `transaction.availability` (el Blueprint tiene su vocabulario y el
-inventario actual no lo implementa) y `provider_type` (solo hay un valor evidenciado).
+**`transaction.availability` — cerrado con el vocabulario del Blueprint 0.1:**
+`available | reserved | sold | unknown`. Adoptado tal cual, con enum, schema, round-trip
+y pruebas. El inventario actual guarda texto libre en `estado_anuncio` (solo se ha
+observado `"disponible"`); el mapeo lo hará el adaptador de F5. El contrato distingue
+`None` —el listing no declara nada— de `UNKNOWN` —lo declara y dice que no se sabe—.
+
+**Abierto.** `provider_type`: solo hay un valor evidenciado (`"contexto"`, Plan §1.4), y
+una taxonomía de tipos de proveedor inventada desde un caso congelaría una hipótesis
+sobre un mercado que aún no conocemos.
 
 **Ejemplos del repo.** `ActivoInmutable` + `TransaccionTemporal` ya acertaban con la
 separación; `tipo_operacion ∈ {venta, arriendo}` fija `Operation` en dos valores
@@ -246,9 +261,23 @@ refactor de `rutas.py`, `compute_travel_to_anchor`.
 **Propósito.** Qué se decidió sobre qué, bajo qué reglas, y qué evidencia sustenta cada
 afirmación.
 
-**Schema.** `contract_version` · `decision_id` · `created_at` · `buyer` · `property` ·
-`place` · `score_version` · `anchor_ids` · `eligibility` · `match` · `strengths` ·
-`tradeoffs` · `uncertainties`.
+**Schema.** `contract_version` · `decision_id` · `created_at` · `objective` · `buyer` ·
+`property` · `place` · `score_version` · `ranking` · `anchor_ids` · `eligibility` ·
+`match` · `strengths` · `tradeoffs` · `uncertainties` · `recommended_next_action` ·
+`explanation` · `trace_id`.
+
+> **Los cinco últimos entraron en la revisión 2.** La comprobación mecánica del mínimo
+> los encontró **ausentes** —`objective`, `ranking`, `recommended_next_action`,
+> `explanation.verification_status`, `trace_id`— y se implementaron antes del merge.
+> `trace_id` merece nota aparte: la revisión 1 tenía una prueba que afirmaba su
+> **ausencia**, por una lectura mía demasiado literal de "`evidence_refs` no se confunde
+> con `trace_id`". Los dos deben existir y decir cosas distintas: uno dice qué sustenta
+> cada afirmación, el otro qué ejecución la generó.
+
+`ranking` usa `RankingEntryV0`, **compartido con la traza** (E1.6): son el mismo hecho
+visto desde dos sitios, y duplicar el tipo habría permitido que divergieran.
+`ExplanationV0` **no guarda la prosa** —se deriva de las afirmaciones materiales—, solo
+si pasó por verificación.
 
 **Congelado.**
 - **Referencia, no contenido.** `BuyerContextRefV0` (`buyer_id` + `context_revision`),
@@ -324,77 +353,108 @@ porque un inmueble existe sin que haya nadie buscándolo.
 
 ---
 
-## 5. Fixtures, adapters y lo que NO se construyó
+## 5. Fixtures, ejemplos reales y reparto de fases
 
-**Fixtures.** Los hay, pero **viven en los ficheros de prueba** como helpers
-(`_medida`, `_comprador`, `_inmueble`, `_lugar`, `_decision`, `_traza`,
-`_traza_representativa`), no como ficheros congelados aparte. E1.6 tiene además un
-fixture mínimo y otro representativo, según su gate.
+### 5.1 Compatibilidad con el repositorio real — **la prueba de fuego**
 
-**Adapters.** **Ninguno.** No hay conversión `ActivoInmutable → PropertyContextV0`, ni
-`analizar_zona() → PlaceContextV0`, ni `calcular_encaje() → DecisionContextV0`.
+Hasta la revisión 1, los seis contratos estaban probados contra ejemplos **que escribí
+yo**. `tests/test_contracts_compatibilidad_repo.py` los enfrenta a las formas reales del
+repo: las columnas de `ActivoInmutable` y `TransaccionTemporal`, lo que devuelve
+`calcular_encaje()`, lo que devuelve `walk_score`, la forma de `preferencias` que vive en
+`AgentState`, y lo poco que hoy se puede saber de una ejecución.
 
-**Esto diverge del Execution Plan 1.0 §1, y hay que decirlo con todas las letras.** El
-Plan describe F1 incluyendo adaptadores y derivación desde funciones existentes:
+**25 pruebas, y ni un dato inventado.** Es la regla que gobierna ese archivo: cuando una
+capacidad actual no puede poblar un campo, se usa `None` / `unknown` /
+`insufficient_evidence` / `limitations`.
 
-| Plan §1 | Lo entregado |
+| Contrato | Fuente real | Lo que el repo NO tiene, declarado como hueco |
+|---|---|---|
+| `EvidenceRefV0` | `walk_score_fuente` ∈ {`osm`, `heuristico`, `NULL`} | `observed_at=None` — OSM no dice de cuándo es |
+| `BuyerContextV0` | `preferencias` del checkpoint | `stage=None` — el repo no tiene eje de decisión |
+| `PropertyContextV0` | `ActivoInmutable` + `TransaccionTemporal` | `inventory_class=UNKNOWN`, `completeness=None`, sin URL de listing |
+| `PlaceContextV0` | `walk_score`, `pois_propios` | ruido y tráfico en `insufficient_evidence`, sin valor |
+| `DecisionContextV0` | retorno de `calcular_encaje()` | `trace_id=None`, `recommended_next_action=None`, `context_revision=None` |
+| `DecisionTraceV0` | lo observable del flujo actual | `inventory_snapshot_id=None`, `model_config_hash=None`, `latency_ms=None` |
+
+Tres resultados que valen más que el resto:
+
+1. **El precio contradictorio no llega.** El activo real trae `caracteristicas.precio=200`
+   y `transaccion.precio=180`. El atributo **no se puede construir**, y el contrato queda
+   con un solo precio y un `warning` que dice qué pasó.
+2. **La heurística de ruido no puede traer valor.** `score_ruido_predictivo` existe en la
+   tabla como `String(10)`. Entra como dimensión explicada, con `value=None`. Hay una
+   prueba de que intentar meterla como valor **no construye el objeto**.
+3. **La caminabilidad medida y la estimada son distinguibles.** Las dos ramas de
+   `walk_score_fuente` producen evidencias que responden distinto a `es_medicion`. E0.3
+   cerrado en el contrato.
+
+**No son adaptadores.** Viven en `tests/`, y hay una prueba que verifica que ningún
+módulo de `app/` los importa.
+
+### 5.2 Reparto de fases — corrección de la revisión 1
+
+La revisión 1 afirmaba que adapters, store y assembler *"quedaron fuera de F1 por
+desviación dirigida"*. **Eso estaba mal.** El Execution Plan 1.0 no los asigna a F1; cada
+uno tiene su fase:
+
+| Pieza | Fase |
 |---|---|
-| 1.2 `PlaceContextV0` **desde** `analizar_zona()` | contrato puro, sin derivación |
-| 1.3 `DecisionContextV0` **desde** `calcular_encaje()` | contrato puro, sin derivación |
-| 1.4 `PropertyContextV0` **+ adaptador local**, 40 activos → 40 objetos válidos | contrato puro, sin adaptador |
-| 1.5 `BuyerContextV0` **+ tabla + versionado**, historial | contrato puro; `context_revision` declarado pero sin store |
-| 1.6 Fixtures del loop: 1 buyer + 10 properties + places, congelados | no existen |
+| Decision assembler | **F2** |
+| Buyer store / versionado | **F3** |
+| Place structured assembler | **F4** |
+| Inventory adapter local | **F5** |
+| Trace instrumentation / store | **F6** |
 
-La divergencia es **deliberada y dirigida**: las instrucciones de esta fase excluyeron
-explícitamente adapters, migraciones, persistencia y assembler, y acotaron F1 a
-representar. No es un descuido, pero **cambia qué significa "Gate F1 superado"** — ver §9.
-
----
+No hay divergencia que justificar: F1 entregó lo que F1 debía entregar.
 
 ## 6. Deuda introducida
 
 1. **`stage` sin enum** cuesta la prueba mecánica de ortogonalidad con `intencion.py`.
-   Documentado, no forzado.
-2. **Los adaptadores no existen**, así que ningún contrato se ha ejercitado contra dato
-   real. Están probados contra ejemplos escritos a mano; nadie ha intentado meter los 40
-   activos reales por `PropertyContextV0` para ver qué se rompe.
-3. **`place_id`** no tiene generador. F2 tendrá que proveerlo.
-4. **`provider` como texto libre** admite variantes del mismo proveedor.
+   Documentado, no forzado. Se cierra cuando haya evidencia de uso.
+2. **`explanation.verification_status` queda abierto.** El Blueprint define el campo, pero
+   su lista de valores no se pudo consultar en esta sesión, y `verificacion_prosa.py` no
+   la resuelve —devuelve hallazgos con gravedad `alta`/`media`, no un estado—. **Inventarlo
+   habría sido el error de `stage`.** Debe cerrarse con el vocabulario del Blueprint antes
+   de que alguien escriba valores a mano. Ver C-J.
+3. **`place_id` no tiene generador.** F2/F4 tendrán que proveerlo: `PlaceContextRefV0` lo
+   exige y `PlaceContextV0` lo tiene opcional.
+4. **`provider` como texto libre** admite variantes del mismo proveedor
+   (`"google"` vs `"google_places"`). Se resuelve con convención, no con enum.
 5. **`DerivedFeatureV0.value` no admite objetos anidados** — inmutabilidad por encima de
    generalidad, deliberado.
 6. **Validación cruzada ausente por diseño**: `anchor_id` y `evidence_id` no se resuelven
    contra nada. F2/F6.
 
----
-
 ## 7. Contradicciones con Plan y Blueprint
 
-**C-F.** El alcance de F1 en el Plan §1 incluye adapters, tabla y fixtures del loop; las
-instrucciones de esta sesión lo redujeron a contratos. **Resuelta por dirección
-explícita**, registrada en §5.
+**C-F. — RETIRADA.** La revisión 1 afirmaba que el Plan §1 asignaba a F1 el Buyer store,
+el Place assembler y el inventory adapter, y que quedaron fuera por desviación dirigida.
+**Era una lectura equivocada del Plan.** Esas piezas nunca fueron entregables de F1; están
+repartidas entre F2 y F6 según §5.2. No hay contradicción que registrar.
 
-**C-G.** El Plan §1.3 menciona `evidence_refs` para `DecisionContextV0`. La primera
-versión los omitió por evitar el snapshot; **corregido**: se citan por `evidence_id` sin
-embeber objetos.
+**C-G. — CERRADA.** El Plan §1.3 menciona `evidence_refs` para `DecisionContextV0`. La
+revisión 1 los omitió por evitar el snapshot; ahora se citan por `evidence_id` sin embeber
+objetos.
 
-**C-H.** El Blueprint define un vocabulario para `transaction.availability` que **no se
-pudo consultar** en esta sesión. Se dejó abierto en vez de inventar uno. Debe adoptarse
-el del Blueprint antes de que alguien escriba valores a mano.
+**C-H. — CERRADA.** `transaction.availability` adopta el vocabulario del Blueprint 0.1:
+`available | reserved | sold | unknown`, con enum, schema, round-trip y pruebas.
 
 **C-I.** `EvidenceRefV0` prohíbe `unknown` y `PropertyProvenanceV0.inventory_class` lo
-permite. **No es incoherencia**: en un caso se fabricaría una evidencia inexistente; en
-el otro se declara desconocer una propiedad de un registro que sí existe. Está probado y
-explicado en ambos módulos.
+permite. **No es incoherencia**: en un caso se fabricaría una evidencia inexistente; en el
+otro se declara desconocer una propiedad de un registro que sí existe. Probado y explicado
+en ambos módulos.
 
----
+**C-J. — ABIERTA.** `explanation.verification_status` está definido en el Blueprint pero su
+vocabulario no se pudo consultar. Queda como `str` abierto, declarado como deuda (§6.2).
+**Es la única contradicción viva con el Blueprint al cerrar F1.**
 
 ## 8. Suite
 
 | | |
 |---|---|
 | Antes de F1 | 869 |
-| **Después** | **1 131**, exit 0 |
-| Nuevas | 262 |
+| **Después** | **1 159**, exit 0 |
+| Nuevas | 290 (265 de contrato + 25 de compatibilidad) |
 | Verificación | árbol limpio **sin `.env`**, con las tres variables dummy de `pruebas.yml` |
 | Regresiones | ninguna — las 869 anteriores siguen pasando |
 
@@ -405,34 +465,36 @@ idéntico al de antes de esta fase.
 
 ## 9. Recomendación
 
-### `ADVANCE TO DECISION CORE` — con una condición explícita
+### `ADVANCE TO DECISION CORE`
 
-Los seis contratos cumplen lo que se les pidió, y cumplen algo más difícil de medir: **la
-forma del objeto ahora impide la clase de error que costó FASE 0.** No porque alguien
-recuerde la regla, sino porque el objeto no se construye si se viola.
+El Gate F1 literal queda satisfecho:
 
-La condición es esta: **lo que el Plan §1 incluía en F1 y esta fase no entregó
-—adapters, tabla del comprador, fixtures del loop— tiene que quedar asignado a F2 de
-forma explícita, o cancelado de forma explícita.** No puede quedarse en el limbo de "ya
-se hizo la fase 1". Concretamente:
+| Requisito | Estado |
+|---|---|
+| Contrato | ✅ los seis, versionados con `Literal` |
+| Schema | ✅ JSON Schema generado y probado en los seis |
+| Fixtures | ✅ mínimos, representativos, y **de compatibilidad con el repo real** |
+| Validación | ✅ invariantes propias, no solo tipos |
+| Tests | ✅ 290 |
+| Suite completa | ✅ 1 159, exit 0, sin `.env` |
 
-1. `ActivoInmutable → PropertyContextV0`, y correrlo contra los 40 activos reales. **Es
-   la primera prueba de fuego de verdad**: hasta que dato real pase por estos contratos,
-   están probados contra ejemplos que yo mismo escribí.
-2. Generación de `place_id`.
-3. El invariante `anchor_id ∈ BuyerContextV0.commute_anchors` en el assembler.
-4. Consultar el Blueprint y cerrar `transaction.availability`.
-5. Fixtures del loop congelados (Plan §1.6), si se siguen queriendo.
+Y no se introdujo nada de lo prohibido: sin persistencia, sin instrumentación, sin
+assembler, sin hooks de LangGraph, sin ejecución de benchmark, sin integración de
+partners. **Ningún módulo de `app/` importa `app.contracts`.**
 
-**Lo que este PASS no dice:**
+Lo que hace que esto sea un PASS y no un trámite: **los contratos ya se enfrentaron al
+dato real** y lo representaron sin inventar nada. El activo con dos precios, la heurística
+de ruido sin medición y la caminabilidad de procedencia ambigua —los tres defectos que F0
+cazó a mano— entran ahora por un contrato que los declara como lo que son o directamente
+no se construye.
 
-- No dice que los contratos encajen con el dato real. Nadie lo ha intentado.
-- No dice que `stage` esté resuelto. Está deliberadamente sin resolver.
-- No dice que las categorías protegidas estén controladas: lo están **estructuralmente**,
-  no en el texto libre.
-- No dice nada sobre rendimiento, tamaño de serialización ni coste de almacenamiento.
+**Lo que este PASS sigue sin decir:**
 
----
+- No hay adaptador de producción. Los fixtures demuestran que la representación es
+  posible; construirla es F5, F4 y F2.
+- `stage` sigue deliberadamente sin resolver, y `verification_status` con él (C-J).
+- Las categorías protegidas están controladas **estructuralmente**, no en el texto libre.
+- Nada sobre rendimiento, tamaño de serialización ni coste de almacenamiento.
 
 ## 10. Parada
 
@@ -443,9 +505,11 @@ Carlos y ChatGPT y autorización explícita.
 
 | Afirmación | Cómo |
 |---|---|
-| Suite en 1 131 | `python -m pytest --collect-only` sobre la rama |
+| Suite en 1 159 | `python -m pytest --collect-only` sobre la rama |
 | Verde sin `.env` | `git worktree add --detach <tmp> <sha>`, exportar `POSTGRES_DB/USER/PASSWORD=test`, `python -m pytest -q` |
-| 262 pruebas de contratos | `python -m pytest tests/test_contracts_*.py --collect-only` |
+| 290 pruebas de contratos | `python -m pytest tests/test_contracts_*.py --collect-only` |
+| El mínimo de `DecisionContextV0` | `set(DecisionContextV0.model_json_schema()["properties"])` |
+| Los contratos representan el repo | `python -m pytest tests/test_contracts_compatibilidad_repo.py` |
 | Nadie consume los contratos | `grep -rn "app.contracts" app/ --include=*.py` → solo el propio paquete |
 | Ningún contexto embebido | `DecisionContextV0.model_json_schema()["$defs"]` |
 | Nada sensible en las llamadas | `set(ProviderCallV0.model_fields)` |

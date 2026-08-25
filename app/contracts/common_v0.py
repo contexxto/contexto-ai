@@ -14,7 +14,7 @@ from __future__ import annotations
 from decimal import Decimal
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ContractBase(BaseModel):
@@ -46,3 +46,45 @@ class TravelMode(StrEnum):
     DRIVE = "drive"
     BIKE = "bike"
     UNKNOWN = "unknown"
+
+
+class Objective(StrEnum):
+    """Para qué busca la persona. Aquí porque lo usan el comprador (lo que declara) y la
+    decisión (para qué se decidió)."""
+
+    BUY = "buy"
+    RENT = "rent"
+    INVEST = "invest"
+    UNKNOWN = "unknown"
+    """Todavía no lo sabemos. Es el valor honesto al empezar una conversación."""
+
+
+class RankingEntryV0(ContractBase):
+    """Una posición de un ranking, con la identidad estable que descubrió E1.3.
+
+    Compartida entre la decisión (el ranking que produjo) y la traza (el ranking que
+    quedó registrado). Son el mismo hecho visto desde dos sitios; duplicar el tipo
+    habría permitido que divergieran.
+    """
+
+    provider_id: str = Field(min_length=1)
+    property_id: str = Field(min_length=1)
+    rank: int = Field(ge=1)
+
+    score: float | None = None
+    """`None` es válido: un ranking puede no ser numérico."""
+
+    score_version: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def _un_score_sin_su_version_no_es_comparable(self) -> RankingEntryV0:
+        if self.score is not None and self.score_version is None:
+            raise ValueError(
+                "hay score pero no score_version: dos números producidos por reglas "
+                "distintas no son comparables, y sin la versión nadie puede saberlo"
+            )
+        return self
+
+    @property
+    def identidad_externa(self) -> tuple[str, str]:
+        return (self.provider_id, self.property_id)

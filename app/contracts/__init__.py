@@ -58,7 +58,7 @@ from app.contracts.place_v0 import (
     PlaceMeasureV0,
     TravelToAnchorV0,
 )
-from app.contracts.common_v0 import ContractBase, Money, TravelMode
+from app.contracts.common_v0 import ContractBase, Money, Objective, RankingEntryV0, TravelMode
 from app.contracts.decision_v0 import (
     CONTRACT_VERSION as DECISION_CONTEXT_V0_VERSION,
 )
@@ -66,6 +66,7 @@ from app.contracts.decision_v0 import (
     BuyerContextRefV0,
     DecisionContextV0,
     DecisionTradeoffV0,
+    ExplanationV0,
     EligibilityV0,
     MatchDimensionV0,
     MatchV0,
@@ -102,6 +103,7 @@ from app.contracts.trace_v0 import (
 )
 from app.contracts.property_v0 import (
     PROVIDER_TYPE_CONTEXTO,
+    Availability,
     InventoryClass,
     Location,
     Media,
@@ -189,4 +191,7 @@ __all__ = [
     "ContractBase",
     "Money",
     "TravelMode",
+    "RankingEntryV0",
+    "Availability",
+    "ExplanationV0",
 ]

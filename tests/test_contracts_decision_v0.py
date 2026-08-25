@@ -209,9 +209,13 @@ def test_no_valida_que_las_referencias_resuelvan():
 
 
 def test_no_trae_scoring_nuevo():
-    texto = json.dumps(json_schema()).lower()
-    for prohibido in ('"score"', '"weight"', '"rank"', '"decision_eligible"'):
-        assert prohibido not in texto
+    """El ranking SÍ lleva `score`/`rank` —es lo que un ranking es— pero la decisión no
+    pondera por su cuenta: no hay pesos, ni elegibilidad calculada, ni score suelto en la
+    raíz."""
+    raiz = set(json_schema()["properties"])
+    for prohibido in ("score", "weight", "weights", "decision_eligible", "priority"):
+        assert prohibido not in raiz
+    assert set(MatchDimensionV0.model_fields) == {"dimension", "evidence_refs"}
 
 
 def test_no_duplica_la_evidencia_de_los_contextos():
@@ -357,12 +361,16 @@ def test_un_evidence_id_vacio_o_repetido_no_cita_nada():
 
 
 def test_evidence_refs_no_se_confunde_con_trace_id():
-    """La trazabilidad de la ejecución es de DecisionTraceV0 (E1.6), no de aquí."""
-    props = set(json_schema()["properties"])
-    assert "trace_id" not in props
-    assert not hasattr(DecisionContextV0, "trace_id")
-    d = _con_afirmaciones()
+    """Los dos existen y dicen cosas distintas: `evidence_refs` dice QUÉ sustenta cada
+    afirmación; `trace_id` dice QUÉ EJECUCIÓN la generó. Uno es respaldo, el otro es
+    procedencia de la corrida."""
+    d = _con_afirmaciones(trace_id="t-1")
+    assert d.trace_id == "t-1"
     assert d.strengths[0].evidence_refs == ("ev-3",)
+    assert d.trace_id not in d.strengths[0].evidence_refs
+
+    sin_trazar = _decision()
+    assert sin_trazar.trace_id is None
 
 
 def test_las_referencias_de_evidencia_sobreviven_el_ida_y_vuelta():

@@ -76,6 +76,7 @@ from typing import Any, Literal
 from pydantic import Field, field_validator, model_validator
 
 from app.contracts.common_v0 import ContractBase as _Base
+from app.contracts.common_v0 import RankingEntryV0 as TraceRankingEntryV0
 from app.contracts.decision_v0 import BuyerContextRefV0
 
 CONTRACT_VERSION = "decision-trace-v0"
@@ -192,32 +193,6 @@ class TraceUncertaintyV0(_Base):
     """Puede estar vacío: la incertidumbre existe a menudo por ausencia de evidencia."""
 
     _e = field_validator("evidence_ids")(_ids_utilizables)
-
-
-class TraceRankingEntryV0(_Base):
-    """Una posición del ranking que produjo el sistema."""
-
-    provider_id: str = Field(min_length=1)
-    property_id: str = Field(min_length=1)
-    rank: int = Field(ge=1)
-
-    score: float | None = None
-    """`None` es válido: un ranking puede no ser numérico."""
-
-    score_version: str | None = Field(default=None, min_length=1)
-
-    @model_validator(mode="after")
-    def _un_score_sin_su_version_no_es_comparable(self) -> TraceRankingEntryV0:
-        if self.score is not None and self.score_version is None:
-            raise ValueError(
-                "hay score pero no score_version: dos números producidos por reglas "
-                "distintas no son comparables, y sin la versión nadie puede saberlo"
-            )
-        return self
-
-    @property
-    def identidad_externa(self) -> tuple[str, str]:
-        return (self.provider_id, self.property_id)
 
 
 class DecisionTraceV0(_Base):

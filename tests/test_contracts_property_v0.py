@@ -23,6 +23,7 @@ from app.contracts.evidence_v0 import (
 from app.contracts.property_v0 import (
     CONTRACT_VERSION,
     PROVIDER_TYPE_CONTEXTO,
+    Availability,
     Location,
     Media,
     Operation,
@@ -191,12 +192,34 @@ def test_el_contrato_no_construye_partner_layer():
 # ── vocabularios abiertos a propósito ────────────────────────────────────────────
 
 
-def test_availability_queda_abierto_en_v0():
-    """El Blueprint tiene su vocabulario y el inventario actual no lo implementa;
-    congelar aquí una lista inventada sería peor."""
-    esquema = json_schema()
-    assert "enum" not in str(esquema["$defs"]["Transaction"]["properties"]["availability"])
-    assert Transaction(operation=Operation.SALE, availability="disponible").availability
+def test_availability_adopta_el_vocabulario_del_blueprint():
+    """Blueprint 0.1: available | reserved | sold | unknown. Se adopta tal cual en vez de
+    inventar uno; el inventario actual guarda texto libre y el mapeo lo hará F5."""
+    assert {a.value for a in Availability} == {"available", "reserved", "sold", "unknown"}
+    assert set(json_schema()["$defs"]["Availability"]["enum"]) == {
+        "available", "reserved", "sold", "unknown"
+    }
+
+
+def test_un_estado_de_anuncio_inventado_ya_no_pasa():
+    with pytest.raises(ValidationError):
+        Transaction(operation=Operation.SALE, availability="disponible")
+
+
+def test_no_declarado_y_declarado_desconocido_no_son_lo_mismo():
+    """`None` = el listing no dice nada. `UNKNOWN` = lo dice y dice que no se sabe."""
+    sin_declarar = Transaction(operation=Operation.SALE)
+    declarado = Transaction(operation=Operation.SALE, availability=Availability.UNKNOWN)
+    assert sin_declarar.availability is None
+    assert declarado.availability is Availability.UNKNOWN
+    assert sin_declarar != declarado
+
+
+def test_el_estado_del_anuncio_sobrevive_el_ida_y_vuelta():
+    t = Transaction(operation=Operation.SALE, availability=Availability.RESERVED)
+    crudo = t.model_dump(mode="json")
+    assert crudo["availability"] == "reserved"
+    assert Transaction.model_validate(crudo).availability is Availability.RESERVED
 
 
 def test_provider_type_queda_abierto_en_v0():
@@ -385,7 +408,7 @@ def test_serializa_y_vuelve_igual_con_todo_lleno():
         transaction=Transaction(
             operation=Operation.RENT,
             price=Money(amount=Decimal("180"), currency="USD"),
-            availability="disponible",
+            availability=Availability.AVAILABLE,
             listed_at=AHORA - timedelta(days=30),
         ),
         media=Media(images=("https://portal.example/1.jpg",)),

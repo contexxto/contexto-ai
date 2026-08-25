@@ -47,11 +47,6 @@ Que el contrato lo tenga NO construye Partner Layer. Solo deja de hacerla imposi
 LO QUE QUEDA ABIERTO A PROPÓSITO
 ──────────────────────────────────────────────────────────────────────────────────
 
-`transaction.availability` es `str`, no enum. El Blueprint define un vocabulario para
-esto y el inventario actual (`estado_anuncio`) no lo implementa; congelar aquí una
-lista inventada sería peor que dejarlo abierto y adoptar la del Blueprint cuando se
-consulte. Mismo criterio que `stage` en E1.2.
-
 `provider_type` también es texto. Solo hay un valor evidenciado —`"contexto"` para el
 inventario propio, según el Plan §1.4—; inventar una taxonomía de tipos de proveedor a
 partir de un solo caso sería congelar una hipótesis sobre un mercado que aún no
@@ -119,6 +114,24 @@ class Operation(StrEnum):
     RENT = "rent"
 
 
+class Availability(StrEnum):
+    """Estado del anuncio. **Vocabulario del Blueprint 0.1**, adoptado tal cual.
+
+    El inventario actual guarda esto en `estado_anuncio` como texto libre y solo se ha
+    observado `"disponible"`; el mapeo lo hará el adaptador de F5:
+    `disponible → available`, `reservado → reserved`, `vendido/arrendado → sold`.
+
+    `unknown` forma parte del vocabulario del Blueprint y es el valor honesto para un
+    registro cuyo estado no se conoce — distinto de que el campo sea `None`, que
+    significa que el listing no lo declara en absoluto.
+    """
+
+    AVAILABLE = "available"
+    RESERVED = "reserved"
+    SOLD = "sold"
+    UNKNOWN = "unknown"
+
+
 class Location(_Base):
     """Dónde está. Del activo físico, no del listing."""
 
@@ -180,8 +193,9 @@ class Transaction(_Base):
     price: Money | None = None
     """`None` = no publicado. Distinto de cero, que sería un precio."""
 
-    availability: str | None = Field(default=None, min_length=1)
-    """Vocabulario abierto en V0; el Blueprint tiene el suyo. Ver la cabecera."""
+    availability: Availability | None = None
+    """Vocabulario cerrado del Blueprint 0.1. `None` = el listing no lo declara, que es
+    distinto de `UNKNOWN` = lo declara y dice que no se sabe."""
 
     listed_at: datetime | None = None
     closed_at: datetime | None = None

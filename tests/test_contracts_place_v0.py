@@ -7,6 +7,7 @@ movían el score ±50 y ±80 puntos sin una sola medición detrás.
 """
 
 import json
+import pathlib
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -307,7 +308,8 @@ def test_el_trayecto_a_un_ancla_es_representable_sin_estar_calculado():
     calculado = PlaceMeasureV0[TravelToAnchorV0](
         status=MeasureStatus.AVAILABLE,
         value=TravelToAnchorV0(
-            anchor_label="la oficina", mode=TravelMode.TRANSIT, duration_minutes=28.0
+            anchor_id="a-1", anchor_label="la oficina",
+            mode=TravelMode.TRANSIT, duration_minutes=28.0
         ),
         evidence=(_medida(methodology="matriz de tiempos de Valhalla"),),
     )
@@ -316,15 +318,15 @@ def test_el_trayecto_a_un_ancla_es_representable_sin_estar_calculado():
 
 
 def test_el_mismo_ancla_no_aparece_dos_veces():
-    def anclado(etiqueta):
+    def anclado(ident):
         return PlaceMeasureV0[TravelToAnchorV0](
             status=MeasureStatus.AVAILABLE,
-            value=TravelToAnchorV0(anchor_label=etiqueta),
+            value=TravelToAnchorV0(anchor_id=ident),
             evidence=(_medida(),),
         )
 
-    with pytest.raises(ValidationError, match="ancla repetida"):
-        _lugar(travel_to_anchors=(anclado("la oficina"), anclado("la oficina")))
+    with pytest.raises(ValidationError, match="anchor_id repetido"):
+        _lugar(travel_to_anchors=(anclado("a-1"), anclado("a-1")))
 
 
 def test_la_isocrona_exige_un_poligono_cerrado():
@@ -442,3 +444,75 @@ def test_no_se_aceptan_campos_extra():
 def test_el_esquema_expone_los_tres_estados():
     enum_ = json_schema()["$defs"]["MeasureStatus"]["enum"]
     assert set(enum_) == {"available", "unknown", "insufficient_evidence"}
+
+
+# ── la costura con el comprador: anchor_id, nunca el label ───────────────────────
+
+
+def test_el_trayecto_exige_anchor_id():
+    with pytest.raises(ValidationError, match="anchor_id"):
+        TravelToAnchorV0(anchor_label="la oficina")
+
+
+def test_el_label_no_sustituye_al_id():
+    """Correlacionar por texto es cómo un trayecto queda huérfano en silencio porque
+    alguien escribió "oficina" donde la persona había dicho "la oficina"."""
+    t = TravelToAnchorV0(anchor_id="a-1")
+    assert t.anchor_label is None
+    assert t.anchor_id == "a-1"
+
+    mismo_id_otro_texto = TravelToAnchorV0(anchor_id="a-1", anchor_label="oficina")
+    assert mismo_id_otro_texto.anchor_id == t.anchor_id
+
+
+def test_dos_anclas_con_el_mismo_texto_no_colisionan_si_el_id_difiere():
+    def anclado(ident, etiqueta):
+        return PlaceMeasureV0[TravelToAnchorV0](
+            status=MeasureStatus.AVAILABLE,
+            value=TravelToAnchorV0(anchor_id=ident, anchor_label=etiqueta),
+            evidence=(_medida(),),
+        )
+
+    lugar = _lugar(travel_to_anchors=(anclado("a-1", "oficina"), anclado("a-2", "oficina")))
+    assert len(lugar.travel_to_anchors) == 2
+
+
+def test_el_lugar_no_importa_el_contrato_del_comprador():
+    """No hay clave foránea ni dependencia Place → Buyer: un lugar existe sin que haya
+    nadie buscándolo. `anchor_id` es un identificador opaco de correlación."""
+    import ast
+
+    import app.contracts.place_v0 as modulo
+
+    arbol = ast.parse(pathlib.Path(modulo.__file__).read_text(encoding="utf-8"))
+    importado = {
+        n.module or ""
+        for n in ast.walk(arbol)
+        if isinstance(n, ast.ImportFrom)
+    }
+    assert not any("buyer" in m for m in importado), f"place importa del comprador: {importado}"
+    assert not hasattr(modulo, "CommuteAnchorV0")
+
+
+def test_un_place_context_base_es_valido_sin_comprador():
+    """travel_to_anchors puede estar vacío."""
+    lugar = _lugar()
+    assert lugar.travel_to_anchors == ()
+
+
+def test_la_referencia_sobrevive_al_ida_y_vuelta_por_json():
+    lugar = _lugar(
+        travel_to_anchors=(
+            PlaceMeasureV0[TravelToAnchorV0](
+                status=MeasureStatus.AVAILABLE,
+                value=TravelToAnchorV0(
+                    anchor_id="a-1", anchor_label="la oficina", duration_minutes=28.0
+                ),
+                evidence=(_medida(),),
+            ),
+        )
+    )
+    crudo = lugar.model_dump(mode="json")
+    assert crudo["travel_to_anchors"][0]["value"]["anchor_id"] == "a-1"
+    vuelta = PlaceContextV0.model_validate(crudo)
+    assert vuelta.travel_to_anchors[0].value.anchor_id == "a-1"

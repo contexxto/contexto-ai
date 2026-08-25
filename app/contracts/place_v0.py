@@ -182,12 +182,22 @@ class TravelToAnchorV0(_Base):
     ni en E1.2. Este objeto solo tiene que poder guardar el resultado cuando exista, y
     poder decir que todavía no existe: para eso está el `PlaceMeasureV0` que lo envuelve,
     con `status=unknown` mientras nadie lo haya calculado.
+
+    LA COSTURA CON EL COMPRADOR ES `anchor_id`, Y NO EL LABEL. Este módulo **no importa**
+    `CommuteAnchorV0`: no hay clave foránea ni dependencia Place → Buyer, porque un
+    lugar existe sin que haya nadie buscándolo. `anchor_id` es un identificador opaco de
+    correlación; quien valide que corresponde a un ancla real del comprador que
+    participa en la decisión es `DecisionContextV0` (E1.5), que es donde los dos
+    contextos se encuentran.
     """
 
-    anchor_label: str = Field(min_length=1)
-    """El mismo `label` que el ancla tiene en `BuyerContextV0`. Es la costura entre los
-    dos contratos, y es una etiqueta, no una referencia dura: el lugar no depende de que
-    exista un comprador concreto."""
+    anchor_id: str = Field(min_length=1)
+    """Referencia ESTRUCTURAL al ancla del comprador. Opaca: no se parsea ni se deriva."""
+
+    anchor_label: str | None = Field(default=None, min_length=1)
+    """Solo presentación. **Nunca se usa para correlacionar.** Correlacionar por texto es
+    cómo un trayecto queda huérfano en silencio porque alguien escribió "oficina" donde
+    la persona había dicho "la oficina"."""
 
     mode: TravelMode = TravelMode.UNKNOWN
     duration_minutes: float | None = Field(default=None, ge=0)
@@ -295,12 +305,12 @@ class PlaceContextV0(_Base):
 
     @model_validator(mode="after")
     def _un_ancla_una_sola_vez(self) -> PlaceContextV0:
-        etiquetas = [
-            m.value.anchor_label for m in self.travel_to_anchors if m.value is not None
-        ]
-        repetidas = {e for e in etiquetas if etiquetas.count(e) > 1}
-        if repetidas:
-            raise ValueError(f"ancla repetida: {sorted(repetidas)}")
+        """Por `anchor_id`, no por label: dos anclas pueden llamarse igual y ser
+        distintas, y la misma puede cambiar de nombre."""
+        ids = [m.value.anchor_id for m in self.travel_to_anchors if m.value is not None]
+        repetidos = {i for i in ids if ids.count(i) > 1}
+        if repetidos:
+            raise ValueError(f"anchor_id repetido: {sorted(repetidos)}")
         return self
 
 

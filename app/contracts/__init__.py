@@ -28,7 +28,7 @@ from app.contracts.buyer_v0 import (
 )
 from app.contracts.buyer_v0 import (
     BuyerContextV0,
-    CommuteAnchor,
+    CommuteAnchorV0,
     CriterionOrigin,
     CriterionStatus,
     DecisionCriterionV0,
@@ -104,7 +104,7 @@ __all__ = [
     "Money",
     "Financial",
     "PropertyRequirements",
-    "CommuteAnchor",
+    "CommuteAnchorV0",
     "Mobility",
     "PlacePreference",
     "Tradeoff",

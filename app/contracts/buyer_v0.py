@@ -285,7 +285,7 @@ class PropertyRequirements(_Base):
     verificable contra el inmueble."""
 
 
-class CommuteAnchor(_Base):
+class CommuteAnchorV0(_Base):
     """Un sitio al que necesita llegar con frecuencia.
 
     Queda ESTRUCTURADO y listo para resolución espacial futura, pero aquí no se resuelve
@@ -294,8 +294,17 @@ class CommuteAnchor(_Base):
     ya geocodificado (`lat`/`lon`), y no confundirlos.
     """
 
+    anchor_id: str = Field(min_length=1)
+    """Identificador OPACO y estable de este ancla. Único dentro del `BuyerContextV0`.
+
+    **No se deriva del label, ni de las coordenadas, ni del texto de la dirección.** Es
+    la referencia estructural con la que `PlaceContextV0` correlaciona sus trayectos, y
+    derivarla de algo que la persona puede cambiar —"la oficina" pasa a "la oficina
+    vieja"— rompería la correlación sin que nadie se entere."""
+
     label: str = Field(min_length=1)
-    """Cómo lo llama la persona: "la oficina", "el colegio de mi hija"."""
+    """Cómo lo llama la persona: "la oficina", "el colegio de mi hija". **Presentación.**
+    Nunca se usa para correlacionar: para eso está `anchor_id`."""
 
     raw_location: str | None = Field(default=None, min_length=1)
     """Tal como lo dijo, sin resolver. Se conserva aunque ya haya coordenadas: si la
@@ -307,7 +316,7 @@ class CommuteAnchor(_Base):
     max_minutes: int | None = Field(default=None, gt=0)
 
     @model_validator(mode="after")
-    def _las_coordenadas_van_de_a_dos(self) -> CommuteAnchor:
+    def _las_coordenadas_van_de_a_dos(self) -> CommuteAnchorV0:
         if (self.lat is None) != (self.lon is None):
             raise ValueError(
                 "lat y lon van juntas: media coordenada no ubica nada y se propaga "
@@ -316,7 +325,7 @@ class CommuteAnchor(_Base):
         return self
 
     @model_validator(mode="after")
-    def _un_ancla_tiene_que_apuntar_a_algo(self) -> CommuteAnchor:
+    def _un_ancla_tiene_que_apuntar_a_algo(self) -> CommuteAnchorV0:
         if self.raw_location is None and self.lat is None:
             raise ValueError(
                 "un ancla necesita raw_location o coordenadas: sin ninguna de las dos "
@@ -331,7 +340,7 @@ class CommuteAnchor(_Base):
 
 
 class Mobility(_Base):
-    commute_anchors: tuple[CommuteAnchor, ...] = ()
+    commute_anchors: tuple[CommuteAnchorV0, ...] = ()
 
 
 class PlacePreference(_Base):
@@ -454,6 +463,19 @@ class BuyerContextV0(_Base):
                 "distintas según dónde corra"
             )
         return v
+
+    @model_validator(mode="after")
+    def _cada_ancla_tiene_identidad_propia(self) -> BuyerContextV0:
+        """Si dos anclas comparten `anchor_id`, correlacionar un trayecto contra ellas
+        vuelve a ser ambiguo — que es justo lo que el id vino a resolver."""
+        ids = [a.anchor_id for a in self.mobility.commute_anchors]
+        repetidos = {i for i in ids if ids.count(i) > 1}
+        if repetidos:
+            raise ValueError(
+                f"anchor_id repetido: {sorted(repetidos)}. Tiene que ser único dentro "
+                "del contexto para poder referenciarlo sin ambigüedad"
+            )
+        return self
 
     @model_validator(mode="after")
     def _cada_criterio_tiene_identidad_propia(self) -> BuyerContextV0:

@@ -14,7 +14,7 @@ from pydantic import ValidationError
 from app.contracts.buyer_v0 import (
     CONTRACT_VERSION,
     BuyerContextV0,
-    CommuteAnchor,
+    CommuteAnchorV0,
     CriterionOrigin,
     CriterionStatus,
     DecisionCriterionV0,
@@ -378,15 +378,16 @@ def test_lo_que_falta_se_nombra_en_vez_de_suponerse():
 
 
 def test_un_ancla_guarda_lo_que_dijo_la_persona_sin_resolverlo():
-    a = CommuteAnchor(label="la oficina", raw_location="La Carolina", mode=TravelMode.TRANSIT)
+    a = CommuteAnchorV0(anchor_id="a-1", label="la oficina", raw_location="La Carolina", mode=TravelMode.TRANSIT)
     assert a.esta_resuelta is False
     assert a.lat is None
 
 
 def test_un_ancla_resuelta_conserva_el_texto_original():
     """Si la geocodificación fue mala, el texto original es lo único que lo delata."""
-    a = CommuteAnchor(
-        label="la oficina", raw_location="La Carolina", lat=-0.18, lon=-78.48
+    a = CommuteAnchorV0(
+        anchor_id="a-1", label="la oficina", raw_location="La Carolina",
+        lat=-0.18, lon=-78.48
     )
     assert a.esta_resuelta is True
     assert a.raw_location == "La Carolina"
@@ -394,17 +395,17 @@ def test_un_ancla_resuelta_conserva_el_texto_original():
 
 def test_media_coordenada_no_ubica_nada():
     with pytest.raises(ValidationError, match="van juntas"):
-        CommuteAnchor(label="oficina", lat=-0.18)
+        CommuteAnchorV0(anchor_id="a-1", label="oficina", lat=-0.18)
 
 
 def test_un_ancla_sin_destino_no_es_un_ancla():
     with pytest.raises(ValidationError, match="sin destino"):
-        CommuteAnchor(label="la oficina")
+        CommuteAnchorV0(anchor_id="a-1", label="la oficina")
 
 
 def test_el_contrato_no_calcula_trayectos():
     """F1 es contratos. `compute_travel_to_anchor` pertenece a Place Harness."""
-    a = CommuteAnchor(label="oficina", raw_location="La Carolina")
+    a = CommuteAnchorV0(anchor_id="a-1", label="oficina", raw_location="La Carolina")
     assert not hasattr(a, "compute_travel_to_anchor")
     assert not hasattr(Mobility, "compute_travel_to_anchor")
 
@@ -449,7 +450,7 @@ def test_serializa_y_vuelve_igual_con_todo_lleno():
         property_requirements=PropertyRequirements(bedrooms_min=2),
         mobility=Mobility(
             commute_anchors=(
-                CommuteAnchor(label="oficina", raw_location="La Carolina", max_minutes=30),
+                CommuteAnchorV0(anchor_id="a-1", label="oficina", raw_location="La Carolina", max_minutes=30),
             )
         ),
         place_preferences=(PlacePreference(dimension="ruido", direction=Direction.LESS),),
@@ -500,3 +501,48 @@ def test_el_esquema_nombra_todos_los_campos_minimos():
         "tradeoffs", "stage", "field_evidence", "unresolved_questions", "updated_at",
     ):
         assert campo in props, f"el contrato perdió el campo mínimo {campo}"
+
+
+# ── la costura con el lugar: anchor_id ───────────────────────────────────────────
+
+
+def test_dos_anclas_no_pueden_compartir_anchor_id():
+    """Si lo comparten, correlacionar un trayecto contra ellas vuelve a ser ambiguo —
+    que es justo lo que el id vino a resolver."""
+    with pytest.raises(ValidationError, match="anchor_id repetido"):
+        _comprador(
+            mobility=Mobility(
+                commute_anchors=(
+                    CommuteAnchorV0(anchor_id="a-1", label="oficina", raw_location="X"),
+                    CommuteAnchorV0(anchor_id="a-1", label="colegio", raw_location="Y"),
+                )
+            )
+        )
+
+
+def test_cambiar_el_label_conserva_la_identidad():
+    """"La oficina" pasa a "la oficina vieja" y el trayecto sigue apuntando al mismo
+    sitio. Si la costura fuera el texto, se habría roto en silencio."""
+    antes = CommuteAnchorV0(anchor_id="a-1", label="la oficina", raw_location="La Carolina")
+    despues = antes.model_copy(update={"label": "la oficina vieja"})
+    assert antes.anchor_id == despues.anchor_id == "a-1"
+    assert antes.label != despues.label
+
+
+def test_el_anchor_id_es_obligatorio_y_no_se_deriva_de_nada():
+    with pytest.raises(ValidationError, match="anchor_id"):
+        CommuteAnchorV0(label="la oficina", raw_location="La Carolina")
+    with pytest.raises(ValidationError):
+        CommuteAnchorV0(anchor_id="", label="la oficina", raw_location="La Carolina")
+
+
+def test_el_id_sobrevive_al_ida_y_vuelta_por_json():
+    b = _comprador(
+        mobility=Mobility(
+            commute_anchors=(
+                CommuteAnchorV0(anchor_id="a-1", label="la oficina", raw_location="X"),
+            )
+        )
+    )
+    vuelta = BuyerContextV0.model_validate(b.model_dump(mode="json"))
+    assert vuelta.mobility.commute_anchors[0].anchor_id == "a-1"

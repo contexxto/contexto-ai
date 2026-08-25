@@ -14,7 +14,15 @@ REM    0 = las dos fuentes respondieron  -> listo
 REM    2 = una fuente caida (reintentable, datos viejos intactos)
 REM    1 = error duro -> no se reintenta, hay que mirar el log
 REM
-REM  CUANDO CORRE: tarea de Windows "Refresco POIs Contexto", lunes 17:00.
+REM  ⚠️ YA NO ES EL MECANISMO PRINCIPAL (2026-08-24, C-A del Trust Gate).
+REM  El refresco programado vive ahora en .github/workflows/refresco-pois.yml, que
+REM  corre en un runner gestionado y no depende de que este PC esté encendido. Este
+REM  .cmd se conserva para correr el refresco A MANO en local, que sigue siendo útil
+REM  para depurar. Si se deja además la tarea de Windows activa, se duplica el trabajo
+REM  sin ganar nada: el workflow tiene concurrency para no pisarse consigo mismo, pero
+REM  no sabe de esta máquina. Recomendación: desactivar la tarea programada de Windows.
+REM
+REM  CUANDO CORRÍA: tarea de Windows "Refresco POIs Contexto", lunes 17:00.
 REM  Esa hora NO es arbitraria -- el lunes es el dia cargado de la maquina:
 REM    09:31 hydrate-nate-herk | 11:26 hydrate-corredor | 13:05 hydrate-senales
 REM    (~60 min medidos) | 15:00 radar-competidores | 15:01 despacho-contexto

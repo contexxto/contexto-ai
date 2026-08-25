@@ -60,12 +60,13 @@ from app.contracts.property_v0 import (
 )
 from app.contracts.property_v0 import (
     PROVIDER_TYPE_CONTEXTO,
+    InventoryClass,
     Location,
     Media,
     Operation,
     PropertyAttribute,
     PropertyContextV0,
-    Provenance,
+    PropertyProvenanceV0,
     Quality,
     Transaction,
 )
@@ -105,7 +106,8 @@ __all__ = [
     "PropertyAttribute",
     "Transaction",
     "Media",
-    "Provenance",
+    "InventoryClass",
+    "PropertyProvenanceV0",
     "Quality",
     # compartidos
     "ContractBase",

@@ -27,8 +27,9 @@ from app.contracts.property_v0 import (
     Media,
     Operation,
     PropertyAttribute,
+    InventoryClass,
     PropertyContextV0,
-    Provenance,
+    PropertyProvenanceV0,
     Quality,
     Transaction,
     json_schema,
@@ -43,7 +44,7 @@ def _inmueble(**cambios):
         provider_id="contexto",
         provider_type=PROVIDER_TYPE_CONTEXTO,
         location=Location(lat=-0.18, lon=-78.48, address="La Floresta"),
-        provenance=Provenance(received_at=AHORA),
+        provenance=PropertyProvenanceV0(received_at=AHORA, inventory_class=InventoryClass.TEST),
     )
     base.update(cambios)
     return PropertyContextV0(**base)
@@ -205,6 +206,95 @@ def test_provider_type_queda_abierto_en_v0():
     assert _inmueble(provider_type="un_tipo_futuro").provider_type == "un_tipo_futuro"
 
 
+# ── §4: el registro dice para qué sirve ─────────────────────────────────────────
+
+
+def test_la_clasificacion_es_obligatoria_y_sin_default():
+    """Un default silencioso sería el fallo mismo que este campo evita: que un registro
+    de prueba pase por real porque nadie lo declaró."""
+    with pytest.raises(ValidationError, match="inventory_class"):
+        PropertyProvenanceV0(received_at=AHORA)
+
+
+def test_los_cuatro_estados_y_ninguno_mas():
+    assert {c.value for c in InventoryClass} == {"live", "demo", "test", "unknown"}
+
+
+def test_el_json_schema_expone_los_cuatro_estados():
+    """Un consumidor que no sea Python tiene que poder leer las opciones."""
+    enum_ = json_schema()["$defs"]["InventoryClass"]["enum"]
+    assert set(enum_) == {"live", "demo", "test", "unknown"}
+
+
+def test_la_clasificacion_es_independiente_del_proveedor():
+    """Ejes distintos: un proveedor externo puede mandar un demo y el inventario propio
+    puede ser real. Cruzarlos escondería la clasificación detrás de un dato que no la
+    significa."""
+    propio_demo = _inmueble(
+        provider_type=PROVIDER_TYPE_CONTEXTO,
+        provenance=PropertyProvenanceV0(
+            received_at=AHORA, inventory_class=InventoryClass.DEMO
+        ),
+    )
+    ajeno_real = _inmueble(
+        provider_type="portal_externo",
+        provenance=PropertyProvenanceV0(
+            received_at=AHORA, inventory_class=InventoryClass.LIVE
+        ),
+    )
+    assert propio_demo.es_inventario_propio is True
+    assert propio_demo.provenance.inventory_class is InventoryClass.DEMO
+    assert ajeno_real.es_inventario_propio is False
+    assert ajeno_real.provenance.inventory_class is InventoryClass.LIVE
+
+
+def test_un_demo_serializa_perfectamente_y_sigue_siendo_demo():
+    """El riesgo real: que al pasar por JSON la marca se caiga y el registro reaparezca
+    del otro lado sin ella."""
+    original = _inmueble(
+        provenance=PropertyProvenanceV0(
+            received_at=AHORA, inventory_class=InventoryClass.DEMO
+        ),
+        transaction=Transaction(
+            operation=Operation.RENT, price=Money(amount=Decimal("180"), currency="USD")
+        ),
+    )
+    crudo = original.model_dump(mode="json")
+    assert crudo["provenance"]["inventory_class"] == "demo"
+    assert PropertyContextV0.model_validate(crudo).provenance.inventory_class is InventoryClass.DEMO
+
+
+def test_unknown_no_se_convierte_en_live_por_el_camino():
+    """`unknown` es la respuesta honesta al migrar inventario del que nadie puede decir
+    de dónde salió. Si se degradara a `live` en algún punto, el campo no serviría de
+    nada — que es justo lo que pasa hoy sin él."""
+    p = PropertyProvenanceV0(received_at=AHORA, inventory_class=InventoryClass.UNKNOWN)
+    b = _inmueble(provenance=p)
+    assert b.provenance.inventory_class is InventoryClass.UNKNOWN
+    ida_y_vuelta = PropertyContextV0.model_validate(b.model_dump(mode="json"))
+    assert ida_y_vuelta.provenance.inventory_class is InventoryClass.UNKNOWN
+    assert ida_y_vuelta.provenance.inventory_class is not InventoryClass.LIVE
+
+
+def test_aqui_unknown_si_es_valido_a_diferencia_de_e1_1():
+    """La diferencia con E1.1 importa: allí un `source_type="unknown"` habría fabricado
+    una evidencia para representar que no la hay. Aquí el registro existe y lo que se
+    declara es que desconocemos una de sus propiedades."""
+    from app.contracts.evidence_v0 import SourceType as ST
+
+    assert "unknown" not in {s.value for s in ST}
+    assert "unknown" in {c.value for c in InventoryClass}
+
+
+def test_la_clasificacion_no_trae_politica_todavia():
+    """En V0 basta con preservar la información: sin decision_eligible, sin reglas de
+    benchmark, sin filtros. Esas políticas la consumirán después."""
+    props = set(json_schema()["properties"])
+    assert "decision_eligible" not in props
+    for prohibido in ("decision_eligible", "is_eligible", "puede_decidirse"):
+        assert not hasattr(PropertyContextV0, prohibido)
+
+
 # ── ubicación ────────────────────────────────────────────────────────────────────
 
 
@@ -228,12 +318,12 @@ def test_una_direccion_sin_coordenadas_es_valida_pero_lo_dice():
 
 def test_no_se_recibe_una_actualizacion_del_futuro():
     with pytest.raises(ValidationError, match="posterior a received_at"):
-        Provenance(received_at=AHORA, last_updated_at=AHORA + timedelta(days=1))
+        PropertyProvenanceV0(received_at=AHORA, inventory_class=InventoryClass.TEST, last_updated_at=AHORA + timedelta(days=1))
 
 
 def test_que_el_proveedor_no_diga_cuando_actualizo_es_un_estado_legitimo():
     """Y no se sustituye por `received_at`, que es la mentira que cerró E0.3."""
-    p = Provenance(received_at=AHORA)
+    p = PropertyProvenanceV0(received_at=AHORA, inventory_class=InventoryClass.TEST)
     assert p.last_updated_at is None
 
 
@@ -246,7 +336,7 @@ def test_la_procedencia_usa_la_primitiva_de_e1_1():
         methodology="volcado del feed del proveedor",
         persistence_policy=PersistencePolicy.PERSISTABLE,
     )
-    b = _inmueble(provenance=Provenance(received_at=AHORA, evidence=(ev,)))
+    b = _inmueble(provenance=PropertyProvenanceV0(received_at=AHORA, inventory_class=InventoryClass.LIVE, evidence=(ev,)))
     assert isinstance(b.provenance.evidence[0], EvidenceRefV0)
 
 

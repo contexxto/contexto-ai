@@ -56,6 +56,32 @@ consulte. Mismo criterio que `stage` en E1.2.
 inventario propio, según el Plan §1.4—; inventar una taxonomía de tipos de proveedor a
 partir de un solo caso sería congelar una hipótesis sobre un mercado que aún no
 conocemos.
+
+──────────────────────────────────────────────────────────────────────────────────
+4. UN REGISTRO DICE PARA QUÉ SIRVE, Y LO DICE AQUÍ
+──────────────────────────────────────────────────────────────────────────────────
+
+`provenance.inventory_class` declara si el registro es inventario utilizable (`live`),
+material de demostración (`demo`), un fixture de pruebas (`test`), o si no se sabe
+(`unknown`). Es OBLIGATORIO y no tiene default.
+
+Por qué vive en el contrato y no se difiere a `DecisionContext` o `DecisionTrace`: esas
+capas tienen que poder CONFIAR en que esto ya viene declarado. Si la clasificación
+naciera aguas abajo, cada consumidor tendría que inferirla, y la inferencia por omisión
+siempre acaba en "asumamos que es real".
+
+El caso concreto que esto evita: las fichas de Quito del inventario actual están
+hidratadas para pruebas. Sin este campo, un registro hidratado y uno real son
+indistinguibles para cualquier capa de arriba, y basta un descuido para que material de
+prueba se presente como inventario comercial.
+
+**`provider_type` NO es señal de esto.** Son ejes independientes: un proveedor externo
+puede mandar un `demo` y el inventario propio puede ser `live`. Cruzarlos volvería a
+esconder la clasificación detrás de un dato que no la significa.
+
+Lo que este campo **todavía no hace**: no hay `decision_eligible`, ni reglas de
+benchmark, ni filtros del agente. Esas políticas lo consumirán después. En V0 basta con
+preservar la información.
 """
 
 from __future__ import annotations
@@ -188,12 +214,45 @@ class Media(_Base):
         return v
 
 
-class Provenance(_Base):
-    """De dónde y cuándo llegó este registro.
+class InventoryClass(StrEnum):
+    """Para qué sirve este registro. Ver §4 de la cabecera.
+
+    Eje INDEPENDIENTE del proveedor: un proveedor externo puede mandar un demo y el
+    inventario propio puede ser real. `provider_type` no es señal de esto.
+    """
+
+    LIVE = "live"
+    """Destinado a representar inventario real utilizable."""
+
+    DEMO = "demo"
+    """Destinado a demostración o producto. **No debe asumirse inventario comercial
+    real.**"""
+
+    TEST = "test"
+    """Fixture o registro creado para pruebas."""
+
+    UNKNOWN = "unknown"
+    """No hay evidencia suficiente para clasificarlo.
+
+    Aquí `unknown` SÍ es válido, y la diferencia con E1.1 importa: allí se prohibió un
+    `source_type="unknown"` porque habría fabricado una evidencia para representar que
+    no la hay. Aquí no se fabrica nada — el registro existe, y lo que se declara es que
+    desconocemos una de sus propiedades. Es la respuesta honesta al migrar inventario
+    del que nadie puede decir con certeza de dónde salió."""
+
+
+class PropertyProvenanceV0(_Base):
+    """De dónde vino este registro, cuándo, y para qué sirve.
 
     Misma disciplina que `EvidenceRefV0`: `received_at` siempre se sabe;
     `last_updated_at` es lo que el proveedor dice, y puede no saberse.
     """
+
+    inventory_class: InventoryClass
+    """Obligatorio y sin default. Un default silencioso sería exactamente el fallo que
+    este campo existe para evitar: que un registro de prueba pase por real porque nadie
+    lo declaró. Si no se puede determinar, `UNKNOWN` — que es una decisión, no una
+    omisión."""
 
     received_at: datetime
     """Cuándo lo recibimos nosotros."""
@@ -212,7 +271,7 @@ class Provenance(_Base):
         return v
 
     @model_validator(mode="after")
-    def _no_actualizado_despues_de_recibido(self) -> Provenance:
+    def _no_actualizado_despues_de_recibido(self) -> PropertyProvenanceV0:
         if self.last_updated_at and self.last_updated_at > self.received_at:
             raise ValueError(
                 "last_updated_at es posterior a received_at: no se puede recibir una "
@@ -260,7 +319,7 @@ class PropertyContextV0(_Base):
     """`None` = sin listing activo. Es un estado normal, no un dato incompleto."""
 
     media: Media = Field(default_factory=Media)
-    provenance: Provenance
+    provenance: PropertyProvenanceV0
     quality: Quality = Field(default_factory=Quality)
 
     @model_validator(mode="after")
@@ -284,6 +343,8 @@ class PropertyContextV0(_Base):
 
     @property
     def es_inventario_propio(self) -> bool:
+        """Si viene de nuestro propio inventario. **No dice si es real**: para eso está
+        `provenance.inventory_class`, que es un eje distinto — ver §4."""
         return self.provider_type == PROVIDER_TYPE_CONTEXTO
 
 

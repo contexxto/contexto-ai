@@ -15,15 +15,17 @@ from app.contracts.buyer_v0 import (
     CONTRACT_VERSION,
     BuyerContextV0,
     CommuteAnchor,
+    CriterionStatus,
+    DecisionCriterionV0,
     Direction,
     FieldEvidence,
     Financial,
     Mobility,
     Money,
     Objective,
+    Operator,
     PlacePreference,
     PropertyRequirements,
-    Stage,
     Tradeoff,
     TravelMode,
     UnresolvedQuestion,
@@ -52,6 +54,18 @@ def _evidencia():
         methodology="lo dijo en la conversación",
         persistence_policy=PersistencePolicy.PERSISTABLE,
     )
+
+
+def _criterio(**cambios):
+    base = dict(
+        criterion_id="c-1",
+        dimension="bedrooms",
+        operator=Operator.GTE,
+        value=3,
+        status=CriterionStatus.STATED,
+    )
+    base.update(cambios)
+    return DecisionCriterionV0(**base)
 
 
 # ── regla 1: `household` es estructuralmente inexistente ─────────────────────────
@@ -122,13 +136,12 @@ def test_no_hay_ningun_campo_de_pesos():
 
 
 def test_una_restriccion_dura_y_una_preferencia_blanda_no_se_mezclan():
-    b = _comprador(
-        hard_constraints=("sin escalones",),
-        soft_preferences=("que haya un parque cerca",),
-    )
-    assert b.hard_constraints == ("sin escalones",)
-    assert b.soft_preferences == ("que haya un parque cerca",)
-    assert set(b.hard_constraints) & set(b.soft_preferences) == set()
+    """Misma primitiva, campos distintos: lo que cambia es cómo se usan."""
+    dura = _criterio(criterion_id="c-dura", dimension="stairs", operator=Operator.NOT_EXISTS, value=None)
+    blanda = _criterio(criterion_id="c-blanda", dimension="park_distance_m", operator=Operator.LTE, value=500, unit="m")
+    b = _comprador(hard_constraints=(dura,), soft_preferences=(blanda,))
+    assert b.hard_constraints[0].criterion_id == "c-dura"
+    assert b.soft_preferences[0].criterion_id == "c-blanda"
 
 
 def test_un_tradeoff_dice_que_se_cambia_por_que():
@@ -138,9 +151,98 @@ def test_un_tradeoff_dice_que_se_cambia_por_que():
     assert not hasattr(t, "weight")
 
 
-def test_una_restriccion_en_blanco_se_rechaza():
-    with pytest.raises(ValidationError, match="en blanco"):
-        _comprador(hard_constraints=("  ",))
+def test_una_restriccion_ya_no_es_prosa():
+    """El cambio de fondo de la revisión: guardarlas como texto obligaba a reparsear
+    prosa para comprobarlas, y reparsear prosa con un LLM es donde se cuelan las
+    alucinaciones que FASE 0 se pasó cerrando."""
+    with pytest.raises(ValidationError):
+        _comprador(hard_constraints=("sin escalones",))
+
+
+# ── la primitiva de criterio ─────────────────────────────────────────────────────
+
+
+def test_un_criterio_es_evaluable_sin_reparsear_prosa():
+    c = _criterio()
+    assert (c.dimension, c.operator, c.value) == ("bedrooms", Operator.GTE, 3)
+
+
+def test_el_operador_no_conoce_el_dominio_inmobiliario():
+    """Un `Operator` con valores tipo MIN_BEDROOMS obligaría a tocar la primitiva cada
+    vez que apareciera una dimensión nueva."""
+    valores = {o.value for o in Operator}
+    assert not any(
+        t in v for v in valores for t in ("bedroom", "area", "price", "property", "pet")
+    )
+
+
+def test_el_valor_tiene_que_encajar_con_el_operador():
+    """Sin esto, `GTE` con "tres" se guarda tan tranquilo y revienta meses después, en
+    el evaluador, lejos de donde se creó."""
+    with pytest.raises(ValidationError, match="necesita un número"):
+        _criterio(operator=Operator.GTE, value="tres")
+    with pytest.raises(ValidationError, match="no lleva value"):
+        _criterio(operator=Operator.EXISTS, value=3)
+    with pytest.raises(ValidationError, match="necesita un value"):
+        _criterio(operator=Operator.EQ, value=None)
+    with pytest.raises(ValidationError, match="colección"):
+        _criterio(operator=Operator.IN, value="quito")
+    with pytest.raises(ValidationError, match="vacía"):
+        _criterio(operator=Operator.IN, value=())
+    with pytest.raises(ValidationError, match="valor único"):
+        _criterio(operator=Operator.EQ, value=("a", "b"))
+
+
+def test_ordenar_booleanos_no_significa_nada():
+    """`bool` es subclase de `int` en Python, así que `GTE True` colaría sin esto."""
+    with pytest.raises(ValidationError, match="necesita un número"):
+        _criterio(operator=Operator.GT, value=True)
+
+
+def test_presencia_y_ausencia_se_expresan_con_su_operador():
+    c = _criterio(dimension="stairs", operator=Operator.NOT_EXISTS, value=None)
+    assert c.value is None and c.unit is None
+
+
+def test_un_criterio_pertenece_a_una_lista_de_valores():
+    c = _criterio(dimension="barrio", operator=Operator.IN, value=("Cumbayá", "La Floresta"))
+    assert c.value == ("Cumbayá", "La Floresta")
+
+
+def test_el_criterio_distingue_lo_declarado_de_lo_deducido():
+    """Mismo espíritu que `heuristic_estimate` en E1.1: lo inferido puede entrar, pero
+    no disfrazado de declaración."""
+    assert _criterio(status=CriterionStatus.INFERRED).status is CriterionStatus.INFERRED
+    assert {s.value for s in CriterionStatus} == {"stated", "inferred", "retracted"}
+
+
+def test_un_criterio_retirado_se_conserva_en_vez_de_borrarse():
+    """Saber que alguien descartó un criterio es información; borrarlo hace que el
+    sistema vuelva a proponer lo que ya rechazó."""
+    c = _criterio(status=CriterionStatus.RETRACTED)
+    assert c.status is CriterionStatus.RETRACTED
+
+
+def test_la_evidencia_del_criterio_viaja_dentro_del_criterio():
+    """Y no por una ruta tipo `hard_constraints[0]`, que deja de apuntar a lo mismo en
+    cuanto cambia el orden del array."""
+    c = _criterio(evidence=(_evidencia(),))
+    assert isinstance(c.evidence[0], EvidenceRefV0)
+
+
+def test_el_criterion_id_es_unico_en_todo_el_contexto():
+    """Solo sirve como referencia estable si no se repite."""
+    with pytest.raises(ValidationError, match="repetido"):
+        _comprador(
+            hard_constraints=(_criterio(criterion_id="c-1"),),
+            soft_preferences=(_criterio(criterion_id="c-1", dimension="area_m2"),),
+        )
+
+
+def test_el_contrato_no_evalua_criterios():
+    """F1 representa; Decision Core evalúa."""
+    for prohibido in ("evaluate", "matches", "check", "parse", "apply"):
+        assert not hasattr(DecisionCriterionV0, prohibido)
 
 
 def test_una_preferencia_de_lugar_lleva_sentido_pero_no_peso():
@@ -153,25 +255,33 @@ def test_una_preferencia_de_lugar_lleva_sentido_pero_no_peso():
 # ── regla 3: `stage` no es el eje de `intencion.py` ──────────────────────────────
 
 
-def test_stage_y_el_embudo_comercial_no_comparten_vocabulario():
-    """Prueba mecánica de la regla 3. Si alguien acerca los dos ejes, esto se cae.
+def test_el_vocabulario_de_stage_queda_abierto_en_v0():
+    """Decisión explícita, no descuido: valores como orienting/narrowing/validating son
+    razonables pero son una HIPÓTESIS sobre cómo decide la gente, sin evidencia de
+    producto detrás. Congelarlos en un enum les daría la misma fuerza que a un hecho
+    medido. Se cerrará cuando exista esa evidencia."""
+    esquema = json_schema()["properties"]["stage"]
+    assert "enum" not in str(esquema), "stage se cerró a enum sin evidencia de uso"
+    assert _comprador(stage="narrowing").stage == "narrowing"
+    assert _comprador(stage="cualquier-vocabulario-futuro").stage is not None
 
-    `app/intencion.py` mide cuán cerca está de transaccionar (eje de VENTA).
-    `stage` mide cuánto ha convergido sobre lo que quiere (eje de DECISIÓN).
-    """
+
+def test_stage_admite_no_saber():
+    assert _comprador().stage is None
+
+
+def test_la_ortogonalidad_con_el_embudo_queda_documentada_no_forzada():
+    """CONSECUENCIA HONESTA de abrir el vocabulario: mientras `stage` sea `str`, nada
+    impide escribir aquí un estado del embudo comercial. La separación entre el eje de
+    DECISIÓN (este) y el de VENTA (`app/intencion.py`) está documentada en el módulo
+    pero el tipo ya no la puede hacer cumplir. Esa garantía vuelve cuando se cierre el
+    vocabulario. Esta prueba existe para que la pérdida quede registrada y no se
+    descubra por sorpresa."""
     from app.intencion import ESTADOS
 
-    solapan = {s.value for s in Stage} & set(ESTADOS)
-    assert not solapan, (
-        f"stage y el embudo comercial comparten {solapan}. Son ejes ortogonales: se "
-        "puede tener criterios clarísimos y cero intención de comprar este año."
-    )
-
-
-def test_stage_admite_no_saber_y_no_lo_confunde_con_orientarse():
-    """`UNKNOWN` es ignorancia nuestra; `ORIENTING` es una afirmación sobre la persona."""
-    assert _comprador().stage is Stage.UNKNOWN
-    assert Stage.UNKNOWN != Stage.ORIENTING
+    assert "enganchado" in ESTADOS
+    # No falla: el contrato lo acepta. Ese es justo el punto.
+    assert _comprador(stage="enganchado").stage == "enganchado"
 
 
 # ── regla 4: una sola procedencia ────────────────────────────────────────────────
@@ -204,7 +314,7 @@ def test_un_comprador_recien_conocido_es_valido_y_casi_todo_vacio():
     sin inventar defaults."""
     b = _comprador()
     assert b.objective is Objective.UNKNOWN
-    assert b.stage is Stage.UNKNOWN
+    assert b.stage is None
     assert b.financial.budget_max is None
     assert b.property_requirements.bedrooms_min is None
     assert b.mobility.commute_anchors == ()
@@ -304,10 +414,13 @@ def test_serializa_y_vuelve_igual_con_todo_lleno():
             )
         ),
         place_preferences=(PlacePreference(dimension="ruido", direction=Direction.LESS),),
-        hard_constraints=("sin escalones",),
-        soft_preferences=("parque cerca",),
+        hard_constraints=(_criterio(criterion_id="c-h", dimension="stairs",
+                                   operator=Operator.NOT_EXISTS, value=None,
+                                   evidence=(_evidencia(),)),),
+        soft_preferences=(_criterio(criterion_id="c-s", dimension="park_distance_m",
+                                    operator=Operator.LTE, value=500, unit="m"),),
         tradeoffs=(Tradeoff(gives_up="10 minutos", gains="un dormitorio"),),
-        stage=Stage.NARROWING,
+        stage="narrowing",
         field_evidence=(FieldEvidence(field="financial.budget_max", evidence=_evidencia()),),
         unresolved_questions=(UnresolvedQuestion(question="¿mascotas?"),),
         context_revision=2,
@@ -318,11 +431,11 @@ def test_serializa_y_vuelve_igual_con_todo_lleno():
 def test_el_contexto_no_se_edita_despues_de_creado():
     b = _comprador()
     with pytest.raises(ValidationError):
-        b.stage = Stage.COMMITTING
+        b.stage = "committing"
 
 
 def test_las_colecciones_tampoco_se_mutan_por_dentro():
-    b = _comprador(hard_constraints=("sin escalones",))
+    b = _comprador(hard_constraints=(_criterio(),))
     assert isinstance(b.hard_constraints, tuple)
     with pytest.raises(AttributeError):
         b.hard_constraints.append("colado")

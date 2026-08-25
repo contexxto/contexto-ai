@@ -40,6 +40,11 @@ LAS CUATRO REGLAS CONGELADAS
    un parque cerca" en la misma clase de cosa, que es como un motor acaba ofreciendo un
    tercer piso sin ascensor porque el parque compensaba.
 
+   Las restricciones y preferencias no son prosa: son `DecisionCriterionV0`, con
+   dimensión, operador, valor y procedencia. Guardarlas como texto obligaría a
+   reparsear con un LLM cada vez que alguien quiera comprobarlas contra un inmueble, y
+   ahí es donde se cuelan las alucinaciones que FASE 0 se pasó cerrando.
+
 3. `stage` ES EL RECORRIDO DE LA DECISIÓN, NO EL CALOR COMERCIAL.
 
    `app/intencion.py` ya modela el otro eje: cuán cerca está de transaccionar
@@ -51,10 +56,13 @@ LAS CUATRO REGLAS CONGELADAS
    este año, o estar caliente comercialmente sin saber aún qué busca. Confundirlos
    haría que el sistema apurara a quien todavía está orientándose.
 
-   Hay una prueba que exige que los dos vocabularios no compartan ni un valor.
+   **El vocabulario queda abierto en V0** (`str | None`), porque no hay todavía
+   evidencia de producto que respalde una lista concreta de etapas. Ver el campo.
 
-4. LA PROCEDENCIA ES UNA SOLA. `field_evidence` apunta a `EvidenceRefV0` (E1.1). No se
-   crea un segundo sistema de procedencia para el comprador.
+4. LA PROCEDENCIA ES UNA SOLA. `EvidenceRefV0` (E1.1), por dos caminos según el sitio:
+   los criterios la llevan DENTRO (`DecisionCriterionV0.evidence`) y se referencian por
+   `criterion_id`, que es estable; el resto de campos la lleva en `field_evidence` con
+   la ruta del campo. No hay un segundo sistema de procedencia.
 
 ──────────────────────────────────────────────────────────────────────────────────
 LO QUE ESTE CONTRATO **NO** GARANTIZA
@@ -96,38 +104,140 @@ class Objective(StrEnum):
     """Todavía no lo sabemos. Es el valor honesto al empezar una conversación."""
 
 
-class Stage(StrEnum):
-    """Dónde está en SU decisión. Eje distinto al de `app/intencion.py` — ver regla 3.
-
-    Los nombres describen qué está haciendo la persona con sus criterios, no cuán
-    cerca está de firmar.
-    """
-
-    ORIENTING = "orienting"
-    """Todavía averiguando qué necesita; los criterios no están fijos."""
-
-    NARROWING = "narrowing"
-    """Tiene criterios y los está usando para descartar."""
-
-    VALIDATING = "validating"
-    """Está verificando un candidato concreto contra lo que dijo que quería."""
-
-    COMMITTING = "committing"
-    """Convergió: actúa sobre una opción."""
-
-    UNKNOWN = "unknown"
-    """No hay señal suficiente. NO significa `ORIENTING`: una es ignorancia nuestra y
-    la otra es una afirmación sobre la persona."""
-
-
 class Direction(StrEnum):
     """Hacia dónde quiere moverse en una dimensión del lugar."""
 
     MORE = "more"
     LESS = "less"
     UNSPECIFIED = "unspecified"
-    """Le importa la dimensión pero no dijo en qué sentido. Sin esto, "me importa el
-    ruido" habría que adivinarlo, y adivinar es lo que E0.4 nos costó."""
+    """Le importa la dimensión pero no sabemos en qué sentido. Sin esto, "me importa el
+    ruido" habría que adivinarlo, y adivinar es lo que E0.4 nos costó.
+
+    Ojo con el límite: si ni siquiera sabemos si la dimensión le importa, **no se crea
+    la preferencia**. `UNSPECIFIED` afirma que le importa; no es un relleno para cuando
+    no sabemos nada."""
+
+
+class Operator(StrEnum):
+    """Comparadores genéricos. A propósito NO hay nada inmobiliario aquí.
+
+    Un `Operator` con valores tipo `MIN_BEDROOMS` metería el dominio dentro de la
+    primitiva y obligaría a tocarla cada vez que aparezca una dimensión nueva. La
+    dimensión viaja en `dimension`, que es texto.
+    """
+
+    GTE = "gte"
+    LTE = "lte"
+    GT = "gt"
+    LT = "lt"
+    EQ = "eq"
+    NEQ = "neq"
+    IN = "in"
+    NOT_IN = "not_in"
+    EXISTS = "exists"
+    NOT_EXISTS = "not_exists"
+
+
+class CriterionStatus(StrEnum):
+    """De dónde salió el criterio y si sigue vigente.
+
+    Esto SÍ es un enum cerrado, a diferencia de `stage`, y la diferencia tiene razón:
+    `stage` es una hipótesis sobre cómo decide la gente —necesita evidencia de uso para
+    cerrarse—, mientras que esto es un hecho sobre nuestros propios datos. Que un
+    criterio lo dijera la persona o lo dedujéramos nosotros no depende de aprender nada
+    del mercado: ya lo sabemos al escribirlo.
+    """
+
+    STATED = "stated"
+    """Lo dijo la persona."""
+
+    INFERRED = "inferred"
+    """Lo dedujimos de otra cosa. Mismo espíritu que `heuristic_estimate` en E1.1: puede
+    entrar, pero no disfrazado de declaración."""
+
+    RETRACTED = "retracted"
+    """Estuvo vigente y ya no. Se conserva en vez de borrarse porque saber que alguien
+    descartó un criterio es información, y borrarlo hace que el sistema vuelva a
+    proponer lo que ya rechazó."""
+
+
+CriterionValue = bool | int | float | str | tuple[str | int | float, ...] | None
+"""Lo que se compara. Sin `Any`: un valor que puede ser cualquier cosa no se puede
+validar, y un criterio que no se puede validar no es evaluable más adelante."""
+
+
+class DecisionCriterionV0(_Base):
+    """Un criterio evaluable. Estructura, no prosa.
+
+    POR QUÉ NO ES TEXTO. Una restricción guardada como `"sin escalones"` obliga a
+    reparsear prosa cada vez que alguien quiera comprobarla contra un inmueble — y
+    reparsear prosa con un LLM es exactamente donde se cuelan las alucinaciones que
+    FASE 0 se pasó cerrando. Con `dimension="stairs"`, `operator=EXISTS` negado y su
+    evidencia al lado, la comprobación es una comparación.
+
+    LO QUE **NO** HAY AQUÍ, y es deliberado: no hay motor de evaluación, ni parser, ni
+    updater. El contrato solo tiene que poder REPRESENTAR el criterio de forma que
+    alguien lo evalúe después. Quién evalúa y cómo es Decision Core, otra fase.
+
+    La evidencia viaja DENTRO del criterio, no por una ruta tipo
+    `"hard_constraints[0]"`: esas rutas se rompen en cuanto cambia el orden del array.
+    `criterion_id` es el identificador estable, y es único dentro del contexto.
+    """
+
+    criterion_id: str = Field(min_length=1)
+    dimension: str = Field(min_length=1)
+    """Qué se compara: `"bedrooms"`, `"area_m2"`, `"stairs"`, `"pets_allowed"`. Texto
+    libre por la misma razón que `provider` en E1.1 — un enum de dimensiones metería el
+    catálogo del dominio dentro de la primitiva."""
+
+    operator: Operator
+    value: CriterionValue = None
+    unit: str | None = Field(default=None, min_length=1)
+    """Unidad del valor: `"m2"`, `"minutes"`, `"USD"`. `None` cuando no aplica."""
+
+    status: CriterionStatus
+    evidence: tuple[EvidenceRefV0, ...] = ()
+    """Procedencia, con la primitiva de E1.1. Regla 4: no hay un segundo sistema."""
+
+    @model_validator(mode="after")
+    def _el_valor_encaja_con_el_operador(self) -> DecisionCriterionV0:
+        """Sin esto, `operator=GTE` con `value="tres"` se guarda tan tranquilo y revienta
+        meses después, en el evaluador, lejos de donde se creó."""
+        op, v = self.operator, self.value
+
+        if op in (Operator.EXISTS, Operator.NOT_EXISTS):
+            if v is not None:
+                raise ValueError(f"operator={op.value} no lleva value; recibió {v!r}")
+            if self.unit is not None:
+                raise ValueError(f"operator={op.value} no lleva unit")
+            return self
+
+        if v is None:
+            raise ValueError(
+                f"operator={op.value} necesita un value; para expresar presencia o "
+                "ausencia usa exists / not_exists"
+            )
+
+        if op in (Operator.IN, Operator.NOT_IN):
+            if not isinstance(v, tuple):
+                raise ValueError(f"operator={op.value} necesita una colección de valores")
+            if not v:
+                raise ValueError(f"operator={op.value} con colección vacía no compara nada")
+            return self
+
+        if isinstance(v, tuple):
+            raise ValueError(
+                f"operator={op.value} compara contra un valor único, no una colección"
+            )
+
+        if op in (Operator.GTE, Operator.LTE, Operator.GT, Operator.LT):
+            # bool es subclase de int en Python; un orden sobre True/False no significa nada.
+            if isinstance(v, bool) or not isinstance(v, (int, float)):
+                raise ValueError(
+                    f"operator={op.value} ordena, así que necesita un número; "
+                    f"recibió {type(v).__name__}"
+                )
+        return self
 
 
 class TravelMode(StrEnum):
@@ -262,7 +372,12 @@ class FieldEvidence(_Base):
     """
 
     field: str = Field(min_length=1)
-    """Ruta del campo: `"financial.budget_max"`, `"mobility.commute_anchors[0]"`."""
+    """Ruta del campo: `"financial.budget_max"`, `"property_requirements.bedrooms_min"`.
+
+    **No se usa para criterios.** Un `DecisionCriterionV0` lleva su evidencia dentro y
+    se identifica por `criterion_id`, que es estable; una ruta como
+    `"hard_constraints[0]"` deja de apuntar a lo mismo en cuanto cambia el orden del
+    array, y nadie se entera."""
 
     evidence: EvidenceRefV0
 
@@ -290,14 +405,37 @@ class BuyerContextV0(_Base):
     mobility: Mobility = Field(default_factory=Mobility)
     place_preferences: tuple[PlacePreference, ...] = ()
 
-    hard_constraints: tuple[str, ...] = ()
+    hard_constraints: tuple[DecisionCriterionV0, ...] = ()
     """Descalifican. Si no se cumple, la opción no entra — no "puntúa menos"."""
 
-    soft_preferences: tuple[str, ...] = ()
-    """Ordenan entre las que sí entran."""
+    soft_preferences: tuple[DecisionCriterionV0, ...] = ()
+    """Ordenan entre las que sí entran. Misma primitiva que las duras a propósito: lo
+    que cambia es CÓMO se usan, no cómo se escriben, y esa diferencia la marca el campo
+    en el que viven — regla 2."""
 
     tradeoffs: tuple[Tradeoff, ...] = ()
-    stage: Stage = Stage.UNKNOWN
+
+    stage: str | None = Field(default=None, min_length=1)
+    """Estado de DECISIÓN del comprador: cuánto ha convergido sobre lo que quiere.
+
+    **Vocabulario deliberadamente abierto en V0.** Valores como
+    `"orienting" / "narrowing" / "validating" / "committing"` son razonables, pero hoy
+    no están respaldados por evidencia de producto ni de uso — son una hipótesis sobre
+    cómo decide la gente. Congelarlos en un enum sería fijar esa hipótesis con la misma
+    fuerza que un hecho medido, que es justo el error que FASE 0 se pasó cerrando en
+    otro terreno. **Se cerrará a enum cuando exista esa evidencia, no antes.**
+
+    ORTOGONAL A `app/intencion.py`, que mide el otro eje: cuán cerca está de
+    transaccionar (`anonimo → … → confirmado`, frío/tibio/caliente) a partir de señales
+    de conversación. Ese es un eje de VENTA; este es de DECISIÓN. Se puede tener
+    criterios clarísimos y cero intención de comprar este año, y al revés.
+
+    Consecuencia honesta de dejarlo abierto: mientras sea `str`, la separación entre los
+    dos ejes está DOCUMENTADA pero no puede hacerse cumplir por el tipo. Nada impide
+    escribir aquí `"enganchado"`. Cuando se cierre el vocabulario, esa garantía vuelve.
+
+    `None` = no hay señal suficiente."""
+
     field_evidence: tuple[FieldEvidence, ...] = ()
     unresolved_questions: tuple[UnresolvedQuestion, ...] = ()
     updated_at: datetime
@@ -312,12 +450,18 @@ class BuyerContextV0(_Base):
             )
         return v
 
-    @field_validator("hard_constraints", "soft_preferences")
-    @classmethod
-    def _sin_entradas_vacias(cls, v: tuple[str, ...]) -> tuple[str, ...]:
-        if any(not s.strip() for s in v):
-            raise ValueError("una restricción o preferencia en blanco no dice nada")
-        return v
+    @model_validator(mode="after")
+    def _cada_criterio_tiene_identidad_propia(self) -> BuyerContextV0:
+        """`criterion_id` solo sirve como referencia estable si es único. Si se repite,
+        apuntar a él vuelve a ser tan ambiguo como apuntar a `hard_constraints[0]`."""
+        ids = [c.criterion_id for c in (*self.hard_constraints, *self.soft_preferences)]
+        repetidos = {i for i in ids if ids.count(i) > 1}
+        if repetidos:
+            raise ValueError(
+                f"criterion_id repetido: {sorted(repetidos)}. Tiene que ser único en "
+                "todo el contexto para poder referenciarlo sin ambigüedad"
+            )
+        return self
 
 
 def json_schema() -> dict[str, Any]:

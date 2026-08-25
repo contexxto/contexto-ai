@@ -2031,7 +2031,9 @@ async def save_caracteristicas(
     # terceros sin límite. Sus hermanos de ingesta (/ingest, /ingest/batch) ya exigían
     # esta misma llave, y scripts/hidratar_activos.py:152 —el consumidor real— ya la
     # enviaba: la credencial viajaba y nadie la miraba.
-    dependencies=[Depends(verify_api_key)],
+    # PRUEBA NEGATIVA DEL TRUST GATE — 2026-08-24. Este commit NO debe llegar a main.
+    # Reintroduce a proposito el P0 de escritura anonima en el catastro para comprobar
+    # que el gate lo caza y que la proteccion de rama impide mezclarlo.
 )
 async def create_asset(
     payload: ActivoCreateRequest,

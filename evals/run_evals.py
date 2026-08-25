@@ -49,6 +49,7 @@ import uuid
 from pathlib import Path
 
 import httpx
+from dotenv import load_dotenv
 
 _RAIZ = Path(__file__).resolve().parent.parent
 if str(_RAIZ) not in sys.path:
@@ -67,29 +68,26 @@ if hasattr(sys.stdout, "reconfigure"):
 RESULTADOS = _RAIZ / "evals" / "results" / "latest"
 
 
-def _load_dotenv(path: str = ".env") -> None:
-    """Carga .env al entorno (sin sobreescribir lo ya definido). Sin dependencias."""
-    try:
-        with open(path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                k, _, v = line.partition("=")
-                k, v = k.strip(), v.strip().strip('"').strip("'")
-                if k and k not in os.environ:
-                    os.environ[k] = v
-    except FileNotFoundError:
-        pass
-
-
-_load_dotenv()
+# python-dotenv (ya pineado en requirements.txt) en lugar del loader a mano que vivía aquí.
+# `override=False` es su default y conserva la semántica de antes —lo del shell gana sobre el
+# archivo—, pero ANCLADO A _RAIZ y no al cwd. El loader viejo abría ".env" relativo, así que
+# correr los evals desde otra carpeta se saltaba el archivo EN SILENCIO: sin ANTHROPIC_API_KEY
+# el juez se apaga solo y la corrida termina en verde con las rúbricas de criterio sin evaluar.
+# Un gate que aprueba por no haber mirado es peor que un gate que falla.
+#
+# Aquí sí inyectamos en os.environ, a diferencia de scripts/generar_qrs.py e hidratar_activos.py,
+# que usan dotenv_values (un dict) porque solo necesitan la URL. Este archivo necesita que el
+# .env llegue de verdad al entorno: de ahí salen ANTHROPIC_API_KEY (el juez) y la X-API-Key.
+load_dotenv(_RAIZ / ".env")
 # La X-API-Key del backend vive en .env como API_KEY (nombre del setting de la app).
 if not os.environ.get("CONTEXTO_API_KEY") and os.environ.get("API_KEY"):
     os.environ["CONTEXTO_API_KEY"] = os.environ["API_KEY"]
 
 # ── Configuración (todo por entorno; cero secretos en el archivo) ──
-API_URL = os.environ.get("CONTEXTO_API_URL", "https://contexto-ai-oregon.onrender.com").rstrip("/")
+# `or` encadenado y no .get(k, default), igual que en los scripts: .env.example declara
+# CONTEXTO_API_URL vacía, y con .get una cadena vacía GANA sobre el respaldo — API_URL quedaba
+# "" y las peticiones salían a "/api/v1/chat/" sin host.
+API_URL = (os.environ.get("CONTEXTO_API_URL") or "https://contexto-ai-oregon.onrender.com").rstrip("/")
 API_KEY = os.environ.get("CONTEXTO_API_KEY", "").strip()
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip()
 if API_KEY and not API_KEY.isascii():

@@ -35,6 +35,7 @@ import sys
 from pathlib import Path
 
 import httpx
+from dotenv import dotenv_values
 
 # Importar el asignador heurístico (scripts no es paquete → añadimos su carpeta).
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -47,7 +48,26 @@ for _s in (sys.stdout, sys.stderr):
         pass
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_API = "https://contexto-ai.onrender.com"
+
+# Este default estuvo clavado a https://contexto-ai.onrender.com. Ese host ya no corresponde
+# al servicio operativo y devuelve 503 (verificado 2026-08-24); el vivo es
+# contexto-ai-oregon.onrender.com. Manda el entorno (CONTEXTO_API_URL, el mismo nombre que usa
+# evals/run_evals.py); el literal es solo el respaldo verificado. La causa estructural —depender
+# de un hostname del proveedor de infraestructura— se arregla con api.contexxto.com, no aquí.
+#
+# Precedencia: --api  >  variable de shell  >  .env  >  el respaldo de abajo.
+# Leemos el .env con dotenv_values, que devuelve un dict y NO toca os.environ: así la
+# URL puede venir del archivo, pero CONTEXTO_API_KEY (línea ~147) sigue siendo de shell
+# y solo de shell. La llave escribe en el catastro de producción; que su origen no se
+# ensanche de refilón por un cambio que era sobre una URL.
+# El `or` encadenado importa: .env.example declara la variable VACÍA, y una cadena
+# vacía tiene que caer al respaldo en vez de ganar como valor.
+_ENV = dotenv_values(ROOT / ".env")
+DEFAULT_API = (
+    os.environ.get("CONTEXTO_API_URL")
+    or _ENV.get("CONTEXTO_API_URL")
+    or "https://contexto-ai-oregon.onrender.com"
+).rstrip("/")
 
 
 def _num(v, cast, default=None):

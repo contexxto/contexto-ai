@@ -37,6 +37,7 @@ from app.entorno import limpiar_texto_servicios
 from app.entorno_curacion import aplicar_curacion, info_verificacion, parse_servicios
 from app.orden import encaje_ajustado, ordenar_candidatos
 from app.preferencias import extraer_preferencias
+from app.decision.context import decidir_ranking, decidir_sobre_presupuesto
 from app.rutas import verificacion_de_entorno
 
 _SEARCH_TOOLS = {"tool_search_nearby_assets", "tool_find_assets_by_text"}
@@ -386,7 +387,7 @@ _ENCAJE_MIN_GRID = 60
 _MARGEN_PRESUPUESTO = 0.10
 
 
-def _recortar_grid(cards: list[dict], preferencias: dict | None,
+def _recortar_grid(cards: list[dict], sobre_presupuesto: frozenset[str],
                    protegidos: set[str] | None = None) -> list[dict]:
     """Deja en el panel solo lo que es una opción de verdad. Nunca lo vacía.
 
@@ -394,11 +395,13 @@ def _recortar_grid(cards: list[dict], preferencias: dict | None,
     corta — "no sé" no es "no sirve". Si el corte se lo llevaría todo, conserva la mejor
     (el panel vacío no informa; la tarjeta mal encajada al menos muestra qué SÍ existe, con
     su número honesto). `protegidos` = ids que el modelo priorizó con motivo declarado.
+
+    F2/E2.2: `sobre_presupuesto` llega DECIDIDO desde el core. Esta función ya no ve el
+    tope ni el precio, así que no puede llegar a una conclusión distinta de la del motor —
+    que es el punto de invertir la autoridad, y no solo de moverla de sitio.
     """
     if not cards:
         return cards
-    tope = (preferencias or {}).get("presupuesto_max")
-    tope = float(tope) if isinstance(tope, (int, float)) and not isinstance(tope, bool) and tope > 0 else None
     protegidos = protegidos or set()
 
     def _pasa(c: dict) -> bool:
@@ -407,8 +410,7 @@ def _recortar_grid(cards: list[dict], preferencias: dict | None,
         enc = c.get("encaje")
         if enc is not None and enc < _ENCAJE_MIN_GRID:
             return False
-        precio = c.get("precio")
-        if tope is not None and precio is not None and precio > tope * (1 + _MARGEN_PRESUPUESTO):
+        if c.get("id") in sobre_presupuesto:
             return False
         return True
 
@@ -538,13 +540,27 @@ async def construir_panel(messages, *, preferencias: dict | None = None) -> dict
     # en app/orden.py, puro y testeable. Sin preferencias declaradas es un no-op que preserva
     # el orden espacial/similitud tal cual — no se inventa un ranking donde no hay necesidad
     # declarada que puntuar.
-    cards = ordenar_candidatos(cards)
     # Si el modelo declaró una prioridad distinta (con motivo, vía tool_priorizar_opcion),
     # el PANEL se mueve con él: la promesa es que prosa y tarjetas cuenten lo mismo.
     prioritario, motivo = _priorizado_por_el_modelo(messages)
-    if prioritario and any(c["id"] == prioritario for c in cards):
-        cards.sort(key=lambda c: c["id"] != prioritario)  # estable: solo sube el elegido
-    visibles = _recortar_grid(cards, preferencias,
+
+    # F2/E2.2 · LA AUTORIDAD SE INVIERTE AQUÍ.
+    # Antes esta línea era `cards = ordenar_candidatos(cards)`: la presentación se ordenaba
+    # a sí misma. Ahora el orden lo DECIDE el core y las tarjetas lo SIGUEN — se proyectan
+    # sobre el ranking por identidad, no se reordenan por su cuenta. El criterio no cambió
+    # (sigue siendo app/orden.py más la priorización declarada); cambió quién manda.
+    #
+    # Que sea una proyección y no un sort paralelo es lo que hace imposible que diverjan:
+    # una tarjeta no puede acabar en una posición que el ranking no le dio.
+    ranking = decidir_ranking(cards, prioritario=prioritario)
+    por_id = {c["id"]: c for c in cards}
+    cards = [por_id[e.property_id] for e in ranking]
+
+    # El veredicto de presupuesto también se decide UNA vez, en el core, y el corte lo
+    # consume. Antes `_recortar_grid` volvía a comparar precio contra tope: dos sitios
+    # calculando lo mismo, y el que se ve gana cuando divergen.
+    sobre_presupuesto = decidir_sobre_presupuesto(cards, preferencias)
+    visibles = _recortar_grid(cards, sobre_presupuesto,
                               protegidos={prioritario} if prioritario else None)[:_MAX_CARDS]
     vistos = {c["id"] for c in visibles}
     return {

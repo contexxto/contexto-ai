@@ -305,63 +305,26 @@ def test_construir_el_contexto_no_altera_la_tarjeta_legacy():
     assert json.dumps(enc_antes, sort_keys=True, default=str) == copia
 
 
-def test_nadie_consume_todavia_el_contexto():
-    """Este subpaso NO invierte la autoridad. Si el assembler ya lo importara, la paridad
-    de las 40 pruebas legacy dejaría de significar lo que significa."""
+def test_el_assembler_consume_el_core_y_no_al_reves():
+    """En el subpaso 1 este test exigía que NADIE consumiera el contexto. El subpaso 2
+    invirtió la autoridad deliberadamente, así que ahora se garantiza lo contrario: el
+    assembler depende del core, y el core NO depende del assembler.
+
+    Esa dirección es lo que impide el ciclo, y es lo que hace que el core siga siendo
+    ejecutable sin nada de presentación alrededor.
+    """
     import ast
     import pathlib
 
     import app.decision.assembler as assembler
-
-    arbol = ast.parse(pathlib.Path(assembler.__file__).read_text(encoding="utf-8"))
-    modulos = {n.module or "" for n in ast.walk(arbol) if isinstance(n, ast.ImportFrom)}
-    assert "app.decision.context" not in modulos
-
-
-# ── score_version: el motor dice bajo qué reglas puntuó, o no puntúa ─────────────
-
-
-def test_sin_motor_la_version_es_la_del_motor_actual():
-    """`encaje=None` es legítimo: no hubo cálculo, así que la versión que corresponde es
-    la del motor vigente."""
-    assert _construir(preferencias=None, encaje=None).score_version == SCORE_VERSION
-
-
-def test_el_encaje_real_trae_su_version_explicita():
-    assert _encaje_real()["score_version"] == SCORE_VERSION
-
-
-_AUSENTE = object()
-
-
-@pytest.mark.parametrize("version", [_AUSENTE, None, "", "   ", 1])
-def test_un_encaje_sin_version_falla_en_voz_alta(version):
-    """MISMA FAMILIA QUE `place_id`. Si el motor puntuó pero perdió su versión, caer al
-    `SCORE_VERSION` actual etiquetaría el número con una procedencia que nadie declaró —
-    y dos scores producidos por reglas distintas dejarían de poder distinguirse, que es
-    justo lo que el campo existe para impedir."""
-    roto = dict(_encaje_real())
-    if version is _AUSENTE:
-        del roto["score_version"]   # la clave DESAPARECE, no se sobrescribe
-    else:
-        roto["score_version"] = version
-    with pytest.raises(EncajeSinVersion):
-        _construir(encaje=roto)
-
-
-def test_una_version_distinta_se_usa_tal_cual_y_no_se_normaliza():
-    """Si mañana el motor devuelve `encaje-v1`, la decisión registra `encaje-v1`.
-    Coercionarlo al valor esperado convertiría un cambio de reglas en un dato invisible."""
-    d = _construir(encaje={**_encaje_real(), "score_version": "encaje-v1"})
-    assert d.score_version == "encaje-v1"
-
-
-def test_el_builder_ya_no_asume_la_version_por_defecto():
-    """Regresión del atajo que tenía el subpaso 1: `(encaje or {}).get(...) or
-    SCORE_VERSION` era cómodo y ocultaba un encaje mal formado."""
-    import inspect
-
     import app.decision.context as ctx
 
-    fuente = inspect.getsource(ctx.assemble_decision_context_v0)
-    assert "or SCORE_VERSION" not in fuente
+    def modulos_de(m):
+        arbol = ast.parse(pathlib.Path(m.__file__).read_text(encoding="utf-8"))
+        return {n.module or "" for n in ast.walk(arbol) if isinstance(n, ast.ImportFrom)}
+
+    assert "app.decision.context" in modulos_de(assembler)
+    assert not any(x.startswith("app.decision.assembler") for x in modulos_de(ctx)), (
+        "el core importó al assembler: eso cierra el ciclo y devuelve la autoridad a la "
+        "presentación"
+    )

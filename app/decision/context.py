@@ -57,7 +57,7 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime
 
-from app.contracts.common_v0 import Objective
+from app.contracts.common_v0 import Objective, RankingEntryV0
 from app.contracts.decision_v0 import (
     BuyerContextRefV0,
     DecisionContextV0,
@@ -65,11 +65,16 @@ from app.contracts.decision_v0 import (
     PropertyContextRefV0,
 )
 from app.encaje import SCORE_VERSION
+from app.orden import ordenar_candidatos
 
 PROVIDER_ID_LOCAL = "contexto"
 """El inventario propio como proveedor, hasta el adaptador de F5."""
 
 _PLACE_ID_PREFIJO = "point-v0"
+_MARGEN_PRESUPUESTO = 0.10
+"""El "casi entra" que sí vale la pena mostrar. Mismo valor que tenía el corte del panel
+cuando esta decisión vivía en la presentación."""
+
 _DECIMALES = 6
 """~0,1 m. Suficiente para que dos lecturas del mismo punto den el mismo id, y para que
 dos inmuebles distintos no colisionen."""
@@ -208,4 +213,75 @@ def assemble_decision_context_v0(
         #   · strengths/tradeoffs→ E2.3; fabricarlos ahora exigiría evidence_refs inventadas
         #   · explanation        → E2.4, y solo después de que exista prosa que verificar
         #   · anchor_ids         → F3, cuando el comprador tenga anclas de verdad
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────────────────
+# E2.2 · segundo subpaso — la autoridad
+# ──────────────────────────────────────────────────────────────────────────────────
+#
+# Hasta aquí la presentación DECIDÍA: ordenaba las tarjetas por su cuenta y volvía a
+# calcular si un precio estaba sobre el tope. Que coincidiera con el motor era una
+# propiedad afortunada, no una garantía — dos sitios calculando lo mismo divergen en
+# cuanto uno de los dos cambia, y el que se ve es el que gana.
+#
+# Estas dos funciones son ahora la única fuente de esas dos verdades. La presentación
+# las CONSUME: proyecta el ranking y aplica el veredicto, sin recalcular ninguno.
+
+
+def decidir_ranking(
+    cards: list[dict],
+    *,
+    prioritario: str | None = None,
+    score_version: str | None = None,
+) -> tuple[RankingEntryV0, ...]:
+    """El orden de la decisión, como `RankingEntryV0` con identidad estable.
+
+    El criterio no cambia: sigue siendo `app.orden.ordenar_candidatos` —léxico por
+    requisitos duros, luego encaje ajustado por cobertura, estable— más la priorización
+    declarada por el modelo, que puede liderar con otra opción siempre que deje el motivo
+    escrito. Lo que cambia es QUIÉN manda: esto produce el orden, y las tarjetas lo
+    siguen.
+
+    `score` es el encaje VISIBLE, que es el mismo por el que se ordena. Va acompañado de
+    `score_version` porque `RankingEntryV0` no admite un número sin su regla.
+    """
+    ordenadas = ordenar_candidatos(list(cards))
+    if prioritario and any(c.get("id") == prioritario for c in ordenadas):
+        # Estable: solo sube el elegido, el resto conserva su posición relativa.
+        ordenadas.sort(key=lambda c: c.get("id") != prioritario)
+
+    version = score_version or SCORE_VERSION
+    return tuple(
+        RankingEntryV0(
+            provider_id=PROVIDER_ID_LOCAL,
+            property_id=str(c["id"]),
+            rank=i,
+            score=float(c["encaje"]) if c.get("encaje") is not None else None,
+            score_version=version if c.get("encaje") is not None else None,
+        )
+        for i, c in enumerate(ordenadas, start=1)
+    )
+
+
+def decidir_sobre_presupuesto(
+    cards: list[dict], preferencias: dict | None
+) -> frozenset[str]:
+    """Qué opciones quedan fuera del presupuesto declarado. Se calcula UNA vez, aquí.
+
+    El margen es el mismo de siempre: deja pasar el "casi entra" —$710 contra $700— que
+    sí vale la pena mostrar mientras se etiquete honestamente, y corta lo que ya no es
+    una opción.
+
+    Devuelve ids, no tarjetas: el veredicto viaja por identidad, así que reordenar el
+    panel después no puede desalinearlo.
+    """
+    tope = (preferencias or {}).get("presupuesto_max")
+    if not isinstance(tope, (int, float)) or isinstance(tope, bool) or tope <= 0:
+        return frozenset()
+    limite = float(tope) * (1 + _MARGEN_PRESUPUESTO)
+    return frozenset(
+        str(c["id"])
+        for c in cards
+        if c.get("precio") is not None and c["precio"] > limite
     )

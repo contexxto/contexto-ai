@@ -20,6 +20,7 @@ from langchain_core.messages import ToolMessage
 from app import preferencias as prefs_mod
 from app.encaje import calcular_encaje
 from app.routers import chat
+from app.decision import assembler
 
 
 # ── _sanitizar: operacion como enum controlado, canal aparte del encaje ──────────────
@@ -78,8 +79,8 @@ def _row(rid, operacion, precio=500):
 def _cards(monkeypatch, ids, rows, preferencias):
     async def fake_fetch(_ids):
         return (rows, {})
-    monkeypatch.setattr(chat, "_fetch_cards_rows", fake_fetch)
-    return asyncio.run(chat.build_result_cards([_tool_msg(ids)], preferencias=preferencias))
+    monkeypatch.setattr(assembler, "_fetch_cards_rows", fake_fetch)
+    return asyncio.run(chat.build_result_cards([_tool_msg(ids)], preferencias=preferencias, session_id="s-test"))
 
 
 def test_filtra_a_arriendo_cuando_el_usuario_lo_declara(monkeypatch):
@@ -162,11 +163,11 @@ def test_comparar_rechaza_operaciones_distintas(monkeypatch):
 
     async def fake_prefs(_textos):
         return {"operacion": "arriendo", "presupuesto_max": 800}
-    monkeypatch.setattr(chat, "extraer_preferencias", fake_prefs)
+    monkeypatch.setattr(assembler, "extraer_preferencias", fake_prefs)
 
     async def fake_fetch(_ids):
         return (rows, {})
-    monkeypatch.setattr(chat, "_fetch_cards_rows", fake_fetch)
+    monkeypatch.setattr(assembler, "_fetch_cards_rows", fake_fetch)
 
     res = asyncio.run(chat.comparar_inmuebles("s", "A", "B"))
     assert res["ok"] is False
@@ -186,11 +187,11 @@ def test_comparar_permite_misma_operacion(monkeypatch):
 
     async def fake_prefs(_textos):
         return {"operacion": "arriendo", "presupuesto_max": 800}
-    monkeypatch.setattr(chat, "extraer_preferencias", fake_prefs)
+    monkeypatch.setattr(assembler, "extraer_preferencias", fake_prefs)
 
     async def fake_fetch(_ids):
         return (rows, {})
-    monkeypatch.setattr(chat, "_fetch_cards_rows", fake_fetch)
+    monkeypatch.setattr(assembler, "_fetch_cards_rows", fake_fetch)
 
     res = asyncio.run(chat.comparar_inmuebles("s", "A", "B"))
     assert res["ok"] is True

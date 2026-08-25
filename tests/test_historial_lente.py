@@ -12,6 +12,7 @@ import types
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.routers import chat
+from app.decision import assembler
 
 
 def _turno(user_text, ids):
@@ -48,11 +49,11 @@ def test_historial_encadena_histeresis_del_lente(monkeypatch):
 
     async def fake_prefs(_textos):
         return {}
-    monkeypatch.setattr(chat, "extraer_preferencias", fake_prefs)
+    monkeypatch.setattr(assembler, "extraer_preferencias", fake_prefs)
 
     async def fake_fetch(_ids):
         return (rows, {})
-    monkeypatch.setattr(chat, "_fetch_cards_rows", fake_fetch)
+    monkeypatch.setattr(assembler, "_fetch_cards_rows", fake_fetch)
 
     hist = asyncio.run(chat.get_session_history("s"))
     asistentes = [h for h in hist["messages"] if h["role"] == "assistant"]

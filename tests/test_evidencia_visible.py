@@ -21,6 +21,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.encaje_contexto import bloque_autoritativo
 from app.routers import chat
+from app.decision import assembler
 
 
 # ── El bloque que lee el modelo ─────────────────────────────────────────────────────
@@ -86,15 +87,15 @@ def _panel(monkeypatch, rows, prefs):
     async def fake_prefs(_textos):
         return prefs
 
-    monkeypatch.setattr(chat, "_fetch_cards_rows", fake_fetch)
-    monkeypatch.setattr(chat, "extraer_preferencias", fake_prefs)
+    monkeypatch.setattr(assembler, "_fetch_cards_rows", fake_fetch)
+    monkeypatch.setattr(assembler, "extraer_preferencias", fake_prefs)
     messages = [
         HumanMessage(content="Busco algo así"),
         ToolMessage(content=json.dumps({"assets": [{"id": r["id"]} for r in rows]}),
                     name="tool_find_assets_by_text", tool_call_id="t1"),
         AIMessage(content="Encontré estas opciones."),
     ]
-    return asyncio.run(chat.build_result_cards(messages))
+    return asyncio.run(chat.build_result_cards(messages, session_id="s-test"))
 
 
 def test_la_tarjeta_lleva_los_conteos(monkeypatch):

@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 import anthropic
 import httpx
 from langchain_anthropic import ChatAnthropic
+from langchain_core.runnables import RunnableConfig
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
@@ -703,7 +704,7 @@ def _build_graph() -> StateGraph:
 
     tool_node = ToolNode(tools=AGENT_TOOLS)
 
-    async def encaje_node(state: AgentState) -> dict:
+    async def encaje_node(state: AgentState, config: RunnableConfig) -> dict:
         """Puntúa lo que la búsqueda encontró ANTES de que el modelo escriba.
 
         Es la frontera que fallaba: el encaje se calculaba DESPUÉS de la respuesta, solo para
@@ -711,14 +712,32 @@ def _build_graph() -> StateGraph:
         tope de presupuesto (BATALLA_Hiinmo 2026-07-30, fallos 1, 3 y 4). Ahora arma el panel
         —las MISMAS tarjetas que verá la persona— y lo entrega como contexto autoritativo.
 
-        Best-effort: cualquier fallo deja el turno exactamente como estaba antes (sin bloque,
-        sin tarjetas precalculadas). El endpoint reconstruye el panel por su cuenta si falta.
+        Best-effort: cualquier fallo OPERACIONAL deja el turno exactamente como estaba antes
+        (sin bloque, sin tarjetas precalculadas). El endpoint reconstruye el panel por su
+        cuenta si falta.
+
+        F2/E2.2: el `session_id` sale del `RunnableConfig` —el mismo `thread_id` que arma
+        `_langgraph_config` en el endpoint— y no de `AgentState`. La identidad de EJECUCIÓN
+        no tiene por qué convertirse en estado conversacional mutable; verificado contra la
+        versión fijada en tests/test_langgraph_config_thread_id.py.
+
+        Y las violaciones de integridad semántica NO son best-effort: ver el `except`.
         """
         # Import diferido: chat.py importa este módulo (grafo → tools), así que importarlo
         # arriba cerraría el ciclo. Mismo patrón que tool_connect_with_broker.
         from app.encaje_contexto import bloque_autoritativo
-        from app.routers.chat import (_collect_asset_ids, _MAX_CARDS, _user_texts,
-                                      construir_panel)
+        # F2/E2.1: el carril de decisión ya no pasa por el router. El import tardío se
+        # conserva —cerrar el ciclo arriba sigue siendo el problema que evita—, pero
+        # ahora apunta al Decision Core, que no sabe nada de HTTP.
+        from app.decision.assembler import (_collect_asset_ids, _MAX_CARDS, _user_texts,
+                                            construir_panel)
+        from app.decision.context import (CoordenadasAusentes, EncajeSinVersion,
+                                          SessionIdAusente)
+        from app.decision.evidencia import DimensionSinProcedencia
+
+        # Integridad semántica: producirían un DecisionContext que valida y es falso.
+        _INTEGRIDAD_DE_LA_DECISION = (SessionIdAusente, CoordenadasAusentes,
+                                      EncajeSinVersion, DimensionSinProcedencia)
 
         messages = state.get("messages") or []
         if not _collect_asset_ids(messages, limit=_MAX_CARDS * 2):
@@ -737,8 +756,17 @@ def _build_graph() -> StateGraph:
             prefs = prefs if isinstance(prefs, dict) else {}
 
         try:
-            panel = await construir_panel(messages, preferencias=prefs)
-        except Exception as exc:  # noqa: BLE001 — el encaje es un extra; jamás rompe el turno
+            session_id = (config.get("configurable") or {}).get("thread_id")
+            panel = await construir_panel(messages, session_id=session_id, preferencias=prefs)
+        except _INTEGRIDAD_DE_LA_DECISION:
+            # Estas CUATRO no se degradan en silencio. Un session_id ausente, unas
+            # coordenadas que no existen, un motor que no declara su versión o una dimensión
+            # que mueve la decisión sin fila de procedencia (E2.3a) no son "no pude armar el
+            # panel": son condiciones que harían FALSO el DecisionContext si se rellenaran.
+            # Seguir por el camino legacy las convertiría en invisibles, que es justo el modo
+            # de fallo que F0 se pasó cerrando. Se propagan con su nombre.
+            raise
+        except Exception as exc:  # noqa: BLE001 — lo OPERACIONAL sí es un extra y jamás rompe el turno
             print(f"  [WARN] no pude armar el panel de encaje ({type(exc).__name__}: {exc})")
             return {"preferencias": prefs, "preferencias_turno": turno}
 

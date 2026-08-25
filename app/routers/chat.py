@@ -26,7 +26,9 @@ from app.entorno_curacion import aplicar_curacion, info_verificacion, parse_serv
 from app.intencion import analizar_intencion
 from app.limiter import limiter
 from app.rutas import verificacion_de_entorno
-from app.verificacion_prosa import registrar as registrar_prosa, verificar_prosa
+from app.contracts.decision_v0 import VerificationStatus
+from app.decision.verify import auditar_explicacion
+from app.verificacion_prosa import registrar as registrar_prosa
 
 router = APIRouter(prefix="/api/v1/chat", tags=["Chat — Agente Conversacional"])
 
@@ -378,9 +380,17 @@ def _auditar_prosa(session_id: str, reply: str, valores: dict | None) -> None:
     """
     try:
         v = valores or {}
-        violaciones = verificar_prosa(reply, v.get("cards"), v.get("preferencias"),
-                                      v.get("descartadas"))
+        # F2/E2.4: el router ya no interpreta gravedades. Pide el veredicto al Decision
+        # Core, que es quien conoce el vocabulario de `ExplanationV0`; aquí solo queda el
+        # efecto de lado. Los hallazgos siguen llegando ÍNTEGROS a `registrar`.
+        explicacion, violaciones = auditar_explicacion(
+            reply, v.get("cards"), v.get("preferencias"), v.get("descartadas"))
         registrar_prosa(violaciones, reply, session=session_id)
+        if explicacion.verification_status is not VerificationStatus.PASSED:
+            # Veredicto del TURNO. No duplica a `registrar`, que cuenta por código: esta
+            # línea dice si la respuesta entera pasó, que es lo que F2 necesita observable.
+            log_prosa.warning("verificacion_prosa veredicto=%s session=%s",
+                              explicacion.verification_status.value, session_id)
     except Exception as exc:  # noqa: BLE001 — el guardián jamás puede tumbar el turno
         log_prosa.warning("verificacion_prosa fallo (%s: %s)", type(exc).__name__, exc)
 

@@ -69,10 +69,11 @@ cazó dos defectos que solo existían fuera del portátil del fundador.
 | E1.2 | `BuyerContextV0` | 497 | 52 | ✅ |
 | E1.3 | `PropertyContextV0` | 380 | 51 | ✅ |
 | E1.4 | `PlaceContextV0` | 320 | 45 | ✅ |
-| E1.5 | `DecisionContextV0` | 400 | 51 | ✅ |
+| E1.5 | `DecisionContextV0` | 400 | 52 | ✅ |
 | E1.6 | `DecisionTraceV0` | 278 | 42 | ✅ |
 | — | `common_v0.py` (compartidos) | 90 | — | ✅ |
 | — | **compatibilidad con el repo real** | — | **25** | ✅ |
+| | | | **303** | |
 
 ---
 
@@ -468,7 +469,7 @@ intercambiables, y no lo son.
 |---|---|
 | Antes de F1 | 869 |
 | **Después** | **1 172**, exit 0 |
-| Nuevas | 303 (278 de contrato + 25 de compatibilidad) |
+| Nuevas | **303** = 278 por unidad (36+52+51+45+52+42) + 25 de compatibilidad |
 | Verificación | árbol limpio **sin `.env`**, con las tres variables dummy de `pruebas.yml` |
 | Regresiones | ninguna — las 869 anteriores siguen pasando |
 
@@ -506,7 +507,9 @@ no se construye.
 
 - No hay adaptador de producción. Los fixtures demuestran que la representación es
   posible; construirla es F5, F4 y F2.
-- `stage` sigue deliberadamente sin resolver, y `verification_status` con él (C-J).
+- **`stage` es el único vocabulario que queda deliberadamente abierto.** Los cuatro del
+  Blueprint —`verification_status`, `severity`, `impact`, `next_action.type`— quedaron
+  cerrados en la revisión 3, y C-J con ellos.
 - Las categorías protegidas están controladas **estructuralmente**, no en el texto libre.
 - Nada sobre rendimiento, tamaño de serialización ni coste de almacenamiento.
 

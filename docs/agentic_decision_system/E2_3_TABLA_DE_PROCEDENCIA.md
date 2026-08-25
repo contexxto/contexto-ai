@@ -15,20 +15,46 @@ procedencia para conservar una razón legacy.
 
 Antes de la tabla, porque cambian su lectura entera.
 
-### 0.1 La fila del inmueble no trae NINGÚN timestamp
+### 0.1 Los timestamps existen en la base y se descartan en el `SELECT`
 
 El `SELECT` de `_fetch_cards_rows` devuelve `id, direccion, tipo_activo, imagen_url,
 caminabilidad, caminabilidad_fuente, ruido, vegetacion, servicios_cercanos, conectividad,
-lat, lon, caracteristicas, operacion, precio`.
+lat, lon, caracteristicas, operacion, precio` (+ `verificado_en_terreno`, §0.3).
 
-**No selecciona `created_at`, ni `updated_at`, ni `fecha_publicacion`** — esta última solo
-aparece dentro del `ORDER BY` del `LATERAL`, para elegir la transacción vigente; nunca sale.
+No es que el dato no exista. Es que **se lo usa para ordenar y luego se lo tira**, dos veces
+con el mismo patrón:
 
-Consecuencia directa: para cualquier dato del inmueble, `EvidenceRefV0.observed_at` sería
-`None` —correcto y permitido— pero **`retrieved_at` también carece de fuente real**. Lo
-único honesto disponible es *"cuándo lo leímos"*, que es el instante del ensamblado. Eso
-es legítimo para `retrieved_at`, pero conviene decirlo: **no sabemos de cuándo es el dato,
-solo cuándo lo miramos**.
+| Timestamp | Existe en | Uso actual | ¿Llega a la decisión? |
+|---|---|---|---|
+| `fecha_publicacion` | `transacciones_temporales` | `ORDER BY … DESC LIMIT 1` del `LATERAL` | ✗ no se selecciona |
+| `creado_en` | `entorno_curacion` | `ORDER BY creado_en DESC` en `_fetch_curaciones_batch` | ✗ no se selecciona |
+
+`created_at`/`updated_at` de `activos_inmutables` tampoco se seleccionan.
+
+Consecuencia: para el precio y para la curación, `EvidenceRefV0.observed_at` sería `None`
+**no porque el dato no tenga fecha, sino porque la query la descarta**. Lo único disponible
+sería `retrieved_at` = el instante del ensamblado: *no sabemos de cuándo es el dato, solo
+cuándo lo miramos*.
+
+Esto es reparable —son dos columnas en dos `SELECT`— pero **es cambio de comportamiento en
+la capa de datos, y F2 es paridad**. Va como deuda, no como arreglo dentro de E2.3.
+
+### 0.3 Existe UN timestamp real, y no respalda ninguna razón
+
+`verificacion_de_entorno(ids)` (`app/rutas.py:247`) devuelve `{activo_id: 'AAAA-MM-DD'}`:
+la fecha en que **un corredor pisó físicamente** algún lugar de ese entorno
+(`max(pois_vivos.verificado_en)` dentro del radio). Y **sí llega a la fila**, como
+`row["verificado_en_terreno"]`.
+
+Es, en todo el flujo, la única procedencia que califica limpio:
+`source_type=OWN_MEASUREMENT`, con `observed_at` **verdadero**.
+
+Con dos matices que son parte de la evidencia, no notas al pie:
+
+- Es **de entorno, no del inmueble**: la insignia se propaga por proximidad — el corredor
+  verifica la farmacia parado en A y B enfrente la hereda. Eso es `limitations`, obligatorio.
+- **No respalda ninguna de las 17 razones.** Es una insignia de tarjeta, no una dimensión
+  de `encaje.py`. La evidencia más fuerte que tenemos hoy no sostiene ningún claim del panel.
 
 ### 0.2 Las preferencias son extracción de un LLM, sin traza a la declaración
 
@@ -124,10 +150,10 @@ Las ocho dimensiones de `app/encaje.py::DIMENSIONES`, cada una con sus razones r
 | **Dónde vive hoy** | `activos_inmutables.servicios_cercanos`, texto de OSM ya curado por el corredor |
 | **Quién lo afirmó** | OSM + posible curación humana (Catastro Vivo) |
 | **Naturaleza** | Dataset público, con overlay humano cuando existe |
-| **Timestamp** | ⚠️ **parcial** — `entorno_curacion` sí tiene fecha, y `verificado_en_terreno` llega en la fila; el POI base de OSM no |
+| **Timestamp** | ✗ para el dato usado. `entorno_curacion.creado_en` existe pero **no se selecciona** (§0.1); el POI base de OSM no tiene fecha |
 | **¿Evidencia del dato o del cálculo?** | Mixto: el parque medido es dato; los minutos son derivación (`distancia ÷ 80`) |
 | **`EvidenceRefV0` posible** | **YES_BUT_LATER** |
-| **Matiz que vale oro** | Es la única dimensión donde **ya existe un timestamp real** (la curación). Cuando F4 tipe los POIs, esta fila puede ser la primera con `observed_at` verdadero. |
+| **Matiz** | Es la dimensión **más cerca** de tener `observed_at` verdadero: la fecha de curación ya está en la base y solo hace falta seleccionarla. Pero hoy la razón se arma desde `servicios_cercanos` (texto), no desde la curación — así que ni siquiera ese arreglo bastaría sin tipar los POIs (F4). |
 | **Tratamiento** | Razón legacy intacta. Sin claim material. E0.4 ya la sacó del scoring cuando solo hay `vegetacion`. |
 
 ### 1.6 `dormitorios`
@@ -176,10 +202,22 @@ el inventario.
 
 ---
 
+### 1.10 `verificado_en_terreno` — evidencia sin razón
+
+Detallado en §0.3. Dato real, medición propia, con fecha verdadera. **No hay ninguna razón
+legacy que lo cite**: es insignia de tarjeta, no dimensión de scoring.
+
+| **`EvidenceRefV0` posible** | **YES_NOW** — y es el único caso donde `observed_at` no sería `None` |
+|---|---|
+| **Tratamiento** | Nada que hacer en E2.3: no hay claim al que colgarlo. Queda anotado como **la primera evidencia lista** para cuando exista un claim que la necesite (F4/F5). |
+
+---
+
 ## 2. El hallazgo que decide la forma de E2.3
 
-Contando: **una** fila es `YES_NOW` (caminabilidad), **seis** son `YES_BUT_LATER`, **una**
-`INSUFFICIENT`, **dos** `NO_CLAIM`.
+Contando sobre las razones legacy: **una** es `YES_NOW` (caminabilidad), **seis**
+`YES_BUT_LATER`, **una** `INSUFFICIENT`, **dos** `NO_CLAIM`. Fuera de las razones queda una
+segunda `YES_NOW` (§1.10) que no respalda ningún claim.
 
 Y la única `YES_NOW` tiene un problema propio: la evidencia de caminabilidad **pertenece a
 `PlaceContextV0`**, que no se ensambla en runtime. `DecisionContextV0.evidence_refs` guarda

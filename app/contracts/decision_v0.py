@@ -89,6 +89,7 @@ el segundo es una afirmación mucho más fuerte que el primero.
 from __future__ import annotations
 
 from datetime import datetime
+from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import Field, field_validator, model_validator
@@ -207,6 +208,10 @@ class DecisionTradeoffV0(_AfirmacionMaterial):
 
     gives_up: str = Field(min_length=1)
     gains: str = Field(min_length=1)
+    severity: Severity
+    """Vocabulario cerrado del Blueprint 0.1: `low | medium | high`. Obligatorio: un
+    tradeoff que el sistema decide mostrar ya implica un juicio sobre cuánto cuesta, y
+    dejarlo implícito lo devolvería a la prosa."""
 
 
 class UncertaintyV0(_Base):
@@ -219,12 +224,74 @@ class UncertaintyV0(_Base):
     """
 
     statement: str = Field(min_length=1)
+    impact: Impact
+    """Vocabulario cerrado del Blueprint 0.1: `low | medium | high`. Obligatorio: sin
+    esto, "no hay medición de ruido" y "no sabemos si el edificio tiene ascensor" pesarían
+    igual, y no pesan igual."""
+
     evidence_refs: tuple[str, ...] = ()
 
     @field_validator("evidence_refs")
     @classmethod
     def _validar_refs(cls, v: tuple[str, ...]) -> tuple[str, ...]:
         return _refs_utilizables(v)
+
+
+class VerificationStatus(StrEnum):
+    """Resultado de verificar la explicación. **Vocabulario del Blueprint 0.1.**
+
+    Encaja con lo que `app/verificacion_prosa.py` ya produce: hallazgos con gravedad
+    `alta`/`media`. Un hallazgo grave es `FAILED`, uno medio es `WARNING`, ninguno es
+    `PASSED`. El mapeo concreto lo hará F2; el contrato solo fija el vocabulario.
+    """
+
+    PASSED = "passed"
+    WARNING = "warning"
+    FAILED = "failed"
+
+
+class Severity(StrEnum):
+    """Cuánto pesa un tradeoff. **Vocabulario del Blueprint 0.1.**"""
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class Impact(StrEnum):
+    """Cuánto afecta una incertidumbre a la decisión. **Vocabulario del Blueprint 0.1.**
+
+    Distinto de `Severity` aunque compartan valores: uno califica un intercambio real y
+    el otro un hueco de conocimiento. Fundirlos en un solo enum los habría hecho
+    intercambiables, y no lo son.
+    """
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class NextActionType(StrEnum):
+    """Qué sugiere hacer el sistema. **Vocabulario del Blueprint 0.1**, cerrado.
+
+    `NONE` significa "se evaluó y no se recomienda ninguna acción" — distinto de que
+    `recommended_next_action` sea `None`, que significa que no se evaluó. Es la misma
+    distinción entre ausente y vacío que gobierna `eligibility` y `match`.
+    """
+
+    INSPECT = "inspect"
+    COMPARE = "compare"
+    ASK_PROVIDER = "ask_provider"
+    SCHEDULE_VISIT = "schedule_visit"
+    CONTACT = "contact"
+    REJECT = "reject"
+    NONE = "none"
+
+
+class RecommendedNextActionV0(_Base):
+    """La acción sugerida. Tipada, no prosa."""
+
+    type: NextActionType
 
 
 class ExplanationV0(_Base):
@@ -237,14 +304,15 @@ class ExplanationV0(_Base):
     cazar afirmaciones que el dato no sostiene.
     """
 
-    verification_status: str = Field(min_length=1)
-    """**Vocabulario abierto en V0**, y es una deuda declarada, no una preferencia.
+    verification_status: VerificationStatus
+    """Vocabulario cerrado del Blueprint 0.1: `passed | warning | failed`.
 
-    El Blueprint define este campo pero no se pudo consultar su lista de valores en esta
-    sesión. `verificacion_prosa.py` no ayuda a cerrarlo: devuelve hallazgos con gravedad
-    (`alta`/`media`), no un estado de verificación. Inventar aquí un vocabulario sería
-    exactamente lo que se evitó con `stage`. **Debe cerrarse con el vocabulario del
-    Blueprint antes de que alguien escriba valores a mano.**"""
+    **Lo que este objeto NO lleva**, y es una reducción deliberada del V0 operativo:
+    `summary` y `generated_by_model`. El Blueprint objetivo los contempla, pero el Plan
+    1.0 solo exige `verification_status` para F1, y F2 construye el `DecisionContextV0`
+    **antes** de que exista la prosa — guardar aquí un resumen que todavía no se ha
+    generado no tendría qué guardar. Se añaden cuando la fase que genera la prosa los
+    necesite."""
 
 
 class EligibilityV0(_Base):
@@ -296,10 +364,10 @@ class DecisionContextV0(_Base):
     Comparte tipo con la traza (E1.6) a propósito: son el mismo hecho visto desde dos
     sitios, y duplicar el tipo habría permitido que divergieran."""
 
-    recommended_next_action: str | None = Field(default=None, min_length=1)
-    """Qué sugiere hacer el sistema. Texto abierto en V0 por la misma razón que
-    `PolicyAppliedV0.outcome`: no hay todavía un catálogo de acciones evidenciado.
-    `None` = la decisión no recomienda nada."""
+    recommended_next_action: RecommendedNextActionV0 | None = None
+    """`None` = no se evaluó qué hacer. Distinto de `type=NONE`, que es "se evaluó y no
+    se recomienda nada" — la misma distinción entre ausente y vacío que gobierna
+    `eligibility` y `match`."""
 
     explanation: ExplanationV0 | None = None
     """`None` = no se generó explicación. Ver `ExplanationV0`."""

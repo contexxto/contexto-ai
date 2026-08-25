@@ -38,12 +38,14 @@ from app.contracts.decision_v0 import (
     BuyerContextRefV0,
     DecisionContextV0,
     ExplanationV0,
+    Impact,
     MatchDimensionV0,
     MatchV0,
     PlaceContextRefV0,
     PropertyContextRefV0,
     StrengthV0,
     UncertaintyV0,
+    VerificationStatus,
 )
 from app.contracts.evidence_v0 import (
     EvidenceRefV0,
@@ -494,7 +496,9 @@ def _decision_desde_el_repo() -> DecisionContextV0:
         uncertainties=tuple(
             # Las razones en `insufficient_evidence` de E0.4 se vuelven incertidumbres,
             # y aquí sí pueden ir sin evidencia: el problema ES que no la hay.
-            UncertaintyV0(statement=f"sin medición para {r['dimension']}")
+            UncertaintyV0(
+                statement=f"sin medición para {r['dimension']}", impact=Impact.MEDIUM
+            )
             for r in sin_evidencia
         ),
         ranking=(
@@ -506,8 +510,10 @@ def _decision_desde_el_repo() -> DecisionContextV0:
                 score_version=ENCAJE["score_version"],
             ),
         ),
-        recommended_next_action=None,   # el flujo actual no emite una acción tipada
-        explanation=ExplanationV0(verification_status="verificada"),
+        # El flujo actual no evalúa qué hacer después: `None`, no `type=NONE`, que
+        # significaría que se evaluó y no se recomienda nada.
+        recommended_next_action=None,
+        explanation=ExplanationV0(verification_status=VerificationStatus.PASSED),
         trace_id=None,                  # hoy no se traza; se declara, no se omite
     )
 

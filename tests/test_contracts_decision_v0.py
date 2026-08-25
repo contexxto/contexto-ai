@@ -19,11 +19,17 @@ from app.contracts.decision_v0 import (
     DecisionContextV0,
     DecisionTradeoffV0,
     EligibilityV0,
+    ExplanationV0,
+    Impact,
     MatchDimensionV0,
     MatchV0,
     PlaceContextRefV0,
     PropertyContextRefV0,
+    NextActionType,
+    RecommendedNextActionV0,
+    Severity,
     StrengthV0,
+    VerificationStatus,
     UncertaintyV0,
     ViolationV0,
     json_schema,
@@ -298,10 +304,13 @@ def _con_afirmaciones(**cambios):
             DecisionTradeoffV0(
                 gives_up="10 minutos más de trayecto",
                 gains="un dormitorio más",
+                severity=Severity.LOW,
                 evidence_refs=("ev-4",),
             ),
         ),
-        uncertainties=(UncertaintyV0(statement="no hay medición de ruido aquí"),),
+        uncertainties=(
+            UncertaintyV0(statement="no hay medición de ruido aquí", impact=Impact.MEDIUM),
+        ),
     )
     base.update(cambios)
     return _decision(**base)
@@ -335,19 +344,24 @@ def test_una_afirmacion_material_exige_evidencia():
     with pytest.raises(ValidationError):
         MatchDimensionV0(dimension="area", evidence_refs=())
     with pytest.raises(ValidationError):
-        DecisionTradeoffV0(gives_up="a", gains="b", evidence_refs=())
+        DecisionTradeoffV0(
+            gives_up="a", gains="b", severity=Severity.LOW, evidence_refs=()
+        )
 
 
 def test_una_incertidumbre_puede_existir_sin_evidencia():
     """Suele existir precisamente porque FALTAN datos: exigirle evidencia sería exigirle
     que demuestre lo que no tiene."""
-    u = UncertaintyV0(statement="no hay medición de ruido en este punto")
+    u = UncertaintyV0(
+        statement="no hay medición de ruido en este punto", impact=Impact.MEDIUM
+    )
     assert u.evidence_refs == ()
 
 
 def test_una_incertidumbre_puede_citar_evidencia_parcial_o_contradictoria():
     u = UncertaintyV0(
         statement="dos fuentes dan superficies distintas",
+        impact=Impact.HIGH,
         evidence_refs=("ev-5", "ev-6"),
     )
     assert len(u.evidence_refs) == 2
@@ -414,3 +428,100 @@ def test_ausente_no_es_lo_mismo_que_vacio():
 def test_las_dimensiones_de_encaje_no_traen_peso_ni_puntaje():
     campos = set(MatchDimensionV0.model_fields)
     assert campos == {"dimension", "evidence_refs"}
+
+
+# ── vocabularios explícitos del Blueprint 0.1 ────────────────────────────────────
+
+
+def test_los_cuatro_vocabularios_del_blueprint_estan_cerrados():
+    """Ninguno se inventó: los cuatro vienen del Blueprint 0.1 y se adoptan tal cual."""
+    assert {v.value for v in VerificationStatus} == {"passed", "warning", "failed"}
+    assert {s.value for s in Severity} == {"low", "medium", "high"}
+    assert {i.value for i in Impact} == {"low", "medium", "high"}
+    assert {n.value for n in NextActionType} == {
+        "inspect", "compare", "ask_provider", "schedule_visit", "contact", "reject", "none",
+    }
+
+
+def test_el_esquema_expone_los_cuatro_vocabularios():
+    defs = json_schema()["$defs"]
+    assert set(defs["VerificationStatus"]["enum"]) == {"passed", "warning", "failed"}
+    assert set(defs["Severity"]["enum"]) == {"low", "medium", "high"}
+    assert set(defs["Impact"]["enum"]) == {"low", "medium", "high"}
+    assert set(defs["NextActionType"]["enum"]) == {
+        "inspect", "compare", "ask_provider", "schedule_visit", "contact", "reject", "none",
+    }
+
+
+@pytest.mark.parametrize("inventado", ["verificada", "ok", "aprobado", "PASSED "])
+def test_un_estado_de_verificacion_inventado_ya_no_pasa(inventado):
+    with pytest.raises(ValidationError):
+        ExplanationV0(verification_status=inventado)
+
+
+def test_severity_e_impact_no_son_intercambiables():
+    """Comparten valores pero califican cosas distintas: uno un intercambio real, el otro
+    un hueco de conocimiento. Fundirlos habría hecho que se pudieran intercambiar."""
+    assert Severity is not Impact
+    assert set(DecisionTradeoffV0.model_fields) & {"impact"} == set()
+    assert set(UncertaintyV0.model_fields) & {"severity"} == set()
+
+
+def test_un_tradeoff_sin_severidad_no_se_construye():
+    """Un tradeoff que el sistema decide mostrar ya implica un juicio sobre cuánto
+    cuesta; dejarlo implícito lo devolvería a la prosa."""
+    with pytest.raises(ValidationError, match="severity"):
+        DecisionTradeoffV0(gives_up="a", gains="b", evidence_refs=("ev-1",))
+
+
+def test_una_incertidumbre_sin_impacto_no_se_construye():
+    """Sin esto, "no hay medición de ruido" y "no sabemos si hay ascensor" pesarían
+    igual, y no pesan igual."""
+    with pytest.raises(ValidationError, match="impact"):
+        UncertaintyV0(statement="algo")
+
+
+def test_la_accion_recomendada_es_tipada_y_no_prosa():
+    a = RecommendedNextActionV0(type=NextActionType.SCHEDULE_VISIT)
+    assert a.type is NextActionType.SCHEDULE_VISIT
+    with pytest.raises(ValidationError):
+        RecommendedNextActionV0(type="agendar visita")
+
+
+def test_no_evaluar_la_accion_no_es_lo_mismo_que_no_recomendar_ninguna():
+    """`None` = no se evaluó. `type=NONE` = se evaluó y no se recomienda nada. Misma
+    distinción que gobierna `eligibility` y `match`."""
+    sin_evaluar = _decision()
+    evaluado_sin_accion = _decision(
+        recommended_next_action=RecommendedNextActionV0(type=NextActionType.NONE)
+    )
+    assert sin_evaluar.recommended_next_action is None
+    assert evaluado_sin_accion.recommended_next_action.type is NextActionType.NONE
+    assert sin_evaluar != evaluado_sin_accion
+
+
+def test_los_vocabularios_sobreviven_el_ida_y_vuelta():
+    d = _decision(
+        explanation=ExplanationV0(verification_status=VerificationStatus.WARNING),
+        recommended_next_action=RecommendedNextActionV0(type=NextActionType.INSPECT),
+        tradeoffs=(
+            DecisionTradeoffV0(
+                gives_up="a", gains="b", severity=Severity.HIGH, evidence_refs=("ev-1",)
+            ),
+        ),
+        uncertainties=(UncertaintyV0(statement="x", impact=Impact.LOW),),
+    )
+    crudo = d.model_dump(mode="json")
+    assert crudo["explanation"]["verification_status"] == "warning"
+    assert crudo["recommended_next_action"]["type"] == "inspect"
+    assert crudo["tradeoffs"][0]["severity"] == "high"
+    assert crudo["uncertainties"][0]["impact"] == "low"
+    assert DecisionContextV0.model_validate(crudo) == d
+
+
+def test_la_explicacion_no_guarda_la_prosa_y_es_deliberado():
+    """Reducción declarada del V0 operativo: el Blueprint objetivo contempla `summary` y
+    `generated_by_model`, pero el Plan 1.0 solo exige `verification_status` para F1, y F2
+    construye el DecisionContext ANTES de que exista la prosa."""
+    campos = set(ExplanationV0.model_fields)
+    assert campos == {"verification_status"}

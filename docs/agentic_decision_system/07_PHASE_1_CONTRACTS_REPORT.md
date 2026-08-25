@@ -11,14 +11,14 @@
 ## 0. Resumen
 
 **Los seis contratos están cerrados, versionados y probados contra el repositorio real.**
-290 pruebas propias; la suite completa pasa de 869 a **1 159**, exit 0, verificada en
+303 pruebas propias; la suite completa pasa de 869 a **1 172**, exit 0, verificada en
 árbol limpio sin `.env`.
 
-> **Revisión 2.** La primera fue rechazada en revisión por cuatro motivos, los cuatro
-> correctos: C-F estaba mal formulada (§7), `transaction.availability` se dejó abierto
-> cuando el Blueprint sí lo define (§3, E1.3), faltaban ejemplos derivados de estructuras
-> reales del repo (§5), y `DecisionContextV0` no tenía cinco campos de su mínimo (§3,
-> E1.5). Los cuatro están corregidos y verificados mecánicamente.
+> **Revisión 3.** La revisión 1 se rechazó por cuatro motivos y la 2 por uno más; los
+> cinco eran correctos. Corregidos: C-F estaba mal formulada (§7), faltaban ejemplos
+> derivados de estructuras reales del repo (§5.1), `DecisionContextV0` no tenía cinco
+> campos de su mínimo (§3, E1.5), y **los cuatro vocabularios explícitos del Blueprint 0.1
+> estaban sin cerrar** (§3, E1.3 y E1.5). Todo verificado mecánicamente, sin asumir.
 
 Lo que esta fase compró no son seis ficheros de Pydantic. Es que **las tres mentiras que
 FASE 0 tuvo que cazar a mano ahora son imposibles de construir**:
@@ -42,11 +42,11 @@ En F0 esas tres cosas se arreglaron. En F1 dejan de poder volver.
 | Repositorio | `github.com/contexxto/contexto-ai` (público) |
 | Base | `e97afb2` (`origin/main` tras el merge del PR #122) |
 | Rama de trabajo | `feat/contracts-evidence-v0`, en worktree propio |
-| Commits | **14** |
+| Commits | **15** |
 | Archivos | **18**, ~+6 000 líneas, 0 eliminadas |
 | Suite antes | 869 |
-| **Suite después** | **1 159**, exit 0 |
-| Pruebas nuevas | **290** |
+| **Suite después** | **1 172**, exit 0 |
+| Pruebas nuevas | **303** |
 | Ubicación | `app/contracts/`, según `02_CURRENT_TO_TARGET_ARCHITECTURE.md` §5 |
 
 **Nada de lo entregado se consume todavía.** Ningún módulo de `app/` importa
@@ -69,7 +69,7 @@ cazó dos defectos que solo existían fuera del portátil del fundador.
 | E1.2 | `BuyerContextV0` | 497 | 52 | ✅ |
 | E1.3 | `PropertyContextV0` | 380 | 51 | ✅ |
 | E1.4 | `PlaceContextV0` | 320 | 45 | ✅ |
-| E1.5 | `DecisionContextV0` | 309 | 39 | ✅ |
+| E1.5 | `DecisionContextV0` | 400 | 51 | ✅ |
 | E1.6 | `DecisionTraceV0` | 278 | 42 | ✅ |
 | — | `common_v0.py` (compartidos) | 90 | — | ✅ |
 | — | **compatibilidad con el repo real** | — | **25** | ✅ |
@@ -411,11 +411,11 @@ No hay divergencia que justificar: F1 entregó lo que F1 debía entregar.
 
 1. **`stage` sin enum** cuesta la prueba mecánica de ortogonalidad con `intencion.py`.
    Documentado, no forzado. Se cierra cuando haya evidencia de uso.
-2. **`explanation.verification_status` queda abierto.** El Blueprint define el campo, pero
-   su lista de valores no se pudo consultar en esta sesión, y `verificacion_prosa.py` no
-   la resuelve —devuelve hallazgos con gravedad `alta`/`media`, no un estado—. **Inventarlo
-   habría sido el error de `stage`.** Debe cerrarse con el vocabulario del Blueprint antes
-   de que alguien escriba valores a mano. Ver C-J.
+2. **`explanation` no lleva `summary` ni `generated_by_model`** — reducción **deliberada**
+   del V0 operativo, no un olvido. El Blueprint objetivo los contempla, pero el Plan 1.0
+   solo exige `verification_status` para F1, y **F2 construye el `DecisionContextV0` antes
+   de que exista la prosa**: guardar aquí un resumen que todavía no se ha generado no
+   tendría qué guardar. Se añaden cuando la fase que genera la prosa los necesite.
 3. **`place_id` no tiene generador.** F2/F4 tendrán que proveerlo: `PlaceContextRefV0` lo
    exige y `PlaceContextV0` lo tiene opcional.
 4. **`provider` como texto libre** admite variantes del mismo proveedor
@@ -444,17 +444,31 @@ permite. **No es incoherencia**: en un caso se fabricaría una evidencia inexist
 otro se declara desconocer una propiedad de un registro que sí existe. Probado y explicado
 en ambos módulos.
 
-**C-J. — ABIERTA.** `explanation.verification_status` está definido en el Blueprint pero su
-vocabulario no se pudo consultar. Queda como `str` abierto, declarado como deuda (§6.2).
-**Es la única contradicción viva con el Blueprint al cerrar F1.**
+**C-J. — CERRADA.** `explanation.verification_status` adopta el vocabulario del Blueprint
+0.1: `passed | warning | failed`. Al comprobar el resto de vocabularios explícitos del
+Blueprint —sin asumir que coincidían— aparecieron **tres más sin cerrar**, todos
+corregidos en la misma pasada:
+
+| Vocabulario del Blueprint 0.1 | Estado antes | Ahora |
+|---|---|---|
+| `explanation.verification_status` = `passed \| warning \| failed` | `str` abierto | ✅ enum cerrado |
+| `tradeoffs[].severity` = `low \| medium \| high` | **el campo no existía** | ✅ enum cerrado, obligatorio |
+| `uncertainties[].impact` = `low \| medium \| high` | **el campo no existía** | ✅ enum cerrado, obligatorio |
+| `recommended_next_action.type` = `inspect \| compare \| ask_provider \| schedule_visit \| contact \| reject \| none` | era `str \| None`, no un objeto | ✅ objeto tipado con enum cerrado |
+
+**No queda ninguna contradicción abierta con el Blueprint al cerrar F1.**
+
+`Severity` e `Impact` comparten valores pero son enums distintos a propósito: uno califica
+un intercambio real y el otro un hueco de conocimiento. Fundirlos los habría hecho
+intercambiables, y no lo son.
 
 ## 8. Suite
 
 | | |
 |---|---|
 | Antes de F1 | 869 |
-| **Después** | **1 159**, exit 0 |
-| Nuevas | 290 (265 de contrato + 25 de compatibilidad) |
+| **Después** | **1 172**, exit 0 |
+| Nuevas | 303 (278 de contrato + 25 de compatibilidad) |
 | Verificación | árbol limpio **sin `.env`**, con las tres variables dummy de `pruebas.yml` |
 | Regresiones | ninguna — las 869 anteriores siguen pasando |
 
@@ -475,8 +489,8 @@ El Gate F1 literal queda satisfecho:
 | Schema | ✅ JSON Schema generado y probado en los seis |
 | Fixtures | ✅ mínimos, representativos, y **de compatibilidad con el repo real** |
 | Validación | ✅ invariantes propias, no solo tipos |
-| Tests | ✅ 290 |
-| Suite completa | ✅ 1 159, exit 0, sin `.env` |
+| Tests | ✅ 303 |
+| Suite completa | ✅ 1 172, exit 0, sin `.env` |
 
 Y no se introdujo nada de lo prohibido: sin persistencia, sin instrumentación, sin
 assembler, sin hooks de LangGraph, sin ejecución de benchmark, sin integración de
@@ -505,9 +519,9 @@ Carlos y ChatGPT y autorización explícita.
 
 | Afirmación | Cómo |
 |---|---|
-| Suite en 1 159 | `python -m pytest --collect-only` sobre la rama |
+| Suite en 1 172 | `python -m pytest --collect-only` sobre la rama |
 | Verde sin `.env` | `git worktree add --detach <tmp> <sha>`, exportar `POSTGRES_DB/USER/PASSWORD=test`, `python -m pytest -q` |
-| 290 pruebas de contratos | `python -m pytest tests/test_contracts_*.py --collect-only` |
+| 303 pruebas de contratos | `python -m pytest tests/test_contracts_*.py --collect-only` |
 | El mínimo de `DecisionContextV0` | `set(DecisionContextV0.model_json_schema()["properties"])` |
 | Los contratos representan el repo | `python -m pytest tests/test_contracts_compatibilidad_repo.py` |
 | Nadie consume los contratos | `grep -rn "app.contracts" app/ --include=*.py` → solo el propio paquete |

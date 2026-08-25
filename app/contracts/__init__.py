@@ -24,7 +24,6 @@ from app.contracts.evidence_v0 import (
     CONTRACT_VERSION as EVIDENCE_REF_V0_VERSION,
 )
 from app.contracts.evidence_v0 import (
-    Confidence,
     EvidenceRefV0,
     PersistencePolicy,
     SourceType,
@@ -35,7 +34,6 @@ __all__ = [
     "EvidenceRefV0",
     "EVIDENCE_REF_V0_VERSION",
     "SourceType",
-    "Confidence",
     "PersistencePolicy",
     "ahora",
 ]

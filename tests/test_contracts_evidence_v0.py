@@ -19,7 +19,6 @@ from pydantic import ValidationError
 
 from app.contracts.evidence_v0 import (
     CONTRACT_VERSION,
-    Confidence,
     EvidenceRefV0,
     PersistencePolicy,
     SourceType,
@@ -37,7 +36,7 @@ def _medida(**cambios):
         source_id="quito:parque:1234",
         observed_at=AHORA - timedelta(days=1),
         retrieved_at=AHORA,
-        confidence=Confidence.HIGH,
+        confidence=0.9,
         methodology="distancia por red peatonal a POI de pois_propios",
         persistence_policy=PersistencePolicy.PERSISTABLE,
     )
@@ -63,7 +62,7 @@ def test_una_version_futura_no_se_cuela_como_v0():
 
 
 def test_serializa_y_vuelve_igual():
-    original = _medida(limitations=["solo cubre el bbox de Quito"])
+    original = _medida(limitations=("solo cubre el bbox de Quito",))
     assert EvidenceRefV0.model_validate(original.model_dump(mode="json")) == original
 
 
@@ -88,7 +87,7 @@ def test_observed_at_no_tiene_valor_por_defecto():
             source_type=SourceType.PROVIDER_API,
             provider="google_places",
             retrieved_at=AHORA,
-            confidence=Confidence.MEDIUM,
+            confidence=None,
             methodology="Places Details",
             persistence_policy=PersistencePolicy.RUNTIME_ONLY,
         )
@@ -107,9 +106,33 @@ def test_no_se_puede_observar_despues_de_haber_traido():
 
 
 def test_la_confianza_distingue_no_se_de_seguro_que_no():
-    """Por eso `confidence` es enum y no float: 0.0 es una afirmación, no una duda."""
-    assert Confidence.UNKNOWN in set(Confidence)
-    assert _medida(confidence=Confidence.UNKNOWN).confidence is Confidence.UNKNOWN
+    """`None` es una abstención; `0.0` es una medición que dice "no merece confianza".
+    Colapsarlos es perder información, así que el contrato los mantiene distintos."""
+    assert _medida(confidence=None).confidence is None
+    assert _medida(confidence=0.0).confidence == 0.0
+    assert _medida(confidence=None) != _medida(confidence=0.0, evidence_id="x")
+
+
+def test_la_confianza_vive_en_el_intervalo_cerrado_cero_uno():
+    assert _medida(confidence=0.0).confidence == 0.0
+    assert _medida(confidence=1.0).confidence == 1.0
+    for fuera in (-0.01, 1.01, 2.0, -1.0):
+        with pytest.raises(ValidationError):
+            _medida(confidence=fuera)
+
+
+def test_omitir_la_confianza_cae_en_no_se_y_no_en_un_numero():
+    """El default seguro se permite porque `None` es la afirmación humilde. Omitir
+    `observed_at`, en cambio, habría caído en "es de ahora": fuerte y falsa."""
+    base = dict(
+        source_type=SourceType.PROVIDER_API,
+        provider="un_proveedor",
+        observed_at=None,
+        retrieved_at=AHORA,
+        methodology="el proveedor entrega alta/media/baja, sin escala numérica",
+        persistence_policy=PersistencePolicy.RUNTIME_ONLY,
+    )
+    assert EvidenceRefV0(**base).confidence is None
 
 
 def test_no_hay_evidencia_sin_metodologia():
@@ -132,30 +155,46 @@ def test_el_ayudante_ahora_trae_zona():
 # ── regla 2: lo no medido declara sus límites (E0.4) ──────────────────────────────
 
 
-@pytest.mark.parametrize(
-    "tipo", [SourceType.HEURISTIC_ESTIMATE, SourceType.UNKNOWN]
-)
-def test_lo_no_medido_sin_limites_declarados_no_se_construye(tipo):
+def test_una_heuristica_sin_limites_declarados_no_se_construye():
     with pytest.raises(ValidationError, match="limitations"):
-        _medida(source_type=tipo, limitations=[])
+        _medida(source_type=SourceType.HEURISTIC_ESTIMATE, limitations=())
 
 
-@pytest.mark.parametrize(
-    "tipo", [SourceType.HEURISTIC_ESTIMATE, SourceType.UNKNOWN]
-)
-def test_lo_no_medido_con_limites_declarados_si_entra(tipo):
-    """La heurística no está prohibida: a veces es lo único que hay. Lo prohibido es
-    que entre callada."""
+def test_una_heuristica_con_limites_declarados_si_entra():
+    """La heurística no está prohibida: a veces es lo único que hay, y ES evidencia.
+    Lo prohibido es que entre callada o disfrazada de medición."""
     ev = _medida(
-        source_type=tipo,
-        limitations=["estimación por zona; no hay medición en este punto"],
+        source_type=SourceType.HEURISTIC_ESTIMATE,
+        limitations=("estimación por zona; no hay medición en este punto",),
     )
     assert ev.limitations
+    assert ev.es_medicion is False
 
 
 def test_una_limitacion_en_blanco_no_cuenta_como_limitacion():
     with pytest.raises(ValidationError, match="no limita nada"):
-        _medida(source_type=SourceType.HEURISTIC_ESTIMATE, limitations=["   "])
+        _medida(source_type=SourceType.HEURISTIC_ESTIMATE, limitations=("   ",))
+
+
+# ── la ausencia de evidencia NO se representa aquí ───────────────────────────────
+
+
+def test_no_existe_un_source_type_para_la_ausencia_de_evidencia():
+    """Decisión de diseño, no descuido.
+
+    Fabricar una EvidenceRefV0 con source_type="unknown" para decir "no tengo nada" es
+    inventarse una procedencia para representar su ausencia — el error de E0.3 con otra
+    ropa. La ausencia la declara el contrato consumidor:
+        status = insufficient_evidence · evidence = [] · limitations = [...]
+    """
+    valores = {s.value for s in SourceType}
+    assert "unknown" not in valores
+    assert not any("unknown" in v or "none" in v or "missing" in v for v in valores)
+
+
+def test_un_source_type_inventado_se_rechaza():
+    with pytest.raises(ValidationError):
+        _medida(source_type="unknown")
 
 
 def test_el_contrato_dice_si_algo_se_midio_pero_no_cuanto_vale():
@@ -164,7 +203,7 @@ def test_el_contrato_dice_si_algo_se_midio_pero_no_cuanto_vale():
     assert _medida().es_medicion is True
     assert _medida(source_type=SourceType.USER_DECLARED).es_medicion is True
     assert _medida(
-        source_type=SourceType.HEURISTIC_ESTIMATE, limitations=["x"]
+        source_type=SourceType.HEURISTIC_ESTIMATE, limitations=("x",)
     ).es_medicion is False
     assert not hasattr(_medida(), "peso")
 
@@ -256,7 +295,25 @@ def test_la_evidencia_no_se_edita_despues_de_creada():
     cuadre con el resultado."""
     ev = _medida()
     with pytest.raises(ValidationError):
-        ev.confidence = Confidence.HIGH
+        ev.confidence = 1.0
+
+
+def test_las_limitaciones_tampoco_se_pueden_mutar_por_dentro():
+    """`frozen=True` impide reasignar el campo, pero no impide `.append()` sobre una
+    lista. Si `limitations` fuera lista, se podrían borrar los límites de una heurística
+    sin tocar nada más — y afirmaríamos una inmutabilidad que no existe."""
+    ev = _medida(source_type=SourceType.HEURISTIC_ESTIMATE, limitations=("estimado",))
+    assert isinstance(ev.limitations, tuple)
+    with pytest.raises(AttributeError):
+        ev.limitations.append("colado")
+    with pytest.raises(TypeError):
+        ev.limitations[0] = "reescrito"
+
+
+def test_una_lista_de_entrada_se_congela_en_tupla():
+    """El caller puede pasar lista; lo que se guarda es inmutable igualmente."""
+    ev = _medida(source_type=SourceType.HEURISTIC_ESTIMATE, limitations=["estimado"])
+    assert isinstance(ev.limitations, tuple)
 
 
 def test_cada_evidencia_nace_con_identidad_propia():

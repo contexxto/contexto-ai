@@ -22,11 +22,24 @@ que se valida o revienta.
 LAS TRES REGLAS QUE ESTE MÓDULO HACE CUMPLIR, y no son decorativas:
 
   1. NO SE INVENTA PROCEDENCIA. `observed_at` no cae por defecto a `retrieved_at`, ni
-     `confidence` a un número. Si no se sabe, hay un estado que lo dice.
-  2. UNA ESTIMACIÓN DECLARA SUS LÍMITES. `heuristic_estimate` y `unknown` exigen
-     `limitations` no vacía. Es E0.4 escrito como invariante en vez de como disciplina.
+     `confidence` a un número inventado. Si no se sabe, hay una forma de decirlo.
+  2. UNA ESTIMACIÓN DECLARA SUS LÍMITES. `heuristic_estimate` exige `limitations` no
+     vacía. Es E0.4 escrito como invariante en vez de como disciplina.
   3. NINGÚN PROVEEDOR ES ESTRUCTURA. No hay `google_place_id` ni `overture_id`. El
      proveedor es un VALOR en `provider`, no una forma del esquema. Ver §"Proveedores".
+
+ESTE OBJETO REPRESENTA EVIDENCIA QUE EXISTE. No hay `source_type="unknown"` y no debe
+haberlo: fabricar una `EvidenceRefV0` para decir "no tengo evidencia" es inventarse una
+procedencia para representar su ausencia, que es el mismo error de E0.3 con otra ropa.
+La ausencia vive en el contrato consumidor, que la declara con sus propios campos:
+
+    status = "insufficient_evidence"      # el estado que E0.4 dejó visible
+    evidence = []                          # vacío, porque no hay
+    limitations = ["no hay medición de ruido en este punto"]
+
+Una heurística REAL sí produce evidencia —a veces es lo único que hay—, siempre que
+declare `methodology` y `limitations` y no se presente como medición. Eso es distinto
+de no tener nada.
 
 Uso mínimo:
 
@@ -36,11 +49,11 @@ Uso mínimo:
         source_id="ChIJ...",
         retrieved_at=datetime.now(timezone.utc),
         observed_at=None,                      # el proveedor no dice de cuándo es
-        confidence=Confidence.MEDIUM,
+        confidence=None,                       # no hay correspondencia numérica defendible
         methodology="Places Details, campo rating; sin fecha de observación",
         persistence_policy=PersistencePolicy.CACHEABLE_TEMPORARILY,
         cache_ttl_seconds=30 * 24 * 3600,
-        limitations=["el rating agrega reseñas de fechas desconocidas"],
+        limitations=("el rating agrega reseñas de fechas desconocidas",),
     )
 """
 
@@ -86,30 +99,16 @@ class SourceType(StrEnum):
 
     HEURISTIC_ESTIMATE = "heuristic_estimate"
     """Inferido, no medido. Exige `limitations` no vacía. Este es exactamente el caso
-    que en E0.4 movía el ranking sin fuente; el contrato ya no deja que pase callado."""
+    que en E0.4 movía el ranking sin fuente; el contrato ya no deja que pase callado.
 
-    UNKNOWN = "unknown"
-    """No se sabe de dónde salió. Existe A PROPÓSITO: sin este valor, quien migre datos
-    viejos elegirá el que mejor suene y el sistema heredará una mentira. Exige
-    `limitations` no vacía."""
+    Ojo: una heurística real ES evidencia. Lo que no es evidencia es no tener nada —
+    eso no se representa aquí, ver la cabecera del módulo."""
 
-
-class Confidence(StrEnum):
-    """Cuánta confianza merece el dato. Enum y no float, deliberadamente.
-
-    Un `float` no sabe decir "no sé". `0.0` significa "seguro que no", que es una
-    afirmación fuerte y distinta. Meter el desconocimiento en la misma escala que la
-    medición es cómo E0.4 acabó con heurísticas puntuando: el número existía, luego
-    parecía comparable.
-
-    Quien necesite una escala continua que la ponga junto al valor, no aquí.
-    """
-
-    HIGH = "high"
-    MEDIUM = "medium"
-    LOW = "low"
-    UNKNOWN = "unknown"
-    """No se puede estimar la confianza. NO es sinónimo de baja."""
+    # NO existe un valor "unknown", y su ausencia es la decisión. Una evidencia sin
+    # procedencia conocida no es una evidencia con procedencia "desconocida": es la
+    # AUSENCIA de evidencia, y eso lo declara el contrato consumidor con
+    # status=insufficient_evidence y evidence=[]. Si algún día alguien lo echa de menos
+    # al migrar datos viejos, la respuesta correcta es no crear la referencia.
 
 
 class PersistencePolicy(StrEnum):
@@ -187,7 +186,28 @@ class EvidenceRefV0(BaseModel):
     retrieved_at: datetime
     """Cuándo lo trajimos nosotros. Esto siempre se sabe."""
 
-    confidence: Confidence
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    """Cuánta confianza merece el dato, en `[0.0, 1.0]`.
+
+        None → desconocida o no proporcionada
+        0.0  → confianza explícitamente nula
+        1.0  → máxima confianza
+
+    `None` y `0.0` NO son lo mismo, y confundirlos es el error que este campo tiene que
+    evitar: `0.0` afirma "esto no merece confianza", que es una medición; `None` dice
+    "no lo sé", que es una abstención.
+
+    **No se convierten categorías de un proveedor a números arbitrarios.** Si un origen
+    entrega "alta/media/baja" y no hay una correspondencia numérica defendible, esto va
+    a `None` y la explicación vive en `methodology` y `limitations`. Inventar el 0.7 que
+    hace falta para que el ranking salga bonito es exactamente cómo E0.4 acabó con
+    heurísticas puntuando.
+
+    Por qué tiene default `None` y `observed_at` no: omitir `confidence` cae en "no sé",
+    que es la afirmación humilde; omitir `observed_at` habría caído en "es de ahora",
+    que es una afirmación fuerte y falsa. Los defaults seguros se permiten; los que
+    mienten, no."""
+
     methodology: str = Field(min_length=1)
     """Cómo se obtuvo, en prosa corta y concreta. Obligatorio: una evidencia sin
     metodología no es evidencia, es un número con buena presentación."""
@@ -196,9 +216,13 @@ class EvidenceRefV0(BaseModel):
     cache_ttl_seconds: int | None = Field(default=None, gt=0)
     """Solo con `CACHEABLE_TEMPORARILY`, y obligatorio con ella."""
 
-    limitations: list[str] = Field(default_factory=list)
+    limitations: tuple[str, ...] = Field(default_factory=tuple)
     """Qué NO puede sostener este dato. Obligatorio y no vacío para
-    `HEURISTIC_ESTIMATE` y `UNKNOWN`."""
+    `HEURISTIC_ESTIMATE`.
+
+    Tupla y no lista: `frozen=True` impide reasignar el campo, pero no impide un
+    `.append()` sobre una lista. Afirmar inmutabilidad y dejar una colección mutable
+    dentro es afirmar algo que no se cumple."""
 
     # ── invariantes ──────────────────────────────────────────────────────────────
 
@@ -217,7 +241,7 @@ class EvidenceRefV0(BaseModel):
 
     @field_validator("limitations")
     @classmethod
-    def _limitaciones_con_texto(cls, v: list[str]) -> list[str]:
+    def _limitaciones_con_texto(cls, v: tuple[str, ...]) -> tuple[str, ...]:
         if any(not l.strip() for l in v):
             raise ValueError("una limitación vacía no limita nada")
         return v
@@ -256,13 +280,11 @@ class EvidenceRefV0(BaseModel):
         """E0.4, convertido en invariante.
 
         Una heurística puede entrar al sistema —a veces es lo único que hay— pero no
-        puede entrar callada. Y `unknown` sin límites declarados es la forma más rápida
-        de que una migración convierta dato sin procedencia en dato de confianza.
+        puede entrar callada.
         """
-        exigen = {SourceType.HEURISTIC_ESTIMATE, SourceType.UNKNOWN}
-        if self.source_type in exigen and not self.limitations:
+        if self.source_type is SourceType.HEURISTIC_ESTIMATE and not self.limitations:
             raise ValueError(
-                f"source_type={self.source_type.value} exige al menos una entrada en "
+                "source_type=heuristic_estimate exige al menos una entrada en "
                 "limitations: un dato no medido que no declara qué no puede sostener "
                 "acaba puntuando como si estuviera medido"
             )
@@ -277,10 +299,7 @@ class EvidenceRefV0(BaseModel):
         Deliberadamente NO devuelve un score ni un peso: quién puntúa y cuánto es
         decisión del motor, no del contrato.
         """
-        return self.source_type not in {
-            SourceType.HEURISTIC_ESTIMATE,
-            SourceType.UNKNOWN,
-        }
+        return self.source_type is not SourceType.HEURISTIC_ESTIMATE
 
     @property
     def puede_guardarse(self) -> bool:

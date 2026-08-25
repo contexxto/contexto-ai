@@ -2,10 +2,12 @@
 Cómo resuelven la URL de la API las tres herramientas que corren contra producción:
 `scripts/generar_qrs.py`, `scripts/hidratar_activos.py` y `evals/run_evals.py`.
 
-POR QUÉ IMPORTA (2026-08-24): los dos scripts tenían la URL de Render clavada en el código.
-Render renombró el servicio, el host viejo empezó a devolver 503 y los defaults quedaron
-apuntando al vacío durante meses. Nadie lo notó porque un script que no encuentra activos
-no se distingue de un script contra un catálogo vacío.
+POR QUÉ IMPORTA (2026-08-24): los dos scripts tenían la URL de la API clavada en el código,
+apuntando a `https://contexto-ai.onrender.com`. Ese host ya no corresponde al servicio
+operativo y devuelve 503; el backend vivo responde en `contexto-ai-oregon.onrender.com`.
+El defecto podía pasar inadvertido porque un fallo de disponibilidad del catálogo podía
+confundirse con una respuesta sin activos en algunos flujos de tooling — interpretación
+razonable de por qué sobrevivió, no un hecho demostrado.
 
 Estos tests fijan la REGLA DE RESOLUCIÓN, no la URL concreta:
 

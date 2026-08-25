@@ -59,11 +59,15 @@ for _stream in (sys.stdout, sys.stderr):
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# El servicio de Render ya se renombró una vez (contexto-ai → contexto-ai-oregon) y este
-# default quedó clavado apuntando al vacío: 503 silencioso, sin activos, sin QRs. Ahora
-# manda el entorno (CONTEXTO_API_URL, el mismo nombre que usa evals/run_evals.py) y el
-# literal es solo el respaldo verificado — para que el próximo renombrado se arregle sin
-# tocar código.
+# Este default estuvo clavado a https://contexto-ai.onrender.com. Ese host ya no corresponde
+# al servicio operativo y devuelve 503 (verificado 2026-08-24); el backend vivo responde en
+# contexto-ai-oregon.onrender.com. Ahora manda el entorno (CONTEXTO_API_URL, el mismo nombre
+# que usa evals/run_evals.py) y el literal es solo el respaldo verificado.
+#
+# Esto NO arregla la causa estructural: los consumidores internos dependen de un hostname que
+# es propiedad del proveedor de infraestructura. Mientras no exista un endpoint canónico
+# controlado por Contexto (api.contexxto.com), otro cambio de hostname o de servicio puede
+# volver a romperlos. Lo que se gana aquí es poder corregirlo por entorno y no por código.
 #
 # Precedencia: --api  >  variable de shell  >  .env  >  el respaldo de abajo.
 # El shell gana sobre el .env para poder apuntar a otra API en una corrida suelta sin

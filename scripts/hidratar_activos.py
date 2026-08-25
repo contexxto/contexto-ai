@@ -49,9 +49,11 @@ for _s in (sys.stdout, sys.stderr):
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# El servicio de Render ya se renombró una vez (contexto-ai → contexto-ai-oregon) y este
-# default quedó clavado apuntando al vacío. Manda el entorno (CONTEXTO_API_URL, el mismo
-# nombre que usa evals/run_evals.py); el literal es solo el respaldo verificado.
+# Este default estuvo clavado a https://contexto-ai.onrender.com. Ese host ya no corresponde
+# al servicio operativo y devuelve 503 (verificado 2026-08-24); el vivo es
+# contexto-ai-oregon.onrender.com. Manda el entorno (CONTEXTO_API_URL, el mismo nombre que usa
+# evals/run_evals.py); el literal es solo el respaldo verificado. La causa estructural —depender
+# de un hostname del proveedor de infraestructura— se arregla con api.contexxto.com, no aquí.
 #
 # Precedencia: --api  >  variable de shell  >  .env  >  el respaldo de abajo.
 # Leemos el .env con dotenv_values, que devuelve un dict y NO toca os.environ: así la

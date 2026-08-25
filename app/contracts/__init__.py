@@ -13,7 +13,7 @@ Estado (2026-08-25):
   · E1.2 `BuyerContextV0`    — hecho, en `buyer_v0.py`
   · E1.3 `PropertyContextV0` — hecho, en `property_v0.py`
   · E1.4 `PlaceContextV0`    — hecho, en `place_v0.py`
-  · E1.5 `DecisionContextV0` — pendiente
+  · E1.5 `DecisionContextV0` — hecho, en `decision_v0.py`
   · E1.6 `DecisionTraceV0`   — pendiente
 
 Esta fase es de contratos, no de integración: nada de aquí cambia todavía el
@@ -59,6 +59,15 @@ from app.contracts.place_v0 import (
     TravelToAnchorV0,
 )
 from app.contracts.common_v0 import ContractBase, Money, TravelMode
+from app.contracts.decision_v0 import (
+    CONTRACT_VERSION as DECISION_CONTEXT_V0_VERSION,
+)
+from app.contracts.decision_v0 import (
+    BuyerContextRefV0,
+    DecisionContextV0,
+    PlaceContextRefV0,
+    PropertyContextRefV0,
+)
 from app.contracts.evidence_v0 import (
     CONTRACT_VERSION as EVIDENCE_REF_V0_VERSION,
 )
@@ -133,6 +142,12 @@ __all__ = [
     "TravelToAnchorV0",
     "IsochroneV0",
     "NamedMeasureV0",
+    # E1.5 — decisión
+    "DecisionContextV0",
+    "DECISION_CONTEXT_V0_VERSION",
+    "BuyerContextRefV0",
+    "PropertyContextRefV0",
+    "PlaceContextRefV0",
     # compartidos
     "ContractBase",
     "Money",

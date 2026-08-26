@@ -20,9 +20,10 @@ conocerlo otorga acceso.**
 
 Tres hechos gobiernan todo lo demás:
 
-1. **[VERIFICADO]** `CurrentUser.user_id = claims["sub"]` — UUID de Supabase, con
-   `profiles.user_id` como PK y **FK a `auth.users` con `ON DELETE CASCADE`**. Contexto no
-   posee esa identidad: la posee Supabase.
+1. **[VERIFICADO]** `CurrentUser.user_id = claims["sub"]` — el sujeto autenticado, o sea
+   `auth.users.id`. `profiles.user_id` es su **proyección local 1:1** (PK con FK a
+   `auth.users` y `ON DELETE CASCADE`), no la identidad misma. Contexto no posee esa
+   identidad: la posee Supabase.
 2. **[VERIFICADO]** `GET /{session_id}/history` **no declara ninguna dependencia de
    autenticación**. Conocer el `session_id` basta para leer la conversación completa. El
    `session_id` es un **portador de capacidad**, no una identidad verificada.
@@ -41,11 +42,22 @@ La arquitectura del Buyer **puede ser asimétrica**, y probablemente deba serlo.
 | `session_id` | **conversación** | frontend (`localStorage`) o backend (`uuid4` si falta) | `localStorage.contexto_ai_session_id` | ✅ cuerpo de la petición | ✅ `chat_sessions.session_id` (PK) + checkpointer |
 | `device_key` | **navegador/dispositivo** | frontend (`crypto.randomUUID`) | `localStorage.contexto_ai_device_id` | ✅ campo propio | ✅ `visita.device_key`, `contacto.device_key` |
 | `chat_sessions.user_id` | **vínculo** cuenta↔conversación | backend | Postgres | — | ✅ nullable, indexado, sin FK |
-| access token | sesión de auth | Supabase | **variable de módulo en JS** | ✅ | ❌ no en `localStorage` |
+| access token | sesión de auth | Supabase | variable de módulo en `api.js` **+ storage propio de supabase-js** | ✅ | ⚠️ ver abajo |
 
-**[VERIFICADO]** El access token **no** se guarda en `localStorage`: vive en memoria y se
-renueva al recargar. Es una decisión de seguridad correcta que además significa que *tener el
-navegador* no equivale a *estar autenticado*.
+> **CORRECCIÓN.** Una versión anterior de este reporte afirmaba *"el access token vive en
+> memoria, no en `localStorage`"*. **Es falso**, y era una afirmación de seguridad. Lo correcto:
+>
+> - **[VERIFICADO]** Contexto **no** guarda el token por su cuenta: `api.js` lo mantiene en una
+>   variable de módulo y no escribe en `localStorage`.
+> - **[VERIFICADO]** `supabaseClient.js` instancia `createClient(url, anon)` **sin opciones de
+>   auth**.
+> - **[CONTRATO DEL PROVEEDOR]** El valor por defecto de `supabase-js` es
+>   `persistSession: true`, que **sí persiste la sesión de auth en `localStorage`**.
+> - **[VERIFICADO]** `logout()` llama a `signOut({ scope: 'local' })`, que limpia ese storage —
+>   pero **no** toca `SESSION_KEY` ni `DEVICE_KEY`, que son claves propias de Contexto.
+>
+> **No confundir tres cosas distintas:**
+> `storage de sesión de Supabase` ≠ `contexto_ai_session_id` ≠ `contexto_ai_device_id`.
 
 ---
 
@@ -68,12 +80,15 @@ supabase-js  →  JWT (ES256, JWKS)  →  Authorization: Bearer
 **[VERIFICADO]** El token se valida contra las llaves **públicas** de Supabase; el backend no
 maneja secretos. Rechaza tokens sin `sub`.
 
-**[VERIFICADO] Estabilidad:** el `sub` es el UUID de `auth.users`. Sobrevive a logout, a
-relogin, a cambio de dispositivo y a cambio de navegador. **Es la única identidad del sistema
-con esa propiedad.**
+**Estabilidad, con el nivel de evidencia exacto:**
 
-**[INFERIDO]** que sobrevive a cambio de email — no se probó; depende de Supabase, no de este
-repo.
+- **[VERIFICADO]** Dentro del flujo autenticado que modela este repo, la identidad es la misma:
+  el backend siempre la deriva de `claims["sub"]`, nunca la genera.
+- **[INFERIDO / contrato del proveedor]** Que la misma cuenta conserve el mismo `sub` entre
+  relogin, navegadores y dispositivos. Es el contrato de Supabase y es razonable, pero **no se
+  probó end-to-end en esta unidad** — habría exigido un entorno real multi-dispositivo, y no
+  hace falta para cerrar E3.1a.
+- **[DESCONOCIDO]** Si sobrevive a cambio de email o de proveedor de login.
 
 ---
 
@@ -242,7 +257,8 @@ se mueve, el test lo detecta.
 | `device_key` | indefinida en `localStorage` | limpiar datos del navegador |
 | `chat_sessions.user_id` | permanente en Postgres | supresión manual |
 | `visita.device_key` / `contacto.device_key` | permanente | **debe alcanzarlas una supresión** (nota 024) |
-| access token | sesión de página | logout · recarga |
+| sesión de auth (storage de supabase-js) | persistida por defecto en `localStorage` **[contrato del proveedor]** | `signOut({scope:'local'})` |
+| access token en `api.js` | variable de módulo, se repuebla al recargar | logout · recarga |
 
 ---
 
@@ -250,7 +266,7 @@ se mueve, el test lo detecta.
 
 | Caso | Identidad disponible | Estabilidad | Cross-thread | Cross-session | Backend verificable | ¿Candidata a buyer root? |
 |---|---|---|---|---|---|---|
-| **autenticado** | `claims.sub` (UUID Supabase) | **alta** — sobrevive logout, dispositivo, navegador | ✅ 1:N vía `chat_sessions.user_id` | ✅ | ✅ JWT firmado, validado contra JWKS | **YES** |
+| **autenticado** | `claims.sub` = `auth.users.id` | **alta** — [VERIFICADO] en el flujo del repo; [INFERIDO] cross-device | ✅ 1:N vía `chat_sessions.user_id` | ✅ | ✅ JWT firmado, validado contra JWKS | **YES** |
 | **anónimo** | ninguna de persona; `session_id` + `device_key` de navegador | media (`localStorage`) | ❌ `session_id` es 1:1 con hilo | ✅ solo mismo navegador | ⚠️ `device_key` sí llega y se persiste, pero **no autenticado** | **NO** — ver §13 |
 | **múltiples chats** | `user_id` | alta | ✅ | ✅ | ✅ | **YES** (misma raíz que autenticado) |
 | **relogin** | `user_id` | alta | ✅ | ✅ | ✅ | **YES** |
@@ -260,17 +276,32 @@ se mueve, el test lo detecta.
 
 ## 12. WHAT CAN BE A BUYER ROOT
 
-**`claims.sub` (= `CurrentUser.user_id` = `profiles.user_id`).** Y solo eso.
+> **La raíz es `claims.sub` = `auth.users.id` — el sujeto autenticado.**
+> **`profiles.user_id` es una proyección local 1:1 de esa identidad, no la identidad.**
+
+La distinción no es estética. La identidad **nace** en el sujeto autenticado; el perfil es una
+representación local que el backend **auto-provisiona** (`_load_or_provision_profile` inserta
+la fila la primera vez que ve al usuario).
+
+```
+auth subject  →  propiedad del Buyer      ← la raíz
+profile       →  metadata de producto (rol, nombre, agencia)
+```
+
+**No al revés.** Si E3.1b hiciera depender la existencia del Buyer de que una fila de
+`profiles` esté correctamente provisionada, ataría la identidad a un efecto secundario
+best-effort. El store puede usar una FK o un valor equivalente a ese UUID; lo que no debe es
+tratar el perfil como fuente.
 
 Razones **[VERIFICADO]**:
 
 1. Identifica **persona/cuenta**, no sesión ni conversación.
 2. Firmado por un tercero (Supabase) y validado contra JWKS: **no es autoafirmado**.
-3. Sobrevive logout, relogin, dispositivo y navegador.
+3. Estable dentro del flujo autenticado modelado por el repo (§3, con su nivel de evidencia).
 4. Ya tiene 1:N con conversaciones, con índice.
-5. Ya tiene FK e integridad referencial (`ON DELETE CASCADE`) — el borrado de cuenta ya
-   arrastra el perfil.
-6. Conocerlo **no** otorga acceso: hace falta un JWT válido.
+5. `profiles.user_id` ya referencia `auth.users(id)` con `ON DELETE CASCADE` — el borrado de
+   cuenta ya arrastra la proyección local.
+6. **Conocerlo no otorga acceso**: hace falta un JWT válido.
 
 El punto 6 es el que ninguna otra identidad del sistema cumple.
 
@@ -355,12 +386,41 @@ Decisiones que **no** son técnicas y E3.1a no toma:
 ## Recomendación
 
 ```
-E3.1b READY WITH CONSTRAINT — authenticated buyer root verified (profiles.user_id)
+E3.1b READY WITH CONSTRAINT
 
-RESTRICCIÓN:  el Buyer durable existe SOLO para usuarios autenticados.
-              Para anónimos NO se crea identidad: la memoria queda acotada al hilo.
-              No apoyarse en thread_id para autorizar (ver §9).
+RAÍZ VERIFICADA
+    claims.sub  =  auth.users.id          ← el sujeto autenticado
+    profiles.user_id                      ← proyección local 1:1, NO la identidad
+
+RESTRICCIONES
+    1. el Buyer durable existe SOLO para autenticados;
+       para anónimos NO se crea identidad — la memoria queda acotada al hilo
+    2. no apoyarse en thread_id para autorizar (§9)
+    3. no atar la existencia del Buyer a que la fila de `profiles` esté provisionada
 ```
+
+### Secuencia recomendada — con un paso intermedio
+
+El hallazgo de §9 no obliga a corregirlo dentro de E3.1a, pero **sí cambia el orden de lo que
+viene**:
+
+```
+E3.1a  ──▶  PR · CI · merge
+              ↓
+        AUTH-READ-GATE          ← proteger /history, /handoff, /intencion por ownership,
+              ↓                    preservando /shared/{token} como acceso público explícito
+        E3.1b Buyer Store
+```
+
+**Por qué antes y no después.** El Buyer Harness aumenta la sensibilidad de lo que se asocia a
+una persona: criterios, presupuesto, correcciones, anclas y trazas. Aunque el store tenga sus
+propios endpoints protegidos, dejar legible por `session_id` la conversación asociada a ese
+mismo usuario sería construir memoria durable encima de una frontera que acabamos de descubrir
+abierta.
+
+**No es una vulnerabilidad explotada** —los `session_id` son UUID4 y no se hizo prueba
+ofensiva— pero sí un **control de autorización ausente [VERIFICADO]**, y eso basta para
+tratarlo como deuda de seguridad **antes** de persistir memoria del comprador.
 
 La asimetría no es una carencia del diseño: es lo que el producto es hoy. Inventar una
 identidad anónima para lograr simetría sería fabricar continuidad que el sistema no tiene —

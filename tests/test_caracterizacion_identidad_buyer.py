@@ -328,9 +328,41 @@ def test_el_logout_no_borra_ni_la_sesion_ni_el_dispositivo():
     assert "removeItem" not in cuerpo
 
 
-def test_el_token_viaja_en_memoria_no_en_localstorage():
-    """El access token vive en una variable de módulo. Consecuencia: al recargar la página se
-    renueva desde Supabase; no queda un JWT en localStorage."""
+def test_contexto_no_guarda_el_token_por_su_cuenta():
+    """Lo que SÍ se puede afirmar: el módulo propio de Contexto mantiene el access token en
+    una variable de módulo y **no** lo escribe en `localStorage`.
+
+    Esto NO significa que no haya un JWT en `localStorage` — ver el test siguiente. Afirmarlo
+    sería una afirmación de seguridad falsa, y una versión anterior de este reporte la hizo.
+    """
     api = (RAIZ / "frontend" / "src" / "api.js").read_text(encoding="utf-8")
     assert "let accessToken" in api or "accessToken = null" in api
     assert "localStorage" not in api.split("export function apiHeaders")[0]
+
+
+def test_el_cliente_supabase_usa_la_persistencia_por_defecto():
+    """CORRECCIÓN. `createClient(url, anon)` se instancia **sin opciones de auth**.
+
+    El comportamiento por defecto de `supabase-js` es `persistSession: true`, que guarda la
+    sesión de auth en `localStorage` del navegador. O sea: sí hay una sesión persistida, solo
+    que **la gestiona la librería**, no Contexto.
+
+    No confundir tres cosas distintas:
+
+        storage de sesión de Supabase   ≠  contexto_ai_session_id  ≠  contexto_ai_device_id
+
+    Lo que este test congela es la CONFIGURACIÓN (verificable en el repo). El comportamiento
+    concreto de la librería es contrato del proveedor, y así queda marcado en el reporte.
+    """
+    js = (RAIZ / "frontend" / "src" / "supabaseClient.js").read_text(encoding="utf-8")
+    assert "createClient(url, anon)" in js
+    assert "persistSession" not in js, "si se configurara explícitamente, cambiaría §10"
+    assert "storageKey" not in js
+
+
+def test_el_signout_es_de_alcance_local():
+    """`signOut({ scope: 'local' })` borra la sesión que la librería mantiene en ESTE
+    dispositivo. Es lo que limpia el storage de Supabase — y sigue sin tocar las claves
+    propias de Contexto (ver `test_el_logout_no_borra_ni_la_sesion_ni_el_dispositivo`)."""
+    js = APP_JSX.read_text(encoding="utf-8")
+    assert "signOut({ scope: 'local' })" in js

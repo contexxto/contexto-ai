@@ -230,9 +230,18 @@ _ATRIBUYE_MEDICION = re.compile(
     rf"(?:{_VERBO_PROCEDENCIA})[^.;\n]{{0,40}}?(?:{_FUENTE_MEDIDA_TXT})"
 )
 
-# Negación GRAMATICAL delante de la atribución: "no fue calculada sobre…", "nunca se midió
-# sobre…", "tampoco sale de…". Se mira solo lo que va ANTES del verbo, para que
-# «calculada sobre los comercios reales, no sobre una estimación» siga siendo una afirmación.
+# Negación GRAMATICAL, en DOS posiciones que significan cosas opuestas. La clave es que el
+# match del regex TERMINA en la fuente, así que la posición de la negación respecto de él
+# distingue por sí sola una negación de una afirmación con matiz:
+#
+#     usa una estimacion, NO openstreetmap          → la negación cae DENTRO del match
+#     └──────────── m.group(0) ────────────┘           (niega la fuente) → callar
+#
+#     calculada sobre comercios reales, NO una estimacion
+#     └────── m.group(0) ──────┘        └ fuera del match (matiza) → denunciar
+#
+# Por eso se mira ANTES del verbo y DENTRO del match, pero nunca después: si bastara un "no"
+# posterior, evadir al guardián sería tan fácil como añadirlo al final de la frase.
 _NEGACION = re.compile(r"\b(?:no|nunca|jamas|tampoco|ni)\b")
 
 # Negación SEMÁNTICA en la frase entera: la frase honesta del heurístico menciona "comercios
@@ -312,9 +321,11 @@ def _caminabilidad_procedencia(reply: str, cards: list[dict]) -> list[dict]:
         frase_plana = _fragmento(plano, m.start())
         if not _CAMINABILIDAD.search(frase_plana) or _NIEGA_MEDICION.search(frase_plana):
             continue
-        # ¿Hay un "no"/"nunca"/"tampoco" antes del verbo, dentro de la misma frase?
+        # Negación gramatical en las dos posiciones que niegan (ver `_NEGACION`): delante del
+        # verbo, o entre el verbo y la fuente. La segunda hace falta porque el regex tolera
+        # texto intermedio, y ahí cabe justo la negación: "usa una estimación, no OSM".
         antes = frase_plana[:frase_plana.find(m.group(0))] if m.group(0) in frase_plana else ""
-        if _NEGACION.search(antes):
+        if _NEGACION.search(antes) or _NEGACION.search(m.group(0)):
             continue
 
         i = _card_de_caminabilidad(frase_plana, _linea_de(plano, m.start()), cards)

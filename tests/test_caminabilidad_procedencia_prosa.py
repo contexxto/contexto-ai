@@ -168,9 +168,33 @@ def test_la_mera_coexistencia_no_es_una_atribucion(frase):
     assert CODIGO not in _codigos(frase, [card])
 
 
+@pytest.mark.parametrize("fuente", ["heuristico", None, ""])
+@pytest.mark.parametrize("frase", [
+    "La caminabilidad 84 usa una estimación, no OpenStreetMap.",
+    "La caminabilidad 84 se calcula con una estimación y no con OpenStreetMap.",
+    "La caminabilidad 84 usa datos estimados, no datos de OpenStreetMap.",
+    "La caminabilidad 84 sale de una estimación, ni de OpenStreetMap ni de un censo.",
+])
+def test_la_negacion_entre_el_verbo_y_la_fuente_tambien_absuelve(frase, fuente):
+    """SEGUNDO falso positivo de la misma familia, y el más sutil.
+
+    El regex tolera texto intermedio entre el verbo y la fuente — y ahí cabe justo la
+    negación. En «usa una estimación, no OpenStreetMap» el match ES
+    `usa una estimacion, no openstreetmap`: el "no" no está *antes* del verbo, está DENTRO.
+    Mirar solo el prefijo lo dejaba pasar, y estas frases dicen la verdad.
+    """
+    card = _card("a", 380, 84, fuente)
+    assert CODIGO not in _codigos(frase, [card]), f"acusó a una negación verdadera: {frase}"
+
+
 def test_la_negacion_posterior_no_absuelve():
-    """Contrapeso del test anterior: si la afirmación viene primero, es una afirmación.
-    Sin esto, bastaría añadir un "no" al final de la frase para evadir al guardián."""
+    """EL CONTRAPESO QUE IMPIDE LA EVASIÓN, y por eso la negación se mira antes del verbo y
+    dentro del match, pero NUNCA después.
+
+    El match termina en la fuente, así que aquí el "no" queda fuera: la frase afirma la
+    medición y luego la matiza. Si un "no" posterior absolviera, evadir al guardián sería
+    tan fácil como añadirlo al final.
+    """
     card = _card("a", 380, 84, "heuristico")
     frase = ("Caminabilidad 84 calculada sobre los comercios reales de la zona, "
              "no sobre una estimación.")

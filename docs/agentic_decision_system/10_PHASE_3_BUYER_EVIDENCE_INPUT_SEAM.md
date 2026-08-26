@@ -27,7 +27,7 @@ LEGACY  (autoridad productiva, sin cambios)
    messages → _user_texts → extraer_preferencias(list[str]) → dict → encaje actual
 
 F3      (construido en esta unidad, NO autoritativo)
-   messages → mensaje_nuevo_de() → IdentifiedUserMessage(message_id, text) → [STOP]
+   messages → ultimo_mensaje_usuario_identificado() → IdentifiedUserMessage(message_id, text) → [STOP]
                                                                               ↑
                                                             aquí entra E3.2 (updater)
 ```
@@ -45,7 +45,7 @@ extractor antiguo** para intentar hacerlo atribuible.
 
 | Regla | Cómo se garantiza |
 |---|---|
-| Sale del `HumanMessage.id` del estado | `mensaje_nuevo_de` lo lee; no lo construye |
+| Sale del `HumanMessage.id` del estado | `ultimo_mensaje_usuario_identificado` lo lee; no lo construye |
 | No lo propone un LLM | ningún modelo participa en esta costura |
 | No se deriva del texto | test: dos turnos con el mismo texto → ids distintos |
 | No lo genera F3 | test por AST: el módulo **no importa** `uuid`, `random`, `secrets`, `hashlib`, `time`, `datetime`, ni llama a `hash()` |
@@ -54,13 +54,43 @@ extractor antiguo** para intentar hacerlo atribuible.
 colapsarían en el mismo id, y una corrección posterior sería indistinguible de la declaración
 original. La identidad tiene que ser del *evento*, no del *contenido*.
 
-### Selección del mensaje nuevo — determinista
+### Selección — determinista, y lo que **no** promete
 
-El **último** `HumanMessage` con contenido no vacío. Sin heurística de "cuál parece nuevo":
-en el punto donde corre el grafo, el último ES el del turno.
+El **último** `HumanMessage` con contenido no vacío. Selección por posición, sin heurística.
 
 El filtro de vacíos es **el mismo** que usa el legacy `_user_texts`, para que los dos carriles
 no discrepen sobre qué cuenta como mensaje del usuario.
+
+> **Distinción congelada:**
+> ```
+> identificado ≠ nuevo
+> último       ≠ sin procesar
+> ```
+
+La función devuelve el último mensaje del transcript. **No sabe si ya fue procesado**, y no
+puede saberlo: la novedad no es propiedad del transcript, es propiedad del **estado
+persistido**. Un retry, un replay, una reanudación del grafo o una ejecución duplicada
+devolverían el mismo `message_id` — y eso es correcto, es el mismo mensaje.
+
+Por eso se llama `ultimo_mensaje_usuario_identificado` y no `mensaje_nuevo_de`: el nombre
+anterior prometía una garantía que la implementación no da. Hoy no era un bug porque el carril
+está desconectado; cuando E3.2 lo conecte, sí lo sería. Hay dos tests que lo fijan — uno
+comprueba que dos llamadas sobre el mismo estado devuelven el mismo id, y otro que ninguna
+función pública del módulo contenga "nuevo" en su nombre.
+
+### Invariante que esto impone a E3.1
+
+**La idempotencia se resuelve en el store, no en la selección.**
+
+```
+mismo buyer_id  +  mismo source_message_id  +  mismo cambio propuesto
+        →  NO dos revisiones independientes del BuyerContext
+```
+
+Una misma declaración fuente no puede producir dos mutaciones del `BuyerContext` solo porque
+el runtime la reprocese. Estaba implícito en el gate original de F3 (*"same transcript, no
+uncontrolled churn"*); esta unidad lo vuelve **estructural**: al no prometer novedad aguas
+arriba, obliga a que la garantía viva donde puede cumplirse.
 
 ### Verificado en runtime
 
@@ -68,7 +98,7 @@ no discrepen sobre qué cuenta como mensaje del usuario.
 HumanMessage(content=…)          id = None      ← así lo construye chat.py
 tras ainvoke                     id = UUID4     ← lo asigna add_messages
 segundo turno                    id nuevo; el del primero intacto
-mensaje_nuevo_de(estado)         devuelve ESE id, no uno propio
+ultimo_mensaje_usuario_identificado(estado)         devuelve ESE id, no uno propio
 ```
 
 ---
@@ -198,14 +228,38 @@ señalar la frase exacta — eso es territorio de `TRUST-ID-01`.
 
 ## WHAT E3.1 CAN NOW BUILD
 
-Con la costura en su sitio, E3.1 (Buyer Store) puede empezar sabiendo:
+Con la costura en su sitio, E3.1 puede empezar sabiendo:
 
 1. **Cada criterio podrá citar el mensaje que lo originó**, con un id real y estable.
-2. **La llave del store no puede ser `thread_id`.** F3.0a demostró que eso es la conversación,
-   no la persona. Sigue abierto qué es "el comprador" sin login.
+2. **El store debe ser idempotente por evidencia de origen** — ver §IDENTITY SEMANTICS.
+   `(buyer_id, source_message_id)` no puede producir dos revisiones.
 3. **El store no necesita releer 12 mensajes.** El camino es incremental:
    `BuyerContext actual + IdentifiedUserMessage → updater → nueva revisión`.
 4. **La barrera Fair Housing va entre la costura y el store**, no dentro del store.
+
+### ⛔ Bloqueador real antes de construir tablas
+
+**`thread_id` no puede ser `buyer_id`.** F3.0a demostró que identifica *conversación*, no
+*persona*. Un store cuya clave primaria sea una incógnita es arquitectura falsa.
+
+Antes de E3.1b (Buyer Store) hace falta caracterizar qué identidad existe **hoy** para:
+
+```
+usuario autenticado        →  ¿hay un user_id estable? probablemente sea la raíz correcta
+usuario anónimo            →  ¿qué hay, si algo?
+múltiples conversaciones   →  ¿se relacionan entre sí?
+relogin / sesión nueva     →  ¿se reconecta con lo anterior?
+```
+
+Para anónimos, **no inventar una identidad cross-session** sin revisar cómo funcionan de
+verdad el frontend y el auth. Eso sugiere partir la fase:
+
+```
+F3.0b  →  merge  →  E3.1a Buyer Identity Characterization  →  E3.1b Buyer Store
+```
+
+No es una fase artificial: la clave primaria del store no se puede diseñar mientras *"buyer"*
+siga siendo una incógnita.
 
 ## WHAT E3.2 MUST DO
 

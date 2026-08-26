@@ -21,7 +21,7 @@ from typing_extensions import TypedDict
 from app.buyer.mensaje import (
     IdentifiedUserMessage,
     MensajeSinIdentidad,
-    mensaje_nuevo_de,
+    ultimo_mensaje_usuario_identificado,
 )
 
 
@@ -55,7 +55,7 @@ def test_el_id_lo_asigna_add_messages_y_la_costura_lo_toma():
     estado = asyncio.run(cg.aget_state(cfg))
     del_estado = estado.values["messages"][-1]
 
-    identificado = mensaje_nuevo_de(estado.values["messages"])
+    identificado = ultimo_mensaje_usuario_identificado(estado.values["messages"])
     assert identificado.message_id == del_estado.id
     assert identificado.text == "solo bajo $450"
 
@@ -64,11 +64,11 @@ def test_un_turno_nuevo_trae_id_nuevo_y_el_anterior_conserva_el_suyo():
     cg, cfg = _grafo(), {"configurable": {"thread_id": "t-2"}}
 
     asyncio.run(cg.ainvoke({"messages": [HumanMessage(content="busco departamento")]}, cfg))
-    primero = mensaje_nuevo_de(asyncio.run(cg.aget_state(cfg)).values["messages"])
+    primero = ultimo_mensaje_usuario_identificado(asyncio.run(cg.aget_state(cfg)).values["messages"])
 
     asyncio.run(cg.ainvoke({"messages": [HumanMessage(content="solo bajo $450")]}, cfg))
     estado = asyncio.run(cg.aget_state(cfg)).values["messages"]
-    segundo = mensaje_nuevo_de(estado)
+    segundo = ultimo_mensaje_usuario_identificado(estado)
 
     assert segundo.message_id != primero.message_id
     assert segundo.text == "solo bajo $450"
@@ -85,14 +85,14 @@ def test_la_seleccion_es_el_ultimo_mensaje_del_usuario():
         HumanMessage(content="solo bajo $450", id="m-2"),
         AIMessage(content="quedan 2"),
     ]
-    assert mensaje_nuevo_de(msgs) == IdentifiedUserMessage(message_id="m-2", text="solo bajo $450")
+    assert ultimo_mensaje_usuario_identificado(msgs) == IdentifiedUserMessage(message_id="m-2", text="solo bajo $450")
 
 
 def test_los_mensajes_del_modelo_y_de_herramienta_no_son_candidatos():
     msgs = [HumanMessage(content="hola", id="m-1"),
             AIMessage(content="respuesta", id="a-1"),
             ToolMessage(content="{}", name="t", tool_call_id="x", id="t-1")]
-    assert mensaje_nuevo_de(msgs).message_id == "m-1"
+    assert ultimo_mensaje_usuario_identificado(msgs).message_id == "m-1"
 
 
 @pytest.mark.parametrize("vacio", ["", "   ", "\n\t "])
@@ -101,7 +101,41 @@ def test_un_mensaje_en_blanco_no_desplaza_al_ultimo_util(vacio):
     qué cuenta como mensaje del usuario."""
     msgs = [HumanMessage(content="solo bajo $450", id="m-1"),
             HumanMessage(content=vacio, id="m-2")]
-    assert mensaje_nuevo_de(msgs).message_id == "m-1"
+    assert ultimo_mensaje_usuario_identificado(msgs).message_id == "m-1"
+
+
+# ── identificado ≠ nuevo · último ≠ sin procesar ───────────────────────────────────
+
+
+def test_la_funcion_no_afirma_que_el_mensaje_este_sin_procesar():
+    """LA DISTINCIÓN QUE EL NOMBRE PROTEGE.
+
+    Llamarla dos veces sobre el mismo estado devuelve el MISMO `message_id`. No es un
+    defecto: es el mismo mensaje. La función selecciona por posición en el transcript y **no
+    puede saber** si ya fue procesado — la novedad no es propiedad del transcript, es
+    propiedad del estado persistido.
+
+    Un retry, un replay o una reanudación del grafo caerían aquí. Por eso la idempotencia se
+    resuelve en el Buyer Store —`(buyer_id, source_message_id)` no debe producir dos
+    revisiones— y no intentando que esta función detecte novedad.
+    """
+    msgs = [HumanMessage(content="solo bajo $450", id="m-1")]
+    primera = ultimo_mensaje_usuario_identificado(msgs)
+    segunda = ultimo_mensaje_usuario_identificado(msgs)
+    assert primera == segunda
+    assert primera.message_id == segunda.message_id == "m-1"
+
+
+def test_el_nombre_no_promete_novedad():
+    """Si alguien la renombra a `nuevo_…` o `mensaje_nuevo_de`, este test lo caza. El nombre
+    es parte del contrato: prometía una garantía que la implementación no da."""
+    from app.buyer import mensaje
+
+    publicas = [n for n in dir(mensaje) if not n.startswith("_") and callable(getattr(mensaje, n))]
+    for n in publicas:
+        assert "nuevo" not in n.lower(), (
+            f"`{n}` promete novedad; la selección es por posición, no por estado procesado"
+        )
 
 
 # ── Fail-closed: no se fabrica identidad ───────────────────────────────────────────
@@ -113,15 +147,15 @@ def test_sin_id_la_costura_falla_cerrado(sin_id):
     su propio origen — la misma familia que `place_id` inventado o `decision_id` colisionado."""
     msgs = [HumanMessage(content="necesito 3 dormitorios", id=sin_id)]
     with pytest.raises(MensajeSinIdentidad, match="no trae"):
-        mensaje_nuevo_de(msgs)
+        ultimo_mensaje_usuario_identificado(msgs)
 
 
 def test_no_se_deriva_la_identidad_del_texto():
     """Dos turnos con el MISMO texto deben tener identidades DISTINTAS. Un hash del contenido
     los colapsaría, y entonces una corrección posterior sería indistinguible de la
     declaración original."""
-    a = mensaje_nuevo_de([HumanMessage(content="sí", id="m-1")])
-    b = mensaje_nuevo_de([HumanMessage(content="sí", id="m-2")])
+    a = ultimo_mensaje_usuario_identificado([HumanMessage(content="sí", id="m-1")])
+    b = ultimo_mensaje_usuario_identificado([HumanMessage(content="sí", id="m-2")])
     assert a.text == b.text and a.message_id != b.message_id
 
 
@@ -155,11 +189,11 @@ def test_el_modulo_no_genera_identificadores():
 def test_sin_mensajes_del_usuario_devuelve_none_y_no_levanta(sin_nada):
     """`None` es "no hay nada que procesar", no un fallo. Se distingue a propósito de
     `MensajeSinIdentidad`, que sí lo es — la misma distinción que gobierna los contratos F1."""
-    assert mensaje_nuevo_de(sin_nada) is None
+    assert ultimo_mensaje_usuario_identificado(sin_nada) is None
 
 
 def test_el_objeto_es_inmutable_y_cerrado():
-    m = mensaje_nuevo_de([HumanMessage(content="hola", id="m-1")])
+    m = ultimo_mensaje_usuario_identificado([HumanMessage(content="hola", id="m-1")])
     with pytest.raises(Exception):
         m.message_id = "otro"
     with pytest.raises(Exception):
@@ -242,7 +276,7 @@ def test_el_texto_sigue_siendo_texto_sin_sanitizar():
     que existir aguas abajo, antes de derivar cualquier criterio.
     """
     crudo = "tengo tres hijos y busco algo tranquilo"
-    m = mensaje_nuevo_de([HumanMessage(content=crudo, id="m-1")])
+    m = ultimo_mensaje_usuario_identificado([HumanMessage(content=crudo, id="m-1")])
     assert m.text == crudo
     assert not hasattr(m, "tranquilidad") and not hasattr(m, "hijos")
     assert set(m.model_dump()) == {"message_id", "text"}
@@ -278,7 +312,7 @@ def test_una_mencion_no_es_estado_durable_del_comprador():
     que esa clasificación ocurra aquí por accidente. La hará el updater (E3.2), con la
     política durable / turn-only / ambiguo → no persistir.
     """
-    m = mensaje_nuevo_de([HumanMessage(content="¿Cuál de estos es el más caminable?", id="m-1")])
+    m = ultimo_mensaje_usuario_identificado([HumanMessage(content="¿Cuál de estos es el más caminable?", id="m-1")])
     assert m.text == "¿Cuál de estos es el más caminable?"
     assert set(m.model_dump()) == {"message_id", "text"}, (
         "si aquí apareciera algo como `caminable`, la clasificación se habría colado en la costura"

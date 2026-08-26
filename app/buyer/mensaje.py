@@ -1,4 +1,4 @@
-"""F3.0b — la costura de entrada: el mensaje nuevo del usuario, con su identidad real.
+"""F3.0b — la costura de entrada: el último mensaje del usuario, con su identidad real.
 
 F3.0a demostró que la identidad que el Buyer Harness necesita **ya existe**: `add_messages`
 le asigna un UUID4 a cada `HumanMessage` al ingerirlo, el id se mantiene estable entre turnos
@@ -9,7 +9,7 @@ identidad en cadenas anónimas.
 Este módulo es el carril nuevo. No sustituye al legacy:
 
     LEGACY (autoridad productiva)     messages → _user_texts → extraer_preferencias → dict
-    F3     (todavía no autoritativo)  messages → mensaje_nuevo_de → IdentifiedUserMessage → [STOP]
+    F3     (todavía no autoritativo)  messages → ultimo_mensaje_usuario_identificado → IdentifiedUserMessage → [STOP]
 
 LA REGLA QUE GOBIERNA TODO ESTE ARCHIVO: el `message_id` **se toma, no se fabrica**. No lo
 propone un modelo, no se deriva del texto, no se genera aquí. Sale del `HumanMessage.id` que
@@ -69,11 +69,25 @@ def _es_util(m) -> bool:
             and bool(m.content.strip()))
 
 
-def mensaje_nuevo_de(messages) -> IdentifiedUserMessage | None:
+def ultimo_mensaje_usuario_identificado(messages) -> IdentifiedUserMessage | None:
     """El ÚLTIMO mensaje del usuario en el hilo, con su identidad.
 
-    Determinista: el más reciente que cumple `_es_util`. No hay heurística de "cuál parece
-    nuevo" — en el punto donde corre el grafo, el último `HumanMessage` ES el del turno.
+    Determinista: el más reciente que cumple `_es_util`. Selección por posición, sin
+    heurística.
+
+    ── LO QUE ESTA FUNCIÓN **NO** AFIRMA ───────────────────────────────────────────────
+
+        identificado ≠ nuevo
+        último       ≠ sin procesar
+
+    Devuelve el último mensaje del transcript. **No sabe si ya fue procesado antes**, y no
+    puede saberlo: la novedad no es una propiedad del transcript, es una propiedad del
+    estado persistido. Un retry, un replay, una reanudación del grafo o una ejecución
+    duplicada devolverían el MISMO `message_id`, y eso es correcto — es el mismo mensaje.
+
+    Por eso el nombre dice `ultimo_…` y no `nuevo_…`: prometer novedad sería prometer una
+    garantía que solo puede dar el Buyer Store. La idempotencia se resuelve allí
+    —`(buyer_id, source_message_id)` no debe producir dos revisiones— no aquí.
 
     Devuelve `None` cuando no hay ningún mensaje del usuario. `None` no es un fallo: es
     "no hay nada que procesar", y se distingue a propósito de `MensajeSinIdentidad`, que sí

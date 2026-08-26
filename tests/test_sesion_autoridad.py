@@ -166,10 +166,176 @@ def test_el_claim_asigna_dueno_y_revoca_en_la_MISMA_sentencia():
     fuente = pathlib.Path(inspect.getfile(sesion_autoridad)).read_text(encoding="utf-8")
     fn = next(n for n in ast.walk(ast.parse(fuente))
               if isinstance(n, ast.AsyncFunctionDef) and n.name == "_ejecutar_claim")
-    sql = ast.unparse(fn)
+    sql = " ".join(ast.unparse(fn).split())   # normaliza el SQL multilínea
     assert "SET user_id = :uid, resume_revoked_at = now()" in sql
     assert sql.count("UPDATE chat_sessions") == 1
-    assert "WHERE session_id = :sid AND user_id IS NULL" in sql, "no reasigna un hilo ajeno"
+    # Las TRES condiciones de autorización, dentro de la misma sentencia.
+    assert "user_id IS NULL" in sql, "podría reasignar un hilo ajeno"
+    assert "resume_token_hash = :h" in sql, "no está ligado a la capacidad que autorizó"
+    assert "resume_revoked_at IS NULL" in sql, "no comprueba que la capacidad siga vigente"
+
+
+# ── El claim: seguro por construcción, no por disciplina del llamador ──────────────
+
+
+class _DBFalsa:
+    """Doble mínimo: registra el SQL y los parámetros, y devuelve las filas que se le digan.
+
+    Permite probar la ATOMICIDAD y el conteo de filas sin Postgres — que es justo lo que
+    importa aquí: si el `UPDATE` no toca exactamente una fila, tiene que fallar.
+    """
+
+    def __init__(self, filas_devueltas=1):
+        self.filas, self.sql, self.params = filas_devueltas, [], []
+        self.commits = self.rollbacks = 0
+
+    async def execute(self, stmt, params=None):
+        self.sql.append(str(stmt))
+        self.params.append(params or {})
+        db = self
+
+        class _R:
+            def fetchall(self_inner):
+                return [("x",)] * db.filas
+
+        return _R()
+
+    async def commit(self):
+        self.commits += 1
+
+    async def rollback(self):
+        self.rollbacks += 1
+
+
+def test_el_claim_liga_el_UPDATE_a_la_capacidad_que_lo_autorizo():
+    """LA CORRECCIÓN DE SEGURIDAD. La versión anterior hacía `WHERE user_id IS NULL` y
+    confiaba en que alguien hubiera autorizado antes. Ahora la condición de autorización va
+    DENTRO de la sentencia: mismo hash, capacidad vigente, hilo sin dueño."""
+    import asyncio
+
+    from app.sesion_autoridad import reclamar_sesion_anonima
+
+    db = _DBFalsa(filas_devueltas=1)
+    asyncio.run(reclamar_sesion_anonima("s-1", U1, SECRETO, db=db))
+
+    sql = db.sql[0]
+    assert "resume_token_hash = :h" in sql, "el UPDATE no está ligado a la capacidad"
+    assert "resume_revoked_at IS NULL" in sql, "no comprueba que siga vigente"
+    assert "user_id           IS NULL" in sql or "user_id IS NULL" in sql
+    assert "RETURNING session_id" in sql
+    assert db.params[0]["h"] == hash_de(SECRETO)
+    assert SECRETO not in str(db.params[0]), "el secreto en claro no debe ir al SQL"
+    assert db.commits == 1
+
+
+def test_un_claim_que_no_reclama_nada_FALLA_en_vez_de_callar():
+    """TOCTOU: si entre la autorización y el UPDATE alguien reclamó el hilo o revocó la
+    capacidad, el `WHERE` deja de cumplirse y no se actualiza nada. Eso debe DOLER."""
+    import asyncio
+
+    from app.sesion_autoridad import reclamar_sesion_anonima
+
+    db = _DBFalsa(filas_devueltas=0)
+    with pytest.raises(AccesoDenegado):
+        asyncio.run(reclamar_sesion_anonima("s-1", U1, SECRETO, db=db))
+    assert db.commits == 0 and db.rollbacks == 1
+
+
+def test_el_claim_sin_capacidad_ni_siquiera_llega_a_la_base():
+    """Un llamador que olvidara autorizar produciría el agujero que el gate cierra. Ahora
+    no puede: sin secreto, la función se niega antes de tocar nada."""
+    import asyncio
+
+    from app.sesion_autoridad import reclamar_sesion_anonima
+
+    db = _DBFalsa()
+    for vacio in (None, ""):
+        with pytest.raises(AccesoDenegado):
+            asyncio.run(reclamar_sesion_anonima("s-1", U1, vacio, db=db))
+    assert db.sql == []
+
+
+# ── El bootstrap: creación ≠ reanudación ───────────────────────────────────────────
+
+
+def test_el_bootstrap_anonimo_emite_secreto_y_guarda_solo_el_hash():
+    import asyncio
+
+    from app.sesion_autoridad import crear_sesion
+
+    db = _DBFalsa(filas_devueltas=1)
+    creada = asyncio.run(crear_sesion(None, db=db))
+
+    assert creada.resume_secret and len(creada.resume_secret) >= 40
+    assert creada.session_id.startswith("session-")
+    assert db.params[0]["h"] == hash_de(creada.resume_secret)
+    assert creada.resume_secret not in str(db.params[0]), "el secreto no se persiste"
+
+
+def test_el_bootstrap_autenticado_no_emite_capacidad():
+    """Ahí manda la identidad; una capacidad anónima sería un segundo acceso sin motivo."""
+    import asyncio
+
+    from app.sesion_autoridad import crear_sesion
+
+    db = _DBFalsa(filas_devueltas=1)
+    creada = asyncio.run(crear_sesion(U1, db=db))
+    assert creada.resume_secret is None
+    assert db.params[0]["uid"] == U1.user_id and db.params[0]["h"] is None
+
+
+def test_el_bootstrap_conserva_el_prefijo_del_QR():
+    """`assets.py` reconstruye el lead del letrero con `LIKE 'qr-{activo}-%'` y `startswith`
+    en siete sitios. Lo que cambia es el componente final: aleatorio del servidor, no el
+    `device_id` del navegador."""
+    import asyncio
+
+    from app.sesion_autoridad import crear_sesion
+
+    db = _DBFalsa(filas_devueltas=1)
+    creada = asyncio.run(crear_sesion(None, activo_id="abc-123", db=db))
+    assert creada.session_id.startswith("qr-abc-123-")
+
+
+def test_si_el_id_ya_existia_NO_se_emite_capacidad():
+    """LA REGLA CONGELADA EN .0. `ON CONFLICT DO NOTHING RETURNING` sin fila significa que
+    el id ya estaba tomado — y entonces no se emite nada."""
+    import asyncio
+
+    from app.sesion_autoridad import crear_sesion
+
+    db = _DBFalsa(filas_devueltas=0)
+    with pytest.raises(AccesoDenegado):
+        asyncio.run(crear_sesion(None, db=db))
+    assert db.commits == 0
+
+
+def test_el_bootstrap_distingue_creacion_de_existencia_en_UNA_sentencia():
+    import asyncio
+
+    from app.sesion_autoridad import crear_sesion
+
+    db = _DBFalsa(filas_devueltas=1)
+    asyncio.run(crear_sesion(None, db=db))
+    sql = db.sql[0]
+    assert "ON CONFLICT (session_id) DO NOTHING" in sql
+    assert "RETURNING session_id" in sql
+    assert "creada_por_servidor" in sql
+
+
+def test_el_cliente_ya_no_elige_el_identificador():
+    """Dos llamadas seguidas dan ids distintos, y ninguno viene del llamador."""
+    import asyncio
+    import inspect
+
+    from app.sesion_autoridad import crear_sesion
+
+    firma = inspect.signature(crear_sesion)
+    assert "session_id" not in firma.parameters
+
+    a = asyncio.run(crear_sesion(None, db=_DBFalsa(1)))
+    b = asyncio.run(crear_sesion(None, db=_DBFalsa(1)))
+    assert a.session_id != b.session_id
 
 
 # ── La migración ───────────────────────────────────────────────────────────────────

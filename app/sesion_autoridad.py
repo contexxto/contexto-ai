@@ -28,6 +28,7 @@ import hmac
 import secrets
 from enum import StrEnum
 
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
 
 from app.auth import CurrentUser
@@ -146,29 +147,120 @@ def _decidir(fila: dict | None, user: CurrentUser | None, resume_secret: str | N
     raise AccesoDenegado()
 
 
-async def reclamar_sesion_anonima(session_id: str, user: CurrentUser, *, db=None) -> None:
-    """Un hilo anónimo pasa a pertenecer a una cuenta, y su capacidad se revoca.
+class SesionCreada(BaseModel):
+    """Lo que devuelve el bootstrap. El secreto viaja **una sola vez**, aquí."""
 
-    **Solo debe llamarse después de que `autorizar_acceso_a_sesion` haya devuelto
-    `ANONYMOUS_CAPABILITY`.** El claim sin capacidad es exactamente el agujero que este gate
-    cierra: antes, cualquier autenticado que conociera el id se quedaba con el hilo.
+    model_config = ConfigDict(frozen=True)
 
-    La revocación va en la MISMA sentencia que la asignación de dueño: si fueran dos, una
-    caída entre ambas dejaría un hilo con dueño y una capacidad viva — el segundo acceso
-    bearer silencioso que la política prohíbe.
+    session_id: str
+    resume_secret: str | None = None
+    """`None` para sesiones con dueño: ahí manda la identidad autenticada y una capacidad
+    anónima sería un segundo acceso bearer sin motivo."""
+
+
+def _nuevo_session_id(activo_id: str | None) -> str:
+    """El servidor elige el identificador. El cliente ya no.
+
+    Se conserva el prefijo `qr-{activo}-` porque **hay siete sitios de `assets.py` que
+    dependen de él** (`LIKE 'qr-{activo}-%'` y `startswith`) para reconstruir el lead del
+    letrero. Lo que cambia es el componente final: antes era el `device_id` del navegador,
+    ahora es aleatorio del servidor. El `device_key` no entra en la autoridad.
+    """
+    aleatorio = secrets.token_urlsafe(12)
+    return f"qr-{activo_id}-{aleatorio}" if activo_id else f"session-{aleatorio}"
+
+
+async def crear_sesion(
+    user: CurrentUser | None, activo_id: str | None = None, *, db=None
+) -> SesionCreada:
+    """Crea una sesión NUEVA y, si es anónima, emite su capacidad de reanudación.
+
+    **Esta es la frontera que hacía falta.** El `INSERT … ON CONFLICT DO NOTHING RETURNING`
+    distingue de forma atómica "acaba de nacer" de "ya existía": si no devuelve fila, el id
+    ya estaba tomado y **no se emite capacidad**. Sin esa distinción, la regla ingenua
+    —"si no trae token, emito uno"— dejaría que cualquiera que conozca un `session_id`
+    existente pidiera una capacidad válida para él, cambiando una puerta abierta por otra
+    con apariencia de seguridad.
+
+    Como el identificador lo genera el servidor con 12 bytes aleatorios, el conflicto es
+    prácticamente imposible; el `ON CONFLICT` está por corrección, no por probabilidad.
     """
     if db is not None:
-        await _ejecutar_claim(db, session_id, user)
-        return
+        return await _ejecutar_creacion(db, user, activo_id)
     async with AsyncSessionLocal() as propio:
-        await _ejecutar_claim(propio, session_id, user)
+        return await _ejecutar_creacion(propio, user, activo_id)
 
 
-async def _ejecutar_claim(db, session_id: str, user: CurrentUser) -> None:
-    await db.execute(
-        text("UPDATE chat_sessions "
-             "SET user_id = :uid, resume_revoked_at = now(), updated_at = now() "
-             "WHERE session_id = :sid AND user_id IS NULL"),
-        {"sid": session_id, "uid": user.user_id},
+async def _ejecutar_creacion(db, user: CurrentUser | None, activo_id: str | None) -> SesionCreada:
+    session_id = _nuevo_session_id(activo_id)
+    secreto = None if user else generar_secreto()
+
+    resultado = await db.execute(
+        text(
+            "INSERT INTO chat_sessions "
+            "  (session_id, user_id, resume_token_hash, resume_issued_at, creada_por_servidor) "
+            "VALUES (:sid, :uid, :h, CASE WHEN :h IS NULL THEN NULL ELSE now() END, true) "
+            "ON CONFLICT (session_id) DO NOTHING "
+            "RETURNING session_id"
+        ),
+        {"sid": session_id, "uid": user.user_id if user else None,
+         "h": hash_de(secreto) if secreto else None},
     )
+    if len(resultado.fetchall()) != 1:
+        await db.rollback()
+        raise AccesoDenegado()   # el id ya existía: NO se emite capacidad para él
+    await db.commit()
+    return SesionCreada(session_id=session_id, resume_secret=secreto)
+
+
+async def reclamar_sesion_anonima(
+    session_id: str, user: CurrentUser, resume_secret: str, *, db=None
+) -> None:
+    """Un hilo anónimo pasa a pertenecer a una cuenta, y su capacidad se revoca.
+
+    **SEGURO POR CONSTRUCCIÓN, no por disciplina del llamador.** La versión anterior confiaba
+    en que alguien hubiera autorizado antes: hacía `UPDATE … WHERE user_id IS NULL` sin
+    ligarse a la capacidad que dio permiso y sin mirar cuántas filas tocó. Eso dejaba dos
+    agujeros:
+
+      · **TOCTOU** — entre la autorización y el `UPDATE`, otra petición podía reclamar el
+        hilo o revocar la capacidad. El `WHERE` seguía cumpliéndose para el segundo llamador
+        si llegaba antes, y el estado observado ya no era el autorizado.
+      · **Mal uso** — un llamador futuro que olvidara autorizar produciría exactamente el
+        agujero que este gate cierra, sin que nada fallara.
+
+    Ahora la condición de autorización **está dentro de la sentencia**: el hash tiene que
+    seguir siendo el mismo, la capacidad tiene que seguir vigente y el hilo tiene que seguir
+    sin dueño. Si algo cambió, no se actualiza nada y se levanta `AccesoDenegado`.
+
+    `RETURNING session_id` + `rowcount` es lo que convierte "no pasó nada" en un error en vez
+    de en un silencio: un claim que no reclama debe doler, no seguir adelante.
+    """
+    if not resume_secret:
+        raise AccesoDenegado()
+    if db is not None:
+        return await _ejecutar_claim(db, session_id, user, resume_secret)
+    async with AsyncSessionLocal() as propio:
+        return await _ejecutar_claim(propio, session_id, user, resume_secret)
+
+
+async def _ejecutar_claim(db, session_id: str, user: CurrentUser, resume_secret: str) -> None:
+    resultado = await db.execute(
+        text(
+            "UPDATE chat_sessions "
+            "   SET user_id = :uid, resume_revoked_at = now(), updated_at = now() "
+            " WHERE session_id        = :sid "
+            "   AND user_id           IS NULL "          # sigue sin dueño
+            "   AND resume_token_hash = :h "             # es LA capacidad que autorizó
+            "   AND resume_revoked_at IS NULL "          # y sigue vigente
+            "RETURNING session_id"
+        ),
+        {"sid": session_id, "uid": user.user_id, "h": hash_de(resume_secret)},
+    )
+    filas = resultado.fetchall()
+    if len(filas) != 1:
+        # Ni una fila (el estado cambió, o nunca hubo autoridad) ni más de una (imposible con
+        # `session_id` como PK, pero comprobarlo cuesta nada y una PK puede cambiar).
+        await db.rollback()
+        raise AccesoDenegado()
     await db.commit()

@@ -112,17 +112,69 @@ def test_1y2_estimado_afirmado_como_medido_es_alta(fuente, frase):
     assert hallazgos[0]["gravedad"] == ALTA
 
 
+@pytest.mark.parametrize("fuente", ["heuristico", None, ""])
 @pytest.mark.parametrize("frase", [
     "Caminabilidad 84, estimación por zona (heurístico), todavía sin contrastar con los "
     "comercios reales del sector.",
     "Caminabilidad 84 — estimación por zona.",
     "La caminabilidad (84) es una estimación por zona, no una medición.",
 ])
-def test_3_el_heuristico_honesto_no_dispara(frase):
+def test_3_el_heuristico_honesto_no_dispara(frase, fuente):
     """Caso 3. LA FRASE HONESTA MENCIONA 'comercios reales' PARA NEGARLOS — un chequeo que
-    solo buscara esas dos palabras acusaría justo a la respuesta correcta."""
+    solo buscara esas dos palabras acusaría justo a la respuesta correcta.
+
+    Se parametriza también con fuente ausente porque el chequeo trata `None` y `""` igual
+    que `heuristico`: no medido. Si la honestidad solo estuviera protegida para una de las
+    tres, el guardián acusaría a la respuesta correcta en las otras dos.
+    """
+    card = _card("a", 380, 84, fuente)
+    assert CODIGO not in _codigos(frase, [card])
+
+
+# ── EL FALSO POSITIVO MÁS CARO: acusar a quien dijo la verdad ──────────────────────
+
+
+@pytest.mark.parametrize("fuente", ["heuristico", None, ""])
+@pytest.mark.parametrize("frase", [
+    "La caminabilidad 84 no fue calculada sobre los comercios reales de la zona.",
+    "La caminabilidad 84 no proviene de OpenStreetMap.",
+    "La caminabilidad 84 no usa OpenStreetMap.",
+    "La caminabilidad 84 nunca se midió sobre comercios reales.",
+    "La caminabilidad 84 tampoco sale de OpenStreetMap.",
+    "Ese 84 no se calculó sobre los comercios reales del sector.",
+])
+def test_una_negacion_verdadera_jamas_se_denuncia(frase, fuente):
+    """Estas frases dicen EXACTAMENTE LA VERDAD sobre un score estimado.
+
+    Denunciarlas sería el peor error posible de este chequeo: enseñaría al equipo a ignorar
+    al guardián, y con él se perdería el caso real que motivó el hotfix. La negación
+    gramatical se evalúa solo ANTES del verbo de procedencia, para que
+    «calculada sobre los comercios reales, no sobre una estimación» siga siendo denunciable.
+    """
+    card = _card("a", 380, 84, fuente)
+    assert CODIGO not in _codigos(frase, [card]), f"acusó a una negación verdadera: {frase}"
+
+
+@pytest.mark.parametrize("frase", [
+    "La caminabilidad es 84 y hay comercios reales alrededor.",
+    "Caminabilidad 84. Alrededor hay comercios reales y un parque.",
+    "Tiene caminabilidad 84; los comercios reales del sector abren hasta tarde.",
+])
+def test_la_mera_coexistencia_no_es_una_atribucion(frase):
+    """Que "84" y "comercios reales" aparezcan en la misma frase no afirma que el uno salga
+    de los otros. Hace falta un VERBO DE PROCEDENCIA que los relacione — esa es la diferencia
+    entre detectar atribución y detectar mención."""
     card = _card("a", 380, 84, "heuristico")
     assert CODIGO not in _codigos(frase, [card])
+
+
+def test_la_negacion_posterior_no_absuelve():
+    """Contrapeso del test anterior: si la afirmación viene primero, es una afirmación.
+    Sin esto, bastaría añadir un "no" al final de la frase para evadir al guardián."""
+    card = _card("a", 380, 84, "heuristico")
+    frase = ("Caminabilidad 84 calculada sobre los comercios reales de la zona, "
+             "no sobre una estimación.")
+    assert CODIGO in _codigos(frase, [card])
 
 
 @pytest.mark.parametrize("frase", [
@@ -193,15 +245,32 @@ def test_sin_tarjetas_no_se_inventa_un_juicio():
     assert CODIGO not in _codigos("Caminabilidad calculada sobre los comercios reales.", [])
 
 
-def test_no_se_acusa_dos_veces_por_la_misma_card():
-    """Dos frases mentirosas sobre el MISMO inmueble son un hallazgo por frase, no un
-    hallazgo por palabra: `registrar` cuenta por turno y el informe señala la evidencia."""
+def test_un_hallazgo_por_tarjeta_aunque_la_mentira_se_repita():
+    """EL CONTRATO, fijado explícitamente: la deduplicación es POR TARJETA, no por frase.
+
+    Repetir la misma afirmación falsa sobre el mismo inmueble sigue siendo UNA violación —
+    el mismo criterio con que `registrar` cuenta por turno y no por hit. Fijarlo ahora
+    importa porque de esto va a depender el numerador cuando se mida la frecuencia
+    (TRUST-OBS-01): si contara por frase, un turno verboso pesaría más que uno escueto con
+    la misma mentira.
+    """
     card = _card("solo", 780, 84, "heuristico")
     frase = ("Caminabilidad 84 calculada sobre los comercios reales de la zona. "
              "Ese 84 sale de OpenStreetMap.")
     hallazgos = [h for h in verificar_prosa(frase, [card], _PREFS) if h["codigo"] == CODIGO]
-    assert 1 <= len(hallazgos) <= 2
-    assert all(h["evidencia"] for h in hallazgos)
+    assert len(hallazgos) == 1, f"la dedup es por tarjeta: salieron {len(hallazgos)}"
+    assert hallazgos[0]["evidencia"]
+
+
+def test_dos_tarjetas_mentidas_son_dos_hallazgos():
+    """El contrapeso: la dedup es por tarjeta, así que dos inmuebles distintos con la misma
+    mentira son dos violaciones. Si no, denunciar el segundo dependería del orden."""
+    cards = [_card("a", 380, 84, "heuristico", direccion="Calle Uno"),
+             _card("b", 420, 61, "heuristico", direccion="Calle Dos")]
+    reply = ("En Calle Uno la caminabilidad 84 se calculó sobre los comercios reales.\n"
+             "En Calle Dos la caminabilidad 61 sale de OpenStreetMap.")
+    hallazgos = [h for h in verificar_prosa(reply, cards, _PREFS) if h["codigo"] == CODIGO]
+    assert len(hallazgos) == 2
 
 
 # ── La costura de E2.4 proyecta sola ───────────────────────────────────────────────

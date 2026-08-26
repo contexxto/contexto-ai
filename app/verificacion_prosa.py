@@ -204,14 +204,39 @@ def _violacion(codigo: str, gravedad: str, detalle: str, evidencia: str = "") ->
 
 _CAMINABILIDAD = re.compile(r"caminab|walk\s*-?\s*score")
 
-# Afirmar que el número se MIDIÓ. "OpenStreetMap" a secas NO entra aquí por sí solo: los
-# POIs y la conectividad sí salen de OSM legítimamente, y acusar esa frase convertiría al
-# guardián en ruido. Solo cuenta si la misma frase habla de caminabilidad.
-_AFIRMA_MEDICION = re.compile(r"comercios reales|open\s*street\s*map")
+# ATRIBUCIÓN, NO MENCIÓN. Es la corrección que evita el falso positivo más caro de todos:
+# acusar a una NEGACIÓN VERDADERA. Buscar solo el nombre de la fuente marcaba como mentira
+# frases como «la caminabilidad 84 no fue calculada sobre los comercios reales» o
+# «la caminabilidad es 84 y hay comercios reales alrededor» — la primera dice la verdad y la
+# segunda ni siquiera habla de procedencia. Un guardián ALTA que denuncia a quien fue honesto
+# se desactiva en una semana, y con él se pierde el caso que sí importa.
+#
+# Así que hace falta un VERBO DE PROCEDENCIA que relacione el número con la fuente. La mera
+# coexistencia de "84" y "comercios reales" en una frase no afirma nada.
+_VERBO_PROCEDENCIA = (
+    r"(?:calculad|contad|medid|sacad|obtenid|derivad|basad)[oa]s?\s+(?:sobre|en|de|a partir de)"
+    r"|se\s+(?:calcul|cuent|mid|obtien|sac|deriv)\w*\s+(?:sobre|en|de|con)"
+    r"|(?:sale|salen|viene|vienen|surge|surgen|provien\w+)\s+de"
+    r"|\bsegun\b"
+    r"|\busa(?:n|ndo)?\b"
+    r"|con datos de"
+    r"|a partir de"
+)
+_FUENTE_MEDIDA_TXT = r"comercios reales|open\s*street\s*map"
 
-# La frase HONESTA para el heurístico menciona "comercios reales" — para NEGARLOS ("todavía
-# sin contrastar con los comercios reales del sector"). Un chequeo que solo buscara esas dos
-# palabras acusaría justo a la respuesta correcta, que es como se desactiva un guardián.
+# El verbo tiene que APUNTAR a la fuente: se admite texto intermedio corto ("calculada sobre
+# LOS comercios reales") pero no cruzar a otra oración — `[^.;\n]` lo impide.
+_ATRIBUYE_MEDICION = re.compile(
+    rf"(?:{_VERBO_PROCEDENCIA})[^.;\n]{{0,40}}?(?:{_FUENTE_MEDIDA_TXT})"
+)
+
+# Negación GRAMATICAL delante de la atribución: "no fue calculada sobre…", "nunca se midió
+# sobre…", "tampoco sale de…". Se mira solo lo que va ANTES del verbo, para que
+# «calculada sobre los comercios reales, no sobre una estimación» siga siendo una afirmación.
+_NEGACION = re.compile(r"\b(?:no|nunca|jamas|tampoco|ni)\b")
+
+# Negación SEMÁNTICA en la frase entera: la frase honesta del heurístico menciona "comercios
+# reales" para negarlos ("todavía sin contrastar con los comercios reales del sector").
 _NIEGA_MEDICION = re.compile(
     r"sin contrastar|estimacion por zona|estimada por zona|estimado por zona|heuristic"
     r"|sin medicion|no (?:es|hay|se) (?:una |ninguna )?medicion|todavia sin|aun sin"
@@ -273,14 +298,23 @@ def _card_de_caminabilidad(frase: str, linea: str, cards: list[dict]) -> int | N
 
 
 def _caminabilidad_procedencia(reply: str, cards: list[dict]) -> list[dict]:
-    """La prosa afirma una caminabilidad MEDIDA para un score que fue ESTIMADO."""
+    """La prosa ATRIBUYE a una medición un score que fue estimado.
+
+    Un hallazgo por TARJETA, no por frase: si el turno repite la misma mentira sobre el mismo
+    inmueble, sigue siendo una violación. `registrar` cuenta por turno y el informe señala la
+    primera evidencia, que es la que hace falta para ir a la frase.
+    """
     out, acusadas = [], set()
     # Se normaliza línea por línea para que las posiciones sigan siendo utilizables: un
     # `_sin_tildes` sobre todo el texto colapsa los saltos y borraría los límites de línea.
     plano = "\n".join(_sin_tildes(l) for l in reply.split("\n"))
-    for m in _AFIRMA_MEDICION.finditer(plano):
+    for m in _ATRIBUYE_MEDICION.finditer(plano):
         frase_plana = _fragmento(plano, m.start())
         if not _CAMINABILIDAD.search(frase_plana) or _NIEGA_MEDICION.search(frase_plana):
+            continue
+        # ¿Hay un "no"/"nunca"/"tampoco" antes del verbo, dentro de la misma frase?
+        antes = frase_plana[:frase_plana.find(m.group(0))] if m.group(0) in frase_plana else ""
+        if _NEGACION.search(antes):
             continue
 
         i = _card_de_caminabilidad(frase_plana, _linea_de(plano, m.start()), cards)

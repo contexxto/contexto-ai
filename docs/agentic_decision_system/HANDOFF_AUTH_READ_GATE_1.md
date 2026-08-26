@@ -3,37 +3,43 @@
 ```
 BRANCH                 feat/auth-read-gate-enforcement
 BASE DE LA UNIDAD      8a8968da412cd3e1dc6efcb7609ed433fa8b2905
-HEAD DE CONTINUACIÓN   009bc759d37c97183b49106f620362bc1ba6b7b9
+HEAD DE CONTINUACIÓN   106719b2f3c56b9a6655277b43200a99bbe2bf5c
 
-ESTADO                 IN PROGRESS
-SUITE                  1 557 exit 0
+ESTADO                 IN PROGRESS · 5b COMPLETE · 5c PENDING
+SUITE BACKEND          1 557 exit 0
+SUITE FRONTEND         35 exit 0
 INVENTARIO 18 ENDPOINTS PASS
 ```
 
 ---
 
-## ⛔ LA RAMA NO ES DESPLEGABLE EN ESTE COMMIT
+## ⛔ LA RAMA SIGUE SIN SER DESPLEGABLE
 
-`POST /chat` ya exige una sesión creada por bootstrap y autoridad válida, pero el frontend
-actual todavía:
+`POST /chat` exige una sesión creada por bootstrap y autoridad válida. El frontend **ya tiene
+todas las piezas** para cumplirlo — pero **`App.jsx` todavía no las usa**:
 
-- no llama a `POST /sessions/bootstrap`
-- no conserva el `resume_secret`
-- no envía `X-Session-Resume`
-- no hace reset seguro de las sesiones legacy
+| | |
+|---|---|
+| llamar a `POST /sessions/bootstrap` | ✅ existe `bootstrapSession()` |
+| conservar el `resume_secret` | ✅ existe `resumeCapability.js` |
+| enviar `X-Session-Resume` | ✅ existe `apiHeadersSesion()` |
+| decidir reanudar vs. abrir nueva | ✅ existe `sessionRecovery.js` |
+| **cablearlo en el componente** | ❌ **5c — pendiente** |
 
-**Backend nuevo + frontend viejo rompe el chat anónimo.** Es deliberado mientras se construye
-la rebanada, y **no es un estado aceptable para PR ni para merge**.
+Mientras `App.jsx` siga creando el `session_id` en el cliente y llamando con `apiHeaders()`,
+**el chat anónimo está roto contra este backend**. Es deliberado mientras se construye la
+rebanada, y **no es un estado aceptable para PR ni para merge**.
 
-> **No confundir "suite verde" con "cutover completo".** `009bc75` demuestra que la nueva
-> política del backend es consistente consigo misma. **Todavía no demuestra que el producto
-> pueda usarla.**
+> **No confundir "suite verde" con "cutover completo".** `106719b` demuestra que la política
+> es consistente y que las piezas del cliente funcionan aisladas. **Todavía no demuestra que
+> el producto las use.**
 
 ---
 
 ## COMPLETADO
 
 ```
+BACKEND
 [✓] 1   migración 027
 [✓] 2   capability primitives
 [✓] 3   bootstrap atómico (núcleo)
@@ -42,16 +48,65 @@ la rebanada, y **no es un estado aceptable para PR ni para merge**.
 [✓] 5a  bootstrap HTTP
 [✓] 5d  enforcement en POST /chat
 [✓] 7   tighten de share / archive / rename
+
+FRONTEND · 5b COMPLETE
+[✓] storage session_id → resume_secret  (claves con espacio de nombres)
+[✓] Vitest mínimo — sin jsdom ni Testing Library
+[✓] job CI `frontend` separado del de pytest
+[✓] bootstrapSession()
+[✓] apiHeadersSesion(sessionId)
+[✓] sessionRecovery.js — el árbol, fuera de React
+[✓] no-leak sobre el camino INTEGRADO, no solo el módulo
+```
+
+### Validación en `106719b`
+
+```
+backend                1 557 exit 0
+frontend               35 tests PASS
+frontend build         PASS
+ficheros nuevos        eslint limpio (exit 0)
+lint global            deuda preexistente (39 errores) · NO es gate, a propósito
 ```
 
 ## PENDIENTE
 
 ```
-[ ] 5b  frontend: bootstrap + almacenamiento de capability + header
-[ ] 5c  QR: nuevo / revisita / reset legacy
+[ ] 5c  QR: nuevo / revisita / reset legacy — cablear en App.jsx
 [ ] 6   proteger los 11 endpoints restantes
 [ ] 10  tests integrales + reporte 13
 ```
+
+## ESTADO
+
+```
+5b COMPLETE
+5c PENDING
+PRODUCT CUTOVER INCOMPLETE
+SECURITY GATE INCOMPLETE
+```
+
+**Sigue sin ser desplegable**: el frontend ya sabe crear sesiones y transportar la capacidad,
+pero `App.jsx` todavía no usa `sessionRecovery`, así que el carril QR no está cableado.
+
+---
+
+## NOTA DE PROCESO — `8f14303`
+
+Ese commit se creó **con la suite del backend en rojo**, porque encadené el test y el commit
+en el mismo comando y no leí el resultado antes. La suite avisaba; el fallo fue de lectura.
+
+`106719b` lo corrige: era un `EXPECTED_POLICY_CHANGE` legítimo —el octavo— que había que
+transformar de todos modos.
+
+**No se reescribe la historia.** Está documentado, el commit siguiente lo deja verde, la rama
+no tiene PR y el squash del cierre lo convertirá en un solo commit limpio. Un rebase ahora
+añadiría riesgo y cero valor.
+
+**Patrón propio a vigilar:** tres veces en esta unidad un test mío ha mirado **texto** donde
+debía mirar **estructura** — SQL con espacios de alineación, `COALESCE` dentro de un
+comentario, y el JSDoc entre dos funciones. Los tres se arreglaron acotando al AST o al cuerpo
+real. Conviene escribirlos así desde el principio.
 
 ---
 
@@ -109,19 +164,69 @@ Es nota, no bloqueo.
 
 ---
 
-## SIGUIENTE ORDEN
+## PRÓXIMA SESIÓN — **solo 5c**
+
+Cablear `sessionRecovery` en `App.jsx`. Las piezas ya existen; falta usarlas.
 
 ```
-1.  abstracción de almacenamiento de capability en el frontend
-2.  bootstrap desde el frontend
-3.  QR: nuevo / revisita / legacy
-4.  hacer pasar el chat end-to-end
-5.  proteger los 11 endpoints restantes con la MISMA costura
-6.  revisar campana/bandeja — especialmente el `OR user/session`
-7.  tests de integración
-8.  frontend build/tests
-9.  reporte 13
-10. revisión completa del diff antes de PR
+1. QR nuevo
+   → bootstrap → session_id + capability → history/chat
+
+2. QR revisita
+   → mismo session_id → su capability → reanudación
+
+3. legacy anónimo sin capability
+   → NO intentar por session_id → limpiar referencia → bootstrap
+
+4. authenticated legacy OWNER
+   → intentar contra el backend SIN capability → allow conserva
+
+5. authenticated con sesión real de OTRA cuenta
+   → U1 recibe 404 → bootstrap
+   ⚠️ usar deliberadamente una sesión EXISTENTE de U2.
+      Un id inventado probaría manejo de inexistencia, NO aislamiento entre propietarios.
+
+6. anon → login → claim
+   → capability válida → claim → borrar capability local DESPUÉS del éxito
+   → las siguientes llamadas van por OWNER
+
+7. capability rechazada o revocada
+   → 404 → limpiar el secreto → SIN fallback de session_id a secas
+```
+
+### Exigido al cerrar 5c
+
+```
+frontend tests PASS          QR new PASS
+frontend build PASS          QR revisit PASS
+backend full suite PASS      legacy anon reset PASS
+no-leak PASS                 authenticated legacy owner PASS
+                             cross-owner REAL PASS
+                             anon→login claim PASS
+                             secret local borrado tras claim PASS
+```
+
+Estado esperado al terminar:
+
+```
+PRODUCT CUTOVER COMPLETE
+SECURITY GATE INCOMPLETE
+```
+
+**No tocar todavía los 11 endpoints. No abrir PR. No declarar AUTH-READ-GATE.1 PASS.**
+
+---
+
+## ORDEN COMPLETO RESTANTE
+
+```
+5c  QR: nuevo / revisita / legacy  ← próxima sesión, sola
+6   los 11 endpoints con la MISMA costura
+    · campana/bandeja: reescribir el `OR user/session`, no solo añadir autorización
+7   tests de integración
+8   reporte 13 — debe corregir formalmente a `.0` sobre `update_session`
+9   revisión completa del diff productivo
+10  PR
 ```
 
 **Sobre el punto 6:** no basta con añadir una dependencia de FastAPI. El problema está en la
@@ -164,6 +269,10 @@ no poner el secret en query params, logs ni mensajes de error
 | Tests de la costura | `tests/test_sesion_autoridad.py` (29) |
 | Oráculo de `.0`, con 7 tests ya transformados | `tests/test_caracterizacion_acceso_sesion.py` |
 | Oráculo de E3.1a, con 2 transformados | `tests/test_caracterizacion_identidad_buyer.py` |
+| Custodia de la capacidad (cliente) | `frontend/src/resumeCapability.js` (+ test) |
+| Bootstrap y transporte | `frontend/src/api.js` |
+| Árbol de recuperación | `frontend/src/sessionRecovery.js` (+ test) |
+| No-fuga del secreto | `frontend/src/noLeak.test.js` |
 | Política y matriz de origen | `docs/agentic_decision_system/12_AUTH_READ_GATE_*.md` |
 
 **Los tests transformados no se borran.** Cada uno documenta qué congelaba en `.0` y qué

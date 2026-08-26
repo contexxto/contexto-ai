@@ -4,9 +4,10 @@
 BRANCH                 feat/auth-read-gate-enforcement
 BASE DE LA UNIDAD      8a8968da412cd3e1dc6efcb7609ed433fa8b2905
 ENTRADA DE 5c          13b949680f5172ba4ab18cb5fc21db7e71086193
+CUTOVER DE 5c          5c70e40483cd29ac41dd2fc7d5254e815f0e6d40
 
 ESTADO                 IN PROGRESS · 5c COMPLETE
-SUITE BACKEND          1 557 exit 0
+SUITE BACKEND          1 563 exit 0   (1 557 + 6 de aislamiento cross-owner)
 SUITE FRONTEND         66 exit 0   (35 → 53 → 66)
 BUILD FRONTEND         PASS
 INVENTARIO 18 ENDPOINTS PASS
@@ -68,15 +69,16 @@ tomaría la rama equivocada y **borraría conversaciones de gente registrada, en
 
 ## LOS SIETE CASOS
 
-Comportamiento en `sessionFlow.test.js` (18 tests, doble de HTTP que registra `{op, sid}`);
-integración en `appCutover.test.js` (13 tests sobre el fuente de `App.jsx`).
+Comportamiento del cliente en `sessionFlow.test.js` (18 tests, doble de HTTP que registra
+`{op, sid}`); integración en `appCutover.test.js` (13 tests sobre el fuente de `App.jsx`);
+**autoridad real del backend** en `tests/test_aislamiento_cross_owner.py` (6 tests).
 
 ```
 1  QR nuevo                    bootstrap(activo) → id + capacidad          PASS
 2  QR revisita                 storeKey → /handoff CON capacidad           PASS
 3  legacy anónimo sin cap.     NO se pide nada → bootstrap                 PASS
 4  authenticated legacy OWNER  /history SIN capacidad → allow conserva     PASS
-5  cross-owner U1 vs U2 REAL   404 → bootstrap                             PASS
+5  cross-owner U1 vs U2 REAL   dos mitades, A y B — ver abajo              PASS
 6  anon → login → claim        borra el secreto DESPUÉS del éxito          PASS
 7  capacidad rechazada         404 → descarta → sin fallback               PASS
 ```
@@ -84,6 +86,60 @@ integración en `appCutover.test.js` (13 tests sobre el fuente de `App.jsx`).
 El caso 3 es el único que **no emite ninguna petición**: preguntar por un `session_id`
 heredado sin capacidad sería pedir acceso sin autoridad. Se comprueba que el doble de HTTP
 no registra llamada alguna, no que la respuesta sea 404.
+
+### CASO 5 — las dos mitades, y por qué hacen falta las dos
+
+```
+A) BACKEND    sesión EXISTENTE con user_id = U2  +  identidad U1  →  404
+              tests/test_aislamiento_cross_owner.py
+
+B) FRONTEND   recibido el 404  →  no conservar U2  →  bootstrap
+              frontend/src/sessionFlow.test.js
+```
+
+**La versión anterior solo tenía B y se presentaba como aislamiento. Era un falso positivo.**
+El doble de HTTP del frontend decidía localmente (`existeYEsDeOtro = new Set([SID_DE_U2])`):
+demostraba que el cliente reacciona bien a una denegación, no que el backend denegara. El
+rótulo está corregido en el fichero y el bloque se llama ahora «mitad B».
+
+**Qué profundidad tiene A.** No hay Postgres en esta suite —no hay `conftest.py`, ni fixture
+de base, ni sqlite (y el SQL usa `user_id::text` y `now()`)—. `test_sesion_autoridad.py` ya lo
+declaraba en su encabezado. Lo que A añade sobre lo que existía:
+
+| | `test_sesion_autoridad.py` | `test_aislamiento_cross_owner.py` |
+|---|---|---|
+| entrada | `_decidir(fila, …)`, fila a mano | la tabla, con estado real |
+| estado | no hay | lo escribe `crear_sesion()`, código de producto |
+| traducción a HTTP | no se ejerce | `_exigir_autoridad` real → 404 |
+| el doble | `_DBFalsa` devuelve filas prefabricadas | almacena y devuelve; **no decide** |
+
+`_TablaChatSessions` es un **almacén de filas**, no un doble que responde sí o no — y eso se
+verifica, no se afirma: `test_la_tabla_NO_pudo_haber_tomado_la_decision` comprueba que la
+lectura emitida por el código real lleva **un solo parámetro** (`sid`), que ninguna identidad
+llega a la base, y que la consulta es **idéntica** para U1 y para U2. Misma fila, misma
+pregunta, resultados opuestos: la diferencia solo puede venir de `_decidir`.
+
+**Se verificó que el test puede fallar.** Dos mutaciones sobre `_decidir`:
+
+```
+dueno = None                     → caen 2 tests, pero NO el del caso 5
+                                   (deniega a todos: no aísla el fallo)
+if user is not None: → OWNER     → caen 4, incluido el del caso 5   ✔
+```
+
+La segunda es la vulnerabilidad real —cualquier autenticado entra en cualquier hilo con
+dueño— y el test la caza. `app/sesion_autoridad.py` quedó restaurado byte a byte
+(`git diff --quiet` limpio) antes de continuar.
+
+**Lo que A todavía NO prueba:** que Postgres ejecute de verdad ese SQL. Eso es el punto 7 de
+la unidad (tests de integración), y está anotado como tal en el propio fichero.
+
+### CASO 6 — no se reabrió, y por qué
+
+El claim server-side ya tenía cobertura previa: 5 tests en `test_sesion_autoridad.py`
+(atomicidad, ligadura a la capacidad que autorizó, fallo ruidoso si no toca exactamente una
+fila, negativa antes de tocar la base sin secreto). No había laguna que conectar, así que no
+se añadió nada — la revisión pedía evidencia solo si faltaba.
 
 ---
 
@@ -328,6 +384,8 @@ no refactorizar App.jsx por gusto — 5c fue integración, no limpieza
 | Árbol de recuperación (decide) | `frontend/src/sessionRecovery.js` (+ test) |
 | Orquestación (ejecuta) | `frontend/src/sessionFlow.js` (+ test, 7 casos) |
 | Integración real en el producto | `frontend/src/appCutover.test.js` |
+| **Caso 5 · A — aislamiento REAL entre cuentas** | `tests/test_aislamiento_cross_owner.py` |
+| Caso 5 · B — reacción del cliente al 404 | `frontend/src/sessionFlow.test.js` |
 | Comentarios fuera, con parser de verdad | `frontend/src/codigoDesnudo.js` |
 | No-fuga del secreto | `frontend/src/noLeak.test.js` |
 | Política y matriz de origen | `docs/agentic_decision_system/12_AUTH_READ_GATE_*.md` |

@@ -1,12 +1,25 @@
 /**
- * AUTH-READ-GATE.1 · 5c — los siete casos del cutover, probados por COMPORTAMIENTO.
+ * AUTH-READ-GATE.1 · 5c — el COMPORTAMIENTO DEL CLIENTE en los siete casos del cutover.
  *
  * Nada aquí afirma sobre el texto de `App.jsx`. Lo que se observa es lo que de verdad importa:
  * qué peticiones se emitieron, con qué `session_id`, cuántas veces, en qué orden, y qué quedó
  * guardado o borrado. Un doble del cliente HTTP lo hace visible.
  *
- * Los dos casos que más fácilmente se prueban mal —y por eso llevan aviso propio— son el 5
- * (aislamiento entre cuentas) y el 6 (orden del borrado tras el claim).
+ * ## EL LÍMITE DE ESTE FICHERO
+ *
+ * El doble de HTTP **responde lo que le decimos**. Eso lo hace perfecto para probar cómo
+ * reacciona el cliente y **inútil para probar qué decide el backend**. La distinción no es
+ * pedante: el caso 5 se dio por probado aquí una vez, y no lo estaba.
+ *
+ * El caso 5 (aislamiento entre cuentas) tiene por tanto dos mitades, en dos ficheros:
+ *
+ *   A) `tests/test_aislamiento_cross_owner.py`  —  sesión EXISTENTE de U2 + identidad U1 → 404,
+ *      con la decisión tomada por `_exigir_autoridad` real sobre estado real
+ *   B) este fichero                              —  recibido el 404 → no conservar → bootstrap
+ *
+ * El caso 6 (orden del borrado tras el claim) se prueba aquí en su mitad de cliente; el claim
+ * server-side —atómico, ligado a la capacidad, con fallo ruidoso si no toca exactamente una
+ * fila— vive en `tests/test_sesion_autoridad.py`.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -149,17 +162,28 @@ describe('caso 4 · conversación autenticada anterior al gate', () => {
   })
 })
 
-// ── CASO 5 · CROSS-OWNER REAL ──────────────────────────────────────────────────────
+// ── CASO 5 · MITAD B — QUÉ HACE EL CLIENTE CON EL 404 ──────────────────────────────
+//
+// ⚠️ ESTE BLOQUE **NO** PRUEBA EL AISLAMIENTO ENTRE PROPIETARIOS. Es la mitad del caso 5
+// que le toca al frontend, y solo esa. El doble de HTTP de este fichero decide localmente
+// —le decimos que deniega y deniega—, así que no puede demostrar nada sobre el backend.
+// Presentarlo como prueba de aislamiento sería un falso positivo.
+//
+//   A) backend    sesión EXISTENTE de U2 + identidad U1  →  404
+//                 tests/test_aislamiento_cross_owner.py
+//                 ahí el 404 lo produce `_exigir_autoridad` real sobre estado real, y se
+//                 verifica que la tabla no pudo tomar la decisión
+//
+//   B) frontend   recibido el 404  →  no conservar  →  bootstrap      ← AQUÍ
+//
+// Las dos juntas son el caso 5. Ninguna sola lo es.
 
-describe('caso 5 · U1 intenta la conversación real de U2', () => {
-  it('el backend deniega y el hilo NO se conserva', async () => {
-    // ⚠️ CONDICIÓN DE VALIDEZ DE ESTE TEST: `SID_DE_U2` es una conversación que EXISTE y
-    // pertenece a otra cuenta. Con un id inventado el backend respondería 404 igual, pero
-    // por inexistencia — y el aislamiento entre propietarios quedaría sin probar.
-    //
-    // El doble lo modela así: el hilo existe (lo conoce) pero para este llamante deniega.
-    const existeYEsDeOtro = new Set([SID_DE_U2])
-    const h = http({ acceso: (sid) => !existeYEsDeOtro.has(sid) })
+describe('caso 5 (mitad B) · el cliente ante un 404 sobre una conversación ajena', () => {
+  it('no conserva el hilo denegado y abre uno nuevo', async () => {
+    // El doble deniega **por decisión nuestra**, no porque el hilo sea de nadie: aquí se
+    // mide la reacción del cliente, no la regla de autoridad. Que `SID_DE_U2` sea de U2 es
+    // el escenario que se está representando, no algo que este test compruebe.
+    const h = http({ acceso: (sid) => sid !== SID_DE_U2 })
 
     const r = await resolverSesion({
       sessionIdPrevio: SID_DE_U2, autenticado: true, http: h,

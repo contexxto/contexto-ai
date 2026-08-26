@@ -89,8 +89,15 @@ Probado en runtime contra las versiones fijadas (`langchain_core 0.3.63`):
 a la serialización del checkpointer** (`JsonPlusSerializer`, el mismo que usa
 `AsyncPostgresSaver`).
 
-**Conclusión:** la identidad de mensaje **ya existe, es estable y está persistida**. El
-problema no es crearla — es que `_user_texts` la descarta tres capas antes del extractor.
+**Conclusión:** la identidad de mensaje **ya existe y es estable**, y su id **sobrevive al
+serializador que usa el checkpointer**. El problema no es crearla — es que `_user_texts` la
+descarta tres capas antes del extractor.
+
+> **Alcance exacto de lo probado** *(corregido en F3.0b)*. **[VERIFICADO]**: `add_messages`
+> asigna el id · es estable entre turnos · `JsonPlusSerializer` lo conserva en round-trip.
+> **[INFERIDO]**: persistencia end-to-end en `AsyncPostgresSaver` — usa el mismo serde, pero
+> no se probó contra una base real. Decir "está persistida" a secas era más fuerte que la
+> evidencia.
 
 ### Q3 · ¿En qué línea exacta se pierde la procedencia?
 
@@ -299,8 +306,9 @@ declaración sigue dentro de la ventana.
 
 ## 6. MESSAGE IDENTITY FINDING
 
-> **La identidad de mensaje que F3 necesita ya existe, es estable y está persistida.**
-> Se descarta en `assembler.py:188`, tres capas antes de que el extractor pueda usarla.
+> **La identidad de mensaje que F3 necesita ya existe y es estable**, y su id sobrevive al
+> serializador que usa el checkpointer. Se descarta en `assembler.py:188`, tres capas antes
+> de que el extractor pueda usarla.
 
 `HumanMessage.id` — UUID4 asignado por `add_messages`, estable entre turnos, conservado por
 `JsonPlusSerializer`. **[VERIFICADO]** en los cuatro puntos.

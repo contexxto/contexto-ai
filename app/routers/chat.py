@@ -28,6 +28,13 @@ from app.limiter import limiter
 from app.rutas import verificacion_de_entorno
 from app.contracts.decision_v0 import VerificationStatus
 from app.decision.verify import auditar_explicacion
+from app.sesion_autoridad import (
+    AccesoDenegado,
+    Autoridad,
+    autorizar_acceso_a_sesion,
+    crear_sesion,
+    reclamar_sesion_anonima,
+)
 from app.verificacion_prosa import registrar as registrar_prosa
 
 router = APIRouter(prefix="/api/v1/chat", tags=["Chat — Agente Conversacional"])
@@ -79,35 +86,114 @@ def verify_api_key(api_key: str | None = Security(_api_key_header)) -> None:
         )
 
 
-async def _tag_session_owner(session_id: str, user: CurrentUser | None) -> None:
-    """Liga la conversación al usuario autenticado (privacidad). Best-effort."""
-    if not user:
-        return
-    try:
-        async with AsyncSessionLocal() as db:
-            await db.execute(
-                text(
-                    "INSERT INTO chat_sessions (session_id, user_id) VALUES (:sid, :uid) "
-                    "ON CONFLICT (session_id) DO UPDATE "
-                    "SET user_id = COALESCE(chat_sessions.user_id, :uid)"
-                ),
-                {"sid": session_id, "uid": user.user_id},
-            )
-            await db.commit()
-    except Exception:  # noqa: BLE001 — etiquetar no debe romper el chat
-        pass
+# ── ELIMINADO EN AUTH-READ-GATE.1 · `_tag_session_owner` ────────────────────────────
+#
+# Hacía `INSERT … ON CONFLICT DO UPDATE SET user_id = COALESCE(chat_sessions.user_id, :uid)`
+# como PRIMERA instrucción de `POST /chat`, con el `session_id` que enviara el cliente.
+# Consecuencia: el primer autenticado que conociera el identificador de una conversación
+# anónima **se quedaba con ella**, sin demostrar posesión de nada. Y el turno seguía adelante
+# escribiendo en el hilo.
+#
+# Lo sustituye la propiedad explícita:
+#   · un hilo nace con dueño (bootstrap autenticado) o sin él (bootstrap anónimo);
+#   · un hilo sin dueño solo se reclama presentando su capacidad de reanudación, y al
+#     reclamarlo esa capacidad se revoca en la misma sentencia.
+#
+# No se conserva como función auxiliar a propósito: mientras exista una vía que asigne
+# propiedad por identificador, alguien la volverá a llamar.
 
 
 class ChatRequest(BaseModel):
     message: str
-    # Si el cliente no envía session_id, generamos uno nuevo (sesión de un solo turno).
-    # Para conversaciones multi-turno, el cliente debe reutilizar el mismo session_id.
-    session_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    # OBLIGATORIO desde AUTH-READ-GATE.1. Antes tenía `default_factory=uuid4`: si el cliente
+    # no lo mandaba, este endpoint CREABA una sesión. Con el bootstrap explícito eso sería un
+    # segundo mecanismo de creación, fuera de la frontera que distingue nacer de reanudar —
+    # y por tanto una vía para obtener un hilo sin pasar por ella. La sesión se crea en
+    # `POST /sessions/bootstrap` y solo ahí.
+    session_id: str = Field(min_length=1)
 
     model_config = {"json_schema_extra": {"example": {
         "message": "¿Cómo es el ruido y la habitabilidad en La Carolina, Quito?",
-        "session_id": "carlos-session-001",
+        "session_id": "qr-11111111-2222-3333-4444-555555555555-Ab3xY9",
     }}}
+
+
+class BootstrapRequest(BaseModel):
+    """Crear una conversación. El cliente NO elige el identificador."""
+
+    activo_id: str | None = Field(default=None, min_length=1)
+    """Cuando la conversación nace de un letrero. Preserva el prefijo `qr-{activo}-`, del que
+    dependen siete consultas de `assets.py` para reconstruir el lead."""
+
+
+class BootstrapResponse(BaseModel):
+    session_id: str
+    resume_secret: str | None = None
+    """Solo para sesiones anónimas, y **solo se entrega aquí**: no se puede volver a pedir.
+    Un hilo con dueño no lo necesita — ahí autoriza la identidad."""
+
+
+@router.post(
+    "/sessions/bootstrap",
+    response_model=BootstrapResponse,
+    summary="Crear una conversación (y su capacidad de reanudación si es anónima)",
+    description=(
+        "El servidor genera el `session_id`. Si la petición es anónima, devuelve además un "
+        "`resume_secret` que el cliente debe conservar y enviar en `X-Session-Resume` para "
+        "volver a esa conversación. **El secreto se entrega una sola vez.**"
+    ),
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("30/minute")
+async def bootstrap_session(
+    request: Request,
+    payload: BootstrapRequest,
+    user: CurrentUser | None = Depends(get_optional_user),
+) -> BootstrapResponse:
+    """La única puerta de creación.
+
+    Existe separada de `POST /chat` a propósito. Emitir la capacidad dentro del chat obligaría
+    a decidir allí si el `session_id` recibido es nuevo o ya existía — y la variante ingenua
+    de esa decisión ("si no trae token, emito uno") permitiría a cualquiera que conozca un id
+    existente pedir una capacidad válida para él.
+    """
+    try:
+        creada = await crear_sesion(user, payload.activo_id)
+    except AccesoDenegado:
+        # El id generado colisionó (prácticamente imposible con 12 bytes aleatorios). No se
+        # reintenta en silencio: reintentar es la puerta por la que se cuela un id elegido.
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
+                            "No se pudo crear la conversación. Reintenta.")
+    return BootstrapResponse(session_id=creada.session_id,
+                             resume_secret=creada.resume_secret)
+
+
+# ── La autoridad, aplicada en el router ──────────────────────────────────────────────
+# Una sola función para los doce endpoints: doce comprobaciones parecidas divergen en cuanto
+# una se toca, y la que se olvida es la que queda abierta.
+
+_CABECERA_RESUME = "x-session-resume"
+
+
+def _resume_de(request: Request) -> str | None:
+    """La capacidad viaja en cabecera, nunca en la URL: una query string acaba en logs de
+    acceso, en el historial del navegador y en la cabecera `Referer` de terceros."""
+    return request.headers.get(_CABECERA_RESUME)
+
+
+async def _exigir_autoridad(
+    request: Request, session_id: str, user: CurrentUser | None
+) -> Autoridad:
+    """Puerta de entrada de todo endpoint con `session_id`. Traduce a HTTP y nada más.
+
+    **404 y no 403** cuando falta autoridad: distinguir "no existe" de "existe y no es tuyo"
+    permitiría enumerar qué conversaciones hay y de quién. El cliente no puede saber cuál de
+    las dos cosas ocurrió, que es exactamente la intención.
+    """
+    try:
+        return await autorizar_acceso_a_sesion(session_id, user, _resume_de(request))
+    except AccesoDenegado:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversación no encontrada.") from None
 
 
 class ChatResponse(BaseModel):
@@ -537,8 +623,24 @@ async def chat(
     stream: bool = False,
     user: CurrentUser | None = Depends(get_optional_user),
 ):
-    # Si el usuario está autenticado, la conversación queda ligada a él (privacidad).
-    await _tag_session_owner(payload.session_id, user)
+    # ── AUTH-READ-GATE.1 · autoridad ANTES de cualquier escritura al hilo ───────────
+    # Antes, la primera instrucción era `_tag_session_owner`, que con `COALESCE` asignaba
+    # dueño a cualquier hilo sin él: conocer el `session_id` bastaba para apropiárselo. Y el
+    # turno seguía adelante escribiendo en la conversación de otro.
+    autoridad = await _exigir_autoridad(request, payload.session_id, user)
+
+    # Un autenticado que presenta la capacidad de un hilo anónimo SÍ puede reclamarlo: eso
+    # es alguien que abrió una conversación sin cuenta y luego inició sesión. Lo que no puede
+    # es reclamarlo solo con el identificador — de ahí que el claim viva DETRÁS de la
+    # autorización, no delante. Al reclamar, la capacidad se revoca en la misma sentencia.
+    if autoridad is Autoridad.ANONYMOUS_CAPABILITY and user is not None:
+        try:
+            await reclamar_sesion_anonima(payload.session_id, user, _resume_de(request))
+        except AccesoDenegado:
+            # El estado cambió entre autorizar y reclamar. No se degrada: seguir escribiendo
+            # en un hilo cuya propiedad acaba de moverse es justo lo que el gate impide.
+            raise HTTPException(status.HTTP_404_NOT_FOUND,
+                                "Conversación no encontrada.") from None
     # Marca de última interacción del QR-lead (base del reenganche por valor). Fire-and-forget:
     # no bloquea la respuesta y nunca rompe el chat. Cubre stream y no-stream (corre antes del branch).
     import asyncio as _aio
@@ -696,16 +798,19 @@ async def update_session(
         raise HTTPException(status_code=400, detail="Nada que actualizar (titulo o pinned).")
 
     uid = user.user_id
-    # Asegura la fila (ligada al usuario), luego aplica los cambios SOLO si es suya.
+    # AUTH-READ-GATE.1: se eliminó el "asegura la fila" que precedía a los cambios. Hacía
+    # `ON CONFLICT DO UPDATE SET user_id = COALESCE(chat_sessions.user_id, :uid)` — la misma
+    # apropiación por identificador que `_tag_session_owner`, escondida como paso previo. Y
+    # era peor de lo que parecía: tras esa sentencia el hilo YA era del llamante, así que el
+    # `UPDATE … AND user_id = :uid` de abajo pasaba a cumplirse. Renombrar una conversación
+    # anónima ajena equivalía a quedársela.
+    #
+    # (La caracterización de `.0` clasificó este endpoint como `owner-auth` mirando solo el
+    # `WHERE` de los UPDATE. La vía de claim iba en la sentencia anterior.)
+    #
+    # Ahora no se asegura nada: si la fila no existe o no es tuya, los UPDATE afectan a 0
+    # filas y la operación no hace nada, que es el resultado correcto.
     async with AsyncSessionLocal() as db:
-        await db.execute(
-            text(
-                "INSERT INTO chat_sessions (session_id, user_id) VALUES (:sid, :uid) "
-                "ON CONFLICT (session_id) DO UPDATE "
-                "SET user_id = COALESCE(chat_sessions.user_id, :uid)"
-            ),
-            {"sid": session_id, "uid": uid},
-        )
         if payload.titulo is not None:
             await db.execute(
                 text("UPDATE chat_sessions SET titulo = :t, updated_at = now() "
@@ -732,14 +837,15 @@ async def delete_session(
     request: Request, session_id: str,
     user: CurrentUser = Depends(get_current_user),
 ):
-    # Solo archiva si la conversación es del usuario (o aún no tiene dueño).
+    # AUTH-READ-GATE.1: solo archiva el DUEÑO. Antes admitía además los hilos sin dueño
+    # (`OR user_id IS NULL`) e insertaba la fila con `user_id = :uid`, así que archivar una
+    # conversación anónima ajena también era quedársela. Un hilo sin dueño se reclama
+    # presentando su capacidad en `POST /chat`, no archivándolo.
     async with AsyncSessionLocal() as db:
         await db.execute(
             text(
-                "INSERT INTO chat_sessions (session_id, archived, user_id) "
-                "VALUES (:sid, true, :uid) "
-                "ON CONFLICT (session_id) DO UPDATE SET archived = true, updated_at = now() "
-                "WHERE chat_sessions.user_id = :uid OR chat_sessions.user_id IS NULL"
+                "UPDATE chat_sessions SET archived = true, updated_at = now() "
+                "WHERE session_id = :sid AND user_id = :uid"
             ),
             {"sid": session_id, "uid": user.user_id},
         )
@@ -764,14 +870,17 @@ async def share_session(
     token = secrets.token_urlsafe(9)
     async with AsyncSessionLocal() as db:
         await db.execute(
+            # AUTH-READ-GATE.1: solo comparte el DUEÑO. Antes esta sentencia hacía las dos
+            # cosas a la vez sobre un hilo sin dueño —`user_id = COALESCE(...)` lo reclamaba
+            # e `is_public = true` lo publicaba—, así que conocer el `session_id` de una
+            # conversación anónima bastaba para quedársela Y hacerla legible por cualquiera.
+            # Ya no inserta: si la fila no existe o no es tuya, no se toca nada.
             text(
-                "INSERT INTO chat_sessions (session_id, user_id, share_token, is_public) "
-                "VALUES (:sid, :uid, :tok, true) "
-                "ON CONFLICT (session_id) DO UPDATE SET "
-                "  share_token = COALESCE(chat_sessions.share_token, :tok), "
-                "  is_public = true, "
-                "  user_id = COALESCE(chat_sessions.user_id, :uid) "
-                "WHERE chat_sessions.user_id = :uid OR chat_sessions.user_id IS NULL"
+                "UPDATE chat_sessions SET "
+                "  share_token = COALESCE(share_token, :tok), "
+                "  is_public   = true, "
+                "  updated_at  = now() "
+                "WHERE session_id = :sid AND user_id = :uid"
             ),
             {"sid": session_id, "uid": user.user_id, "tok": token},
         )

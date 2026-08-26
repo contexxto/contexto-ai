@@ -147,71 +147,108 @@ def test_el_hilo_compartido_SI_exige_una_condicion():
 # ── Frontera 2 · ESCRITURA Y APROPIACIÓN ───────────────────────────────────────────
 
 
-def test_POST_chat_no_comprueba_propiedad_ANTES_de_escribir():
-    """AMPLÍA EL ALCANCE DE LA UNIDAD.
+def test_REGRESION_POST_chat_autoriza_ANTES_de_escribir():
+    """`EXPECTED_POLICY_CHANGE` · antes: `test_POST_chat_no_comprueba_propiedad_ANTES_de_escribir`.
 
-    `POST /chat` recibe `session_id` del cliente y llama a `_tag_session_owner` **como
-    primera instrucción**, sin comprobar antes de quién es el hilo. Después invoca el grafo
-    con ese `thread_id`. O sea: conocer el id permite **escribir** en la conversación.
+    **Comportamiento congelado en `.0`:** `POST /chat` llamaba a `_tag_session_owner` como
+    primera instrucción, con el `session_id` que enviara el cliente y sin comprobar de quién
+    era el hilo. Conocer el id permitía escribir en la conversación.
+
+    **Cambio autorizado por la política** (`.0` §7, filas 8 y 9). Ahora la primera
+    instrucción real es la autorización, y el claim vive **detrás** de ella.
     """
     fn = _fn("chat")
     cuerpo = ast.unparse(fn)
-    assert "_tag_session_owner(payload.session_id, user)" in cuerpo
+    assert "_exigir_autoridad(request, payload.session_id, user)" in cuerpo
+
     primera = next(s for s in fn.body if not isinstance(s, ast.Expr) or
                    not isinstance(s.value, ast.Constant))
-    assert "_tag_session_owner" in ast.unparse(primera), "es la primera instrucción real"
-    assert "get_optional_user" in cuerpo, "el anónimo también entra por aquí"
+    assert "_exigir_autoridad" in ast.unparse(primera), (
+        "la autorización dejó de ser la primera instrucción: algo se escribe antes de validar"
+    )
+    # El claim solo puede ocurrir DESPUÉS de autorizar.
+    assert cuerpo.index("_exigir_autoridad") < cuerpo.index("reclamar_sesion_anonima")
 
 
-def test_un_autenticado_puede_RECLAMAR_un_hilo_anonimo_con_solo_conocer_el_id():
-    """EL HALLAZGO MÁS IMPORTANTE DE LA UNIDAD.
+def test_REGRESION_ya_no_existe_via_de_apropiacion_por_identificador():
+    """`EXPECTED_POLICY_CHANGE` · antes:
+    `test_un_autenticado_puede_RECLAMAR_un_hilo_anonimo_con_solo_conocer_el_id`.
 
-    `_tag_session_owner` hace `COALESCE(chat_sessions.user_id, :uid)`. Si el hilo no tiene
-    dueño, el primer autenticado que envíe ese `session_id` en `POST /chat` **se queda con
-    él**, sin demostrar posesión de nada.
+    **Comportamiento congelado en `.0`:** `_tag_session_owner` hacía
+    `COALESCE(chat_sessions.user_id, :uid)`, así que el primer autenticado que enviara el
+    `session_id` se quedaba con el hilo sin demostrar posesión.
 
-    Cerrar `/history` y dejar esto abierto sería una corrección incompleta: el atacante no
-    leería el hilo — se lo quedaría, y entonces podría leerlo legítimamente.
+    **Cambio autorizado por la política** (`.0` §7, fila 8: *auth + solo session_id → no
+    claim*). La función se **eliminó**; no se conservó como auxiliar, porque mientras exista
+    una vía que asigne propiedad por identificador alguien volverá a llamarla.
     """
-    cuerpo = ast.unparse(_fn("_tag_session_owner"))
-    assert "COALESCE(chat_sessions.user_id, :uid)" in cuerpo
-    assert "ON CONFLICT (session_id) DO UPDATE" in cuerpo
-    # No hay ninguna condición que exija demostrar posesión del hilo anónimo.
-    assert "share_token" not in cuerpo and "resume" not in cuerpo.lower()
+    src = CHAT.read_text(encoding="utf-8")
+    assert "async def _tag_session_owner" not in src
+    # Se mira el CÓDIGO, no los comentarios: el bloque que documenta la eliminación cita la
+    # sentencia vieja a propósito, y eso no es una vía de apropiación.
+    literales = " ".join(n.value for n in ast.walk(ast.parse(src))
+                         if isinstance(n, ast.Constant) and isinstance(n.value, str))
+    assert "COALESCE(chat_sessions.user_id" not in literales, (
+        "reapareció la asignación de dueño por identificador"
+    )
+    # Y el claim que la sustituye exige la capacidad.
+    from app.sesion_autoridad import reclamar_sesion_anonima
+    import inspect
+    assert "resume_secret" in inspect.signature(reclamar_sesion_anonima).parameters
 
 
-@pytest.mark.parametrize("fn_nombre,permisiva", [
-    ("update_session", False),   # renombrar/fijar: WHERE session_id = :sid AND user_id = :uid
-    ("delete_session", True),    # archivar:        ... OR chat_sessions.user_id IS NULL
-    ("share_session", True),     # compartir:       ... OR chat_sessions.user_id IS NULL
-])
-def test_las_mutaciones_no_usan_el_mismo_criterio_entre_si(fn_nombre, permisiva):
-    """Asimetría real, congelada: **renombrar** exige ser dueño; **archivar** y **compartir**
-    aceptan además los hilos sin dueño.
+@pytest.mark.parametrize("fn_nombre", ["update_session", "delete_session", "share_session"])
+def test_REGRESION_las_tres_mutaciones_exigen_ser_dueno(fn_nombre):
+    """`EXPECTED_POLICY_CHANGE` · antes: `test_las_mutaciones_no_usan_el_mismo_criterio_entre_si`.
 
-    Consecuencia de la variante permisiva: un autenticado que conozca el `session_id` de una
-    conversación anónima puede archivarla, y en el caso de compartir puede **publicarla y
-    quedarse con ella a la vez** (`is_public = true` + `user_id = COALESCE(...)`).
+    **Congelado en `.0`:** asimetría entre endpoints hermanos — renombrar era estricto;
+    archivar y compartir aceptaban además los hilos sin dueño (`OR user_id IS NULL`).
+
+    **Y la caracterización se quedó corta**: `update_session` también reclamaba, con un
+    `INSERT … COALESCE` como paso previo que el test de `.0` no vio porque solo miraba el
+    `WHERE` de los `UPDATE`.
+
+    **Cambio autorizado:** las tres exigen ser dueño. Ninguna crea la fila ni la adquiere.
     """
     cuerpo = ast.unparse(_fn(fn_nombre))
-    tiene_null = "user_id IS NULL" in cuerpo
-    assert tiene_null is permisiva, f"{fn_nombre}: cambió el criterio de propiedad"
+    assert "user_id IS NULL" not in cuerpo, "sigue aceptando hilos sin dueño"
+    assert "COALESCE(chat_sessions.user_id" not in cuerpo, "sigue reclamando por identificador"
+    assert "user_id = :uid" in cuerpo, "debe exigir propiedad"
 
 
-def test_compartir_publica_y_reclama_en_la_misma_sentencia():
-    """El caso más agudo de la variante permisiva."""
-    cuerpo = ast.unparse(_fn("share_session"))
-    assert "is_public = true" in cuerpo
-    assert "user_id = COALESCE(chat_sessions.user_id, :uid)" in cuerpo
-    assert "chat_sessions.user_id = :uid OR chat_sessions.user_id IS NULL" in cuerpo
+def test_REGRESION_compartir_ya_no_reclama_el_hilo():
+    """`EXPECTED_POLICY_CHANGE` · antes: `test_compartir_publica_y_reclama_en_la_misma_sentencia`.
+
+    **Congelado en `.0`:** la sentencia publicaba Y reclamaba a la vez sobre un hilo sin
+    dueño, así que conocer el `session_id` de una conversación anónima bastaba para quedársela
+    y hacerla legible por cualquiera.
+
+    **Cambio autorizado:** ya no inserta. Publica solo lo que ya es tuyo.
+    """
+    cuerpo = " ".join(ast.unparse(_fn("share_session")).split())   # SQL alineado con espacios
+    assert "is_public = true" in cuerpo, "sigue siendo el endpoint de compartir"
+    assert "INSERT INTO chat_sessions" not in cuerpo, "no debe crear ni adquirir la fila"
+    assert "user_id = COALESCE" not in cuerpo
+    assert "WHERE session_id = :sid AND user_id = :uid" in cuerpo
 
 
-def test_el_etiquetado_de_dueno_es_silencioso_si_falla():
-    """Si la escritura falla, el hilo queda sin dueño y nadie se entera. Importa para el
-    gate: no se puede asumir que "sin dueño" signifique "nunca hubo un autenticado"."""
-    fn = _fn("_tag_session_owner")
-    manejadores = [h for t in ast.walk(fn) if isinstance(t, ast.Try) for h in t.handlers]
-    assert manejadores and all(isinstance(h.body[0], ast.Pass) for h in manejadores)
+def test_REGRESION_ya_no_hay_etiquetado_silencioso_de_dueno():
+    """`EXPECTED_POLICY_CHANGE` · antes: `test_el_etiquetado_de_dueno_es_silencioso_si_falla`.
+
+    **Congelado en `.0`:** `_tag_session_owner` tragaba toda excepción con `pass`, así que un
+    hilo podía quedar sin dueño sin que nadie se enterara.
+
+    **Cambio autorizado:** la función se eliminó. La propiedad es ahora explícita —nace en el
+    bootstrap o se reclama con capacidad— y el claim **falla ruidoso** si no toca exactamente
+    una fila, en vez de callar.
+    """
+    import inspect
+
+    from app.sesion_autoridad import _ejecutar_claim
+
+    assert "async def _tag_session_owner" not in CHAT.read_text(encoding="utf-8")
+    cuerpo = inspect.getsource(_ejecutar_claim)
+    assert "raise AccesoDenegado" in cuerpo and "rollback" in cuerpo
 
 
 # ── INVENTARIO COMPLETO · todo endpoint donde `session_id` da acceso a estado ──────
@@ -334,28 +371,27 @@ def test_hay_endpoints_sin_ninguna_auth_mas_alla_de_los_cinco_iniciales():
 # ── BOOTSTRAP · el hueco que impide emitir la capability con seguridad ─────────────
 
 
-def test_una_sesion_anonima_NO_deja_fila_en_chat_sessions():
-    """EL SEGUNDO HUECO, y condiciona todo el diseño de la capability.
+def test_REGRESION_una_sesion_anonima_SI_deja_fila_autoritativa():
+    """`EXPECTED_POLICY_CHANGE` · antes: `test_una_sesion_anonima_NO_deja_fila_en_chat_sessions`.
 
-    `_tag_session_owner` hace `return` inmediato si no hay usuario. Por tanto **un hilo
-    anónimo nunca crea fila en `chat_sessions`**.
+    **Congelado en `.0`:** los hilos anónimos nunca creaban fila, así que `chat_sessions` no
+    era el catálogo de sesiones y el servidor no podía distinguir nacimiento de reanudación.
 
-    Consecuencia 1 — `chat_sessions` NO es el catálogo de sesiones: faltan todas las
-    anónimas. Afecta a cualquier migración retroactiva.
+    **Cambio autorizado:** el bootstrap inserta SIEMPRE, con `creada_por_servidor = true`.
+    Esa fila es la frontera que faltaba.
 
-    Consecuencia 2 — el servidor **no tiene hoy una frontera autoritativa** para distinguir
-    "esta sesión acaba de nacer" de "este `session_id` anónimo ya existe". Sin esa
-    distinción, una regla ingenua del tipo *"si no viene token, emito uno"* dejaría que un
-    tercero que conozca un `session_id` existente pidiera una capability válida para él:
-    cambiaríamos una puerta abierta por otra con apariencia de seguridad.
+    Lo que NO cambia: los hilos anónimos **anteriores** al gate siguen sin fila, y por eso no
+    se pueden reanudar. Es la pérdida deliberada de compatibilidad de la migración 027.
     """
-    fn = _fn("_tag_session_owner")
-    cuerpo = ast.unparse(fn)
-    assert "if not user:" in cuerpo
-    # El `return` de salida temprana ocurre ANTES de cualquier INSERT.
-    idx_return = cuerpo.index("return")
-    idx_insert = cuerpo.index("INSERT INTO chat_sessions")
-    assert idx_return < idx_insert, "el anónimo sale antes de tocar la tabla"
+    import inspect
+
+    from app.sesion_autoridad import _ejecutar_creacion
+
+    cuerpo = inspect.getsource(_ejecutar_creacion)
+    assert "INSERT INTO chat_sessions" in cuerpo
+    assert "creada_por_servidor" in cuerpo, "la frontera creación≠reanudación"
+    assert "ON CONFLICT (session_id) DO NOTHING" in cuerpo
+    assert "RETURNING session_id" in cuerpo
 
 
 def test_el_session_id_anonimo_lo_elige_el_cliente_sin_control_del_servidor():

@@ -89,27 +89,48 @@ def test_el_estricto_distingue_sin_token_de_token_malo():
 # ── El vínculo user ↔ thread ───────────────────────────────────────────────────────
 
 
-def test_la_conversacion_se_liga_al_usuario_con_primer_dueno_gana():
-    """`chat_sessions(session_id, user_id)` con `COALESCE`: una vez que un hilo tiene dueño,
-    otro usuario NO se lo puede reasignar. Es lo que hace posible el caso anon→login: un hilo
-    con `user_id` NULL sí puede adquirir dueño más tarde."""
-    fuente = CHAT.read_text(encoding="utf-8")
-    fn = next(n for n in ast.walk(ast.parse(fuente))
-              if isinstance(n, ast.AsyncFunctionDef) and n.name == "_tag_session_owner")
-    cuerpo = ast.unparse(fn)
-    assert "COALESCE(chat_sessions.user_id, :uid)" in cuerpo
-    assert "ON CONFLICT (session_id) DO UPDATE" in cuerpo
-    assert "if not user:" in cuerpo and "return" in cuerpo, "sin usuario no se etiqueta nada"
+def test_REGRESION_el_vinculo_user_thread_exige_capacidad():
+    """`EXPECTED_POLICY_CHANGE` · antes:
+    `test_la_conversacion_se_liga_al_usuario_con_primer_dueno_gana`.
+
+    **Congelado en E3.1a:** `_tag_session_owner` usaba `COALESCE`, así que un hilo sin dueño
+    lo adquiría el primer autenticado que enviara el `session_id`. Eso hacía posible el caso
+    anon→login… y también la apropiación por identificador.
+
+    **Cambio autorizado en AUTH-READ-GATE.1:** el caso anon→login **se conserva** —sigue
+    siendo un requisito de producto— pero ahora exige presentar la capacidad del hilo. La
+    propiedad se adquiere demostrando posesión, no conociendo el nombre.
+    """
+    import inspect
+
+    from app.sesion_autoridad import reclamar_sesion_anonima
+
+    src = CHAT.read_text(encoding="utf-8")
+    literales = " ".join(n.value for n in ast.walk(ast.parse(src))
+                         if isinstance(n, ast.Constant) and isinstance(n.value, str))
+    assert "COALESCE(chat_sessions.user_id" not in literales
+    assert "resume_secret" in inspect.signature(reclamar_sesion_anonima).parameters
 
 
-def test_el_etiquetado_es_best_effort_y_puede_fallar_en_silencio():
-    """Consecuencia para E3.1b: el vínculo user↔thread NO está garantizado. Si la escritura
-    falla, la conversación queda sin dueño y nadie se entera."""
-    fuente = CHAT.read_text(encoding="utf-8")
-    fn = next(n for n in ast.walk(ast.parse(fuente))
-              if isinstance(n, ast.AsyncFunctionDef) and n.name == "_tag_session_owner")
-    manejadores = [h for t in ast.walk(fn) if isinstance(t, ast.Try) for h in t.handlers]
-    assert manejadores and all(isinstance(h.body[0], ast.Pass) for h in manejadores)
+def test_REGRESION_el_vinculo_ya_no_falla_en_silencio():
+    """`EXPECTED_POLICY_CHANGE` · antes:
+    `test_el_etiquetado_es_best_effort_y_puede_fallar_en_silencio`.
+
+    **Congelado en E3.1a:** el vínculo user↔thread era best-effort; si la escritura fallaba,
+    la conversación quedaba sin dueño y nadie se enteraba. Se anotó como consecuencia para
+    E3.1b: *"un store que asuma que toda conversación tiene dueño se equivocará"*.
+
+    **Cambio autorizado:** el claim comprueba el `rowcount` y levanta si no tocó exactamente
+    una fila. Un claim que no reclama ya no pasa desapercibido.
+    """
+    import inspect
+
+    from app.sesion_autoridad import _ejecutar_claim
+
+    cuerpo = inspect.getsource(_ejecutar_claim)
+    assert "len(filas) != 1" in cuerpo
+    assert "raise AccesoDenegado" in cuerpo
+    assert "pass" not in cuerpo, "no queda ninguna degradación silenciosa"
 
 
 def test_el_esquema_soporta_1_a_N_usuario_conversaciones():
@@ -212,14 +233,29 @@ def test_el_hilo_compartido_si_exige_una_condicion_explicita():
 # ── El session_id: quién lo genera y cuánto dura ───────────────────────────────────
 
 
-def test_el_backend_genera_un_session_id_si_el_cliente_no_lo_manda():
-    """`ChatRequest.session_id` tiene `default_factory=uuid4`. Un turno sin session_id NO
-    falla: crea una conversación de un solo turno, irrecuperable."""
+def test_REGRESION_el_chat_ya_no_puede_crear_una_sesion():
+    """`EXPECTED_POLICY_CHANGE` · antes:
+    `test_el_backend_genera_un_session_id_si_el_cliente_no_lo_manda`.
+
+    **Comportamiento congelado en E3.1a:** `ChatRequest.session_id` tenía
+    `default_factory=uuid4`, así que un turno sin `session_id` no fallaba — creaba una
+    conversación irrecuperable.
+
+    **Cambio autorizado en AUTH-READ-GATE.1:** con el bootstrap explícito, que `POST /chat`
+    pudiera inventar una sesión sería un **segundo mecanismo de creación**, fuera de la
+    frontera que distingue nacer de reanudar. El campo es obligatorio.
+    """
+    import pytest as _pytest
+
     from app.routers.chat import ChatRequest
 
-    a, b = ChatRequest(message="hola"), ChatRequest(message="hola")
-    assert a.session_id != b.session_id
-    assert len(a.session_id) == 36 and a.session_id.count("-") == 4
+    with _pytest.raises(Exception):
+        ChatRequest(message="hola")            # sin session_id → ya no valida
+    with _pytest.raises(Exception):
+        ChatRequest(message="hola", session_id="")
+
+    valido = ChatRequest(message="hola", session_id="qr-abc-Ab3xY9")
+    assert valido.session_id == "qr-abc-Ab3xY9", "el cliente sigue pudiendo REANUDAR"
 
 
 def test_el_frontend_persiste_el_session_id_en_localstorage():

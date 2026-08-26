@@ -267,17 +267,32 @@ def test_el_frontend_persiste_el_session_id_en_localstorage():
     assert re.search(r"localStorage\.setItem\(SESSION_KEY", js)
 
 
-def test_existe_un_device_id_anonimo_previo_a_esta_fase():
-    """INFRAESTRUCTURA ANÓNIMA QUE YA EXISTÍA, y hay que caracterizarla antes de reutilizarla.
+def test_REGRESION_el_device_id_ya_no_privatiza_la_sesion_del_QR():
+    """`EXPECTED_POLICY_CHANGE` · antes: `test_existe_un_device_id_anonimo_previo_a_esta_fase`.
 
-    `contexto_ai_device_id` es un UUID de navegador en localStorage. Su propósito declarado es
-    acotado: hacer PRIVADA la sesión del QR por visitante (`qr-{activo}-{dispositivo}`), no
-    identificar a una persona.
+    **Sigue en pie:** `contexto_ai_device_id` existe, es un UUID de navegador en localStorage y
+    **no** identifica a una persona. Esa parte de E3.1a no cambia — y es la que decidía que no
+    sirve como `buyer_id`.
+
+    **Congelado en `.0`/E3.1a:** ese identificador se usaba además para hacer *privada* la
+    sesión del QR, incrustándolo en el nombre de la conversación (`qr-{activo}-{dispositivo}`).
+    Eso era privacidad por oscuridad: el esquema es público y el `device_id` viaja al servidor
+    en cada llegada (`visita.device_key`, migración 024), así que no era secreto.
+
+    **Cambio autorizado en AUTH-READ-GATE.1 · 5c:** la conversación se privatiza con la
+    capacidad, no con el nombre. El `device_key` conserva únicamente su uso analítico.
+
+    Esto **refuerza** la conclusión de E3.1a: el `device_key` nunca fue autoridad, y ahora
+    tampoco aparenta serlo.
     """
     js = APP_JSX.read_text(encoding="utf-8")
+
     assert "const DEVICE_KEY = 'contexto_ai_device_id'" in js
     assert "crypto.randomUUID" in js
-    assert "qr-${id}-${getDeviceId()}" in js.replace("`", "`")
+
+    # Ya no se incrusta en el identificador de la conversación; queda como dato de llegada.
+    assert "qr-${id}-${getDeviceId()}" not in js
+    assert "device_key: getDeviceId()" in js
 
 
 def test_el_device_key_SI_llega_al_backend_y_SI_se_persiste():

@@ -45,30 +45,58 @@ def test_el_QR_codifica_el_INMUEBLE_no_una_conversacion():
     assert "session_id" not in src.split("def _qr_url")[-1][:400] if "_qr_url" in src else True
 
 
-def test_el_session_id_del_QR_nace_en_el_CLIENTE_y_vive_en_localstorage():
-    """Cuándo existe por primera vez y quién lo genera: el navegador, al abrir el deep link.
+def test_REGRESION_el_session_id_del_QR_ya_NO_nace_en_el_cliente():
+    """`EXPECTED_POLICY_CHANGE` · antes: `test_el_session_id_del_QR_nace_en_el_CLIENTE_y_vive_en_localstorage`.
 
-        fresco    →  `qr-{activo}-{device}-{6 al azar}`
-        reanudar  →  el guardado en `localStorage['ctx_qr_' + activo]`
+    **Congelado en `.0`:** el navegador fabricaba el identificador al abrir el deep link —
+    `` `${qrSessionId(id)}-${Math.random().toString(36).slice(2, 8)}` `` — y el servidor lo
+    recibía ya hecho. Ese era el hallazgo central de la caracterización: **quien elige el
+    identificador elige a qué conversación entra**, porque nada más se comprobaba.
 
-    El servidor nunca lo emite en este carril: lo recibe ya hecho.
+    **Cambio autorizado en AUTH-READ-GATE.1 · 5c:** el id lo emite `POST /sessions/bootstrap`.
+    El cliente ya no puede proponerlo, así que dejó de ser una credencial: lo que autoriza es
+    la capacidad (`X-Session-Resume`) o ser el dueño autenticado.
+
+    Lo que **no** cambia —y por eso se sigue afirmando aquí— es que la llave de reanudación
+    del carril QR vive en `localStorage['ctx_qr_' + activo]`. Los letreros ya impresos no
+    llevan sesión, así que el navegador tiene que recordar cuál era la suya.
     """
     js = APP_JSX.read_text(encoding="utf-8")
+
     assert "const storeKey = 'ctx_qr_' + id" in js
-    assert "const sid = `${qrSessionId(id)}-${Math.random().toString(36).slice(2, 8)}`" in js
     assert "localStorage.setItem(storeKey, sid)" in js
 
+    # La expresión que fabricaba el id ya no existe, y el bootstrap ocupa su lugar.
+    assert "const sid = `${qrSessionId(id)}-${Math.random()" not in js
+    assert "const sid = await bootstrapSession(id)" in js
 
-def test_la_reanudacion_del_QR_es_por_navegador_no_por_persona():
-    """¿Necesita recuperar la MISMA conversación desde otro dispositivo? Hoy no puede.
 
-    La llave de reanudación está en `localStorage`, y el `session_id` incluye el
-    `device_id`. Otro navegador —aunque sea la misma persona— genera un hilo NUEVO. Es un
-    dato de producto, no un defecto: acota qué tiene que preservar el gate.
+def test_UNCHANGED_INVARIANT_la_reanudacion_del_QR_sigue_siendo_por_navegador():
+    """`UNCHANGED_INVARIANT` con **mecanismo distinto** · antes: `test_la_reanudacion_del_QR_es_por_navegador_no_por_persona`.
+
+    La propiedad de producto es la misma que congeló `.0`: desde otro navegador —aunque sea
+    la misma persona— sale un hilo NUEVO. Sigue sin haber recuperación entre dispositivos.
+
+    Lo que cambió es **por qué**. En `.0` el hilo estaba atado al navegador porque el
+    `device_id` iba *dentro del propio identificador* (`qr-{activo}-{device}`): el vínculo
+    era el nombre de la conversación. Ahora está atado porque la **capacidad** vive en ese
+    `localStorage` y en ningún otro sitio.
+
+    La diferencia importa y por eso el test se transforma en vez de borrarse: un id que
+    contiene el dispositivo es *adivinable* para quien conozca el esquema; un secreto de 32
+    bytes que nunca sale del navegador, no. Misma limitación de producto, garantía distinta.
+
+    `qrSessionId` está eliminado: el prefijo `qr-{activo}-` lo pone ahora el servidor, que es
+    lo que mantiene vivas las siete consultas de `assets.py` que dependen de él.
     """
     js = APP_JSX.read_text(encoding="utf-8")
-    assert "const qrSessionId = (id) => `qr-${id}-${getDeviceId()}`" in js
-    assert "localStorage.getItem(storeKey)" in js
+
+    assert "const qrSessionId" not in js, "el cliente ya no compone el identificador"
+    assert "localStorage.getItem(storeKey)" in js, "la reanudación sigue siendo local"
+
+    # El vínculo con el navegador es ahora el secreto, no el nombre de la conversación.
+    custodia = (RAIZ / "frontend" / "src" / "resumeCapability.js").read_text(encoding="utf-8")
+    assert "ctx_resume_" in custodia
 
 
 def test_REGRESION_el_carril_anonimo_YA_tiene_credencial():
@@ -114,11 +142,24 @@ def test_intencion_NO_participa_en_el_QR():
     assert "api/v1/chat" not in frontend.split("intencionesEntrada")[0][-200:]
 
 
-def test_handoff_SI_participa_en_el_QR():
-    """`/handoff` sí es parte del carril anónimo: es como el visitante recupera la
-    conversación con el corredor al volver a escanear."""
+def test_REGRESION_el_handoff_del_QR_ahora_va_con_capacidad():
+    """`EXPECTED_POLICY_CHANGE` · antes: `test_handoff_SI_participa_en_el_QR`.
+
+    **Sigue en pie el hecho caracterizado:** `/handoff` es parte del carril anónimo — es como
+    el visitante recupera la conversación con el corredor al volver a escanear el letrero.
+
+    **Congelado en `.0`:** esa llamada iba con `apiHeaders()`, es decir, sin ninguna prueba de
+    posesión. Bastaba con acertar el `session_id` para leer el hilo con el corredor.
+
+    **Cambio autorizado en AUTH-READ-GATE.1 · 5c:** va con `apiHeadersSesion(prev)`, que lleva
+    la capacidad **de esa conversación**. Si la rechazan, el secreto local se descarta y se
+    abre un hilo nuevo — nunca se reintenta sin él, que sería el dual-path que este gate cierra.
+    """
     js = APP_JSX.read_text(encoding="utf-8")
-    assert "/handoff`, { headers: apiHeaders() })" in js
+
+    assert "/handoff`, { headers: apiHeadersSesion(prev) })" in js
+    assert "/handoff`, { headers: apiHeaders() })" not in js
+    assert "descartarCapacidadRechazada(prev)" in js
 
 
 # ── Frontera 1 · LECTURA ───────────────────────────────────────────────────────────

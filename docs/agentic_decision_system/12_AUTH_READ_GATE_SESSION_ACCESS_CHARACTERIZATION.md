@@ -73,17 +73,60 @@ posesión para el QR tiene que poder **emitirse después del escaneo**, no venir
 
 ---
 
-## 3. FRONTERA 1 · LECTURA
+## 3. INVENTARIO COMPLETO · los 18 endpoints session-scoped
 
-| Endpoint | Auth | Usado por el QR |
+**Ampliación pedida en revisión.** La primera pasada cubrió cinco. El barrido sistemático por
+AST —parámetro `session_id`, `payload.session_id`, `destinatario_session` o lectura del
+checkpointer— encuentra **18**.
+
+### owner-auth · exigen identidad del propietario  *(4)*
+
+`PATCH /sessions/{id}` · `DELETE /sessions/{id}` · `POST /sessions/{id}/share` ·
+`DELETE /sessions/{id}/share`
+
+### public-by-design · capacidad explícita, no identidad  *(1)*
+
+`GET /shared/{token}` — exige `share_token` **+** `is_public`. **No se toca.**
+
+### internal · `session_id` no es la autoridad  *(1)*
+
+`GET /sessions` — filtra por usuario; `[]` para invitados.
+
+### anonymous-capability-required · HOY basta con conocer el id  *(12)*
+
+| Endpoint | Auth declarada | Nota |
 |---|---|---|
-| `GET /{session_id}/history` | ❌ ninguna | ✅ sí |
-| `GET /{session_id}/handoff` | ❌ ninguna | ✅ sí |
-| `GET /{session_id}/intencion` | ❌ ninguna | ❌ **no — abierto por accidente** |
-| `GET /shared/{token}` | ❌ por diseño | — exige `share_token` **+** `is_public` |
-| `GET /sessions` | ✅ `get_optional_user` → `[]` si invitado | — |
+| `POST /` (chat) | `get_optional_user` | **escribe y reclama** (§4) |
+| `GET /{id}/history` | ❌ | sostiene el QR |
+| `GET /{id}/handoff` | ❌ | sostiene el QR |
+| `POST /{id}/handoff` | `get_optional_user` | session-scoped |
+| `POST /{id}/handoff/mensaje` | `get_optional_user` | session-scoped |
+| `POST /{id}/handoff/push` | ❌ | |
+| `GET /{id}/intencion` | ❌ | **sin consumidor** |
+| `POST /comparar` | ❌ | |
+| `POST /lead-contacto` | ❌ | |
+| `GET /notificaciones` | `get_optional_user*` | ⚠️ ver abajo |
+| `GET /conversaciones` | `get_optional_user*` | ⚠️ ver abajo |
+| `POST /notificaciones/leidas` | `get_optional_user*` | ⚠️ ver abajo |
 
-`/intencion` es el caso fácil: **no tiene consumidor**. Cerrarlo no rompe nada.
+### ⚠️ La puerta que faltaba: campana y bandeja
+
+Los tres endpoints de avisos **declaran** dependencia de usuario, pero la consulta usa un
+**`OR`, no un `else`**:
+
+```sql
+WHERE (CAST(:u AS uuid) IS NOT NULL AND destinatario_user_id = CAST(:u AS uuid))
+   OR (CAST(:s AS text) IS NOT NULL AND destinatario_session = CAST(:s AS text))
+```
+
+Conocer el `session_id` concede acceso a los avisos del hilo. Y la segunda rama **no
+comprueba propiedad**, así que un autenticado que pase un `session_id` ajeno también los
+recibe. `POST /notificaciones/leidas` permite además **mutar** ese estado.
+
+Es la misma semántica que el gate pretende eliminar, en otro sitio. **Cerrar solo los cinco
+primeros dejaría esta puerta abierta.**
+
+`/intencion` sigue siendo el caso fácil: **no tiene consumidor**, cerrarlo no rompe nada.
 
 ---
 
@@ -203,6 +246,61 @@ Mantenerla sería conservar un segundo acceso bearer a datos ya asociados a una 
 
 ---
 
+## 7-bis. EL BOOTSTRAP · el hueco que impide emitir la capability con seguridad
+
+**Segunda ampliación pedida en revisión, y condiciona todo el diseño.**
+
+**[VERIFICADO]** `_tag_session_owner` hace `return` inmediato si no hay usuario — antes de
+cualquier `INSERT`. Por tanto:
+
+> **Un hilo anónimo nunca crea fila en `chat_sessions`.**
+
+### Consecuencia 1 · `chat_sessions` no es el catálogo de sesiones
+
+Faltan **todas** las anónimas. Cualquier migración retroactiva que asuma esa tabla como censo
+de hilos se equivocará, y el gate no puede usar "existe fila" como señal de nada.
+
+### Consecuencia 2 · el servidor no puede distinguir nacimiento de reanudación
+
+```
+el cliente elige el session_id
+        ↓
+POST /chat sin capability
+        ↓
+¿cómo sabe el servidor que es un hilo NUEVO
+y no un session_id anónimo existente que un tercero conoce?
+```
+
+**Hoy no puede.** **[VERIFICADO]** `ChatRequest` acepta cualquier `session_id` que envíe el
+cliente, y no existe ninguna operación atómica de creación: no hay `RETURNING`, no hay
+detección de `INSERT`-vs-`UPDATE`, no hay endpoint de bootstrap.
+
+### La regla que AUTH-READ-GATE.1 debe respetar
+
+> **La capability solo puede emitirse en una operación de creación de sesión que el servidor
+> pueda distinguir de forma atómica de la reanudación de una existente. Conocer un
+> `session_id` preexistente nunca debe permitir obtener una capability nueva.**
+
+```
+sesión anónima NUEVA        →  operación atómica de creación
+                            →  session_id + resume capability
+                            →  guardar HASH de la capability
+
+sesión anónima EXISTENTE    →  capability obligatoria
+                            →  JAMÁS reemitirla por conocer el session_id
+```
+
+Sin esta regla, una implementación ingenua —*"si no viene token, emito uno"*— dejaría que
+cualquiera que conozca un `session_id` existente pidiera una capability válida para él.
+**Habríamos cambiado una puerta abierta por otra con apariencia de seguridad**, que es peor:
+la primera al menos se ve.
+
+Formas equivalentes de conseguirlo —**ninguna se elige ni se implementa aquí**— serían un
+registro autoritativo insertado al crear el hilo con `INSERT … ON CONFLICT` que distinga
+creación de existencia, o un endpoint de bootstrap dedicado.
+
+---
+
 ## 8. SI HACE FALTA UNA CAPABILITY (evaluación, no implementación)
 
 Contrato evaluado contra el carril QR real:
@@ -257,14 +355,20 @@ AUTH-READ-GATE.1 READY WITH CONSTRAINT
 
 **Restricciones que AUTH-READ-GATE.1 debe respetar:**
 
-1. **El alcance es mayor que la lectura.** Debe cubrir `POST /chat` (escritura + claim) y
-   `share`. Cerrar solo los GET dejaría el claim abierto.
-2. **La credencial no puede venir en la URL** — los letreros impresos no cambian.
-3. **`/intencion` se puede cerrar sin coste**: no tiene consumidor.
-4. **`/handoff` y `/history` sí sostienen el QR**: cerrarlos sin capability rompe producto.
-5. **`/shared/{token}` no se toca.**
-6. **No usar `device_key`** como credencial (§6).
-7. **TTL y transporte quedan sin decidir** hasta resolver §9.1.
+1. **El alcance son 18 endpoints, no 5** (§3). Cerrar solo los GET del hilo dejaría abiertas
+   la campana, la bandeja, `/comparar`, `/lead-contacto` y `/handoff/push`.
+2. **Debe cubrir escritura y apropiación**, no solo lectura: `POST /chat` y `share` (§4).
+3. **Bootstrap atómico obligatorio** (§7-bis): la capability solo se emite en una creación
+   distinguible de una reanudación. Conocer un `session_id` existente **nunca** debe permitir
+   obtener una capability nueva.
+4. **`chat_sessions` no es el catálogo de sesiones** — faltan todas las anónimas. No usarla
+   como censo ni en la migración retroactiva.
+5. **La credencial no puede venir en la URL** — los letreros impresos no cambian.
+6. **`/intencion` se puede cerrar sin coste**: no tiene consumidor.
+7. **`/handoff` y `/history` sí sostienen el QR**: cerrarlos sin capability rompe producto.
+8. **`/shared/{token}` no se toca.**
+9. **No usar `device_key`** como credencial (§6).
+10. **TTL y transporte quedan sin decidir** hasta resolver §9.1.
 
 **No está BLOCKED**: la semántica del QR quedó resuelta. Lo que falta son datos de producto
 para afinar, no para diseñar.

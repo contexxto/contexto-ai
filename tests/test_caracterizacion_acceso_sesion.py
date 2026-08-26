@@ -214,6 +214,168 @@ def test_el_etiquetado_de_dueno_es_silencioso_si_falla():
     assert manejadores and all(isinstance(h.body[0], ast.Pass) for h in manejadores)
 
 
+# ── INVENTARIO COMPLETO · todo endpoint donde `session_id` da acceso a estado ──────
+
+
+def _inventario() -> dict[tuple[str, str], set[str]]:
+    """Todos los endpoints de `chat.py` en los que `session_id` participa del acceso a
+    estado del hilo — por parámetro, por `payload.session_id`, por `destinatario_session`
+    o por lectura del checkpointer."""
+    arbol = ast.parse(CHAT.read_text(encoding="utf-8"))
+    fuera = {}
+    for n in ast.walk(arbol):
+        if not isinstance(n, (ast.AsyncFunctionDef, ast.FunctionDef)):
+            continue
+        for dec in n.decorator_list:
+            s = ast.unparse(dec)
+            metodo = next((m for m, t in (("GET", ".get("), ("POST", ".post("),
+                                          ("DELETE", ".delete("), ("PATCH", ".patch("))
+                           if t in s), None)
+            if not metodo:
+                continue
+            cuerpo = ast.unparse(n)
+            params = {a.arg for a in list(n.args.args) + list(n.args.kwonlyargs)}
+            usa_sesion = ("session_id" in params or "sid" in params
+                          or "payload.session_id" in cuerpo
+                          or "destinatario_session" in cuerpo
+                          or "aget_state" in cuerpo)
+            if usa_sesion:
+                ruta = s.split("(", 1)[1].split(",")[0].strip().strip("'\"")
+                fuera[(metodo, ruta)] = {a for a in _AUTH if a in cuerpo}
+            break
+    return fuera
+
+
+# Clasificación exigida por la revisión. Congelada: si aparece un endpoint nuevo que use
+# `session_id`, el test de exhaustividad falla y obliga a clasificarlo antes de mergear.
+CLASIFICACION = {
+    # ── owner-auth: exigen identidad del propietario ──────────────────────────────
+    ("PATCH",  "/sessions/{session_id}"):        "owner-auth",
+    ("DELETE", "/sessions/{session_id}"):        "owner-auth",
+    ("POST",   "/sessions/{session_id}/share"):  "owner-auth",
+    ("DELETE", "/sessions/{session_id}/share"):  "owner-auth",
+
+    # ── public-by-design: acceso explícito por capacidad, no por identidad ────────
+    ("GET",    "/shared/{token}"):               "public-by-design",
+
+    # ── internal/irrelevant: `session_id` no es la autoridad ─────────────────────
+    ("GET",    "/sessions"):                     "internal",   # filtra por usuario; [] si invitado
+
+    # ── anonymous-capability-required: HOY basta con conocer el id ───────────────
+    ("POST",   "/"):                             "capability-required",  # escribe Y reclama
+    ("GET",    "/{session_id}/history"):         "capability-required",
+    ("GET",    "/{session_id}/handoff"):         "capability-required",
+    ("POST",   "/{session_id}/handoff"):         "capability-required",
+    ("POST",   "/{session_id}/handoff/mensaje"): "capability-required",
+    ("POST",   "/{session_id}/handoff/push"):    "capability-required",
+    ("GET",    "/{session_id}/intencion"):       "capability-required",
+    ("POST",   "/comparar"):                     "capability-required",
+    ("POST",   "/lead-contacto"):                "capability-required",
+    ("GET",    "/notificaciones"):               "capability-required",
+    ("GET",    "/conversaciones"):               "capability-required",
+    ("POST",   "/notificaciones/leidas"):        "capability-required",
+}
+
+
+def test_el_inventario_de_endpoints_session_scoped_esta_completo():
+    """AMPLIACIÓN DEL ALCANCE, pedida en revisión.
+
+    La primera pasada cubrió cinco endpoints. El barrido sistemático encuentra **18**. Si
+    AUTH-READ-GATE.1 cerrara solo los que vimos primero, dejaría puertas equivalentes
+    abiertas — la campana y la bandeja, entre otras.
+    """
+    encontrados = set(_inventario())
+    clasificados = set(CLASIFICACION)
+    assert encontrados - clasificados == set(), (
+        f"endpoints session-scoped SIN clasificar: {sorted(encontrados - clasificados)}"
+    )
+    assert clasificados - encontrados == set(), (
+        f"clasificados que ya no existen: {sorted(clasificados - encontrados)}"
+    )
+    assert len(encontrados) == 18
+
+
+@pytest.mark.parametrize("clave", [k for k, v in CLASIFICACION.items() if v == "owner-auth"])
+def test_los_owner_auth_exigen_identidad(clave):
+    assert "get_current_user" in _inventario()[clave]
+
+
+def test_la_campana_y_la_bandeja_usan_el_session_id_como_AUTORIDAD():
+    """LA PUERTA QUE FALTABA. Los tres endpoints de avisos aceptan `session_id` y lo usan
+    para decidir qué filas devolver o mutar:
+
+        WHERE (user_id  IS NOT NULL AND destinatario_user_id = :u)
+           OR (session  IS NOT NULL AND destinatario_session = :s)
+
+    Es un **OR**, no un `else`. Así que conocer el `session_id` concede acceso a los avisos
+    del hilo — y además un autenticado que pase un `session_id` ajeno también los recibe,
+    porque la segunda rama no comprueba propiedad.
+
+    Es exactamente la semántica que el gate pretende eliminar, en otro sitio.
+    """
+    src = CHAT.read_text(encoding="utf-8")
+    assert src.count("destinatario_session = CAST(:s AS text)") >= 3
+    for fn in ("notificaciones", "conversaciones", "marcar_leidas"):
+        try:
+            cuerpo = ast.unparse(_fn(fn))
+        except StopIteration:
+            continue
+        assert "destinatario_session" in cuerpo
+
+
+def test_hay_endpoints_sin_ninguna_auth_mas_alla_de_los_cinco_iniciales():
+    """`/comparar`, `/lead-contacto` y `/handoff/push` tampoco declaran auth."""
+    inv = _inventario()
+    for clave in [("POST", "/comparar"), ("POST", "/lead-contacto"),
+                  ("POST", "/{session_id}/handoff/push")]:
+        assert inv[clave] == set(), f"{clave} ya no está desprotegido — revisar §3"
+
+
+# ── BOOTSTRAP · el hueco que impide emitir la capability con seguridad ─────────────
+
+
+def test_una_sesion_anonima_NO_deja_fila_en_chat_sessions():
+    """EL SEGUNDO HUECO, y condiciona todo el diseño de la capability.
+
+    `_tag_session_owner` hace `return` inmediato si no hay usuario. Por tanto **un hilo
+    anónimo nunca crea fila en `chat_sessions`**.
+
+    Consecuencia 1 — `chat_sessions` NO es el catálogo de sesiones: faltan todas las
+    anónimas. Afecta a cualquier migración retroactiva.
+
+    Consecuencia 2 — el servidor **no tiene hoy una frontera autoritativa** para distinguir
+    "esta sesión acaba de nacer" de "este `session_id` anónimo ya existe". Sin esa
+    distinción, una regla ingenua del tipo *"si no viene token, emito uno"* dejaría que un
+    tercero que conozca un `session_id` existente pidiera una capability válida para él:
+    cambiaríamos una puerta abierta por otra con apariencia de seguridad.
+    """
+    fn = _fn("_tag_session_owner")
+    cuerpo = ast.unparse(fn)
+    assert "if not user:" in cuerpo
+    # El `return` de salida temprana ocurre ANTES de cualquier INSERT.
+    idx_return = cuerpo.index("return")
+    idx_insert = cuerpo.index("INSERT INTO chat_sessions")
+    assert idx_return < idx_insert, "el anónimo sale antes de tocar la tabla"
+
+
+def test_el_session_id_anonimo_lo_elige_el_cliente_sin_control_del_servidor():
+    """Refuerza el punto anterior: el servidor recibe un `session_id` ya hecho y no puede
+    saber si es nuevo. `ChatRequest` solo lo genera cuando el cliente **no** lo manda."""
+    from app.routers.chat import ChatRequest
+
+    elegido = ChatRequest(message="hola", session_id="qr-cualquier-cosa-que-yo-invente")
+    assert elegido.session_id == "qr-cualquier-cosa-que-yo-invente"
+
+
+def test_no_existe_hoy_ninguna_operacion_atomica_de_creacion_de_sesion():
+    """No hay endpoint ni sentencia que cree la sesión distinguiendo creación de existencia.
+    El único `INSERT ... ON CONFLICT` sobre `chat_sessions` en el camino del chat es el de
+    `_tag_session_owner`, que ni siquiera corre para anónimos."""
+    src = CHAT.read_text(encoding="utf-8")
+    assert "xmax" not in src, "no hay detección de INSERT-vs-UPDATE"
+    assert "RETURNING" not in src.split("_tag_session_owner")[1][:600]
+
+
 # ── El device_key sigue sin ser credencial de nada ─────────────────────────────────
 
 

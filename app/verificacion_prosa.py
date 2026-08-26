@@ -191,6 +191,168 @@ def _violacion(codigo: str, gravedad: str, detalle: str, evidencia: str = "") ->
             "evidencia": (evidencia or "")[:200]}
 
 
+# ── Procedencia de la caminabilidad (TRUST-HOTFIX-01) ─────────────────────────────────────
+# El caso real: contexxto.com, 2026-08-25 14:49. La ficha decía "estimada por zona" y la
+# prosa, del MISMO inmueble y en el MISMO turno, "calculada sobre los comercios reales de la
+# zona". `caminabilidad_fuente` era `heuristico`.
+#
+# Es la TERCERA superficie del mismo problema. Las otras dos ya estaban cerradas —el pie de
+# ResultCards.jsx (2026-08-11) y encaje._score_caminable (E0.3)—, así que el dato se arregló
+# dos veces y la AFIRMACIÓN nunca. `app/agent/graph.py` se lo prohíbe al modelo con todas las
+# letras y el modelo lo hizo igual: es el modo de fallo de la batalla Hiinmo, y por eso el
+# guardián vive en la salida y no en el prompt.
+
+_CAMINABILIDAD = re.compile(r"caminab|walk\s*-?\s*score")
+
+# ATRIBUCIÓN, NO MENCIÓN. Es la corrección que evita el falso positivo más caro de todos:
+# acusar a una NEGACIÓN VERDADERA. Buscar solo el nombre de la fuente marcaba como mentira
+# frases como «la caminabilidad 84 no fue calculada sobre los comercios reales» o
+# «la caminabilidad es 84 y hay comercios reales alrededor» — la primera dice la verdad y la
+# segunda ni siquiera habla de procedencia. Un guardián ALTA que denuncia a quien fue honesto
+# se desactiva en una semana, y con él se pierde el caso que sí importa.
+#
+# Así que hace falta un VERBO DE PROCEDENCIA que relacione el número con la fuente. La mera
+# coexistencia de "84" y "comercios reales" en una frase no afirma nada.
+_VERBO_PROCEDENCIA = (
+    r"(?:calculad|contad|medid|sacad|obtenid|derivad|basad)[oa]s?\s+(?:sobre|en|de|a partir de)"
+    r"|se\s+(?:calcul|cuent|mid|obtien|sac|deriv)\w*\s+(?:sobre|en|de|con)"
+    r"|(?:sale|salen|viene|vienen|surge|surgen|provien\w+)\s+de"
+    r"|\bsegun\b"
+    r"|\busa(?:n|ndo)?\b"
+    r"|con datos de"
+    r"|a partir de"
+)
+_FUENTE_MEDIDA_TXT = r"comercios reales|open\s*street\s*map"
+
+# El verbo tiene que APUNTAR a la fuente: se admite texto intermedio corto ("calculada sobre
+# LOS comercios reales") pero no cruzar a otra oración — `[^.;\n]` lo impide.
+_ATRIBUYE_MEDICION = re.compile(
+    rf"(?:{_VERBO_PROCEDENCIA})[^.;\n]{{0,40}}?(?:{_FUENTE_MEDIDA_TXT})"
+)
+
+# Negación GRAMATICAL, en DOS posiciones que significan cosas opuestas. La clave es que el
+# match del regex TERMINA en la fuente, así que la posición de la negación respecto de él
+# distingue por sí sola una negación de una afirmación con matiz:
+#
+#     usa una estimacion, NO openstreetmap          → la negación cae DENTRO del match
+#     └──────────── m.group(0) ────────────┘           (niega la fuente) → callar
+#
+#     calculada sobre comercios reales, NO una estimacion
+#     └────── m.group(0) ──────┘        └ fuera del match (matiza) → denunciar
+#
+# Por eso se mira ANTES del verbo y DENTRO del match, pero nunca después: si bastara un "no"
+# posterior, evadir al guardián sería tan fácil como añadirlo al final de la frase.
+_NEGACION = re.compile(r"\b(?:no|nunca|jamas|tampoco|ni)\b")
+
+# Negación SEMÁNTICA en la frase entera: la frase honesta del heurístico menciona "comercios
+# reales" para negarlos ("todavía sin contrastar con los comercios reales del sector").
+_NIEGA_MEDICION = re.compile(
+    r"sin contrastar|estimacion por zona|estimada por zona|estimado por zona|heuristic"
+    r"|sin medicion|no (?:es|hay|se) (?:una |ninguna )?medicion|todavia sin|aun sin"
+)
+
+_FUENTE_MEDIDA = {"osm"}
+
+
+def _fuente_card(c: dict) -> str:
+    return (c.get("caminabilidad_fuente") or "").strip().lower()
+
+
+def _linea_de(texto: str, pos: int) -> str:
+    """La LÍNEA que contiene `pos`. Más ancha que `_fragmento` a propósito: las direcciones
+    de Quito llevan punto ("Av. 6 de Diciembre y Whymper") y el corte por frase las parte en
+    dos, dejando sin identificar justo el caso que motivó este chequeo."""
+    ini = texto.rfind("\n", 0, pos)
+    fin = texto.find("\n", pos)
+    return texto[ini + 1: fin if fin != -1 else len(texto)]
+
+
+def _walk(c: dict) -> int | None:
+    v = c.get("caminabilidad")
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return None
+    return int(round(v))
+
+
+def _card_de_caminabilidad(frase: str, linea: str, cards: list[dict]) -> int | None:
+    """De qué tarjeta habla esto. Devuelve `None` cuando no es inequívoco.
+
+    Tres caminos y ninguno más, en orden de fuerza: dirección literal, walk score que solo
+    una tarjeta tiene, o panel de una sola opción. Si dice "tiene buena caminabilidad" con
+    dos tarjetas en pantalla, no se sabe de cuál habla — y adivinar para subir la cobertura
+    es exactamente lo que este chequeo no hace.
+
+    La DIRECCIÓN se busca en la línea; el NÚMERO, en la frase. El número es débil —84 puede
+    ser un precio, un área o unos metros—, así que se lo mantiene pegado a la afirmación.
+    """
+    con_direccion = [i for i, c in enumerate(cards)
+                     if (n := _sin_tildes(_nombre(c))) and len(n) > 3 and n in linea]
+    if len(con_direccion) == 1:                        # 1 · por dirección, si es una sola
+        return con_direccion[0]
+    if con_direccion:                                  # dos direcciones en la misma línea
+        return None
+
+    numeros = {int(n) for n in re.findall(r"\b\d{1,3}\b", frase)}
+    candidatos = [i for i, c in enumerate(cards) if _walk(c) in numeros]
+    if len(candidatos) == 1:                           # 2 · por walk score único
+        unico = _walk(cards[candidatos[0]])
+        if sum(1 for c in cards if _walk(c) == unico) == 1:
+            return candidatos[0]
+    if candidatos:                                     # varias tarjetas comparten el score
+        return None
+
+    if len(cards) == 1:                                # 3 · no hay de dónde elegir
+        return 0
+    return None
+
+
+def _caminabilidad_procedencia(reply: str, cards: list[dict]) -> list[dict]:
+    """La prosa ATRIBUYE a una medición un score que fue estimado.
+
+    Un hallazgo por TARJETA, no por frase: si el turno repite la misma mentira sobre el mismo
+    inmueble, sigue siendo una violación. `registrar` cuenta por turno y el informe señala la
+    primera evidencia, que es la que hace falta para ir a la frase.
+    """
+    out, acusadas = [], set()
+    # Se normaliza línea por línea para que las posiciones sigan siendo utilizables: un
+    # `_sin_tildes` sobre todo el texto colapsa los saltos y borraría los límites de línea.
+    plano = "\n".join(_sin_tildes(l) for l in reply.split("\n"))
+    for m in _ATRIBUYE_MEDICION.finditer(plano):
+        frase_plana = _fragmento(plano, m.start())
+        if not _CAMINABILIDAD.search(frase_plana) or _NIEGA_MEDICION.search(frase_plana):
+            continue
+        # Negación gramatical en las dos posiciones que niegan (ver `_NEGACION`): delante del
+        # verbo, o entre el verbo y la fuente. La segunda hace falta porque el regex tolera
+        # texto intermedio, y ahí cabe justo la negación: "usa una estimación, no OSM".
+        antes = frase_plana[:frase_plana.find(m.group(0))] if m.group(0) in frase_plana else ""
+        if _NEGACION.search(antes) or _NEGACION.search(m.group(0)):
+            continue
+
+        i = _card_de_caminabilidad(frase_plana, _linea_de(plano, m.start()), cards)
+        if i is None or i in acusadas or _fuente_card(cards[i]) in _FUENTE_MEDIDA:
+            continue
+
+        acusadas.add(i)
+        card = cards[i]
+        fuente = _fuente_card(card) or "sin registrar"
+        out.append(_violacion(
+            "caminabilidad_procedencia_falsa", ALTA,
+            f"la prosa afirma que la caminabilidad de «{_nombre(card) or card.get('id')}» "
+            f"({card.get('caminabilidad')}) se midió sobre comercios reales, pero su "
+            f"procedencia es '{fuente}' — la ficha muestra 'estimación por zona'",
+            _frase_original(reply, frase_plana),
+        ))
+    return out
+
+
+def _frase_original(reply: str, frase_plana: str) -> str:
+    """La frase con su tipografía real, para que el informe señale lo que se escribió."""
+    for bruta in re.split(f"[{re.escape(_LIMITES)}]", reply):
+        if _sin_tildes(bruta) == frase_plana:
+            return bruta.strip()
+    return frase_plana
+
+
 # ── Los cinco chequeos ────────────────────────────────────────────────────────────────────
 def _presupuesto_suavizado(reply: str, cards: list[dict], tope: float | None) -> list[dict]:
     """FALLO 4 en su forma literal: «$710, justo en tu tope» con tope de $700."""
@@ -418,6 +580,7 @@ def verificar_prosa(reply: str, cards: list[dict] | None,
         + _cifra_sin_procedencia(reply, cards, descartadas, tope)
         + _descartada_ofrecida(reply, cards, descartadas)
         + _orden_alterado(reply, cards)
+        + _caminabilidad_procedencia(reply, cards)
         + _gancho(reply, cards, descartadas)
     )
     return sorted(hallazgos, key=lambda v: 0 if v["gravedad"] == ALTA else 1)

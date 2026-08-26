@@ -79,3 +79,46 @@ jobs:
         # Sin --maxfail: queremos el parte completo de lo que se rompió, no el
         # primer fallo. La suite entera tarda segundos.
         run: python -m pytest -q
+
+  # ── Frontend ────────────────────────────────────────────────────────────────
+  # Job SEPARADO del de pytest a propósito: si algo se cae, el nombre del job dice
+  # de qué lado fue sin abrir el log. Nació en AUTH-READ-GATE.1 y no como mejora de
+  # tooling: la capacidad de reanudación se custodia en el cliente, y el aislamiento
+  # entre conversaciones es una propiedad de SEGURIDAD que hasta ahora no tenía
+  # runner que la ejecutara — solo podía verificarse leyendo el fuente.
+  #
+  # `npm run lint` NO está aquí: al añadir este job tenía 39 errores preexistentes.
+  # Convertirlo en gate mezclaría deuda histórica con una frontera de seguridad y
+  # haría que este job fallara por motivos que no son este cambio. Los ficheros
+  # nuevos sí pasan lint limpios; el resto es una tarea aparte.
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Traer el código
+        uses: actions/checkout@v4
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          # El repo no fija versión de Node en ningún sitio (ni package.json, ni
+          # Dockerfile, ni Vercel). Se fija aquí una LTS que cumple el mínimo de
+          # Vite 8 (>=20.19). Si el build de producción sube, esta línea sube con él.
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Correr los tests
+        run: npm test
+
+      - name: Compilar
+        # El build va DESPUÉS de los tests: si algo está roto, se ve en la prueba
+        # que lo nombra, no en un error de compilación difícil de leer.
+        run: npm run build

@@ -71,23 +71,36 @@ def test_la_reanudacion_del_QR_es_por_navegador_no_por_persona():
     assert "localStorage.getItem(storeKey)" in js
 
 
-def test_loadFromDeepLink_no_lleva_ninguna_credencial_extra():
-    """¿Hay una credencial escondida en el flujo? No.
+def test_REGRESION_el_carril_anonimo_YA_tiene_credencial():
+    """`EXPECTED_POLICY_CHANGE` · antes: `test_loadFromDeepLink_no_lleva_ninguna_credencial_extra`.
 
-    Las dos llamadas de reanudación —`/handoff` y `/history`— van con `apiHeaders()`, que
-    solo aporta la `X-API-Key` del sitio y, si existe, el Bearer del usuario. Para un
-    anónimo eso es **la clave pública del sitio y nada más**: no hay prueba de posesión.
+    **Congelado en `.0`:** el carril de reanudación del QR no llevaba ninguna prueba de
+    posesión. `apiHeaders()` solo aportaba la `X-API-Key` pública del sitio y, si existía, el
+    Bearer del usuario — para un anónimo, nada que demostrara que la conversación era suya.
+    Ese era el hueco que hacía del `session_id` una credencial de facto.
+
+    **Cambio autorizado en AUTH-READ-GATE.1:** existe `apiHeadersSesion(sessionId)`, que añade
+    `X-Session-Resume` cuando hay capacidad **para esa conversación**.
+
+    Se pasa la sesión por parámetro y no se usa una "capacidad actual": el navegador puede
+    tener varias conversaciones abiertas y cada una tiene la suya.
     """
-    js = APP_JSX.read_text(encoding="utf-8")
-    bloque = js[js.index("const loadFromDeepLink"): js.index("const sid = `${qrSessionId(id)}")]
-    assert "/handoff`, { headers: apiHeaders() })" in bloque
-    assert "/history`, { headers: apiHeaders() })" in bloque
-    assert "token" not in bloque.lower()
-
     api = (RAIZ / "frontend" / "src" / "api.js").read_text(encoding="utf-8")
-    cuerpo = api[api.index("export function apiHeaders"):]
+
+    assert "export function apiHeadersSesion(sessionId)" in api
+    assert "resumeHeader(sessionId)" in api
+    assert "bootstrapSession" in api, "y existe la única puerta de creación"
+
+    # `apiHeaders()` sigue SIN capacidad: es para peticiones que no son sobre una
+    # conversación concreta. La capacidad solo entra por la variante que recibe la sesión.
+    #
+    # Se acota al CUERPO de la función, no al texto entre ambas: en medio va el JSDoc de
+    # `apiHeadersSesion`, que nombra la cabecera legítimamente al explicar el contrato.
+    lineas = api.splitlines()
+    i = next(n for n, l in enumerate(lineas) if l.startswith("export function apiHeaders()"))
+    cuerpo = "\n".join(lineas[i:i + 7])
     assert "X-API-Key" in cuerpo and "Authorization" in cuerpo
-    assert "resume" not in cuerpo.lower()
+    assert "resume" not in cuerpo.lower(), "la capacidad no puede colarse en la cabecera genérica"
 
 
 def test_intencion_NO_participa_en_el_QR():

@@ -311,6 +311,60 @@ async def test_1C_la_029_no_se_confunde_con_un_conname_homonimo_de_OTRA_tabla(mo
             "  AND conrelid = 'buyer_context_revisions'::regclass"))).scalar()
     assert propia == 1, "el homónimo de otra tabla hizo que la 029 se saltara su trabajo"
 
+
+@necesita_motor
+@pytest.mark.asyncio
+async def test_1B_un_error_TIPADO_tampoco_deja_el_savepoint_abierto(motor):
+    """El último hueco de la frontera transaccional.
+
+    `BuyerContextCorrupto` hereda de `BuyerStoreError`, y el `except BuyerStoreError: raise`
+    lo re-lanzaba SIN cerrar el savepoint. Sale de `_rehidratar(previa)` dentro del
+    savepoint, cuando el `(buyer_id, source_message_id)` ya existe pero su revisión dejó de
+    validar.
+
+    No hay pérdida de datos —a diferencia del caso de la cabeza huérfana— pero el store
+    devolvía el control al llamante con una transacción anidada **suya** todavía abierta.
+    Eso rompe la frontera que 1B acaba de formalizar: el llamante no puede razonar sobre su
+    propia transacción si el store deja la suya a medias dentro.
+    """
+    from app.buyer.store import BuyerContextCorrupto
+
+    fabrica = async_sessionmaker(motor, expire_on_commit=False)
+    async with fabrica() as s:
+        b = await _cuenta(s)
+        await s.execute(text("CREATE TABLE IF NOT EXISTS trabajo_ajeno (nota text)"))
+        await s.execute(text("DELETE FROM trabajo_ajeno"))
+        await s.commit()
+
+    # Una revisión ya CONFIRMADA que después deja de validar (el contrato exige `buyer_id`).
+    async with fabrica() as s:
+        await anexar_revision(b, "m-1", _ctx(b, objective=Objective.RENT), None, db=s)
+        await s.commit()
+    async with fabrica() as s:
+        await s.execute(text(
+            "UPDATE buyer_context_revisions SET context_json = CAST(:j AS jsonb) "
+            "WHERE buyer_id = CAST(:b AS uuid)"),
+            {"b": b, "j": '{"version": "buyer-context-v0"}'})
+        await s.commit()
+
+    async with fabrica() as s:
+        await s.execute(text("INSERT INTO trabajo_ajeno (nota) VALUES ('del llamante')"))
+
+        with pytest.raises(BuyerContextCorrupto):
+            await anexar_revision(b, "m-1", _ctx(b, objective=Objective.RENT), None, db=s)
+
+        assert not s.in_nested_transaction(),             "el store devolvió el control con su savepoint todavía abierto"
+
+        await s.commit()
+
+    async with fabrica() as v:
+        assert (await v.execute(text("SELECT count(*) FROM trabajo_ajeno"))).scalar() == 1
+        assert await _filas(v, b) == 1, "el store añadió una revisión pese al error"
+        crudo = (await v.execute(text(
+            "SELECT context_json::text FROM buyer_context_revisions "
+            "WHERE buyer_id = CAST(:b AS uuid)"), {"b": b})).scalar()
+        assert "buyer_id" not in crudo, "la revisión corrupta fue modificada"
+
 # ── Infraestructura ────────────────────────────────────────────────────────────────
 
 

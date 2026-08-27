@@ -55,9 +55,15 @@ deshacer del store  →  NO borra trabajo ajeno
 fallo del store     →  NO deja trabajo propio parcial
 ```
 
-Cinco casos probados contra motor: sesión propia confirma; sesión inyectada respeta el
-rollback del llamante; respeta su commit; al fallar no deshace trabajo ajeno; y al fallar no
-deja cabeza ni revisión propias.
+**Un solo camino de limpieza.** `BuyerContextCorrupto` hereda de `BuyerStoreError`, y el
+`except BuyerStoreError: raise` lo re-lanzaba sin cerrar el savepoint: el store devolvía el
+control con una transacción anidada suya abierta. No perdía datos, pero rompía la misma
+frontera que 1B formaliza. Los `_deshacer()` que había junto a cada `raise` se retiraron —
+con dos caminos, el próximo error tipado vuelve a olvidarse de cerrar.
+
+Seis casos probados contra motor: sesión propia confirma; sesión inyectada respeta el
+rollback del llamante; respeta su commit; al fallar no deshace trabajo ajeno; al fallar no
+deja cabeza ni revisión propias; y un error TIPADO tampoco deja el savepoint abierto.
 
 `FOR UPDATE`, `UNIQUE`, idempotencia y concurrencia siguen intactas.
 
@@ -131,6 +137,7 @@ el store vuelve a confirmar sobre db=          → cae el de rollback del llaman
 se quita la guarda de message_id vacío         → caen los 4 de 1C en Python
 se quita el savepoint                          → cae el de atomicidad del fallo
 la 029 comprueba conname sin acotar la tabla   → cae el del homónimo
+except BuyerStoreError re-lanza sin limpiar     → caen LOS DOS de atomicidad
 ```
 
 `app/buyer/store.py` restaurado y verificado tras cada una.

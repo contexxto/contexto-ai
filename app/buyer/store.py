@@ -306,7 +306,6 @@ async def _ejecutar_anexo(db, buyer_id, source_message_id, contexto, expected_re
         if previa is not None:
             ya = _rehidratar(previa)
             if _canonico(ya) != _canonico(contexto):
-                await _deshacer()
                 raise BuyerIdempotencyConflict(
                     f"el mensaje {source_message_id} ya produjo la revisión "
                     f"{previa['context_revision']} con un estado distinto"
@@ -318,7 +317,6 @@ async def _ejecutar_anexo(db, buyer_id, source_message_id, contexto, expected_re
 
         # 3 · CONCURRENCIA. Lo que el llamante creía ya no es lo que hay.
         if expected_revision != actual:
-            await _deshacer()
             raise BuyerRevisionConflict(
                 f"se esperaba la revisión {expected_revision} y la vigente es {actual}"
             )
@@ -353,6 +351,17 @@ async def _ejecutar_anexo(db, buyer_id, source_message_id, contexto, expected_re
         return RevisionPersistida(BuyerContextV0.model_validate(datos), nueva, creada=True)
 
     except BuyerStoreError:
+        # Los errores tipados del store también dejan el savepoint abierto si no se cierra
+        # aquí. `BuyerContextCorrupto` es el caso real: sale de `_rehidratar(previa)` DENTRO
+        # del savepoint cuando el `(buyer_id, source_message_id)` ya existe pero su revisión
+        # dejó de validar. Antes se re-lanzaba tal cual y el store devolvía el control al
+        # llamante con una transacción anidada suya todavía abierta — no se pierde nada,
+        # pero rompe la frontera que E3.2 acaba de formalizar.
+        #
+        # UN SOLO CAMINO DE LIMPIEZA. Los `_deshacer()` que había justo antes de levantar
+        # los dos conflictos se retiraron: con dos caminos, el próximo error tipado que se
+        # añada vuelve a olvidarse de cerrar.
+        await _deshacer()
         raise
     except Exception:
         await _deshacer()

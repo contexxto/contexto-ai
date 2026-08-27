@@ -347,12 +347,21 @@ def test_hay_exactamente_cinco_dimensiones():
     assert set(B.BuyerFieldV0) == set(B._CAMPO_DE.values())
 
 
-def test_el_campo_es_un_enum_y_no_una_cadena_libre():
-    """Un `field: str` dejaría que una ambigüedad declarara `household.children` y confiara
-    en un filtro posterior — la misma superficie que la unión de mutaciones cerró."""
-    for prohibido in ("household", "children", "race", "familial_status", "stage",
-                      "accessibility", "place_preferences"):
-        assert prohibido not in {c.value for c in B.BuyerFieldV0}
+def test_el_dominio_del_campo_es_cerrado():
+    """Lo que garantiza `BuyerFieldV0` **no es el tipo, es el dominio.**
+
+    Al heredar de `StrEnum` sus miembros SON `str` —el primer docstring decía lo contrario y
+    era falso—. Lo que no admite es una cadena **fuera de los cinco valores**, y eso se
+    demuestra construyendo, no enumerando: comprobar que "household" no está en la lista
+    dice qué hay hoy; comprobar que no se puede construir dice qué es imposible.
+    """
+    assert isinstance(B.BuyerFieldV0.OBJECTIVE, str)          # sí es str
+    assert B.BuyerFieldV0("objective") is B.BuyerFieldV0.OBJECTIVE
+
+    for prohibido in ("household.children", "household", "race", "familial_status",
+                      "stage", "accessibility_requirements", "place_preferences", ""):
+        with pytest.raises(ValueError):
+            B.BuyerFieldV0(prohibido)
 
 
 def test_una_mutacion_ajena_no_tiene_campo():

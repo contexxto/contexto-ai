@@ -214,7 +214,12 @@ def ruta_contractual(mutacion) -> str:
 
 
 class BuyerFieldV0(StrEnum):
-    """Las cinco dimensiones del comprador que V0 puede tocar. **Enum, nunca un `str`.**
+    """Las cinco dimensiones del comprador que V0 puede tocar.
+
+    **Dominio cerrado mediante `StrEnum`; nunca una cadena libre.** El matiz importa: al
+    heredar de `StrEnum`, sus miembros **sí son** instancias de `str` —`isinstance(OBJECTIVE,
+    str)` es `True`— y decir "no es un str" sería falso. Lo que garantiza no es el tipo, es
+    el DOMINIO: `BuyerFieldV0("household.children")` levanta `ValueError`.
 
     Existe para que una afirmación que NO lleva mutación —una ambigüedad, un rechazo— pueda
     decir a qué dimensión pertenece. Hoy `ruta_contractual` solo funciona sobre una mutación,

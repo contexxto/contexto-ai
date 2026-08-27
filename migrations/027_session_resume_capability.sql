@@ -45,10 +45,23 @@ COMMENT ON COLUMN chat_sessions.resume_revoked_at IS
     'Se sella al reclamar el hilo una cuenta. Desde ese instante solo autoriza el dueño: '
     'mantener viva la capacidad sería conservar un segundo acceso bearer en silencio.';
 
--- Búsqueda por hash en cada petición anónima: sin índice sería un scan del catálogo.
-CREATE INDEX IF NOT EXISTS ix_chat_sessions_resume_vivo
-    ON chat_sessions (session_id)
-    WHERE resume_token_hash IS NOT NULL AND resume_revoked_at IS NULL;
+-- SIN ÍNDICE NUEVO, Y ES DELIBERADO.
+--
+-- Una versión anterior de esta migración creaba un índice parcial sobre `session_id`
+-- justificado como "búsqueda por hash en cada petición anónima". Era falso por partida
+-- doble: el índice era sobre `session_id` —que ya es PRIMARY KEY, así que nunca habría un
+-- plan mejor— y la única consulta de autoridad es
+--
+--     SELECT … FROM chat_sessions WHERE session_id = :sid
+--
+-- que no filtra por el hash en absoluto: la comparación ocurre en Python, en tiempo
+-- constante (`hmac.compare_digest`), sobre la fila ya recuperada. Un índice sobre el hash
+-- tampoco serviría, y además sería contraproducente — indexar el material de una capacidad
+-- facilita confirmarla por sondeo.
+--
+-- Se retira antes de aplicarla en ningún entorno (verificado: producción está en
+-- `PROD_SCHEMA_027 = NOT_APPLIED`). Si algún día la autoridad busca POR hash, el índice
+-- correcto será sobre `resume_token_hash` y habrá que sopesar ese riesgo entonces.
 
 -- ── La frontera de creación ──────────────────────────────────────────────────
 -- Distingue "esta sesión acaba de nacer" de "este id ya existía". Sin esto, la regla
@@ -71,7 +84,6 @@ WHERE table_name = 'chat_sessions'
                       'resume_revoked_at', 'creada_por_servidor');
 
 -- ROLLBACK:
---   DROP INDEX IF EXISTS ix_chat_sessions_resume_vivo;
 --   ALTER TABLE chat_sessions
 --     DROP COLUMN IF EXISTS resume_token_hash,
 --     DROP COLUMN IF EXISTS resume_issued_at,

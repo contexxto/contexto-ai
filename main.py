@@ -18,6 +18,20 @@ from app.routers import alertas, assets, auth, chat, ingest, match, review, visi
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("Contexto AI API iniciando...")
+
+    # AUTH-READ-GATE.1 · HOLD-2 — lo PRIMERO, antes de abrir nada.
+    #
+    # `_exigir_autoridad` corre en cada turno y lee columnas que crea la migración 027. Sin
+    # ellas la autorización no deniega: FALLA, y el chat cae para todo el mundo. Como no hay
+    # runner de migraciones que garantice el orden, se comprueba aquí.
+    #
+    # Fallar en el arranque es deliberado: un proceso que arranca sin esas columnas pasa el
+    # health check, Render lo da por bueno, y el error acaba en la cara del usuario. Así el
+    # despliegue no progresa, la versión anterior sigue sirviendo, y el mensaje llega a quien
+    # puede arreglarlo. NO se aplica DDL aquí — migrar es un acto explícito.
+    from app.esquema_requerido import exigir_esquema
+    await exigir_esquema()
+
     await setup_checkpointer()
     # CRM Vivo: comparte el mismo checkpointer Postgres → el hilo del corredor persiste.
     from app.agent.crm_graph import setup_crm_checkpointer

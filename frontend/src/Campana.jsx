@@ -17,7 +17,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import axios from 'axios'
 import { Bell, ArrowLeft } from 'lucide-react'
-import { API_BASE, apiHeaders } from './api'
+import { API_BASE, apiHeaders, apiHeadersSesion } from './api'
 
 const CADENCIA = 40000   // red de seguridad; lo inmediato llega por el Service Worker
 const ANCHO_MOVIL = 640
@@ -45,7 +45,10 @@ export default function Campana({ sessionId, onAbrir }) {
   const cargar = useCallback(async () => {
     try {
       const { data } = await axios.get(`${API_BASE}/api/v1/chat/conversaciones`, {
-        params: sessionId ? { session_id: sessionId } : undefined, headers: apiHeaders(),
+        // AUTH-READ-GATE.1: si se pide el alcance de una conversación, hay que poder
+        // demostrarla. `apiHeaders()` no lleva la capacidad y el backend responde 404.
+        params: sessionId ? { session_id: sessionId } : undefined,
+        headers: sessionId ? apiHeadersSesion(sessionId) : apiHeaders(),
       })
       setDatos(data || { hilos: [], no_leidas: 0 })
     } catch { /* silencioso: la bandeja nunca debe estorbar */ }
@@ -89,7 +92,7 @@ export default function Campana({ sessionId, onAbrir }) {
       await axios.post(`${API_BASE}/api/v1/chat/notificaciones/leidas`, {}, {
         params: { hilo: h.session_id, ...(h.activo_id ? { activo: h.activo_id } : {}),
                   ...(sessionId ? { session_id: sessionId } : {}) },
-        headers: apiHeaders(),
+        headers: sessionId ? apiHeadersSesion(sessionId) : apiHeaders(),
       })
     } catch { cargar() }   // si falló, que el contador vuelva a la verdad del servidor
   }

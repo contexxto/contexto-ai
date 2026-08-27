@@ -183,12 +183,28 @@ def _rutas() -> dict[tuple[str, str], set[str]]:
     return fuera
 
 
-def test_conocer_el_session_id_basta_para_LEER():
-    """Inventario congelado de lecturas sin autenticación."""
+_FN_DE_RUTA = {
+    "/{session_id}/history": "get_session_history",
+    "/{session_id}/handoff": "estado_handoff",
+    "/{session_id}/intencion": "session_intencion",
+}
+
+
+def test_REGRESION_conocer_el_session_id_ya_NO_basta_para_leer():
+    """`EXPECTED_POLICY_CHANGE` - antes: `test_conocer_el_session_id_basta_para_LEER`.
+
+    **Congelado en `.0`:** las tres lecturas de conversación no declaraban ninguna
+    dependencia de autenticación. `GET /history` era el caso extremo - su firma ni siquiera
+    recibía `request`, así que no existía forma de presentar una capacidad aunque se tuviera.
+
+    **Cambio autorizado en AUTH-READ-GATE.1 (endpoints 1-3 de 11):** las tres reciben ahora
+    identidad opcional y pasan por `_exigir_autoridad`. Leer sin cuenta sigue siendo posible
+    -el carril del QR lo necesita- pero exige la capacidad de ESE hilo.
+    """
     r = _rutas()
-    assert r[("GET", "/{session_id}/history")] == set()
-    assert r[("GET", "/{session_id}/handoff")] == set()
-    assert r[("GET", "/{session_id}/intencion")] == set()
+    for ruta, fn in _FN_DE_RUTA.items():
+        assert r[("GET", ruta)] == {"get_optional_user"}, f"{ruta} sigue sin identidad"
+        assert "_exigir_autoridad" in ast.unparse(_fn(fn)), ruta
 
 
 def test_el_hilo_compartido_SI_exige_una_condicion():
@@ -391,35 +407,52 @@ def test_los_owner_auth_exigen_identidad(clave):
     assert "get_current_user" in _inventario()[clave]
 
 
-def test_la_campana_y_la_bandeja_usan_el_session_id_como_AUTORIDAD():
-    """LA PUERTA QUE FALTABA. Los tres endpoints de avisos aceptan `session_id` y lo usan
-    para decidir qué filas devolver o mutar:
+def test_REGRESION_la_rama_de_sesion_ya_NO_se_emite_sin_autoridad():
+    """`EXPECTED_POLICY_CHANGE` - antes: `test_la_campana_y_la_bandeja_usan_el_session_id_como_AUTORIDAD`.
 
-        WHERE (user_id  IS NOT NULL AND destinatario_user_id = :u)
-           OR (session  IS NOT NULL AND destinatario_session = :s)
+    **Congelado en `.0`:** los tres endpoints de avisos construían
 
-    Es un **OR**, no un `else`. Así que conocer el `session_id` concede acceso a los avisos
-    del hilo — y además un autenticado que pase un `session_id` ajeno también los recibe,
-    porque la segunda rama no comprueba propiedad.
+        WHERE (... AND destinatario_user_id = :u)  OR  (... AND destinatario_session = :s)
 
-    Es exactamente la semántica que el gate pretende eliminar, en otro sitio.
+    con `:s` tal cual venía del cliente. Un autenticado que pasara la sesión de otra persona
+    leía sus avisos por la segunda rama, que no comprobaba propiedad de nada.
+
+    **Cambio autorizado en AUTH-READ-GATE.1 (endpoints 9-11 de 11):** el `WHERE` se compone
+    en `_alcances_autorizados`, que **solo añade la rama de sesión después de que
+    `_exigir_autoridad` la haya probado**. No es que el `OR` se haya vuelto seguro: es que
+    ya no puede existir una rama sin autoridad detrás.
+
+    Por eso se exige que **ninguno** de los tres endpoints nombre ya `destinatario_session`:
+    esa cadena vive ahora en un solo sitio, el que autoriza.
     """
     src = CHAT.read_text(encoding="utf-8")
-    assert src.count("destinatario_session = CAST(:s AS text)") >= 3
-    for fn in ("notificaciones", "conversaciones", "marcar_leidas"):
-        try:
-            cuerpo = ast.unparse(_fn(fn))
-        except StopIteration:
-            continue
-        assert "destinatario_session" in cuerpo
+
+    assert src.count("destinatario_session = CAST(:s AS text)") == 1
+    costura = ast.unparse(_fn("_alcances_autorizados"))
+    assert "destinatario_session" in costura and "_exigir_autoridad" in costura
+
+    for fn in ("listar_notificaciones", "listar_conversaciones", "marcar_notificaciones_leidas"):
+        cuerpo = ast.unparse(_fn(fn))
+        assert "destinatario_session" not in cuerpo, f"{fn} vuelve a montar su propia rama"
+        assert "_alcances_autorizados" in cuerpo, f"{fn} no pasa por la costura"
 
 
-def test_hay_endpoints_sin_ninguna_auth_mas_alla_de_los_cinco_iniciales():
-    """`/comparar`, `/lead-contacto` y `/handoff/push` tampoco declaran auth."""
+def test_REGRESION_ya_no_quedan_endpoints_de_sesion_sin_auth():
+    """`EXPECTED_POLICY_CHANGE` - antes: `test_hay_endpoints_sin_ninguna_auth_mas_alla_de_los_cinco_iniciales`.
+
+    **Congelado en `.0`:** `/comparar`, `/lead-contacto` y `/{session_id}/handoff/push` no
+    declaraban auth alguna. Los tres son peores de lo que "sin auth" sugiere: `/comparar`
+    revela las necesidades declaradas del hilo, y los otros dos **escriben** - uno planta el
+    contacto del lead, el otro reemplaza el destino de sus notificaciones push.
+
+    **Cambio autorizado en AUTH-READ-GATE.1 (endpoints 4, 7 y 8 de 11).**
+    """
     inv = _inventario()
-    for clave in [("POST", "/comparar"), ("POST", "/lead-contacto"),
-                  ("POST", "/{session_id}/handoff/push")]:
-        assert inv[clave] == set(), f"{clave} ya no está desprotegido — revisar §3"
+    for clave, fn in ((("POST", "/comparar"), "comparar_endpoint"),
+                      (("POST", "/lead-contacto"), "lead_contacto"),
+                      (("POST", "/{session_id}/handoff/push"), "registrar_push_subscription")):
+        assert inv[clave] == {"get_optional_user"}, f"{clave} sigue sin identidad"
+        assert "_exigir_autoridad" in ast.unparse(_fn(fn)), clave
 
 
 # ── BOOTSTRAP · el hueco que impide emitir la capability con seguridad ─────────────

@@ -192,32 +192,52 @@ def test_las_MUTACIONES_de_una_conversacion_exigen_dueno():
         assert "get_current_user" in rutas.get(clave, set()), clave
 
 
-def test_LEER_una_conversacion_no_exige_dueno():
-    """EL HALLAZGO QUE DECIDE SI `thread_id` PUEDE SER RAÍZ DEL BUYER: no puede.
+def test_REGRESION_LEER_una_conversacion_ya_exige_autoridad():
+    """`EXPECTED_POLICY_CHANGE` - antes: `test_LEER_una_conversacion_no_exige_dueno`.
 
-    `GET /{session_id}/history` no declara ninguna dependencia de autenticación. Conocer el
-    `session_id` basta para leer la conversación entera. El `session_id` es, por tanto, un
-    **portador de capacidad** (como un enlace secreto), no una identidad verificada.
+    **Congelado en E3.1a:** `GET /{session_id}/history` no declaraba autenticación alguna.
+    Conocer el `session_id` bastaba para leer la conversación entera, lo que convertía al
+    identificador en un portador de capacidad de facto.
 
-    Esto NO se corrige aquí —E3.1a no cambia comportamiento— pero fija el hecho: una raíz de
-    identidad cuyo conocimiento otorga acceso no puede ser la raíz del Buyer.
+    **Cambio autorizado en AUTH-READ-GATE.1 (endpoint 1 de 11):** exige `_exigir_autoridad`.
+
+    **La conclusión de E3.1a NO cambia, y conviene decir por qué.** Que ahora haga falta
+    autoridad no rehabilita a `thread_id` como raíz del Buyer: la capacidad sigue siendo un
+    *portador* -quien la tenga entra, sea quien sea- y sigue viviendo en un `localStorage`,
+    o sea por navegador. La raíz del Buyer sigue siendo `claims.sub`. Lo que cambió es que
+    el portador ahora es un secreto de 32 bytes y no el nombre de la conversación.
     """
     rutas = _rutas_con_auth()
-    assert rutas.get(("GET", "/{session_id}/history")) == set(), (
-        "si esto cambió, revisar §9 del reporte 11: la frontera de autorización se movió"
+    assert rutas.get(("GET", "/{session_id}/history")) == {"get_optional_user"}, (
+        "revisar §9 del reporte 11: la frontera de autorización se movió otra vez"
     )
+    import ast as _ast
+    cuerpo = _ast.unparse(next(
+        n for n in _ast.walk(_ast.parse(CHAT.read_text(encoding="utf-8")))
+        if isinstance(n, (_ast.AsyncFunctionDef, _ast.FunctionDef))
+        and n.name == "get_session_history"))
+    assert "_exigir_autoridad" in cuerpo
 
 
-def test_el_inventario_exacto_de_lecturas_sin_auth():
-    """Inventario congelado. Si aparece una ruta nueva sin auth, este test la caza."""
+def test_REGRESION_la_unica_lectura_sin_auth_es_la_publica_por_diseno():
+    """`EXPECTED_POLICY_CHANGE` - antes: `test_el_inventario_exacto_de_lecturas_sin_auth`.
+
+    **Congelado en E3.1a:** cuatro lecturas sin auth. Tres eran el agujero (`/history`,
+    `/handoff`, `/intencion`); la cuarta, `/shared/{token}`, era pública **por diseño**.
+
+    **Cambio autorizado en AUTH-READ-GATE.1:** quedan las tres cerradas y sobrevive una sola.
+    Y esa sobrevive con razón: no autentica a nadie, pero **exige token + `is_public`**, que
+    es la misma separación recurso-capacidad que el gate generaliza. El carril compartido no
+    se toca -es una decisión congelada de la unidad.
+
+    El test sigue siendo el mismo cazador de siempre: si mañana aparece una lectura nueva sin
+    auth, cae aquí.
+    """
     rutas = _rutas_con_auth()
     sin_auth = {r for (m, r), a in rutas.items() if m == "GET" and not a}
-    assert sin_auth == {
-        "/shared/{token}",              # público POR DISEÑO: exige share_token + is_public
-        "/{session_id}/history",
-        "/{session_id}/handoff",
-        "/{session_id}/intencion",
-    }, f"cambió el conjunto de lecturas sin auth: {sin_auth}"
+    assert sin_auth == {"/shared/{token}"}, (
+        f"apareció una lectura sin auth que no es la pública: {sin_auth}"
+    )
 
 
 def test_el_hilo_compartido_si_exige_una_condicion_explicita():

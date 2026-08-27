@@ -196,6 +196,59 @@ async def _exigir_autoridad(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversación no encontrada.") from None
 
 
+async def _alcances_autorizados(
+    request: Request, session_id: str | None, user: CurrentUser | None
+) -> tuple[list[str], dict]:
+    """Las ramas del `WHERE` de la campana y la bandeja — **solo las ya autorizadas**.
+
+    ## El fallo que esto cierra
+
+    La consulta era, en esencia:
+
+        WHERE (destinatario_user_id = :u)   OR   (destinatario_session = :s)
+
+    y `:s` venía del cliente **sin comprobar nada**. Un autenticado que pasara la sesión de
+    otra persona leía sus avisos por la segunda rama. El `OR` no era el error en sí: el error
+    era que una de las dos ramas no tenía detrás ninguna autoridad.
+
+    ## Por qué no basta con llamar a `_exigir_autoridad` y dejar el `OR` igual
+
+    Porque entonces la seguridad depende de que *alguien recuerde* llamarla antes, y de que
+    el parámetro que llega al SQL sea el mismo que se autorizó. Aquí la rama de sesión **no
+    se construye** si no hay autoridad: no existe cláusula que desactivar ni parámetro que
+    colar. Lo que protege es la forma del código, no la disciplina de quien lo edite.
+
+    ## La regla
+
+    ```
+    cuenta   el Bearer la demuestra          → destinatario_user_id = :u
+    sesión   `_exigir_autoridad` la demuestra → destinatario_session = :s
+    ```
+
+    Estar autenticado **no** añade la rama de sesión: hay que probar esa sesión igual que un
+    anónimo. Y aportar un `session_id` **no** amplía lo que ya se tenía por cuenta. Son dos
+    alcances independientes que se suman solo cuando los dos están probados.
+
+    De paso desaparecen los `CAST(:u AS uuid) IS NOT NULL AND …`: existían para neutralizar
+    en tiempo de ejecución una rama que ahora, simplemente, no se emite.
+    """
+    condiciones: list[str] = []
+    params: dict = {}
+
+    if user is not None:
+        condiciones.append("destinatario_user_id = CAST(:u AS uuid)")
+        params["u"] = user.user_id
+
+    if session_id is not None:
+        # 404 si no la puede probar. No se degrada a "te doy solo lo de tu cuenta": pedir
+        # una conversación ajena es un intento de acceso, no una preferencia de filtrado.
+        await _exigir_autoridad(request, session_id, user)
+        condiciones.append("destinatario_session = CAST(:s AS text)")
+        params["s"] = session_id
+
+    return condiciones, params
+
+
 class ChatResponse(BaseModel):
     reply: str
     session_id: str
@@ -440,10 +493,20 @@ class CompararReq(BaseModel):
 
 @router.post("/comparar", summary="DELTA de encaje entre 2 inmuebles (modo COMPARAR)")
 @limiter.limit("30/minute")
-async def comparar_endpoint(request: Request, payload: CompararReq) -> dict:
+async def comparar_endpoint(
+    request: Request,
+    payload: CompararReq,
+    user: CurrentUser | None = Depends(get_optional_user),
+) -> dict:
     """Compara 2 inmuebles contra las necesidades declaradas del hilo. Determinístico:
     el delta sale del motor auditable (app.encaje), no del LLM. Lo dispara el frontend al
-    seleccionar 2 tarjetas; comparte lógica con una futura tool del agente (API-first)."""
+    seleccionar 2 tarjetas; comparte lógica con una futura tool del agente (API-first).
+
+    AUTH-READ-GATE.1 · endpoint 7/11. El `session_id` no es decorativo: el delta se calcula
+    **contra las necesidades declaradas del hilo**. Sin autoridad, la respuesta revela qué
+    busca esa persona —presupuesto, zona, si tiene hijos— a quien acierte el identificador.
+    """
+    await _exigir_autoridad(request, payload.session_id, user)
     return await comparar_inmuebles(payload.session_id, payload.id_a, payload.id_b)
 
 
@@ -957,7 +1020,16 @@ async def get_shared(request: Request, token: str) -> dict:
     summary="Historial de una sesión",
     description="Recupera los mensajes almacenados para un session_id dado.",
 )
-async def get_session_history(session_id: str):
+async def get_session_history(
+    request: Request,
+    session_id: str,
+    user: CurrentUser | None = Depends(get_optional_user),
+):
+    # AUTH-READ-GATE.1 · endpoint 1/11. Este era el más expuesto de todos: la firma ni
+    # siquiera recibía `request`, así que no había forma de presentar una capacidad —
+    # conocer el `session_id` ERA el permiso de lectura del historial completo.
+    await _exigir_autoridad(request, session_id, user)
+
     config = _langgraph_config(session_id)
     state = await agent_graph.compiled_graph.aget_state(config)
 
@@ -1298,7 +1370,21 @@ class LeadContacto(BaseModel):
                 "Habilita que el reenganche le llegue a ÉL directo, no solo al corredor.",
 )
 @limiter.limit("10/minute")
-async def lead_contacto(request: Request, payload: LeadContacto) -> dict:
+async def lead_contacto(
+    request: Request,
+    payload: LeadContacto,
+    user: CurrentUser | None = Depends(get_optional_user),
+) -> dict:
+    # AUTH-READ-GATE.1 · endpoint 8/11. La descripción decía "Público — es el propio
+    # comprador", y esa era exactamente la suposición sin verificar: nada comprobaba que
+    # quien escribe el contacto sea el dueño de la conversación. Sin autoridad se podía
+    # **plantar el email y el push de un tercero** en el hilo de otra persona: el
+    # `ON CONFLICT DO UPDATE` sobrescribe, y el reenganche futuro habría ido al atacante.
+    #
+    # Sigue siendo un carril anónimo —el comprador del QR no tiene cuenta— pero anónimo
+    # ahora significa "con la capacidad de ESE hilo", no "sin nada".
+    await _exigir_autoridad(request, payload.session_id, user)
+
     if not payload.session_id.startswith("qr-"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Sesión inválida.")
     activo = activo_de_session(payload.session_id)
@@ -1499,20 +1585,19 @@ async def listar_notificaciones(
     Se consulta por usuario Y por sesión a la vez: un corredor los tiene ligados a su
     cuenta, y un interesado sin registrarse solo tiene su conversación.
     """
-    if not user and not session_id:
+    # AUTH-READ-GATE.1 · endpoint 9/11. Autorizar ANTES de tocar la base: si la sesión que
+    # se pide no es demostrable, esto levanta 404 y no llega a consultarse nada.
+    condiciones, params = await _alcances_autorizados(request, session_id, user)
+    if not condiciones:
         return {"items": [], "no_leidas": 0}
     async with AsyncSessionLocal() as db:
         await ensure_handoff_tables(db)
         filas = (await db.execute(text(
             "SELECT id, titulo, cuerpo, url, session_id, creada_en, leida_en "
             "FROM notificacion "
-            # Los CAST no son adorno: con el parametro en NULL, Postgres no puede deducir
-            # su tipo en ":u IS NOT NULL" y revienta con AmbiguousParameterError — el
-            # endpoint devolvia 500 y la campana salia vacia sin decir nada.
-            "WHERE (CAST(:u AS uuid) IS NOT NULL AND destinatario_user_id = CAST(:u AS uuid)) "
-            "   OR (CAST(:s AS text) IS NOT NULL AND destinatario_session = CAST(:s AS text)) "
+            f"WHERE ({' OR '.join(condiciones)}) "
             "ORDER BY creada_en DESC LIMIT 30"),
-            {"u": user.user_id if user else None, "s": session_id})).mappings().all()
+            params)).mappings().all()
     return {
         "items": [{
             "id": f["id"], "titulo": f["titulo"], "cuerpo": f["cuerpo"], "url": f["url"],
@@ -1540,7 +1625,9 @@ async def listar_conversaciones(
     Devuelve por hilo: el último mensaje, cuándo, y cuántos lleva sin leer. Y `no_leidas`
     del total es el número de HILOS con algo nuevo, que es lo que debe marcar la campana.
     """
-    if not user and not session_id:
+    # AUTH-READ-GATE.1 · endpoint 10/11. Misma costura que la campana.
+    condiciones, params = await _alcances_autorizados(request, session_id, user)
+    if not condiciones:
         return {"hilos": [], "no_leidas": 0}
     async with AsyncSessionLocal() as db:
         await ensure_handoff_tables(db)
@@ -1555,10 +1642,9 @@ async def listar_conversaciones(
             "         row_number() OVER (PARTITION BY session_id, activo_id "
             "                            ORDER BY creada_en DESC) AS rn "
             "  FROM notificacion "
-            "  WHERE (CAST(:u AS uuid) IS NOT NULL AND destinatario_user_id = CAST(:u AS uuid)) "
-            "     OR (CAST(:s AS text) IS NOT NULL AND destinatario_session = CAST(:s AS text)) "
+            f"  WHERE ({' OR '.join(condiciones)}) "
             ") t WHERE rn = 1 ORDER BY creada_en DESC LIMIT 40"),
-            {"u": user.user_id if user else None, "s": session_id})).mappings().all()
+            params)).mappings().all()
     return {
         "hilos": [{
             "session_id": f["session_id"], "activo_id": f["activo_id"],
@@ -1588,18 +1674,25 @@ async def marcar_notificaciones_leidas(
 
     Sin `hilo` sigue marcando todo: lo usa el botón de "marcar todo como visto".
     """
-    if not user and not session_id:
+    # AUTH-READ-GATE.1 · endpoint 11/11. Es una MUTACIÓN, así que la autoridad va antes del
+    # `UPDATE` — si no, un tercero podría vaciar el contador rojo de otra persona y hacer
+    # que no viera nunca que su corredor le respondió. Daño silencioso y difícil de notar.
+    condiciones, params = await _alcances_autorizados(request, session_id, user)
+    if not condiciones:
         return {"ok": True, "marcadas": 0}
+
+    # `hilo` acota QUÉ conversación se marca, dentro de lo que ya se puede ver. No es una
+    # autoridad y no puede ampliar el alcance: el `AND` con las condiciones autorizadas lo
+    # deja siempre como un filtro, nunca como una puerta.
+    params |= {"h": hilo, "a": _uuid_valido(activo)}
     async with AsyncSessionLocal() as db:
         await ensure_handoff_tables(db)
         r = await db.execute(text(
             "UPDATE notificacion SET leida_en = now() WHERE leida_en IS NULL AND "
             "(CAST(:h AS text) IS NULL OR session_id = CAST(:h AS text)) AND "
             "(CAST(:a AS uuid) IS NULL OR activo_id = CAST(:a AS uuid)) AND "
-            "((CAST(:u AS uuid) IS NOT NULL AND destinatario_user_id = CAST(:u AS uuid)) "
-            " OR (CAST(:s AS text) IS NOT NULL AND destinatario_session = CAST(:s AS text)))"),
-            {"u": user.user_id if user else None, "s": session_id, "h": hilo,
-             "a": _uuid_valido(activo)})
+            f"({' OR '.join(condiciones)})"),
+            params)
         await db.commit()
     return {"ok": True, "marcadas": r.rowcount}
 
@@ -1796,6 +1889,11 @@ async def solicitar_handoff(
     activo_id: str | None = None,
     user: CurrentUser | None = Depends(get_optional_user),
 ) -> dict:
+    # AUTH-READ-GATE.1 · endpoint 5/11. Crea el handoff Y NOTIFICA AL CORREDOR. Sin
+    # autoridad, un tercero podía disparar contactos reales en nombre de otra persona:
+    # ruido para el corredor y una conversación que el interesado nunca pidió.
+    await _exigir_autoridad(request, session_id, user)
+
     quien = (user.nombre or user.email) if user else "Un interesado"
     res = await registrar_handoff(
         session_id,
@@ -1828,6 +1926,10 @@ async def handoff_mensaje_lead(
     activo_id: str | None = None,
     user: CurrentUser | None = Depends(get_optional_user),
 ) -> dict:
+    # AUTH-READ-GATE.1 · endpoint 6/11. Escribir EN NOMBRE del interesado dentro de su
+    # conversación con el corredor. La suplantación es el daño, no la lectura.
+    await _exigir_autoridad(request, session_id, user)
+
     async with AsyncSessionLocal() as db:
         await ensure_handoff_tables(db)
         # ¿A QUÉ corredor le escribe? Al de este inmueble si el cliente lo dice (la bandeja
@@ -1869,7 +1971,16 @@ async def handoff_mensaje_lead(
 )
 @limiter.limit("120/minute")
 async def estado_handoff(request: Request, session_id: str, desde: int = 0,
-                         activo_id: str | None = None) -> dict:
+                         activo_id: str | None = None,
+                         user: CurrentUser | None = Depends(get_optional_user)) -> dict:
+    # AUTH-READ-GATE.1 · endpoint 2/11. Aquí viven los mensajes con el corredor, que es
+    # material personal: quién pregunta por qué inmueble y qué se dijeron.
+    #
+    # OJO con el `vacio` de abajo: NO sirve como denegación. Devolver "no hay handoff" a
+    # quien no tiene autoridad y "aquí están los mensajes" a quien sí, distingue la sesión
+    # que existe de la que no. La denegación tiene que ser el 404 de siempre.
+    await _exigir_autoridad(request, session_id, user)
+
     vacio = {"activo": False, "estado": None, "mensajes": [],
              "corredor_whatsapp": None, "activo_id": None, "hilos": []}
     async with AsyncSessionLocal() as db:
@@ -1975,7 +2086,15 @@ async def intencion_de_sesion(session_id: str, horas_inactividad: float | None =
     ),
 )
 @limiter.limit("60/minute")
-async def session_intencion(request: Request, session_id: str) -> dict:
+async def session_intencion(
+    request: Request,
+    session_id: str,
+    user: CurrentUser | None = Depends(get_optional_user),
+) -> dict:
+    # AUTH-READ-GATE.1 · endpoint 3/11. `.0` lo clasificó como abierto POR ACCIDENTE: ningún
+    # componente del frontend lo llama. Que nadie lo use no lo hacía inofensivo — expone el
+    # score de intención de compra de una persona a quien acierte el identificador.
+    await _exigir_autoridad(request, session_id, user)
     return await intencion_de_sesion(session_id)
 
 
@@ -1988,10 +2107,19 @@ async def registrar_push_subscription(
     request: Request,
     session_id: str,
     payload: dict,
+    user: CurrentUser | None = Depends(get_optional_user),
 ) -> dict:
     """Guarda la PushSubscription del browser para enviar notificaciones
     cuando el corredor responda. La suscripción viene de
-    registration.pushManager.subscribe() en el frontend."""
+    registration.pushManager.subscribe() en el frontend.
+
+    AUTH-READ-GATE.1 · endpoint 4/11. Sin autoridad, cualquiera que supiera el `session_id`
+    podía **redirigir los avisos de esa conversación a su propio navegador**: el `UPDATE`
+    sobrescribe la suscripción del hilo. No era solo lectura indebida — era secuestro del
+    canal de notificación.
+    """
+    await _exigir_autoridad(request, session_id, user)
+
     if not payload.get("endpoint"):
         raise HTTPException(status_code=400, detail="Suscripción push inválida (sin endpoint).")
     async with AsyncSessionLocal() as db:

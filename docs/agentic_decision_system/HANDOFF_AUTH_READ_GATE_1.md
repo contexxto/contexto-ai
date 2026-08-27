@@ -5,15 +5,16 @@ BRANCH                 feat/auth-read-gate-enforcement
 BASE DE LA UNIDAD      8a8968da412cd3e1dc6efcb7609ed433fa8b2905
 ENTRADA DE 5c          13b949680f5172ba4ab18cb5fc21db7e71086193
 CUTOVER DE 5c          5c70e40483cd29ac41dd2fc7d5254e815f0e6d40
+EVIDENCIA CASO 5       8b67900dd875a8238ba37551483813cfa31ceb3c
 
-ESTADO                 IN PROGRESS · 5c COMPLETE
-SUITE BACKEND          1 563 exit 0   (1 557 + 6 de aislamiento cross-owner)
+ESTADO                 IN PROGRESS · 11/11 ENDPOINTS CERRADOS
+SUITE BACKEND          1 652 exit 0   (+89 de autoridad por endpoint)
 SUITE FRONTEND         66 exit 0   (35 → 53 → 66)
 BUILD FRONTEND         PASS
 INVENTARIO 18 ENDPOINTS PASS
 
 PRODUCT CUTOVER        COMPLETE
-SECURITY GATE          INCOMPLETE   ← 11 endpoints sin cerrar
+SECURITY GATE          INCOMPLETE   ← falta integración, Postgres, reporte 13
 ```
 
 ---
@@ -239,6 +240,147 @@ base — deuda preexistente, fuera de alcance a propósito.
 
 ---
 
+## LOS 11 ENDPOINTS — antes, ahora y con qué se demuestra
+
+Todos denegados con **404** y —esto es lo que se verifica, no el código de estado— con **cero
+efectos laterales**. Los tests viven en `tests/test_autoridad_endpoints.py` (89, parametrizados
+sobre los once).
+
+| # | Endpoint | Autoridad ANTES | Autoridad AHORA | Qué permitía |
+|---|---|---|---|---|
+| 1 | `GET /{sid}/history` | ninguna | `_exigir_autoridad` | leer el hilo entero con solo el id |
+| 2 | `GET /{sid}/handoff` | ninguna | `_exigir_autoridad` | leer los mensajes con el corredor |
+| 3 | `GET /{sid}/intencion` | ninguna | `_exigir_autoridad` | ver el score de intención de compra |
+| 4 | `POST /{sid}/handoff/push` | ninguna | `_exigir_autoridad` | **secuestrar el canal de avisos** del hilo |
+| 5 | `POST /{sid}/handoff` | `get_optional_user`, sin puerta | `_exigir_autoridad` | disparar contacto real con el corredor |
+| 6 | `POST /{sid}/handoff/mensaje` | `get_optional_user`, sin puerta | `_exigir_autoridad` | **escribir suplantando** al interesado |
+| 7 | `POST /comparar` | ninguna | `_exigir_autoridad` | revelar las necesidades declaradas del hilo |
+| 8 | `POST /lead-contacto` | ninguna ("público") | `_exigir_autoridad` | **plantar el email y el push de un tercero** |
+| 9 | `GET /notificaciones` | `OR` con rama sin autorizar | `_alcances_autorizados` | leer avisos ajenos |
+| 10 | `GET /conversaciones` | `OR` con rama sin autorizar | `_alcances_autorizados` | leer la bandeja ajena |
+| 11 | `POST /notificaciones/leidas` | `OR` con rama sin autorizar | `_alcances_autorizados` | **marcar leídos los avisos de otro** |
+
+Cobertura, idéntica para los once:
+
+| Propiedad probada | Resultado |
+|---|---|
+| OWNER sobre su propia sesión | pasa la puerta |
+| U1 sobre sesión **existente** de U2 | 404 · sin efectos |
+| anónimo con **su** capacidad | pasa la puerta |
+| anónimo con capacidad de **otra** sesión | 404 · sin efectos |
+| `session_id` a secas, sin capacidad | 404 · sin efectos |
+| autenticado sin la capacidad del hilo anónimo | 404 · sin efectos |
+| existente-ajena vs. inexistente | **misma** respuesta, byte a byte |
+
+Ninguno de los once es *account-only*: los once sirven al interesado del QR, que no tiene
+cuenta, así que el carril anónimo con capacidad se conserva en todos. Lo account-only de este
+router (`/sessions`, `/push/subscribe`, los diagnósticos) no está en la lista y sigue con
+`get_current_user`.
+
+**El oráculo no es el 404, es el centinela.** Un 404 emitido *después* de escribir sería un
+desastre silencioso: el atacante ve un error y el efecto queda hecho. La base falsa atiende
+`chat_sessions` —donde vive la autoridad— y levanta un centinela ante cualquier otra tabla. Si
+el gate deniega, el centinela no se dispara: no hubo `INSERT`, ni `UPDATE`, ni push, ni
+mensaje, ni cambio de estado de leído.
+
+---
+
+## EL GRUPO B — cómo se cerró el `OR`
+
+El fallo no era el `OR`: era que **una de sus dos ramas no tenía autoridad detrás**.
+
+```sql
+WHERE (… destinatario_user_id = :u)   OR   (… destinatario_session = :s)
+```
+
+`:s` venía del cliente sin comprobar nada. Un autenticado que pasara la sesión de otra persona
+leía —o marcaba como leídos— sus avisos por la segunda rama.
+
+**No se arregló añadiendo `_exigir_autoridad` y dejando el `OR` intacto.** El `WHERE` se
+compone ahora en `_alcances_autorizados`, que solo **construye** la rama de sesión después de
+que la autoridad la haya probado. No hay cláusula que desactivar ni parámetro que colar: lo que
+protege es la forma del código, no la disciplina de quien lo edite mañana.
+
+```
+modo cuenta    user presente        →  destinatario_user_id = :u    (lo prueba el Bearer)
+modo sesión    session_id presente  →  destinatario_session = :s    (lo prueba _exigir_autoridad)
+ninguno        ni user ni session   →  respuesta vacía, sin consulta
+```
+
+Estar autenticado **no** añade la rama de sesión, y aportar un `session_id` **no** amplía lo que
+ya se tenía por cuenta. Son dos alcances independientes que se suman solo cuando ambos están
+probados. De paso desaparecieron los `CAST(:u AS uuid) IS NOT NULL AND …`, que existían solo
+para neutralizar en tiempo de ejecución una rama que ahora no se emite.
+
+**Por qué la unión sigue existiendo, y no dos consultas separadas:** `Campana.jsx` manda
+`session_id` **siempre**, también cuando hay cuenta. Hacer que un `session_id` presente
+significara "solo modo sesión" le habría quitado al corredor autenticado sus avisos de cuenta.
+La unión es un requisito de producto; lo que no era admisible era una rama sin probar.
+
+---
+
+## HALLAZGOS DE ESTA UNIDAD
+
+**1 · Dos endpoints se tragan cualquier excepción.** `estado_handoff` devuelve su `vacio` y
+`lead_contacto` convierte en 500 **cualquier** `Exception`. El centinela de los tests tuvo que
+heredar de `BaseException` para no quedar atrapado ahí — si no, el test habría visto "no hubo
+efecto" cuando sí lo hubo: un falso verde en un gate de seguridad. La autoridad va delante de
+ambos, así que no los afecta; pero **son endpoints que degradan en silencio** y conviene
+saberlo.
+
+**2 · El `vacio` de `estado_handoff` no sirve como denegación.** Devolver "no hay handoff" a
+quien no tiene autoridad, y los mensajes a quien sí, distingue la sesión que existe de la que
+no. La denegación tiene que ser el 404 de siempre, y por eso el gate va antes del `try`.
+
+**3 · `Campana.jsx` llamaba sin capacidad.** Mandaba `session_id` con `apiHeaders()`, que no
+lleva `X-Session-Resume`. Con los endpoints cerrados, la campana de un anónimo habría dado 404.
+Migrada a `apiHeadersSesion(sessionId)` — es la única regresión que obligó a tocar frontend, y
+`App.jsx` no se tocó.
+
+**4 · Denegar por sesión ajena tumba TODA la petición**, no solo esa rama. Es deliberado: pedir
+una conversación que no se puede probar es un intento de acceso, no una preferencia de filtrado.
+El coste es que un `session_id` local caducado deja sin campana a un autenticado que sí tiene
+avisos de cuenta. Es aceptable porque, tras 5c, el cliente solo conserva sesiones que él mismo
+arrancó y cuya capacidad custodia.
+
+---
+
+## POSTGRES — lo que sigue SIN demostrarse
+
+Se investigó, como pedía la unidad, y **no hay vía disponible y segura**:
+
+```
+docker              instalado (29.5.2) pero el DEMONIO NO CORRE
+testcontainers      no instalado
+pytest-postgresql   no instalado
+sqlite              no sirve — el SQL usa `user_id::text` y `now()`
+DATABASE_URL        apunta a PRODUCCIÓN (Supabase) — descartado de plano
+```
+
+Arrancar Docker Desktop y montar el compose es infraestructura pesada para este punto, que es
+justo lo que la unidad pidió no hacer. **Queda pendiente y explícito:**
+
+> Ningún test de esta unidad ejecuta el SQL de autoridad contra un Postgres real. Se demuestra
+> que **el código real decide** y que **el efecto no ocurre al denegar**. NO se demuestra que
+> las sentencias sean válidas para Postgres, ni que los `CAST` se comporten en el motor como
+> aquí se asume. Eso es trabajo del punto 7.
+
+Vía más barata cuando se retome: arrancar el demonio de Docker y usar el `docker-compose.yml`
+que ya está en el repo, o instalar `testcontainers`. Ninguna de las dos se hizo aquí.
+
+---
+
+## MUTACIONES — la prueba de que estos tests pueden fallar
+
+```
+rama de sesión sin autorizar (el fallo original)   →  caen 12 tests
+GET /history sin la puerta                          →  caen 7 tests
+```
+
+`app/routers/chat.py` quedó restaurado y verificado antes de continuar.
+
+---
+
 ## COMPLETADO
 
 ```
@@ -249,47 +391,36 @@ BACKEND
 [✓] 4   costura central de autoridad + claim seguro contra TOCTOU
 [✓] 5a  bootstrap HTTP
 [✓] 5d  enforcement en POST /chat
+[✓] 6   LOS 11 ENDPOINTS RESTANTES
 [✓] 7   tighten de share / archive / rename
 
 FRONTEND
 [✓] 5b  piezas: custodia, bootstrap, transporte, árbol de recuperación
 [✓] 5c  INTEGRACIÓN en App.jsx + los siete casos
+[✓]     Campana.jsx transporta la capacidad
 ```
 
 ## PENDIENTE
 
 ```
-[ ] 6   proteger los 11 endpoints restantes
-[ ] 7   tests de integración
+[ ] 7   tests de integración — incluye la evidencia Postgres, que sigue abierta
 [ ] 8   reporte 13 — debe corregir formalmente a `.0` sobre `update_session`
 [ ] 9   revisión completa del diff productivo
-[ ] 10  PR
+[ ] 10  PR + decisión PASS / HOLD / FAIL
 ```
 
 ---
 
-## ⚠️ LA RAMA TODAVÍA NO ES DESPLEGABLE
-
-El producto ya usa el modelo de autoridad, pero **11 endpoints siguen abiertos**. Un
-`session_id` filtrado todavía lee la bandeja, el handoff y la intención de otra persona.
+## ESTADO
 
 ```
-GET  /{id}/history          GET  /{id}/handoff         POST /{id}/handoff
-POST /{id}/handoff/mensaje  POST /{id}/handoff/push    GET  /{id}/intencion
-POST /comparar              POST /lead-contacto        GET  /notificaciones
-GET  /conversaciones        POST /notificaciones/leidas
+SECURITY ENDPOINT ENFORCEMENT   COMPLETE
+PRODUCT CUTOVER                 COMPLETE
+SECURITY GATE                   INCOMPLETE
 ```
 
-La costura ya existe: `_exigir_autoridad(request, session_id, user)` en `app/routers/chat.py`.
-
-**Sobre la campana/bandeja:** no basta con añadir una dependencia de FastAPI. El problema está
-en la consulta —`WHERE (user…) OR (destinatario_session = :s)`—: la rama de `session_id` solo
-puede ejecutarse tras validar la capability **de ese mismo hilo**, y un autenticado no debe
-obtener acceso adicional por aportar un `session_id`.
-
-> **Nota de secuencia:** el frontend ya manda `X-Session-Resume` en las 9 llamadas. Cerrar los
-> 11 endpoints es, por tanto, activar una comprobación cuyo transporte ya está en producción
-> de la rama — no un cambio de contrato con el cliente.
+El gate sigue incompleto **a propósito**: faltan la integración final, la evidencia Postgres si
+resulta viable, el reporte 13, la revisión del diff productivo y la decisión.
 
 ---
 

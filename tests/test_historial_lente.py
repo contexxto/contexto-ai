@@ -11,7 +11,10 @@ import types
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
+from starlette.requests import Request
+
 from app.routers import chat
+from app.sesion_autoridad import Autoridad
 from app.decision import assembler
 
 
@@ -32,6 +35,19 @@ def _row(rid):
         "lat": -0.18, "lon": -78.48, "caracteristicas": {},
         "operacion": "ARRIENDO", "precio": 500,
     }
+
+
+# AUTH-READ-GATE.1: `get_session_history` exige ahora autoridad sobre la conversación. Estos
+# tests miden la RECONSTRUCCIÓN del historial, no la puerta — así que se les da una llamada
+# ya autorizada. La autoridad tiene sus propios 89 tests en `test_autoridad_endpoints.py`;
+# duplicarla aquí no añadiría cobertura y sí ataría estos tests a un cambio de política.
+def _historial_autorizado(monkeypatch, session_id="s"):
+    async def _permitir(_request, _sid, _user):
+        return Autoridad.OWNER
+    monkeypatch.setattr(chat, "_exigir_autoridad", _permitir)
+    peticion = Request({"type": "http", "method": "GET", "path": "/", "headers": [],
+                        "client": ("test", 0), "query_string": b""})
+    return chat.get_session_history(peticion, session_id, None)
 
 
 def test_historial_encadena_histeresis_del_lente(monkeypatch):
@@ -55,7 +71,7 @@ def test_historial_encadena_histeresis_del_lente(monkeypatch):
         return (rows, {})
     monkeypatch.setattr(assembler, "_fetch_cards_rows", fake_fetch)
 
-    hist = asyncio.run(chat.get_session_history("s"))
+    hist = asyncio.run(_historial_autorizado(monkeypatch))
     asistentes = [h for h in hist["messages"] if h["role"] == "assistant"]
     assert len(asistentes) == 2
     assert asistentes[0]["map_seed"]["modo"] == "auras"   # 3 pines

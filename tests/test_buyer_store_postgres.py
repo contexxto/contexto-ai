@@ -124,6 +124,17 @@ async def migrada(db):
     return db
 
 
+# E3.2 · 1B — LA PROPIEDAD DE LA TRANSACCIÓN CAMBIÓ, Y ESTOS TESTS LO NOTAN.
+#
+# En E3.1b el store hacía `commit()` también sobre la sesión inyectada, así que estos tests
+# no confirmaban nada. Ahora el dueño de la sesión es el dueño de la transacción: si el test
+# inyecta `db=migrada`, el test confirma.
+#
+# No es cosmético. Sin el commit, la escritura de preparación deja la transacción abierta
+# reteniendo el `FOR UPDATE` de la cabeza, y el test de concurrencia —que usa OTRAS
+# conexiones— espera ese bloqueo para siempre. Se descubrió exactamente así: la suite dejó
+# de terminar.
+
 # ── 1-2 · la migración ─────────────────────────────────────────────────────────────
 
 
@@ -159,6 +170,7 @@ async def test_la_028_es_idempotente(db):
 async def test_el_primer_estado_es_la_revision_cero(migrada):
     b = await _cuenta(migrada)
     r = await anexar_revision(b, "m-1", _contexto(b), None, db=migrada)
+    await migrada.commit()   # E3.2·1B: el llamante posee la transacción
 
     assert r.revision == 0 and r.creada is True
     assert r.contexto.context_revision == 0
@@ -168,20 +180,28 @@ async def test_round_trip_exacto_por_el_contrato(migrada):
     b = await _cuenta(migrada)
     original = _contexto(b, Objective.RENT, stage="explorando")
     await anexar_revision(b, "m-1", original, None, db=migrada)
+    await migrada.commit()   # E3.2·1B: el llamante posee la transacción
 
     leido = await cargar_ultima(b, db=migrada)
     assert isinstance(leido, BuyerContextV0)
     assert leido.objective is Objective.RENT
     assert leido.stage == "explorando"
     assert leido.buyer_id == b
-    assert leido.updated_at == original.updated_at
+    # EXPECTED_POLICY_CHANGE (E3.2 · 1A): `updated_at` dejó de ser un campo del llamante.
+    # Ahora es el instante de PERSISTENCIA que asigna el store, así que no puede coincidir
+    # con el que traía el contexto. Lo que se exige es que sobreviva al round-trip con zona
+    # horaria: es metadato, pero metadato fiable.
+    assert leido.updated_at != original.updated_at
+    assert leido.updated_at.tzinfo is not None
     assert leido.context_revision == 0
 
 
 async def test_el_segundo_mensaje_avanza_a_la_revision_uno(migrada):
     b = await _cuenta(migrada)
     await anexar_revision(b, "m-1", _contexto(b), None, db=migrada)
+    await migrada.commit()   # E3.2·1B: el llamante posee la transacción
     r = await anexar_revision(b, "m-2", _contexto(b, Objective.BUY), 0, db=migrada)
+    await migrada.commit()   # E3.2·1B: el llamante posee la transacción
 
     assert r.revision == 1 and r.creada is True
     assert (await cargar_ultima(b, db=migrada)).objective is Objective.BUY
@@ -190,7 +210,9 @@ async def test_el_segundo_mensaje_avanza_a_la_revision_uno(migrada):
 async def test_el_historial_conserva_las_revisiones_anteriores(migrada):
     b = await _cuenta(migrada)
     await anexar_revision(b, "m-1", _contexto(b, Objective.RENT), None, db=migrada)
+    await migrada.commit()   # E3.2·1B: el llamante posee la transacción
     await anexar_revision(b, "m-2", _contexto(b, Objective.BUY), 0, db=migrada)
+    await migrada.commit()   # E3.2·1B: el llamante posee la transacción
 
     cero = await cargar_revision(b, 0, db=migrada)
     uno = await cargar_revision(b, 1, db=migrada)
@@ -213,9 +235,11 @@ async def test_el_reintento_del_mismo_mensaje_NO_crea_otra_revision(migrada):
     b = await _cuenta(migrada)
     ctx = _contexto(b, Objective.RENT)
     primera = await anexar_revision(b, "m-1", ctx, None, db=migrada)
+    await migrada.commit()   # E3.2·1B: el llamante posee la transacción
 
     # El reintento llega con el `expected_revision` viejo, como llegaría de verdad.
     repetida = await anexar_revision(b, "m-1", ctx, None, db=migrada)
+    await migrada.commit()   # E3.2·1B: el llamante posee la transacción
 
     assert repetida.creada is False
     assert repetida.revision == primera.revision == 0
@@ -231,6 +255,7 @@ async def test_el_mismo_mensaje_con_estado_DISTINTO_falla_ruidosamente(migrada):
     """
     b = await _cuenta(migrada)
     await anexar_revision(b, "m-1", _contexto(b, Objective.RENT), None, db=migrada)
+    await migrada.commit()   # E3.2·1B: el llamante posee la transacción
 
     with pytest.raises(BuyerIdempotencyConflict):
         await anexar_revision(b, "m-1", _contexto(b, Objective.BUY), None, db=migrada)
@@ -245,7 +270,9 @@ async def test_el_mismo_mensaje_con_estado_DISTINTO_falla_ruidosamente(migrada):
 async def test_una_revision_esperada_rancia_no_sobrescribe(migrada):
     b = await _cuenta(migrada)
     await anexar_revision(b, "m-1", _contexto(b), None, db=migrada)
+    await migrada.commit()   # E3.2·1B: el llamante posee la transacción
     await anexar_revision(b, "m-2", _contexto(b, Objective.BUY), 0, db=migrada)
+    await migrada.commit()   # E3.2·1B: el llamante posee la transacción
 
     # Llega alguien que leyó cuando la vigente era 0.
     with pytest.raises(BuyerRevisionConflict):
@@ -268,6 +295,7 @@ async def test_dos_conexiones_REALES_compitiendo_por_la_misma_revision(migrada):
     """
     b = await _cuenta(migrada)
     await anexar_revision(b, "m-0", _contexto(b), None, db=migrada)
+    await migrada.commit()   # E3.2·1B: el llamante posee la transacción
 
     motor = create_async_engine(URL)
     fabrica = async_sessionmaker(motor, expire_on_commit=False)
@@ -275,7 +303,10 @@ async def test_dos_conexiones_REALES_compitiendo_por_la_misma_revision(migrada):
     async def escribir(mensaje: str, objetivo: Objective):
         async with fabrica() as s:
             try:
-                return await anexar_revision(b, mensaje, _contexto(b, objetivo), 0, db=s)
+                resultado = await anexar_revision(b, mensaje, _contexto(b, objetivo),
+                                                  0, db=s)
+                await s.commit()   # E3.2·1B: cada escritor confirma la suya
+                return resultado
             except BuyerStoreError as e:
                 return e
 
@@ -307,7 +338,9 @@ async def test_dos_conexiones_REALES_compitiendo_por_la_misma_revision(migrada):
 async def test_dos_compradores_no_mezclan_revisiones(migrada):
     b1, b2 = await _cuenta(migrada), await _cuenta(migrada)
     await anexar_revision(b1, "m-1", _contexto(b1, Objective.RENT), None, db=migrada)
+    await migrada.commit()   # E3.2·1B: el llamante posee la transacción
     await anexar_revision(b2, "m-1", _contexto(b2, Objective.BUY), None, db=migrada)
+    await migrada.commit()   # E3.2·1B: el llamante posee la transacción
 
     assert (await cargar_ultima(b1, db=migrada)).objective is Objective.RENT
     assert (await cargar_ultima(b2, db=migrada)).objective is Objective.BUY
@@ -329,7 +362,9 @@ async def test_un_contexto_de_OTRO_comprador_no_se_persiste(migrada):
 async def test_borrar_la_cuenta_borra_cabeza_e_historial(migrada):
     b = await _cuenta(migrada)
     await anexar_revision(b, "m-1", _contexto(b), None, db=migrada)
+    await migrada.commit()   # E3.2·1B: el llamante posee la transacción
     await anexar_revision(b, "m-2", _contexto(b, Objective.BUY), 0, db=migrada)
+    await migrada.commit()   # E3.2·1B: el llamante posee la transacción
     assert await db_filas(migrada, b) == 2
 
     await migrada.execute(text("DELETE FROM auth.users WHERE id = CAST(:u AS uuid)"), {"u": b})
@@ -357,6 +392,7 @@ async def test_una_fila_que_no_valida_falla_LOUD(migrada):
 
     b = await _cuenta(migrada)
     await anexar_revision(b, "m-1", _contexto(b), None, db=migrada)
+    await migrada.commit()   # E3.2·1B: el llamante posee la transacción
 
     # Se corrompe el snapshot a mano: `buyer_id` es obligatorio en el contrato.
     await migrada.execute(text(

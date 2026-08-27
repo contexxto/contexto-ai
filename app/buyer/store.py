@@ -48,6 +48,7 @@ propio almacenamiento; duplicar el texto aquí sería duplicar PII sin ganar nad
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 from dataclasses import dataclass
 
@@ -114,12 +115,21 @@ def _canonico(contexto: BuyerContextV0) -> str:
     texto sin ordenar produciría falsos `BuyerIdempotencyConflict` — un error que acusaría
     al extractor de no ser determinista cuando el no determinista sería este módulo.
 
-    `context_revision` se excluye a propósito: es metadato que asigna el store, no parte
-    del estado observado del comprador. Incluirlo haría que el mismo snapshot pareciera
-    distinto solo por haber sido numerado.
+    **Se excluyen `context_revision` y `updated_at`**: los dos son metadato que asigna el
+    store, no estado observado del comprador. Incluir cualquiera de ellos haría que el mismo
+    snapshot pareciera distinto solo por haber sido numerado o fechado — y un reintento
+    honesto daría `BuyerIdempotencyConflict`, acusando de no determinista a un extractor que
+    sí lo es.
+
+    `updated_at` se excluyó en E3.2 tras decidir su semántica (§1A del reporte 15): es el
+    instante de PERSISTENCIA de esa revisión, no la hora del evento. `IdentifiedUserMessage`
+    no lleva timestamp contractual del evento, así que inventarle uno violaría procedencia.
+    En E3.1b este campo SÍ entraba en la comparación; los tests no lo revelaban porque sus
+    fixtures usaban un timestamp fijo.
     """
     datos = contexto.model_dump(mode="json")
-    datos.pop("context_revision", None)
+    for metadato in ("context_revision", "updated_at"):
+        datos.pop(metadato, None)
     return json.dumps(datos, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
 
 
@@ -207,18 +217,61 @@ async def anexar_revision(
         raise BuyerStoreError(
             "el contexto pertenece a otro comprador: no se persiste bajo esta raíz"
         )
+    # E3.2 · 1C — defensa en profundidad. `NOT NULL` impide `NULL`, no `""`: en E3.1b la
+    # cadena vacía atravesaba esta función y llegaba hasta la base. La garantía vivía solo
+    # en `IdentifiedUserMessage(min_length=1)`, aguas arriba. Ahora falla aquí, y la
+    # migración 029 añade el `CHECK` para que tampoco entre por otra vía.
+    if not isinstance(source_message_id, str) or not source_message_id.strip():
+        raise BuyerStoreError("source_message_id no puede ser vacío ni solo espacios")
     if expected_revision is not None and expected_revision < 0:
         raise BuyerStoreError("expected_revision no puede ser negativa")
 
+    # E3.2 · 1B — LA PROPIEDAD DE LA TRANSACCIÓN SIGUE A LA PROPIEDAD DE LA SESIÓN.
+    #
+    #   sesión propia (db=None)  → el store hace commit/rollback
+    #   sesión inyectada (db=…)  → el LLAMANTE hace commit/rollback; el store NO toca ninguno
+    #
+    # En E3.1b el store hacía `commit()` y `rollback()` también sobre la sesión inyectada.
+    # Funcionaba porque era dueño exclusivo de la frontera, pero era una precondición no
+    # escrita: en cuanto E3.2 comparta sesión con otro trabajo, un `rollback` del store
+    # descartaría escrituras ajenas que nadie le pidió deshacer.
     if db is not None:
         return await _ejecutar_anexo(db, buyer_id, source_message_id, contexto,
-                                     expected_revision)
+                                     expected_revision, propietario=False)
     async with AsyncSessionLocal() as propio:
         return await _ejecutar_anexo(propio, buyer_id, source_message_id, contexto,
-                                     expected_revision)
+                                     expected_revision, propietario=True)
 
 
-async def _ejecutar_anexo(db, buyer_id, source_message_id, contexto, expected_revision):
+async def _ejecutar_anexo(db, buyer_id, source_message_id, contexto, expected_revision,
+                          *, propietario: bool):
+    # SAVEPOINT — lo que hace compatibles las dos garantías que E3.2 exige a la vez:
+    #
+    #   1. deshacer del store NO puede borrar trabajo ajeno
+    #   2. un fallo del store NO puede dejar trabajo propio a medias
+    #
+    # Sin él solo se podía cumplir una. Con `db.rollback()` (E3.1b) se cumplía la 2 y se
+    # violaba la 1. Al quitarlo (primera versión de E3.2·1B) se cumplía la 1 y se violaba
+    # la 2: el `INSERT` de la cabeza ocurre ANTES de comprobar `expected_revision`, así que
+    # un `BuyerRevisionConflict` dejaba una cabeza huérfana que el `commit` del llamante
+    # confirmaba — contradiciendo el "no se escribió nada" documentado en la excepción.
+    #
+    # El savepoint acota el alcance del deshacer a lo que el store escribió. No hace falta
+    # razonar sobre qué casos pueden dejar estado parcial: ninguno puede.
+    punto = await db.begin_nested()
+
+    async def _deshacer():
+        """Deshace SOLO lo que escribió el store. Lo anterior del llamante no se toca."""
+        if punto.is_active:
+            await punto.rollback()
+        if propietario:
+            await db.rollback()
+
+    async def _confirmar():
+        await punto.commit()          # libera el savepoint; no confirma nada por sí solo
+        if propietario:
+            await db.commit()
+
     try:
         # 1 · La cabeza, creada si no existe, y BLOQUEADA en el mismo viaje. El
         # `ON CONFLICT DO NOTHING` seguido del `SELECT … FOR UPDATE` cubre la carrera de
@@ -253,27 +306,34 @@ async def _ejecutar_anexo(db, buyer_id, source_message_id, contexto, expected_re
         if previa is not None:
             ya = _rehidratar(previa)
             if _canonico(ya) != _canonico(contexto):
-                await db.rollback()
                 raise BuyerIdempotencyConflict(
                     f"el mensaje {source_message_id} ya produjo la revisión "
                     f"{previa['context_revision']} con un estado distinto"
                 )
-            await db.rollback()   # nada que escribir; no se deja transacción abierta
+            # Nada que escribir. Con sesión propia se cierra la transacción; con sesión
+            # ajena NO se toca: el llamante puede tener trabajo pendiente en ella.
+            await _deshacer()
             return RevisionPersistida(ya, previa["context_revision"], creada=False)
 
         # 3 · CONCURRENCIA. Lo que el llamante creía ya no es lo que hay.
         if expected_revision != actual:
-            await db.rollback()
             raise BuyerRevisionConflict(
                 f"se esperaba la revisión {expected_revision} y la vigente es {actual}"
             )
 
         nueva = 0 if actual is None else actual + 1
 
-        # 4 · El historial. La revisión persistida la fija el store; se sobrescribe lo que
-        # trajera el contexto para que no haya dos fuentes de verdad del número.
+        # 4 · El historial. El store fija los DOS metadatos —la revisión y el instante de
+        # persistencia— y sobrescribe lo que trajera el contexto, para que no haya dos
+        # fuentes de verdad de ninguno.
+        #
+        # `updated_at` es el instante en que ESTA revisión se persiste (E3.2 · 1A). No es la
+        # hora del mensaje: `IdentifiedUserMessage` no lleva timestamp contractual del
+        # evento, y fabricarle uno sería inventar procedencia. El updater no debe generar
+        # `datetime.now()` dentro del payload semántico — lo pone aquí.
         datos = contexto.model_dump(mode="json")
         datos["context_revision"] = nueva
+        datos["updated_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
 
         await db.execute(text(
             "INSERT INTO buyer_context_revisions "
@@ -287,11 +347,22 @@ async def _ejecutar_anexo(db, buyer_id, source_message_id, contexto, expected_re
             "WHERE buyer_id = CAST(:b AS uuid)"),
             {"b": buyer_id, "r": nueva})
 
-        await db.commit()
+        await _confirmar()
         return RevisionPersistida(BuyerContextV0.model_validate(datos), nueva, creada=True)
 
     except BuyerStoreError:
+        # Los errores tipados del store también dejan el savepoint abierto si no se cierra
+        # aquí. `BuyerContextCorrupto` es el caso real: sale de `_rehidratar(previa)` DENTRO
+        # del savepoint cuando el `(buyer_id, source_message_id)` ya existe pero su revisión
+        # dejó de validar. Antes se re-lanzaba tal cual y el store devolvía el control al
+        # llamante con una transacción anidada suya todavía abierta — no se pierde nada,
+        # pero rompe la frontera que E3.2 acaba de formalizar.
+        #
+        # UN SOLO CAMINO DE LIMPIEZA. Los `_deshacer()` que había justo antes de levantar
+        # los dos conflictos se retiraron: con dos caminos, el próximo error tipado que se
+        # añada vuelve a olvidarse de cerrar.
+        await _deshacer()
         raise
     except Exception:
-        await db.rollback()
+        await _deshacer()
         raise

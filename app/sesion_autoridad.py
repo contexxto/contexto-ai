@@ -199,7 +199,17 @@ async def _ejecutar_creacion(db, user: CurrentUser | None, activo_id: str | None
         text(
             "INSERT INTO chat_sessions "
             "  (session_id, user_id, resume_token_hash, resume_issued_at, creada_por_servidor) "
-            "VALUES (:sid, :uid, :h, CASE WHEN :h IS NULL THEN NULL ELSE now() END, true) "
+            # Los CAST no son adorno — y esto ya había pasado antes en este repo, en la
+            # campana: dentro de `CASE WHEN … IS NULL`, Postgres no tiene columna de la que
+            # deducir el tipo del parámetro y aborta con `AmbiguousParameterError`. Con
+            # `asyncpg` (protocolo extendido) revienta al PREPARAR, así que fallaba tanto la
+            # sesión anónima como la autenticada: el bootstrap entero, o sea el gate entero.
+            #
+            # Ningún test con base falsa podía cazarlo, porque ninguno parsea SQL. Lo cazó la
+            # primera ejecución contra Postgres real (HOLD-1). El `uid` lleva CAST por lo
+            # mismo: llega `None` para las sesiones anónimas.
+            "VALUES (CAST(:sid AS text), CAST(:uid AS uuid), CAST(:h AS text), "
+            "        CASE WHEN CAST(:h AS text) IS NULL THEN NULL ELSE now() END, true) "
             "ON CONFLICT (session_id) DO NOTHING "
             "RETURNING session_id"
         ),

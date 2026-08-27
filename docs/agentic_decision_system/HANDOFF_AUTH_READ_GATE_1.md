@@ -7,37 +7,43 @@ ENTRADA DE 5c          13b949680f5172ba4ab18cb5fc21db7e71086193
 CUTOVER DE 5c          5c70e40483cd29ac41dd2fc7d5254e815f0e6d40
 EVIDENCIA CASO 5       8b67900dd875a8238ba37551483813cfa31ceb3c
 
-ESTADO                 REVISADO · DECISIÓN = HOLD (ver reporte 13)
-SUITE BACKEND          1 665 exit 0   (+102 de autoridad por endpoint)
+ESTADO                 AUTH-READ-GATE.1 = PASS · recomendación: OPEN PR
+SUITE BACKEND          1 692 exit 0   (+17 integración Postgres, +10 readiness)
 SUITE FRONTEND         66 exit 0   (35 → 53 → 66)
 BUILD FRONTEND         PASS
 INVENTARIO 18 ENDPOINTS PASS
 
 PRODUCT CUTOVER        COMPLETE
-SECURITY GATE          INCOMPLETE   ← HOLD: Postgres NOT VERIFIED + sin runner de migración
+SECURITY GATE          COMPLETE   ← Postgres VERIFIED + readiness de arranque
 ```
 
 ---
 
-## ⛔ DECISIÓN DEL GATE — **HOLD**
+## ✅ DECISIÓN DEL GATE — **PASS**
 
-El informe completo es `docs/agentic_decision_system/13_AUTH_READ_GATE_ENFORCEMENT.md`.
+Informe completo: `docs/agentic_decision_system/13_AUTH_READ_GATE_ENFORCEMENT.md` (§16).
 
-**No es FAIL:** la revisión adversarial de los 18 endpoints —más los 6 de `assets.py` que el
-inventario nunca cubrió, y que están correctos— no encontró bypass, autoridad duplicada,
-fallback de `session_id` a secas, `device_key` como autoridad, secreto en URL/log/base, claim
-no atómico, capacidad sin revocar, ni efecto antes de la puerta. `REGRESSION = 0`.
+**El HOLD estaba justificado.** Ejecutar contra PostgreSQL real destapó dos defectos que
+habrían tumbado el producto entero en el primer despliegue, y ninguno era detectable sin motor:
 
-**No es PASS, por dos hechos concretos:**
+1. **El bootstrap fallaba SIEMPRE.** `CASE WHEN :h IS NULL` sin `CAST` →
+   `AmbiguousParameterError` al preparar. Reventaba `POST /sessions/bootstrap` para sesiones
+   anónimas **y** autenticadas. Como tras 5c toda conversación nace del bootstrap, nadie habría
+   podido abrir un chat. Los 102 tests de autoridad no podían cazarlo: su tabla falsa no parsea
+   SQL.
+2. **El aplicador de migraciones no sabía aplicar la migración.** Mandaba el fichero entero por
+   el protocolo extendido → `cannot insert multiple commands into a prepared statement`.
 
-1. La sentencia que decide **cada** petición del producto —`SELECT … resume_token_hash,
-   resume_revoked_at FROM chat_sessions`— **nunca se ha ejecutado contra PostgreSQL**. No hay
-   motor seguro disponible: docker sin demonio, sin servicio, sin binarios, 5432 cerrado, sin
-   CLI de Supabase, sin `testcontainers`.
-2. **No existe runner de migraciones.** `render.yaml` y `Dockerfile` no aplican nada. Si el
-   código se despliega sin `027`, `POST /chat` cae **para todos**, autenticados incluidos.
+Ambos corregidos y verificados contra el motor. **No eran fallos de diseño, sino de ejecución:
+el modelo de autoridad resistió el contacto con Postgres sin un solo cambio.**
 
-Para convertirlo en PASS hacen falta esas dos cosas — evidencia y operación, no rediseño.
+```
+HOLD-1  Postgres real          CERRADO   17 tests contra PG 15.4 (prod es 17.6)
+HOLD-2  migration deployment   CERRADO   readiness de arranque + migración explícita
+```
+
+**Requisito de despliegue innegociable:** aplicar la 027 ANTES del código
+(`python -m app.esquema_requerido --aplicar`). El arranque lo verifica solo y falla si falta.
 
 ---
 

@@ -12,8 +12,12 @@ frontend         66 exit 0
 build         PASS
 inventario    18/18 · 0 sin clasificar
 
-DECISIÓN      HOLD
+DECISIÓN      PASS   (era HOLD; resuelto en §16)
 ```
+
+> **§16 · HOLD RESOLUTION** es la sección que cierra la decisión. El HOLD estaba justificado:
+> ejecutar contra PostgreSQL real destapó **dos defectos que habrían tumbado el producto en el
+> primer despliegue**, y ninguno era detectable sin el motor.
 
 ---
 
@@ -399,3 +403,247 @@ Ninguna de las dos exige rediseño. Son evidencia y operación, no código de pr
 - **`codigoDesnudo.js` vive en `frontend/src/`** y depende de `vite`. No es alcanzable desde el
   entry, así que no entra al bundle (verificado: el build pasa), pero es infraestructura de test
   en un directorio de producción.
+
+---
+
+# 16 · HOLD RESOLUTION
+
+```
+SHA de entrada   a02f69090c9b2e8a2d4aa8e329972bdf53b459a5
+HOLD-1           CERRADO   Postgres real ejecutado
+HOLD-2           CERRADO   readiness de arranque + migración explícita
+
+DECISIÓN NUEVA   PASS
+```
+
+**Y el HOLD estaba justificado: el motor real encontró dos defectos que habrían tumbado el
+producto en el primer despliegue.** Ninguno era detectable sin él.
+
+---
+
+## 16.1 · Producción, inspección read-only
+
+```
+motor            PostgreSQL 17.6 (Supabase, aws-1-us-west-2)
+columnas de 027  0/4
+índice           AUSENTE
+PROD_SCHEMA_027  NOT_APPLIED
+```
+
+Solo `information_schema` y `pg_indexes`. Cero DDL, cero DML.
+
+Que la 027 no esté aplicada en ningún entorno permitió corregirla sin reescribir historia, y
+confirma que HOLD-2 era un riesgo vivo y no teórico.
+
+---
+
+## 16.2 · 🔴 DEFECTO 1 — el bootstrap habría fallado **siempre**
+
+`_ejecutar_creacion` insertaba con:
+
+```sql
+VALUES (:sid, :uid, :h, CASE WHEN :h IS NULL THEN NULL ELSE now() END, true)
+```
+
+Dentro de `CASE WHEN … IS NULL` **Postgres no tiene columna de la que deducir el tipo del
+parámetro**. Con `asyncpg`, que usa el protocolo extendido, la sentencia falla **al
+prepararse**:
+
+```
+asyncpg.exceptions.AmbiguousParameterError:
+could not determine data type of parameter $3
+```
+
+**Alcance del fallo: total.** No afectaba a un caso raro — reventaba `POST /sessions/bootstrap`
+para **las sesiones anónimas y las autenticadas por igual**. Como el frontend de 5c ya no
+fabrica identificadores y **toda** conversación nace del bootstrap, nadie habría podido abrir
+un chat. El gate entero habría caído en el primer minuto de producción.
+
+**Por qué ningún test lo cazó:** los 102 tests de autoridad usan una tabla en memoria que
+almacena filas; ninguno parsea SQL, así que ninguno podía descubrir que la sentencia era
+inválida para el motor. Ahí está exactamente el límite que el HOLD señalaba.
+
+**Y el repo ya conocía este error.** Los endpoints de la campana llevan desde hace tiempo un
+comentario que lo explica: *"Los CAST no son adorno: con el parámetro en NULL, Postgres no
+puede deducir su tipo … revienta con AmbiguousParameterError — el endpoint devolvía 500 y la
+campana salía vacía sin decir nada."* El mismo fallo se repitió en el bootstrap.
+
+**Corregido:** `CAST(:sid AS text)`, `CAST(:uid AS uuid)`, `CAST(:h AS text)`, incluido dentro
+del `CASE`. Verificado contra el motor.
+
+**Barrido posterior:** se buscó el mismo patrón (`:param IS [NOT] NULL` sin `CAST`) en todos
+los literales SQL de `app/`. **Cero apariciones restantes.**
+
+---
+
+## 16.3 · 🔴 DEFECTO 2 — el aplicador de migraciones no sabía aplicar la migración
+
+La primera versión de `aplicar_migracion` mandaba el fichero entero por
+`session.execute(text(sql))`. `asyncpg` prepara cada sentencia, y **una sentencia preparada es
+una sentencia**:
+
+```
+cannot insert multiple commands into a prepared statement
+```
+
+Es decir: el mecanismo escrito para cerrar HOLD-2 habría fallado justo el día que se necesitara.
+
+**Corregido** bajando al protocolo simple del driver (`driver_connection.execute`), que sí
+acepta un script. **No** se trocea por `;` — un `;` dentro de un literal (los `COMMENT ON … IS
+'…'` de la 027 son candidatos naturales) partiría la sentencia por la mitad; es la misma trampa
+de "texto vs. estructura" de toda esta unidad.
+
+Los tests de integración aplican la 027 **con el aplicador de producción**, no con una copia:
+si el aplicador no sabe ejecutar el fichero, los tests fallan.
+
+---
+
+## 16.4 · Motor de pruebas
+
+```
+contenedor   contexto_db · postgis/postgis:15-3.3 (del docker-compose.yml del repo)
+motor        PostgreSQL 15.4
+base         auth_gate_test — creada vacía y aislada; NO es contexto_v2 (la de desarrollo)
+```
+
+`TEST_DATABASE_URL` es obligatoria y **no** cae por defecto a `settings.database_url`: estos
+tests crean sesiones, reclaman hilos y revocan capacidades. La fixture además aborta si la URL
+contiene `supabase.com` o `pooler`. Doble candado contra escribir en producción.
+
+**Diferencia de versión, dicha claramente:** las pruebas corren en **PG 15.4** y producción es
+**PG 17.6**. Para lo que la 027 y la autoridad usan —`ADD COLUMN IF NOT EXISTS`, `NOT NULL
+DEFAULT`, `ON CONFLICT … DO NOTHING RETURNING`, `CAST`, `now()`, inferencia de tipos de
+parámetro— el comportamiento es estable entre 15 y 17. No es el mismo motor y no se afirma que
+lo sea.
+
+---
+
+## 16.5 · Lo ejecutado contra el motor real — 17 tests
+
+```
+MIGRACIÓN 027
+ ✓ primera ejecución PASS, cuatro columnas con tipo y nulabilidad correctos
+ ✓ creada_por_servidor: boolean NOT NULL DEFAULT false
+ ✓ SEGUNDA ejecución PASS — idempotencia real, no declarada
+ ✓ filas legacy sobreviven; el DEFAULT las rellena sin reescribir la tabla
+ ✓ legacy con dueño → OWNER; legacy anónima → denegada (pérdida deliberada)
+
+AUTORIDAD (app/sesion_autoridad.py real, sin db= inyectado)
+ ✓ bootstrap anónimo: user_id NULL, hash guardado, resume_issued_at sellado,
+   creada_por_servidor=true, y el secreto crudo NO aparece en NINGUNA columna de la fila
+ ✓ bootstrap autenticado: user_id real, sin capacidad emitida
+ ✓ el prefijo qr-{activo}- sobrevive y el LIKE de assets.py lo encuentra
+ ✓ cross-owner: U2 entra, U1 no — ni con un secreto inventado
+ ✓ capacidad propia → ANONYMOUS_CAPABILITY; ajena, ninguna, o id inexistente → denegado
+ ✓ claim: user_id asignado y resume_revoked_at sellado, VERIFICADO leyendo la fila
+ ✓ tras el claim la capacidad vieja no sirve ni al anónimo ni a otro autenticado;
+   el nuevo dueño entra por identidad
+ ✓ claim sobre hilo ajeno: rowcount 0 → levanta, y la fila de U2 queda intacta
+ ✓ ON CONFLICT con id existente: NO se re-emite capacidad (el hash original no cambia)
+
+HÍBRIDOS (_alcances_autorizados real, SQL ejecutado)
+ ✓ solo cuenta → solo los avisos de U1
+ ✓ cuenta ∪ sesión propia autorizada → ambos
+ ✓ sesión REAL de U2 → SOLO cuenta; cero filas de U2
+ ✓ anónimo sin capacidad → 404
+ ✓ marcar leídas con sesión ajena → rowcount 1 (solo el de cuenta);
+   los avisos de U2 siguen SIN LEER, verificado leyendo la base después
+```
+
+---
+
+## 16.6 · HOLD-2 — mecanismo de despliegue
+
+`app/esquema_requerido.py`:
+
+| | |
+|---|---|
+| `exigir_esquema()` | comprobación de arranque; levanta `EsquemaIncompleto` si faltan columnas |
+| `aplicar_migracion()` | acto **explícito**, nunca automático |
+| `python -m app.esquema_requerido [--aplicar]` | uso operativo |
+
+La comprobación es **lo primero** del `lifespan`, antes del checkpointer y de los cron
+(verificado por AST, no por texto). **No se aplica DDL al arrancar**: con varias réplicas sería
+una carrera, y un despliegue fallido dejaría el esquema a medias sin que nadie lo pidiera.
+
+Fallar al arrancar es deliberado. Un proceso que arranca sin las columnas pasa el health check,
+Render lo da por bueno, y el error acaba en la cara del usuario. Así el despliegue no progresa
+y la versión anterior sigue sirviendo.
+
+**10 tests:** cada una de las cuatro columnas por separado (ninguna es opcional), tabla entera
+ausente, el mensaje nombra columna y migración pero **no** filtra conexión ni valores, la
+comprobación no contiene ningún verbo de escritura, va la primera en el `lifespan`, y el
+arranque no migra.
+
+---
+
+## 16.7 · La migración, corregida antes de aplicarse
+
+Se retiró `ix_chat_sessions_resume_vivo`. Su comentario decía *"búsqueda por hash en cada
+petición anónima"* y era falso por partida doble: el índice era sobre `session_id` —ya PRIMARY
+KEY, nunca habría un plan mejor— y la única consulta de autoridad no filtra por el hash en
+absoluto; la comparación ocurre en Python con `hmac.compare_digest` sobre la fila recuperada.
+
+Un índice sobre el hash tampoco serviría y sería **contraproducente**: indexar el material de
+una capacidad facilita confirmarla por sondeo. El fichero documenta ahora por qué **no** hay
+índice, en vez de llevar uno decorativo con una justificación inventada.
+
+Legítimo porque `PROD_SCHEMA_027 = NOT_APPLIED`: no se reescribe una migración ya aplicada.
+
+---
+
+## 16.8 · Estado final de las suites
+
+```
+integración Postgres     17 exit 0   ← evidencia nueva
+readiness de esquema     10 exit 0   ← evidencia nueva
+backend sin motor      1 692 exit 0  (17 saltados)
+backend CON motor      1 692 exit 0  (0 saltados)
+frontend                  66 exit 0
+build                     PASS
+inventario                18/18 · 0 sin clasificar
+```
+
+```
+POSTGRES INTEGRATION = VERIFIED   (PG 15.4; producción es 17.6 — §16.4)
+MIGRATION 027 = SQL REVIEWED · SQL EXECUTED · IDEMPOTENT
+```
+
+---
+
+## 16.9 · DECISIÓN — `PASS`
+
+Los dos bloqueadores están cerrados con evidencia, no con argumentos:
+
+- **HOLD-1** — el SQL de autoridad se ejecutó contra PostgreSQL real y **encontró dos defectos
+  que habrían tumbado el producto entero**. Ambos corregidos y verificados.
+- **HOLD-2** — existe comprobación de arranque que se niega a servir con el esquema
+  incompleto, y un mecanismo explícito de migración con su runbook.
+
+No apareció bypass, regresión ni defecto estructural. Los dos fallos encontrados eran de
+**ejecución** (tipos de parámetro y protocolo del driver), no de diseño: el modelo de autoridad
+resistió el contacto con el motor sin un solo cambio.
+
+```
+AUTH-READ-GATE.1   PASS
+RECOMENDACIÓN      OPEN PR
+```
+
+**El PR no se abre en esta unidad.**
+
+### Requisito de despliegue, sin el cual el PASS no vale
+
+1. Aplicar `migrations/027_session_resume_capability.sql` en producción **antes** de desplegar.
+   `python -m app.esquema_requerido --aplicar`, o el SQL a mano.
+2. El arranque lo verifica solo: si falta algo, el despliegue falla en vez de servir roto.
+3. Backend y frontend **juntos** — el backend exige `X-Session-Resume` y un frontend viejo no
+   lo envía.
+4. Rollback: **código primero, esquema después.**
+
+### Lo que sigue sin demostrarse
+
+- Las pruebas corren en **PG 15.4**; producción es **17.6** (§16.4).
+- No hay test de carga ni de concurrencia real sobre el claim. La atomicidad está probada por
+  `rowcount` contra el motor, no con dos clientes compitiendo.
+- Los 6 endpoints session-scoped de `assets.py` (§1) se auditaron por lectura, no por
+  ejecución.

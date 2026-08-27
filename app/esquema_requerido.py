@@ -105,17 +105,36 @@ async def exigir_esquema(db=None) -> None:
 async def aplicar_migracion(ruta: str = MIGRACION, db=None) -> None:
     """Aplica la migración. **Explícito, nunca automático en el arranque.**
 
-    La 027 es idempotente (`ADD COLUMN IF NOT EXISTS`), así que repetirla es seguro. El
-    fichero se ejecuta como un solo bloque: sus sentencias son independientes y no hay
-    ninguna razón para trocearlo por `;`, que además rompería cualquier cuerpo que lo lleve.
+    La 027 es idempotente (`ADD COLUMN IF NOT EXISTS`), así que repetirla es seguro.
+
+    ## Por qué baja al driver en vez de usar `session.execute(text(...))`
+
+    Porque **no funciona**: `asyncpg` usa el protocolo extendido (sentencias preparadas) y
+    ahí una sentencia preparada es **una** sentencia. Un fichero de migración con varios
+    `ALTER` y `COMMENT` revienta con `cannot insert multiple commands into a prepared
+    statement`. La versión anterior de esta función lo hacía así y habría fallado el día del
+    despliegue — lo descubrió el primer intento de correrla contra un Postgres real, que era
+    justamente el motivo del HOLD.
+
+    La alternativa —trocear el fichero por `;`— es la trampa de siempre: un `;` dentro de un
+    literal (los `COMMENT ON … IS '…'` de la 027 son candidatos naturales) partiría la
+    sentencia por la mitad. Se usa el protocolo simple del driver, que sí acepta un script.
     """
     sql = pathlib.Path(ruta).read_text(encoding="utf-8")
+
+    async def _ejecutar(sesion) -> None:
+        conexion = await sesion.connection()
+        cruda = await conexion.get_raw_connection()
+        # `driver_connection` es la conexión de asyncpg. Su `execute()` sin argumentos usa
+        # el protocolo simple, que acepta varias sentencias en un mismo texto.
+        await cruda.driver_connection.execute(sql)
+
     if db is not None:
-        await db.execute(text(sql))
+        await _ejecutar(db)
         await db.commit()
         return
     async with AsyncSessionLocal() as propio:
-        await propio.execute(text(sql))
+        await _ejecutar(propio)
         await propio.commit()
 
 

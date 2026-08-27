@@ -60,18 +60,20 @@ ACTIVO = str(uuid.uuid4())
 
 # Lo mínimo de `chat_sessions` anterior a la 027, para que la migración tenga qué alterar.
 # Se replica la forma de `migrations/006_chat_sessions.sql` + `008_auth_roles.sql`.
-BASE = """
-CREATE TABLE IF NOT EXISTS chat_sessions (
-    session_id  TEXT PRIMARY KEY,
-    user_id     UUID,
-    titulo      TEXT,
-    is_public   BOOLEAN NOT NULL DEFAULT false,
-    share_token TEXT,
-    archived    BOOLEAN NOT NULL DEFAULT false,
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS ix_chat_sessions_user ON chat_sessions (user_id);
-"""
+# Una sentencia por elemento: `asyncpg` prepara cada `execute()` y una sentencia preparada
+# es UNA sentencia. Meter las dos juntas da `cannot insert multiple commands`.
+BASE = (
+    """CREATE TABLE IF NOT EXISTS chat_sessions (
+        session_id  TEXT PRIMARY KEY,
+        user_id     UUID,
+        titulo      TEXT,
+        is_public   BOOLEAN NOT NULL DEFAULT false,
+        share_token TEXT,
+        archived    BOOLEAN NOT NULL DEFAULT false,
+        updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    )""",
+    "CREATE INDEX IF NOT EXISTS ix_chat_sessions_user ON chat_sessions (user_id)",
+)
 
 
 @pytest_asyncio.fixture
@@ -85,7 +87,8 @@ async def db(monkeypatch):
 
     async with sesion() as s:
         await s.execute(text("DROP TABLE IF EXISTS chat_sessions CASCADE"))
-        await s.execute(text(BASE))
+        for sentencia in BASE:
+            await s.execute(text(sentencia))
         await s.commit()
 
     # `AsyncSessionLocal` de la app apunta al motor de pruebas: el código bajo test es el
@@ -100,9 +103,14 @@ async def db(monkeypatch):
 
 
 async def _aplicar_027(s):
-    sql = pathlib.Path("migrations/027_session_resume_capability.sql").read_text(encoding="utf-8")
-    await s.execute(text(sql))
-    await s.commit()
+    """Aplica la 027 con el APLICADOR DE PRODUCCIÓN, no con una copia.
+
+    Es deliberado: si el aplicador no sabe ejecutar el fichero, estos tests tienen que
+    fallar. La primera versión de `aplicar_migracion` mandaba el script entero por el
+    protocolo extendido y habría reventado en el despliegue; se descubrió exactamente aquí.
+    """
+    from app.esquema_requerido import aplicar_migracion
+    await aplicar_migracion(db=s)
 
 
 async def _columnas(s) -> dict[str, tuple[str, str, str | None]]:
@@ -346,7 +354,7 @@ CREATE TABLE IF NOT EXISTS notificacion (
 async def avisos(migrada):
     """Avisos de U1 (por cuenta), de U2 (por cuenta) y de una sesión anónima."""
     await migrada.execute(text("DROP TABLE IF EXISTS notificacion"))
-    await migrada.execute(text(NOTIF))
+    await migrada.execute(text(NOTIF.strip().rstrip(';')))
     anonima = await crear_sesion(None, activo_id=ACTIVO)
     de_u2 = (await crear_sesion(U2, activo_id=ACTIVO)).session_id
 

@@ -6,9 +6,11 @@ RAMA       feat/f3-buyer-extractor-routing
 
 ENTREGADO   caracterización · multi-mutation · matrices · C1-C5 congeladas
             núcleo determinista de routing (67b3c6d) — PARCIAL
-PENDIENTE   verificador de valor exacto · Clear por retractación · intérprete
+            E3.2b.1a-A §3-§7 · unión cerrada de afirmaciones + routing por
+            BuyerFieldV0 + orden estable — defectos 1, 2 y 3 CERRADOS
+PENDIENTE   verificador de valor exacto (defecto 4) · Clear por retractación · intérprete
 
-GATE        HOLD — C1-C5 congeladas (§6); faltan los 4 defectos de E3.2b.1a (§6b)
+GATE        HOLD — falta E3.2b.1a-B (defecto 4 de §6b)
 ```
 
 ---
@@ -237,14 +239,25 @@ Eso es C5, y es lo que hace que Fair Housing no cueste hechos legítimos:
 ```
 caracterización E3.2b.1            COMPLETE
 C1-C5                              FROZEN
-núcleo determinista de routing     PARCIAL
-verificador semántico              INCOMPLETO
+núcleo determinista de routing     COMPLETO      (E3.2b.1a-A · §3-§7)
+verificador semántico              INCOMPLETO    (defecto 4 · dimensión sí, valor no)
 intérprete text → Afirmacion       NOT STARTED
 
-E3.2b.1                            HOLD
+E3.2b.1                            HOLD — a la espera de E3.2b.1a-B
 ```
 
 ### Los cuatro defectos que abre E3.2b.1a `[VERIFICADO]`
+
+```
+1 · corrección incompleta al revés   CERRADO   E3.2b.1a-A §3-§5
+2 · _DISYUNCION redundante           CERRADO   E3.2b.1a-A §7 — eliminada
+3 · el orden no se preserva          CERRADO   E3.2b.1a-A §6
+4 · guarda de dimensión, no de valor ABIERTO   → E3.2b.1a-B
+```
+
+Lo que sigue es el enunciado original de los cuatro, tal como se levantaron. Se conserva
+literal: es la especificación contra la que se contrastaron los asserts, y reescribirlo en
+pasado borraría la evidencia de qué se estaba arreglando.
 
 Salieron de revisar `67b3c6d` contra las decisiones congeladas. **Tres de los cuatro son
 prosa que adelantó al comportamiento** — un comentario o un test que afirma una propiedad
@@ -332,8 +345,12 @@ nuevo    app/buyer/extractor.py        interpretación + routing
 nuevo    tests/test_buyer_extractor.py corpus adversarial
 tocado   este documento
 
-intactos boundary.py · store.py · mensaje.py · contratos · preferencias.py
+intactos store.py · mensaje.py · contratos · preferencias.py
          encaje.py · fair_housing.py · migraciones · frontend
+
+boundary.py  SOLO DOCSTRING (E3.2b.1a-A). El de `BuyerFieldV0` describía el defecto 1 en
+             presente —"un AMBIGUOUS es un hecho sin dimensión"— y eso dejó de ser cierto.
+             Cero cambios de comportamiento: §1 y §2 siguen cerradas.
 ```
 
 Nada de esta unidad aplica mutaciones, escribe en el store, crea `field_evidence`, resuelve
@@ -347,9 +364,28 @@ conflictos entre revisiones ni conecta con el producto.
 E3.2b.1   HOLD
 ```
 
-La caracterización está completa y la decisión de multi-mutation **cerrada con evidencia del
-esquema**. Lo que bloquea es §6: implementar el routing sin resolver el conflicto
-intra-mensaje obligaría a improvisarlo dentro del extractor, que es donde peor se revisa.
+§6 ya está decidido y el routing construido: la unión de afirmaciones es cerrada, la
+resolución intramensaje agrupa por `BuyerFieldV0` y el orden de aparición se conserva por
+construcción. Lo que bloquea ahora es **el defecto 4**: la guarda semántica comprueba
+dimensión y no valor, así que `SetObjective(BUY)` pasa ante un texto que solo dice "quiero
+alquilar", y los `Clear*` quedan autorizados por omisión. Acercar un modelo con esa guarda
+incompleta es lo que no se debe hacer.
 
-**Punto de reentrada:** decidir §6, y después construir el extractor con el corpus del §4-§5
-como especificación ejecutable.
+**Punto de reentrada:** E3.2b.1a-B — verificador de valor exacto y autorización de `Clear`
+por retractación. Después, el intérprete `text → Afirmacion` con el corpus del §4-§5 como
+especificación ejecutable.
+
+### Lo que E3.2b.1a-A dejó decidido y NO estaba en C1-C5
+
+C1-C5 hablan de *"dos declaraciones incompatibles sobre la misma dimensión"* y no dicen qué
+hacer cuando un `TURN_ONLY` o un `REJECTED` **llevan campo** y caen en el grupo de una
+durable. Se resolvió así, y queda congelado:
+
+```
+compiten sólo las afirmaciones que DECLARAN un valor: DURABLE y AMBIGUOUS.
+TURN_ONLY y REJECTED con campo acompañan — conservan su posición y no eliminan nada.
+```
+
+El motivo es la dirección del error: una pregunta sobre el presupuesto no retira el
+presupuesto, y dejarlos competir haría que *"máximo 120000 USD, ¿y cuánto suele costar
+aquí?"* borrara una declaración explícita en silencio. Cubierto por T16 y T17.

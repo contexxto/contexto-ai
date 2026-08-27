@@ -222,9 +222,11 @@ class BuyerFieldV0(StrEnum):
     el DOMINIO: `BuyerFieldV0("household.children")` levanta `ValueError`.
 
     Existe para que una afirmación que NO lleva mutación —una ambigüedad, un rechazo— pueda
-    decir a qué dimensión pertenece. Hoy `ruta_contractual` solo funciona sobre una mutación,
-    así que un `AMBIGUOUS` es un hecho sin dimensión: no puede competir con la declaración
-    durable que viene a invalidar, y `"120000 USD… no, 100000"` acaba conservando los 120000.
+    decir a qué dimensión pertenece. `ruta_contractual` solo funciona sobre una mutación, así
+    que antes de esto un `AMBIGUOUS` era un hecho sin dimensión: no podía competir con la
+    declaración durable que venía a invalidar, y `"120000 USD… no, 100000"` acababa
+    conservando los 120000. **Ya no**: `AfirmacionAmbiguous` exige su `BuyerFieldV0` y la
+    resolución intramensaje agrupa por él (E3.2b.1a-A, §3-§5).
 
     **Por qué no reutilizar la ruta contractual como cadena.** Un `field: str` dejaría que
     una ambigüedad declarara `household.children` y confiara en que algo la filtre después.

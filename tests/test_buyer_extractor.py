@@ -11,6 +11,13 @@ E3.2b.1   protege TRADUCCIONES  →  "tenemos dos niños" no puede volverse bedr
 puede rechazarla, es justo lo que acepta. Lo único que impide que nazca de una frase sobre
 personas es exigir que el texto hable de la dimensión que se va a escribir.
 
+## Cómo se escribió esta suite (gate PROSE ↔ BEHAVIOR de §6c)
+
+Cada test de las secciones D-F se derivó en este orden: **decisión congelada → comportamiento
+esperado → assert → nombre → docstring → código**. Nunca al revés. Leída desde el código,
+cualquier suite verde parece una especificación; así fue como se coló el test falso de la
+corrección incompleta, que estaba VERDE afirmando que los 120000 sobrevivían.
+
 Pura y offline: sin store, sin base, sin LLM.
 """
 
@@ -22,29 +29,39 @@ import pytest
 from pydantic import ValidationError
 
 from app.buyer.boundary import (
-    BuyerCurrencyV0, Disposicion, SetAreaM2Min, SetBedroomsMin, SetBudgetMax,
+    BuyerCurrencyV0, BuyerFieldV0, Disposicion, SetAreaM2Min, SetBedroomsMin, SetBudgetMax,
     SetObjective, SetPetsRequired, ruta_contractual,
 )
 from app.buyer.extractor import (
-    Afirmacion, LoteExtraccion, TraduccionNoAutorizada, autorizar_traduccion,
-    construir_lote, hay_autocorreccion,
+    AfirmacionAmbiguous, AfirmacionDurable, AfirmacionRejected, AfirmacionTurnOnly,
+    LoteExtraccion, TraduccionNoAutorizada, autorizar_traduccion, construir_lote,
+    hay_autocorreccion,
 )
 from app.buyer.mensaje import IdentifiedUserMessage
 from app.contracts.buyer_v0 import Objective
 
 USD = BuyerCurrencyV0.USD
+F = BuyerFieldV0
 
 
 def _msg(texto, mid="m-1"):
     return IdentifiedUserMessage(message_id=mid, text=texto)
 
 
-def _dur(m):
-    return Afirmacion(disposicion=Disposicion.DURABLE, mutacion=m, motivo="declarado")
+def _dur(m, motivo="declarado"):
+    return AfirmacionDurable(mutacion=m, motivo=motivo)
 
 
-def _no(disposicion, motivo="no persistible"):
-    return Afirmacion(disposicion=disposicion, motivo=motivo)
+def _amb(campo, motivo="declaración incompleta"):
+    return AfirmacionAmbiguous(campo=campo, motivo=motivo)
+
+
+def _turn(campo=None, motivo="pregunta del turno"):
+    return AfirmacionTurnOnly(campo=campo, motivo=motivo)
+
+
+def _rej(campo=None, motivo="fuera de la frontera V0"):
+    return AfirmacionRejected(campo=campo, motivo=motivo)
 
 
 _OBJ = lambda o: _dur(SetObjective(objective=o))
@@ -138,7 +155,147 @@ def test_sin_lenguaje_de_la_dimension_no_hay_autorizacion(mutacion, texto):
         autorizar_traduccion(mutacion, texto)
 
 
-# ══ D · C1-C5 · política intramensaje ═══════════════════════════════════════════════
+# ══ D · §3 · la unión cerrada de afirmaciones ═══════════════════════════════════════
+
+
+def test_T1_una_ambigua_declara_su_dimension():
+    """DECISIÓN (boundary, `BuyerFieldV0`): una afirmación sin mutación tiene que poder decir
+    a qué dimensión pertenece, o "no puede competir con la declaración durable que viene a
+    invalidar". El campo existe y se lee."""
+    a = _amb(F.BUDGET_MAX, "monto sin moneda")
+    assert a.campo is F.BUDGET_MAX
+    assert a.disposicion is Disposicion.AMBIGUOUS
+
+
+def test_T1b_una_ambigua_SIN_dimension_no_se_puede_construir():
+    """DECISIÓN CONGELADA (§3): en `AfirmacionAmbiguous` el campo es **OBLIGATORIO**.
+
+    Lo escribió la mutación S3, no el diseño: hacer `campo` opcional dejaba la suite entera
+    en verde. T7 construye su ambigua CON campo, así que demuestra que una ambigua con
+    dimensión compite — no que una sin dimensión sea imposible. Esa es justo la forma que
+    tenía el defecto #1: una ambigüedad sin campo que no competía con nadie.
+    """
+    with pytest.raises(ValidationError):
+        AfirmacionAmbiguous(motivo="monto sin moneda")
+
+
+def test_T2_la_dimension_de_una_ambigua_es_de_dominio_cerrado():
+    """DECISIÓN (boundary): un `field: str` dejaría que una ambigüedad declarara
+    `household.children` y confiara en que algo la filtre después — la misma superficie que
+    la unión de mutaciones cerró, reabierta en la capa de arriba."""
+    with pytest.raises(ValidationError):
+        AfirmacionAmbiguous(campo="household.children", motivo="x")
+
+
+def test_T3_la_durable_no_deja_elegir_su_dimension():
+    """DECISIÓN (§3): en la durable el campo **no es input** — es una property que deriva de
+    la mutación. Aceptarlo como dato permitiría agrupar por una dimensión que no es la de la
+    mutación, que es el mismo agujero por otra puerta."""
+    with pytest.raises(ValidationError):
+        AfirmacionDurable(mutacion=SetPetsRequired(), motivo="x", campo=F.OBJECTIVE)
+    assert _dur(SetPetsRequired()).campo is F.PETS_REQUIRED
+
+
+@pytest.mark.parametrize("clase", [AfirmacionAmbiguous, AfirmacionTurnOnly,
+                                   AfirmacionRejected])
+def test_T4_T5_T6_lo_que_no_es_durable_no_tiene_donde_poner_una_mutacion(clase):
+    """DECISIÓN (boundary, `ResultadoFrontera`): "Solo DURABLE puede llevar mutación".
+
+    Antes lo garantizaba un validador sobre una clase única; ahora lo garantiza el TIPO: en
+    estas tres no existe el campo `mutacion`, así que `extra="forbid"` lo rechaza. No se
+    filtra lo inválido — no hay dónde escribirlo.
+    """
+    with pytest.raises(ValidationError):
+        clase(campo=F.PETS_REQUIRED, motivo="x", mutacion=SetPetsRequired())
+
+
+def test_la_durable_exige_su_mutacion():
+    """DURABLE sin mutación no significa nada: autorizar sin qué."""
+    with pytest.raises(ValidationError):
+        AfirmacionDurable(motivo="x")
+
+
+@pytest.mark.parametrize("clase", [AfirmacionDurable, AfirmacionAmbiguous,
+                                   AfirmacionTurnOnly, AfirmacionRejected])
+def test_ninguna_afirmacion_expone_path_ni_value_libres(clase):
+    for prohibido in ("path", "value", "field", "operation", "ruta"):
+        assert prohibido not in clase.model_fields
+
+
+@pytest.mark.parametrize("clase", [AfirmacionDurable, AfirmacionAmbiguous,
+                                   AfirmacionTurnOnly, AfirmacionRejected])
+def test_toda_afirmacion_exige_un_motivo_no_vacio(clase):
+    """Una decisión de routing sin razón registrada es una decisión que nadie puede revisar."""
+    with pytest.raises(ValidationError):
+        clase(motivo="", **({"mutacion": SetPetsRequired()}
+                            if clase is AfirmacionDurable else
+                            {"campo": F.PETS_REQUIRED}))
+
+
+# ══ E · §4-§5 · C1-C5 · la política intramensaje ════════════════════════════════════
+
+
+def test_T7_una_correccion_incompleta_no_deja_sobrevivir_a_la_primera():
+    """DECISIÓN CONGELADA (§6): `"máximo 120000 USD... no, 100000"` → budget AMBIGUOUS ·
+    **CERO mutación**. "Ni hereda la moneda de la primera ni deja sobrevivir a la primera. El
+    usuario acaba de corregirla."
+
+    **Este test estaba VERDE afirmando lo contrario.** Su versión anterior comprobaba
+    `all(m.currency is USD for m in lote.mutaciones)` —vacuamente cierto si sobreviven los
+    120000— y un docstring racionalizaba que "la afirmación ambigua no compite por la ruta,
+    así que la durable sobrevive". Eso es exactamente el defecto #1, escrito como si fuera
+    la especificación. Reescrito desde la decisión, no desde el código.
+    """
+    lote = construir_lote(_msg("máximo 120000 USD... no, 100000"),
+                          [_BUD(120000), _amb(F.BUDGET_MAX, "monto sin moneda")])
+
+    assert lote.mutaciones == ()
+    (unica,) = lote.afirmaciones
+    assert isinstance(unica, AfirmacionAmbiguous)
+    assert unica.campo is F.BUDGET_MAX
+    # Ni los 120000 originales, ni un 100000 fabricado, ni una moneda heredada.
+    assert not any(isinstance(a, AfirmacionDurable) for a in lote.afirmaciones)
+
+
+@pytest.mark.parametrize("texto", ["quiero comprar o alquilar",
+                                   "podría comprar y también alquilar"])
+def test_T8_dos_declaraciones_sin_correccion_dejan_la_dimension_AMBIGUOUS(texto):
+    """DECISIÓN CONGELADA (C1+C3): nada de *last-write-wins* intramensaje. Dos declaraciones
+    incompatibles sin marca explícita de corrección son ambigüedad, no una elección de la
+    última, y esa dimensión no produce ninguna mutación durable."""
+    lote = construir_lote(_msg(texto), [_OBJ(Objective.BUY), _OBJ(Objective.RENT)])
+
+    assert lote.mutaciones == ()
+    (unica,) = lote.afirmaciones
+    assert isinstance(unica, AfirmacionAmbiguous)
+    assert unica.campo is F.OBJECTIVE
+
+
+def test_T8b_bedrooms_en_conflicto_sin_correccion_no_persiste():
+    """C3 no es una regla del objective: es de cualquier dimensión."""
+    lote = construir_lote(_msg("mínimo 2 dormitorios y mínimo 3 dormitorios"),
+                          [_BED(2), _BED(3)])
+    assert lote.mutaciones == ()
+    (unica,) = lote.afirmaciones
+    assert isinstance(unica, AfirmacionAmbiguous)
+    assert unica.campo is F.BEDROOMS_MIN
+
+
+def test_T8c_el_AMBIGUOUS_generado_ocupa_la_posicion_de_la_ULTIMA_declaracion():
+    """DECISIÓN (§6 orden): conflicto→AMBIGUOUS → **índice del último**.
+
+    Sin el rechazo intercalado esta regla es INOBSERVABLE: cuando el conflicto consume las dos
+    únicas afirmaciones, la ambigua generada queda sola y da igual qué índice llevara. Lo
+    destapó una mutación —tomar el índice del primero dejaba la suite entera en verde— y ése
+    es el mismo síntoma que tenía `_DISYUNCION`. La diferencia es que aquí la decisión SÍ está
+    congelada y sí es observable, así que se cubre en vez de eliminarse.
+    """
+    lote = construir_lote(_msg("quiero comprar, algo tranquilo, o alquilar"),
+                          [_OBJ(Objective.BUY), _rej(motivo="tranquilidad"),
+                           _OBJ(Objective.RENT)])
+
+    assert lote.mutaciones == ()
+    assert [type(a) for a in lote.afirmaciones] == [AfirmacionRejected, AfirmacionAmbiguous]
 
 
 @pytest.mark.parametrize("texto", [
@@ -146,83 +303,141 @@ def test_sin_lenguaje_de_la_dimension_no_hay_autorizacion(mutacion, texto):
     "quiero comprar... mejor alquilar",
     "quiero comprar, en realidad alquilar",
 ])
-def test_C2_una_autocorreccion_explicita_deja_UNA_sola_mutacion(texto):
+def test_T9_una_autocorreccion_explicita_selecciona_la_declaracion_final(texto):
+    """DECISIÓN CONGELADA (C2): con corrección explícita se supersede la anterior y se emite
+    **como máximo UNA** mutación durable para esa dimensión — la final."""
     lote = construir_lote(_msg(texto), [_OBJ(Objective.BUY), _OBJ(Objective.RENT)])
     assert [m.objective for m in lote.mutaciones] == [Objective.RENT]
 
 
-@pytest.mark.parametrize("texto", ["quiero comprar o alquilar",
-                                   "podría comprar y también alquilar"])
-def test_C3_sin_correccion_explicita_la_ruta_queda_AMBIGUOUS(texto):
-    """C1: nada de *last-write-wins*. Dos declaraciones incompatibles sin marca de corrección
-    son ambigüedad, no una elección de la última."""
-    lote = construir_lote(_msg(texto), [_OBJ(Objective.BUY), _OBJ(Objective.RENT)])
-    assert lote.mutaciones == ()
-    assert any(a.disposicion is Disposicion.AMBIGUOUS for a in lote.afirmaciones)
+def test_T10_una_repeticion_se_deduplica_en_la_posicion_de_la_PRIMERA():
+    """DECISIÓN (§6 orden): duplicado → **índice del primero**.
 
+    El `_rej` intercalado no es decorado: es lo que hace observable la posición. Si la
+    deduplicación se quedara con la segunda aparición, la durable saldría DESPUÉS del
+    rechazo y este assert caería.
+    """
+    lote = construir_lote(_msg("mínimo 2 dormitorios, sí, mínimo 2 dormitorios"),
+                          [_BED(2), _rej(motivo="algo tranquilo"), _BED(2)])
 
-def test_C3_bedrooms_en_conflicto_sin_correccion_no_persiste():
-    lote = construir_lote(_msg("mínimo 2 dormitorios y mínimo 3 dormitorios"),
-                          [_BED(2), _BED(3)])
-    assert lote.mutaciones == ()
-
-
-def test_A_la_repeticion_del_MISMO_valor_se_deduplica():
-    lote = construir_lote(_msg("mínimo 2 dormitorios, sí, mínimo 2"), [_BED(2), _BED(2)])
     assert len(lote.mutaciones) == 1
+    assert [type(a) for a in lote.afirmaciones] == [AfirmacionDurable, AfirmacionRejected]
 
 
-def test_C4_el_lote_NO_se_puede_construir_con_dos_mutaciones_de_la_misma_ruta():
-    """Si llegaran sin resolver, el reducer las aplicaría en orden y ganaría la última —
-    un *last-write-wins* dentro del mensaje. Es un bug del extractor, no algo que el
-    reducer deba arreglar, así que el lote no se puede construir así."""
+def test_T11_tres_hechos_independientes_salen_en_el_ORDEN_DE_ENTRADA():
+    """DECISIÓN (§6b defecto 3): el comentario decía "se conserva el orden de aparición" y
+    `tuple(sueltas + resueltas)` movía al frente todo lo que no tenía ruta.
+
+    Con `sueltas + resueltas` el rechazo saldría PRIMERO. C5 además exige que no arrastre
+    ninguno de los dos hechos legítimos.
+    """
+    lote = construir_lote(_msg("quiero comprar, algo tranquilo, y máximo 150000 USD"),
+                          [_OBJ(Objective.BUY), _rej(motivo="tranquilidad"), _BUD(150000)])
+
+    assert [type(a) for a in lote.afirmaciones] == [
+        AfirmacionDurable, AfirmacionRejected, AfirmacionDurable]
+    assert [a.campo for a in lote.afirmaciones] == [F.OBJECTIVE, None, F.BUDGET_MAX]
+
+
+def test_T12_el_orden_sobrevive_a_que_la_ambigua_mate_a_la_durable():
+    """DECISIÓN (§6 orden): conflicto→AMBIGUOUS toma el **índice del último**, y lo que no
+    compite se queda donde estaba.
+
+    El turn-only lleva campo `BEDROOMS_MIN` a propósito: preguntar por dormitorios nombra la
+    dimensión sin declararla. Si el orden se reconstruyera agrupando por campo en vez de por
+    índice, la ambigua de budget —cuyo grupo se vio primero— saldría antes que el turn-only,
+    y saldría en orden inverso al que el usuario habló.
+    """
+    lote = construir_lote(
+        _msg("máximo 120000 USD, ¿y hay de 2 dormitorios?... no, 100000"),
+        [_BUD(120000),
+         _turn(F.BEDROOMS_MIN, "pregunta por dormitorios"),
+         _amb(F.BUDGET_MAX, "monto sin moneda")])
+
+    assert lote.mutaciones == ()
+    assert [type(a) for a in lote.afirmaciones] == [AfirmacionTurnOnly, AfirmacionAmbiguous]
+
+
+def test_T13_el_lote_NO_se_construye_con_dos_durables_del_mismo_CAMPO():
+    """DECISIÓN CONGELADA (C4): un lote persistible contiene como máximo UNA mutación durable
+    por dimensión. Si llegaran sin resolver, el reducer las aplicaría en orden y ganaría la
+    última — el *last-write-wins* que C1 prohíbe. Es un fallo del extractor, así que el lote
+    no se puede construir así."""
     with pytest.raises(ValidationError):
         LoteExtraccion(source_message_id="m-1", afirmaciones=(_BED(2), _BED(3)))
 
 
-def test_C5_un_REJECTED_no_arrastra_hechos_independientes():
-    """*"Quiero comprar y algo tranquilo"*: la tranquilidad no es escribible, pero el
-    objetivo sí — y no puede perderse por compartir mensaje."""
+def test_T14_dos_durables_de_CAMPOS_DISTINTOS_coexisten():
+    """C4 prohíbe repetir dimensión, no coexistir. Un lote que rechazara esto perdería la
+    decisión de multi-mutation del §3: un mensaje puede justificar varios campos."""
+    lote = LoteExtraccion(source_message_id="m-1", afirmaciones=(_BED(2), _BUD(150000)))
+    assert len(lote.mutaciones) == 2
+    assert [a.campo for a in lote.afirmaciones] == [F.BEDROOMS_MIN, F.BUDGET_MAX]
+
+
+def test_T15_un_REJECTED_sin_campo_no_elimina_una_durable():
+    """DECISIÓN CONGELADA (C5): un resultado AMBIGUOUS / REJECTED / TURN_ONLY sobre una
+    afirmación NO elimina mutaciones durables **independientes** del mismo mensaje.
+
+    *"Quiero comprar y algo tranquilo"*: la tranquilidad no es escribible, pero el objetivo sí
+    — y no puede perderse por compartir mensaje.
+    """
     lote = construir_lote(_msg("quiero comprar y algo tranquilo"),
-                          [_OBJ(Objective.BUY), _no(Disposicion.REJECTED, "tranquilidad")])
+                          [_OBJ(Objective.BUY), _rej(motivo="tranquilidad")])
     assert [m.objective for m in lote.mutaciones] == [Objective.BUY]
+    assert len(lote.afirmaciones) == 2
+
+
+def test_T16_una_PREGUNTA_sobre_la_dimension_no_retira_la_declaracion():
+    """DECISIÓN DE ESTA UNIDAD, no heredada de C1-C5.
+
+    Las cinco reglas hablan de *"dos declaraciones incompatibles"* y no dicen qué hacer con un
+    TURN_ONLY que lleva campo. §4 lo define como pregunta o exploración: no declara, así que
+    no compite. La alternativa —dejarlo competir— borraría el presupuesto en silencio, que es
+    la clase de pérdida que esta unidad existe para impedir.
+    """
+    lote = construir_lote(_msg("máximo 120000 USD, ¿y cuánto suele costar aquí?"),
+                          [_BUD(120000), _turn(F.BUDGET_MAX, "pregunta por precios")])
+
+    assert [m.amount for m in lote.mutaciones] == [Decimal(120000)]
+    assert len(lote.afirmaciones) == 2
+
+
+def test_T17_un_REJECTED_con_campo_tampoco_elimina_la_durable_de_esa_dimension():
+    """DECISIÓN DE ESTA UNIDAD, por el mismo motivo que T16 y con el respaldo literal de C5:
+    "un resultado REJECTED sobre una afirmación NO elimina mutaciones durables".
+
+    *"no quiero perros grandes"* toca `PETS_REQUIRED` —V0 no puede representarlo— pero no
+    retira el requisito que el usuario acaba de declarar.
+    """
+    lote = construir_lote(
+        _msg("necesito que acepten mascotas; no quiero perros grandes"),
+        [_dur(SetPetsRequired()), _rej(F.PETS_REQUIRED, "V0 no modela ese requisito")])
+
+    assert len(lote.mutaciones) == 1
     assert len(lote.afirmaciones) == 2
 
 
 def test_C5_fair_housing_mixto_conserva_el_hecho_legitimo():
     """*"Tenemos dos niños y máximo 150000 USD"*: el presupuesto sobrevive, los dormitorios
-    no nacen."""
+    no nacen. Es lo que hace que Fair Housing no cueste hechos legítimos."""
     lote = construir_lote(_msg("tenemos dos niños y máximo 150000 USD"),
-                          [_no(Disposicion.REJECTED, "household"), _BUD(150000)])
+                          [_rej(motivo="contenido de hogar/familia"), _BUD(150000)])
     rutas = [ruta_contractual(m) for m in lote.mutaciones]
     assert rutas == ["financial.budget_max"]
     assert "property_requirements.bedrooms_min" not in rutas
 
 
-def test_multi_fact_produce_tres_rutas_distintas():
+def test_multi_fact_produce_tres_dimensiones_distintas():
+    """§3: un mensaje produce un LOTE, no tres revisiones. La unicidad es por dimensión."""
     lote = construir_lote(
         _msg("quiero comprar, máximo 120000 USD y mínimo 2 dormitorios"),
         [_OBJ(Objective.BUY), _BUD(120000), _BED(2)])
     assert len(lote.mutaciones) == 3
-    assert len({ruta_contractual(m) for m in lote.mutaciones}) == 3
+    assert [a.campo for a in lote.afirmaciones] == [F.OBJECTIVE, F.BUDGET_MAX, F.BEDROOMS_MIN]
 
 
-# ══ E · la corrección SELECCIONA, no completa ═══════════════════════════════════════
-
-
-def test_una_correccion_incompleta_no_hereda_la_moneda():
-    """*"máximo 120000 USD… no, 100000"*: la segunda declaración no tiene moneda, así que
-    nunca llegó a ser una mutación. Heredar `USD` de la primera sería inventar procedencia.
-
-    Se modela como corresponde: solo la primera es mutación, la segunda es `AMBIGUOUS`, y
-    hay corrección explícita — así que la ruta queda ambigua y no persiste nada.
-    """
-    lote = construir_lote(_msg("máximo 120000 USD... no, 100000"),
-                          [_BUD(120000), _no(Disposicion.AMBIGUOUS, "sin moneda")])
-    # La afirmación ambigua no compite por la ruta, así que la durable sobrevive: el
-    # extractor NUNCA debió emitir una mutación para la segunda cláusula.
-    assert all(m.currency is USD for m in lote.mutaciones)
-    assert any(a.disposicion is Disposicion.AMBIGUOUS for a in lote.afirmaciones)
+# ══ F · §7 · la detección de autocorrección ═════════════════════════════════════════
 
 
 @pytest.mark.parametrize("texto,esperado", [
@@ -232,10 +447,17 @@ def test_una_correccion_incompleta_no_hereda_la_moneda():
     ("quiero comprar y alquilar", False),
 ])
 def test_la_deteccion_de_autocorreccion_no_confunde_disyuncion_con_correccion(texto, esperado):
+    """**Este test es la evidencia de que `_DISYUNCION` sobraba.**
+
+    Estaba verde con la guarda `if _DISYUNCION.search(p) and not _CORRECCION.search(p)` y
+    sigue verde sin ella: la rama era algebraicamente `return bool(_CORRECCION.search(p))` y
+    ningún input separa las dos versiones. "Comprar o alquilar" da `False` porque no lleva
+    marca de corrección, no porque haya un detector de disyunción.
+    """
     assert hay_autocorreccion(texto) is esperado
 
 
-# ══ F · meta-tests estructurales ════════════════════════════════════════════════════
+# ══ G · meta-tests estructurales ════════════════════════════════════════════════════
 
 
 def test_el_lote_conserva_el_message_id_sin_fabricarlo():
@@ -252,23 +474,6 @@ def test_el_mismo_texto_con_ids_distintos_da_el_mismo_contenido_y_conserva_los_i
     b = construir_lote(_msg("quiero comprar", mid="m-2"), [_OBJ(Objective.BUY)])
     assert a.mutaciones == b.mutaciones
     assert a.source_message_id != b.source_message_id
-
-
-@pytest.mark.parametrize("disposicion", [Disposicion.TURN_ONLY, Disposicion.AMBIGUOUS,
-                                         Disposicion.REJECTED])
-def test_lo_que_no_es_DURABLE_no_puede_llevar_mutacion(disposicion):
-    with pytest.raises(ValidationError):
-        Afirmacion(disposicion=disposicion, mutacion=SetPetsRequired(), motivo="x")
-
-
-def test_DURABLE_exige_mutacion():
-    with pytest.raises(ValidationError):
-        Afirmacion(disposicion=Disposicion.DURABLE, motivo="x")
-
-
-def test_la_afirmacion_no_expone_path_ni_value_libres():
-    for prohibido in ("path", "value", "field", "operation"):
-        assert prohibido not in Afirmacion.model_fields
 
 
 def test_el_extractor_no_toca_store_ni_base_ni_modelo():
@@ -294,8 +499,6 @@ def test_el_extractor_no_toca_store_ni_base_ni_modelo():
 
 def test_el_extractor_no_reescribe_el_texto_del_usuario():
     """`_norm` existe solo para comparar; el texto original no se altera ni se guarda."""
-    from app.buyer import extractor
-
     original = "Quiero COMPRAR, máximo 120.000 USD"
     mensaje = _msg(original)
     construir_lote(mensaje, [_OBJ(Objective.BUY)])

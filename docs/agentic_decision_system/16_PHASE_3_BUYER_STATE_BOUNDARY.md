@@ -15,6 +15,18 @@ GATE        PASS
 
 ---
 
+---
+
+# SNAPSHOT DE CARACTERIZACIÓN — previo a congelar D-B1..D-B9
+
+> **§1-§6 son evidencia histórica.** Describen el estado *antes* de que las nueve decisiones
+> se congelaran, y se conservan porque son **lo que las justifica**: sin ellas, D-B7 y D-B8
+> parecerían prudencia arbitraria en vez de la consecuencia de que ninguno de esos paths
+> tiene consumidor ni vocabulario.
+>
+> El estado **actual** está en §7-§12. Donde estas secciones digan "abierta", "no congelado"
+> o "no se escribió", léase *"no lo estaba entonces"*.
+
 ## 1 · FORMA REAL DEL CONTRATO `[VERIFICADO]`
 
 ```
@@ -61,7 +73,7 @@ WRITABLE y dejar la decisión para una unidad posterior"*. Inventar una ontolog�
 accesibilidad sin datos ni consumidor sería crear vocabulario que nadie puede verificar —
 y en un campo donde el error tiene consecuencias legales.
 
-**Indicación fuerte: `NOT WRITABLE EN E3.2b.0`.** No congelado.
+**Indicación de entonces: `NOT WRITABLE`.** Congelada después como **D-B8** (§7).
 
 ### B · `place_preferences` tampoco tiene consumidor, y `dimension` es texto libre
 
@@ -87,8 +99,8 @@ Y aunque la moneda venga explícita, `^[A-Z]{3}$` no basta: acepta `ZZZ` y `EUR`
 lo trae** — ni debería, porque el contrato es general y el updater es una frontera más
 estrecha.
 
-**Indicación: `budget_max` solo escribible con moneda explícita Y contra un enum cerrado que
-esta unidad tendría que definir.** No congelado.
+**Indicación de entonces:** `budget_max` solo con moneda explícita y enum cerrado propio.
+Congelada después como **D-B3** — el enum es `BuyerCurrencyV0 = USD | MXN` (§7).
 
 ---
 
@@ -116,30 +128,28 @@ Dos desajustes que no son de nombre sino de semántica:
 Y **`tranquilidad`** es el caso que el §7 marca: reintroducirla como estado durable crearía
 una capacidad que hoy no podemos medir ni defender. Indicación: no escribible.
 
-**Conclusión de D-B9 (indicada, no congelada): `DIMENSIONES` sirve como REFERENCIA de
-vocabulario para `place_preferences`, no como whitelist a copiar.**
+**Congelada después como D-B9:** `DIMENSIONES` es REFERENCIA de vocabulario, no whitelist
+a copiar (§7).
 
 ---
 
-## 4 · LO QUE FALTA — y por qué no se improvisó
+## 4 · LO QUE FALTABA AL CERRAR LA CARACTERIZACIÓN
 
 ```
-D-B1  qué paths son writable                    ABIERTA
-D-B2  tipo exacto por path                      ABIERTA
-D-B3  dominio cerrado por path                  ABIERTA
-D-B4  operaciones por path (SET / CLEAR)        ABIERTA
-D-B5  normalización determinista                ABIERTA
-D-B6  semántica de NO MATCH                     indicada: NO PERSIST (§2), sin implementar
-D-B7  identidad de place_preferences            ABIERTA · ver §2B
-D-B8  accessibility escribible o diferido       indicada: DIFERIR · ver §2A
+D-B1  qué paths son writable                    abierta entonces
+D-B2  tipo exacto por path                      abierta entonces
+D-B3  dominio cerrado por path                  abierta entonces
+D-B4  operaciones por path (SET / CLEAR)        abierta entonces
+D-B5  normalización determinista                abierta entonces
+D-B6  semántica de NO MATCH                     indicada: NO PERSIST
+D-B7  identidad de place_preferences            indicada: diferir · ver §2B
+D-B8  accessibility escribible o diferido       indicada: diferir · ver §2A
 D-B9  reutilización de DIMENSIONES              indicada: solo referencia · ver §3
 ```
 
-Ninguna está congelada. La caracterización acota las opciones; congelarlas es el trabajo de
-la siguiente sesión, con contexto entero.
-
-**No se escribió `app/buyer/boundary.py`.** Escribir la implementación antes de cerrar la
-matriz invertiría el orden que esta unidad existe para imponer.
+**Las nueve están congeladas en §7.** En aquel momento no lo estaban, y `boundary.py` no
+existía: escribir la implementación antes de cerrar la matriz habría invertido el orden que
+esta unidad existe para imponer. Ese orden se respetó.
 
 ---
 
@@ -153,15 +163,21 @@ caracterización       PASS
 Lo que en su momento figuró aquí como *NO EMPEZADO* —matriz, `boundary.py`, tests y
 mutaciones— está entregado y se documenta en §7-§11. El gate final es **PASS**.
 
-## 6 · PUNTO DE REENTRADA
+## 6 · PUNTO DE REENTRADA HISTÓRICO — ya consumido
 
-Sesión nueva desde este worktree o uno equivalente. Empezar por **D-B8, D-B9 y D-B7**, que
-son las que la caracterización ya deja casi resueltas, y solo después D-B1..D-B5.
+Este era el plan al cerrar la caracterización: empezar por D-B8, D-B9 y D-B7 y solo después
+D-B1..D-B5. **Se siguió, y las nueve están cerradas en §7.**
 
-La pregunta que ordena el resto: **¿qué paths tienen hoy un consumidor capaz de usarlos?**
-Los tres candidatos con texto libre —accessibility, place_preferences, currency— no lo
-tienen, y esa ausencia es un argumento a favor de un V0 más estrecho de lo que sugiere la
-lista de campos candidatos del §4 del prompt.
+Se conserva porque la pregunta que lo ordenaba resultó ser la correcta y sirve para las
+unidades siguientes: **¿qué paths tienen hoy un consumidor capaz de usarlos?** Los tres
+candidatos con texto libre no lo tenían, y esa ausencia es lo que justificó un V0 de cinco
+paths en vez de siete.
+
+> **El punto de reentrada ACTUAL es §12 · E3.2b.1.**
+
+---
+
+# ESTADO ACTUAL
 
 ---
 

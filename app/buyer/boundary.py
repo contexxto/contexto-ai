@@ -136,9 +136,13 @@ class SetAreaM2Min(_Mutacion):
     """`float` porque `PropertyRequirements.area_m2_min` lo es — no `Decimal`.
 
     `allow_inf_nan=False` deja la garantía en la definición del campo y visible en el schema,
-    en vez de en un validador aparte que alguien pueda retirar sin notarlo. `StrictFloat`
-    rechaza además `bool` y `int`: el candidato viene estructurado, así que un área debe
-    llegar ya como número real.
+    en vez de en un validador aparte que alguien pueda retirar sin notarlo: `NaN` y `±inf`
+    quedan fuera por tipo.
+
+    `StrictFloat` **admite `int`** como entrada compatible con `float` —`50` entra como
+    `50.0`, sin pérdida— pero **excluye `bool`**, que en Python es subclase de `int`. Es
+    justo la línea que interesa: un entero es un área legítima; un booleano es un candidato
+    mal formado. Verificado en `test_un_area_entera_SI_se_acepta_y_bool_no`.
     """
 
     tipo: Literal["set_area_m2_min"] = "set_area_m2_min"

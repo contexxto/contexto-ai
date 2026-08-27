@@ -308,6 +308,62 @@ def test_ruta_contractual_no_admite_que_le_pasen_la_ruta():
         f"la firma abre una vía para elegir destino: {parametros}"
     )
 
+
+# ── G · BuyerFieldV0 · la dimensión, para lo que no lleva mutación ─────────────────
+
+
+def test_el_mapeo_mutacion_a_campo_cubre_TODA_la_union():
+    """META-TEST de totalidad.
+
+    Si mañana se añade una variante a `BuyerMutationV0` y se olvida el mapeo, una afirmación
+    de esa dimensión no podría identificarse — y volvería el defecto que `BuyerFieldV0`
+    existe para cerrar: una ambigüedad sin dimensión no compite con la durable que viene a
+    invalidar. Esto lo convierte en test rojo en vez de en pérdida silenciosa.
+    """
+    import typing
+
+    en_union = set(typing.get_args(typing.get_args(B.BuyerMutationV0)[0]))
+    assert en_union == set(B._CAMPO_DE), (
+        f"sin campo: {[c.__name__ for c in en_union - set(B._CAMPO_DE)]} · "
+        f"sobran: {[c.__name__ for c in set(B._CAMPO_DE) - en_union]}"
+    )
+
+
+@pytest.mark.parametrize("set_, clear_", [
+    (B.SetObjective(objective=Objective.BUY), B.ClearObjective()),
+    (B.SetBudgetMax(amount=Decimal("1"), currency=USD), B.ClearBudgetMax()),
+    (B.SetBedroomsMin(bedrooms_min=1), B.ClearBedroomsMin()),
+    (B.SetAreaM2Min(area_m2_min=1.0), B.ClearAreaM2Min()),
+    (B.SetPetsRequired(), B.ClearPetsRequired()),
+])
+def test_set_y_clear_COMPITEN_por_la_misma_dimension(set_, clear_):
+    """Son las dos declaraciones que se disputan un campo. Agruparlas es lo que permite
+    resolver el conflicto intramensaje antes de que llegue al reducer."""
+    assert B.campo_de_mutacion(set_) is B.campo_de_mutacion(clear_)
+
+
+def test_hay_exactamente_cinco_dimensiones():
+    assert len(set(B._CAMPO_DE.values())) == 5
+    assert set(B.BuyerFieldV0) == set(B._CAMPO_DE.values())
+
+
+def test_el_campo_es_un_enum_y_no_una_cadena_libre():
+    """Un `field: str` dejaría que una ambigüedad declarara `household.children` y confiara
+    en un filtro posterior — la misma superficie que la unión de mutaciones cerró."""
+    for prohibido in ("household", "children", "race", "familial_status", "stage",
+                      "accessibility", "place_preferences"):
+        assert prohibido not in {c.value for c in B.BuyerFieldV0}
+
+
+def test_una_mutacion_ajena_no_tiene_campo():
+    from pydantic import BaseModel as _BM
+
+    class Impostora(_BM):
+        pass
+
+    with pytest.raises(TypeError):
+        B.campo_de_mutacion(Impostora())
+
 # ── F · la frontera es PURA ────────────────────────────────────────────────────────
 
 

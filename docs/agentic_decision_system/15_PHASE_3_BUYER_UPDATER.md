@@ -4,7 +4,7 @@
 BASELINE        8b96a2faabbdca484888f01069ddcafab373fc8b   (origin/main verificado)
 RAMA            feat/f3-buyer-updater
 
-ALCANCE ENTREGADO   §0 prestart · §1 las tres precondiciones · §16 migración 029
+ALCANCE ENTREGADO   §0 prestart · §1 precondiciones (+ atomicidad del fallo) · §16 migración 029
 ALCANCE PENDIENTE   §2-§15 el updater completo · §20 shadow wiring
 
 GATE E3.2       HOLD   — la mayor parte del checklist sigue sin cumplirse
@@ -39,9 +39,25 @@ db=None   → el store abre su sesión y hace commit/rollback
 db=…      → el LLAMANTE hace commit/rollback; el store NO toca ninguno
 ```
 
-Cuatro casos probados contra motor: sesión propia confirma; sesión inyectada respeta el
-rollback del llamante; respeta su commit; y al fallar **no deshace trabajo ajeno** que el
-store nunca vio.
+**Y las dos garantías se cumplen a la vez, que era el hueco.** La primera versión de 1B
+quitaba el `rollback` y con eso cumplía *"no borres trabajo ajeno"* pero rompía *"no dejes
+trabajo propio a medias"*: el `INSERT` de la cabeza ocurre **antes** de comprobar
+`expected_revision`, así que un `BuyerRevisionConflict` dejaba una cabeza huérfana que el
+`commit` del llamante confirmaba — contradiciendo el "no se escribió nada" que documenta la
+propia excepción.
+
+Se cierra con **savepoint** (`begin_nested`), no con análisis de casos: el deshacer se acota
+a lo que escribió el store, así que no hay que enumerar qué carreras podrían dejar estado
+parcial. Ninguna puede.
+
+```
+deshacer del store  →  NO borra trabajo ajeno
+fallo del store     →  NO deja trabajo propio parcial
+```
+
+Cinco casos probados contra motor: sesión propia confirma; sesión inyectada respeta el
+rollback del llamante; respeta su commit; al fallar no deshace trabajo ajeno; y al fallar no
+deja cabeza ni revisión propias.
 
 `FOR UPDATE`, `UNIQUE`, idempotencia y concurrencia siguen intactas.
 
@@ -55,6 +71,11 @@ esquema    migración 029, CHECK btrim             ninguna otra vía puede colar
 
 La tercera capa importa porque las dos primeras protegen **un** camino: un backfill o un
 segundo escritor futuro no pasan por `anexar_revision`.
+
+**La comprobación de idempotencia de la 029 va acotada por `conrelid`.** `conname` no es
+único por base de datos: otra tabla con una restricción homónima haría creer que la migración
+ya está aplicada, y `buyer_context_revisions` se quedaría sin el `CHECK` **en silencio**. Hay
+un test adversarial que planta ese homónimo antes de reaplicar.
 
 ---
 
@@ -108,6 +129,8 @@ base    e32_test — dedicada, aislada
 updated_at vuelve a la comparación canónica   → caen 2 tests de 1A
 el store vuelve a confirmar sobre db=          → cae el de rollback del llamante
 se quita la guarda de message_id vacío         → caen los 4 de 1C en Python
+se quita el savepoint                          → cae el de atomicidad del fallo
+la 029 comprueba conname sin acotar la tabla   → cae el del homónimo
 ```
 
 `app/buyer/store.py` restaurado y verificado tras cada una.

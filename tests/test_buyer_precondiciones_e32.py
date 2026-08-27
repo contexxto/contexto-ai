@@ -235,6 +235,82 @@ async def test_1C_un_message_id_normal_sigue_pasando(migrada):
     assert r.creada is True
 
 
+
+@necesita_motor
+@pytest.mark.asyncio
+async def test_1B_al_fallar_NO_deja_trabajo_PROPIO_a_medias(motor):
+    """LA OTRA MITAD DE 1B, y la que faltaba.
+
+    `BuyerRevisionConflict` documenta "no se escribió nada". Sin savepoint eso era falso con
+    sesión inyectada: el `INSERT` de la cabeza ocurre ANTES de comprobar
+    `expected_revision`, así que el conflicto dejaba una cabeza huérfana que el `commit` del
+    llamante confirmaba.
+
+    Las dos garantías tienen que cumplirse **a la vez**:
+
+        deshacer del store  →  NO borra trabajo ajeno
+        fallo del store     →  NO deja trabajo propio parcial
+    """
+    fabrica = async_sessionmaker(motor, expire_on_commit=False)
+    async with fabrica() as s:
+        b = await _cuenta(s)
+        await s.execute(text("CREATE TABLE IF NOT EXISTS trabajo_ajeno (nota text)"))
+        await s.execute(text("DELETE FROM trabajo_ajeno"))
+        await s.commit()
+
+    async with fabrica() as s:
+        await s.execute(text("INSERT INTO trabajo_ajeno (nota) VALUES ('del llamante')"))
+
+        with pytest.raises(BuyerRevisionConflict):
+            await anexar_revision(b, "m-1", _ctx(b), 5, db=s)
+
+        await s.commit()          # el llamante conserva LO SUYO
+
+    async with fabrica() as v:
+        ajeno = (await v.execute(text("SELECT count(*) FROM trabajo_ajeno"))).scalar()
+        cabezas = (await v.execute(text(
+            "SELECT count(*) FROM buyer_context_heads WHERE buyer_id = CAST(:b AS uuid)"),
+            {"b": b})).scalar()
+        revisiones = await _filas(v, b)
+
+    assert ajeno == 1, "el store deshizo trabajo que no era suyo"
+    assert cabezas == 0, "el conflicto dejó una cabeza huérfana: 'no se escribió nada' es falso"
+    assert revisiones == 0
+
+
+@necesita_motor
+@pytest.mark.asyncio
+async def test_1C_la_029_no_se_confunde_con_un_conname_homonimo_de_OTRA_tabla(motor):
+    """`conname` no es único por base de datos.
+
+    Si otra tabla tiene ya una restricción con ese nombre, comprobar solo `conname` haría
+    creer que la 029 está aplicada — y `buyer_context_revisions` se quedaría sin el `CHECK`,
+    en silencio. Por eso la comprobación va acotada por `conrelid`.
+    """
+    fabrica = async_sessionmaker(motor, expire_on_commit=False)
+    async with fabrica() as s:
+        # Se retira el CHECK y se planta un homónimo en otra tabla ANTES de reaplicar.
+        await s.execute(text(
+            "ALTER TABLE buyer_context_revisions "
+            "DROP CONSTRAINT IF EXISTS ck_buyer_revisions_message_id_no_vacio"))
+        await s.execute(text("DROP TABLE IF EXISTS senuelo"))
+        await s.execute(text("CREATE TABLE senuelo (x text)"))
+        await s.execute(text(
+            "ALTER TABLE senuelo ADD CONSTRAINT ck_buyer_revisions_message_id_no_vacio "
+            "CHECK (length(btrim(x)) > 0)"))
+        await s.commit()
+
+    async with fabrica() as s:
+        from app.esquema_requerido import aplicar_migracion
+        await aplicar_migracion("migrations/029_buyer_source_message_id_nonempty.sql", db=s)
+
+    async with fabrica() as v:
+        propia = (await v.execute(text(
+            "SELECT count(*) FROM pg_constraint "
+            "WHERE conname = 'ck_buyer_revisions_message_id_no_vacio' "
+            "  AND conrelid = 'buyer_context_revisions'::regclass"))).scalar()
+    assert propia == 1, "el homónimo de otra tabla hizo que la 029 se saltara su trabajo"
+
 # ── Infraestructura ────────────────────────────────────────────────────────────────
 
 
@@ -248,6 +324,10 @@ async def motor():
         await s.execute(text("DROP TABLE IF EXISTS buyer_context_revisions CASCADE"))
         await s.execute(text("DROP TABLE IF EXISTS buyer_context_heads CASCADE"))
         await s.execute(text("DROP TABLE IF EXISTS trabajo_ajeno"))
+        # El señuelo del test de `conname` homónimo: si sobrevive entre tests, la 029 lo
+        # encontraría en el arranque y el fallo aparecería como error de fixture en vez de
+        # como el assert que lo explica.
+        await s.execute(text("DROP TABLE IF EXISTS senuelo"))
         await s.execute(text("DROP TABLE IF EXISTS auth.users CASCADE"))
         await s.execute(text("CREATE SCHEMA IF NOT EXISTS auth"))
         await s.execute(text("CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY)"))

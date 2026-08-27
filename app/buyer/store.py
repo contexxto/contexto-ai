@@ -245,13 +245,30 @@ async def anexar_revision(
 
 async def _ejecutar_anexo(db, buyer_id, source_message_id, contexto, expected_revision,
                           *, propietario: bool):
+    # SAVEPOINT — lo que hace compatibles las dos garantías que E3.2 exige a la vez:
+    #
+    #   1. deshacer del store NO puede borrar trabajo ajeno
+    #   2. un fallo del store NO puede dejar trabajo propio a medias
+    #
+    # Sin él solo se podía cumplir una. Con `db.rollback()` (E3.1b) se cumplía la 2 y se
+    # violaba la 1. Al quitarlo (primera versión de E3.2·1B) se cumplía la 1 y se violaba
+    # la 2: el `INSERT` de la cabeza ocurre ANTES de comprobar `expected_revision`, así que
+    # un `BuyerRevisionConflict` dejaba una cabeza huérfana que el `commit` del llamante
+    # confirmaba — contradiciendo el "no se escribió nada" documentado en la excepción.
+    #
+    # El savepoint acota el alcance del deshacer a lo que el store escribió. No hace falta
+    # razonar sobre qué casos pueden dejar estado parcial: ninguno puede.
+    punto = await db.begin_nested()
+
     async def _deshacer():
-        """Solo si la sesión es nuestra. Si es del llamante, deshacer es su decisión — y
-        podría llevarse por delante trabajo suyo que ni siquiera hemos visto."""
+        """Deshace SOLO lo que escribió el store. Lo anterior del llamante no se toca."""
+        if punto.is_active:
+            await punto.rollback()
         if propietario:
             await db.rollback()
 
     async def _confirmar():
+        await punto.commit()          # libera el savepoint; no confirma nada por sí solo
         if propietario:
             await db.commit()
 

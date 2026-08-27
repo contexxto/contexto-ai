@@ -38,6 +38,10 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
         WHERE conname = 'ck_buyer_revisions_message_id_no_vacio'
+          -- Acotado A LA TABLA: `conname` no es unico por base de datos. Otra tabla con una
+          -- restriccion del mismo nombre haria creer que esta migracion ya se aplico, y
+          -- `buyer_context_revisions` se quedaria SIN el CHECK — en silencio.
+          AND conrelid = 'buyer_context_revisions'::regclass
     ) THEN
         ALTER TABLE buyer_context_revisions
             ADD CONSTRAINT ck_buyer_revisions_message_id_no_vacio
@@ -52,7 +56,8 @@ COMMENT ON CONSTRAINT ck_buyer_revisions_message_id_no_vacio ON buyer_context_re
 -- Verificación (debe devolver 1)
 SELECT count(*) AS restriccion_creada
 FROM pg_constraint
-WHERE conname = 'ck_buyer_revisions_message_id_no_vacio';
+WHERE conname = 'ck_buyer_revisions_message_id_no_vacio'
+  AND conrelid = 'buyer_context_revisions'::regclass;
 
 -- ROLLBACK:
 --   ALTER TABLE buyer_context_revisions

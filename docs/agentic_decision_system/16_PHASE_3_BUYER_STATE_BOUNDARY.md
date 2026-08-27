@@ -1,18 +1,17 @@
-# 16 · E3.2b.0 — BUYER STATE BOUNDARY · **CARACTERIZACIÓN, sin decisiones congeladas**
+# 16 · E3.2b.0 — BUYER STATE BOUNDARY
 
 ```
 BASELINE   662a269a5bb6920775d0de8d9a3d70c2cc0bee60   (origin/main verificado, sin avance)
 RAMA       feat/f3-buyer-state-boundary
 
-ENTREGADO   §0 prestart · §1 caracterización
-PENDIENTE   §3 matriz · §14 boundary.py · §16-17 tests · D-B1..D-B9
+ENTREGADO   caracterización · D-B1..D-B9 congeladas · boundary.py · 161 tests · M1-M6
 
-GATE        HOLD — sin decisiones congeladas todavía
+backend     1 901 exit 0        frontend  0 ficheros
+GATE        PASS
 ```
 
-> Esta unidad entrega **la caracterización que la matriz necesita como entrada**, no la
-> matriz. Las nueve decisiones D-B1..D-B9 siguen abiertas a propósito: tres condiciones de
-> STOP del §19 se materializaron y ninguna debe resolverse improvisando.
+> La caracterización de §1-§3 se conserva porque es **lo que justifica** las decisiones. Las
+> nueve están congeladas en §7 y la frontera está implementada y probada.
 
 ---
 
@@ -144,22 +143,15 @@ matriz invertiría el orden que esta unidad existe para imponer.
 
 ---
 
-## 5 · ESTADO
+## 5 · ESTADO DE LA FASE DE CARACTERIZACIÓN
 
 ```
 prestart              PASS   origin/main sin avance · worktree nuevo · baseline verde
 caracterización       PASS
-matriz                NO EMPEZADA
-boundary.py           NO EMPEZADO
-tests adversariales   NO EMPEZADOS
-mutaciones            NO EJECUTADAS
-
-cambios en app/       0
-cambios en migrations/ 0
-cambios en frontend/   0
-
-GATE E3.2b.0          HOLD
 ```
+
+Lo que en su momento figuró aquí como *NO EMPEZADO* —matriz, `boundary.py`, tests y
+mutaciones— está entregado y se documenta en §7-§11. El gate final es **PASS**.
 
 ## 6 · PUNTO DE REENTRADA
 
@@ -170,3 +162,99 @@ La pregunta que ordena el resto: **¿qué paths tienen hoy un consumidor capaz d
 Los tres candidatos con texto libre —accessibility, place_preferences, currency— no lo
 tienen, y esa ausencia es un argumento a favor de un V0 más estrecho de lo que sugiere la
 lista de campos candidatos del §4 del prompt.
+
+---
+
+## 7 · D-B1..D-B9 — CONGELADAS PARA V0
+
+```
+D-B1  writable      objective · financial.budget_max · bedrooms_min · area_m2_min
+                    · pets_allowed_required                    (CINCO, y ninguno más)
+      no writable   accessibility · place_preferences · mobility · hard/soft · tradeoffs
+                    · stage · unresolved_questions · field_evidence como input
+                    · buyer_id · context_revision · updated_at
+D-B2  tipos         Objective · Decimal+enum · StrictInt · StrictFloat · sin campo (pets)
+D-B3  dominios      BUY|RENT|INVEST · USD|MXN · >=1 · >0 finito · SET solo afirma
+D-B4  operaciones   clases concretas; sin PATCH/MERGE/APPEND ni operation:str
+D-B5  normalización ninguna — la frontera no interpreta lenguaje
+D-B6  no-match      NO PERSIST, garantizado al construir el resultado
+D-B7  place_prefs   DIFERIDO — sin consumidor y sin vocabulario
+D-B8  accessibility DIFERIDO — sin ontología defendible
+D-B9  DIMENSIONES   referencia, no whitelist
+```
+
+## 8 · API de `app/buyer/boundary.py`
+
+```
+BuyerCurrencyV0        USD | MXN
+BuyerMutationV0        unión discriminada de 10 variantes
+ruta_contractual(m)    la clase → el path del contrato. Un solo parámetro.
+Disposicion            DURABLE | TURN_ONLY | AMBIGUOUS | REJECTED
+ResultadoFrontera      solo DURABLE puede llevar mutación
+autorizar(m) · no_persistir(disposicion, motivo)
+```
+
+**Garantías por FORMA, no por validación posterior:**
+
+- Los atributos protegidos **no tienen dónde escribirse**.
+- `SetPetsRequired()` no lleva campo: `False` no es representable.
+- Los `Clear*` no llevan payload.
+- `DURABLE` sin mutación y no-`DURABLE` con mutación **fallan al construir**.
+- La ruta se deriva de la clase; la firma no ofrece por dónde pasar un destino.
+
+## 9 · MUTACIONES M1-M6 `[VERIFICADO]`
+
+```
+M1  variante genérica en la unión     → caen los 2 tests de coherencia unión↔mapeo
+M2  currency abierta por patrón       → caen EUR y ZZZ
+M3  SetPetsRequired gana value: bool  → caen el meta-test y los de payload
+M4  SetObjective acepta UNKNOWN       → cae el de UNKNOWN
+M5  AMBIGUOUS puede llevar mutación   → caen los 3 de disposición
+M6  ruta_contractual acepta la ruta   → cae el de firma cerrada
+```
+
+**M1 y M6 no cayeron en el primer intento, y eso encontró dos huecos reales.**
+
+M1 destapó que **la unión y el mapeo de rutas podían divergir** sin que ningún test lo
+notara. Inocuo hoy —`autorizar` rechaza lo que no está en el mapeo— pero deja dos listas que
+describen lo mismo: quien añadiera una mutación legítima tocaría solo una, y el fallo
+aparecería como un `REJECTED` inexplicable en vez de como un test rojo. Cerrado exigiendo que
+sean el mismo conjunto en ambas direcciones.
+
+M6 falló por estar mal construida: añadía un parámetro que nadie usaba, y eso no rompe
+ninguna propiedad. La garantía real era que **la firma no ofrezca por dónde pasar un
+destino**, y ahora hay un test que la fija.
+
+## 10 · HALLAZGOS DE IMPLEMENTACIÓN `[VERIFICADO]`
+
+**`Decimal` no estricto aceptaba `"900"`** y lo convertía. Eso es interpretar una cadena, y
+D-B5 se lo reserva al extractor. Corregido con `strict=True`.
+
+**`StrictFloat` admite `int` pero excluye `bool`.** Verificado, no supuesto: `50` entra como
+`50.0` —es un float exacto— y `True` se rechaza pese a ser subclase de `int`. Es justo la
+línea correcta, y hay un test que la documenta.
+
+**Los docstrings sobreviven a `ast.unparse`.** El test de pureza se acusaba a sí mismo,
+porque el módulo se explica nombrando lo que no usa. Se podan del AST — la misma trampa
+texto-vs-estructura que persigue a esta rama desde AUTH-READ-GATE.
+
+## 11 · GATE
+
+```
+E3.2b.0   PASS
+
+boundary            161 tests exit 0
+backend completo  1 901 exit 0
+frontend              0 ficheros
+```
+
+Sin LLM, sin base, sin store, sin migraciones, sin producción.
+
+## 12 · PUNTO DE REENTRADA · E3.2b.1
+
+El extractor nace **debajo** de una frontera ya cerrada. Su contrato de salida es
+`BuyerMutationV0`: no puede proponer un path, ni una operación, ni un valor fuera de dominio,
+porque el tipo no lo admite.
+
+Lo que E3.2b.1 debe traer es el routing situacional —durable / turn-only / ambiguous— y la
+interpretación de lenguaje que esta unidad se prohibió a propósito.

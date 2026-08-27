@@ -28,6 +28,13 @@ from app.limiter import limiter
 from app.rutas import verificacion_de_entorno
 from app.contracts.decision_v0 import VerificationStatus
 from app.decision.verify import auditar_explicacion
+from app.sesion_autoridad import (
+    AccesoDenegado,
+    Autoridad,
+    autorizar_acceso_a_sesion,
+    crear_sesion,
+    reclamar_sesion_anonima,
+)
 from app.verificacion_prosa import registrar as registrar_prosa
 
 router = APIRouter(prefix="/api/v1/chat", tags=["Chat — Agente Conversacional"])
@@ -79,35 +86,199 @@ def verify_api_key(api_key: str | None = Security(_api_key_header)) -> None:
         )
 
 
-async def _tag_session_owner(session_id: str, user: CurrentUser | None) -> None:
-    """Liga la conversación al usuario autenticado (privacidad). Best-effort."""
-    if not user:
-        return
-    try:
-        async with AsyncSessionLocal() as db:
-            await db.execute(
-                text(
-                    "INSERT INTO chat_sessions (session_id, user_id) VALUES (:sid, :uid) "
-                    "ON CONFLICT (session_id) DO UPDATE "
-                    "SET user_id = COALESCE(chat_sessions.user_id, :uid)"
-                ),
-                {"sid": session_id, "uid": user.user_id},
-            )
-            await db.commit()
-    except Exception:  # noqa: BLE001 — etiquetar no debe romper el chat
-        pass
+# ── ELIMINADO EN AUTH-READ-GATE.1 · `_tag_session_owner` ────────────────────────────
+#
+# Hacía `INSERT … ON CONFLICT DO UPDATE SET user_id = COALESCE(chat_sessions.user_id, :uid)`
+# como PRIMERA instrucción de `POST /chat`, con el `session_id` que enviara el cliente.
+# Consecuencia: el primer autenticado que conociera el identificador de una conversación
+# anónima **se quedaba con ella**, sin demostrar posesión de nada. Y el turno seguía adelante
+# escribiendo en el hilo.
+#
+# Lo sustituye la propiedad explícita:
+#   · un hilo nace con dueño (bootstrap autenticado) o sin él (bootstrap anónimo);
+#   · un hilo sin dueño solo se reclama presentando su capacidad de reanudación, y al
+#     reclamarlo esa capacidad se revoca en la misma sentencia.
+#
+# No se conserva como función auxiliar a propósito: mientras exista una vía que asigne
+# propiedad por identificador, alguien la volverá a llamar.
 
 
 class ChatRequest(BaseModel):
     message: str
-    # Si el cliente no envía session_id, generamos uno nuevo (sesión de un solo turno).
-    # Para conversaciones multi-turno, el cliente debe reutilizar el mismo session_id.
-    session_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    # OBLIGATORIO desde AUTH-READ-GATE.1. Antes tenía `default_factory=uuid4`: si el cliente
+    # no lo mandaba, este endpoint CREABA una sesión. Con el bootstrap explícito eso sería un
+    # segundo mecanismo de creación, fuera de la frontera que distingue nacer de reanudar —
+    # y por tanto una vía para obtener un hilo sin pasar por ella. La sesión se crea en
+    # `POST /sessions/bootstrap` y solo ahí.
+    session_id: str = Field(min_length=1)
 
     model_config = {"json_schema_extra": {"example": {
         "message": "¿Cómo es el ruido y la habitabilidad en La Carolina, Quito?",
-        "session_id": "carlos-session-001",
+        "session_id": "qr-11111111-2222-3333-4444-555555555555-Ab3xY9",
     }}}
+
+
+class BootstrapRequest(BaseModel):
+    """Crear una conversación. El cliente NO elige el identificador."""
+
+    activo_id: str | None = Field(default=None, min_length=1)
+    """Cuando la conversación nace de un letrero. Preserva el prefijo `qr-{activo}-`, del que
+    dependen siete consultas de `assets.py` para reconstruir el lead."""
+
+
+class BootstrapResponse(BaseModel):
+    session_id: str
+    resume_secret: str | None = None
+    """Solo para sesiones anónimas, y **solo se entrega aquí**: no se puede volver a pedir.
+    Un hilo con dueño no lo necesita — ahí autoriza la identidad."""
+
+
+@router.post(
+    "/sessions/bootstrap",
+    response_model=BootstrapResponse,
+    summary="Crear una conversación (y su capacidad de reanudación si es anónima)",
+    description=(
+        "El servidor genera el `session_id`. Si la petición es anónima, devuelve además un "
+        "`resume_secret` que el cliente debe conservar y enviar en `X-Session-Resume` para "
+        "volver a esa conversación. **El secreto se entrega una sola vez.**"
+    ),
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("30/minute")
+async def bootstrap_session(
+    request: Request,
+    payload: BootstrapRequest,
+    user: CurrentUser | None = Depends(get_optional_user),
+) -> BootstrapResponse:
+    """La única puerta de creación.
+
+    Existe separada de `POST /chat` a propósito. Emitir la capacidad dentro del chat obligaría
+    a decidir allí si el `session_id` recibido es nuevo o ya existía — y la variante ingenua
+    de esa decisión ("si no trae token, emito uno") permitiría a cualquiera que conozca un id
+    existente pedir una capacidad válida para él.
+    """
+    try:
+        creada = await crear_sesion(user, payload.activo_id)
+    except AccesoDenegado:
+        # El id generado colisionó (prácticamente imposible con 12 bytes aleatorios). No se
+        # reintenta en silencio: reintentar es la puerta por la que se cuela un id elegido.
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
+                            "No se pudo crear la conversación. Reintenta.")
+    return BootstrapResponse(session_id=creada.session_id,
+                             resume_secret=creada.resume_secret)
+
+
+# ── La autoridad, aplicada en el router ──────────────────────────────────────────────
+# Una sola función para los doce endpoints: doce comprobaciones parecidas divergen en cuanto
+# una se toca, y la que se olvida es la que queda abierta.
+
+_CABECERA_RESUME = "x-session-resume"
+
+
+def _resume_de(request: Request) -> str | None:
+    """La capacidad viaja en cabecera, nunca en la URL: una query string acaba en logs de
+    acceso, en el historial del navegador y en la cabecera `Referer` de terceros."""
+    return request.headers.get(_CABECERA_RESUME)
+
+
+async def _exigir_autoridad(
+    request: Request, session_id: str, user: CurrentUser | None
+) -> Autoridad:
+    """Puerta de entrada de todo endpoint con `session_id`. Traduce a HTTP y nada más.
+
+    **404 y no 403** cuando falta autoridad: distinguir "no existe" de "existe y no es tuyo"
+    permitiría enumerar qué conversaciones hay y de quién. El cliente no puede saber cuál de
+    las dos cosas ocurrió, que es exactamente la intención.
+    """
+    try:
+        return await autorizar_acceso_a_sesion(session_id, user, _resume_de(request))
+    except AccesoDenegado:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversación no encontrada.") from None
+
+
+async def _alcances_autorizados(
+    request: Request, session_id: str | None, user: CurrentUser | None
+) -> tuple[list[str], dict]:
+    """Las ramas del `WHERE` de la campana y la bandeja — **solo las ya autorizadas**.
+
+    ## El fallo que esto cierra
+
+    La consulta era, en esencia:
+
+        WHERE (destinatario_user_id = :u)   OR   (destinatario_session = :s)
+
+    y `:s` venía del cliente **sin comprobar nada**. Un autenticado que pasara la sesión de
+    otra persona leía sus avisos por la segunda rama. El `OR` no era el error en sí: el error
+    era que una de las dos ramas no tenía detrás ninguna autoridad.
+
+    ## Por qué no basta con llamar a `_exigir_autoridad` y dejar el `OR` igual
+
+    Porque entonces la seguridad depende de que *alguien recuerde* llamarla antes, y de que
+    el parámetro que llega al SQL sea el mismo que se autorizó. Aquí la rama de sesión **no
+    se construye** si no hay autoridad: no existe cláusula que desactivar ni parámetro que
+    colar. Lo que protege es la forma del código, no la disciplina de quien lo edite.
+
+    ## La regla
+
+    ```
+    cuenta   el Bearer la demuestra               → destinatario_user_id = :u
+    sesión   la autoridad de la sesión la demuestra → destinatario_session = :s
+    ```
+
+    Estar autenticado **no** añade la rama de sesión: hay que probar esa sesión igual que un
+    anónimo. Y aportar un `session_id` **no** amplía lo que ya se tenía por cuenta. Son dos
+    alcances independientes que se suman solo cuando los dos están probados.
+
+    De paso desaparecen los `CAST(:u AS uuid) IS NOT NULL AND …`: existían para neutralizar
+    en tiempo de ejecución una rama que ahora, simplemente, no se emite.
+
+    ## Por qué esto NO usa `_exigir_autoridad` (que sería lo obvio)
+
+    Porque estos tres endpoints tratan la conversación como un **filtro**, no como el recurso
+    pedido, y eso cambia qué debe pasar cuando el filtro no se puede probar. `_exigir_autoridad`
+    convierte cualquier fallo en 404 y mata la petición entera — correcto en
+    `GET /{sid}/history`, donde no hay nada más que servir; equivocado aquí, donde un
+    `session_id` caducado en el navegador dejaría a un usuario sin **sus propios** avisos de
+    cuenta. La matriz completa está en el `except` de abajo.
+
+    La diferencia es de disponibilidad, no de permisos: en los dos casos, los datos de una
+    sesión que no se puede probar **no se entregan**.
+    """
+    condiciones: list[str] = []
+    params: dict = {}
+
+    if user is not None:
+        condiciones.append("destinatario_user_id = CAST(:u AS uuid)")
+        params["u"] = user.user_id
+
+    if session_id is not None:
+        try:
+            await autorizar_acceso_a_sesion(session_id, user, _resume_de(request))
+        except AccesoDenegado:
+            # ── B.1 · alcance que no se puede probar ────────────────────────────────
+            #
+            # Aquí la conversación **no es el recurso pedido**: es un filtro opcional sobre
+            # una lista que ya tiene su propio alcance. Eso cambia qué significa fallar.
+            #
+            # CON cuenta → se cae la rama de sesión y se sirve lo de la cuenta. Un
+            #   `session_id` viejo, revocado o ajeno guardado en el navegador no puede
+            #   dejar a nadie sin SUS avisos: sería tirar disponibilidad sin ganar nada,
+            #   porque los datos de esa sesión no se entregan igualmente.
+            #
+            # SIN cuenta → 404. La sesión era el único alcance posible; sin ella no queda
+            #   nada que servir, y responder "vacío" en vez de 404 diría que la petición
+            #   fue válida. Se responde como en el resto del gate.
+            #
+            # Lo que NO cambia: la rama de sesión **no se construye**. Degradar el alcance
+            # y ampliarlo son cosas distintas — esto solo puede devolver menos, nunca más.
+            if user is None:
+                raise HTTPException(
+                    status.HTTP_404_NOT_FOUND, "Conversación no encontrada.") from None
+        else:
+            condiciones.append("destinatario_session = CAST(:s AS text)")
+            params["s"] = session_id
+
+    return condiciones, params
 
 
 class ChatResponse(BaseModel):
@@ -354,10 +525,20 @@ class CompararReq(BaseModel):
 
 @router.post("/comparar", summary="DELTA de encaje entre 2 inmuebles (modo COMPARAR)")
 @limiter.limit("30/minute")
-async def comparar_endpoint(request: Request, payload: CompararReq) -> dict:
+async def comparar_endpoint(
+    request: Request,
+    payload: CompararReq,
+    user: CurrentUser | None = Depends(get_optional_user),
+) -> dict:
     """Compara 2 inmuebles contra las necesidades declaradas del hilo. Determinístico:
     el delta sale del motor auditable (app.encaje), no del LLM. Lo dispara el frontend al
-    seleccionar 2 tarjetas; comparte lógica con una futura tool del agente (API-first)."""
+    seleccionar 2 tarjetas; comparte lógica con una futura tool del agente (API-first).
+
+    AUTH-READ-GATE.1 · endpoint 7/11. El `session_id` no es decorativo: el delta se calcula
+    **contra las necesidades declaradas del hilo**. Sin autoridad, la respuesta revela qué
+    busca esa persona —presupuesto, zona, si tiene hijos— a quien acierte el identificador.
+    """
+    await _exigir_autoridad(request, payload.session_id, user)
     return await comparar_inmuebles(payload.session_id, payload.id_a, payload.id_b)
 
 
@@ -537,8 +718,24 @@ async def chat(
     stream: bool = False,
     user: CurrentUser | None = Depends(get_optional_user),
 ):
-    # Si el usuario está autenticado, la conversación queda ligada a él (privacidad).
-    await _tag_session_owner(payload.session_id, user)
+    # ── AUTH-READ-GATE.1 · autoridad ANTES de cualquier escritura al hilo ───────────
+    # Antes, la primera instrucción era `_tag_session_owner`, que con `COALESCE` asignaba
+    # dueño a cualquier hilo sin él: conocer el `session_id` bastaba para apropiárselo. Y el
+    # turno seguía adelante escribiendo en la conversación de otro.
+    autoridad = await _exigir_autoridad(request, payload.session_id, user)
+
+    # Un autenticado que presenta la capacidad de un hilo anónimo SÍ puede reclamarlo: eso
+    # es alguien que abrió una conversación sin cuenta y luego inició sesión. Lo que no puede
+    # es reclamarlo solo con el identificador — de ahí que el claim viva DETRÁS de la
+    # autorización, no delante. Al reclamar, la capacidad se revoca en la misma sentencia.
+    if autoridad is Autoridad.ANONYMOUS_CAPABILITY and user is not None:
+        try:
+            await reclamar_sesion_anonima(payload.session_id, user, _resume_de(request))
+        except AccesoDenegado:
+            # El estado cambió entre autorizar y reclamar. No se degrada: seguir escribiendo
+            # en un hilo cuya propiedad acaba de moverse es justo lo que el gate impide.
+            raise HTTPException(status.HTTP_404_NOT_FOUND,
+                                "Conversación no encontrada.") from None
     # Marca de última interacción del QR-lead (base del reenganche por valor). Fire-and-forget:
     # no bloquea la respuesta y nunca rompe el chat. Cubre stream y no-stream (corre antes del branch).
     import asyncio as _aio
@@ -696,16 +893,19 @@ async def update_session(
         raise HTTPException(status_code=400, detail="Nada que actualizar (titulo o pinned).")
 
     uid = user.user_id
-    # Asegura la fila (ligada al usuario), luego aplica los cambios SOLO si es suya.
+    # AUTH-READ-GATE.1: se eliminó el "asegura la fila" que precedía a los cambios. Hacía
+    # `ON CONFLICT DO UPDATE SET user_id = COALESCE(chat_sessions.user_id, :uid)` — la misma
+    # apropiación por identificador que `_tag_session_owner`, escondida como paso previo. Y
+    # era peor de lo que parecía: tras esa sentencia el hilo YA era del llamante, así que el
+    # `UPDATE … AND user_id = :uid` de abajo pasaba a cumplirse. Renombrar una conversación
+    # anónima ajena equivalía a quedársela.
+    #
+    # (La caracterización de `.0` clasificó este endpoint como `owner-auth` mirando solo el
+    # `WHERE` de los UPDATE. La vía de claim iba en la sentencia anterior.)
+    #
+    # Ahora no se asegura nada: si la fila no existe o no es tuya, los UPDATE afectan a 0
+    # filas y la operación no hace nada, que es el resultado correcto.
     async with AsyncSessionLocal() as db:
-        await db.execute(
-            text(
-                "INSERT INTO chat_sessions (session_id, user_id) VALUES (:sid, :uid) "
-                "ON CONFLICT (session_id) DO UPDATE "
-                "SET user_id = COALESCE(chat_sessions.user_id, :uid)"
-            ),
-            {"sid": session_id, "uid": uid},
-        )
         if payload.titulo is not None:
             await db.execute(
                 text("UPDATE chat_sessions SET titulo = :t, updated_at = now() "
@@ -732,14 +932,15 @@ async def delete_session(
     request: Request, session_id: str,
     user: CurrentUser = Depends(get_current_user),
 ):
-    # Solo archiva si la conversación es del usuario (o aún no tiene dueño).
+    # AUTH-READ-GATE.1: solo archiva el DUEÑO. Antes admitía además los hilos sin dueño
+    # (`OR user_id IS NULL`) e insertaba la fila con `user_id = :uid`, así que archivar una
+    # conversación anónima ajena también era quedársela. Un hilo sin dueño se reclama
+    # presentando su capacidad en `POST /chat`, no archivándolo.
     async with AsyncSessionLocal() as db:
         await db.execute(
             text(
-                "INSERT INTO chat_sessions (session_id, archived, user_id) "
-                "VALUES (:sid, true, :uid) "
-                "ON CONFLICT (session_id) DO UPDATE SET archived = true, updated_at = now() "
-                "WHERE chat_sessions.user_id = :uid OR chat_sessions.user_id IS NULL"
+                "UPDATE chat_sessions SET archived = true, updated_at = now() "
+                "WHERE session_id = :sid AND user_id = :uid"
             ),
             {"sid": session_id, "uid": user.user_id},
         )
@@ -764,14 +965,17 @@ async def share_session(
     token = secrets.token_urlsafe(9)
     async with AsyncSessionLocal() as db:
         await db.execute(
+            # AUTH-READ-GATE.1: solo comparte el DUEÑO. Antes esta sentencia hacía las dos
+            # cosas a la vez sobre un hilo sin dueño —`user_id = COALESCE(...)` lo reclamaba
+            # e `is_public = true` lo publicaba—, así que conocer el `session_id` de una
+            # conversación anónima bastaba para quedársela Y hacerla legible por cualquiera.
+            # Ya no inserta: si la fila no existe o no es tuya, no se toca nada.
             text(
-                "INSERT INTO chat_sessions (session_id, user_id, share_token, is_public) "
-                "VALUES (:sid, :uid, :tok, true) "
-                "ON CONFLICT (session_id) DO UPDATE SET "
-                "  share_token = COALESCE(chat_sessions.share_token, :tok), "
-                "  is_public = true, "
-                "  user_id = COALESCE(chat_sessions.user_id, :uid) "
-                "WHERE chat_sessions.user_id = :uid OR chat_sessions.user_id IS NULL"
+                "UPDATE chat_sessions SET "
+                "  share_token = COALESCE(share_token, :tok), "
+                "  is_public   = true, "
+                "  updated_at  = now() "
+                "WHERE session_id = :sid AND user_id = :uid"
             ),
             {"sid": session_id, "uid": user.user_id, "tok": token},
         )
@@ -848,7 +1052,16 @@ async def get_shared(request: Request, token: str) -> dict:
     summary="Historial de una sesión",
     description="Recupera los mensajes almacenados para un session_id dado.",
 )
-async def get_session_history(session_id: str):
+async def get_session_history(
+    request: Request,
+    session_id: str,
+    user: CurrentUser | None = Depends(get_optional_user),
+):
+    # AUTH-READ-GATE.1 · endpoint 1/11. Este era el más expuesto de todos: la firma ni
+    # siquiera recibía `request`, así que no había forma de presentar una capacidad —
+    # conocer el `session_id` ERA el permiso de lectura del historial completo.
+    await _exigir_autoridad(request, session_id, user)
+
     config = _langgraph_config(session_id)
     state = await agent_graph.compiled_graph.aget_state(config)
 
@@ -1189,7 +1402,21 @@ class LeadContacto(BaseModel):
                 "Habilita que el reenganche le llegue a ÉL directo, no solo al corredor.",
 )
 @limiter.limit("10/minute")
-async def lead_contacto(request: Request, payload: LeadContacto) -> dict:
+async def lead_contacto(
+    request: Request,
+    payload: LeadContacto,
+    user: CurrentUser | None = Depends(get_optional_user),
+) -> dict:
+    # AUTH-READ-GATE.1 · endpoint 8/11. La descripción decía "Público — es el propio
+    # comprador", y esa era exactamente la suposición sin verificar: nada comprobaba que
+    # quien escribe el contacto sea el dueño de la conversación. Sin autoridad se podía
+    # **plantar el email y el push de un tercero** en el hilo de otra persona: el
+    # `ON CONFLICT DO UPDATE` sobrescribe, y el reenganche futuro habría ido al atacante.
+    #
+    # Sigue siendo un carril anónimo —el comprador del QR no tiene cuenta— pero anónimo
+    # ahora significa "con la capacidad de ESE hilo", no "sin nada".
+    await _exigir_autoridad(request, payload.session_id, user)
+
     if not payload.session_id.startswith("qr-"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Sesión inválida.")
     activo = activo_de_session(payload.session_id)
@@ -1390,20 +1617,19 @@ async def listar_notificaciones(
     Se consulta por usuario Y por sesión a la vez: un corredor los tiene ligados a su
     cuenta, y un interesado sin registrarse solo tiene su conversación.
     """
-    if not user and not session_id:
+    # AUTH-READ-GATE.1 · endpoint 9/11. Autorizar ANTES de tocar la base: si la sesión que
+    # se pide no es demostrable, esto levanta 404 y no llega a consultarse nada.
+    condiciones, params = await _alcances_autorizados(request, session_id, user)
+    if not condiciones:
         return {"items": [], "no_leidas": 0}
     async with AsyncSessionLocal() as db:
         await ensure_handoff_tables(db)
         filas = (await db.execute(text(
             "SELECT id, titulo, cuerpo, url, session_id, creada_en, leida_en "
             "FROM notificacion "
-            # Los CAST no son adorno: con el parametro en NULL, Postgres no puede deducir
-            # su tipo en ":u IS NOT NULL" y revienta con AmbiguousParameterError — el
-            # endpoint devolvia 500 y la campana salia vacia sin decir nada.
-            "WHERE (CAST(:u AS uuid) IS NOT NULL AND destinatario_user_id = CAST(:u AS uuid)) "
-            "   OR (CAST(:s AS text) IS NOT NULL AND destinatario_session = CAST(:s AS text)) "
+            f"WHERE ({' OR '.join(condiciones)}) "
             "ORDER BY creada_en DESC LIMIT 30"),
-            {"u": user.user_id if user else None, "s": session_id})).mappings().all()
+            params)).mappings().all()
     return {
         "items": [{
             "id": f["id"], "titulo": f["titulo"], "cuerpo": f["cuerpo"], "url": f["url"],
@@ -1431,7 +1657,9 @@ async def listar_conversaciones(
     Devuelve por hilo: el último mensaje, cuándo, y cuántos lleva sin leer. Y `no_leidas`
     del total es el número de HILOS con algo nuevo, que es lo que debe marcar la campana.
     """
-    if not user and not session_id:
+    # AUTH-READ-GATE.1 · endpoint 10/11. Misma costura que la campana.
+    condiciones, params = await _alcances_autorizados(request, session_id, user)
+    if not condiciones:
         return {"hilos": [], "no_leidas": 0}
     async with AsyncSessionLocal() as db:
         await ensure_handoff_tables(db)
@@ -1446,10 +1674,9 @@ async def listar_conversaciones(
             "         row_number() OVER (PARTITION BY session_id, activo_id "
             "                            ORDER BY creada_en DESC) AS rn "
             "  FROM notificacion "
-            "  WHERE (CAST(:u AS uuid) IS NOT NULL AND destinatario_user_id = CAST(:u AS uuid)) "
-            "     OR (CAST(:s AS text) IS NOT NULL AND destinatario_session = CAST(:s AS text)) "
+            f"  WHERE ({' OR '.join(condiciones)}) "
             ") t WHERE rn = 1 ORDER BY creada_en DESC LIMIT 40"),
-            {"u": user.user_id if user else None, "s": session_id})).mappings().all()
+            params)).mappings().all()
     return {
         "hilos": [{
             "session_id": f["session_id"], "activo_id": f["activo_id"],
@@ -1479,18 +1706,25 @@ async def marcar_notificaciones_leidas(
 
     Sin `hilo` sigue marcando todo: lo usa el botón de "marcar todo como visto".
     """
-    if not user and not session_id:
+    # AUTH-READ-GATE.1 · endpoint 11/11. Es una MUTACIÓN, así que la autoridad va antes del
+    # `UPDATE` — si no, un tercero podría vaciar el contador rojo de otra persona y hacer
+    # que no viera nunca que su corredor le respondió. Daño silencioso y difícil de notar.
+    condiciones, params = await _alcances_autorizados(request, session_id, user)
+    if not condiciones:
         return {"ok": True, "marcadas": 0}
+
+    # `hilo` acota QUÉ conversación se marca, dentro de lo que ya se puede ver. No es una
+    # autoridad y no puede ampliar el alcance: el `AND` con las condiciones autorizadas lo
+    # deja siempre como un filtro, nunca como una puerta.
+    params |= {"h": hilo, "a": _uuid_valido(activo)}
     async with AsyncSessionLocal() as db:
         await ensure_handoff_tables(db)
         r = await db.execute(text(
             "UPDATE notificacion SET leida_en = now() WHERE leida_en IS NULL AND "
             "(CAST(:h AS text) IS NULL OR session_id = CAST(:h AS text)) AND "
             "(CAST(:a AS uuid) IS NULL OR activo_id = CAST(:a AS uuid)) AND "
-            "((CAST(:u AS uuid) IS NOT NULL AND destinatario_user_id = CAST(:u AS uuid)) "
-            " OR (CAST(:s AS text) IS NOT NULL AND destinatario_session = CAST(:s AS text)))"),
-            {"u": user.user_id if user else None, "s": session_id, "h": hilo,
-             "a": _uuid_valido(activo)})
+            f"({' OR '.join(condiciones)})"),
+            params)
         await db.commit()
     return {"ok": True, "marcadas": r.rowcount}
 
@@ -1687,6 +1921,11 @@ async def solicitar_handoff(
     activo_id: str | None = None,
     user: CurrentUser | None = Depends(get_optional_user),
 ) -> dict:
+    # AUTH-READ-GATE.1 · endpoint 5/11. Crea el handoff Y NOTIFICA AL CORREDOR. Sin
+    # autoridad, un tercero podía disparar contactos reales en nombre de otra persona:
+    # ruido para el corredor y una conversación que el interesado nunca pidió.
+    await _exigir_autoridad(request, session_id, user)
+
     quien = (user.nombre or user.email) if user else "Un interesado"
     res = await registrar_handoff(
         session_id,
@@ -1719,6 +1958,10 @@ async def handoff_mensaje_lead(
     activo_id: str | None = None,
     user: CurrentUser | None = Depends(get_optional_user),
 ) -> dict:
+    # AUTH-READ-GATE.1 · endpoint 6/11. Escribir EN NOMBRE del interesado dentro de su
+    # conversación con el corredor. La suplantación es el daño, no la lectura.
+    await _exigir_autoridad(request, session_id, user)
+
     async with AsyncSessionLocal() as db:
         await ensure_handoff_tables(db)
         # ¿A QUÉ corredor le escribe? Al de este inmueble si el cliente lo dice (la bandeja
@@ -1760,7 +2003,16 @@ async def handoff_mensaje_lead(
 )
 @limiter.limit("120/minute")
 async def estado_handoff(request: Request, session_id: str, desde: int = 0,
-                         activo_id: str | None = None) -> dict:
+                         activo_id: str | None = None,
+                         user: CurrentUser | None = Depends(get_optional_user)) -> dict:
+    # AUTH-READ-GATE.1 · endpoint 2/11. Aquí viven los mensajes con el corredor, que es
+    # material personal: quién pregunta por qué inmueble y qué se dijeron.
+    #
+    # OJO con el `vacio` de abajo: NO sirve como denegación. Devolver "no hay handoff" a
+    # quien no tiene autoridad y "aquí están los mensajes" a quien sí, distingue la sesión
+    # que existe de la que no. La denegación tiene que ser el 404 de siempre.
+    await _exigir_autoridad(request, session_id, user)
+
     vacio = {"activo": False, "estado": None, "mensajes": [],
              "corredor_whatsapp": None, "activo_id": None, "hilos": []}
     async with AsyncSessionLocal() as db:
@@ -1866,7 +2118,15 @@ async def intencion_de_sesion(session_id: str, horas_inactividad: float | None =
     ),
 )
 @limiter.limit("60/minute")
-async def session_intencion(request: Request, session_id: str) -> dict:
+async def session_intencion(
+    request: Request,
+    session_id: str,
+    user: CurrentUser | None = Depends(get_optional_user),
+) -> dict:
+    # AUTH-READ-GATE.1 · endpoint 3/11. `.0` lo clasificó como abierto POR ACCIDENTE: ningún
+    # componente del frontend lo llama. Que nadie lo use no lo hacía inofensivo — expone el
+    # score de intención de compra de una persona a quien acierte el identificador.
+    await _exigir_autoridad(request, session_id, user)
     return await intencion_de_sesion(session_id)
 
 
@@ -1879,10 +2139,19 @@ async def registrar_push_subscription(
     request: Request,
     session_id: str,
     payload: dict,
+    user: CurrentUser | None = Depends(get_optional_user),
 ) -> dict:
     """Guarda la PushSubscription del browser para enviar notificaciones
     cuando el corredor responda. La suscripción viene de
-    registration.pushManager.subscribe() en el frontend."""
+    registration.pushManager.subscribe() en el frontend.
+
+    AUTH-READ-GATE.1 · endpoint 4/11. Sin autoridad, cualquiera que supiera el `session_id`
+    podía **redirigir los avisos de esa conversación a su propio navegador**: el `UPDATE`
+    sobrescribe la suscripción del hilo. No era solo lectura indebida — era secuestro del
+    canal de notificación.
+    """
+    await _exigir_autoridad(request, session_id, user)
+
     if not payload.get("endpoint"):
         raise HTTPException(status_code=400, detail="Suscripción push inválida (sin endpoint).")
     async with AsyncSessionLocal() as db:

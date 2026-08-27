@@ -45,49 +45,90 @@ def test_el_QR_codifica_el_INMUEBLE_no_una_conversacion():
     assert "session_id" not in src.split("def _qr_url")[-1][:400] if "_qr_url" in src else True
 
 
-def test_el_session_id_del_QR_nace_en_el_CLIENTE_y_vive_en_localstorage():
-    """Cuándo existe por primera vez y quién lo genera: el navegador, al abrir el deep link.
+def test_REGRESION_el_session_id_del_QR_ya_NO_nace_en_el_cliente():
+    """`EXPECTED_POLICY_CHANGE` · antes: `test_el_session_id_del_QR_nace_en_el_CLIENTE_y_vive_en_localstorage`.
 
-        fresco    →  `qr-{activo}-{device}-{6 al azar}`
-        reanudar  →  el guardado en `localStorage['ctx_qr_' + activo]`
+    **Congelado en `.0`:** el navegador fabricaba el identificador al abrir el deep link —
+    `` `${qrSessionId(id)}-${Math.random().toString(36).slice(2, 8)}` `` — y el servidor lo
+    recibía ya hecho. Ese era el hallazgo central de la caracterización: **quien elige el
+    identificador elige a qué conversación entra**, porque nada más se comprobaba.
 
-    El servidor nunca lo emite en este carril: lo recibe ya hecho.
+    **Cambio autorizado en AUTH-READ-GATE.1 · 5c:** el id lo emite `POST /sessions/bootstrap`.
+    El cliente ya no puede proponerlo, así que dejó de ser una credencial: lo que autoriza es
+    la capacidad (`X-Session-Resume`) o ser el dueño autenticado.
+
+    Lo que **no** cambia —y por eso se sigue afirmando aquí— es que la llave de reanudación
+    del carril QR vive en `localStorage['ctx_qr_' + activo]`. Los letreros ya impresos no
+    llevan sesión, así que el navegador tiene que recordar cuál era la suya.
     """
     js = APP_JSX.read_text(encoding="utf-8")
+
     assert "const storeKey = 'ctx_qr_' + id" in js
-    assert "const sid = `${qrSessionId(id)}-${Math.random().toString(36).slice(2, 8)}`" in js
     assert "localStorage.setItem(storeKey, sid)" in js
 
+    # La expresión que fabricaba el id ya no existe, y el bootstrap ocupa su lugar.
+    assert "const sid = `${qrSessionId(id)}-${Math.random()" not in js
+    assert "const sid = await bootstrapSession(id)" in js
 
-def test_la_reanudacion_del_QR_es_por_navegador_no_por_persona():
-    """¿Necesita recuperar la MISMA conversación desde otro dispositivo? Hoy no puede.
 
-    La llave de reanudación está en `localStorage`, y el `session_id` incluye el
-    `device_id`. Otro navegador —aunque sea la misma persona— genera un hilo NUEVO. Es un
-    dato de producto, no un defecto: acota qué tiene que preservar el gate.
+def test_UNCHANGED_INVARIANT_la_reanudacion_del_QR_sigue_siendo_por_navegador():
+    """`UNCHANGED_INVARIANT` con **mecanismo distinto** · antes: `test_la_reanudacion_del_QR_es_por_navegador_no_por_persona`.
+
+    La propiedad de producto es la misma que congeló `.0`: desde otro navegador —aunque sea
+    la misma persona— sale un hilo NUEVO. Sigue sin haber recuperación entre dispositivos.
+
+    Lo que cambió es **por qué**. En `.0` el hilo estaba atado al navegador porque el
+    `device_id` iba *dentro del propio identificador* (`qr-{activo}-{device}`): el vínculo
+    era el nombre de la conversación. Ahora está atado porque la **capacidad** vive en ese
+    `localStorage` y en ningún otro sitio.
+
+    La diferencia importa y por eso el test se transforma en vez de borrarse: un id que
+    contiene el dispositivo es *adivinable* para quien conozca el esquema; un secreto de 32
+    bytes que nunca sale del navegador, no. Misma limitación de producto, garantía distinta.
+
+    `qrSessionId` está eliminado: el prefijo `qr-{activo}-` lo pone ahora el servidor, que es
+    lo que mantiene vivas las siete consultas de `assets.py` que dependen de él.
     """
     js = APP_JSX.read_text(encoding="utf-8")
-    assert "const qrSessionId = (id) => `qr-${id}-${getDeviceId()}`" in js
-    assert "localStorage.getItem(storeKey)" in js
+
+    assert "const qrSessionId" not in js, "el cliente ya no compone el identificador"
+    assert "localStorage.getItem(storeKey)" in js, "la reanudación sigue siendo local"
+
+    # El vínculo con el navegador es ahora el secreto, no el nombre de la conversación.
+    custodia = (RAIZ / "frontend" / "src" / "resumeCapability.js").read_text(encoding="utf-8")
+    assert "ctx_resume_" in custodia
 
 
-def test_loadFromDeepLink_no_lleva_ninguna_credencial_extra():
-    """¿Hay una credencial escondida en el flujo? No.
+def test_REGRESION_el_carril_anonimo_YA_tiene_credencial():
+    """`EXPECTED_POLICY_CHANGE` · antes: `test_loadFromDeepLink_no_lleva_ninguna_credencial_extra`.
 
-    Las dos llamadas de reanudación —`/handoff` y `/history`— van con `apiHeaders()`, que
-    solo aporta la `X-API-Key` del sitio y, si existe, el Bearer del usuario. Para un
-    anónimo eso es **la clave pública del sitio y nada más**: no hay prueba de posesión.
+    **Congelado en `.0`:** el carril de reanudación del QR no llevaba ninguna prueba de
+    posesión. `apiHeaders()` solo aportaba la `X-API-Key` pública del sitio y, si existía, el
+    Bearer del usuario — para un anónimo, nada que demostrara que la conversación era suya.
+    Ese era el hueco que hacía del `session_id` una credencial de facto.
+
+    **Cambio autorizado en AUTH-READ-GATE.1:** existe `apiHeadersSesion(sessionId)`, que añade
+    `X-Session-Resume` cuando hay capacidad **para esa conversación**.
+
+    Se pasa la sesión por parámetro y no se usa una "capacidad actual": el navegador puede
+    tener varias conversaciones abiertas y cada una tiene la suya.
     """
-    js = APP_JSX.read_text(encoding="utf-8")
-    bloque = js[js.index("const loadFromDeepLink"): js.index("const sid = `${qrSessionId(id)}")]
-    assert "/handoff`, { headers: apiHeaders() })" in bloque
-    assert "/history`, { headers: apiHeaders() })" in bloque
-    assert "token" not in bloque.lower()
-
     api = (RAIZ / "frontend" / "src" / "api.js").read_text(encoding="utf-8")
-    cuerpo = api[api.index("export function apiHeaders"):]
+
+    assert "export function apiHeadersSesion(sessionId)" in api
+    assert "resumeHeader(sessionId)" in api
+    assert "bootstrapSession" in api, "y existe la única puerta de creación"
+
+    # `apiHeaders()` sigue SIN capacidad: es para peticiones que no son sobre una
+    # conversación concreta. La capacidad solo entra por la variante que recibe la sesión.
+    #
+    # Se acota al CUERPO de la función, no al texto entre ambas: en medio va el JSDoc de
+    # `apiHeadersSesion`, que nombra la cabecera legítimamente al explicar el contrato.
+    lineas = api.splitlines()
+    i = next(n for n, l in enumerate(lineas) if l.startswith("export function apiHeaders()"))
+    cuerpo = "\n".join(lineas[i:i + 7])
     assert "X-API-Key" in cuerpo and "Authorization" in cuerpo
-    assert "resume" not in cuerpo.lower()
+    assert "resume" not in cuerpo.lower(), "la capacidad no puede colarse en la cabecera genérica"
 
 
 def test_intencion_NO_participa_en_el_QR():
@@ -101,11 +142,24 @@ def test_intencion_NO_participa_en_el_QR():
     assert "api/v1/chat" not in frontend.split("intencionesEntrada")[0][-200:]
 
 
-def test_handoff_SI_participa_en_el_QR():
-    """`/handoff` sí es parte del carril anónimo: es como el visitante recupera la
-    conversación con el corredor al volver a escanear."""
+def test_REGRESION_el_handoff_del_QR_ahora_va_con_capacidad():
+    """`EXPECTED_POLICY_CHANGE` · antes: `test_handoff_SI_participa_en_el_QR`.
+
+    **Sigue en pie el hecho caracterizado:** `/handoff` es parte del carril anónimo — es como
+    el visitante recupera la conversación con el corredor al volver a escanear el letrero.
+
+    **Congelado en `.0`:** esa llamada iba con `apiHeaders()`, es decir, sin ninguna prueba de
+    posesión. Bastaba con acertar el `session_id` para leer el hilo con el corredor.
+
+    **Cambio autorizado en AUTH-READ-GATE.1 · 5c:** va con `apiHeadersSesion(prev)`, que lleva
+    la capacidad **de esa conversación**. Si la rechazan, el secreto local se descarta y se
+    abre un hilo nuevo — nunca se reintenta sin él, que sería el dual-path que este gate cierra.
+    """
     js = APP_JSX.read_text(encoding="utf-8")
-    assert "/handoff`, { headers: apiHeaders() })" in js
+
+    assert "/handoff`, { headers: apiHeadersSesion(prev) })" in js
+    assert "/handoff`, { headers: apiHeaders() })" not in js
+    assert "descartarCapacidadRechazada(prev)" in js
 
 
 # ── Frontera 1 · LECTURA ───────────────────────────────────────────────────────────
@@ -129,12 +183,28 @@ def _rutas() -> dict[tuple[str, str], set[str]]:
     return fuera
 
 
-def test_conocer_el_session_id_basta_para_LEER():
-    """Inventario congelado de lecturas sin autenticación."""
+_FN_DE_RUTA = {
+    "/{session_id}/history": "get_session_history",
+    "/{session_id}/handoff": "estado_handoff",
+    "/{session_id}/intencion": "session_intencion",
+}
+
+
+def test_REGRESION_conocer_el_session_id_ya_NO_basta_para_leer():
+    """`EXPECTED_POLICY_CHANGE` - antes: `test_conocer_el_session_id_basta_para_LEER`.
+
+    **Congelado en `.0`:** las tres lecturas de conversación no declaraban ninguna
+    dependencia de autenticación. `GET /history` era el caso extremo - su firma ni siquiera
+    recibía `request`, así que no existía forma de presentar una capacidad aunque se tuviera.
+
+    **Cambio autorizado en AUTH-READ-GATE.1 (endpoints 1-3 de 11):** las tres reciben ahora
+    identidad opcional y pasan por `_exigir_autoridad`. Leer sin cuenta sigue siendo posible
+    -el carril del QR lo necesita- pero exige la capacidad de ESE hilo.
+    """
     r = _rutas()
-    assert r[("GET", "/{session_id}/history")] == set()
-    assert r[("GET", "/{session_id}/handoff")] == set()
-    assert r[("GET", "/{session_id}/intencion")] == set()
+    for ruta, fn in _FN_DE_RUTA.items():
+        assert r[("GET", ruta)] == {"get_optional_user"}, f"{ruta} sigue sin identidad"
+        assert "_exigir_autoridad" in ast.unparse(_fn(fn)), ruta
 
 
 def test_el_hilo_compartido_SI_exige_una_condicion():
@@ -147,71 +217,108 @@ def test_el_hilo_compartido_SI_exige_una_condicion():
 # ── Frontera 2 · ESCRITURA Y APROPIACIÓN ───────────────────────────────────────────
 
 
-def test_POST_chat_no_comprueba_propiedad_ANTES_de_escribir():
-    """AMPLÍA EL ALCANCE DE LA UNIDAD.
+def test_REGRESION_POST_chat_autoriza_ANTES_de_escribir():
+    """`EXPECTED_POLICY_CHANGE` · antes: `test_POST_chat_no_comprueba_propiedad_ANTES_de_escribir`.
 
-    `POST /chat` recibe `session_id` del cliente y llama a `_tag_session_owner` **como
-    primera instrucción**, sin comprobar antes de quién es el hilo. Después invoca el grafo
-    con ese `thread_id`. O sea: conocer el id permite **escribir** en la conversación.
+    **Comportamiento congelado en `.0`:** `POST /chat` llamaba a `_tag_session_owner` como
+    primera instrucción, con el `session_id` que enviara el cliente y sin comprobar de quién
+    era el hilo. Conocer el id permitía escribir en la conversación.
+
+    **Cambio autorizado por la política** (`.0` §7, filas 8 y 9). Ahora la primera
+    instrucción real es la autorización, y el claim vive **detrás** de ella.
     """
     fn = _fn("chat")
     cuerpo = ast.unparse(fn)
-    assert "_tag_session_owner(payload.session_id, user)" in cuerpo
+    assert "_exigir_autoridad(request, payload.session_id, user)" in cuerpo
+
     primera = next(s for s in fn.body if not isinstance(s, ast.Expr) or
                    not isinstance(s.value, ast.Constant))
-    assert "_tag_session_owner" in ast.unparse(primera), "es la primera instrucción real"
-    assert "get_optional_user" in cuerpo, "el anónimo también entra por aquí"
+    assert "_exigir_autoridad" in ast.unparse(primera), (
+        "la autorización dejó de ser la primera instrucción: algo se escribe antes de validar"
+    )
+    # El claim solo puede ocurrir DESPUÉS de autorizar.
+    assert cuerpo.index("_exigir_autoridad") < cuerpo.index("reclamar_sesion_anonima")
 
 
-def test_un_autenticado_puede_RECLAMAR_un_hilo_anonimo_con_solo_conocer_el_id():
-    """EL HALLAZGO MÁS IMPORTANTE DE LA UNIDAD.
+def test_REGRESION_ya_no_existe_via_de_apropiacion_por_identificador():
+    """`EXPECTED_POLICY_CHANGE` · antes:
+    `test_un_autenticado_puede_RECLAMAR_un_hilo_anonimo_con_solo_conocer_el_id`.
 
-    `_tag_session_owner` hace `COALESCE(chat_sessions.user_id, :uid)`. Si el hilo no tiene
-    dueño, el primer autenticado que envíe ese `session_id` en `POST /chat` **se queda con
-    él**, sin demostrar posesión de nada.
+    **Comportamiento congelado en `.0`:** `_tag_session_owner` hacía
+    `COALESCE(chat_sessions.user_id, :uid)`, así que el primer autenticado que enviara el
+    `session_id` se quedaba con el hilo sin demostrar posesión.
 
-    Cerrar `/history` y dejar esto abierto sería una corrección incompleta: el atacante no
-    leería el hilo — se lo quedaría, y entonces podría leerlo legítimamente.
+    **Cambio autorizado por la política** (`.0` §7, fila 8: *auth + solo session_id → no
+    claim*). La función se **eliminó**; no se conservó como auxiliar, porque mientras exista
+    una vía que asigne propiedad por identificador alguien volverá a llamarla.
     """
-    cuerpo = ast.unparse(_fn("_tag_session_owner"))
-    assert "COALESCE(chat_sessions.user_id, :uid)" in cuerpo
-    assert "ON CONFLICT (session_id) DO UPDATE" in cuerpo
-    # No hay ninguna condición que exija demostrar posesión del hilo anónimo.
-    assert "share_token" not in cuerpo and "resume" not in cuerpo.lower()
+    src = CHAT.read_text(encoding="utf-8")
+    assert "async def _tag_session_owner" not in src
+    # Se mira el CÓDIGO, no los comentarios: el bloque que documenta la eliminación cita la
+    # sentencia vieja a propósito, y eso no es una vía de apropiación.
+    literales = " ".join(n.value for n in ast.walk(ast.parse(src))
+                         if isinstance(n, ast.Constant) and isinstance(n.value, str))
+    assert "COALESCE(chat_sessions.user_id" not in literales, (
+        "reapareció la asignación de dueño por identificador"
+    )
+    # Y el claim que la sustituye exige la capacidad.
+    from app.sesion_autoridad import reclamar_sesion_anonima
+    import inspect
+    assert "resume_secret" in inspect.signature(reclamar_sesion_anonima).parameters
 
 
-@pytest.mark.parametrize("fn_nombre,permisiva", [
-    ("update_session", False),   # renombrar/fijar: WHERE session_id = :sid AND user_id = :uid
-    ("delete_session", True),    # archivar:        ... OR chat_sessions.user_id IS NULL
-    ("share_session", True),     # compartir:       ... OR chat_sessions.user_id IS NULL
-])
-def test_las_mutaciones_no_usan_el_mismo_criterio_entre_si(fn_nombre, permisiva):
-    """Asimetría real, congelada: **renombrar** exige ser dueño; **archivar** y **compartir**
-    aceptan además los hilos sin dueño.
+@pytest.mark.parametrize("fn_nombre", ["update_session", "delete_session", "share_session"])
+def test_REGRESION_las_tres_mutaciones_exigen_ser_dueno(fn_nombre):
+    """`EXPECTED_POLICY_CHANGE` · antes: `test_las_mutaciones_no_usan_el_mismo_criterio_entre_si`.
 
-    Consecuencia de la variante permisiva: un autenticado que conozca el `session_id` de una
-    conversación anónima puede archivarla, y en el caso de compartir puede **publicarla y
-    quedarse con ella a la vez** (`is_public = true` + `user_id = COALESCE(...)`).
+    **Congelado en `.0`:** asimetría entre endpoints hermanos — renombrar era estricto;
+    archivar y compartir aceptaban además los hilos sin dueño (`OR user_id IS NULL`).
+
+    **Y la caracterización se quedó corta**: `update_session` también reclamaba, con un
+    `INSERT … COALESCE` como paso previo que el test de `.0` no vio porque solo miraba el
+    `WHERE` de los `UPDATE`.
+
+    **Cambio autorizado:** las tres exigen ser dueño. Ninguna crea la fila ni la adquiere.
     """
     cuerpo = ast.unparse(_fn(fn_nombre))
-    tiene_null = "user_id IS NULL" in cuerpo
-    assert tiene_null is permisiva, f"{fn_nombre}: cambió el criterio de propiedad"
+    assert "user_id IS NULL" not in cuerpo, "sigue aceptando hilos sin dueño"
+    assert "COALESCE(chat_sessions.user_id" not in cuerpo, "sigue reclamando por identificador"
+    assert "user_id = :uid" in cuerpo, "debe exigir propiedad"
 
 
-def test_compartir_publica_y_reclama_en_la_misma_sentencia():
-    """El caso más agudo de la variante permisiva."""
-    cuerpo = ast.unparse(_fn("share_session"))
-    assert "is_public = true" in cuerpo
-    assert "user_id = COALESCE(chat_sessions.user_id, :uid)" in cuerpo
-    assert "chat_sessions.user_id = :uid OR chat_sessions.user_id IS NULL" in cuerpo
+def test_REGRESION_compartir_ya_no_reclama_el_hilo():
+    """`EXPECTED_POLICY_CHANGE` · antes: `test_compartir_publica_y_reclama_en_la_misma_sentencia`.
+
+    **Congelado en `.0`:** la sentencia publicaba Y reclamaba a la vez sobre un hilo sin
+    dueño, así que conocer el `session_id` de una conversación anónima bastaba para quedársela
+    y hacerla legible por cualquiera.
+
+    **Cambio autorizado:** ya no inserta. Publica solo lo que ya es tuyo.
+    """
+    cuerpo = " ".join(ast.unparse(_fn("share_session")).split())   # SQL alineado con espacios
+    assert "is_public = true" in cuerpo, "sigue siendo el endpoint de compartir"
+    assert "INSERT INTO chat_sessions" not in cuerpo, "no debe crear ni adquirir la fila"
+    assert "user_id = COALESCE" not in cuerpo
+    assert "WHERE session_id = :sid AND user_id = :uid" in cuerpo
 
 
-def test_el_etiquetado_de_dueno_es_silencioso_si_falla():
-    """Si la escritura falla, el hilo queda sin dueño y nadie se entera. Importa para el
-    gate: no se puede asumir que "sin dueño" signifique "nunca hubo un autenticado"."""
-    fn = _fn("_tag_session_owner")
-    manejadores = [h for t in ast.walk(fn) if isinstance(t, ast.Try) for h in t.handlers]
-    assert manejadores and all(isinstance(h.body[0], ast.Pass) for h in manejadores)
+def test_REGRESION_ya_no_hay_etiquetado_silencioso_de_dueno():
+    """`EXPECTED_POLICY_CHANGE` · antes: `test_el_etiquetado_de_dueno_es_silencioso_si_falla`.
+
+    **Congelado en `.0`:** `_tag_session_owner` tragaba toda excepción con `pass`, así que un
+    hilo podía quedar sin dueño sin que nadie se enterara.
+
+    **Cambio autorizado:** la función se eliminó. La propiedad es ahora explícita —nace en el
+    bootstrap o se reclama con capacidad— y el claim **falla ruidoso** si no toca exactamente
+    una fila, en vez de callar.
+    """
+    import inspect
+
+    from app.sesion_autoridad import _ejecutar_claim
+
+    assert "async def _tag_session_owner" not in CHAT.read_text(encoding="utf-8")
+    cuerpo = inspect.getsource(_ejecutar_claim)
+    assert "raise AccesoDenegado" in cuerpo and "rollback" in cuerpo
 
 
 # ── INVENTARIO COMPLETO · todo endpoint donde `session_id` da acceso a estado ──────
@@ -300,62 +407,78 @@ def test_los_owner_auth_exigen_identidad(clave):
     assert "get_current_user" in _inventario()[clave]
 
 
-def test_la_campana_y_la_bandeja_usan_el_session_id_como_AUTORIDAD():
-    """LA PUERTA QUE FALTABA. Los tres endpoints de avisos aceptan `session_id` y lo usan
-    para decidir qué filas devolver o mutar:
+def test_REGRESION_la_rama_de_sesion_ya_NO_se_emite_sin_autoridad():
+    """`EXPECTED_POLICY_CHANGE` - antes: `test_la_campana_y_la_bandeja_usan_el_session_id_como_AUTORIDAD`.
 
-        WHERE (user_id  IS NOT NULL AND destinatario_user_id = :u)
-           OR (session  IS NOT NULL AND destinatario_session = :s)
+    **Congelado en `.0`:** los tres endpoints de avisos construían
 
-    Es un **OR**, no un `else`. Así que conocer el `session_id` concede acceso a los avisos
-    del hilo — y además un autenticado que pase un `session_id` ajeno también los recibe,
-    porque la segunda rama no comprueba propiedad.
+        WHERE (... AND destinatario_user_id = :u)  OR  (... AND destinatario_session = :s)
 
-    Es exactamente la semántica que el gate pretende eliminar, en otro sitio.
+    con `:s` tal cual venía del cliente. Un autenticado que pasara la sesión de otra persona
+    leía sus avisos por la segunda rama, que no comprobaba propiedad de nada.
+
+    **Cambio autorizado en AUTH-READ-GATE.1 (endpoints 9-11 de 11):** el `WHERE` se compone
+    en `_alcances_autorizados`, que **solo añade la rama de sesión después de que
+    `_exigir_autoridad` la haya probado**. No es que el `OR` se haya vuelto seguro: es que
+    ya no puede existir una rama sin autoridad detrás.
+
+    Por eso se exige que **ninguno** de los tres endpoints nombre ya `destinatario_session`:
+    esa cadena vive ahora en un solo sitio, el que autoriza.
     """
     src = CHAT.read_text(encoding="utf-8")
-    assert src.count("destinatario_session = CAST(:s AS text)") >= 3
-    for fn in ("notificaciones", "conversaciones", "marcar_leidas"):
-        try:
-            cuerpo = ast.unparse(_fn(fn))
-        except StopIteration:
-            continue
-        assert "destinatario_session" in cuerpo
+
+    assert src.count("destinatario_session = CAST(:s AS text)") == 1
+    costura = ast.unparse(_fn("_alcances_autorizados"))
+    assert "destinatario_session" in costura and "_exigir_autoridad" in costura
+
+    for fn in ("listar_notificaciones", "listar_conversaciones", "marcar_notificaciones_leidas"):
+        cuerpo = ast.unparse(_fn(fn))
+        assert "destinatario_session" not in cuerpo, f"{fn} vuelve a montar su propia rama"
+        assert "_alcances_autorizados" in cuerpo, f"{fn} no pasa por la costura"
 
 
-def test_hay_endpoints_sin_ninguna_auth_mas_alla_de_los_cinco_iniciales():
-    """`/comparar`, `/lead-contacto` y `/handoff/push` tampoco declaran auth."""
+def test_REGRESION_ya_no_quedan_endpoints_de_sesion_sin_auth():
+    """`EXPECTED_POLICY_CHANGE` - antes: `test_hay_endpoints_sin_ninguna_auth_mas_alla_de_los_cinco_iniciales`.
+
+    **Congelado en `.0`:** `/comparar`, `/lead-contacto` y `/{session_id}/handoff/push` no
+    declaraban auth alguna. Los tres son peores de lo que "sin auth" sugiere: `/comparar`
+    revela las necesidades declaradas del hilo, y los otros dos **escriben** - uno planta el
+    contacto del lead, el otro reemplaza el destino de sus notificaciones push.
+
+    **Cambio autorizado en AUTH-READ-GATE.1 (endpoints 4, 7 y 8 de 11).**
+    """
     inv = _inventario()
-    for clave in [("POST", "/comparar"), ("POST", "/lead-contacto"),
-                  ("POST", "/{session_id}/handoff/push")]:
-        assert inv[clave] == set(), f"{clave} ya no está desprotegido — revisar §3"
+    for clave, fn in ((("POST", "/comparar"), "comparar_endpoint"),
+                      (("POST", "/lead-contacto"), "lead_contacto"),
+                      (("POST", "/{session_id}/handoff/push"), "registrar_push_subscription")):
+        assert inv[clave] == {"get_optional_user"}, f"{clave} sigue sin identidad"
+        assert "_exigir_autoridad" in ast.unparse(_fn(fn)), clave
 
 
 # ── BOOTSTRAP · el hueco que impide emitir la capability con seguridad ─────────────
 
 
-def test_una_sesion_anonima_NO_deja_fila_en_chat_sessions():
-    """EL SEGUNDO HUECO, y condiciona todo el diseño de la capability.
+def test_REGRESION_una_sesion_anonima_SI_deja_fila_autoritativa():
+    """`EXPECTED_POLICY_CHANGE` · antes: `test_una_sesion_anonima_NO_deja_fila_en_chat_sessions`.
 
-    `_tag_session_owner` hace `return` inmediato si no hay usuario. Por tanto **un hilo
-    anónimo nunca crea fila en `chat_sessions`**.
+    **Congelado en `.0`:** los hilos anónimos nunca creaban fila, así que `chat_sessions` no
+    era el catálogo de sesiones y el servidor no podía distinguir nacimiento de reanudación.
 
-    Consecuencia 1 — `chat_sessions` NO es el catálogo de sesiones: faltan todas las
-    anónimas. Afecta a cualquier migración retroactiva.
+    **Cambio autorizado:** el bootstrap inserta SIEMPRE, con `creada_por_servidor = true`.
+    Esa fila es la frontera que faltaba.
 
-    Consecuencia 2 — el servidor **no tiene hoy una frontera autoritativa** para distinguir
-    "esta sesión acaba de nacer" de "este `session_id` anónimo ya existe". Sin esa
-    distinción, una regla ingenua del tipo *"si no viene token, emito uno"* dejaría que un
-    tercero que conozca un `session_id` existente pidiera una capability válida para él:
-    cambiaríamos una puerta abierta por otra con apariencia de seguridad.
+    Lo que NO cambia: los hilos anónimos **anteriores** al gate siguen sin fila, y por eso no
+    se pueden reanudar. Es la pérdida deliberada de compatibilidad de la migración 027.
     """
-    fn = _fn("_tag_session_owner")
-    cuerpo = ast.unparse(fn)
-    assert "if not user:" in cuerpo
-    # El `return` de salida temprana ocurre ANTES de cualquier INSERT.
-    idx_return = cuerpo.index("return")
-    idx_insert = cuerpo.index("INSERT INTO chat_sessions")
-    assert idx_return < idx_insert, "el anónimo sale antes de tocar la tabla"
+    import inspect
+
+    from app.sesion_autoridad import _ejecutar_creacion
+
+    cuerpo = inspect.getsource(_ejecutar_creacion)
+    assert "INSERT INTO chat_sessions" in cuerpo
+    assert "creada_por_servidor" in cuerpo, "la frontera creación≠reanudación"
+    assert "ON CONFLICT (session_id) DO NOTHING" in cuerpo
+    assert "RETURNING session_id" in cuerpo
 
 
 def test_el_session_id_anonimo_lo_elige_el_cliente_sin_control_del_servidor():

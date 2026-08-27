@@ -18,7 +18,8 @@ import Launcher from './Launcher'
 import AttachSheet from './AttachSheet'
 
 // Headers (backend key + Bearer del usuario) centralizados en api.js
-import { API_BASE, apiHeaders, setAccessToken } from './api'
+import { API_BASE, apiHeaders, apiHeadersSesion, bootstrapSession, setAccessToken } from './api'
+import { descartarCapacidadRechazada, limpiarCapacidadTrasClaim, resolverSesion } from './sessionFlow'
 import { renderMarkdown } from './markdown'
 import './App.css'
 import ReviewStation from './ReviewStation'
@@ -60,14 +61,10 @@ const CompararMap = lazyWithReload(() => import('./CompararMap'))
 // ── Helpers ────────────────────────────────────────────────
 const SESSION_KEY = 'contexto_ai_session_id'
 
-function getOrCreateSession() {
-  let id = localStorage.getItem(SESSION_KEY)
-  if (!id) {
-    id = 'session-' + crypto.randomUUID()
-    localStorage.setItem(SESSION_KEY, id)
-  }
-  return id
-}
+// AUTH-READ-GATE.1: aquí vivían `getOrCreateSession()` y `qrSessionId()`, que fabricaban el
+// `session_id` en el cliente. Se eliminan, no se dejan sin usar: mientras existieran, serían
+// una invitación a volver al modelo en que el identificador ERA la credencial. Los emite
+// `POST /sessions/bootstrap`, que además conserva el prefijo `qr-{activo}-`.
 
 // Convierte una clave VAPID base64url a Uint8Array para pushManager.subscribe().
 function urlBase64ToUint8Array(base64String) {
@@ -87,8 +84,6 @@ function getDeviceId() {
     return id
   } catch { return 'anon' }
 }
-// Sesión del QR: única por (inmueble × dispositivo).
-const qrSessionId = (id) => `qr-${id}-${getDeviceId()}`
 
 // ── Registro de LLEGADA (F0 · PLAN_Onboarding_Ecosistema) ───────────────────────────
 // Se dispara al CARGAR, antes de que la persona escriba nada: así el escaneo de un QR
@@ -128,7 +123,7 @@ function registrarLlegada({ sessionId, activoId, superficie }) {
     // El backend le quita la query antes de guardarlo (ahí viajan tokens y búsquedas).
     referrer: document.referrer || null,
     device_key: getDeviceId(),
-  }, { headers: apiHeaders() }).catch(() => {})
+  }, { headers: apiHeadersSesion(sessionId) }).catch(() => {})
 }
 
 // renderMarkdown se movió a ./markdown.js (compartido con el CRM Vivo). Ver import arriba.
@@ -206,7 +201,7 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
     let cancel = false
     setDeltaLoading(true); setDelta(null)
     axios.post(`${API_BASE}/api/v1/chat/comparar`,
-      { session_id: sessionId, id_a: comparar[0], id_b: comparar[1] }, { headers: apiHeaders() })
+      { session_id: sessionId, id_a: comparar[0], id_b: comparar[1] }, { headers: apiHeadersSesion(sessionId) })
       .then(({ data }) => { if (!cancel) setDelta(data) })
       .catch(() => { if (!cancel) setDelta({ ok: false, message: 'No pude comparar ahora mismo.' }) })
       .finally(() => { if (!cancel) setDeltaLoading(false) })
@@ -432,8 +427,12 @@ export default function App() {
     const a = new URLSearchParams(window.location.search).get('a')
     return a && /^[0-9a-f-]{36}$/i.test(a) ? a : null
   })()
+  // AUTH-READ-GATE.1: el cliente YA NO fabrica identificadores. Arranca con lo que hubiera
+  // guardado —o `null`— y el efecto de abajo resuelve: reanudar si hay autoridad que
+  // demostrar, o pedirle una sesión nueva al servidor. Antes esta línea generaba
+  // `'session-' + crypto.randomUUID()`, y ese id inventado era la credencial de facto.
   const [sessionId, setSessionId] = useState(() =>
-    sesionDeUrl || (deepLinkId ? qrSessionId(deepLinkId) : 'session-' + crypto.randomUUID()))
+    sesionDeUrl || localStorage.getItem(SESSION_KEY) || null)
   const [messages, setMessages]   = useState([])
   const [input, setInput]         = useState('')
   const [loading, setLoading]     = useState(false)
@@ -497,6 +496,11 @@ export default function App() {
     return [...prev, ...nuevos.filter((m) => !ya.has(m.id))]
   }
   const [session, setSession] = useState(null)            // sesión de Supabase | null
+  // AUTH-READ-GATE.1: ¿ya sabemos SI hay cuenta? La resolución de la conversación depende
+  // de eso —una sesión heredada sin capacidad se conserva por OWNER si hay cuenta y se
+  // abandona si no la hay—, así que resolver antes tomaría la rama equivocada. Sin auth
+  // configurado no hay nada que esperar.
+  const [authListo, setAuthListo] = useState(!authEnabled)
   const [authOpen, setAuthOpen] = useState(() => {        // modal login/registro (auto-abre desde la web: /?login=1 · /?corredor=1)
     const p = new URLSearchParams(window.location.search)
     return p.get('login') === '1' || p.get('corredor') === '1'
@@ -550,6 +554,7 @@ export default function App() {
     const onSession = async (s) => {
       setSession(s)
       setAccessToken(s?.access_token)
+      setAuthListo(true)   // ya se sabe si hay cuenta: la resolución de sesión puede correr
       await applyPendingProfile(s?.access_token)
       await loadRol(s?.access_token)
     }
@@ -557,6 +562,59 @@ export default function App() {
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => onSession(s))
     return () => sub?.subscription?.unsubscribe?.()
   }, [])
+
+  // ── AUTH-READ-GATE.1 · 5c — de dónde sale la conversación ────────────────────────────
+  //
+  // Este efecto es el cutover. Antes, la app **inventaba** un `session_id` en el cliente y
+  // ese id inventado era, de hecho, la credencial: quien lo tuviera leía el hilo. Ahora el
+  // id lo emite el servidor, y lo que autoriza es una capacidad aparte (`X-Session-Resume`)
+  // o ser el dueño autenticado.
+  //
+  // El árbol de decisión NO vive aquí — vive en `sessionRecovery` y se ejecuta en
+  // `sessionFlow`, probado por comportamiento. Este efecto solo aporta el transporte real.
+  //
+  // El QR tiene su propio carril (`loadFromDeepLink`), que además restaura el hilo con el
+  // corredor; no se duplica aquí, o se pedirían dos sesiones al servidor por una visita.
+  const sesionResuelta = useRef(false)
+  useEffect(() => {
+    if (!authListo || deepLinkId || sesionResuelta.current) return
+    sesionResuelta.current = true
+    let vivo = true
+    ;(async () => {
+      try {
+        const { sessionId: sid } = await resolverSesion({
+          sessionIdPrevio: sessionId,
+          activoId: null,
+          autenticado: !!session,
+          http: {
+            // El backend responde 404 igual para "no existe" que para "no es tuyo".
+            // Esa indistinguibilidad es la política, no una carencia: el cliente no
+            // necesita —ni debe— poder separarlas.
+            puedeAcceder: async (s) => {
+              try {
+                await axios.get(`${API_BASE}/api/v1/chat/${s}/history`,
+                  { headers: apiHeadersSesion(s) })
+                return true
+              } catch {
+                descartarCapacidadRechazada(s)   // lo que se rechazó ya no vale para nada
+                return false
+              }
+            },
+            bootstrap: (activoId) => bootstrapSession(activoId),
+          },
+        })
+        if (!vivo) return
+        localStorage.setItem(SESSION_KEY, sid)
+        setSessionId(sid)
+      } catch {
+        if (vivo) setError('No se pudo abrir la conversación. Recarga la página.')
+      }
+    })()
+    return () => { vivo = false }
+  // `sessionId` se lee, pero NO va en deps: cambia como RESULTADO de este efecto y lo
+  // reactivaría en bucle. El candado de `sesionResuelta` lo hace explícito.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authListo, session, deepLinkId])
 
   const logout = useCallback(() => {
     // Limpiamos el estado local PRIMERO para que la UI responda al instante.
@@ -601,8 +659,11 @@ export default function App() {
     // Nueva sesión (o vacía) → resetea el handoff de cámara ANTES de cualquier early-return,
     // para que el 1er mapa haga ease-in y NO vuele desde el encuadre de la sesión anterior.
     mapBboxRef.current = null
+    // Sin conversación resuelta no hay nada que pedir: `sessionId` es `null` entre el
+    // montaje y la respuesta del bootstrap, y también mientras «nuevo chat» va y vuelve.
+    if (!sessionId) return
     if (skipFirstRestore.current) { skipFirstRestore.current = false; return }
-    axios.get(`${API_BASE}/api/v1/chat/${sessionId}/history`, { headers: apiHeaders() })
+    axios.get(`${API_BASE}/api/v1/chat/${sessionId}/history`, { headers: apiHeadersSesion(sessionId) })
       .then(({ data }) => {
         if (!data.messages?.length) return
         const restored = data.messages.map((m, i) => ({
@@ -622,7 +683,7 @@ export default function App() {
         // DESAPARECÍA — el interesado veía el análisis del inmueble y nada más, como si
         // nunca hubieran hablado. El flujo de QR ya lo restauraba; el normal no.
         axios.get(`${API_BASE}/api/v1/chat/${sessionId}/handoff`,
-          { params: hiloSeleccionado ? { activo_id: hiloSeleccionado } : undefined, headers: apiHeaders() })
+          { params: hiloSeleccionado ? { activo_id: hiloSeleccionado } : undefined, headers: apiHeadersSesion(sessionId) })
           .then(({ data: h }) => {
             if (h?.activo_id) setHiloActivo(h.activo_id)
             setHilosCorredor(h?.hilos || [])
@@ -675,10 +736,10 @@ export default function App() {
     const prev = localStorage.getItem(storeKey)
     if (prev) {
       try {
-        const { data: h } = await axios.get(`${API_BASE}/api/v1/chat/${prev}/handoff`, { headers: apiHeaders() })
+        const { data: h } = await axios.get(`${API_BASE}/api/v1/chat/${prev}/handoff`, { headers: apiHeadersSesion(prev) })
         if (h?.activo) {
           setSessionId(prev)
-          const hist = await axios.get(`${API_BASE}/api/v1/chat/${prev}/history`, { headers: apiHeaders() })
+          const hist = await axios.get(`${API_BASE}/api/v1/chat/${prev}/history`, { headers: apiHeadersSesion(prev) })
             .then(r => r.data).catch(() => ({ messages: [] }))
           const base = (hist.messages || []).map((m, i) => ({
             id: `r-${i}`, role: m.role === 'user' ? 'user' : 'ai', content: limpiarCtx(m), time: '', toolCalls: [],
@@ -692,10 +753,18 @@ export default function App() {
           setModoCorredor(true)
           return
         }
-      } catch { /* sin handoff: seguimos a cápsula fresca */ }
+      } catch {
+        // 404: la capacidad caducó, el hilo fue reclamado, o nunca fue de este dispositivo.
+        // Se tira el secreto y se abre una conversación nueva. NO se reintenta sin él: ese
+        // reintento sería exactamente el fallback de `session_id` a secas que esto elimina.
+        descartarCapacidadRechazada(prev)
+        localStorage.removeItem(storeKey)
+      }
     }
 
-    const sid = `${qrSessionId(id)}-${Math.random().toString(36).slice(2, 8)}`
+    // AUTH-READ-GATE.1: el servidor emite el id —conservando el prefijo `qr-{activo}-`, del
+    // que dependen siete consultas de `assets.py`— y, si es anónima, su capacidad.
+    const sid = await bootstrapSession(id)
     localStorage.setItem(SESSION_KEY, sid)
     localStorage.setItem(storeKey, sid)
     setSessionId(sid)
@@ -708,13 +777,13 @@ export default function App() {
       const { data } = await axios.post(`${API_BASE}/api/v1/chat/`, {
         message: `El usuario escaneó el QR del inmueble ${id} y abrió el chat. ABRE EN MODO CÁPSULA (no un informe): consulta el inmueble con tool_fetch_asset_lifecycle_specs y responde corto y cálido — un saludo, UN dato memorable y verificable del inmueble dicho con naturalidad (NO escribas etiquetas como "El pico:"), y un gancho con 2-3 caminos para profundizar. ADAPTA los caminos a la OPERACIÓN (campo "operacion"): si es ARRIENDO ofrece "cómo es vivir aquí / qué incluye el arriendo / estado del inmueble" y NUNCA "¿es buena inversión?"; si es VENTA sí puedes ofrecer "si es buena inversión". NO vuelques todos los datos; deja que el usuario elija. El informe completo solo si lo pide. Si el id no existe, dilo con honestidad.`,
         session_id: sid,
-      }, { headers: apiHeaders() })
+      }, { headers: apiHeadersSesion(sid) })
       setMessages(prev => [...prev, { id: crypto.randomUUID(), role:'ai', content: data.reply,
         time: new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }),
         toolCalls: data.tool_calls_made > 0 ? Array(data.tool_calls_made).fill('t') : [] }])
       // Título limpio en la barra lateral (en vez del mensaje técnico).
       axios.patch(`${API_BASE}/api/v1/chat/sessions/${sid}`,
-        { titulo: '📍 Inmueble escaneado (QR)' }, { headers: apiHeaders() }).catch(() => {})
+        { titulo: '📍 Inmueble escaneado (QR)' }, { headers: apiHeadersSesion(sid) }).catch(() => {})
     } catch {
       setError('No pudimos cargar este inmueble ahora mismo. Reintenta en un momento.')
     } finally { setLoading(false) }
@@ -732,13 +801,17 @@ export default function App() {
   // al que escanea el letrero y se va sin decir nada — que es la mayoría, y era la señal
   // más fuerte que el sistema tiraba a la basura.
   useEffect(() => {
+    // Espera a que la conversación exista: el id ya no se inventa en el montaje, lo emite
+    // el servidor. `registrarLlegada` de-duplica por `sessionId` en `sessionStorage`, así
+    // que correr al resolverse cuenta la llegada UNA vez, no una por render.
+    if (!sessionId) return
     registrarLlegada({
       sessionId,
       activoId: deepLinkId,
       superficie: deepLinkId ? 'anuncio' : shareToken ? 'conversacion_compartida' : 'home',
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [sessionId])
 
   // Auto-scroll. OJO: scrollIntoView desplaza TODOS los contenedores scrolleables que
   // haya por encima, incluido el documento — asi se iba el header fuera de pantalla en
@@ -796,6 +869,11 @@ export default function App() {
     }
     const g = geoOverride || geo
 
+    // AUTH-READ-GATE.1: sin conversación resuelta no se envía nada. El id ya no se fabrica
+    // en el cliente, así que en el instante entre el montaje y la respuesta de bootstrap
+    // `sessionId` es `null` — y mandarlo produciría un 422, no un turno.
+    if (!sessionId) { setError('Preparando la conversación… reintenta en un segundo.'); return }
+
     setInput('')
     if (inputRef.current) inputRef.current.style.height = 'auto'  // reinicia el auto-grow al enviar
     setError(null)
@@ -813,7 +891,7 @@ export default function App() {
         const hilo = hiloActivo || hiloSeleccionado
         await axios.post(`${API_BASE}/api/v1/chat/${sessionId}/handoff/mensaje`,
           { texto: userText },
-          { params: hilo ? { activo_id: hilo } : undefined, headers: apiHeaders() })
+          { params: hilo ? { activo_id: hilo } : undefined, headers: apiHeadersSesion(sessionId) })
       } catch { setError('No se pudo enviar tu mensaje al corredor. Intenta de nuevo.') }
       return
     }
@@ -837,12 +915,23 @@ export default function App() {
     const parcheaMensaje = (id, cambio) => setMessages(prev => prev.map(
       m => m.id === id ? { ...m, ...cambio } : m))
 
+    // AUTH-READ-GATE.1 · caso 6 — anónimo → login → claim.
+    // El backend hace el claim DENTRO de `POST /chat`: si la petición trae capacidad válida
+    // y va autenticada, asigna dueño y revoca la capacidad en la misma sentencia. Desde ese
+    // momento el secreto local no autoriza nada y solo seguiría viajando en cada petición.
+    //
+    // Se borra DESPUÉS de confirmar el éxito, nunca antes: si se borrara primero y el claim
+    // fallara, quedaríamos sin con qué reanudar y el hilo seguiría sin dueño — inaccesible
+    // para siempre. El orden es la garantía, no un detalle de estilo.
+    const trasEnvioExitoso = () =>
+      limpiarCapacidadTrasClaim({ sessionId, autenticado: !!session, exito: true })
+
     // Camino de respaldo: el POST bloqueante de siempre, intacto.
     const enviarBloqueante = async () => {
       const { data } = await axios.post(`${API_BASE}/api/v1/chat/`, {
         message: apiMessage,
         session_id: sessionId,
-      }, { headers: apiHeaders() })
+      }, { headers: apiHeadersSesion(sessionId) })
       setMessages(prev => [...prev, {
         id: msgId, role: 'ai', content: data.reply, time: hora(),
         toolCalls: data.tool_calls_made > 0
@@ -856,12 +945,13 @@ export default function App() {
         puerta: data.puerta || null,
       }])
       lastAiRef.current = data.reply || ''
+      trasEnvioExitoso()
     }
 
     try {
       const resp = await fetch(`${API_BASE}/api/v1/chat/?stream=true`, {
         method: 'POST',
-        headers: { ...apiHeaders(), 'Content-Type': 'application/json' },
+        headers: { ...apiHeadersSesion(sessionId), 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: apiMessage, session_id: sessionId }),
       })
       if (!resp.ok || !resp.body) throw new Error(`stream HTTP ${resp.status}`)
@@ -914,6 +1004,7 @@ export default function App() {
       if (!escribio) throw new Error('stream sin tokens')
       parchea({ streaming: false })
       lastAiRef.current = texto
+      trasEnvioExitoso()
     } catch {
       if (escribio) {
         // Se cortó a mitad de la escritura: conservamos lo escrito y avisamos.
@@ -934,7 +1025,7 @@ export default function App() {
       setLoading(false)
       setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 100)
     }
-  }, [input, loading, sessionId, geo, modoCorredor])
+  }, [input, loading, sessionId, session, geo, modoCorredor])
 
   // ── Registro del Service Worker + auto-update de la PWA ─────────────────────
   // Registra el SW (PWA instalable + push) y detecta cuando hay una versión nueva
@@ -1069,7 +1160,7 @@ export default function App() {
     const sub = await ensurePushSubscription()
     if (!sub) return
     try {
-      await axios.post(`${API_BASE}/api/v1/chat/${sid}/handoff/push`, sub, { headers: apiHeaders() })
+      await axios.post(`${API_BASE}/api/v1/chat/${sid}/handoff/push`, sub, { headers: apiHeadersSesion(sid) })
     } catch (e) { console.warn('Lead push:', e) }
   }, [ensurePushSubscription])
 
@@ -1082,7 +1173,7 @@ export default function App() {
     try {
       await axios.post(`${API_BASE}/api/v1/chat/lead-contacto`,
         { session_id: sid, push_subscription: sub || null, consent: true },
-        { headers: apiHeaders() })
+        { headers: apiHeadersSesion(sid) })
       return true
     } catch (e) { console.warn('Lead contacto:', e); return false }
   }, [ensurePushSubscription])
@@ -1119,9 +1210,12 @@ export default function App() {
   // los mensajes del corredor. Una sola consulta al cambiar de conversación.
   useEffect(() => {
     if (anuncioMode || modoCorredor || prefiereAgente) return
+    // Sin conversación resuelta no hay nada que pedir: `sessionId` es `null` entre el
+    // montaje y la respuesta del bootstrap, y también mientras «nuevo chat» va y vuelve.
+    if (!sessionId) return
     let vivo = true
     axios.get(`${API_BASE}/api/v1/chat/${sessionId}/handoff`,
-      { params: hiloSeleccionado ? { activo_id: hiloSeleccionado } : undefined, headers: apiHeaders() })
+      { params: hiloSeleccionado ? { activo_id: hiloSeleccionado } : undefined, headers: apiHeadersSesion(sessionId) })
       .then(({ data }) => {
         if (!vivo || !data?.activo) return
         setModoCorredor(true)
@@ -1193,7 +1287,7 @@ export default function App() {
       // que el usuario tiene en pantalla, o el corredor no se resuelve y el lead se pierde.
       const { data } = await axios.post(
         `${API_BASE}/api/v1/chat/${sessionId}/handoff`, {},
-        { params: activoCandidato ? { activo_id: activoCandidato } : undefined, headers: apiHeaders() })
+        { params: activoCandidato ? { activo_id: activoCandidato } : undefined, headers: apiHeadersSesion(sessionId) })
       if (data?.corredor_whatsapp) setCorredorWhatsapp(data.corredor_whatsapp)
       // Puede ser un SEGUNDO corredor de la misma conversación: el hilo pasa a ser este.
       if (data?.activo_id) { setHiloActivo(data.activo_id); setHiloSeleccionado(data.activo_id) }
@@ -1234,13 +1328,16 @@ export default function App() {
   // respuestas. Ahora corre también cuando el handoff ya está en marcha (modoCorredor).
   useEffect(() => {
     if ((!deepLinkId && !modoCorredor && !hilosCorredor.length) || anuncioMode) return
+    // Sin conversación resuelta no hay nada que pedir: `sessionId` es `null` entre el
+    // montaje y la respuesta del bootstrap, y también mientras «nuevo chat» va y vuelve.
+    if (!sessionId) return
     let vivo = true
     const tick = async () => {
       try {
         const { data } = await axios.get(`${API_BASE}/api/v1/chat/${sessionId}/handoff`,
           { params: { desde: handoffSeenRef.current,
                       ...(hiloSeleccionado ? { activo_id: hiloSeleccionado } : {}) },
-            headers: apiHeaders() })
+            headers: apiHeadersSesion(sessionId) })
         if (!vivo || !data?.activo) return
         if (!modoCorredor && !prefiereAgente) setModoCorredor(true)
         if (data?.activo_id) setHiloActivo(data.activo_id)
@@ -1476,14 +1573,26 @@ export default function App() {
     reader.readAsDataURL(file)
   }, [matchByImage])
 
-  const resetSession = useCallback(() => {
+  const resetSession = useCallback(async () => {
     // Sin confirmación: la conversación actual no se pierde — queda guardada y
     // visible en la barra lateral, a un clic. "Nuevo chat" crea uno al instante.
-    const newId = 'session-' + crypto.randomUUID()
-    localStorage.setItem(SESSION_KEY, newId)
-    setSessionId(newId)
+    //
+    // AUTH-READ-GATE.1: el id lo emite el servidor. `bootstrapSession` guarda además la
+    // capacidad de reanudación si la conversación nace anónima.
     setMessages([])
     setError(null)
+    // Se suelta la conversación anterior ANTES de pedir la nueva. Crear la sesión es ahora
+    // un viaje al servidor, no una línea síncrona: si se conservara el id viejo durante esa
+    // espera, un mensaje escrito rápido se iría a la conversación que se acaba de cerrar —
+    // y en pantalla no habría ni rastro de él, porque los mensajes ya se limpiaron.
+    setSessionId(null)
+    try {
+      const newId = await bootstrapSession(null)
+      localStorage.setItem(SESSION_KEY, newId)
+      setSessionId(newId)
+    } catch {
+      setError('No se pudo abrir una conversación nueva. Reintenta.')
+    }
     setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 100)
   }, [])
 

@@ -89,27 +89,48 @@ def test_el_estricto_distingue_sin_token_de_token_malo():
 # ── El vínculo user ↔ thread ───────────────────────────────────────────────────────
 
 
-def test_la_conversacion_se_liga_al_usuario_con_primer_dueno_gana():
-    """`chat_sessions(session_id, user_id)` con `COALESCE`: una vez que un hilo tiene dueño,
-    otro usuario NO se lo puede reasignar. Es lo que hace posible el caso anon→login: un hilo
-    con `user_id` NULL sí puede adquirir dueño más tarde."""
-    fuente = CHAT.read_text(encoding="utf-8")
-    fn = next(n for n in ast.walk(ast.parse(fuente))
-              if isinstance(n, ast.AsyncFunctionDef) and n.name == "_tag_session_owner")
-    cuerpo = ast.unparse(fn)
-    assert "COALESCE(chat_sessions.user_id, :uid)" in cuerpo
-    assert "ON CONFLICT (session_id) DO UPDATE" in cuerpo
-    assert "if not user:" in cuerpo and "return" in cuerpo, "sin usuario no se etiqueta nada"
+def test_REGRESION_el_vinculo_user_thread_exige_capacidad():
+    """`EXPECTED_POLICY_CHANGE` · antes:
+    `test_la_conversacion_se_liga_al_usuario_con_primer_dueno_gana`.
+
+    **Congelado en E3.1a:** `_tag_session_owner` usaba `COALESCE`, así que un hilo sin dueño
+    lo adquiría el primer autenticado que enviara el `session_id`. Eso hacía posible el caso
+    anon→login… y también la apropiación por identificador.
+
+    **Cambio autorizado en AUTH-READ-GATE.1:** el caso anon→login **se conserva** —sigue
+    siendo un requisito de producto— pero ahora exige presentar la capacidad del hilo. La
+    propiedad se adquiere demostrando posesión, no conociendo el nombre.
+    """
+    import inspect
+
+    from app.sesion_autoridad import reclamar_sesion_anonima
+
+    src = CHAT.read_text(encoding="utf-8")
+    literales = " ".join(n.value for n in ast.walk(ast.parse(src))
+                         if isinstance(n, ast.Constant) and isinstance(n.value, str))
+    assert "COALESCE(chat_sessions.user_id" not in literales
+    assert "resume_secret" in inspect.signature(reclamar_sesion_anonima).parameters
 
 
-def test_el_etiquetado_es_best_effort_y_puede_fallar_en_silencio():
-    """Consecuencia para E3.1b: el vínculo user↔thread NO está garantizado. Si la escritura
-    falla, la conversación queda sin dueño y nadie se entera."""
-    fuente = CHAT.read_text(encoding="utf-8")
-    fn = next(n for n in ast.walk(ast.parse(fuente))
-              if isinstance(n, ast.AsyncFunctionDef) and n.name == "_tag_session_owner")
-    manejadores = [h for t in ast.walk(fn) if isinstance(t, ast.Try) for h in t.handlers]
-    assert manejadores and all(isinstance(h.body[0], ast.Pass) for h in manejadores)
+def test_REGRESION_el_vinculo_ya_no_falla_en_silencio():
+    """`EXPECTED_POLICY_CHANGE` · antes:
+    `test_el_etiquetado_es_best_effort_y_puede_fallar_en_silencio`.
+
+    **Congelado en E3.1a:** el vínculo user↔thread era best-effort; si la escritura fallaba,
+    la conversación quedaba sin dueño y nadie se enteraba. Se anotó como consecuencia para
+    E3.1b: *"un store que asuma que toda conversación tiene dueño se equivocará"*.
+
+    **Cambio autorizado:** el claim comprueba el `rowcount` y levanta si no tocó exactamente
+    una fila. Un claim que no reclama ya no pasa desapercibido.
+    """
+    import inspect
+
+    from app.sesion_autoridad import _ejecutar_claim
+
+    cuerpo = inspect.getsource(_ejecutar_claim)
+    assert "len(filas) != 1" in cuerpo
+    assert "raise AccesoDenegado" in cuerpo
+    assert "pass" not in cuerpo, "no queda ninguna degradación silenciosa"
 
 
 def test_el_esquema_soporta_1_a_N_usuario_conversaciones():
@@ -171,32 +192,52 @@ def test_las_MUTACIONES_de_una_conversacion_exigen_dueno():
         assert "get_current_user" in rutas.get(clave, set()), clave
 
 
-def test_LEER_una_conversacion_no_exige_dueno():
-    """EL HALLAZGO QUE DECIDE SI `thread_id` PUEDE SER RAÍZ DEL BUYER: no puede.
+def test_REGRESION_LEER_una_conversacion_ya_exige_autoridad():
+    """`EXPECTED_POLICY_CHANGE` - antes: `test_LEER_una_conversacion_no_exige_dueno`.
 
-    `GET /{session_id}/history` no declara ninguna dependencia de autenticación. Conocer el
-    `session_id` basta para leer la conversación entera. El `session_id` es, por tanto, un
-    **portador de capacidad** (como un enlace secreto), no una identidad verificada.
+    **Congelado en E3.1a:** `GET /{session_id}/history` no declaraba autenticación alguna.
+    Conocer el `session_id` bastaba para leer la conversación entera, lo que convertía al
+    identificador en un portador de capacidad de facto.
 
-    Esto NO se corrige aquí —E3.1a no cambia comportamiento— pero fija el hecho: una raíz de
-    identidad cuyo conocimiento otorga acceso no puede ser la raíz del Buyer.
+    **Cambio autorizado en AUTH-READ-GATE.1 (endpoint 1 de 11):** exige `_exigir_autoridad`.
+
+    **La conclusión de E3.1a NO cambia, y conviene decir por qué.** Que ahora haga falta
+    autoridad no rehabilita a `thread_id` como raíz del Buyer: la capacidad sigue siendo un
+    *portador* -quien la tenga entra, sea quien sea- y sigue viviendo en un `localStorage`,
+    o sea por navegador. La raíz del Buyer sigue siendo `claims.sub`. Lo que cambió es que
+    el portador ahora es un secreto de 32 bytes y no el nombre de la conversación.
     """
     rutas = _rutas_con_auth()
-    assert rutas.get(("GET", "/{session_id}/history")) == set(), (
-        "si esto cambió, revisar §9 del reporte 11: la frontera de autorización se movió"
+    assert rutas.get(("GET", "/{session_id}/history")) == {"get_optional_user"}, (
+        "revisar §9 del reporte 11: la frontera de autorización se movió otra vez"
     )
+    import ast as _ast
+    cuerpo = _ast.unparse(next(
+        n for n in _ast.walk(_ast.parse(CHAT.read_text(encoding="utf-8")))
+        if isinstance(n, (_ast.AsyncFunctionDef, _ast.FunctionDef))
+        and n.name == "get_session_history"))
+    assert "_exigir_autoridad" in cuerpo
 
 
-def test_el_inventario_exacto_de_lecturas_sin_auth():
-    """Inventario congelado. Si aparece una ruta nueva sin auth, este test la caza."""
+def test_REGRESION_la_unica_lectura_sin_auth_es_la_publica_por_diseno():
+    """`EXPECTED_POLICY_CHANGE` - antes: `test_el_inventario_exacto_de_lecturas_sin_auth`.
+
+    **Congelado en E3.1a:** cuatro lecturas sin auth. Tres eran el agujero (`/history`,
+    `/handoff`, `/intencion`); la cuarta, `/shared/{token}`, era pública **por diseño**.
+
+    **Cambio autorizado en AUTH-READ-GATE.1:** quedan las tres cerradas y sobrevive una sola.
+    Y esa sobrevive con razón: no autentica a nadie, pero **exige token + `is_public`**, que
+    es la misma separación recurso-capacidad que el gate generaliza. El carril compartido no
+    se toca -es una decisión congelada de la unidad.
+
+    El test sigue siendo el mismo cazador de siempre: si mañana aparece una lectura nueva sin
+    auth, cae aquí.
+    """
     rutas = _rutas_con_auth()
     sin_auth = {r for (m, r), a in rutas.items() if m == "GET" and not a}
-    assert sin_auth == {
-        "/shared/{token}",              # público POR DISEÑO: exige share_token + is_public
-        "/{session_id}/history",
-        "/{session_id}/handoff",
-        "/{session_id}/intencion",
-    }, f"cambió el conjunto de lecturas sin auth: {sin_auth}"
+    assert sin_auth == {"/shared/{token}"}, (
+        f"apareció una lectura sin auth que no es la pública: {sin_auth}"
+    )
 
 
 def test_el_hilo_compartido_si_exige_una_condicion_explicita():
@@ -212,14 +253,29 @@ def test_el_hilo_compartido_si_exige_una_condicion_explicita():
 # ── El session_id: quién lo genera y cuánto dura ───────────────────────────────────
 
 
-def test_el_backend_genera_un_session_id_si_el_cliente_no_lo_manda():
-    """`ChatRequest.session_id` tiene `default_factory=uuid4`. Un turno sin session_id NO
-    falla: crea una conversación de un solo turno, irrecuperable."""
+def test_REGRESION_el_chat_ya_no_puede_crear_una_sesion():
+    """`EXPECTED_POLICY_CHANGE` · antes:
+    `test_el_backend_genera_un_session_id_si_el_cliente_no_lo_manda`.
+
+    **Comportamiento congelado en E3.1a:** `ChatRequest.session_id` tenía
+    `default_factory=uuid4`, así que un turno sin `session_id` no fallaba — creaba una
+    conversación irrecuperable.
+
+    **Cambio autorizado en AUTH-READ-GATE.1:** con el bootstrap explícito, que `POST /chat`
+    pudiera inventar una sesión sería un **segundo mecanismo de creación**, fuera de la
+    frontera que distingue nacer de reanudar. El campo es obligatorio.
+    """
+    import pytest as _pytest
+
     from app.routers.chat import ChatRequest
 
-    a, b = ChatRequest(message="hola"), ChatRequest(message="hola")
-    assert a.session_id != b.session_id
-    assert len(a.session_id) == 36 and a.session_id.count("-") == 4
+    with _pytest.raises(Exception):
+        ChatRequest(message="hola")            # sin session_id → ya no valida
+    with _pytest.raises(Exception):
+        ChatRequest(message="hola", session_id="")
+
+    valido = ChatRequest(message="hola", session_id="qr-abc-Ab3xY9")
+    assert valido.session_id == "qr-abc-Ab3xY9", "el cliente sigue pudiendo REANUDAR"
 
 
 def test_el_frontend_persiste_el_session_id_en_localstorage():
@@ -231,17 +287,32 @@ def test_el_frontend_persiste_el_session_id_en_localstorage():
     assert re.search(r"localStorage\.setItem\(SESSION_KEY", js)
 
 
-def test_existe_un_device_id_anonimo_previo_a_esta_fase():
-    """INFRAESTRUCTURA ANÓNIMA QUE YA EXISTÍA, y hay que caracterizarla antes de reutilizarla.
+def test_REGRESION_el_device_id_ya_no_privatiza_la_sesion_del_QR():
+    """`EXPECTED_POLICY_CHANGE` · antes: `test_existe_un_device_id_anonimo_previo_a_esta_fase`.
 
-    `contexto_ai_device_id` es un UUID de navegador en localStorage. Su propósito declarado es
-    acotado: hacer PRIVADA la sesión del QR por visitante (`qr-{activo}-{dispositivo}`), no
-    identificar a una persona.
+    **Sigue en pie:** `contexto_ai_device_id` existe, es un UUID de navegador en localStorage y
+    **no** identifica a una persona. Esa parte de E3.1a no cambia — y es la que decidía que no
+    sirve como `buyer_id`.
+
+    **Congelado en `.0`/E3.1a:** ese identificador se usaba además para hacer *privada* la
+    sesión del QR, incrustándolo en el nombre de la conversación (`qr-{activo}-{dispositivo}`).
+    Eso era privacidad por oscuridad: el esquema es público y el `device_id` viaja al servidor
+    en cada llegada (`visita.device_key`, migración 024), así que no era secreto.
+
+    **Cambio autorizado en AUTH-READ-GATE.1 · 5c:** la conversación se privatiza con la
+    capacidad, no con el nombre. El `device_key` conserva únicamente su uso analítico.
+
+    Esto **refuerza** la conclusión de E3.1a: el `device_key` nunca fue autoridad, y ahora
+    tampoco aparenta serlo.
     """
     js = APP_JSX.read_text(encoding="utf-8")
+
     assert "const DEVICE_KEY = 'contexto_ai_device_id'" in js
     assert "crypto.randomUUID" in js
-    assert "qr-${id}-${getDeviceId()}" in js.replace("`", "`")
+
+    # Ya no se incrusta en el identificador de la conversación; queda como dato de llegada.
+    assert "qr-${id}-${getDeviceId()}" not in js
+    assert "device_key: getDeviceId()" in js
 
 
 def test_el_device_key_SI_llega_al_backend_y_SI_se_persiste():

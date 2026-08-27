@@ -1,6 +1,8 @@
 // Headers compartidos para todas las llamadas al backend.
 // Incluye la llave del backend (X-API-Key) y, si hay sesión, el Bearer token del usuario.
 import axios from 'axios'
+
+import { resumeHeader, setResumeSecret } from './resumeCapability'
 import { supabase } from './supabaseClient'
 
 export const API_BASE = import.meta.env.VITE_API_URL ?? ''
@@ -15,6 +17,48 @@ export function apiHeaders() {
     ...(API_KEY ? { 'X-API-Key': API_KEY } : {}),
     ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
   }
+}
+
+/**
+ * Cabeceras para una petición SOBRE UNA CONVERSACIÓN concreta (AUTH-READ-GATE.1).
+ *
+ * Añade `X-Session-Resume` **solo si hay capacidad guardada para ESE `session_id`**. Se pasa
+ * la sesión por parámetro a propósito: no existe una capacidad "actual" que valga para
+ * cualquier petición, porque el navegador puede tener varias conversaciones abiertas.
+ *
+ * OJO CON LO QUE ESTO **NO** SIGNIFICA. Que no haya secreto no prueba que la conversación
+ * sea tuya: solo significa que no se puede intentar el camino de capacidad. Quién es el dueño
+ * lo decide el backend, respondiendo allow o 404. El cliente nunca concluye propiedad.
+ */
+export function apiHeadersSesion(sessionId) {
+  return { ...apiHeaders(), ...resumeHeader(sessionId) }
+}
+
+/**
+ * Crea una conversación. **El cliente ya no elige el `session_id`.**
+ *
+ * Es la única puerta de creación: el servidor genera el identificador y, si la petición es
+ * anónima, emite el secreto de reanudación **una sola vez**. Se guarda aquí mismo, asociado a
+ * ese `session_id` y a ningún otro.
+ *
+ * Para una petición autenticada el servidor devuelve `resume_secret: null` y no se guarda
+ * nada: esa conversación se autoriza por identidad.
+ *
+ * `activo_id` conserva el prefijo `qr-{activo}-`, del que dependen siete consultas de
+ * `assets.py` para reconstruir el lead del letrero.
+ */
+export async function bootstrapSession(activoId = null) {
+  const { data } = await axios.post(
+    `${API_BASE}/api/v1/chat/sessions/bootstrap`,
+    { activo_id: activoId },
+    { headers: apiHeaders() },
+  )
+  const sessionId = data?.session_id
+  if (!sessionId) throw new Error('bootstrap sin session_id')
+
+  // `setResumeSecret` ignora null/vacío, así que una sesión con dueño no deja capacidad.
+  setResumeSecret(sessionId, data?.resume_secret)
+  return sessionId
 }
 
 // ── Recuperación de token caducado ──────────────────────────────────────────

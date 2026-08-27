@@ -13,7 +13,10 @@ import types
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
+from starlette.requests import Request
+
 from app.routers import chat
+from app.sesion_autoridad import Autoridad
 from app.decision import assembler
 
 
@@ -81,6 +84,19 @@ def _patch(monkeypatch, messages, rows):
     return llamadas
 
 
+# AUTH-READ-GATE.1: `get_session_history` exige ahora autoridad sobre la conversación. Estos
+# tests miden la RECONSTRUCCIÓN del historial, no la puerta — así que se les da una llamada
+# ya autorizada. La autoridad tiene sus propios 89 tests en `test_autoridad_endpoints.py`;
+# duplicarla aquí no añadiría cobertura y sí ataría estos tests a un cambio de política.
+def _historial_autorizado(monkeypatch, session_id="s"):
+    async def _permitir(_request, _sid, _user):
+        return Autoridad.OWNER
+    monkeypatch.setattr(chat, "_exigir_autoridad", _permitir)
+    peticion = Request({"type": "http", "method": "GET", "path": "/", "headers": [],
+                        "client": ("test", 0), "query_string": b""})
+    return chat.get_session_history(peticion, session_id, None)
+
+
 def test_history_preserva_el_encaje_tras_recargar(monkeypatch):
     # El mensaje del usuario SÍ declara preferencias claras (repro exacta del caso real).
     texto = "Busco departamento en La Carolina, tranquilo, cerca de un parque, que acepte mascotas, hasta 800 al mes"
@@ -88,7 +104,7 @@ def test_history_preserva_el_encaje_tras_recargar(monkeypatch):
     messages = _mensajes_de_un_turno(texto, ["A"])
     llamadas = _patch(monkeypatch, messages, rows)
 
-    hist = asyncio.run(chat.get_session_history("s"))
+    hist = asyncio.run(_historial_autorizado(monkeypatch))
     turno = hist["messages"][-1]
     assert turno["role"] == "assistant"
 
@@ -115,7 +131,7 @@ def test_history_multiturno_acumula_preferencias_de_turnos_previos(monkeypatch):
     rows = [_mk_row("A"), _mk_row("B")]
     llamadas = _patch(monkeypatch, t1 + t2, rows)
 
-    hist = asyncio.run(chat.get_session_history("s"))
+    hist = asyncio.run(_historial_autorizado(monkeypatch))
     asistentes = [h for h in hist["messages"] if h["role"] == "assistant"]
     assert len(asistentes) == 2
     # Ambos turnos deben llevar encaje: el segundo turno no repite las preferencias en su
@@ -137,7 +153,7 @@ def test_history_memoiza_una_sola_llamada_llm_en_hilo_largo(monkeypatch):
     rows = [_mk_row(rid) for rid in ["A", "B", "C", "D", "E"]]
     llamadas = _patch(monkeypatch, messages, rows)
 
-    hist = asyncio.run(chat.get_session_history("s"))
+    hist = asyncio.run(_historial_autorizado(monkeypatch))
     asistentes = [h for h in hist["messages"] if h["role"] == "assistant"]
     assert len(asistentes) == 5
     # Las preferencias del primer turno siguen vigentes en TODOS los turnos posteriores.
@@ -153,7 +169,7 @@ def test_history_sin_preferencias_declaradas_no_inventa_encaje(monkeypatch):
     t1 = _mensajes_de_un_turno("¿Qué hay cerca de este sector?", ["A"])
     _patch(monkeypatch, t1, [_mk_row("A")])
 
-    hist = asyncio.run(chat.get_session_history("s"))
+    hist = asyncio.run(_historial_autorizado(monkeypatch))
     turno = hist["messages"][-1]
     assert turno["results"][0]["encaje"] is None
     assert turno["map_seed"]["capas"] == []  # sin encaje ni fresco → ninguna capa

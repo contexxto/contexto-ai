@@ -33,14 +33,20 @@ BuyerContextV0
   stage                  str | None                         E3.6 · texto libre
   field_evidence         tuple[FieldEvidence, ...]
 
-Money            amount: Decimal (REQ) · currency: str (REQ, sin enum, sin default)
+Money            amount: Decimal (REQ) · currency: str (REQ) con pattern ^[A-Z]{3}$
 PlacePreference  dimension: str (libre) · direction: Direction (more|less|unspecified)
 FieldEvidence    field: str (libre) · evidence: EvidenceRefV0
 ```
 
-**Cuatro campos escribibles-por-contrato son texto libre**: `accessibility_requirements`,
-`PlacePreference.dimension`, `Money.currency`, `FieldEvidence.field`. Que el contrato lo
-permita no autoriza al updater — es exactamente la distinción del §2.
+**Tres campos escribibles-por-contrato son texto libre**: `accessibility_requirements`,
+`PlacePreference.dimension` y `FieldEvidence.field`. Que el contrato lo permita no autoriza
+al updater — es exactamente la distinción del §2.
+
+`Money.currency` es un cuarto caso y **es distinto**: lleva `pattern=^[A-Z]{3}$`, así que no
+es texto libre. Pero eso **restringe la forma, no el dominio**: `ZZZ` y `EUR` pasan igual que
+`USD` (verificado ejecutando el contrato). La conclusión no cambia —el updater necesita un
+enum cerrado— pero el motivo sí: no es que falte restricción, es que la que hay no distingue
+una moneda real de tres letras cualesquiera.
 
 ---
 
@@ -77,8 +83,10 @@ vocabulario cerrado. No es un path que se pueda abrir "tal cual".
 "presupuesto 900" no puede construir un `Money` sin moneda. El §12 prohíbe inferirla por
 locale o contexto, y no existe fuente determinista congelada que la herede.
 
-Además la propia `currency` es texto libre: aunque la moneda venga explícita, el updater no
-puede aceptar cualquier cadena. Hace falta un enum cerrado, y **el contrato no lo trae**.
+Y aunque la moneda venga explícita, `^[A-Z]{3}$` no basta: acepta `ZZZ` y `EUR` igual que
+`USD`. Valida forma, no dominio. Hace falta un enum cerrado del updater, y **el contrato no
+lo trae** — ni debería, porque el contrato es general y el updater es una frontera más
+estrecha.
 
 **Indicación: `budget_max` solo escribible con moneda explícita Y contra un enum cerrado que
 esta unidad tendría que definir.** No congelado.

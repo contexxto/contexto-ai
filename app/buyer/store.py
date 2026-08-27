@@ -1,0 +1,297 @@
+"""E3.1b · Buyer Store V0 — persistencia versionada del `BuyerContextV0`.
+
+Guarda el estado del comprador y su historia. **Nada más.** No extrae preferencias, no
+interpreta mensajes, no clasifica criterios, no resuelve tradeoffs y no habla con el
+agente. Recibe un `BuyerContextV0` ya construido y lo persiste; quién lo construye es
+E3.2.
+
+## Las tres cosas que resuelve, y por qué no bastaba una fila mutable
+
+**Historia.** Un estado que se sobrescribe no puede explicarse. En cuanto la siguiente
+actualización pisa a la anterior, *"¿por qué el sistema cree que quiero tres dormitorios?"*
+deja de tener respuesta.
+
+**Reintentos.** El mismo mensaje puede procesarse dos veces —retry de red, replay de una
+cola— y eso no puede producir dos revisiones del mismo hecho.
+
+**Concurrencia.** Un comprador puede tener dos conversaciones abiertas. Sin una revisión
+sobre la que hacer control optimista, la segunda escritura pisa a la primera **en
+silencio**, que es la peor forma de perder datos.
+
+## Dónde vive cada garantía
+
+Las dos garantías duras están en la **base**, no en Python:
+
+```
+idempotencia   UNIQUE (buyer_id, source_message_id)
+concurrencia   SELECT … FOR UPDATE sobre la fila de cabeza
+```
+
+No es una preferencia de estilo. Comprobar-en-Python-y-luego-insertar tiene una ventana
+entre la comprobación y la escritura; bajo dos procesos concurrentes esa ventana se abre.
+Un índice único y un bloqueo de fila no la tienen.
+
+## Lo que este módulo NO decide
+
+**La revisión la asigna el store**, nunca el llamante y menos el modelo. `expected_revision`
+es lo que el llamante *creía* que había cuando leyó; si ya no es cierto, la escritura falla.
+
+**No es la barrera de Fair Housing.** Acepta un `BuyerContextV0` ya construido y no mira su
+contenido. La sanitización determinista de texto libre a criterios persistibles pertenece a
+E3.2 y tiene que ocurrir *antes* de llegar aquí. No se abre un segundo camino de extracción
+"para facilitar los tests": eso sería exactamente el atajo por el que la barrera deja de
+existir.
+
+**No guarda el texto del mensaje.** Solo `source_message_id`. La conversación tiene su
+propio almacenamiento; duplicar el texto aquí sería duplicar PII sin ganar nada.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+
+from pydantic import ValidationError
+from sqlalchemy import text
+
+from app.contracts.buyer_v0 import BuyerContextV0
+from app.database import AsyncSessionLocal
+
+
+class BuyerStoreError(RuntimeError):
+    """Raíz de los fallos del store. Nunca se levanta directamente."""
+
+
+class BuyerRevisionConflict(BuyerStoreError):
+    """Otro escritor avanzó el estado desde que este leyó. **No se escribió nada.**
+
+    Es un `lost update` evitado, no un error de programación: dos conversaciones del mismo
+    comprador pueden llegar a la vez y ambas son legítimas. Resolver el conflicto —fundir
+    los dos estados, o reintentar sobre el nuevo— es E3.2; aquí solo se garantiza que
+    ninguno pise al otro sin enterarse.
+    """
+
+
+class BuyerIdempotencyConflict(BuyerStoreError):
+    """El mismo `(buyer_id, source_message_id)` ya produjo un estado **distinto**.
+
+    Este es el error más informativo del módulo y por eso no se traga. Un reintento honesto
+    del mismo mensaje tiene que producir el mismo estado; si produce otro, lo que hay
+    delante es un extractor no determinista, un replay corrupto, o la misma evidencia
+    interpretada de dos maneras. Si el store lo ocultara —devolviendo lo viejo o creando
+    una revisión nueva— esa divergencia seguiría ahí, invisible.
+    """
+
+
+class BuyerContextCorrupto(BuyerStoreError):
+    """Lo persistido ya no satisface `BuyerContextV0`.
+
+    Pasa cuando el contrato evoluciona de forma incompatible con filas antiguas. Se falla
+    ruidosamente en vez de devolver el `dict` crudo: un diccionario que no valida no es un
+    BuyerContext, y presentarlo como tal trasladaría el fallo a quien confíe en el tipo.
+    """
+
+
+@dataclass(frozen=True)
+class RevisionPersistida:
+    """Lo que quedó guardado, y si esta llamada fue quien lo guardó.
+
+    `creada=False` significa que el mensaje ya se había procesado y se devuelve la revisión
+    que existía. El llamante necesita distinguirlo: no es lo mismo "acabo de avanzar el
+    estado" que "esto ya estaba hecho".
+    """
+
+    contexto: BuyerContextV0
+    revision: int
+    creada: bool
+
+
+def _canonico(contexto: BuyerContextV0) -> str:
+    """Forma estable del contexto, para comparar dos snapshots por igualdad.
+
+    Se compara el JSON del contrato con las claves ordenadas, no los objetos: dos
+    `BuyerContextV0` equivalentes pueden diferir en el orden de serialización, y comparar
+    texto sin ordenar produciría falsos `BuyerIdempotencyConflict` — un error que acusaría
+    al extractor de no ser determinista cuando el no determinista sería este módulo.
+
+    `context_revision` se excluye a propósito: es metadato que asigna el store, no parte
+    del estado observado del comprador. Incluirlo haría que el mismo snapshot pareciera
+    distinto solo por haber sido numerado.
+    """
+    datos = contexto.model_dump(mode="json")
+    datos.pop("context_revision", None)
+    return json.dumps(datos, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+
+
+def _rehidratar(fila) -> BuyerContextV0:
+    crudo = fila["context_json"]
+    if isinstance(crudo, str):          # según el driver, JSONB llega como texto
+        crudo = json.loads(crudo)
+    try:
+        return BuyerContextV0.model_validate({**crudo, "context_revision": fila["context_revision"]})
+    except ValidationError as e:
+        raise BuyerContextCorrupto(
+            f"la revisión {fila['context_revision']} de {fila['buyer_id']} no satisface "
+            f"BuyerContextV0: {e.error_count()} error(es)"
+        ) from e
+
+
+# ── Lectura ────────────────────────────────────────────────────────────────────────
+
+
+async def cargar_ultima(buyer_id: str, *, db=None) -> BuyerContextV0 | None:
+    """El estado vigente del comprador, o `None` si nunca se persistió."""
+    async def _ejecutar(sesion):
+        fila = (await sesion.execute(text(
+            "SELECT r.buyer_id::text AS buyer_id, r.context_revision, r.context_json "
+            "FROM buyer_context_heads h "
+            "JOIN buyer_context_revisions r "
+            "  ON r.buyer_id = h.buyer_id AND r.context_revision = h.current_revision "
+            "WHERE h.buyer_id = CAST(:b AS uuid)"),
+            {"b": buyer_id})).mappings().first()
+        return _rehidratar(fila) if fila else None
+
+    if db is not None:
+        return await _ejecutar(db)
+    async with AsyncSessionLocal() as propio:
+        return await _ejecutar(propio)
+
+
+async def cargar_revision(buyer_id: str, revision: int, *, db=None) -> BuyerContextV0 | None:
+    """Una revisión concreta del historial. Es lo que hace auditable el estado."""
+    async def _ejecutar(sesion):
+        fila = (await sesion.execute(text(
+            "SELECT buyer_id::text AS buyer_id, context_revision, context_json "
+            "FROM buyer_context_revisions "
+            "WHERE buyer_id = CAST(:b AS uuid) AND context_revision = :r"),
+            {"b": buyer_id, "r": revision})).mappings().first()
+        return _rehidratar(fila) if fila else None
+
+    if db is not None:
+        return await _ejecutar(db)
+    async with AsyncSessionLocal() as propio:
+        return await _ejecutar(propio)
+
+
+# ── Escritura ──────────────────────────────────────────────────────────────────────
+
+
+async def anexar_revision(
+    buyer_id: str,
+    source_message_id: str,
+    contexto: BuyerContextV0,
+    expected_revision: int | None,
+    *,
+    db=None,
+) -> RevisionPersistida:
+    """Añade una revisión al historial. La única forma de escribir en el store.
+
+    `expected_revision` es lo que el llamante leyó: `None` si no había estado, o el número
+    de la revisión sobre la que construyó ésta. Si el estado ya avanzó, se levanta
+    `BuyerRevisionConflict` **sin escribir nada**.
+
+    El orden de las comprobaciones no es casual:
+
+      1. **La identidad primero.** Antes de tocar la base se exige que
+         `contexto.buyer_id` sea el comprador autorizado. Persistir el estado de una
+         cuenta bajo la raíz de otra es el peor fallo posible de este módulo, y no puede
+         depender de que una consulta posterior lo note.
+      2. **La cabeza se bloquea antes de leerla.** `FOR UPDATE` serializa a los escritores
+         del mismo comprador; sin él, dos procesos leerían la misma revisión y ambos se
+         creerían al día.
+      3. **La idempotencia se comprueba dentro de la transacción**, ya con el bloqueo
+         tomado, y aun así el `UNIQUE` de la base queda como red por si el bloqueo no
+         aplicara (otra ruta de escritura, un futuro reemplazo del store).
+    """
+    if contexto.buyer_id != buyer_id:
+        raise BuyerStoreError(
+            "el contexto pertenece a otro comprador: no se persiste bajo esta raíz"
+        )
+    if expected_revision is not None and expected_revision < 0:
+        raise BuyerStoreError("expected_revision no puede ser negativa")
+
+    if db is not None:
+        return await _ejecutar_anexo(db, buyer_id, source_message_id, contexto,
+                                     expected_revision)
+    async with AsyncSessionLocal() as propio:
+        return await _ejecutar_anexo(propio, buyer_id, source_message_id, contexto,
+                                     expected_revision)
+
+
+async def _ejecutar_anexo(db, buyer_id, source_message_id, contexto, expected_revision):
+    try:
+        # 1 · La cabeza, creada si no existe, y BLOQUEADA en el mismo viaje. El
+        # `ON CONFLICT DO NOTHING` seguido del `SELECT … FOR UPDATE` cubre la carrera de
+        # dos primeros escritores simultáneos: uno inserta, el otro no, y ambos acaban
+        # bloqueando la misma fila.
+        await db.execute(text(
+            "INSERT INTO buyer_context_heads (buyer_id, current_revision) "
+            "VALUES (CAST(:b AS uuid), 0) ON CONFLICT (buyer_id) DO NOTHING"),
+            {"b": buyer_id})
+
+        cabeza = (await db.execute(text(
+            "SELECT current_revision FROM buyer_context_heads "
+            "WHERE buyer_id = CAST(:b AS uuid) FOR UPDATE"),
+            {"b": buyer_id})).scalar()
+
+        # ¿Hay ya alguna revisión, o la cabeza acaba de nacer vacía?
+        hay_estado = (await db.execute(text(
+            "SELECT count(*) FROM buyer_context_revisions WHERE buyer_id = CAST(:b AS uuid)"),
+            {"b": buyer_id})).scalar() > 0
+        actual = cabeza if hay_estado else None
+
+        # 2 · IDEMPOTENCIA. Se mira antes que el conflicto de revisión a propósito: un
+        # reintento del mismo mensaje llega con el `expected_revision` viejo y parecería
+        # un conflicto de concurrencia. Sería un diagnóstico equivocado — no hay dos
+        # escritores, hay uno que repite.
+        previa = (await db.execute(text(
+            "SELECT buyer_id::text AS buyer_id, context_revision, context_json "
+            "FROM buyer_context_revisions "
+            "WHERE buyer_id = CAST(:b AS uuid) AND source_message_id = :m"),
+            {"b": buyer_id, "m": source_message_id})).mappings().first()
+
+        if previa is not None:
+            ya = _rehidratar(previa)
+            if _canonico(ya) != _canonico(contexto):
+                await db.rollback()
+                raise BuyerIdempotencyConflict(
+                    f"el mensaje {source_message_id} ya produjo la revisión "
+                    f"{previa['context_revision']} con un estado distinto"
+                )
+            await db.rollback()   # nada que escribir; no se deja transacción abierta
+            return RevisionPersistida(ya, previa["context_revision"], creada=False)
+
+        # 3 · CONCURRENCIA. Lo que el llamante creía ya no es lo que hay.
+        if expected_revision != actual:
+            await db.rollback()
+            raise BuyerRevisionConflict(
+                f"se esperaba la revisión {expected_revision} y la vigente es {actual}"
+            )
+
+        nueva = 0 if actual is None else actual + 1
+
+        # 4 · El historial. La revisión persistida la fija el store; se sobrescribe lo que
+        # trajera el contexto para que no haya dos fuentes de verdad del número.
+        datos = contexto.model_dump(mode="json")
+        datos["context_revision"] = nueva
+
+        await db.execute(text(
+            "INSERT INTO buyer_context_revisions "
+            "  (buyer_id, context_revision, source_message_id, context_json) "
+            "VALUES (CAST(:b AS uuid), :r, :m, CAST(:j AS jsonb))"),
+            {"b": buyer_id, "r": nueva, "m": source_message_id,
+             "j": json.dumps(datos, ensure_ascii=False)})
+
+        await db.execute(text(
+            "UPDATE buyer_context_heads SET current_revision = :r, updated_at = now() "
+            "WHERE buyer_id = CAST(:b AS uuid)"),
+            {"b": buyer_id, "r": nueva})
+
+        await db.commit()
+        return RevisionPersistida(BuyerContextV0.model_validate(datos), nueva, creada=True)
+
+    except BuyerStoreError:
+        raise
+    except Exception:
+        await db.rollback()
+        raise

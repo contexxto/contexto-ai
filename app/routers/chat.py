@@ -221,8 +221,8 @@ async def _alcances_autorizados(
     ## La regla
 
     ```
-    cuenta   el Bearer la demuestra          → destinatario_user_id = :u
-    sesión   `_exigir_autoridad` la demuestra → destinatario_session = :s
+    cuenta   el Bearer la demuestra               → destinatario_user_id = :u
+    sesión   la autoridad de la sesión la demuestra → destinatario_session = :s
     ```
 
     Estar autenticado **no** añade la rama de sesión: hay que probar esa sesión igual que un
@@ -231,6 +231,18 @@ async def _alcances_autorizados(
 
     De paso desaparecen los `CAST(:u AS uuid) IS NOT NULL AND …`: existían para neutralizar
     en tiempo de ejecución una rama que ahora, simplemente, no se emite.
+
+    ## Por qué esto NO usa `_exigir_autoridad` (que sería lo obvio)
+
+    Porque estos tres endpoints tratan la conversación como un **filtro**, no como el recurso
+    pedido, y eso cambia qué debe pasar cuando el filtro no se puede probar. `_exigir_autoridad`
+    convierte cualquier fallo en 404 y mata la petición entera — correcto en
+    `GET /{sid}/history`, donde no hay nada más que servir; equivocado aquí, donde un
+    `session_id` caducado en el navegador dejaría a un usuario sin **sus propios** avisos de
+    cuenta. La matriz completa está en el `except` de abajo.
+
+    La diferencia es de disponibilidad, no de permisos: en los dos casos, los datos de una
+    sesión que no se puede probar **no se entregan**.
     """
     condiciones: list[str] = []
     params: dict = {}
@@ -240,11 +252,31 @@ async def _alcances_autorizados(
         params["u"] = user.user_id
 
     if session_id is not None:
-        # 404 si no la puede probar. No se degrada a "te doy solo lo de tu cuenta": pedir
-        # una conversación ajena es un intento de acceso, no una preferencia de filtrado.
-        await _exigir_autoridad(request, session_id, user)
-        condiciones.append("destinatario_session = CAST(:s AS text)")
-        params["s"] = session_id
+        try:
+            await autorizar_acceso_a_sesion(session_id, user, _resume_de(request))
+        except AccesoDenegado:
+            # ── B.1 · alcance que no se puede probar ────────────────────────────────
+            #
+            # Aquí la conversación **no es el recurso pedido**: es un filtro opcional sobre
+            # una lista que ya tiene su propio alcance. Eso cambia qué significa fallar.
+            #
+            # CON cuenta → se cae la rama de sesión y se sirve lo de la cuenta. Un
+            #   `session_id` viejo, revocado o ajeno guardado en el navegador no puede
+            #   dejar a nadie sin SUS avisos: sería tirar disponibilidad sin ganar nada,
+            #   porque los datos de esa sesión no se entregan igualmente.
+            #
+            # SIN cuenta → 404. La sesión era el único alcance posible; sin ella no queda
+            #   nada que servir, y responder "vacío" en vez de 404 diría que la petición
+            #   fue válida. Se responde como en el resto del gate.
+            #
+            # Lo que NO cambia: la rama de sesión **no se construye**. Degradar el alcance
+            # y ampliarlo son cosas distintas — esto solo puede devolver menos, nunca más.
+            if user is None:
+                raise HTTPException(
+                    status.HTTP_404_NOT_FOUND, "Conversación no encontrada.") from None
+        else:
+            condiciones.append("destinatario_session = CAST(:s AS text)")
+            params["s"] = session_id
 
     return condiciones, params
 

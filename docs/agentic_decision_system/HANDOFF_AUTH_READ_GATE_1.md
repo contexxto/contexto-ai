@@ -7,8 +7,8 @@ ENTRADA DE 5c          13b949680f5172ba4ab18cb5fc21db7e71086193
 CUTOVER DE 5c          5c70e40483cd29ac41dd2fc7d5254e815f0e6d40
 EVIDENCIA CASO 5       8b67900dd875a8238ba37551483813cfa31ceb3c
 
-ESTADO                 IN PROGRESS · 11/11 ENDPOINTS CERRADOS
-SUITE BACKEND          1 652 exit 0   (+89 de autoridad por endpoint)
+ESTADO                 IN PROGRESS · 11/11 CERRADOS + B.1 (alcances híbridos)
+SUITE BACKEND          1 665 exit 0   (+102 de autoridad por endpoint)
 SUITE FRONTEND         66 exit 0   (35 → 53 → 66)
 BUILD FRONTEND         PASS
 INVENTARIO 18 ENDPOINTS PASS
@@ -256,7 +256,7 @@ sobre los once).
 | 6 | `POST /{sid}/handoff/mensaje` | `get_optional_user`, sin puerta | `_exigir_autoridad` | **escribir suplantando** al interesado |
 | 7 | `POST /comparar` | ninguna | `_exigir_autoridad` | revelar las necesidades declaradas del hilo |
 | 8 | `POST /lead-contacto` | ninguna ("público") | `_exigir_autoridad` | **plantar el email y el push de un tercero** |
-| 9 | `GET /notificaciones` | `OR` con rama sin autorizar | `_alcances_autorizados` | leer avisos ajenos |
+| 9 | `GET /notificaciones` | `OR` con rama sin autorizar | `_alcances_autorizados` (+B.1) | leer avisos ajenos |
 | 10 | `GET /conversaciones` | `OR` con rama sin autorizar | `_alcances_autorizados` | leer la bandeja ajena |
 | 11 | `POST /notificaciones/leidas` | `OR` con rama sin autorizar | `_alcances_autorizados` | **marcar leídos los avisos de otro** |
 
@@ -316,6 +316,84 @@ para neutralizar en tiempo de ejecución una rama que ahora no se emite.
 `session_id` **siempre**, también cuando hay cuenta. Hacer que un `session_id` presente
 significara "solo modo sesión" le habría quitado al corredor autenticado sus avisos de cuenta.
 La unión es un requisito de producto; lo que no era admisible era una rama sin probar.
+
+---
+
+## B.1 — LA SESIÓN COMO FILTRO vs. COMO RECURSO
+
+Al cerrar los once quedó una asimetría que no era de seguridad sino de **disponibilidad**.
+
+`_alcances_autorizados` usaba `_exigir_autoridad`, que convierte cualquier fallo en 404 y mata
+la petición entera. En `GET /{sid}/history` eso es exactamente lo correcto: la conversación **es**
+el recurso pedido, y sin ella no hay nada que servir. En la campana no: ahí la conversación es un
+**filtro opcional** sobre una lista que ya tiene su propio alcance de cuenta.
+
+El resultado era que un `session_id` viejo, revocado o ajeno guardado en el navegador dejaba a un
+usuario autenticado sin **sus propios** avisos. Y `Campana.jsx` se traga el error en silencio, así
+que la campana se quedaba vacía sin explicación.
+
+### La matriz, tal como está implementada
+
+| # | cuenta | session_id | Resultado |
+|---|---|---|---|
+| 1 | no | no | vacío · **no se consulta nada** |
+| 2 | no | autorizada | alcance sesión |
+| 3 | no | NO autorizada | **404** |
+| 4 | sí | no | alcance cuenta · no se lee `chat_sessions` |
+| 5 | sí | autorizada | cuenta ∪ sesión |
+| 6 | sí | NO autorizada | **alcance cuenta únicamente · NO 404** |
+
+El caso 3 no se relaja: sin cuenta la sesión era el único alcance posible, y responder "vacío" en
+vez de 404 afirmaría que la petición fue válida.
+
+Para el autenticado, **una sesión ajena y una inexistente dan el mismo resultado observable**. Si
+difirieran, la campana propia sería un oráculo de existencia: se podría averiguar qué `session_id`
+existen probándolos contra ella.
+
+### Lo que NO cambió
+
+La rama de sesión **sigue sin construirse** cuando no está probada. Degradar el alcance y
+ampliarlo son cosas distintas: esto solo puede devolver *menos*, nunca más. Los datos de la sesión
+no demostrada no se entregan en ninguno de los seis casos.
+
+**La tolerancia es exclusiva de los tres híbridos.** En `history`, `handoff`, `intencion`,
+`comparar`, `lead-contacto` y las mutaciones del handoff, la conversación es el recurso: autoridad
+inválida sigue siendo 404. `test_B1_la_tolerancia_NO_se_extiende_a_los_ocho_directos` caza a quien
+generalice el patrón.
+
+### `POST /notificaciones/leidas` — la mutación
+
+Es el único de los tres que escribe. Con la rama de sesión caída, el `UPDATE` solo alcanza filas
+cuyo `destinatario_user_id` es el llamante. El parámetro `hilo` es un **filtro**, no una autoridad:
+va en `AND` con la condición autorizada, así que pasar el hilo de otra persona no abre ninguna
+puerta — simplemente hace que el `UPDATE` no encuentre nada.
+
+Se prueban los dos lados: con el hilo de U2 no se toca nada de U2; con un hilo propio de U1 el
+`UPDATE` conserva su rama de cuenta. El segundo importa tanto como el primero — si la degradación
+hubiera vaciado también el alcance de cuenta, el arreglo no habría arreglado nada.
+
+### Cómo se observa (y por qué no basta el status code)
+
+El oráculo de B.1 **no es el código de estado**: es el SQL que de verdad se emitió. La tabla falsa
+lo registra antes de que salte el centinela, así que los tests afirman sobre las ramas que llegaron
+a construirse — `destinatario_session` no puede aparecer en ninguna sentencia cuando la sesión no
+está probada, ni siquiera cuando la petición sí prospera por cuenta.
+
+**Cambio en el arnés:** `ensure_handoff_tables` / `ensure_lead_actividad` se neutralizan en la
+fixture. Crean el esquema al vuelo y su lista incluye un par de migraciones DML; si se dejaran
+correr, el centinela saltaría **ahí** —antes de la consulta real— y sería imposible observar qué
+`WHERE` se emitió. No es una excepción cómoda: el bootstrap de esquema no es el efecto del
+endpoint y tiene su propio candado de módulo. El centinela sigue estricto con toda sentencia del
+endpoint.
+
+### Mutaciones
+
+```
+la rama de sesión se añade pese a no estar probada  →  caen 9 tests
+la tolerancia se extiende al anónimo (caso 3)       →  caen 13 tests
+```
+
+`app/routers/chat.py` restaurado y verificado antes de continuar.
 
 ---
 

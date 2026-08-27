@@ -185,6 +185,17 @@ def tabla(monkeypatch):
             aget_state = staticmethod(_centinela)
 
     monkeypatch.setattr(chat, "agent_graph", _Grafo)
+
+    # `ensure_handoff_tables` / `ensure_lead_actividad` crean el esquema al vuelo (y su
+    # lista incluye un par de migraciones DML). Eso NO es el efecto del endpoint: es
+    # arranque idempotente, con su propio candado de módulo. Si se dejara correr, el
+    # centinela saltaría ahí —antes de la consulta real— y sería imposible observar QUÉ
+    # `WHERE` se emitió, que es justo la propiedad que B.1 tiene que demostrar.
+    async def _sin_bootstrap(_db):
+        return None
+
+    monkeypatch.setattr(chat, "ensure_handoff_tables", _sin_bootstrap)
+    monkeypatch.setattr(chat, "ensure_lead_actividad", _sin_bootstrap)
     return t
 
 
@@ -220,6 +231,22 @@ ENDPOINTS = {
 
 TODOS = list(ENDPOINTS.items())
 
+# ── B.1 · dos políticas, porque la sesión significa dos cosas distintas ────────────
+#
+# DIRECTOS   la conversación ES el recurso pedido. Autoridad inválida → 404, siempre.
+# HIBRIDOS   la conversación es un FILTRO sobre una lista que ya tiene alcance propio.
+#            Un autenticado con un `session_id` que no puede probar recibe lo suyo de
+#            cuenta, sin la rama de sesión, y sin 404.
+#
+# La diferencia es de disponibilidad, no de permisos: en ambos casos los datos de la
+# sesión no demostrada NO se entregan. Lo que cambia es si además se le quita al usuario
+# lo que sí es suyo.
+HIBRIDOS = [(n, f) for n, f in TODOS
+            if any(k in n for k in ("notificaciones", "conversaciones"))]
+DIRECTOS = [(n, f) for n, f in TODOS if (n, f) not in HIBRIDOS]
+
+assert len(HIBRIDOS) == 3 and len(DIRECTOS) == 8
+
 
 def _ejecutar(fn, sid, user, resume):
     return asyncio.run(fn(sid, user, resume))
@@ -246,7 +273,7 @@ def _permitido(fn, sid, user=None, resume=None):
 # ── A · cross-owner: el corazón del gate ───────────────────────────────────────────
 
 
-@pytest.mark.parametrize("nombre,fn", TODOS)
+@pytest.mark.parametrize("nombre,fn", DIRECTOS)
 def test_U1_no_toca_la_sesion_EXISTENTE_de_U2(tabla, nombre, fn):
     """Estado real de U2 —creado por `crear_sesion()`, código de producto— y U1 llamando.
 
@@ -293,7 +320,7 @@ def test_el_session_id_a_secas_ya_no_abre_nada(tabla, nombre, fn):
     _denegado(fn, s, user=None, resume=None)
 
 
-@pytest.mark.parametrize("nombre,fn", TODOS)
+@pytest.mark.parametrize("nombre,fn", DIRECTOS)
 def test_estar_autenticado_no_sustituye_a_la_capacidad(tabla, nombre, fn):
     """Tener cuenta dice QUIÉN eres, no A QUÉ puedes entrar. Un hilo anónimo ajeno sigue
     cerrado para un autenticado que no traiga su capacidad."""
@@ -304,7 +331,7 @@ def test_estar_autenticado_no_sustituye_a_la_capacidad(tabla, nombre, fn):
 # ── C · indistinguibilidad ─────────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("nombre,fn", TODOS)
+@pytest.mark.parametrize("nombre,fn", DIRECTOS)
 def test_existir_y_no_existir_dan_la_MISMA_respuesta(tabla, nombre, fn):
     """404 para la ausencia de autoridad y para la de recurso. Si difirieran, el 404 sería
     un oráculo de existencia: se podrían enumerar conversaciones."""
@@ -383,43 +410,250 @@ def test_modo_cuenta_sin_session_id_no_consulta_la_autoridad(tabla, nombre, fn):
     assert not [c for c in tabla.consultas if "chat_sessions" in c[0]]
 
 
-@pytest.mark.parametrize("nombre,fn", AVISOS)
-def test_un_autenticado_NO_gana_alcance_por_aportar_una_sesion_ajena(tabla, nombre, fn):
-    """EL FALLO ORIGINAL, ejecutado.
 
-    Antes: `WHERE (…user_id = :u) OR (…destinatario_session = :s)` con `:s` sin comprobar.
-    U1 pasaba la sesión de U2 y leía —o marcaba como leídos— sus avisos por la segunda rama.
 
-    Ahora la rama de sesión no se construye sin autoridad, así que esto es 404 **y** el
-    `UPDATE` de `leidas` no llega a ejecutarse.
+# ── B.1 · alcances híbridos: qué se sirve cuando la sesión no se puede probar ──────
+#
+# El observable de este bloque **no es el código de estado**: es el SQL que de verdad se
+# emitió. La tabla lo registra antes de que salte el centinela, así que se puede afirmar
+# sobre las ramas que llegaron a construirse — que es la propiedad de seguridad real.
+
+
+def _consulta_a_notificacion(tabla) -> tuple[str, dict]:
+    """La sentencia que el endpoint emitió contra `notificacion`, con sus parámetros.
+
+    El bootstrap de esquema está neutralizado en la fixture, así que aquí solo puede haber
+    la consulta del endpoint.
+    """
+    ns = [c for c in tabla.consultas if "notificacion" in c[0]]
+    assert len(ns) == 1, f"se esperaba una sola sentencia contra notificacion, hubo {len(ns)}"
+    return ns[0]
+
+
+def _alcances_de(tabla) -> set[str]:
+    """Qué ramas llegaron al `WHERE`: `{"cuenta"}`, `{"sesion"}`, ambas, o ninguna."""
+    sql, params = _consulta_a_notificacion(tabla)
+    alcances = set()
+    if "destinatario_user_id" in sql:
+        alcances.add("cuenta")
+        assert "u" in params
+    if "destinatario_session" in sql:
+        alcances.add("sesion")
+        assert "s" in params
+    return alcances
+
+
+@pytest.mark.parametrize("nombre,fn", HIBRIDOS)
+def test_B1_autenticado_con_sesion_AJENA_recibe_solo_su_cuenta(tabla, nombre, fn):
+    """CASO 6 de la matriz. **El corazón de B.1.**
+
+    Antes de este cambio esto era un 404 que mataba la petición entera: un `session_id`
+    viejo, revocado o ajeno guardado en el navegador dejaba al usuario sin **sus propios**
+    avisos. `Campana.jsx` además se traga el error en silencio, así que la campana
+    simplemente se quedaba vacía sin explicación.
+
+    Ahora la rama de sesión **no se construye** y se sirve el alcance de cuenta. No es una
+    concesión de permisos: los datos de U2 siguen sin entregarse — lo que se recupera es la
+    disponibilidad de lo que sí es de U1.
     """
     de_u2 = _crear(U2, tabla).session_id
-    _denegado(fn, de_u2, user=U1)
+    tabla.consultas.clear()
+
+    _permitido(fn, de_u2, user=U1)   # NO 404
+
+    assert _alcances_de(tabla) == {"cuenta"}
+    sql, params = _consulta_a_notificacion(tabla)
+    assert "destinatario_session" not in sql, "se coló la rama de una sesión no probada"
+    assert de_u2 not in str(params), "el session_id ajeno llegó al SQL"
+    assert params["u"] == U1.user_id
 
 
-@pytest.mark.parametrize("nombre,fn", AVISOS)
-def test_aportar_la_sesion_PROPIA_si_es_valido(tabla, nombre, fn):
-    """MODO SESIÓN. Es el caso normal de la campana: el frontend manda su `session_id`.
+@pytest.mark.parametrize("nombre,fn", HIBRIDOS)
+def test_B1_una_sesion_ajena_y_una_inexistente_son_indistinguibles(tabla, nombre, fn):
+    """CASOS A y B: para el autenticado, el resultado observable debe ser el mismo.
 
-    Con autoridad, las dos ramas están probadas y se suman.
+    Si difirieran, el endpoint sería un oráculo de existencia: se podría averiguar qué
+    `session_id` existen probándolos contra la campana propia.
     """
+    de_u2 = _crear(U2, tabla).session_id
+
+    tabla.consultas.clear()
+    _permitido(fn, de_u2, user=U1)
+    con_ajena = _consulta_a_notificacion(tabla)
+
+    tabla.consultas.clear()
+    _permitido(fn, "session-no-existe-jamas", user=U1)
+    con_inventada = _consulta_a_notificacion(tabla)
+
+    assert con_ajena == con_inventada, "el SQL delata cuál de las dos sesiones existía"
+
+    # Y el estado SÍ difiere: una fila existe y la otra no.
+    assert de_u2 in tabla.filas and "session-no-existe-jamas" not in tabla.filas
+
+
+@pytest.mark.parametrize("nombre,fn", HIBRIDOS)
+def test_B1_autenticado_con_su_propia_sesion_suma_los_dos_alcances(tabla, nombre, fn):
+    """CASO 5: cuenta ∪ sesión. Es el caso normal de la campana — `Campana.jsx` manda el
+    `session_id` **siempre**, también con cuenta."""
     propia = _crear(U1, tabla).session_id
+    tabla.consultas.clear()
+
     _permitido(fn, propia, user=U1)
 
+    assert _alcances_de(tabla) == {"cuenta", "sesion"}
+    _sql, params = _consulta_a_notificacion(tabla)
+    assert params["s"] == propia and params["u"] == U1.user_id
 
-def test_las_ramas_del_where_se_construyen_solo_tras_autorizar(tabla):
-    """La propiedad estructural que hace innecesario confiar en la disciplina de nadie.
 
-    Se observa por comportamiento: con una sesión ajena, la rama de sesión no llega a
-    existir porque la ejecución no pasa de la autoridad — el centinela no se dispara.
+@pytest.mark.parametrize("nombre,fn", HIBRIDOS)
+def test_B1_anonimo_con_SU_capacidad_recibe_el_alcance_de_sesion(tabla, nombre, fn):
+    """CASO 2 / D: sin cuenta, la capacidad es el único alcance — y basta."""
+    propia = _crear(None, tabla)
+    tabla.consultas.clear()
+
+    _permitido(fn, propia.session_id, user=None, resume=propia.resume_secret)
+
+    assert _alcances_de(tabla) == {"sesion"}
+
+
+@pytest.mark.parametrize("nombre,fn", HIBRIDOS)
+def test_B1_anonimo_con_capacidad_AJENA_sigue_siendo_404(tabla, nombre, fn):
+    """CASO 3 / E: la tolerancia **no** se extiende al anónimo.
+
+    Sin cuenta no queda ningún otro alcance que servir, así que responder "vacío" diría que
+    la petición fue válida. Se deniega como en el resto del gate — y sin efectos.
+    """
+    victima = _crear(None, tabla).session_id
+    ajena = _crear(None, tabla)
+
+    _denegado(fn, victima, user=None, resume=ajena.resume_secret)
+
+
+@pytest.mark.parametrize("nombre,fn", HIBRIDOS)
+def test_B1_anonimo_con_session_id_a_secas_sigue_siendo_404(tabla, nombre, fn):
+    """CASO F. La frase congelada de la unidad sigue rigiendo el carril anónimo."""
+    s = _crear(None, tabla).session_id
+    _denegado(fn, s, user=None, resume=None)
+
+
+@pytest.mark.parametrize("nombre,fn", HIBRIDOS)
+def test_B1_sin_cuenta_y_sin_sesion_no_se_consulta_nada(tabla, nombre, fn):
+    """CASO 1: no hay ningún alcance. Se responde vacío sin tocar la base."""
+    tabla.consultas.clear()
+    resultado = _ejecutar(fn, None, None, None)
+
+    assert not tabla.consultas
+    assert resultado in ({"items": [], "no_leidas": 0},
+                         {"hilos": [], "no_leidas": 0},
+                         {"ok": True, "marcadas": 0})
+
+
+@pytest.mark.parametrize("nombre,fn", HIBRIDOS)
+def test_B1_modo_cuenta_sin_session_id_no_consulta_la_autoridad(tabla, nombre, fn):
+    """CASO 4. Sin `session_id` no hay ninguna sesión que autorizar: `chat_sessions` ni se
+    toca."""
+    tabla.consultas.clear()
+    _permitido(fn, None, user=U1)
+
+    assert not [c for c in tabla.consultas if "chat_sessions" in c[0]]
+    assert _alcances_de(tabla) == {"cuenta"}
+
+
+# ── B.1 · la mutación: `POST /notificaciones/leidas` ───────────────────────────────
+#
+# Es el único de los tres que ESCRIBE. La tolerancia no puede convertirse en una vía para
+# tocar filas ajenas: degradar el alcance solo puede quitar, nunca añadir.
+
+_LEIDAS = ENDPOINTS["11·POST /notificaciones/leidas"]
+
+
+def _leidas(sid, user, resume=None, hilo=None):
+    return chat.marcar_notificaciones_leidas(_peticion(resume), sid, hilo, None, user)
+
+
+def test_B1_marcar_leidas_con_sesion_de_U2_no_puede_tocar_nada_de_U2(tabla):
+    """U1 + `session_id` de U2 + `hilo` de U2.
+
+    El `hilo` es un filtro, no una autoridad: acota QUÉ se marca dentro de lo que ya se
+    puede ver. Con la rama de sesión caída, el `UPDATE` solo alcanza filas cuyo
+    `destinatario_user_id` es U1 — y las de U2 no lo son. El `hilo` de U2 no abre ninguna
+    puerta; simplemente hace que el `UPDATE` no encuentre nada.
     """
     de_u2 = _crear(U2, tabla).session_id
+    tabla.consultas.clear()
 
-    condiciones_vistas = []
-    for _nombre, fn in AVISOS:
-        e = _denegado(fn, de_u2, user=U1)
-        condiciones_vistas.append(e.status_code)
-    assert condiciones_vistas == [404, 404, 404]
+    with pytest.raises(_LlegoAlEfecto):
+        asyncio.run(_leidas(de_u2, U1, hilo=de_u2))
 
-    # Y ninguna sentencia contra `notificacion` llegó a emitirse en ninguno de los tres.
+    sql, params = _consulta_a_notificacion(tabla)
+    assert sql.strip().upper().startswith("UPDATE")
+    assert "destinatario_session" not in sql, "la rama de sesión ajena llegó al UPDATE"
+    assert "destinatario_user_id" in sql and params["u"] == U1.user_id
+    # El `hilo` viaja como filtro y está en `AND` con la condición autorizada.
+    assert params["h"] == de_u2
+    assert " AND (destinatario_user_id" in sql or "AND (destinatario_user_id" in sql
+
+
+def test_B1_marcar_leidas_con_sesion_de_U2_SI_alcanza_lo_legitimo_de_U1(tabla):
+    """El otro lado del mismo caso: la tolerancia debe **servir para algo**.
+
+    Con un `hilo` propio de U1, el `UPDATE` se emite con su rama de cuenta intacta. Si la
+    degradación hubiera vaciado también el alcance de cuenta, esto no marcaría nada y el
+    arreglo no habría arreglado nada.
+    """
+    de_u2 = _crear(U2, tabla).session_id
+    de_u1 = _crear(U1, tabla).session_id
+    tabla.consultas.clear()
+
+    with pytest.raises(_LlegoAlEfecto):
+        asyncio.run(_leidas(de_u2, U1, hilo=de_u1))
+
+    sql, params = _consulta_a_notificacion(tabla)
+    assert "destinatario_user_id" in sql and params["u"] == U1.user_id
+    assert "destinatario_session" not in sql
+    assert params["h"] == de_u1
+
+
+def test_B1_el_anonimo_no_marca_nada_sin_capacidad(tabla):
+    """Sin cuenta y sin capacidad no hay tolerancia que valga: 404 y cero efectos."""
+    de_u2 = _crear(U2, tabla).session_id
+    _denegado(_LEIDAS, de_u2, user=None)
     assert not [c for c in tabla.consultas if "notificacion" in c[0]]
+
+
+# ── B.1 · la propiedad que no puede romperse ───────────────────────────────────────
+
+
+def test_B1_la_rama_de_sesion_NUNCA_se_construye_sin_autoridad(tabla):
+    """La invariante de toda la unidad, ahora con la tolerancia encima.
+
+    Degradar el alcance y ampliarlo son cosas distintas. Se recorren las combinaciones en
+    las que la sesión NO está probada y se exige que `destinatario_session` no aparezca en
+    ninguna sentencia emitida — ni siquiera cuando la petición sí prospera por cuenta.
+    """
+    de_u2 = _crear(U2, tabla).session_id
+    anonima = _crear(None, tabla).session_id
+
+    for sid in (de_u2, anonima, "session-no-existe-jamas"):
+        for _nombre, fn in HIBRIDOS:
+            tabla.consultas.clear()
+            try:
+                _ejecutar(fn, sid, U1, None)
+            except (_LlegoAlEfecto, HTTPException):
+                pass
+            emitidas = [c[0] for c in tabla.consultas]
+            assert not [q for q in emitidas if "destinatario_session" in q], (
+                f"rama de sesión sin autoridad en {_nombre} con {sid}"
+            )
+
+
+def test_B1_la_tolerancia_NO_se_extiende_a_los_ocho_directos(tabla):
+    """La frontera entre las dos políticas, comprobada.
+
+    En los directos la conversación **es** el recurso: no hay nada que degradar, así que un
+    autenticado con una sesión ajena sigue recibiendo 404 y cero efectos. Si algún día
+    alguien generalizara la tolerancia de B.1, este test lo caza.
+    """
+    de_u2 = _crear(U2, tabla).session_id
+    for _nombre, fn in DIRECTOS:
+        _denegado(fn, de_u2, user=U1)

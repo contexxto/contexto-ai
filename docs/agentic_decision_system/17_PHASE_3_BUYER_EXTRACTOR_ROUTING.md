@@ -4,10 +4,11 @@
 BASELINE   e65b8ab461d30441b8267379bd55e1952c765da9   (origin/main verificado)
 RAMA       feat/f3-buyer-extractor-routing
 
-ENTREGADO   caracterización del seam · decisión de multi-mutation · matrices de routing y CLEAR
-PENDIENTE   el extractor · el corpus adversarial ejecutable
+ENTREGADO   caracterización · multi-mutation · matrices · C1-C5 congeladas
+            núcleo determinista de routing (67b3c6d) — PARCIAL
+PENDIENTE   verificador de valor exacto · Clear por retractación · intérprete
 
-GATE        HOLD — una decisión material queda abierta (§6)
+GATE        HOLD — C1-C5 congeladas (§6); faltan los 4 defectos de E3.2b.1a (§6b)
 ```
 
 ---
@@ -171,32 +172,138 @@ pérdida silenciosa de estado, y por eso cada caso dudoso cae en AMBIGUOUS.
 
 ---
 
-## 6 · ⚠️ DECISIÓN ABIERTA — conflicto dentro del mismo mensaje
+## 6 · CONFLICTO DENTRO DEL MISMO MENSAJE — **C1-C5, CONGELADAS**
 
-§12 propone AMBIGUOUS ante conflicto interno. **No la congelo, porque hay dos lecturas y la
-evidencia no las separa:**
+Esta sección figuró como `DECISIÓN ABIERTA`. **Ya no lo está**: Carlos la cerró con cinco
+reglas, y el núcleo determinista de `app/buyer/extractor.py` las implementa.
 
 ```
-"quiero comprar... mejor alquilar"
+C1   NO last-write-wins intramensaje.
+
+C2   Dos declaraciones incompatibles sobre la misma dimensión CON autocorrección
+     explícita: se resuelve en el extractor, se supersede la anterior, y se emite
+     como máximo UNA mutación durable para esa dimensión.
+
+C3   Las mismas dos SIN autocorrección explícita: esa dimensión queda AMBIGUOUS
+     y no produce ninguna mutación durable.
+
+C4   Un lote persistible contiene como máximo UNA mutación durable por ruta.
+
+C5   Un resultado AMBIGUOUS / REJECTED / TURN_ONLY sobre una afirmación NO elimina
+     mutaciones durables independientes del mismo mensaje.
 ```
 
-- **Lectura A — AMBIGUOUS.** Un mensaje que se contradice no declara nada con claridad.
-  Seguro, pero descarta una corrección que a un humano le parecería obvia.
-- **Lectura B — la última gana dentro del mensaje.** "mejor alquilar" es una autocorrección
-  en el mismo turno, no dos declaraciones en conflicto.
+**La corrección SELECCIONA una declaración; no completa la que falte.**
 
-La diferencia importa porque el lote es **ordenado**: si se acepta B, el reducer aplica
-`SetObjective(BUY)` y luego `SetObjective(RENT)` sobre el mismo path, y la última gana por
-construcción. Eso es indistinguible de un *last-write-wins* dentro del mensaje, y §12 lo
-prohíbe explícitamente entre mensajes.
+```
+"quiero comprar... no, alquilar"          →  SetObjective(RENT)
+"quiero comprar... mejor alquilar"        →  SetObjective(RENT)
+"quiero comprar o alquilar"               →  objective AMBIGUOUS
+"máximo 120000 USD... no, 100000 USD"     →  SetBudgetMax(100000 USD)
+"máximo 120000 USD... no, 100000"         →  budget AMBIGUOUS · CERO mutación
+```
 
-**No hay evidencia de producto para elegir.** Congelar B sin datos reintroduce por la puerta
-de atrás la política que el gate de conflictos rechazó; congelar A sin datos puede descartar
-la forma normal en que la gente se corrige al hablar.
+El último caso es el que más fácilmente se implementa al revés: la segunda declaración quedó
+incompleta, así que **ni hereda la moneda de la primera ni deja sobrevivir a la primera**. El
+usuario acaba de corregirla.
 
-`STOP` — decisión de Carlos, no mía.
+### Ajuste material · routing POR AFIRMACIÓN
+
+Un mensaje mezcla cosas, así que la disposición **no es del mensaje sino de cada hecho**.
+
+```
+"Quiero comprar, máximo 120000 USD y algo tranquilo"
+
+   DURABLE    SetObjective(BUY)
+   DURABLE    SetBudgetMax(...)
+   REJECTED   tranquilidad — no es writable en V0
+```
+
+Tratar el mensaje como una sola disposición perdería los dos primeros por culpa del tercero.
+Eso es C5, y es lo que hace que Fair Housing no cueste hechos legítimos:
+
+```
+"tenemos dos niños y máximo 150000 USD"
+
+   REJECTED   contenido de hogar/familia
+   DURABLE    SetBudgetMax(150000 USD)
+   NUNCA      SetBedroomsMin(2)
+```
 
 ---
+
+## 6b · ESTADO REAL AL ABRIR E3.2b.1a
+
+```
+caracterización E3.2b.1            COMPLETE
+C1-C5                              FROZEN
+núcleo determinista de routing     PARCIAL
+verificador semántico              INCOMPLETO
+intérprete text → Afirmacion       NOT STARTED
+
+E3.2b.1                            HOLD
+```
+
+### Los cuatro defectos que abre E3.2b.1a `[VERIFICADO]`
+
+Salieron de revisar `67b3c6d` contra las decisiones congeladas. **Tres de los cuatro son
+prosa que adelantó al comportamiento** — un comentario o un test que afirma una propiedad
+que el código no tiene:
+
+**1 · La corrección incompleta está implementada al revés.** `Afirmacion.ruta` solo se deriva
+cuando hay `mutacion`, así que una `AMBIGUOUS` no tiene dimensión y **nunca compite** con la
+durable previa de su mismo campo. El resultado es que `"máximo 120000 USD... no, 100000"`
+conserva los 120000 — lo contrario de lo congelado.
+
+Y lo peor no es el defecto: **el test que lo cubre está verde y afirma el comportamiento
+equivocado**, con un docstring que lo racionaliza. Un test verde solo demuestra que su assert
+coincide con el código; contrastarlo contra la decisión es otra cosa.
+
+**2 · `_DISYUNCION` es redundante, no "defensivo sin cobertura".** El informe anterior lo
+llamó lo segundo, que implica que existe un test posible aún no escrito. No lo hay:
+
+```python
+if _DISYUNCION.search(p) and not _CORRECCION.search(p):
+    return False
+return bool(_CORRECCION.search(p))
+```
+
+es algebraicamente `return bool(_CORRECCION.search(p))`. **Ningún input distingue las dos
+versiones**, y por eso la mutación X6 no podía caer. Se elimina; no se fabrica un test para
+justificar código sin semántica observable.
+
+**3 · El orden no se preserva.** El comentario dice *"se conserva el orden de aparición"* y
+`tuple(sueltas + resueltas)` mueve al frente todo lo que no tiene ruta.
+
+**4 · La guarda comprueba dimensión, no valor.** Es el más importante antes de acercar un
+modelo. Hoy se protege `persona → dimensión incorrecta`; no se protege `dimensión correcta →
+valor inventado`. `SetObjective` comparte vocabulario para comprar/alquilar/invertir, así que
+`BUY` pasa ante un texto que solo dice "quiero alquilar". Y los `Clear*` **quedan autorizados
+por omisión**: `_VOCABULARIO.get` devuelve `None` y la función retorna sin validar.
+
+---
+
+## 6c · GATE PROSE ↔ BEHAVIOR CONSISTENCY
+
+Incorporado al gate de E3.2b.1a y de aquí en adelante:
+
+```
+1  Releer todo docstring/comentario nuevo o modificado.
+2  Por cada afirmación factual sobre comportamiento: localizar el código que la
+   implementa y el test que la demuestra.
+3  Buscar contradicciones explícitamente:
+       comentario dice X   /  código hace Y
+       nombre del test X   /  assert acepta Y
+       docstring del test  /  decisión congelada
+4  Ningún comentario cuenta como evidencia de que una propiedad existe.
+5  Ningún test verde cuenta como correcto hasta contrastar SU ASSERT contra la
+   decisión congelada.
+6  Prosa que describa intención no implementada: PENDIENTE / HIPÓTESIS, o se borra.
+```
+
+**No es cosmético.** En una unidad que decide qué significado puede convertirse en memoria
+durable, una explicación optimista es más peligrosa que un test rojo: el rojo interrumpe, el
+comentario hace que el revisor confirme mentalmente una propiedad inexistente.
 
 ## 7 · RIESGOS FAIR HOUSING
 

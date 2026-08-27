@@ -230,7 +230,75 @@ facilitar los tests" — eso sería precisamente el atajo por el que la barrera 
 
 ---
 
-## 10 · LÍMITES CONOCIDOS
+## 10 · PRECONDICIONES DE E3.2 — verificadas, no resueltas
+
+Las tres salieron de la revisión de código del PR #131. **No son deuda difusa: son hechos
+comprobados que E3.2 tiene que decidir antes de conectar el store.** Viven aquí y no en la
+descripción del PR porque este documento es el handoff.
+
+### 1 · `updated_at` participa hoy en la comparación de idempotencia
+
+`[VERIFICADO]` `_canonico()` excluye `context_revision` pero **no** `updated_at`. Dos
+`BuyerContextV0` semánticamente iguales cuyo `updated_at` difiera en un segundo se comparan
+como payloads distintos, y un reintento del mismo `source_message_id` produciría
+`BuyerIdempotencyConflict`.
+
+**Los tests de E3.1b no podían revelarlo.** Sus fixtures usan un timestamp fijo
+(`2026-08-27T12:00Z` literal), así que el reintento es determinista **por construcción**. No
+es que el test pasara por suerte: la propiedad no era observable con esa entrada.
+
+E3.2 debe decidir explícitamente qué significa `updated_at`:
+
+- si es el timestamp **del evento** que originó el estado, forma parte del hecho y debe
+  participar en la idempotencia;
+- si es el timestamp **de persistencia** del store, es metadato: lo asigna el store o se
+  excluye de la comparación, igual que `context_revision`.
+
+**No cambiar esta semántica sin tomar antes esa decisión.** Y no se añade aquí un test que
+fije una de las dos opciones: convertiría una pregunta de diseño de E3.2 en una decisión
+accidental de E3.1b.
+
+### 2 · `anexar_revision(…, db=sesion)` asume propiedad exclusiva de la transacción
+
+`[VERIFICADO]` El store ejecuta `commit()` y `rollback()` incluso sobre una sesión inyectada.
+Es correcto mientras esa sesión contenga **solo** trabajo del Buyer Store, que es el caso en
+E3.1b.
+
+E3.2 no debe reutilizar una sesión con otras escrituras pendientes sin decidir primero quién
+posee `commit`/`rollback` y dónde termina la transacción. Es una precondición no escrita, y
+las precondiciones no escritas se rompen cuando llega el segundo llamante.
+
+### 3 · `source_message_id` vacío no lo rechaza ni el store ni el esquema
+
+`[VERIFICADO]` `NOT NULL` impide `NULL`, no `""`. La cadena vacía atraviesa la validación del
+store y llega hasta la base.
+
+Hoy la garantía de no-vacío vive **upstream**, en `IdentifiedUserMessage(message_id` con
+`min_length=1)`, así que E3.1b no tiene ningún camino productivo que pueda persistir una
+cadena vacía —tampoco tiene consumidor productivo—.
+
+Antes de conectar el store, E3.2 debe mantener esa costura como camino obligatorio o añadir
+validación defensiva en el store. **No atribuir esta garantía al esquema:** el esquema no la
+da.
+
+---
+
+## 10b · LECCIÓN DE COBERTURA
+
+Una suite verde demuestra únicamente las propiedades que **sus entradas hacen observables**.
+En E3.1b el timestamp fijo hizo invisible la interacción entre `updated_at` y la idempotencia:
+el `assert` era correcto y la fixture impedía que llegara a ejercerse.
+
+Es la misma familia que los dos defectos que Postgres destapó en AUTH-READ-GATE.1 —evidencia
+que parecía cubrir algo y no lo cubría—, con una diferencia: allí lo encontró un motor real,
+aquí lo encontró una lectura del código.
+
+**Antes de dar una invariante por cubierta, comprobar no solo el `assert` sino que la fixture
+pueda producir el estado que debería hacerla fallar.**
+
+---
+
+## 10c · OTROS LÍMITES CONOCIDOS
 
 - `[DESCONOCIDO]` **La 028 no se aplicó en producción.** Deliberado: el store no está
   conectado a nada. Migrar producción se decide cuando se conecte al flujo real.
@@ -289,3 +357,8 @@ persistirlo.
 Lo que E3.2 hereda ya resuelto: identidad, versionado, historia, idempotencia y concurrencia.
 Lo que tiene que traer: el updater, la barrera de Fair Housing, y la política de resolución
 de conflictos.
+
+**Y tres decisiones que no puede saltarse**, verificadas en la revisión de #131 y detalladas
+en §10: qué significa `updated_at` para la idempotencia, quién posee la transacción cuando se
+inyecta una sesión, y dónde vive la garantía de que `source_message_id` no llega vacío.
+Ninguna es opcional: las tres se rompen justo al conectar el store.

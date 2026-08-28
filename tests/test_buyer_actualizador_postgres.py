@@ -106,6 +106,52 @@ async def comprador(sesiones):
     return uid
 
 
+BARRERA_TIMEOUT = 15
+"""Si la barrera no se abre, el test FALLA en vez de colgarse. Un cuelgue aquí se comería el
+`timeout-minutes` del job entero y aparecería como "CI lento", no como "el arnés está roto"."""
+
+
+@pytest.fixture
+def ambos_leen_la_misma_base(monkeypatch):
+    """Fuerza el SOLAPAMIENTO que el nombre de estos tests promete. Sin esto son un volado.
+
+    E3.2b.3a se cerró con estos tres tests en verde y el 2026-08-28 uno de ellos salió rojo en
+    CI (run #36) y verde en el run #37 sobre el MISMO commit. Reproducido en local: 19/20
+    verde, y con 50 ms de retardo antes del segundo escritor, rojo determinista. El estímulo
+    era sólo `asyncio.gather`, que no garantiza nada: si A commitea antes de que B llegue a su
+    `cargar_ultima`, B lee estado fresco y ambas escrituras son CREADA — lo cual es CORRECTO
+    para dos escrituras en serie. El assert medía el planificador, no el contrato.
+
+    La barrera va sobre `act.cargar_ultima` —el orquestador lee la base por ahí— y sostiene
+    **sólo las dos primeras lecturas** hasta que ambas han ocurrido. Después libera a los dos.
+    Las lecturas POSTERIORES pasan sin tocar: la que hace el orquestador al diagnosticar un
+    `BuyerRevisionConflict` tiene que ver el estado ya commiteado por el ganador, y frenarla
+    rompería justo lo que se quiere observar.
+
+    Se bloquea DESPUÉS de ejecutar la lectura real, y eso no retiene ningún lock: la consulta
+    de `cargar_ultima` es un `SELECT` liso. El `FOR UPDATE` vive en `anexar_revision`, después
+    de la barrera. Si algún día `cargar_ultima` tomara lock, esto sería un abrazo mortal y el
+    `BARRERA_TIMEOUT` lo diría en voz alta.
+
+    NO usar en pruebas de un solo escritor ni secuenciales: la segunda lectura nunca llegaría.
+    """
+    real = act.cargar_ultima
+    estado = {"lecturas": 0}
+    ambas_dentro = asyncio.Event()
+
+    async def _con_barrera(*args, **kwargs):
+        resultado = await real(*args, **kwargs)
+        estado["lecturas"] += 1
+        if estado["lecturas"] <= 2:
+            if estado["lecturas"] == 2:
+                ambas_dentro.set()
+            await asyncio.wait_for(ambas_dentro.wait(), timeout=BARRERA_TIMEOUT)
+        return resultado
+
+    monkeypatch.setattr(act, "cargar_ultima", _con_barrera)
+    return estado
+
+
 def _proponente(*propuestas):
     async def proponer(_texto):
         return propuestas
@@ -145,7 +191,8 @@ async def _limpiar(hacer, buyer_id):
         await s.commit()
 
 
-async def test_dos_escritores_de_RUTAS_DISJUNTAS_sobreviven_los_dos(sesiones, comprador):
+async def test_dos_escritores_de_RUTAS_DISJUNTAS_sobreviven_los_dos(
+        sesiones, comprador, ambos_leen_la_misma_base):
     """`budget || bedrooms` sobre un comprador NUEVO — ninguna toca lo de la otra, así que la
     que pierde la carrera se rebasa y las dos declaraciones acaban en el estado final.
 
@@ -179,9 +226,13 @@ async def test_dos_escritores_de_RUTAS_DISJUNTAS_sobreviven_los_dos(sesiones, co
         await _limpiar(sesiones, comprador)
 
 
-async def test_dos_escritores_de_LA_MISMA_ruta_no_se_pisan(sesiones, comprador):
-    """`budget || budget` sobre un comprador nuevo — solapan, así que uno gana y el otro NO
-    sobreescribe. Cero last-write-wins: es C1 entre mensajes."""
+async def test_dos_escritores_de_LA_MISMA_ruta_no_se_pisan(
+        sesiones, comprador, ambos_leen_la_misma_base):
+    """`budget || budget` DESDE LA MISMA BASE — solapan, así que uno gana y el otro NO
+    sobreescribe. Cero last-write-wins: es C1 entre mensajes.
+
+    El solapamiento ya no se espera del planificador, se garantiza: la barrera sostiene a los
+    dos hasta que ambos han leído. Sin ella, este era el test que salía rojo 1 de cada 20."""
     try:
         resultados = await asyncio.gather(
             _escritor(sesiones, comprador, _msg("m-A", "máximo 120000 USD"),
@@ -210,7 +261,7 @@ async def test_dos_escritores_de_LA_MISMA_ruta_no_se_pisan(sesiones, comprador):
 
 
 async def test_el_replay_concurrente_del_MISMO_mensaje_da_CREADA_mas_REPLAY(
-        sesiones, comprador):
+        sesiones, comprador, ambos_leen_la_misma_base):
     """`CREADA + REPLAY`, y **no** `CREADA + CONFLICTO`.
 
     El store consulta el `source_message_id` ANTES de diagnosticar conflicto de revisión, y
@@ -234,5 +285,48 @@ async def test_el_replay_concurrente_del_MISMO_mensaje_da_CREADA_mas_REPLAY(
                 "SELECT count(*) FROM buyer_context_revisions "
                 "WHERE buyer_id = CAST(:b AS uuid)"), {"b": comprador})).scalar()
         assert filas == 1, f"el mismo mensaje creó {filas} revisiones"
+    finally:
+        await _limpiar(sesiones, comprador)
+
+
+# ══ La otra rama: sin solapamiento no hay conflicto, y eso es CORRECTO ═══════════════
+
+
+async def test_dos_escritores_SECUENCIALES_de_la_misma_ruta_ambos_CREAN(sesiones, comprador):
+    """`budget` y luego `budget`, con el primero YA commiteado. Sin barrera a propósito.
+
+    Ésta es la rama que el run #36 produjo y que nadie había afirmado. Es el mismo par de
+    escrituras que el test de arriba y el desenlace es el OPUESTO —`CREADA + CREADA`, no
+    `CREADA + CONFLICTO`— porque el conflicto no es una propiedad del par de mensajes sino de
+    si el segundo leyó la base ANTES de que el primero la moviera. El orquestador sólo declara
+    conflicto cuando otra escritura divergió desde **la base que él leyó**; si B lee después
+    del commit de A, B está actualizando estado fresco y eso no es last-write-wins, es una
+    conversación posterior.
+
+    Sin este test, un rojo del de arriba se leería como un defecto de producción. Con él, las
+    dos ramas quedan dichas y la diferencia entre ellas queda donde debe: en la precondición.
+    """
+    from app.buyer.store import cargar_ultima
+
+    try:
+        primero = await _escritor(
+            sesiones, comprador, _msg("m-A", "máximo 120000 USD"),
+            PropuestaV0(disposicion="durable", motivo="tope A",
+                        mutacion=SetBudgetMax(amount=Decimal(120000), currency=USD)))
+        # El `await` de arriba ya cerró la transacción de A. B empieza sobre estado vigente.
+        segundo = await _escritor(
+            sesiones, comprador, _msg("m-B", "máximo 90000 USD"),
+            PropuestaV0(disposicion="durable", motivo="tope B",
+                        mutacion=SetBudgetMax(amount=Decimal(90000), currency=USD)))
+
+        assert [primero.estado, segundo.estado] == [EstadoActualizacion.CREADA] * 2, \
+            [primero.estado.value, segundo.estado.value]
+
+        async with sesiones() as s:
+            final = await cargar_ultima(comprador, db=s)
+
+        assert final.context_revision == 1, "dos escrituras en serie ⇒ revisiones 0 y 1"
+        assert final.financial.budget_max.amount == Decimal(90000), \
+            "el segundo valor es el vigente: B declaró después, sobre estado que ya vio"
     finally:
         await _limpiar(sesiones, comprador)

@@ -16,9 +16,11 @@ ENTREGADO   caracterización · multi-mutation · matrices · C1-C5 congeladas
             sin soporte de coreferencia en V0
             E3.2b.1a-B.3 · predicado de ADMISIÓN — el predicado tiene que significar
             lo que la mutación afirma · defecto 4 CERRADO
-PENDIENTE   intérprete text → Afirmacion (NOT STARTED)
+            E3.2b.1b · intérprete text → Afirmacion — proponente inyectable + post-
+            procesamiento puro; eval semántico contra modelo real 19/19
+PENDIENTE   reducer E3.2b.2 (NO AUTORIZADO) · wiring productivo
 
-GATE        HOLD — los cuatro defectos de §6b cerrados; falta el intérprete
+GATE        HOLD — la costura existe y está probada; no hay consumidor
 ```
 
 ---
@@ -76,9 +78,21 @@ ser la propia unión: el modelo no puede proponer un path porque el tipo no tien
 ponerlo. Un modelo que devuelva `household.children` produce un error de parseo, no una
 mutación que haya que filtrar.
 
-`[HIPÓTESIS]` Parte del trabajo puede ser determinista —`"al menos N dormitorios"` es un
-patrón cerrado— pero no se ha medido contra mensajes reales. No conviene congelar el reparto
-sin ese dato.
+`[MEDIDO · E3.2b.1b]` El reparto ya no es hipótesis. La parte determinista llegó bastante
+más lejos de lo previsto —dimensión, valor, polaridad, vinculación y predicado, todo cerrado
+en E3.2b.1a— pero hay una clase que **ninguna gramática cerrada decide**, porque los pares
+tienen perfil de tokens casi idéntico:
+
+```
+"quiero comprar"                 vs  "¿debería comprar?"          modo
+"quiero comprar"                 vs  "mi hermana quiere comprar"  sujeto
+"máximo 120000 USD"              vs  "el corredor dijo: …"        voz
+"necesito que acepten mascotas"  vs  "la cafetería acepta mascotas"  referente
+```
+
+De ahí el reparto congelado: **modelo como PROPONENTE, determinismo como GUARDA.** El modelo
+propone lecturas; nada de lo que proponga se persiste sin pasar `autorizar_traduccion`. Eso
+deja la comprensión donde hace falta y la autoridad donde se puede auditar.
 
 ---
 
@@ -352,9 +366,17 @@ El corpus adversarial debe incluirlo con ese desenlace en mente, no solo con el 
 ## 8 · FICHEROS ESPERADOS Y LO QUE NO SE TOCA
 
 ```
-nuevo    app/buyer/extractor.py        interpretación + routing
-nuevo    tests/test_buyer_extractor.py corpus adversarial
+nuevo    app/buyer/extractor.py         guarda de evidencia + routing + C1-C5
+nuevo    tests/test_buyer_extractor.py  corpus adversarial
+nuevo    app/buyer/interprete.py        text → Afirmacion (E3.2b.1b)
+nuevo    tests/test_buyer_interprete.py invariantes estructurales · gate de CI
+nuevo    evals/corpus_interprete.py     eval semántico · gate de CIERRE, no de CI
 tocado   este documento
+
+DEUDA OBSERVABLE · con `interprete.py` son SEIS construcciones de cliente Anthropic en
+`app/` (crm_graph, graph, vision, preferencias, match, interprete). No se extrajo adapter
+compartido: tocaría el camino caliente del chat y queda fuera de esta unidad. Si aparece un
+segundo consumidor de esta costura, o si la duplicación bloquea otra fase, toca unidad propia.
 
 intactos store.py · mensaje.py · contratos · preferencias.py
          encaje.py · fair_housing.py · migraciones · frontend
@@ -386,8 +408,56 @@ ya propuesta, y hoy nadie propone. Eso es correcto —la guarda debía existir a
 proponente, no al revés— pero conviene no leer la unidad como si el extractor ya interpretara
 mensajes.
 
-**Punto de reentrada:** el intérprete, con el corpus del §4-§5 como especificación ejecutable
-y `autorizar_traduccion` como condición de admisión de cada propuesta.
+**Punto de reentrada:** E3.2b.2 (reducer) — **NO AUTORIZADO todavía**.
+
+### E3.2b.1b · lo que dejó construido y lo que dejó medido
+
+```
+texto  →  PROPONENTE          modelo · falible · inyectable
+       →  POST-PROCESAMIENTO  puro · aplica la guarda y C1-C5
+       →  LoteExtraccion
+```
+
+El proponente **no decide qué se persiste**. Tres invariantes lo sostienen, y son gate de CI
+en `tests/test_buyer_interprete.py`:
+
+```
+toda durable del lote pasa autorizar_traduccion  — se comprueba contra la guarda, no
+                                                    contra una lista de casos esperados
+lo entendido y no acreditado cae a AMBIGUOUS      — nunca al vacío
+cualquier fallo del proponente da cero propuestas — jamás una durable
+```
+
+El segundo es el que paga la estrictez de E3.2b.1a. La guarda tiene falsos negativos
+deliberados —`"120000 dólares"`, `"pet friendly"`, toda anáfora— y si el intérprete tratara
+"no pasó la guarda" como "no había nada", el usuario habría declarado algo, el sistema lo
+habría entendido, y no quedaría **ni el estado ni la pregunta**.
+
+**El eval semántico (`evals/corpus_interprete.py`) es gate de CIERRE, no de CI.** CI no tiene
+credencial y no debe tenerla: volver la suite dependiente de una API de pago y no determinista
+rompería el gate que sí protege cada push. 19/19 contra `claude-sonnet-4-5-20250929`, con el
+hash del prompt guardado junto a los resultados — si el prompt cambia, los números no son
+comparables y el hash lo delata.
+
+### Dos defectos que sólo el eval podía encontrar
+
+**1 · La dimensión presupuesto era imposible de proponer.** `SetBudgetMax.amount` es `Decimal`
+estricto y JSON no tiene `Decimal`: ningún valor del modelo validaba. No era "difícil", era
+imposible, y el esquema encima le ofrecía al modelo `number | string` — le mentía. Los tests
+estructurales no podían verlo porque ahí las mutaciones se construyen en Python. El tipado del
+wire vive ahora en `_tipar_monto`, que es el trabajo que `boundary` delega hacia arriba
+—*"la frontera recibe estructura ya tipada"*— y que sólo convierte números: una cadena
+`"120000"` se sigue rechazando, porque interpretar texto a número es justo lo que `strict=True`
+existe para impedir.
+
+**2 · El corpus pasaba 19/19 sin discriminar.** Seis casos pasaban porque el modelo **no
+proponía nada**, no porque clasificara bien: `"no persistió"` y `"no entendió"` son
+indistinguibles desde fuera y sólo el primero es correcto. Se añadió `debe_registrar` a los
+casos cuya disposición está congelada (`TURN_ONLY` para la pregunta y la consulta de zona,
+`REJECTED` para el contenido de hogar), tres casos pasaron a rojo, y el diagnóstico fue de
+**prompt**: enumeraba las cuatro disposiciones pero sólo explicaba cuándo algo NO es durable,
+y cerraba con *"aunque la lista vaya vacía"*. Con la regla 8 —registrar también lo no
+durable— los tres pasan y no queda un solo caso mudo.
 
 ### Lo que congela E3.2b.1a-B · qué cuenta como EVIDENCIA
 

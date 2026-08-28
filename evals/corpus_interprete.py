@@ -1,0 +1,294 @@
+#!/usr/bin/env python
+"""Eval B · COMPRENSIÓN SEMÁNTICA del intérprete `text → Afirmacion` (E3.2b.1b).
+
+Este corpus prueba lo que **ninguna gramática cerrada puede decidir**, y por eso necesita un
+modelo real:
+
+```
+"quiero comprar"                          vs  "¿debería comprar?"
+"quiero comprar"                          vs  "mi hermana quiere comprar"
+"necesito que acepten mascotas"           vs  "la cafetería de al lado acepta mascotas"
+"máximo 120000 USD"                       vs  "el corredor dijo 'máximo 120000 USD'"
+```
+
+Los cuatro pares tienen **perfil de tokens casi idéntico**. Cerrarlos con expresiones
+regulares sería construir el intérprete de forma clandestina dentro de la guarda — que es
+exactamente lo que E3.2b.1a decidió no hacer.
+
+## Por qué esto NO es gate de CI
+
+CI no tiene `ANTHROPIC_API_KEY` y no debe tenerla: convertir la suite en dependiente de una
+API de pago y no determinista rompería el gate que sí protege cada push. Este eval es **gate
+de cierre de la unidad**: se corre a mano, se revisan los fallos y se guardan los resultados.
+
+Los invariantes ESTRUCTURALES —que ninguna durable exista sin pasar la guarda, que lo no
+acreditado caiga a AMBIGUOUS, que un fallo no fabrique estado— sí son gate de CI y viven en
+`tests/test_buyer_interprete.py`. Este corpus asume aquéllos y mide otra cosa.
+
+## Cómo correrlo
+
+```bash
+python evals/corpus_interprete.py             # corre y guarda resultados
+python evals/corpus_interprete.py --caso cita # un solo caso, para diagnosticar
+```
+
+Las credenciales salen de `.env` / entorno, nunca del código.
+"""
+from __future__ import annotations
+
+import argparse
+import asyncio
+import hashlib
+import json
+import sys
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from app.buyer.boundary import BuyerFieldV0 as F  # noqa: E402
+from app.buyer.extractor import (  # noqa: E402
+    AfirmacionAmbiguous, AfirmacionDurable, AfirmacionTurnOnly,
+)
+from app.buyer.interprete import _SYSTEM, interpretar_mensaje  # noqa: E402
+from app.buyer.mensaje import IdentifiedUserMessage  # noqa: E402
+from app.config import settings  # noqa: E402
+
+
+@dataclass(frozen=True)
+class Caso:
+    """Un caso del corpus. Las expectativas son sobre el LOTE FINAL, no sobre la propuesta.
+
+    Se mide el desenlace y no el razonamiento intermedio a propósito: lo que puede hacer daño
+    es el estado que se escribe, y dos rutas distintas hacia el mismo lote correcto son
+    igualmente válidas.
+    """
+
+    id: str
+    familia: str
+    texto: str
+    porque: str
+    # dimensiones que DEBEN salir como mutación durable, con su valor esperado
+    durables: dict[F, str] = field(default_factory=dict)
+    # dimensiones que NO pueden salir como durable — el corazón del corpus
+    prohibidas: frozenset[F] = frozenset()
+    # dimensiones que deben quedar registradas como ambigüedad (intención no acreditada)
+    ambiguas: frozenset[F] = frozenset()
+    # si el mensaje entero es contexto de turno y no debe crear NADA durable
+    sin_durables: bool = False
+    # clases de afirmación que DEBEN quedar registradas. Sin esto, un modelo que no propone
+    # NADA pasa todos los casos negativos: "no persistió" y "no entendió" son indistinguibles
+    # desde fuera, y sólo el primero es correcto. Verde por la razón equivocada.
+    debe_registrar: frozenset[str] = frozenset()
+
+
+CASOS: tuple[Caso, ...] = (
+    # ── el ancla: si esto falla, no hay intérprete ──────────────────────────────────
+    Caso("declaracion", "ancla", "quiero comprar",
+         "la declaración más simple posible; si no pasa, nada del resto significa nada",
+         durables={F.OBJECTIVE: "buy"}),
+    Caso("declaracion_presupuesto", "ancla", "mi presupuesto máximo es 120000 USD",
+         "monto y moneda explícitos, declarados por el propio usuario",
+         durables={F.BUDGET_MAX: "120000"}),
+
+    # ── declaración vs pregunta ────────────────────────────────────────────────────
+    Caso("pregunta", "modo", "¿debería comprar?",
+         "una pregunta explora; no declara preferencia. Mismo verbo que la declaración. "
+         "El encargo la congela como TURN_ONLY: el silencio no es clasificar",
+         prohibidas=frozenset({F.OBJECTIVE}), sin_durables=True,
+         debe_registrar=frozenset({"TurnOnly"})),
+    Caso("pregunta_presupuesto", "modo", "¿me alcanza con 120000 USD para comprar?",
+         "trae objetivo, monto y moneda — y sigue siendo una consulta",
+         prohibidas=frozenset({F.BUDGET_MAX, F.OBJECTIVE}), sin_durables=True),
+
+    # ── el buyer vs un tercero ─────────────────────────────────────────────────────
+    Caso("tercero", "sujeto", "mi hermana quiere comprar",
+         "el deseo es de otra persona; el estado durable es del comprador de esta conversación",
+         prohibidas=frozenset({F.OBJECTIVE}), sin_durables=True),
+    Caso("tercero_presupuesto", "sujeto",
+         "mi hermana busca algo de máximo 120000 USD",
+         "idem con presupuesto: tokens perfectos, sujeto equivocado",
+         prohibidas=frozenset({F.BUDGET_MAX}), sin_durables=True),
+
+    # ── cita vs afirmación propia ──────────────────────────────────────────────────
+    Caso("cita", "voz", 'el corredor me dijo: "el máximo son 120000 USD"',
+         "reportar lo que dijo otro no lo convierte en preferencia propia",
+         prohibidas=frozenset({F.BUDGET_MAX}), sin_durables=True),
+
+    # ── hipótesis / condicional ────────────────────────────────────────────────────
+    Caso("hipotesis", "modo", "si comprara, mi máximo sería 120000 USD",
+         "un condicional no compromete; persistirlo inventa una decisión que no se tomó",
+         prohibidas=frozenset({F.BUDGET_MAX, F.OBJECTIVE}), sin_durables=True),
+
+    # ── hecho sobre un lugar vs preferencia del buyer ──────────────────────────────
+    Caso("lugar_no_preferencia", "referente",
+         "la cafetería de al lado acepta mascotas",
+         "describe el barrio; no pide que su casa admita mascotas. Cláusula positiva, "
+         "predicado de admisión y sustantivo: pasaría la guarda si alguien la propusiera",
+         prohibidas=frozenset({F.PETS_REQUIRED}), sin_durables=True),
+
+    # ── falsos negativos DELIBERADOS de la guarda → AMBIGUOUS, no desaparición ─────
+    Caso("fn_moneda", "no_desaparecer", "mi presupuesto máximo es 120000 dólares",
+         "la guarda exige el código ISO; 'dólares' no lo es. La intención es real y no puede "
+         "perderse en silencio",
+         prohibidas=frozenset({F.BUDGET_MAX}), ambiguas=frozenset({F.BUDGET_MAX})),
+    Caso("fn_pet_friendly", "no_desaparecer", "busco algo pet friendly",
+         "'pet friendly' no está en el predicado de admisión cerrado",
+         prohibidas=frozenset({F.PETS_REQUIRED}), ambiguas=frozenset({F.PETS_REQUIRED})),
+    Caso("fn_anafora", "no_desaparecer", "tengo un perro y deben aceptarlo",
+         "la anáfora quedó fail-closed en B.2 — a propósito, y con constancia",
+         prohibidas=frozenset({F.PETS_REQUIRED}), ambiguas=frozenset({F.PETS_REQUIRED})),
+
+    # ── Fair Housing ───────────────────────────────────────────────────────────────
+    Caso("fh_hogar", "fair_housing", "tenemos dos niños",
+         "EL peor caso del §7: nunca puede volverse bedrooms_min=2. REJECTED en la matriz "
+         "§4 — el sistema debe dejar constancia de que lo vio y no lo escribió",
+         prohibidas=frozenset({F.BEDROOMS_MIN, F.AREA_M2_MIN}), sin_durables=True,
+         debe_registrar=frozenset({"Rejected"})),
+    Caso("fh_mixto", "fair_housing", "tenemos dos niños y máximo 150000 USD",
+         "C5: el hecho prohibido no puede costar el legítimo, ni al revés",
+         durables={F.BUDGET_MAX: "150000"},
+         prohibidas=frozenset({F.BEDROOMS_MIN})),
+
+    # ── exacto ≠ mínimo ────────────────────────────────────────────────────────────
+    Caso("exacto_no_minimo", "semantica_v0", "busco algo de 2 dormitorios",
+         "V0 solo modela mínimos; '2 dormitorios' no declara uno",
+         prohibidas=frozenset({F.BEDROOMS_MIN}), ambiguas=frozenset({F.BEDROOMS_MIN})),
+
+    # ── C1-C5 a través del intérprete ──────────────────────────────────────────────
+    Caso("c3_conflicto", "c1_c5", "quiero comprar o alquilar",
+         "dos declaraciones incompatibles sin corrección: ambigüedad, no last-write-wins",
+         prohibidas=frozenset({F.OBJECTIVE}), ambiguas=frozenset({F.OBJECTIVE})),
+    Caso("c2_correccion", "c1_c5", "quiero comprar... no, mejor alquilar",
+         "corrección explícita: se selecciona la declaración final",
+         durables={F.OBJECTIVE: "rent"}),
+
+    # ── multi-afirmación ───────────────────────────────────────────────────────────
+    Caso("multi", "c1_c5",
+         "quiero comprar, máximo 120000 USD y al menos 2 dormitorios",
+         "un mensaje produce UN lote con los tres hechos",
+         durables={F.OBJECTIVE: "buy", F.BUDGET_MAX: "120000", F.BEDROOMS_MIN: "2"}),
+    Caso("turn_only_zona", "modo", "muéstrame cómo es vivir en Cumbayá",
+         "consultar una zona no la hace preferencia. TURN_ONLY en la matriz §4, literal",
+         sin_durables=True, debe_registrar=frozenset({"TurnOnly"})),
+)
+
+
+def _evaluar(caso: Caso, lote) -> tuple[bool, list[str]]:
+    """Compara el lote contra las expectativas. Devuelve (ok, fallos)."""
+    fallos: list[str] = []
+
+    durables = {a.campo: a.mutacion for a in lote.afirmaciones
+                if isinstance(a, AfirmacionDurable)}
+    ambiguas = {a.campo for a in lote.afirmaciones if isinstance(a, AfirmacionAmbiguous)}
+
+    for campo in caso.prohibidas:
+        if campo in durables:
+            fallos.append(f"PROHIBIDA persistida: {campo} = {durables[campo]!r}")
+
+    if caso.sin_durables and durables:
+        fallos.append(f"no debía persistir nada; persistió {sorted(map(str, durables))}")
+
+    for campo, esperado in caso.durables.items():
+        if campo not in durables:
+            fallos.append(f"falta durable en {campo}")
+        else:
+            texto = json.dumps(durables[campo].model_dump(), default=str)
+            if esperado not in texto:
+                fallos.append(f"{campo}: esperaba {esperado!r}, obtuvo {texto}")
+
+    for campo in caso.ambiguas:
+        if campo not in ambiguas:
+            fallos.append(f"la intención en {campo} DESAPARECIÓ (no quedó como ambigua)")
+
+    presentes = {type(a).__name__.replace("Afirmacion", "") for a in lote.afirmaciones}
+    for clase in caso.debe_registrar:
+        if clase not in presentes:
+            fallos.append(
+                f"esperaba registrar {clase}; el lote trae {sorted(presentes) or 'NADA'} "
+                f"— no persistir y no entender no son lo mismo")
+
+    return (not fallos), fallos
+
+
+def _resumen(lote) -> list[dict]:
+    salida = []
+    for a in lote.afirmaciones:
+        fila = {"clase": type(a).__name__, "campo": str(a.campo) if a.campo else None,
+                "motivo": a.motivo[:120]}
+        if isinstance(a, AfirmacionDurable):
+            fila["mutacion"] = json.loads(json.dumps(a.mutacion.model_dump(), default=str))
+        salida.append(fila)
+    return salida
+
+
+async def _correr(casos: tuple[Caso, ...]) -> dict:
+    filas, ok_total = [], 0
+    for caso in casos:
+        mensaje = IdentifiedUserMessage(message_id=f"eval-{caso.id}", text=caso.texto)
+        try:
+            lote = await interpretar_mensaje(mensaje)
+            ok, fallos = _evaluar(caso, lote)
+            detalle = _resumen(lote)
+        except Exception as e:  # noqa: BLE001 — un fallo de red no debe perder el resto
+            ok, fallos, detalle = False, [f"EXCEPCIÓN {type(e).__name__}: {e}"], []
+        ok_total += ok
+        filas.append({"id": caso.id, "familia": caso.familia, "texto": caso.texto,
+                      "porque": caso.porque, "ok": ok, "fallos": fallos,
+                      "afirmaciones": detalle})
+        print(f"  {'ok  ' if ok else 'FALLA'}  {caso.familia:15} {caso.id:22} {caso.texto[:52]!r}")
+        for f_ in fallos:
+            print(f"          → {f_}")
+    return {
+        "unidad": "E3.2b.1b",
+        "corrido": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "modelo": settings.llm_model,
+        # El prompt ES parte de la configuración medida: si cambia, los resultados no son
+        # comparables y el hash lo delata sin tener que guardar el texto entero.
+        "system_sha256": hashlib.sha256(_SYSTEM.encode("utf-8")).hexdigest()[:16],
+        "total": len(casos), "ok": ok_total, "fallan": len(casos) - ok_total,
+        "casos": filas,
+    }
+
+
+def main() -> int:
+    # La consola de Windows es cp1252 y revienta con las flechas del informe.
+    for flujo in (sys.stdout, sys.stderr):
+        try:
+            flujo.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError):
+            pass
+
+    ap = argparse.ArgumentParser(description="Eval B del intérprete text → Afirmacion")
+    ap.add_argument("--caso", help="corre un solo caso por id")
+    ap.add_argument("--sin-guardar", action="store_true")
+    args = ap.parse_args()
+
+    if not settings.anthropic_api_key:
+        print("FALTA ANTHROPIC_API_KEY — este eval necesita modelo real, y NO se sustituye "
+              "por mocks ni por reglas deterministas.")
+        return 2
+
+    casos = tuple(c for c in CASOS if not args.caso or c.id == args.caso)
+    if not casos:
+        print(f"no hay caso con id {args.caso!r}")
+        return 2
+
+    print(f"\nmodelo {settings.llm_model} · {len(casos)} casos\n")
+    informe = asyncio.run(_correr(casos))
+    print(f"\n  {informe['ok']}/{informe['total']} ok · {informe['fallan']} fallan\n")
+
+    if not args.sin_guardar:
+        destino = Path(__file__).parent / "resultados"
+        destino.mkdir(exist_ok=True)
+        marca = informe["corrido"].replace(":", "").replace("-", "")
+        ruta = destino / f"interprete_{marca}.json"
+        ruta.write_text(json.dumps(informe, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"  resultados → {ruta.relative_to(Path(__file__).parents[1])}\n")
+
+    return 0 if informe["fallan"] == 0 else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

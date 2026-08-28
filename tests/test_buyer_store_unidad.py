@@ -142,52 +142,52 @@ def test_la_raiz_es_auth_users():
 # ── CERO wiring productivo ─────────────────────────────────────────────────────────
 
 
-def test_NADIE_en_produccion_llama_todavia_al_store():
-    """La memoria del comprador existe y **el producto no la toca**. Conectarla es E3.2b.4.
+def test_la_superficie_de_producto_solo_toca_la_SOMBRA():
+    """E3.2b.4 · el producto ya llama a la memoria del comprador, pero **sólo por la sombra**.
 
-    Este test impide que el wiring se cuele "de paso" y cambie el comportamiento del producto
-    en una unidad que no lo autorizaba.
+    La versión anterior enumeraba nombres de módulo prohibidos y se le coló este wiring: como
+    `chat.py` importa `buyer.sombra` y ese nombre no estaba en la lista, el guard pasó en
+    verde el mismo commit que conectaba producción. Enumerar lo prohibido falla en cuanto
+    aparece un nombre nuevo; enumerar lo PERMITIDO no.
 
-    **Se mide sobre la superficie de PRODUCTO**, no sobre cualquier import. Hasta E3.2b.2 las
-    dos cosas coincidían porque nada dentro de `app/` llamaba al store; con el orquestador de
-    E3.2b.3 dejaron de coincidir: `actualizador.py` sí llama al store y **no tiene llamante**,
-    así que no cambia lo que el producto hace. Prohibir el import habría prohibido construir
-    la costura, que no es lo que este guard protege.
-
-    Y de paso vigila más que antes: ahora también el ORQUESTADOR queda fuera del alcance del
-    producto, no sólo el store.
+    Ahora la regla es una lista blanca de UNO: la superficie de producto puede nombrar
+    `buyer.sombra` y nada más de `app/buyer`. Cualquier atajo que salte la sombra —llamar al
+    orquestador, al reducer o al store directamente— vuelve a poner esto rojo.
     """
     superficie = [p for p in [RAIZ / "app" / "routers", RAIZ / "app" / "agent",
                               RAIZ / "app" / "main.py"] if p.exists()]
-    prohibidos = ("buyer.store", "buyer.actualizador", "anexar_revision", "cargar_ultima",
-                  "interpretar_mensaje")
+    permitido = "app.buyer.sombra"
+    prohibidos = ("buyer.store", "buyer.actualizador", "buyer.reductor", "buyer.interprete",
+                  "buyer.extractor", "buyer.boundary", "anexar_revision", "cargar_ultima",
+                  "interpretar_mensaje", "ReduccionImposible")
 
-    consumidores = []
+    atajos = []
     for raiz in superficie:
-        ficheros = [raiz] if raiz.is_file() else raiz.rglob("*.py")
-        for f in ficheros:
+        for f in ([raiz] if raiz.is_file() else raiz.rglob("*.py")):
             if "__pycache__" in f.parts:
                 continue
-            texto = f.read_text(encoding="utf-8", errors="ignore")
-            if any(p in texto for p in prohibidos):
-                consumidores.append(str(f.relative_to(RAIZ)))
+            texto = f.read_text(encoding="utf-8", errors="ignore").replace(permitido, "")
+            if any(pr in texto for pr in prohibidos):
+                atajos.append(str(f.relative_to(RAIZ)))
 
-    assert consumidores == [], f"el producto ya llama a la memoria del comprador: {consumidores}"
+    assert atajos == [], f"el producto salta la sombra y llama directo: {atajos}"
 
 
-def test_el_ORQUESTADOR_tampoco_tiene_llamante_todavia():
-    """La contraparte del anterior: la costura completa está construida y probada, y **nadie
-    la invoca** en ningún punto de `app/`. Es lo que mantiene E3.2b.4 como una decisión
-    explícita en vez de algo que ya ocurrió sin querer."""
+def test_el_ORQUESTADOR_solo_lo_consume_la_sombra():
+    """La contraparte: el único consumidor del orquestador en `app/` es `sombra.py`.
+
+    Mantiene la propiedad que el guard anterior protegía —que nadie lo invoque por su cuenta—
+    ahora que la sombra sí está autorizada a hacerlo.
+    """
     llamantes = []
     for f in (RAIZ / "app").rglob("*.py"):
-        if "__pycache__" in f.parts or f.name == "actualizador.py":
+        if "__pycache__" in f.parts or f.name in ("actualizador.py", "sombra.py"):
             continue
         texto = f.read_text(encoding="utf-8", errors="ignore")
         if "buyer.actualizador" in texto or "ResultadoUpdater" in texto:
             llamantes.append(str(f.relative_to(RAIZ)))
 
-    assert llamantes == [], f"el orquestador ya tiene consumidor: {llamantes}"
+    assert llamantes == [], f"el orquestador tiene un consumidor fuera de la sombra: {llamantes}"
 
 
 def test_el_store_no_expone_endpoints():

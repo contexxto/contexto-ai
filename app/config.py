@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     llm_model: str = "claude-sonnet-4-5-20250929"
     ssl_verify: str = "true"
 
+    # E3.2b.4 · shadow wiring del Buyer Updater. APAGADO por defecto, y el default es la
+    # decisión: la cadena entera —intérprete, guarda, reducer, orquestador— corre sin
+    # autoridad sobre la conversación, pero corre contra la memoria durable de una persona
+    # real. Encenderlo es un acto deliberado por entorno, no algo que llegue con un deploy.
+    buyer_updater_shadow: bool = False
+
     # En producción (Render + Supabase) se puede pasar la DATABASE_URL completa
     # para evitar problemas de IPv6. Si está presente, tiene precedencia.
     database_url_override: str = ""

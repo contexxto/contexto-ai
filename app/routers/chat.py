@@ -11,6 +11,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Security, status
 from fastapi.responses import StreamingResponse
 from fastapi.security.api_key import APIKeyHeader
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+
+from app.buyer.sombra import actualizar_en_sombra
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
@@ -770,6 +772,11 @@ async def chat(
     # Instrumentar la intención del turno (Fase 0 del Motor de Intención). Fire-and-forget:
     # jamás bloquea ni rompe la respuesta; alimenta el panel CRM y el reporte de lift.
     _aio.create_task(registrar_intencion(payload.session_id, messages))
+    # E3.2b.4 · SOMBRA. La memoria durable del comprador se actualiza en paralelo y **no
+    # participa en la respuesta**: `reply` y `results` ya están decididos más abajo por el
+    # carril legacy, que sigue siendo el único que habla con el usuario. Mismo contrato que
+    # las dos tareas de arriba — si falla, falla sola. Apagada por defecto tras un flag.
+    _aio.create_task(actualizar_en_sombra(user, messages))
     # Las tarjetas ya las armó el nodo `encaje` del grafo, ANTES de que el modelo escribiera:
     # devolver ESAS es lo que garantiza que el panel sea el mismo del que habla la respuesta
     # (y de paso evita repetir la extracción de preferencias y la consulta a la BD). Solo se

@@ -20,24 +20,35 @@ E3.2b.1 aquí       protege TRADUCCIONES →  "tenemos dos niños" no puede volv
 La segunda es la que importa en esta unidad, porque `SetBedroomsMin(2)` es una mutación
 **perfectamente válida para el tipo**. La frontera no puede rechazarla: es exactamente lo que
 está diseñada para aceptar. Lo único que puede impedir que nazca de una frase sobre personas
-es exigir que el texto **hable de la dimensión que se va a escribir**.
+es exigir evidencia textual de lo que se va a escribir.
 
 `autorizar_traduccion` es esa exigencia, y es determinista a propósito: un modelo no puede
 tender el puente persona → requisito de propiedad porque el puente se comprueba fuera de él.
 
-## Y la guarda comprueba DIMENSIÓN **Y VALOR**
+## Qué cuenta como evidencia
 
-Comprobar sólo la dimensión dejaba abierto `dimensión correcta → valor inventado`, que para
-el store es indistinguible de una preferencia declarada: `"quiero alquilar"` autorizaba
-`SetObjective(BUY)` porque los tres objetivos comparten vocabulario. Hoy cada propuesta exige
-evidencia de su valor concreto, y ningún `Clear*` se autoriza por omisión — necesita
-retractación explícita de su propia dimensión.
+```
+EVIDENCIA EXACTA   no es   "todos los tokens necesarios existen en el mensaje"
+                   es      "los tokens sostienen LA MISMA afirmación"
+```
 
-**El número tiene que salir de la cláusula de su dimensión**, y eso es Fair Housing y no
-estilo: buscarlo en todo el mensaje convierte el conteo de personas en evidencia de un
-requisito de propiedad —`"tenemos 2 niños y al menos 3 dormitorios"` autorizaría
-`SetBedroomsMin(2)`—, que es el peor caso del §7 entrando por la puerta que abre el propio
-verificador de valor.
+Esa distinción no es retórica: cada vez que se relajó costó una autorización falsa, y las
+tres formas de relajarla aparecieron por separado.
+
+**LOCAL.** La evidencia vive en UNA cláusula. Repartida por el mensaje, dos hechos sin
+relación suman un tercero que nadie declaró: `"tenemos 2 niños y al menos 3 dormitorios"`
+autorizaba `SetBedroomsMin(2)` —el peor caso del §7—, y
+`"ya no necesito mascotas; mi presupuesto máximo es 120000 USD"` autorizaba `ClearBudgetMax`,
+borrando un campo vigente.
+
+**POSITIVA.** La cláusula tiene que afirmar, no negar. `"no quiero comprar"` contiene
+`comprar`, y sin ese filtro el patrón de `BUY` encontraba ahí su evidencia y autorizaba lo
+contrario de lo que dijo el usuario. La matriz del §5 lo congela como AMBIGUOUS.
+
+**DEL VALOR, no de la dimensión.** Los tres objetivos comparten vocabulario, así que
+comprobar la dimensión dejaba pasar `SetObjective(BUY)` ante `"quiero alquilar"`. Y ningún
+`Clear*` se autoriza por omisión: necesita retractación explícita de su propia dimensión, en
+su propia cláusula.
 
 ## Routing POR AFIRMACIÓN, no por mensaje
 
@@ -128,10 +139,20 @@ _DIM_BEDROOMS = re.compile(r"\b(dormitorio|dormitorios|habitacion|habitaciones|"
                            r"cuarto|cuartos|recamara|recamaras|bedroom|bedrooms)\b")
 _DIM_AREA = re.compile(r"(\bm2\b|\bm²|metros? cuadrados?|square meters?)")
 _PETS_SUSTANTIVO = re.compile(r"\b(mascota|mascotas|perro|perros|gato|gatos|pet|pets)\b")
+
+# Dos clases de verbo, y separarlas es lo que impide sumar dos hechos sin relación:
+#
+#   REQUISITO   genérico —"necesito", "deben"—. NO relaciona nada con la mascota por sí solo:
+#               en "necesito 2 dormitorios" pide dormitorios. Exige el sustantivo EN SU
+#               CLÁUSULA.
+#   ANAFORICO   el clítico de objeto —"aceptarlo"— ya lleva dentro a qué se refiere. Es lo
+#               que hace legítimo *"tengo un perro y deben aceptarlo"*, donde el sustantivo
+#               vive en la cláusula anterior.
 _PETS_REQUISITO = re.compile(
-    r"\b(acepte|acepten|aceptarlo|aceptarla|aceptarlos|aceptarlas|"
-    r"admita|admitan|permita|permitan|"
+    r"\b(acepte|acepten|admita|admitan|permita|permitan|"
     r"necesito|necesitamos|debe|deben|tiene que|allowed|required)\b")
+_PETS_ANAFORICO = re.compile(r"\b(aceptarlo|aceptarla|aceptarlos|aceptarlas|"
+                             r"admitirlo|admitirla|admitirlos|admitirlas)\b")
 
 
 # ── La evidencia del VALOR ─────────────────────────────────────────────────────────
@@ -191,13 +212,27 @@ _CLAUSULA = re.compile(r"(?<!\d)[,;.:]|[,;.:](?!\d)|[!?¡¿]|\by\b|\bpero\b|\bau
 _NEGACION = re.compile(r"\b(no|ni|tampoco|sin)\b")
 
 
+def _afirmativas(plano: str):
+    """Las cláusulas que AFIRMAN algo: las que no llevan negación.
+
+    Una cláusula negada no evidencia lo que nombra — lo contradice. `"no quiero comprar"`
+    contiene `comprar`, y sin este filtro el patrón de `BUY` encontraba ahí su evidencia y
+    autorizaba lo contrario de lo que dijo el usuario. La matriz del §5 congela ese mensaje
+    como AMBIGUOUS: *"¿alquila, o retira el objetivo?"*.
+
+    **Por cláusula y no por mensaje**: una negación en otra cláusula no puede costar un hecho
+    que el usuario sí declaró. *"No tengo mascotas, pero quiero comprar"* declara la compra.
+    """
+    return [c for c in _CLAUSULA.split(plano) if not _NEGACION.search(c)]
+
+
 def _evidencia_objective(mutacion, plano: str) -> bool:
     patron = _EVIDENCIA_OBJECTIVE.get(mutacion.objective)
-    return patron is not None and bool(patron.search(plano))
+    return patron is not None and any(patron.search(c) for c in _afirmativas(plano))
 
 
 def _numero_junto_a_su_dimension(plano: str, valor, *dimension: re.Pattern) -> bool:
-    """¿Alguna cláusula evidencia esta dimensión **y** este número a la vez?
+    """¿Alguna cláusula AFIRMA esta dimensión **y** este número a la vez?
 
     **Por cláusula, y es una frontera de Fair Housing, no una preferencia de estilo.** Buscar
     el número en todo el mensaje convierte el conteo de personas en evidencia de un requisito
@@ -205,12 +240,13 @@ def _numero_junto_a_su_dimension(plano: str, valor, *dimension: re.Pattern) -> b
     `2`, y autorizaría `SetBedroomsMin(2)` — el peor caso del §7, y plausible.
 
     La guarda de dimensión no lo veía: el texto SÍ habla de dormitorios. Lo que hay que
-    exigir es que el número salga de la misma cláusula que la dimensión que va a escribir.
+    exigir es que el número salga de la misma cláusula que la dimensión que va a escribir, y
+    que esa cláusula lo afirme en vez de negarlo.
     """
     return any(
         all(p.search(clausula) for p in dimension)
         and any(n == valor for n in _numeros_del_texto(clausula))
-        for clausula in _CLAUSULA.split(plano)
+        for clausula in _afirmativas(plano)
     )
 
 
@@ -232,18 +268,32 @@ def _evidencia_area(mutacion, plano: str) -> bool:
 
 
 def _evidencia_pets(_mutacion, plano: str) -> bool:
-    """`SetPetsRequired` no lleva payload, así que "valor exacto" aquí significa que el texto
-    expresa **positivamente** el requisito de que la propiedad admita mascotas.
+    """`SetPetsRequired` no lleva payload, así que "valor exacto" aquí significa que alguna
+    cláusula afirmativa exija **que la propiedad admita mascotas** — no que el mensaje
+    mencione una mascota y, por separado, pida algo.
 
-    La operación ES la afirmación —`False` no es representable y dejar de necesitarlo es
-    `ClearPetsRequired`—, así que una mención negada no puede convertirse en el requisito.
-    Sin este chequeo, `"no necesito que acepten mascotas"` traía sustantivo y verbo de
-    requisito y autorizaba justo lo contrario de lo que dice.
+    ```
+    "necesito que acepten mascotas"        requisito + sustantivo en la MISMA cláusula
+    "tengo un perro y deben aceptarlo"     el clítico -lo ya dice a qué se refiere
+    "tengo un perro; necesito 2 dormitorios"   dos hechos sin relación → NO
+    ```
+
+    El tercero autorizaba: el sustantivo se buscaba en todo el mensaje y bastaba un
+    `necesito` suelto en cualquier cláusula sin negación. Pero `necesito` y `deben` son
+    genéricos —ahí piden dormitorios— y no vinculan nada con la mascota. Sumar los dos
+    fabricaba un requisito que nadie declaró.
+
+    **Límite conocido y no cerrado:** la vía anafórica no comprueba a QUÉ se refiere el
+    clítico, así que *"tengo un perro; el banco debe aceptarlo"* pasaría. Resolver el
+    referente es interpretación, no gramática cerrada, y no le toca a una guarda. Queda
+    anotado en vez de disimulado.
     """
-    if not _PETS_SUSTANTIVO.search(plano):
-        return False
-    return any(_PETS_REQUISITO.search(clausula) and not _NEGACION.search(clausula)
-               for clausula in _CLAUSULA.split(plano))
+    hay_mascota = bool(_PETS_SUSTANTIVO.search(plano))
+    return hay_mascota and any(
+        _PETS_ANAFORICO.search(clausula)
+        or (_PETS_REQUISITO.search(clausula) and _PETS_SUSTANTIVO.search(clausula))
+        for clausula in _afirmativas(plano)
+    )
 
 
 # ── La retractación · lo que autoriza un `Clear*` ──────────────────────────────────
@@ -264,17 +314,32 @@ _DIM_AREA_CLEAR = re.compile(r"(\bm2\b|\bm²|metros? cuadrados?|square meters?|"
 
 
 def _retractacion_de(*dimension: re.Pattern):
-    """Construye el verificador de un `Clear*`: retractación explícita **Y** su dimensión.
+    """Construye el verificador de un `Clear*`: retractación explícita **Y** su dimensión,
+    **en la MISMA cláusula**.
 
-    Las dos condiciones, no una. Con solo el marcador, un *"ya no"* sobre los dormitorios
-    autorizaría borrar el objetivo por vecindad en la misma frase.
+    Es la misma vinculación que exigen los números, y por el mismo motivo. Pedir marcador en
+    cualquier parte del mensaje y dimensión en cualquier parte deja que dos afirmaciones sin
+    relación se sumen en un borrado:
+
+    ```
+    "ya no necesito mascotas; mi presupuesto máximo es 120000 USD"
+         ^^^^^ retractación de mascotas      ^^^^^^^^^^^ dimensión budget
+                          →  autorizaba ClearBudgetMax
+    ```
+
+    El usuario no retiró su presupuesto. Un `Clear` mal vinculado es pérdida silenciosa de un
+    campo que sigue vigente, que es exactamente lo que §5 avisa que hay que evitar.
+
+    Aquí NO se filtra por cláusula afirmativa: `"ya no"` **es** una negación, y es la que
+    autoriza. Lo que distingue retractación de negación es el marcador, no la polaridad.
 
     Esta función no recibe estado, así que no demuestra que el campo existiera antes: sólo
     que el texto autoriza la INTENCIÓN de borrar esa dimensión. Que borrar algo vacío sea un
     no-op es del reducer y del store, no de aquí.
     """
     def verificar(_mutacion, plano: str) -> bool:
-        return bool(_RETRACCION.search(plano)) and all(p.search(plano) for p in dimension)
+        return any(_RETRACCION.search(clausula) and all(p.search(clausula) for p in dimension)
+                   for clausula in _CLAUSULA.split(plano))
 
     return verificar
 
@@ -307,9 +372,13 @@ class TraduccionNoAutorizada(Exception):
 def autorizar_traduccion(mutacion, texto: str) -> None:
     """Levanta si el texto no evidencia **exactamente** la mutación propuesta.
 
-    Exactamente quiere decir dimensión Y valor: `"quiero alquilar"` no autoriza
-    `SetObjective(BUY)` aunque hable inequívocamente del objetivo. Y un `Clear*` exige
-    retractación explícita de su propia dimensión — la negación no basta.
+    Exactamente quiere decir **local, positiva y del valor**: la evidencia vive en una sola
+    cláusula, esa cláusula afirma en vez de negar, y sostiene el valor concreto y no sólo la
+    dimensión. `"quiero alquilar"` no autoriza `SetObjective(BUY)` aunque hable
+    inequívocamente del objetivo; `"no quiero comprar"` tampoco autoriza `SetObjective(BUY)`
+    aunque contenga la palabra. Y un `Clear*` exige retractación explícita de su propia
+    dimensión, en su propia cláusula — la negación no basta y el marcador no se presta entre
+    afirmaciones vecinas.
 
     **Fail closed.** Un tipo sin entrada en `_VERIFICADOR` no se autoriza. Antes hacía lo
     contrario —`return` cuando no había vocabulario—, que es como los cinco `Clear*` quedaban

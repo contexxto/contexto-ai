@@ -9,7 +9,9 @@ ENTREGADO   caracterización · multi-mutation · matrices · C1-C5 congeladas
             E3.2b.1a-A §3-§7 · unión cerrada de afirmaciones + routing por
             BuyerFieldV0 + orden estable — defectos 1, 2 y 3 CERRADOS
             E3.2b.1a-B · verificador de evidencia EXACTA (dimensión + valor) +
-            Clear por retractación, fail closed — defecto 4 CERRADO
+            Clear por retractación, fail closed
+            E3.2b.1a-B.1 · evidencia LOCAL, POSITIVA y VINCULADA — cerró los tres
+            huecos de asociación que la revisión forense encontró · defecto 4 CERRADO
 PENDIENTE   intérprete text → Afirmacion (NOT STARTED)
 
 GATE        HOLD — los cuatro defectos de §6b cerrados; falta el intérprete
@@ -383,23 +385,47 @@ mensajes.
 **Punto de reentrada:** el intérprete, con el corpus del §4-§5 como especificación ejecutable
 y `autorizar_traduccion` como condición de admisión de cada propuesta.
 
-### La frontera que E3.2b.1a-B tuvo que añadir · Fair Housing
+### Lo que congela E3.2b.1a-B · qué cuenta como EVIDENCIA
 
-Verificar el valor abre una puerta que la guarda de dimensión no tenía. Buscar el número en
-todo el mensaje convierte el conteo de personas en evidencia de un requisito de propiedad:
-
-```
-"tenemos 2 niños y al menos 3 dormitorios"  +  SetBedroomsMin(2)   →  autorizaba
-```
-
-La dimensión era correcta —el texto habla de dormitorios— y el `2` estaba en el mensaje. Es
-el peor caso del §7 entrando por la puerta que abre el propio verificador. Queda congelado:
+Verificar el valor abrió una puerta que la guarda de dimensión no tenía, y la abrió **cuatro
+veces con la misma forma**. La primera se encontró implementando; las otras tres las encontró
+la revisión forense de `78d67e6`, ya con el verificador escrito y verde:
 
 ```
-el número que evidencia una mutación tiene que salir de la MISMA CLÁUSULA que su dimensión
+"tenemos 2 niños y al menos 3 dormitorios"  + SetBedroomsMin(2)     →  autorizaba
+"no quiero comprar"                          + SetObjective(BUY)     →  autorizaba
+"ya no necesito mascotas; mi presupuesto máximo es 120000 USD"
+                                             + ClearBudgetMax()      →  autorizaba
+"tengo un perro; necesito 2 dormitorios"     + SetPetsRequired()     →  autorizaba
 ```
 
-Reproducido en rojo antes de cerrarlo y cubierto por los tests de B9.
+En los cuatro la dimensión era correcta y los tokens existían. Lo que fallaba era la
+asociación: mitades de dos afirmaciones distintas sumando una tercera que nadie declaró. Es
+**una clase de defecto, no cuatro casos**, y por eso la regla se congela como definición y no
+como parche:
+
+```
+EVIDENCIA EXACTA   no es   "todos los tokens necesarios existen en el mensaje"
+                   es      "los tokens sostienen LA MISMA afirmación"
+
+LOCAL      la evidencia vive en UNA cláusula — nada se presta entre cláusulas vecinas
+POSITIVA   esa cláusula afirma; una cláusula negada no evidencia, contradice
+DEL VALOR  sostiene el valor concreto, no sólo la dimensión que lo contiene
+```
+
+La polaridad se juzga **por cláusula y no por mensaje**: una negación en otra cláusula no
+puede costar un hecho que el usuario sí declaró (*"no tengo mascotas, pero quiero comprar"*
+declara la compra). Los `Clear*` son la excepción a POSITIVA — `"ya no"` **es** una negación,
+y es la que autoriza; lo que los distingue de una negación simple es el marcador, no la
+polaridad.
+
+Los cuatro se reprodujeron en rojo antes de cerrarlos. Cubiertos por B9 y por la sección I,
+que además pincha la clase con casos que no son ninguno de los cuatro.
+
+**Límite conocido y no cerrado.** La vía anafórica de mascotas —*"tengo un perro y deben
+aceptarlo"*— no comprueba a qué se refiere el clítico, así que *"tengo un perro; el banco
+debe aceptarlo"* pasaría. Resolver el referente es interpretación, no gramática cerrada, y no
+le toca a una guarda. Queda anotado en vez de disimulado.
 
 ### Lo que E3.2b.1a-A dejó decidido y NO estaba en C1-C5
 

@@ -9,18 +9,20 @@ E3.2b.1   protege TRADUCCIONES  →  "tenemos dos niños" no puede volverse bedr
 
 `SetBedroomsMin(2)` es una mutación **perfectamente válida para el tipo**: la frontera no
 puede rechazarla, es justo lo que acepta. Lo que impide que nazca de una frase sobre personas
-es exigir que el texto evidencie la dimensión **y el valor** que se va a escribir — y que el
-valor salga de la cláusula de esa dimensión, no de cualquier parte del mensaje.
+es exigir evidencia **local, positiva y del valor**: en una sola cláusula, que afirme en vez
+de negar, y que sostenga el valor concreto y no sólo la dimensión que lo contiene.
 
 ## Cómo se escribió esta suite (gate PROSE ↔ BEHAVIOR de §6c)
 
-Cada test de las secciones D-H se derivó en este orden: **decisión congelada → comportamiento
+Cada test de las secciones D-I se derivó en este orden: **decisión congelada → comportamiento
 esperado → assert → nombre → docstring → código**. Nunca al revés. Leída desde el código,
 cualquier suite verde parece una especificación; así fue como se coló el test falso de la
 corrección incompleta, que estaba VERDE afirmando que los 120000 sobrevivían.
 
-La sección H se escribió entera **antes** de su implementación y se corrió en rojo: 25 fallos
-que son la prueba de que el defecto 4 existía y de que estos asserts lo detectan.
+Las secciones H e I se escribieron enteras **antes** de su implementación y se corrieron en
+rojo: 25 y 12 fallos. Son la prueba de que los defectos existían y de que estos asserts los
+detectan — y la sección I existe porque una suite verde de 124 casos seguía autorizando
+`SetObjective(BUY)` ante `"no quiero comprar"`.
 
 Pura y offline: sin store, sin base, sin LLM.
 """
@@ -787,3 +789,158 @@ def test_B9_el_hecho_legitimo_de_la_MISMA_frase_sigue_autorizando(mutacion, text
     declaró. En la misma frase que menciona a los niños, el dormitorio y el presupuesto que
     el usuario declaró explícitamente siguen autorizándose."""
     autorizar_traduccion(mutacion, texto)
+
+
+# ══ I · P1-P3 · EVIDENCIA LOCAL, POSITIVA Y VINCULADA ═══════════════════════════════
+#
+# El hallazgo de "2 niños + 3 dormitorios" no era un caso aislado: destapó una CLASE de
+# defecto —evidencia correcta pero mal asociada— y B9 solo cerró una de sus caras.
+#
+#     EVIDENCIA EXACTA  no es  "todos los tokens necesarios existen en el mensaje"
+#                       es     "los tokens sostienen LA MISMA afirmación"
+#
+# Tres caras más de la misma clase, las tres reproducidas en rojo antes de cerrarlas.
+
+
+# ── P1 · el valor está presente pero NEGADO ────────────────────────────────────────
+
+
+@pytest.mark.parametrize("mutacion,texto", [
+    (SetObjective(objective=Objective.BUY), "no quiero comprar"),
+    (SetObjective(objective=Objective.RENT), "no quiero alquilar"),
+    (SetObjective(objective=Objective.INVEST), "no quiero invertir"),
+    (SetBedroomsMin(bedrooms_min=2), "no necesito mínimo 2 dormitorios"),
+    (SetAreaM2Min(area_m2_min=80.0), "no necesito mínimo 80 m2"),
+    (SetBudgetMax(amount=Decimal(120000), currency=USD),
+     "no tengo un presupuesto máximo de 120000 USD"),
+])
+def test_P1_un_valor_NEGADO_no_evidencia_la_mutacion(mutacion, texto):
+    """DECISIÓN CONGELADA (§5, matriz de CLEAR): `"no quiero comprar"` → **AMBIGUOUS**.
+    Ni `SetObjective(BUY)` ni un borrado: *"¿alquila, o retira el objetivo?"*.
+
+    El verificador de valor comprobaba que el lexema estuviera presente, no que estuviera
+    AFIRMADO. `"no quiero comprar"` contiene `comprar`, así que el patrón de `BUY` encontraba
+    su evidencia y autorizaba justo lo contrario de lo que dice el usuario.
+
+    **Evidencia del lexema ≠ evidencia de la afirmación.** La cláusula que sostiene un `Set*`
+    tiene que ser positiva.
+    """
+    with pytest.raises(TraduccionNoAutorizada):
+        autorizar_traduccion(mutacion, texto)
+
+
+def test_P1_la_polaridad_se_juzga_POR_CLAUSULA_no_por_mensaje():
+    """Una negación en otra cláusula no puede costar un hecho que el usuario sí declaró: eso
+    sería C5 al revés. La negación gobierna su cláusula, no el mensaje entero."""
+    texto = "no tengo mascotas, pero quiero comprar y máximo 120000 USD"
+    autorizar_traduccion(SetObjective(objective=Objective.BUY), texto)
+    autorizar_traduccion(SetBudgetMax(amount=Decimal(120000), currency=USD), texto)
+    with pytest.raises(TraduccionNoAutorizada):
+        autorizar_traduccion(SetPetsRequired(), texto)
+
+
+# ── P2 · la retractación tiene que estar EN la cláusula de su dimensión ────────────
+
+
+@pytest.mark.parametrize("mutacion,texto", [
+    (ClearBudgetMax(), "ya no necesito mascotas; mi presupuesto máximo es 120000 USD"),
+    (ClearObjective(), "ya no necesito mascotas; quiero comprar"),
+    (ClearBudgetMax(),
+     "ya no necesito mínimo de dormitorios; mi presupuesto máximo es 120000 USD"),
+    (ClearBedroomsMin(), "ya no necesito mascotas; al menos 2 dormitorios"),
+])
+def test_P2_una_retractacion_de_OTRA_clausula_no_autoriza_este_Clear(mutacion, texto):
+    """MISMA CLASE que B9, aplicada a los `Clear*`.
+
+    `_retractacion_de` pedía marcador en cualquier parte del mensaje Y dimensión en cualquier
+    parte del mensaje, sin exigir que fueran la misma afirmación. Un mensaje que retracta las
+    mascotas y de paso menciona el presupuesto entregaba las dos mitades y autorizaba
+    `ClearBudgetMax` — borrado silencioso de un campo que el usuario no retiró.
+
+    El test anterior no lo veía porque usaba un mensaje donde las otras dimensiones ni
+    aparecían: todas fallaban por ausencia, no por vinculación.
+    """
+    with pytest.raises(TraduccionNoAutorizada):
+        autorizar_traduccion(mutacion, texto)
+
+
+def test_P2_el_Clear_de_la_dimension_RETRACTADA_sigue_autorizando():
+    """El acotado no puede costar la retractación legítima de la misma frase."""
+    texto = "ya no necesito mascotas; mi presupuesto máximo es 120000 USD"
+    autorizar_traduccion(ClearPetsRequired(), texto)
+
+
+# ── P3 · mención de mascota + requisito INDEPENDIENTE ──────────────────────────────
+
+
+@pytest.mark.parametrize("texto", [
+    "tengo un perro; necesito 2 dormitorios",
+    "tengo un gato; necesito comprar",
+    "tengo un perro, mínimo 80 m2",
+])
+def test_P3_una_mascota_y_un_requisito_AJENO_no_son_un_requisito_de_mascota(texto):
+    """El sustantivo se buscaba en todo el mensaje y el verbo en cualquier cláusula sin
+    negación, así que dos hechos sin relación se sumaban en un requisito que nadie declaró.
+
+    `necesito` o `deben` no relacionan por sí solos la cláusula con la mascota: son verbos
+    genéricos que aquí piden dormitorios o una compra.
+    """
+    with pytest.raises(TraduccionNoAutorizada):
+        autorizar_traduccion(SetPetsRequired(), texto)
+
+
+@pytest.mark.parametrize("texto", [
+    "necesito que acepten mascotas",
+    "tengo un perro y deben aceptarlo",
+    "busco algo que admitan gatos",
+])
+def test_P3_el_requisito_DE_MASCOTAS_sigue_autorizando(texto):
+    """Los dos primeros son los casos congelados en B6. `"deben aceptarlo"` pasa por la forma
+    anafórica del verbo de aceptación —el clítico `-lo`—, no por `deben`: si bastara `deben`,
+    `"necesito 2 dormitorios"` volvería a colar."""
+    autorizar_traduccion(SetPetsRequired(), texto)
+
+
+# ── La CLASE, no los tres casos ────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("mutacion,texto", [
+    # el número de una dimensión no evidencia otra, aunque las dos estén declaradas
+    (SetBudgetMax(amount=Decimal(2), currency=USD),
+     "máximo 120000 USD, al menos 2 dormitorios"),
+    (SetBedroomsMin(bedrooms_min=120000),
+     "máximo 120000 USD, al menos 2 dormitorios"),
+    (SetAreaM2Min(area_m2_min=2.0), "al menos 2 dormitorios, mínimo 80 m2"),
+    # la moneda de otra cláusula tampoco
+    (SetBudgetMax(amount=Decimal(900), currency=BuyerCurrencyV0.MXN),
+     "máximo 900 USD y 5000 MXN en mantenimiento"),
+])
+def test_la_evidencia_de_UNA_dimension_no_sirve_para_otra(mutacion, texto):
+    """Barrido de la CLASE que destapó "2 niños + 3 dormitorios": **evidencia correcta, mal
+    asociada.** Salió tres veces —números, `Clear*`, mascotas— y cada vez con la misma forma:
+    dos afirmaciones sin relación cuyas mitades sumaban una tercera que nadie declaró.
+
+    Estos casos no son ninguno de los tres; están para que la regla quede pinchada como
+    propiedad general y no como parche de los síntomas conocidos.
+    """
+    with pytest.raises(TraduccionNoAutorizada):
+        autorizar_traduccion(mutacion, texto)
+
+
+def test_lo_declarado_sobrevive_a_que_su_alternativa_este_negada():
+    """C5 por el lado de la polaridad: negar una cosa no puede costar la que sí se afirmó en
+    la misma frase."""
+    texto = "quiero comprar, no alquilar"
+    autorizar_traduccion(SetObjective(objective=Objective.BUY), texto)
+    with pytest.raises(TraduccionNoAutorizada):
+        autorizar_traduccion(SetObjective(objective=Objective.RENT), texto)
+
+
+def test_dos_retractaciones_legitimas_en_un_mensaje_autorizan_LAS_DOS():
+    """El acotado por cláusula no puede costar retractaciones reales: lo que prohíbe es
+    tomar prestado el marcador de la cláusula vecina, no retractar dos cosas."""
+    texto = "quita mi mínimo de dormitorios y ya no tengo presupuesto"
+    autorizar_traduccion(ClearBedroomsMin(), texto)
+    autorizar_traduccion(ClearBudgetMax(), texto)
+    with pytest.raises(TraduccionNoAutorizada):
+        autorizar_traduccion(ClearObjective(), texto)

@@ -650,7 +650,7 @@ def test_B5_el_2_de_m2_NO_es_un_numero_del_mensaje():
 
 @pytest.mark.parametrize("texto,esperado", [
     ("necesito que acepten mascotas", True),
-    ("tengo un perro y deben aceptarlo", True),
+    ("tengo un perro y deben aceptarlo", False),      # REVERTIDO · ver sección J
     ("no tengo mascotas", False),
     ("no quiero mascotas", False),
     ("no necesito que acepten mascotas", False),      # NEGACIÓN · el caso de M8
@@ -662,8 +662,11 @@ def test_B6_las_mascotas_exigen_un_requisito_POSITIVO(texto, esperado):
 
     `SetPetsRequired` no lleva campo por diseño —`False` no es representable, y dejar de
     necesitarlo es `ClearPetsRequired`—, así que una mención negada **no puede** volverse el
-    requisito positivo. La gramática cerrada exige el sustantivo en el texto y un verbo de
-    requisito en una cláusula SIN negación.
+    requisito positivo. La gramática cerrada exige sustantivo de mascota **y** verbo de
+    requisito en una MISMA cláusula sin negación.
+
+    `"tengo un perro y deben aceptarlo"` figuró aquí como `True` y **se revirtió**: apoyaba la
+    autorización en un clítico que no dice a qué refiere. El porqué está en la sección J.
     """
     assert _autoriza(SetPetsRequired(), texto) is esperado
 
@@ -891,13 +894,15 @@ def test_P3_una_mascota_y_un_requisito_AJENO_no_son_un_requisito_de_mascota(text
 
 @pytest.mark.parametrize("texto", [
     "necesito que acepten mascotas",
-    "tengo un perro y deben aceptarlo",
     "busco algo que admitan gatos",
 ])
 def test_P3_el_requisito_DE_MASCOTAS_sigue_autorizando(texto):
-    """Los dos primeros son los casos congelados en B6. `"deben aceptarlo"` pasa por la forma
-    anafórica del verbo de aceptación —el clítico `-lo`—, no por `deben`: si bastara `deben`,
-    `"necesito 2 dormitorios"` volvería a colar."""
+    """Acotar la evidencia no puede costar el requisito que sí se declaró: en los dos, el
+    sustantivo y el verbo de admisión viven en la misma cláusula.
+
+    `"tengo un perro y deben aceptarlo"` estuvo en esta lista y **se retiró** — su evidencia
+    estaba repartida entre dos cláusulas y sólo la unía un clítico. Sección J.
+    """
     autorizar_traduccion(SetPetsRequired(), texto)
 
 
@@ -944,3 +949,62 @@ def test_dos_retractaciones_legitimas_en_un_mensaje_autorizan_LAS_DOS():
     autorizar_traduccion(ClearBudgetMax(), texto)
     with pytest.raises(TraduccionNoAutorizada):
         autorizar_traduccion(ClearObjective(), texto)
+
+
+# ══ J · FAIL-CLOSED · la coreferencia no se asume ═══════════════════════════════════
+#
+# DECISIÓN NUEVA, y REVIERTE una anterior de esta misma suite. B6 congeló
+# `"tengo un perro y deben aceptarlo"` como PASS, apoyándose en el clítico `-lo` para tender
+# un puente entre cláusulas. Ese puente privilegiaba recall sobre integridad, que es la
+# elección equivocada para una guarda de autorización.
+#
+#     no puedo verificar la coreferencia   →   NO autorizo
+#     no                                   →   asumo que "lo" refiere a la mascota
+#
+# Precisamente porque resolver el referente no le toca a la guarda, tampoco le toca darlo por
+# supuesto. Una guarda tolera falsos negativos antes que falsos positivos.
+
+
+@pytest.mark.parametrize("texto", [
+    "tengo un perro; el banco debe aceptarlo",
+    "tengo un perro; la guardería debe aceptarlo",
+    "tengo un perro y deben aceptarlo",
+    "tengo un gato, el seguro debe admitirlo",
+])
+def test_J_un_clitico_en_OTRA_clausula_no_evidencia_el_requisito(texto):
+    """Los dos primeros eran autorizaciones falsas y el tercero era un PASS congelado que se
+    revierte a propósito.
+
+    El código calculaba `hay_mascota` sobre todo el mensaje y luego aceptaba cualquier
+    cláusula afirmativa con una forma anafórica. Nada vinculaba las dos: `"el banco debe
+    aceptarlo"` autorizaba un requisito de mascotas porque en otra frase había un perro.
+
+    `"tengo un perro y deben aceptarlo"` cae con ellos, y **no significa que el usuario no lo
+    haya querido decir**. Significa que la gramática cerrada no puede verificar a qué refiere
+    el clítico con certeza suficiente para crear estado durable. El intérprete podrá
+    clasificarlo AMBIGUOUS; lo que no puede es cruzar hoy la frontera durable.
+    """
+    with pytest.raises(TraduccionNoAutorizada):
+        autorizar_traduccion(SetPetsRequired(), texto)
+
+
+@pytest.mark.parametrize("texto", [
+    "necesito que acepten mascotas",
+    "busco algo que admita gatos",
+    "busco depto que acepte mi gato",
+    "el edificio debe permitir perros",
+])
+def test_J_el_requisito_declarado_EN_UNA_CLAUSULA_sigue_autorizando(texto):
+    """La regla que queda es una sola y sin excepciones: sustantivo de mascota **y** verbo de
+    admisión **en la misma cláusula afirmativa**. Es lo que hace que la propiedad declarada en
+    el encabezado —evidencia LOCAL, POSITIVA y VINCULADA— deje de tener una excepción."""
+    autorizar_traduccion(SetPetsRequired(), texto)
+
+
+def test_J_no_queda_gramatica_anaforica_en_el_modulo():
+    """No se deja código muerto. Si la vía anafórica ya no autoriza nada, su vocabulario no
+    puede quedarse rondando: sería la próxima cosa que alguien reconecta "porque estaba ahí".
+    """
+    from app.buyer import extractor as E
+
+    assert not hasattr(E, "_PETS_ANAFORICO")

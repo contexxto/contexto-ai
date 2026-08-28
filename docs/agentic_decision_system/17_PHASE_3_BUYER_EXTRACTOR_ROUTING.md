@@ -11,7 +11,9 @@ ENTREGADO   caracterización · multi-mutation · matrices · C1-C5 congeladas
             E3.2b.1a-B · verificador de evidencia EXACTA (dimensión + valor) +
             Clear por retractación, fail closed
             E3.2b.1a-B.1 · evidencia LOCAL, POSITIVA y VINCULADA — cerró los tres
-            huecos de asociación que la revisión forense encontró · defecto 4 CERRADO
+            huecos de asociación que la revisión forense encontró
+            E3.2b.1a-B.2 · mascotas fail-closed — se retira la excepción anafórica;
+            sin soporte de coreferencia en V0 · defecto 4 CERRADO
 PENDIENTE   intérprete text → Afirmacion (NOT STARTED)
 
 GATE        HOLD — los cuatro defectos de §6b cerrados; falta el intérprete
@@ -422,10 +424,33 @@ polaridad.
 Los cuatro se reprodujeron en rojo antes de cerrarlos. Cubiertos por B9 y por la sección I,
 que además pincha la clase con casos que no son ninguno de los cuatro.
 
-**Límite conocido y no cerrado.** La vía anafórica de mascotas —*"tengo un perro y deben
-aceptarlo"*— no comprueba a qué se refiere el clítico, así que *"tengo un perro; el banco
-debe aceptarlo"* pasaría. Resolver el referente es interpretación, no gramática cerrada, y no
-le toca a una guarda. Queda anotado en vez de disimulado.
+### La regla no tiene excepciones · lo que cerró E3.2b.1a-B.2
+
+Hubo una: `SetPetsRequired` aceptaba el clítico de objeto —*"tengo un perro y deben
+aceptarlo"*— con el sustantivo en otra cláusula. Se conservó un tiempo como *"límite conocido"*
+para no perder ese caso, y era una autorización falsa en pie:
+
+```
+"tengo un perro; el banco debe aceptarlo"   +  SetPetsRequired()   →  autorizaba
+```
+
+**El argumento de que resolver el referente no le toca a la guarda es exactamente el motivo
+para no asumirlo.** Una frontera fail-closed convierte *"no puedo verificarlo"* en *"no
+autorizo"*, nunca en *"asumo"*:
+
+```
+no puedo verificar la coreferencia   →   NO autorizo
+```
+
+Una guarda de autorización tolera falsos negativos antes que falsos positivos, y mantener el
+caso legítimo costaba una excepción a la propiedad que el propio encabezado acababa de
+declarar. `"tengo un perro y deben aceptarlo"` ya **no** autoriza. Eso no dice que el usuario
+no lo quisiera decir: dice que esta gramática no puede probarlo, y AMBIGUOUS es donde vive lo
+que se entiende pero no se acredita. `_PETS_ANAFORICO` se eliminó — no queda código muerto que
+alguien pueda reconectar "porque estaba ahí".
+
+**No hay soporte de coreferencia en V0, ni se simula.** Cualquier expresión anafórica queda
+fail-closed.
 
 ### Lo que E3.2b.1a-A dejó decidido y NO estaba en C1-C5
 

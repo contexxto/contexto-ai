@@ -140,19 +140,17 @@ _DIM_BEDROOMS = re.compile(r"\b(dormitorio|dormitorios|habitacion|habitaciones|"
 _DIM_AREA = re.compile(r"(\bm2\b|\bm²|metros? cuadrados?|square meters?)")
 _PETS_SUSTANTIVO = re.compile(r"\b(mascota|mascotas|perro|perros|gato|gatos|pet|pets)\b")
 
-# Dos clases de verbo, y separarlas es lo que impide sumar dos hechos sin relación:
+# El verbo de requisito es genérico —"necesito", "deben", "acepten"— y NO relaciona nada con
+# la mascota por sí solo: en "necesito 2 dormitorios" pide dormitorios. Por eso se exige el
+# sustantivo EN SU MISMA CLÁUSULA, sin excepciones.
 #
-#   REQUISITO   genérico —"necesito", "deben"—. NO relaciona nada con la mascota por sí solo:
-#               en "necesito 2 dormitorios" pide dormitorios. Exige el sustantivo EN SU
-#               CLÁUSULA.
-#   ANAFORICO   el clítico de objeto —"aceptarlo"— ya lleva dentro a qué se refiere. Es lo
-#               que hace legítimo *"tengo un perro y deben aceptarlo"*, donde el sustantivo
-#               vive en la cláusula anterior.
+# Hubo una vía anafórica —el clítico de objeto, "aceptarlo"— para admitir *"tengo un perro y
+# deben aceptarlo"*, donde el sustantivo vive en la cláusula anterior. Se eliminó: el clítico
+# no dice a qué refiere, así que *"tengo un perro; el banco debe aceptarlo"* autorizaba un
+# requisito de mascotas. Ver `_evidencia_pets`.
 _PETS_REQUISITO = re.compile(
     r"\b(acepte|acepten|admita|admitan|permita|permitan|"
     r"necesito|necesitamos|debe|deben|tiene que|allowed|required)\b")
-_PETS_ANAFORICO = re.compile(r"\b(aceptarlo|aceptarla|aceptarlos|aceptarlas|"
-                             r"admitirlo|admitirla|admitirlos|admitirlas)\b")
 
 
 # ── La evidencia del VALOR ─────────────────────────────────────────────────────────
@@ -202,8 +200,10 @@ def _numeros_del_texto(plano: str) -> set[Decimal]:
     return valores
 
 
-# Cláusulas. Acotan el alcance de una negación —"tengo un perro y deben aceptarlo" autoriza,
-# "no necesito que acepten mascotas" no— y, sobre todo, ACOTAN EL ALCANCE DE UN NÚMERO.
+# Cláusulas. Son la unidad en la que tiene que caber TODA la evidencia de una mutación:
+# acotan el alcance de una negación —"no tengo mascotas, pero quiero comprar" declara la
+# compra—, el de un número y el de un marcador de retractación. Nada se presta entre
+# cláusulas vecinas; ahí es donde se colaban las autorizaciones falsas.
 #
 # La puntuación NO corta entre dígitos: en "120.000" ese punto es un separador de miles, no
 # un fin de cláusula. Sin esa excepción el número se parte en "120" y "000" y un presupuesto
@@ -268,32 +268,37 @@ def _evidencia_area(mutacion, plano: str) -> bool:
 
 
 def _evidencia_pets(_mutacion, plano: str) -> bool:
-    """`SetPetsRequired` no lleva payload, así que "valor exacto" aquí significa que alguna
-    cláusula afirmativa exija **que la propiedad admita mascotas** — no que el mensaje
-    mencione una mascota y, por separado, pida algo.
+    """`SetPetsRequired` no lleva payload, así que "valor exacto" aquí significa que **una
+    misma cláusula afirmativa** exija que la propiedad admita mascotas.
 
     ```
-    "necesito que acepten mascotas"        requisito + sustantivo en la MISMA cláusula
-    "tengo un perro y deben aceptarlo"     el clítico -lo ya dice a qué se refiere
-    "tengo un perro; necesito 2 dormitorios"   dos hechos sin relación → NO
+    "necesito que acepten mascotas"             sustantivo + requisito juntos   →  SÍ
+    "busco algo que admita gatos"               idem                            →  SÍ
+    "tengo un perro; necesito 2 dormitorios"    dos hechos sin relación         →  NO
+    "tengo un perro; el banco debe aceptarlo"   el clítico no dice a qué refiere→  NO
+    "tengo un perro y deben aceptarlo"          tampoco, y es deliberado        →  NO
     ```
 
-    El tercero autorizaba: el sustantivo se buscaba en todo el mensaje y bastaba un
-    `necesito` suelto en cualquier cláusula sin negación. Pero `necesito` y `deben` son
-    genéricos —ahí piden dormitorios— y no vinculan nada con la mascota. Sumar los dos
-    fabricaba un requisito que nadie declaró.
+    Una regla, sin excepciones — y la última línea es una decisión REVERTIDA. Hubo una vía
+    anafórica que aceptaba el clítico de objeto (`aceptarlo`) con el sustantivo en otra
+    cláusula, para no perder ese caso. Tendía un puente que la gramática no puede sostener:
+    `-lo` no dice a qué refiere, así que *"el banco debe aceptarlo"* servía de evidencia de un
+    requisito de mascotas porque en otra frase había un perro.
 
-    **Límite conocido y no cerrado:** la vía anafórica no comprueba a QUÉ se refiere el
-    clítico, así que *"tengo un perro; el banco debe aceptarlo"* pasaría. Resolver el
-    referente es interpretación, no gramática cerrada, y no le toca a una guarda. Queda
-    anotado en vez de disimulado.
+    **Fail closed, y ése es el punto.** Precisamente porque resolver el referente no le toca a
+    la guarda, tampoco le toca darlo por supuesto:
+
+    ```
+    no puedo verificar la coreferencia   →   NO autorizo
+    ```
+
+    Una guarda de autorización tolera falsos negativos antes que falsos positivos. Que
+    *"tengo un perro y deben aceptarlo"* no autorice no dice que el usuario no lo quisiera
+    decir: dice que esto no puede probarlo. El intérprete podrá clasificarlo AMBIGUOUS, que
+    es donde vive lo que se entiende pero no se puede acreditar.
     """
-    hay_mascota = bool(_PETS_SUSTANTIVO.search(plano))
-    return hay_mascota and any(
-        _PETS_ANAFORICO.search(clausula)
-        or (_PETS_REQUISITO.search(clausula) and _PETS_SUSTANTIVO.search(clausula))
-        for clausula in _afirmativas(plano)
-    )
+    return any(_PETS_REQUISITO.search(clausula) and _PETS_SUSTANTIVO.search(clausula)
+               for clausula in _afirmativas(plano))
 
 
 # ── La retractación · lo que autoriza un `Clear*` ──────────────────────────────────

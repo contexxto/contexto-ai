@@ -40,6 +40,7 @@ import argparse
 import asyncio
 import hashlib
 import json
+import os
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -219,6 +220,25 @@ def _evaluar(caso: Caso, lote) -> tuple[bool, list[str]]:
                 if isinstance(a, AfirmacionDurable)}
     ambiguas = {a.campo for a in lote.afirmaciones if isinstance(a, AfirmacionAmbiguous)}
 
+    # EXACTITUD, y es la propiedad general que faltaba. Comprobar "aparece lo esperado" no
+    # es lo mismo que comprobar "no aparece nada más": el corpus daba 20/20 mientras el
+    # modelo fabricaba, de forma perfectamente estable, un AMBIGUOUS de más. Estable no es
+    # correcto — y un unresolved inventado se convierte después en una repregunta que nadie
+    # pidió, justo lo que la fase siguiente va a consumir.
+    #
+    # Sólo se exige exactitud en lo que toca MEMORIA y ESTADO PENDIENTE. Las TURN_ONLY y
+    # REJECTED auxiliares se siguen comprobando por presencia: exigir su conjunto exacto
+    # ataría el eval a cómo el modelo trocea la frase, que no es la propiedad que importa.
+    if set(durables) != set(caso.durables):
+        fallos.append(f"conjunto DURABLE {sorted(map(str, durables))} != esperado "
+                      f"{sorted(map(str, caso.durables))}")
+    if ambiguas != set(caso.ambiguas):
+        fallos.append(f"conjunto AMBIGUOUS {sorted(map(str, ambiguas))} != esperado "
+                      f"{sorted(map(str, caso.ambiguas))}")
+
+    # `prohibidas` y `ambiguas_prohibidas` quedan aunque la exactitud ya las implique: nombran
+    # CUÁL era el campo peligroso de cada caso —los de Fair Housing, sobre todo— y dan un
+    # fallo que se lee solo.
     for campo in caso.prohibidas:
         if campo in durables:
             fallos.append(f"PROHIBIDA persistida: {campo} = {durables[campo]!r}")
@@ -316,6 +336,36 @@ def _commit_sha() -> str:
         return "desconocido"
 
 
+def _candidate_tree_sha() -> str:
+    """El sha del ÁRBOL evaluado, que es lo que de verdad identifica qué código corrió.
+
+    El eval se corre ANTES de commitear —tiene que hacerlo: es el gate que decide si hay
+    commit—, así que `commit_sha` siempre dirá `+sucio` y apuntará al padre. Es honesto pero
+    no sirve para demostrar reproducibilidad.
+
+    Este sha sí: es el mismo árbol que quedará dentro del commit si el gate pasa, así que el
+    artefacto puede demostrar después que se evaluó exactamente lo que se publicó — sin el
+    ciclo absurdo de commitear, evaluar y volver a commitear.
+
+    Se calcula sobre un índice TEMPORAL: mirar el árbol no puede tener el efecto secundario
+    de preparar los cambios del usuario.
+    """
+    import subprocess
+    import tempfile
+
+    raiz = Path(__file__).resolve().parents[1]
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            entorno = {**os.environ, "GIT_INDEX_FILE": str(Path(tmp) / "index")}
+            subprocess.run(["git", "add", "-A"], cwd=raiz, env=entorno, capture_output=True,
+                           timeout=60, check=True)
+            return subprocess.run(["git", "write-tree"], cwd=raiz, env=entorno,
+                                  capture_output=True, text=True, timeout=30,
+                                  check=True).stdout.strip() or "desconocido"
+    except Exception:  # noqa: BLE001
+        return "desconocido"
+
+
 def _identidad_config() -> dict:
     """TODO lo que determina qué ve el modelo, legible y con un hash que lo resume.
 
@@ -327,6 +377,8 @@ def _identidad_config() -> dict:
     Se conservan los campos sueltos **y** el hash agregado: el hash dice *"esto cambió"*, los
     campos dicen *"qué cambió"*.
     """
+    # Lo que DETERMINA QUÉ VE EL MODELO. Sólo esto entra en el hash: es la pregunta que el
+    # hash tiene que contestar —¿vieron lo mismo estas dos corridas?— y nada más.
     campos = {
         "model": settings.llm_model,
         "system_sha256": _sha(_SYSTEM),
@@ -335,9 +387,22 @@ def _identidad_config() -> dict:
         "max_tokens": _MAX_TOKENS,
         "tool_choice": _TOOL_CHOICE,
         "temperature": _TEMPERATURE if _TEMPERATURE is not None else "unset",
-        "commit_sha": _commit_sha(),
     }
-    return {**campos,
+    # PROCEDENCIA · de dónde salió, y deliberadamente FUERA del hash.
+    #
+    # Meterla dentro rompe la comparabilidad, y de la peor manera: `candidate_tree_sha` cambia
+    # en cada corrida —cada una escribe su resultado en el árbol— así que TODAS las corridas
+    # salían con configuración distinta y el comparador se negaba a compararlas. Lo destapó él
+    # mismo en la primera ejecución tras añadirlo.
+    #
+    # El fondo es que son dos preguntas distintas: el hash contesta "¿vieron lo mismo?", la
+    # procedencia contesta "¿de dónde vino?". Mezclarlas hace que un commit nuevo con idéntico
+    # prompt parezca un experimento distinto.
+    procedencia = {
+        "commit_sha": _commit_sha(),
+        "candidate_tree_sha": _candidate_tree_sha(),
+    }
+    return {**campos, **procedencia,
             "interpreter_config_sha256": _sha(json.dumps(campos, sort_keys=True,
                                                          ensure_ascii=False))}
 

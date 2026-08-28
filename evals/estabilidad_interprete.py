@@ -126,7 +126,7 @@ def main() -> int:
     #          nada, pero altera si el producto repregunta y sobre qué.
     #   LEVE   sólo varía el `campo` OPCIONAL de un TURN_ONLY o un REJECTED, sin tocar
     #          durables ni ambigüedades. Ahí `campo` es opcional por diseño.
-    grave, media, leve = {}, {}, {}
+    grave, media, auxiliar, leve = {}, {}, {}, {}
     for cid, hs in oscilan.items():
         lecturas = [json.loads(h) for h in hs]
 
@@ -136,13 +136,17 @@ def main() -> int:
         def _ambiguas(lectura):
             return frozenset(campo for c, campo, _ in lectura if c == "Ambiguous")
 
-        def _clases(lectura):
-            return tuple(sorted(c for c, _, _ in lectura))
+        def _migracion(lectura):
+            """Qué clase le tocó a cada dimensión. Si una dimensión cambia de clase entre
+            corridas, eso SÍ es migración; que aparezca una afirmación auxiliar de más, no."""
+            return frozenset((campo, c) for c, campo, _ in lectura if campo is not None)
 
         if len({_durables(l) for l in lecturas}) > 1:
             grave[cid] = hs
-        elif len({_ambiguas(l) for l in lecturas}) > 1 or len({_clases(l) for l in lecturas}) > 1:
+        elif len({_ambiguas(l) for l in lecturas}) > 1 or len({_migracion(l) for l in lecturas}) > 1:
             media[cid] = hs
+        elif len({tuple(sorted(c for c, _, _ in l)) for l in lecturas}) > 1:
+            auxiliar[cid] = hs
         else:
             leve[cid] = hs
 
@@ -159,13 +163,18 @@ def main() -> int:
 
     _mostrar("GRAVE · entra y sale de DURABLE — escribiría memoria de forma no determinista",
              grave)
-    _mostrar("MEDIA · cambia la clase no-durable — altera si el producto repregunta", media)
+    _mostrar("MEDIA · una DIMENSIÓN migra de clase, o cambia el conjunto ambiguo — altera si "
+             "el producto repregunta y sobre qué", media)
+    _mostrar("AUXILIAR · durables y ambiguas IDÉNTICAS; sólo varía si además se registra un "
+             "TURN_ONLY/REJECTED suelto. Sin efecto en memoria ni en repregunta — no bloquea "
+             "por I3, pero se muestra para que la decisión sea de quien revisa", auxiliar)
     _mostrar("LEVE  · misma clase, sólo varía el `campo` opcional", leve)
     if not oscilan:
         print(f"  ninguna decisión oscila en {len(huellas)} casos")
 
     print(f"\n  durables estables: {'SÍ' if not grave else 'NO'}"
-          f" · clasificación estable: {'SÍ' if not (grave or media) else 'NO'}")
+          f" · unresolved estable: {'SÍ' if not (grave or media) else 'NO'}"
+          f" · auxiliares: {len(auxiliar)} (no bloquean · I3)")
     ok = not fallan and not grave and not media
     print(f"  {'ESTABLE' if ok else 'NO ESTABLE — HOLD'}\n")
     return 0 if ok else 1

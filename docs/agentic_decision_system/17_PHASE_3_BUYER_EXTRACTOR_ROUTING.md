@@ -250,9 +250,13 @@ Los cuatro casos que fijan la frontera:
 ```
 
 En los dos últimos no hay ningún valor propio que el comprador esté ofreciendo para recordar.
-Y en el segundo, `objective` **no** se marca ambiguo pese al `comprara`: el candidato que el
-usuario revela son los 120000 USD; `comprara` es el marco hipotético que los enmarca, no una
-declaración a medias. Marcarlo también sería sobreinterpretar el condicional.
+
+**El candidato es el VALOR concreto, no el verbo que enmarca la frase.** Ni `"comprar"` en la
+pregunta ni `"comprara"` en la hipótesis marcan `objective` como ambiguo: en la primera es lo
+que el usuario está evaluando, en la segunda es el marco que sostiene la cifra. Lo que revela
+para recordar son los 120000 USD, y sólo eso. Un `AMBIGUOUS` de más no es ruido inofensivo —
+es una repregunta que el usuario nunca pidió, y la fase siguiente consume precisamente los
+`AMBIGUOUS`.
 
 La extensión de interrogativa a no asertiva salió del eval: `hipotesis` oscilaba entre las dos
 lecturas porque I2 sólo nombraba la pregunta, y un condicional bloquea el compromiso

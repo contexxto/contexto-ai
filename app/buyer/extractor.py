@@ -4,11 +4,13 @@ Decide, para **un** `IdentifiedUserMessage`, qué de lo que se afirmó es estado
 comprador, qué es contexto del turno, qué es ambiguo y qué no debe crear estado — y lo
 devuelve como un lote ordenado.
 
-`[PENDIENTE · intérprete NOT STARTED]` **Este módulo no lee el texto para producir las
-afirmaciones.** `construir_lote` las recibe ya construidas de su llamante y usa el texto sólo
-para detectar autocorrección. El paso `text → Afirmacion` no existe todavía, así que decir
-que el extractor "convierte un mensaje en decisiones" describiría una capa que nadie ha
-escrito.
+**Este módulo no lee el texto para producir las afirmaciones**, y la distinción sigue
+importando aunque el intérprete ya exista: `construir_lote` las recibe ya construidas de su
+llamante y usa el texto sólo para detectar autocorrección. Quien convierte `text → Afirmacion`
+es `app/buyer/interprete.py` (E3.2b.1b); aquí vive la GUARDA y la política intramensaje.
+
+Mantener la frontera es lo que permite que la guarda se pruebe sin modelo y que el intérprete
+no pueda saltársela.
 
 ## Dos guardas, y protegen cosas distintas
 

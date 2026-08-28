@@ -143,23 +143,51 @@ def test_la_raiz_es_auth_users():
 
 
 def test_NADIE_en_produccion_llama_todavia_al_store():
-    """E3.1b es infraestructura interna: al terminar, el store existe y nadie lo usa.
+    """La memoria del comprador existe y **el producto no la toca**. Conectarla es E3.2b.4.
 
-    Conectarlo es E3.2. Este test es lo que impide que el wiring se cuele "de paso" y
-    cambie el comportamiento del producto en una unidad que no lo autorizaba.
+    Este test impide que el wiring se cuele "de paso" y cambie el comportamiento del producto
+    en una unidad que no lo autorizaba.
+
+    **Se mide sobre la superficie de PRODUCTO**, no sobre cualquier import. Hasta E3.2b.2 las
+    dos cosas coincidían porque nada dentro de `app/` llamaba al store; con el orquestador de
+    E3.2b.3 dejaron de coincidir: `actualizador.py` sí llama al store y **no tiene llamante**,
+    así que no cambia lo que el producto hace. Prohibir el import habría prohibido construir
+    la costura, que no es lo que este guard protege.
+
+    Y de paso vigila más que antes: ahora también el ORQUESTADOR queda fuera del alcance del
+    producto, no sólo el store.
     """
+    superficie = [p for p in [RAIZ / "app" / "routers", RAIZ / "app" / "agent",
+                              RAIZ / "app" / "main.py"] if p.exists()]
+    prohibidos = ("buyer.store", "buyer.actualizador", "anexar_revision", "cargar_ultima",
+                  "interpretar_mensaje")
+
     consumidores = []
-    for f in RAIZ.rglob("*.py"):
-        partes = set(f.parts)
-        if partes & {"tests", ".venv", "node_modules", "__pycache__"}:
-            continue
-        if f.name == "store.py" and "buyer" in partes:
+    for raiz in superficie:
+        ficheros = [raiz] if raiz.is_file() else raiz.rglob("*.py")
+        for f in ficheros:
+            if "__pycache__" in f.parts:
+                continue
+            texto = f.read_text(encoding="utf-8", errors="ignore")
+            if any(p in texto for p in prohibidos):
+                consumidores.append(str(f.relative_to(RAIZ)))
+
+    assert consumidores == [], f"el producto ya llama a la memoria del comprador: {consumidores}"
+
+
+def test_el_ORQUESTADOR_tampoco_tiene_llamante_todavia():
+    """La contraparte del anterior: la costura completa está construida y probada, y **nadie
+    la invoca** en ningún punto de `app/`. Es lo que mantiene E3.2b.4 como una decisión
+    explícita en vez de algo que ya ocurrió sin querer."""
+    llamantes = []
+    for f in (RAIZ / "app").rglob("*.py"):
+        if "__pycache__" in f.parts or f.name == "actualizador.py":
             continue
         texto = f.read_text(encoding="utf-8", errors="ignore")
-        if "buyer.store" in texto or "anexar_revision" in texto or "cargar_ultima" in texto:
-            consumidores.append(str(f.relative_to(RAIZ)))
+        if "buyer.actualizador" in texto or "ResultadoUpdater" in texto:
+            llamantes.append(str(f.relative_to(RAIZ)))
 
-    assert consumidores == [], f"el store ya está conectado a producción: {consumidores}"
+    assert llamantes == [], f"el orquestador ya tiene consumidor: {llamantes}"
 
 
 def test_el_store_no_expone_endpoints():

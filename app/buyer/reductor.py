@@ -305,3 +305,11 @@ _RUTA_DE_CAMPO: dict[BuyerFieldV0, str] = {
 """Dimensión → ruta del contrato, derivado de las funciones que ya son autoridad de cada una.
 
 Escribirlo a mano sería una tercera copia del mapeo, y la que se desincronizaría primero."""
+
+
+def ruta_de_campo(campo: BuyerFieldV0) -> str:
+    """La ruta contractual de una dimensión, para quien tiene el campo y no la mutación.
+
+    Lo necesita el orquestador: una `AMBIGUOUS` lleva `BuyerFieldV0` y ninguna mutación, y
+    aun así reclama su ruta a efectos de concurrencia."""
+    return _RUTA_DE_CAMPO[campo]

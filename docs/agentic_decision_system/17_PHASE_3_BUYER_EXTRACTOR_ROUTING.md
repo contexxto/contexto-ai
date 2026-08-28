@@ -21,9 +21,10 @@ ENTREGADO   caracterización · multi-mutation · matrices · C1-C5 congeladas
             E3.2b.1b.1 · integridad y ESTABILIDAD del eval — I1/I2/I3 congelados;
             20/20 en 3 corridas, 0 GRAVE, 0 MEDIA, 0 LEVE
             E3.2b.2 · reducer — el lote se vuelve memoria; R-IDEMP-1 congelada
-PENDIENTE   wiring productivo · que el producto CONSUMA los unresolved
+            E3.2b.3 · orquestador — no-op idempotente + concurrencia entre mensajes
+PENDIENTE   shadow wiring (E3.2b.4) · que el producto CONSUMA los unresolved
 
-GATE        HOLD — la cadena está completa y probada; nadie la llama todavía
+GATE        HOLD — la costura completa existe y está probada; nadie la llama todavía
 ```
 
 ---
@@ -464,6 +465,10 @@ nuevo    evals/corpus_interprete.py     eval semántico · gate de CIERRE, no de
 nuevo    app/buyer/reductor.py          lote → BuyerContextV0 (E3.2b.2)
 nuevo    tests/test_buyer_reductor.py   R1-R7 + R-IDEMP-1
 tocado   app/buyer/store.py             SOLO `_canonico` — R-IDEMP-1
+nuevo    app/buyer/actualizador.py      orquestador · gates 1-8 (E3.2b.3)
+nuevo    tests/test_buyer_actualizador.py           política, offline
+nuevo    tests/test_buyer_actualizador_postgres.py  concurrencia real · SKIP sin
+                                                    TEST_DATABASE_URL
 tocado   este documento
 
 DEUDA OBSERVABLE · con `interprete.py` son SEIS construcciones de cliente Anthropic en

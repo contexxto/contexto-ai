@@ -17,7 +17,9 @@ ENTREGADO   caracterización · multi-mutation · matrices · C1-C5 congeladas
             E3.2b.1a-B.3 · predicado de ADMISIÓN — el predicado tiene que significar
             lo que la mutación afirma · defecto 4 CERRADO
             E3.2b.1b · intérprete text → Afirmacion — proponente inyectable + post-
-            procesamiento puro; eval semántico contra modelo real 19/19
+            procesamiento puro
+            E3.2b.1b.1 · integridad y ESTABILIDAD del eval — I1/I2/I3 congelados;
+            20/20 en 3 corridas, 0 GRAVE, 0 MEDIA, 0 LEVE
 PENDIENTE   reducer E3.2b.2 (NO AUTORIZADO) · wiring productivo
 
 GATE        HOLD — la costura existe y está probada; no hay consumidor
@@ -168,11 +170,94 @@ estado durable. El producto responde igual.
 | "$120000" | AMBIGUOUS | el símbolo no resuelve USD |
 | "900 pesos" | AMBIGUOUS | no se infiere MXN |
 | "2 dormitorios" | AMBIGUOUS | exacto ≠ mínimo, y V0 solo modela mínimo |
+| "la cafetería de al lado acepta mascotas" | TURN_ONLY | describe el barrio; no declara preferencia (I1) |
+| "¿me alcanza con 120000 USD para comprar?" | TURN_ONLY + AMBIGUOUS `budget_max` | la pregunta no persiste; la cifra sí es candidata (I2) |
+| "si comprara, mi máximo sería 120000 USD" | TURN_ONLY + AMBIGUOUS `budget_max` | el condicional no compromete; la cifra sigue siendo candidata (I2) |
+| "si comprara, ¿qué zonas mirarías?" | TURN_ONLY | condicional SIN candidato concreto — nada que recordar (I2) |
 | "quiero algo tranquilo" | REJECTED | `tranquilidad` no es writable |
 | "necesito acceso sin escalones" | REJECTED | accessibility diferida (D-B8) |
 | "somos cuatro en la familia" | REJECTED | ningún path compatible |
 | "tenemos dos niños" | REJECTED | **y NO puede inferir `bedrooms_min=2`** |
 | "mi madre usa silla de ruedas" | REJECTED | ninguna mutación durable |
+
+### I1 y I2 · dos huecos que la ontología tenía y encontró el eval **[CONGELADO]**
+
+No los encontró revisando código: los encontró **midiendo estabilidad**. El modelo oscilaba
+entre dos lecturas en estos dos casos, y al mirarlos resultó que la matriz de arriba no
+desempataba ninguno. El modelo no se estaba equivocando — estaba mostrando dónde no habíamos
+decidido. Ajustar el prompt hasta que eligiera una habría congelado política en el archivo
+equivocado.
+
+```
+I1 · CONTEXTO EXTERNO / DE LUGAR
+
+Una afirmación que describe un lugar, negocio, propiedad o tercero SIN declarar una
+preferencia propia del comprador:
+
+    NO es DURABLE · NO es AMBIGUOUS por defecto · NO es REJECTED si aporta
+    contexto útil al turno                                    →  TURN_ONLY
+```
+
+El motivo es proteger el significado de `REJECTED`. Si pasa a significar "cualquier cosa no
+durable", deja de distinguir el caso que de verdad importa: **que algo del propio comprador no
+cupo en la frontera**.
+
+**El eje que separa las dos es DE QUIÉN HABLA**, y esto costó una corrida en rojo. La primera
+formulación decía que `REJECTED` era para lo que *"intentó"* volverse preferencia; con eso,
+`"tenemos dos niños"` dejó de registrarse en las tres corridas —no *intenta* nada de forma
+explícita— y se perdió la constancia de que el sistema lo vio y lo rechazó. El eje correcto:
+
+```
+habla del MUNDO          lugar · negocio · propiedad · tercero          →  TURN_ONLY
+habla de SÍ MISMO        y V0 no puede representarlo (hogar, familia,
+                         tranquilidad, accesibilidad)                   →  REJECTED
+```
+
+Así `"tenemos dos niños"` sigue siendo `REJECTED` —habla de él— y `"la cafetería acepta
+mascotas"` es `TURN_ONLY` —habla del barrio—, sin que ninguna de las dos se caiga por el
+borde.
+
+```
+I2 · CANDIDATO A ESTADO DEL COMPRADOR BAJO MODALIDAD NO ASERTIVA
+
+Si un mensaje contiene un candidato CONCRETO y AUTORREFERENCIAL a `BuyerContext`, pero
+aparece bajo una modalidad que NO compromete al comprador:
+
+    · interrogativa
+    · hipotética / condicional
+
+entonces:
+
+    el acto conversacional  →  TURN_ONLY
+    el campo candidato      →  AMBIGUOUS
+    ese campo               →  CERO durable
+```
+
+La regla NO es *"pregunta + número"* ni *"condicional → ambigüedad"*: las dos serían
+heurísticas accidentales. Es la conjunción:
+
+```
+modalidad no asertiva  +  candidato concreto de estado PROPIO  =  TURN_ONLY + AMBIGUOUS
+```
+
+Los cuatro casos que fijan la frontera:
+
+```
+"¿me alcanza con 120000 USD para comprar?"    TURN_ONLY + AMBIGUOUS budget_max
+"si comprara, mi máximo sería 120000 USD"     TURN_ONLY + AMBIGUOUS budget_max
+"¿debería comprar?"                           TURN_ONLY, y nada más
+"si comprara, ¿qué zonas mirarías?"           TURN_ONLY, y nada más
+```
+
+En los dos últimos no hay ningún valor propio que el comprador esté ofreciendo para recordar.
+Y en el segundo, `objective` **no** se marca ambiguo pese al `comprara`: el candidato que el
+usuario revela son los 120000 USD; `comprara` es el marco hipotético que los enmarca, no una
+declaración a medias. Marcarlo también sería sobreinterpretar el condicional.
+
+La extensión de interrogativa a no asertiva salió del eval: `hipotesis` oscilaba entre las dos
+lecturas porque I2 sólo nombraba la pregunta, y un condicional bloquea el compromiso
+exactamente igual. Ese criterio es semántico y le toca al intérprete — **no a otra expresión
+regular**.
 
 ---
 
@@ -435,9 +520,43 @@ habría entendido, y no quedaría **ni el estado ni la pregunta**.
 
 **El eval semántico (`evals/corpus_interprete.py`) es gate de CIERRE, no de CI.** CI no tiene
 credencial y no debe tenerla: volver la suite dependiente de una API de pago y no determinista
-rompería el gate que sí protege cada push. 19/19 contra `claude-sonnet-4-5-20250929`, con el
-hash del prompt guardado junto a los resultados — si el prompt cambia, los números no son
-comparables y el hash lo delata.
+rompería el gate que sí protege cada push.
+
+### E3.2b.1b.1 · el eval tuvo que arreglarse antes de poder creerle
+
+Dos defectos del propio gate, los dos de la misma familia que veníamos cazando en el código:
+
+**El oracle dejaba pasar el silencio.** Seis casos negativos se cumplían igual con el modelo
+callado: *"no persistió"* y *"no entendió"* son indistinguibles desde fuera y sólo el primero
+es correcto. La primera corrección reforzó tres casos —encontrar la clase y parchear
+instancias, otra vez— y la segunda la puso donde va: `debe_clasificar` por defecto, porque los
+20 casos llevan contenido inmobiliario. Verificado con un proponente mudo: 20/20 fallan.
+
+**La identidad registrada era incompleta.** Se guardaba `modelo` + `system_sha256`, y esta
+misma unidad cambió el esquema de la tool de 11.512 a 4.524 caracteres sin tocar el prompt:
+dos corridas con el mismo `system_sha256` habrían usado esquemas distintos y el artefacto las
+habría presentado como comparables. Ahora se guarda la identidad completa —modelo, hashes de
+prompt y esquema, `max_tokens`, `tool_choice`, `temperature`, commit— más un
+`interpreter_config_sha256` que las resume.
+
+**Y el eval encontró dos huecos de la ontología, no del modelo.** El modelo oscilaba en
+`lugar_no_preferencia` y en `pregunta_presupuesto` porque §4 no desempataba ninguno de los
+dos. De ahí salieron I1 e I2. Ése es el uso menos obvio y más valioso de un eval: descubrir
+dónde la especificación propia no ha decidido, antes de que esa indecisión se vuelva
+comportamiento en producción.
+
+**Estabilidad · gate I3.** Tres corridas bajo una única configuración vigente:
+
+```
+GRAVE  entra/sale/cambia una DURABLE                        →  bloquea   ·  0
+MEDIA  cambia la clase no-durable o la dimensión ambigua    →  bloquea   ·  0
+LEVE   sólo el `campo` opcional de un TURN_ONLY/REJECTED    →  reporta   ·  0
+```
+
+Los artefactos de configuraciones anteriores **no se borran**: se catalogan `LEGACY` o
+`SUPERADA` y quedan fuera del cálculo. Documentan que llegamos a un 19/19 falsamente
+convincente y cómo se apretó el sistema; reescribir la historia cuando cambia la vara sería
+perder justo la parte instructiva.
 
 ### Dos defectos que sólo el eval podía encontrar
 

@@ -51,7 +51,9 @@ from app.buyer.boundary import BuyerFieldV0 as F  # noqa: E402
 from app.buyer.extractor import (  # noqa: E402
     AfirmacionAmbiguous, AfirmacionDurable, AfirmacionTurnOnly,
 )
-from app.buyer.interprete import _SYSTEM, interpretar_mensaje  # noqa: E402
+from app.buyer.interprete import (  # noqa: E402
+    _MAX_TOKENS, _SYSTEM, _TEMPERATURE, _TOOL_CHOICE, _tool_schema, interpretar_mensaje,
+)
 from app.buyer.mensaje import IdentifiedUserMessage  # noqa: E402
 from app.config import settings  # noqa: E402
 
@@ -77,10 +79,22 @@ class Caso:
     ambiguas: frozenset[F] = frozenset()
     # si el mensaje entero es contexto de turno y no debe crear NADA durable
     sin_durables: bool = False
-    # clases de afirmación que DEBEN quedar registradas. Sin esto, un modelo que no propone
-    # NADA pasa todos los casos negativos: "no persistió" y "no entendió" son indistinguibles
-    # desde fuera, y sólo el primero es correcto. Verde por la razón equivocada.
+    # clases de afirmación que DEBEN quedar registradas. Sólo se fija donde la matriz §4 o el
+    # encargo de la unidad congelan la disposición; inventar una expectativa y luego ajustar el
+    # prompt hasta cumplirla sería razonar en círculo.
     debe_registrar: frozenset[str] = frozenset()
+    # LA PROPIEDAD GENERAL, y por eso el default es True: todos los casos de este corpus
+    # llevan contenido inmobiliario, así que NINGUNO puede pasar quedándose callado.
+    #
+    # `debe_registrar` sólo cubría tres instancias, y ese fue exactamente el error que este
+    # corpus existe para cazar: encontrar la clase de defecto y reforzar unos pocos casos deja
+    # la propiedad sin pinchar. "No persistió" y "no entendió" son indistinguibles desde fuera
+    # y sólo el primero es correcto; la regla 8 de `_SYSTEM` lo exige —"omitir no es
+    # clasificar"— y hasta ahora el oracle no la comprobaba.
+    debe_clasificar: bool = True
+    # I2 prohíbe fabricar un candidato donde el usuario no ofreció ninguno: "¿debería
+    # comprar?" no revela valor propio que recordar, así que un AMBIGUOUS ahí es inventado.
+    ambiguas_prohibidas: frozenset[F] = frozenset()
 
 
 CASOS: tuple[Caso, ...] = (
@@ -95,12 +109,18 @@ CASOS: tuple[Caso, ...] = (
     # ── declaración vs pregunta ────────────────────────────────────────────────────
     Caso("pregunta", "modo", "¿debería comprar?",
          "una pregunta explora; no declara preferencia. Mismo verbo que la declaración. "
-         "El encargo la congela como TURN_ONLY: el silencio no es clasificar",
+         "El encargo la congela como TURN_ONLY: el silencio no es clasificar. Y por I2 "
+         "tampoco lleva AMBIGUOUS — no ofrece ningún valor propio que recordar, pregunta qué "
+         "hacer. Es el contraste que impide leer I2 como 'pregunta + número'",
          prohibidas=frozenset({F.OBJECTIVE}), sin_durables=True,
-         debe_registrar=frozenset({"TurnOnly"})),
+         debe_registrar=frozenset({"TurnOnly"}),
+         ambiguas_prohibidas=frozenset({F.OBJECTIVE})),
     Caso("pregunta_presupuesto", "modo", "¿me alcanza con 120000 USD para comprar?",
-         "trae objetivo, monto y moneda — y sigue siendo una consulta",
-         prohibidas=frozenset({F.BUDGET_MAX, F.OBJECTIVE}), sin_durables=True),
+         "I2: la pregunta es TURN_ONLY, pero los 120000 USD son un candidato concreto y "
+         "sobre sí mismo. Se registran las dos cosas; el campo nunca durable",
+         prohibidas=frozenset({F.BUDGET_MAX, F.OBJECTIVE}), sin_durables=True,
+         ambiguas=frozenset({F.BUDGET_MAX}),
+         debe_registrar=frozenset({"TurnOnly"})),
 
     # ── el buyer vs un tercero ─────────────────────────────────────────────────────
     Caso("tercero", "sujeto", "mi hermana quiere comprar",
@@ -118,15 +138,31 @@ CASOS: tuple[Caso, ...] = (
 
     # ── hipótesis / condicional ────────────────────────────────────────────────────
     Caso("hipotesis", "modo", "si comprara, mi máximo sería 120000 USD",
-         "un condicional no compromete; persistirlo inventa una decisión que no se tomó",
-         prohibidas=frozenset({F.BUDGET_MAX, F.OBJECTIVE}), sin_durables=True),
+         "I2 extendido: el condicional no compromete, pero los 120000 USD SÍ son un candidato "
+         "concreto y suyo. TURN_ONLY + AMBIGUOUS budget_max. `objective` NO se marca ambiguo "
+         "pese a 'comprara': ése es el marco hipotético, no una declaración a medias",
+         prohibidas=frozenset({F.BUDGET_MAX, F.OBJECTIVE}), sin_durables=True,
+         ambiguas=frozenset({F.BUDGET_MAX}),
+         ambiguas_prohibidas=frozenset({F.OBJECTIVE}),
+         debe_registrar=frozenset({"TurnOnly"})),
+    Caso("hipotesis_sin_candidato", "modo", "si comprara, ¿qué zonas mirarías?",
+         "LA FRONTERA de I2, y por eso está: sin candidato concreto de estado propio no hay "
+         "nada que recordar. Si esto produjera un AMBIGUOUS, la regla se habría leído como "
+         "'condicional = ambigüedad', que es la heurística accidental que I2 rechaza",
+         prohibidas=frozenset({F.OBJECTIVE}), sin_durables=True,
+         ambiguas_prohibidas=frozenset({F.OBJECTIVE, F.BUDGET_MAX}),
+         debe_registrar=frozenset({"TurnOnly"})),
 
     # ── hecho sobre un lugar vs preferencia del buyer ──────────────────────────────
     Caso("lugar_no_preferencia", "referente",
          "la cafetería de al lado acepta mascotas",
          "describe el barrio; no pide que su casa admita mascotas. Cláusula positiva, "
-         "predicado de admisión y sustantivo: pasaría la guarda si alguien la propusiera",
-         prohibidas=frozenset({F.PETS_REQUIRED}), sin_durables=True),
+         "predicado de admisión y sustantivo: pasaría la guarda si alguien la propusiera. "
+         "I1 lo congela como TURN_ONLY — no REJECTED: una observación sobre el mundo no "
+         "intentó volverse preferencia, y degradar REJECTED a 'todo lo no durable' le quita "
+         "el único significado que tiene",
+         prohibidas=frozenset({F.PETS_REQUIRED}), sin_durables=True,
+         debe_registrar=frozenset({"TurnOnly"})),
 
     # ── falsos negativos DELIBERADOS de la guarda → AMBIGUOUS, no desaparición ─────
     Caso("fn_moneda", "no_desaparecer", "mi presupuesto máximo es 120000 dólares",
@@ -198,11 +234,18 @@ def _evaluar(caso: Caso, lote) -> tuple[bool, list[str]]:
             if esperado not in texto:
                 fallos.append(f"{campo}: esperaba {esperado!r}, obtuvo {texto}")
 
+    for campo in caso.ambiguas_prohibidas:
+        if campo in ambiguas:
+            fallos.append(f"AMBIGUOUS inventada en {campo}: no había candidato que recordar")
+
     for campo in caso.ambiguas:
         if campo not in ambiguas:
             fallos.append(f"la intención en {campo} DESAPARECIÓ (no quedó como ambigua)")
 
     presentes = {type(a).__name__.replace("Afirmacion", "") for a in lote.afirmaciones}
+    if caso.debe_clasificar and not lote.afirmaciones:
+        fallos.append("no registró NADA: el mensaje tiene contenido inmobiliario, así que "
+                      "callarse no es clasificarlo (regla 8 de _SYSTEM)")
     for clase in caso.debe_registrar:
         if clase not in presentes:
             fallos.append(
@@ -242,14 +285,61 @@ async def _correr(casos: tuple[Caso, ...]) -> dict:
             print(f"          → {f_}")
     return {
         "unidad": "E3.2b.1b",
+        # Sube cuando cambia el ORACLE o la identidad registrada. Es lo que permite que
+        # el comparador distinga un artefacto comparable de uno histórico sin tener que
+        # tocar el histórico para que "parezca" compatible.
+        "eval_schema_version": 2,
         "corrido": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "modelo": settings.llm_model,
-        # El prompt ES parte de la configuración medida: si cambia, los resultados no son
-        # comparables y el hash lo delata sin tener que guardar el texto entero.
-        "system_sha256": hashlib.sha256(_SYSTEM.encode("utf-8")).hexdigest()[:16],
+        "config": _identidad_config(),
         "total": len(casos), "ok": ok_total, "fallan": len(casos) - ok_total,
         "casos": filas,
     }
+
+
+def _sha(texto: str) -> str:
+    return hashlib.sha256(texto.encode("utf-8")).hexdigest()[:16]
+
+
+def _commit_sha() -> str:
+    """El commit desde el que se corrió, marcado si el árbol estaba sucio: un resultado
+    sacado de un árbol modificado no es reproducible y conviene que se vea."""
+    import subprocess
+
+    raiz = Path(__file__).resolve().parents[1]
+    try:
+        sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=raiz, capture_output=True,
+                             text=True, timeout=10).stdout.strip()
+        sucio = subprocess.run(["git", "status", "--porcelain"], cwd=raiz,
+                               capture_output=True, text=True, timeout=10).stdout.strip()
+        return (f"{sha}{'+sucio' if sucio else ''}") if sha else "desconocido"
+    except Exception:  # noqa: BLE001 — sin git el eval vale igual, sólo pierde trazabilidad
+        return "desconocido"
+
+
+def _identidad_config() -> dict:
+    """TODO lo que determina qué ve el modelo, legible y con un hash que lo resume.
+
+    Guardar sólo `modelo` + `system_sha256` era insuficiente, y **esta misma unidad lo
+    demuestra**: el esquema de la tool pasó de 11.512 a 4.524 caracteres sin que el prompt
+    cambiara. Dos corridas con el mismo `system_sha256` habrían usado esquemas distintos y el
+    artefacto las habría presentado como comparables.
+
+    Se conservan los campos sueltos **y** el hash agregado: el hash dice *"esto cambió"*, los
+    campos dicen *"qué cambió"*.
+    """
+    campos = {
+        "model": settings.llm_model,
+        "system_sha256": _sha(_SYSTEM),
+        "tool_schema_sha256": _sha(json.dumps(_tool_schema(), sort_keys=True,
+                                              ensure_ascii=False)),
+        "max_tokens": _MAX_TOKENS,
+        "tool_choice": _TOOL_CHOICE,
+        "temperature": _TEMPERATURE if _TEMPERATURE is not None else "unset",
+        "commit_sha": _commit_sha(),
+    }
+    return {**campos,
+            "interpreter_config_sha256": _sha(json.dumps(campos, sort_keys=True,
+                                                         ensure_ascii=False))}
 
 
 def main() -> int:
@@ -275,7 +365,9 @@ def main() -> int:
         print(f"no hay caso con id {args.caso!r}")
         return 2
 
-    print(f"\nmodelo {settings.llm_model} · {len(casos)} casos\n")
+    cfg = _identidad_config()
+    print(f"\nmodelo {cfg['model']} · config {cfg['interpreter_config_sha256']} · "
+          f"{len(casos)} casos\n")
     informe = asyncio.run(_correr(casos))
     print(f"\n  {informe['ok']}/{informe['total']} ok · {informe['fallan']} fallan\n")
 

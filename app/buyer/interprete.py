@@ -211,6 +211,18 @@ _PROPUESTAS = TypeAdapter(list[PropuestaV0])
 
 _TOOL_NAME = "registrar_afirmaciones"
 
+# Constantes con nombre, no literales dentro de la llamada: son **parte material de lo que ve
+# el modelo**, así que el eval tiene que poder registrarlas junto a los resultados. Dos
+# corridas con el mismo prompt pero distinto `max_tokens` no son comparables, y sin esto el
+# artefacto las presentaría como si lo fueran.
+#
+# `temperature` NO se pasa: se usa el default del proveedor. Se deja explícito aquí —y se
+# registra como "unset" en el eval— porque "no lo fijamos" es una decisión que hay que poder
+# leer, no un hueco que alguien rellene sin darse cuenta.
+_MAX_TOKENS = 1500
+_TOOL_CHOICE = {"type": "tool", "name": _TOOL_NAME}
+_TEMPERATURE = None
+
 _SYSTEM = (
     "Eres un intérprete de mensajes de un comprador/arrendatario inmobiliario. Lees UN "
     "mensaje y registras qué afirmó, separando lo que es preferencia durable de lo que no.\n"
@@ -227,8 +239,15 @@ _SYSTEM = (
     "1. Solo es durable lo que el PROPIO usuario declara querer. NO lo es una pregunta "
     "('¿debería comprar?'), lo que quiere un TERCERO ('mi hermana quiere comprar'), una CITA "
     "('el corredor dijo que máximo 120000'), ni una HIPÓTESIS ('si comprara, máximo 120000').\n"
-    "2. Un HECHO SOBRE UN LUGAR no es una preferencia del usuario. 'La cafetería de al lado "
-    "acepta mascotas' describe el barrio; no pide que su casa acepte mascotas.\n"
+    "2. DE QUIÉN HABLA decide entre turn_only y rejected:\n"
+    "   - habla del MUNDO —un lugar, un negocio, una propiedad, un tercero— sin declarar una "
+    "preferencia suya → turn_only. 'La cafetería de al lado acepta mascotas' describe el "
+    "barrio; no pide que su casa acepte mascotas.\n"
+    "   - habla de SU PROPIA situación o necesidad, pero el sistema no puede representarla "
+    "—hogar, familia, tranquilidad, accesibilidad— → rejected. 'Tenemos dos niños' habla de "
+    "él y por eso se registra como rejected, no se omite.\n"
+    "   Mantener esa línea evita que rejected acabe significando 'cualquier cosa no durable', "
+    "que es cuando deja de distinguir lo único que importa: que algo suyo no cupo.\n"
     "3. NUNCA infieras una preferencia a partir de QUIÉN es la persona. Si menciona familia, "
     "hijos, edad, origen, religión, género o discapacidad, IGNÓRALO: 'tenemos dos niños' NO "
     "es 2 dormitorios ni más área. Eso es discriminación en vivienda y está prohibido.\n"
@@ -240,6 +259,27 @@ _SYSTEM = (
     "un clear. Solo una retractación explícita ('ya no…', 'quita…') justifica un clear.\n"
     "7. Un mensaje puede contener VARIAS afirmaciones de distinto tipo. Regístralas todas, en "
     "el orden en que aparecen.\n"
+    "7a. NO RESUELVAS TÚ LAS CORRECCIONES NI LOS CONFLICTOS. Si el usuario declara algo y "
+    "luego lo corrige, registra LAS DOS declaraciones en orden, cada una como durable con su "
+    "mutación. Hay una capa posterior, determinista y auditada, que decide cuál sobrevive; si "
+    "decides tú, esa política se duplica donde nadie puede revisarla.\n"
+    "   'quiero comprar... no, mejor alquilar' → DOS durables: set_objective buy, y después "
+    "set_objective rent. No lo colapses a un ambiguous.\n"
+    "   'quiero comprar o alquilar' → también DOS durables. Que no haya corrección explícita "
+    "lo resuelve la capa de abajo, no tú.\n"
+    "7b. MODALIDAD NO ASERTIVA CON CANDIDATO. Una pregunta o una hipótesis/condicional es "
+    "siempre turn_only. Pero si dentro de ella el usuario introduce un valor CONCRETO y SOBRE "
+    "SÍ MISMO que podría ser su preferencia, y la modalidad impide saber si lo está "
+    "declarando, registra DOS cosas: el acto como turn_only Y ese campo como ambiguous. Nunca "
+    "durable.\n"
+    "   '¿me alcanza con 120000 USD para comprar?' → turn_only + ambiguous en budget_max.\n"
+    "   'si comprara, mi máximo sería 120000 USD' → turn_only + ambiguous en budget_max. NO "
+    "marques objective: el candidato que revela son los 120000; 'comprara' es el marco "
+    "hipotético que los enmarca, no una declaración a medias.\n"
+    "   Hacen falta LAS DOS COSAS, modalidad y candidato. Sin candidato concreto no hay nada "
+    "que recordar y va SOLO turn_only:\n"
+    "   '¿debería comprar?' → solo turn_only. 'Si comprara, ¿qué zonas mirarías?' → solo "
+    "turn_only. No inventes un ambiguous donde el usuario no ofreció ningún valor suyo.\n"
     "8. REGISTRA TAMBIÉN LO QUE NO ES DURABLE. Omitir no es clasificar. Una pregunta se "
     "registra como turn_only, no como lista vacía; un contenido que este sistema no modela "
     "—hogar, familia, tranquilidad, accesibilidad— se registra como rejected. Deja constancia "
@@ -318,10 +358,10 @@ async def proponer_con_modelo(texto: str) -> Sequence[PropuestaV0]:
         return ()
     respuesta = await _client().messages.create(
         model=settings.llm_model,
-        max_tokens=1500,
+        max_tokens=_MAX_TOKENS,
         system=_SYSTEM,
         tools=[_tool_schema()],
-        tool_choice={"type": "tool", "name": _TOOL_NAME},
+        tool_choice=_TOOL_CHOICE,
         messages=[{"role": "user", "content": texto}],
     )
     for bloque in respuesta.content:

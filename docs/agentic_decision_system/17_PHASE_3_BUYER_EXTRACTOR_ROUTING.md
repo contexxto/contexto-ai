@@ -20,9 +20,10 @@ ENTREGADO   caracterización · multi-mutation · matrices · C1-C5 congeladas
             procesamiento puro
             E3.2b.1b.1 · integridad y ESTABILIDAD del eval — I1/I2/I3 congelados;
             20/20 en 3 corridas, 0 GRAVE, 0 MEDIA, 0 LEVE
-PENDIENTE   reducer E3.2b.2 (NO AUTORIZADO) · wiring productivo
+            E3.2b.2 · reducer — el lote se vuelve memoria; R-IDEMP-1 congelada
+PENDIENTE   wiring productivo · que el producto CONSUMA los unresolved
 
-GATE        HOLD — la costura existe y está probada; no hay consumidor
+GATE        HOLD — la cadena está completa y probada; nadie la llama todavía
 ```
 
 ---
@@ -460,6 +461,9 @@ nuevo    tests/test_buyer_extractor.py  corpus adversarial
 nuevo    app/buyer/interprete.py        text → Afirmacion (E3.2b.1b)
 nuevo    tests/test_buyer_interprete.py invariantes estructurales · gate de CI
 nuevo    evals/corpus_interprete.py     eval semántico · gate de CIERRE, no de CI
+nuevo    app/buyer/reductor.py          lote → BuyerContextV0 (E3.2b.2)
+nuevo    tests/test_buyer_reductor.py   R1-R7 + R-IDEMP-1
+tocado   app/buyer/store.py             SOLO `_canonico` — R-IDEMP-1
 tocado   este documento
 
 DEUDA OBSERVABLE · con `interprete.py` son SEIS construcciones de cliente Anthropic en
@@ -498,6 +502,50 @@ proponente, no al revés— pero conviene no leer la unidad como si el extractor
 mensajes.
 
 **Punto de reentrada:** E3.2b.2 (reducer) — **NO AUTORIZADO todavía**.
+
+### R-IDEMP-1 · procedencia vs estado **[CONGELADO · E3.2b.2]**
+
+El preflight del reducer encontró, ANTES de escribirlo, que un replay del mismo mensaje daría
+`BuyerIdempotencyConflict`. Reproducido, no inferido:
+
+```
+evidence_id    uuid4()          distinto en cada intento
+retrieved_at   datetime.now()   distinto en cada intento
+_canonico      sólo excluía context_revision y updated_at
+```
+
+El store habría acusado de no determinista a un extractor que sí lo es.
+
+La regla congelada **está acotada a la evidencia `USER_DECLARED` que crea este updater**, y el
+límite es la parte importante:
+
+```
+evidence_id    "un asa nuestra, no una afirmación sobre el mundo"  →  no participa
+retrieved_at   cuándo lo procesamos NOSOTROS                       →  no participa
+todo lo demás  source_id · observed_at · methodology · valor       →  SÍ participa
+```
+
+Para un `PROVIDER_API` con TTL, `retrieved_at` dice si el dato sigue fresco: ahí es material y
+sigue comparándose. Excluirlo en general habría cambiado un defecto puntual por una pérdida
+general de procedencia.
+
+**`retrieved_at` no se estabiliza: se pasa como dato.** El reducer no tiene reloj. El primer
+procesamiento persiste `T1`; el reintento llega con `T2`, la igualdad canónica lo ignora para
+esta evidencia, el store reconoce el replay y `T1` se queda en la historia. No hace falta que
+sea estable — hace falta que sea verdadero y que no se confunda con estado del comprador.
+
+`evidence_id` pasa además a derivarse: `uuid5` sobre comprador + mensaje + ruta, **sin el
+valor**. Si un replay produjera otro valor queremos el mismo id y un contexto distinto, para
+que la divergencia se vea en vez de esconderse detrás de dos identificadores.
+
+Los cuatro conceptos que esto deja de mezclar:
+
+```
+observed_at    cuándo el mundo estaba así       hoy None — no tenemos esa evidencia
+retrieved_at   cuándo lo procesamos             verdadero, operacional, entra como dato
+evidence_id    asa sobre la evidencia           determinista
+valor + ruta   estado durable del comprador     lo único que la idempotencia compara
+```
 
 ### E3.2b.1b · lo que dejó construido y lo que dejó medido
 

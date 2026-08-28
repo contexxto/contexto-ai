@@ -174,3 +174,111 @@ def test_el_store_no_extrae_ni_interpreta():
     codigo = (RAIZ / "app" / "buyer" / "store.py").read_text(encoding="utf-8")
     for prohibido in ("anthropic", "llm", "extraer_preferencias", "HumanMessage", "prompt"):
         assert prohibido.lower() not in codigo.lower(), f"el store {prohibido}"
+
+
+# ══ R-IDEMP-1 · la procedencia OPERACIONAL no es estado del comprador ════════════════
+#
+# Un replay del mismo mensaje construye una `EvidenceRefV0` nueva: `evidence_id` sale de
+# `uuid4()` y `retrieved_at` de un reloj. Los dos cambian, `_canonico` cambia con ellos, y un
+# reintento honesto acababa en `BuyerIdempotencyConflict` — acusando de no determinista a un
+# extractor que sí lo es.
+#
+# La excepción está ACOTADA a `USER_DECLARED`, que es la evidencia que crea este updater. Para
+# un `PROVIDER_API` con TTL, `retrieved_at` sí es material —dice si el dato está fresco— y
+# excluirlo en general habría cambiado un bug puntual por una pérdida general de procedencia.
+
+from datetime import timedelta  # noqa: E402
+
+from app.contracts.evidence_v0 import (  # noqa: E402
+    EvidenceRefV0, PersistencePolicy, SourceType,
+)
+from app.contracts.buyer_v0 import FieldEvidence  # noqa: E402
+
+_T0 = dt.datetime(2026, 8, 28, 12, 0, tzinfo=dt.timezone.utc)
+
+
+def _ev(*, tipo=SourceType.USER_DECLARED, source_id="m-1", retrieved_at=_T0,
+        observed_at=None, evidence_id=None, provider=None):
+    extra = {"evidence_id": evidence_id} if evidence_id else {}
+    # `HEURISTIC_ESTIMATE` exige `limitations` por contrato — "un dato no medido que no
+    # declara qué no puede sostener acaba puntuando como si estuviera medido". Lo pide el
+    # propio EvidenceRefV0, y este helper lo respeta en vez de esquivar el tipo.
+    if tipo is SourceType.HEURISTIC_ESTIMATE:
+        extra["limitations"] = ("estimado, no medido",)
+    return EvidenceRefV0(
+        source_type=tipo, source_id=source_id, provider=provider,
+        methodology="declaración del usuario en la conversación",
+        persistence_policy=PersistencePolicy.PERSISTABLE,
+        retrieved_at=retrieved_at, observed_at=observed_at, **extra)
+
+
+def _con_evidencia(evidencia, *, campo="objective", objetivo=Objective.BUY):
+    return _ctx(objective=objetivo,
+                field_evidence=(FieldEvidence(field=campo, evidence=evidencia),))
+
+
+def test_IDEMP_un_replay_con_otro_evidence_id_es_el_MISMO_estado():
+    """`evidence_id` es, por su propio contrato, *"un asa nuestra, no una afirmación sobre el
+    mundo"*. Dos asas distintas para el mismo hecho no son dos hechos."""
+    a = _con_evidencia(_ev(evidence_id="11111111-1111-5111-8111-111111111111"))
+    b = _con_evidencia(_ev(evidence_id="22222222-2222-5222-8222-222222222222"))
+    assert _canonico(a) == _canonico(b)
+
+
+def test_IDEMP_un_replay_con_otro_retrieved_at_es_el_MISMO_estado():
+    """`retrieved_at` es cuándo lo procesamos NOSOTROS. Que el reintento ocurra cinco segundos
+    después no cambia lo que el comprador declaró."""
+    a = _con_evidencia(_ev(retrieved_at=_T0))
+    b = _con_evidencia(_ev(retrieved_at=_T0 + timedelta(seconds=5)))
+    assert _canonico(a) == _canonico(b)
+
+
+def test_IDEMP_otro_source_id_SI_es_otro_estado():
+    """Lo que sostiene el valor es de qué mensaje salió. Cambiar eso es cambiar la
+    procedencia, y tiene que verse."""
+    assert _canonico(_con_evidencia(_ev(source_id="m-1"))) != \
+           _canonico(_con_evidencia(_ev(source_id="m-2")))
+
+
+def test_IDEMP_otro_valor_durable_SI_es_otro_estado():
+    """La excepción no puede cegar el caso que la idempotencia existe para cazar: el mismo
+    mensaje produciendo dos interpretaciones distintas."""
+    assert _canonico(_con_evidencia(_ev(), objetivo=Objective.BUY)) != \
+           _canonico(_con_evidencia(_ev(), objetivo=Objective.RENT))
+
+
+def test_IDEMP_otro_observed_at_SI_es_otro_estado():
+    """`observed_at` es CUÁNDO EL MUNDO ESTABA ASÍ — un hecho sobre el dato, no sobre nuestro
+    intento de procesarlo. No entra en la excepción."""
+    assert _canonico(_con_evidencia(_ev(observed_at=None))) != \
+           _canonico(_con_evidencia(_ev(observed_at=_T0 - timedelta(days=1))))
+
+
+def test_IDEMP_otra_ruta_SI_es_otro_estado():
+    assert _canonico(_con_evidencia(_ev(), campo="objective")) != \
+           _canonico(_con_evidencia(_ev(), campo="financial.budget_max"))
+
+
+@pytest.mark.parametrize("tipo", [SourceType.PROVIDER_API, SourceType.PUBLIC_DATASET,
+                                  SourceType.OWN_MEASUREMENT, SourceType.HEURISTIC_ESTIMATE])
+def test_IDEMP_la_excepcion_NO_alcanza_a_la_evidencia_de_otros_origenes(tipo):
+    """EL LÍMITE DE LA EXCEPCIÓN, y es lo que impide cambiar un bug puntual por una pérdida
+    general de procedencia.
+
+    Para un `PROVIDER_API` con TTL, `retrieved_at` dice si el dato sigue fresco: es material y
+    tiene que seguir participando. La excepción se justifica por lo que significa
+    `USER_DECLARED` —lo dijo la persona, y cuándo lo procesamos no cambia lo que dijo—, no por
+    conveniencia de comparación.
+    """
+    a = _con_evidencia(_ev(tipo=tipo, provider="google_places", retrieved_at=_T0))
+    b = _con_evidencia(_ev(tipo=tipo, provider="google_places",
+                           retrieved_at=_T0 + timedelta(hours=6)))
+    assert _canonico(a) != _canonico(b)
+
+
+def test_IDEMP_la_excepcion_tampoco_alcanza_al_evidence_id_de_otros_origenes():
+    a = _con_evidencia(_ev(tipo=SourceType.PROVIDER_API, provider="x",
+                           evidence_id="11111111-1111-5111-8111-111111111111"))
+    b = _con_evidencia(_ev(tipo=SourceType.PROVIDER_API, provider="x",
+                           evidence_id="22222222-2222-5222-8222-222222222222"))
+    assert _canonico(a) != _canonico(b)

@@ -8,9 +8,11 @@ ENTREGADO   caracterización · multi-mutation · matrices · C1-C5 congeladas
             núcleo determinista de routing (67b3c6d) — PARCIAL
             E3.2b.1a-A §3-§7 · unión cerrada de afirmaciones + routing por
             BuyerFieldV0 + orden estable — defectos 1, 2 y 3 CERRADOS
-PENDIENTE   verificador de valor exacto (defecto 4) · Clear por retractación · intérprete
+            E3.2b.1a-B · verificador de evidencia EXACTA (dimensión + valor) +
+            Clear por retractación, fail closed — defecto 4 CERRADO
+PENDIENTE   intérprete text → Afirmacion (NOT STARTED)
 
-GATE        HOLD — falta E3.2b.1a-B (defecto 4 de §6b)
+GATE        HOLD — los cuatro defectos de §6b cerrados; falta el intérprete
 ```
 
 ---
@@ -240,10 +242,10 @@ Eso es C5, y es lo que hace que Fair Housing no cueste hechos legítimos:
 caracterización E3.2b.1            COMPLETE
 C1-C5                              FROZEN
 núcleo determinista de routing     COMPLETO      (E3.2b.1a-A · §3-§7)
-verificador semántico              INCOMPLETO    (defecto 4 · dimensión sí, valor no)
+verificador semántico              COMPLETO      (E3.2b.1a-B · dimensión + valor)
 intérprete text → Afirmacion       NOT STARTED
 
-E3.2b.1                            HOLD — a la espera de E3.2b.1a-B
+E3.2b.1                            HOLD — a la espera del intérprete
 ```
 
 ### Los cuatro defectos que abre E3.2b.1a `[VERIFICADO]`
@@ -252,12 +254,15 @@ E3.2b.1                            HOLD — a la espera de E3.2b.1a-B
 1 · corrección incompleta al revés   CERRADO   E3.2b.1a-A §3-§5
 2 · _DISYUNCION redundante           CERRADO   E3.2b.1a-A §7 — eliminada
 3 · el orden no se preserva          CERRADO   E3.2b.1a-A §6
-4 · guarda de dimensión, no de valor ABIERTO   → E3.2b.1a-B
+4 · guarda de dimensión, no de valor CERRADO   E3.2b.1a-B
 ```
 
-Lo que sigue es el enunciado original de los cuatro, tal como se levantaron. Se conserva
-literal: es la especificación contra la que se contrastaron los asserts, y reescribirlo en
-pasado borraría la evidencia de qué se estaba arreglando.
+> ⚠️ **TODO LO QUE SIGUE EN ESTA SECCIÓN ESTÁ CERRADO.** Es el enunciado original de los
+> cuatro defectos, en el presente en que se levantaron, y se conserva literal a propósito: es
+> la especificación contra la que se contrastaron los asserts, y reescribirlo en pasado
+> borraría la evidencia de qué se estaba arreglando. **Ninguna frase de aquí abajo describe
+> el comportamiento actual** — para eso está la tabla de estado de arriba. En particular, la
+> guarda ya NO comprueba sólo dimensión y ningún `Clear*` queda autorizado por omisión.
 
 Salieron de revisar `67b3c6d` contra las decisiones congeladas. **Tres de los cuatro son
 prosa que adelantó al comportamiento** — un comentario o un test que afirma una propiedad
@@ -364,16 +369,37 @@ conflictos entre revisiones ni conecta con el producto.
 E3.2b.1   HOLD
 ```
 
-§6 ya está decidido y el routing construido: la unión de afirmaciones es cerrada, la
-resolución intramensaje agrupa por `BuyerFieldV0` y el orden de aparición se conserva por
-construcción. Lo que bloquea ahora es **el defecto 4**: la guarda semántica comprueba
-dimensión y no valor, así que `SetObjective(BUY)` pasa ante un texto que solo dice "quiero
-alquilar", y los `Clear*` quedan autorizados por omisión. Acercar un modelo con esa guarda
-incompleta es lo que no se debe hacer.
+§6 está decidido y el routing construido: la unión de afirmaciones es cerrada, la resolución
+intramensaje agrupa por `BuyerFieldV0` y el orden de aparición se conserva por construcción.
+El defecto 4 también está cerrado: la guarda exige evidencia del **valor** y no sólo de la
+dimensión, y ningún `Clear*` se autoriza por omisión.
 
-**Punto de reentrada:** E3.2b.1a-B — verificador de valor exacto y autorización de `Clear`
-por retractación. Después, el intérprete `text → Afirmacion` con el corpus del §4-§5 como
-especificación ejecutable.
+Lo que bloquea ahora es que **el intérprete `text → Afirmacion` sigue NOT STARTED**.
+`autorizar_traduccion` es una guarda sin llamante en `app/`: responde sí/no sobre una mutación
+ya propuesta, y hoy nadie propone. Eso es correcto —la guarda debía existir antes que el
+proponente, no al revés— pero conviene no leer la unidad como si el extractor ya interpretara
+mensajes.
+
+**Punto de reentrada:** el intérprete, con el corpus del §4-§5 como especificación ejecutable
+y `autorizar_traduccion` como condición de admisión de cada propuesta.
+
+### La frontera que E3.2b.1a-B tuvo que añadir · Fair Housing
+
+Verificar el valor abre una puerta que la guarda de dimensión no tenía. Buscar el número en
+todo el mensaje convierte el conteo de personas en evidencia de un requisito de propiedad:
+
+```
+"tenemos 2 niños y al menos 3 dormitorios"  +  SetBedroomsMin(2)   →  autorizaba
+```
+
+La dimensión era correcta —el texto habla de dormitorios— y el `2` estaba en el mensaje. Es
+el peor caso del §7 entrando por la puerta que abre el propio verificador. Queda congelado:
+
+```
+el número que evidencia una mutación tiene que salir de la MISMA CLÁUSULA que su dimensión
+```
+
+Reproducido en rojo antes de cerrarlo y cubierto por los tests de B9.
 
 ### Lo que E3.2b.1a-A dejó decidido y NO estaba en C1-C5
 

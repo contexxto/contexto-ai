@@ -8,15 +8,19 @@ E3.2b.1   protege TRADUCCIONES  →  "tenemos dos niños" no puede volverse bedr
 ```
 
 `SetBedroomsMin(2)` es una mutación **perfectamente válida para el tipo**: la frontera no
-puede rechazarla, es justo lo que acepta. Lo único que impide que nazca de una frase sobre
-personas es exigir que el texto hable de la dimensión que se va a escribir.
+puede rechazarla, es justo lo que acepta. Lo que impide que nazca de una frase sobre personas
+es exigir que el texto evidencie la dimensión **y el valor** que se va a escribir — y que el
+valor salga de la cláusula de esa dimensión, no de cualquier parte del mensaje.
 
 ## Cómo se escribió esta suite (gate PROSE ↔ BEHAVIOR de §6c)
 
-Cada test de las secciones D-F se derivó en este orden: **decisión congelada → comportamiento
+Cada test de las secciones D-H se derivó en este orden: **decisión congelada → comportamiento
 esperado → assert → nombre → docstring → código**. Nunca al revés. Leída desde el código,
 cualquier suite verde parece una especificación; así fue como se coló el test falso de la
 corrección incompleta, que estaba VERDE afirmando que los 120000 sobrevivían.
+
+La sección H se escribió entera **antes** de su implementación y se corrió en rojo: 25 fallos
+que son la prueba de que el defecto 4 existía y de que estos asserts lo detectan.
 
 Pura y offline: sin store, sin base, sin LLM.
 """
@@ -29,8 +33,9 @@ import pytest
 from pydantic import ValidationError
 
 from app.buyer.boundary import (
-    BuyerCurrencyV0, BuyerFieldV0, Disposicion, SetAreaM2Min, SetBedroomsMin, SetBudgetMax,
-    SetObjective, SetPetsRequired, ruta_contractual,
+    BuyerCurrencyV0, BuyerFieldV0, ClearAreaM2Min, ClearBedroomsMin, ClearBudgetMax,
+    ClearObjective, ClearPetsRequired, Disposicion, SetAreaM2Min, SetBedroomsMin,
+    SetBudgetMax, SetObjective, SetPetsRequired, ruta_contractual,
 )
 from app.buyer.extractor import (
     AfirmacionAmbiguous, AfirmacionDurable, AfirmacionRejected, AfirmacionTurnOnly,
@@ -504,3 +509,281 @@ def test_el_extractor_no_reescribe_el_texto_del_usuario():
     construir_lote(mensaje, [_OBJ(Objective.BUY)])
     assert mensaje.text == original
     assert "text" not in LoteExtraccion.model_fields
+
+
+# ══ H · B1-B7 · el VERIFICADOR DE EVIDENCIA EXACTA ══════════════════════════════════
+#
+# El defecto 4 de §6b: la guarda protegía `persona → dimensión incorrecta` y NO protegía
+# `dimensión correcta → valor inventado`. `SetObjective` comparte vocabulario para
+# comprar/alquilar/invertir, así que BUY pasaba ante un texto que solo dice "quiero alquilar".
+#
+# Estos tests se escribieron ANTES de la implementación y en ROJO. La guarda sigue siendo
+# guarda: recibe (texto, mutación propuesta) y responde sí/no. No decide qué mutación crear.
+
+
+def _autoriza(mutacion, texto) -> bool:
+    """Adaptador a booleano: los asserts de esta sección leen mejor como tabla."""
+    try:
+        autorizar_traduccion(mutacion, texto)
+        return True
+    except TraduccionNoAutorizada:
+        return False
+
+
+# ── B2 · SetObjective · evidencia POR VALOR ────────────────────────────────────────
+
+
+@pytest.mark.parametrize("texto,objetivo,esperado", [
+    ("quiero alquilar", Objective.BUY, False),      # EL CASO QUE ABRE LA UNIDAD
+    ("quiero alquilar", Objective.RENT, True),
+    ("quiero comprar", Objective.INVEST, False),
+    ("quiero comprar", Objective.BUY, True),
+    ("quiero invertir", Objective.INVEST, True),
+    ("quiero invertir", Objective.RENT, False),
+    ("busco arrendar un departamento", Objective.RENT, True),
+    ("busco arrendar un departamento", Objective.BUY, False),
+])
+def test_B2_el_objetivo_exige_evidencia_DEL_VALOR_no_de_la_dimension(texto, objetivo, esperado):
+    """DECISIÓN (§6b defecto 4): "`SetObjective` comparte vocabulario para
+    comprar/alquilar/invertir, así que `BUY` pasa ante un texto que solo dice 'quiero
+    alquilar'". Cerrar eso es el objeto de esta unidad.
+
+    La guarda no elige el objetivo: comprueba que el propuesto esté literalmente soportado.
+    """
+    assert _autoriza(SetObjective(objective=objetivo), texto) is esperado
+
+
+def test_B2_un_texto_con_DOS_alternativas_autoriza_cada_una_por_separado():
+    """DECISIÓN (B2): si el texto menciona más de una alternativa, la guarda autoriza cada
+    propuesta literalmente soportada; **C1-C3 resuelven el conflicto después**.
+
+    Convertir esta guarda en resolver duplicaría la política en dos sitios, y la copia se
+    desincronizaría. Aquí sólo se responde "¿el texto dice esto?".
+    """
+    texto = "quiero comprar o alquilar"
+    assert _autoriza(SetObjective(objective=Objective.BUY), texto) is True
+    assert _autoriza(SetObjective(objective=Objective.RENT), texto) is True
+    assert _autoriza(SetObjective(objective=Objective.INVEST), texto) is False
+
+
+# ── B3 · SetBudgetMax · monto Y moneda ─────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("texto,monto,moneda,esperado", [
+    ("máximo 120000 USD", 120000, BuyerCurrencyV0.USD, True),
+    ("máximo 100000 USD", 120000, BuyerCurrencyV0.USD, False),   # monto no evidenciado
+    ("máximo 120000 MXN", 120000, BuyerCurrencyV0.USD, False),   # moneda no evidenciada
+    ("$120000", 120000, BuyerCurrencyV0.USD, False),             # el símbolo no resuelve USD
+    ("900 pesos", 900, BuyerCurrencyV0.MXN, False),              # pesos no implica MXN
+    ("máximo 900 MXN", 900, BuyerCurrencyV0.MXN, True),
+    ("hasta 120.000 USD", 120000, BuyerCurrencyV0.USD, True),    # miles en grupos de 3
+])
+def test_B3_el_presupuesto_exige_evidencia_del_MONTO_y_de_la_MONEDA(
+        texto, monto, moneda, esperado):
+    """DECISIÓN CONGELADA (§4 matriz): "120000" sin moneda es AMBIGUOUS, "$120000" también
+    —"el símbolo no resuelve USD"— y "900 pesos" también —"no se infiere MXN"—.
+
+    De ahí sale la normalización N1: **la única evidencia de moneda es el código ISO
+    literal**. Aceptar "dólares" reabriría por otra puerta lo que §4 cerró; hay ocho dólares
+    en el mundo. El coste —"máximo 120000 dólares" no autoriza— es deliberado.
+    """
+    assert _autoriza(SetBudgetMax(amount=Decimal(monto), currency=moneda), texto) is esperado
+
+
+@pytest.mark.parametrize("texto", ["máximo 120000.50 USD", "máximo 120.5 USD"])
+def test_B3_un_numero_de_forma_AMBIGUA_no_aporta_evidencia(texto):
+    """DECISIÓN (N2): "120.000" puede ser ciento veinte mil o ciento veinte coma cero según
+    la plaza. Se normaliza **sólo** la forma inequívoca —dígitos puros, o grupos de
+    exactamente 3—; cualquier otra no aporta evidencia y la propuesta no se autoriza.
+
+    Ante duda → no autorizar. El coste es que un presupuesto con centavos no es autorizable
+    por esta gramática, y eso queda documentado en vez de resuelto a ojo.
+    """
+    assert _autoriza(
+        SetBudgetMax(amount=Decimal(120000), currency=BuyerCurrencyV0.USD), texto) is False
+
+
+# ── B4 · SetBedroomsMin · dimensión + mínimo + número exacto ───────────────────────
+
+
+@pytest.mark.parametrize("texto,n,esperado", [
+    ("mínimo 2 dormitorios", 2, True),
+    ("mínimo 3 dormitorios", 2, False),      # número distinto
+    ("2 dormitorios", 2, False),             # exacto ≠ mínimo (ya congelado)
+    ("al menos 20 dormitorios", 2, False),   # NADA de substring
+    ("al menos 2 dormitorios", 20, False),
+    ("como mínimo 2 recámaras", 2, True),
+])
+def test_B4_los_dormitorios_exigen_dimension_MINIMO_y_numero_exacto(texto, n, esperado):
+    """DECISIÓN (B4): tienen que coincidir las tres cosas. El caso `"al menos 20" + 2` es el
+    que obliga a tokenizar números en vez de buscar el dígito como substring."""
+    assert _autoriza(SetBedroomsMin(bedrooms_min=n), texto) is esperado
+
+
+# ── B5 · SetAreaM2Min ──────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("texto,a,esperado", [
+    ("mínimo 80 m2", 80.0, True),
+    ("mínimo 60 m2", 80.0, False),
+    ("80 m2", 80.0, False),
+    ("al menos 80 metros cuadrados", 80.0, True),
+])
+def test_B5_el_area_exige_dimension_MINIMO_y_numero_exacto(texto, a, esperado):
+    assert _autoriza(SetAreaM2Min(area_m2_min=a), texto) is esperado
+
+
+def test_B5_el_2_de_m2_NO_es_un_numero_del_mensaje():
+    """DECISIÓN (N2): el token numérico lleva un lookbehind de carácter de palabra.
+
+    Sin él, `"mínimo 80 m2"` ofrecería los números {80, 2} y autorizaría un área mínima de
+    2 m² que el usuario jamás dijo. Es el mismo error de clase que el substring de B4, por
+    el otro extremo.
+    """
+    assert _autoriza(SetAreaM2Min(area_m2_min=2.0), "mínimo 80 m2") is False
+
+
+# ── B6 · SetPetsRequired · requisito POSITIVO, y la negación ───────────────────────
+
+
+@pytest.mark.parametrize("texto,esperado", [
+    ("necesito que acepten mascotas", True),
+    ("tengo un perro y deben aceptarlo", True),
+    ("no tengo mascotas", False),
+    ("no quiero mascotas", False),
+    ("no necesito que acepten mascotas", False),      # NEGACIÓN · el caso de M8
+    ("ya no necesito que acepten mascotas", False),   # es un Clear, no un Set
+])
+def test_B6_las_mascotas_exigen_un_requisito_POSITIVO(texto, esperado):
+    """DECISIÓN (B6): sin payload, "exactitud" significa que el texto expresa positivamente
+    el requisito de que la propiedad admita mascotas.
+
+    `SetPetsRequired` no lleva campo por diseño —`False` no es representable, y dejar de
+    necesitarlo es `ClearPetsRequired`—, así que una mención negada **no puede** volverse el
+    requisito positivo. La gramática cerrada exige el sustantivo en el texto y un verbo de
+    requisito en una cláusula SIN negación.
+    """
+    assert _autoriza(SetPetsRequired(), texto) is esperado
+
+
+# ── B7 · Clear* · FAIL CLOSED, y negación ≠ retractación ───────────────────────────
+
+
+@pytest.mark.parametrize("texto,mutacion,esperado", [
+    ("ya no tengo claro si comprar o alquilar", ClearObjective(), True),
+    ("no quiero comprar", ClearObjective(), False),
+    ("ya no tengo un presupuesto máximo", ClearBudgetMax(), True),
+    ("quita el límite de presupuesto", ClearBudgetMax(), True),
+    ("ya no necesito mínimo de dormitorios", ClearBedroomsMin(), True),
+    ("quita mi mínimo de dormitorios", ClearBedroomsMin(), True),
+    ("no necesito 2 dormitorios", ClearBedroomsMin(), False),
+    ("ya no necesito un mínimo de área", ClearAreaM2Min(), True),
+    ("ya no necesito que acepten mascotas", ClearPetsRequired(), True),
+    ("no tengo mascotas", ClearPetsRequired(), False),
+    ("no quiero mascotas", ClearPetsRequired(), False),
+])
+def test_B7_un_Clear_exige_RETRACTACION_EXPLICITA_de_su_dimension(texto, mutacion, esperado):
+    """DECISIÓN CONGELADA (§5): **"La negación no es borrado. Es la confusión que más
+    fácilmente convierte un CLEAR en pérdida silenciosa de estado."**
+
+    De ahí la normalización N3: la retractación es un marcador explícito —"ya no", "quita",
+    "elimina"…— y un `no` a secas NUNCA lo es. `"no quiero comprar"` es AMBIGUOUS en la
+    matriz del §5 (¿alquila, o retira el objetivo?), no un borrado.
+
+    Esta función no recibe estado, así que no demuestra que el campo existiera antes: sólo
+    que el texto autoriza la INTENCIÓN de borrar esa dimensión. La existencia y el no-op son
+    del reducer y del store.
+    """
+    assert _autoriza(mutacion, texto) is esperado
+
+
+def test_B7_una_retractacion_no_autoriza_a_borrar_OTRA_dimension():
+    """La retractación tiene que ser DE esa dimensión. Si bastara el marcador, un "ya no"
+    sobre los dormitorios borraría el objetivo — pérdida silenciosa de estado por vecindad
+    en la misma frase."""
+    texto = "ya no necesito mínimo de dormitorios"
+    assert _autoriza(ClearBedroomsMin(), texto) is True
+    assert _autoriza(ClearObjective(), texto) is False
+    assert _autoriza(ClearBudgetMax(), texto) is False
+    assert _autoriza(ClearPetsRequired(), texto) is False
+
+
+def test_B7_NINGUN_Clear_se_autoriza_por_omision():
+    """DECISIÓN (§6b defecto 4): "los `Clear*` **quedan autorizados por omisión**:
+    `_VOCABULARIO.get` devuelve `None` y la función retorna sin validar".
+
+    Un texto que no habla de nada no puede autorizar ningún borrado. Éste es el test que
+    mata la mutación M6 —volver al `return` cuando no hay vocabulario— para las cinco
+    variantes a la vez.
+    """
+    for clear in (ClearObjective(), ClearBudgetMax(), ClearBedroomsMin(),
+                  ClearAreaM2Min(), ClearPetsRequired()):
+        assert _autoriza(clear, "hola, ¿cómo estás?") is False
+
+
+def test_el_verificador_cubre_TODA_la_union_de_mutaciones_V0():
+    """META-TEST de totalidad, el mismo patrón que `campo_de_mutacion`.
+
+    Si mañana se añade una variante a `BuyerMutationV0` y se olvida su verificador, con la
+    política fail-closed quedaría imposible de autorizar en vez de autorizada por omisión.
+    Eso ya es el lado seguro — pero es un fallo silencioso igualmente, y esto lo convierte
+    en rojo.
+    """
+    import typing
+
+    from app.buyer import boundary as B
+    from app.buyer import extractor as E
+
+    en_union = set(typing.get_args(typing.get_args(B.BuyerMutationV0)[0]))
+    assert en_union == set(E._VERIFICADOR), (
+        f"sin verificador: {[c.__name__ for c in en_union - set(E._VERIFICADOR)]} · "
+        f"sobran: {[c.__name__ for c in set(E._VERIFICADOR) - en_union]}"
+    )
+
+
+def test_una_mutacion_ajena_a_la_union_NO_se_autoriza_por_omision():
+    """Fail closed también ante lo que no pertenece a la unión: sin entrada en la tabla, no
+    hay autorización posible."""
+    class Impostora:
+        pass
+
+    assert _autoriza(Impostora(), "quiero comprar y máximo 120000 USD") is False
+
+
+# ── B9 · el número tiene que ser DE SU dimensión ───────────────────────────────────
+
+
+@pytest.mark.parametrize("mutacion,texto", [
+    # El peor caso del §7, por la puerta que abre el propio verificador de valor.
+    (SetBedroomsMin(bedrooms_min=2), "tenemos 2 niños y al menos 3 dormitorios"),
+    (SetBedroomsMin(bedrooms_min=4), "somos 4 en la familia, mínimo 2 dormitorios"),
+    (SetAreaM2Min(area_m2_min=4.0), "somos 4, al menos 80 metros cuadrados"),
+    (SetBudgetMax(amount=Decimal(2), currency=USD),
+     "tenemos 2 niños y máximo 150000 USD"),
+])
+def test_B9_un_numero_de_OTRA_clausula_no_evidencia_esta_dimension(mutacion, texto):
+    """DECISIÓN CONGELADA (§7): *"tenemos dos niños" → bedrooms_min=2* es "el peor caso, y es
+    plausible".
+
+    **Este agujero lo abrió el propio verificador de valor.** Buscar el número en todo el
+    mensaje hace que el conteo de personas sirva de evidencia para el requisito de propiedad:
+    `"tenemos 2 niños y al menos 3 dormitorios"` traía dimensión, mínimo y un `2` — y
+    autorizaba `SetBedroomsMin(2)`. La guarda de dimensión seguía intacta; lo que faltaba era
+    exigir que el número saliera de la MISMA cláusula que su dimensión.
+
+    Verificado en rojo antes de cerrarlo: los cuatro casos autorizaban.
+    """
+    with pytest.raises(TraduccionNoAutorizada):
+        autorizar_traduccion(mutacion, texto)
+
+
+@pytest.mark.parametrize("mutacion,texto", [
+    (SetBedroomsMin(bedrooms_min=3), "tenemos 2 niños y al menos 3 dormitorios"),
+    (SetBudgetMax(amount=Decimal(150000), currency=USD),
+     "tenemos 2 niños y máximo 150000 USD"),
+])
+def test_B9_el_hecho_legitimo_de_la_MISMA_frase_sigue_autorizando(mutacion, texto):
+    """C5 por el otro lado: acotar por cláusula no puede costar los hechos que el usuario sí
+    declaró. En la misma frase que menciona a los niños, el dormitorio y el presupuesto que
+    el usuario declaró explícitamente siguen autorizándose."""
+    autorizar_traduccion(mutacion, texto)

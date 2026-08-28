@@ -25,10 +25,19 @@ es exigir que el texto **hable de la dimensión que se va a escribir**.
 `autorizar_traduccion` es esa exigencia, y es determinista a propósito: un modelo no puede
 tender el puente persona → requisito de propiedad porque el puente se comprueba fuera de él.
 
-`[PENDIENTE · E3.2b.1a-B]` Esa guarda comprueba hoy **dimensión, no valor**: protege
-`persona → dimensión incorrecta` y NO protege `dimensión correcta → valor inventado`. Los
-`Clear*` además quedan autorizados por omisión. Se anota aquí para que la sección de arriba
-no se lea como si la guarda ya estuviera completa.
+## Y la guarda comprueba DIMENSIÓN **Y VALOR**
+
+Comprobar sólo la dimensión dejaba abierto `dimensión correcta → valor inventado`, que para
+el store es indistinguible de una preferencia declarada: `"quiero alquilar"` autorizaba
+`SetObjective(BUY)` porque los tres objetivos comparten vocabulario. Hoy cada propuesta exige
+evidencia de su valor concreto, y ningún `Clear*` se autoriza por omisión — necesita
+retractación explícita de su propia dimensión.
+
+**El número tiene que salir de la cláusula de su dimensión**, y eso es Fair Housing y no
+estilo: buscarlo en todo el mensaje convierte el conteo de personas en evidencia de un
+requisito de propiedad —`"tenemos 2 niños y al menos 3 dormitorios"` autorizaría
+`SetBedroomsMin(2)`—, que es el peor caso del §7 entrando por la puerta que abre el propio
+verificador de valor.
 
 ## Routing POR AFIRMACIÓN, no por mensaje
 
@@ -59,13 +68,21 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Callable
+from decimal import Decimal
 from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.buyer.boundary import (
+    BuyerCurrencyV0,
     BuyerFieldV0,
     BuyerMutationV0,
+    ClearAreaM2Min,
+    ClearBedroomsMin,
+    ClearBudgetMax,
+    ClearObjective,
+    ClearPetsRequired,
     Disposicion,
     SetAreaM2Min,
     SetBedroomsMin,
@@ -74,6 +91,7 @@ from app.buyer.boundary import (
     SetPetsRequired,
     campo_de_mutacion,
 )
+from app.contracts.buyer_v0 import Objective
 
 _CERRADO = ConfigDict(frozen=True, extra="forbid")
 
@@ -87,27 +105,194 @@ def _norm(texto: str) -> str:
 
 # ── La autorización semántica ──────────────────────────────────────────────────────
 #
-# Cada tipo de mutación exige que el texto hable de SU dimensión. No es un detector de
-# intención —eso puede proponerlo un modelo— sino la condición sin la cual ninguna propuesta
-# se acepta. El vocabulario es cerrado y se amplía a mano, con la misma disciplina que
-# `encaje.DIMENSIONES`.
+# Cada mutación exige que el texto evidencie **su dimensión Y su valor concreto**. No es un
+# detector de intención —eso puede proponerlo un modelo— sino la condición sin la cual
+# ninguna propuesta se acepta. Todo el vocabulario es cerrado y se amplía a mano, con la
+# misma disciplina que `encaje.DIMENSIONES`.
+#
+# Comprobar solo la dimensión era el defecto 4 de §6b: `SetObjective` comparte vocabulario
+# para comprar/alquilar/invertir, así que `BUY` pasaba ante un texto que solo dice "quiero
+# alquilar". Una dimensión correcta con un valor inventado es indistinguible, para el store,
+# de una preferencia que el usuario declaró.
 
-_MINIMO = r"(al menos|como minimo|minimo|minimum|at least|o mas|o más|en adelante|desde)"
+_MINIMO = re.compile(
+    r"(al menos|como minimo|minimo|minimum|at least|o mas|o más|en adelante|desde)")
 
-_VOCABULARIO: dict[type, tuple[str, ...]] = {
-    SetObjective: (r"\b(comprar|compra|adquirir|buy|purchase|"
-                   r"alquilar|arrendar|rentar|rent|"
-                   r"invertir|inversion|invest)\b",),
-    SetBudgetMax: (r"\b(presupuesto|budget|maximo|max|hasta|tope)\b",),
-    # La dimensión Y el mínimo, por separado: "2 dormitorios" nombra la dimensión pero no
-    # declara un mínimo, y V0 solo modela mínimos.
-    SetBedroomsMin: (r"\b(dormitorio|dormitorios|habitacion|habitaciones|"
-                     r"cuarto|cuartos|recamara|recamaras|bedroom|bedrooms)\b", _MINIMO),
-    SetAreaM2Min: (r"(\bm2\b|\bm²|metros? cuadrados?|square meters?)", _MINIMO),
-    SetPetsRequired: (r"\b(mascota|mascotas|perro|perros|gato|gatos|pet|pets)\b",
-                      r"\b(acepte|acepten|admita|admitan|permita|permitan|"
-                      r"necesito|necesitamos|debe|tiene que|allowed|required)\b"),
+_DIM_OBJECTIVE = re.compile(r"\b(comprar|compra|adquirir|buy|purchase|"
+                            r"alquilar|arrendar|rentar|rent|"
+                            r"invertir|inversion|invest)\b")
+_DIM_BUDGET = re.compile(r"\b(presupuesto|budget|maximo|max|hasta|tope)\b")
+# La dimensión Y el mínimo se piden por separado: "2 dormitorios" nombra la dimensión pero
+# no declara un mínimo, y V0 solo modela mínimos.
+_DIM_BEDROOMS = re.compile(r"\b(dormitorio|dormitorios|habitacion|habitaciones|"
+                           r"cuarto|cuartos|recamara|recamaras|bedroom|bedrooms)\b")
+_DIM_AREA = re.compile(r"(\bm2\b|\bm²|metros? cuadrados?|square meters?)")
+_PETS_SUSTANTIVO = re.compile(r"\b(mascota|mascotas|perro|perros|gato|gatos|pet|pets)\b")
+_PETS_REQUISITO = re.compile(
+    r"\b(acepte|acepten|aceptarlo|aceptarla|aceptarlos|aceptarlas|"
+    r"admita|admitan|permita|permitan|"
+    r"necesito|necesitamos|debe|deben|tiene que|allowed|required)\b")
+
+
+# ── La evidencia del VALOR ─────────────────────────────────────────────────────────
+
+_EVIDENCIA_OBJECTIVE: dict[Objective, re.Pattern] = {
+    Objective.BUY: re.compile(r"\b(comprar|compra|compro|adquirir|adquiero|buy|purchase)\b"),
+    Objective.RENT: re.compile(r"\b(alquilar|alquilo|arrendar|arriendo|rentar|rento|rent)\b"),
+    Objective.INVEST: re.compile(r"\b(invertir|invierto|inversion|invest)\b"),
 }
+"""Un patrón POR VALOR, no por dimensión. Es la mitad que faltaba: sin esto, los tres
+objetivos comparten el mismo vocabulario y cualquiera de ellos pasa por los otros dos."""
+
+_MONEDA_ISO: dict[BuyerCurrencyV0, re.Pattern] = {
+    BuyerCurrencyV0.USD: re.compile(r"\busd\b"),
+    BuyerCurrencyV0.MXN: re.compile(r"\bmxn\b"),
+}
+"""**Solo el código ISO literal.** El símbolo `$` no resuelve USD y `pesos` no implica MXN:
+las dos están congeladas como AMBIGUOUS en la matriz del §4. Aceptar `dolares` reabriría lo
+mismo por otra puerta —hay ocho dólares en el mundo— así que el coste de que
+`"máximo 120000 dólares"` no autorice es deliberado, no un olvido."""
+
+# El lookbehind `(?<!\w)` es lo que impide que el "2" de `m2` cuente como un número que el
+# usuario dijo. Sin él, "mínimo 80 m2" ofrecería {80, 2} y autorizaría un área mínima de 2.
+_TOKEN_NUMERICO = re.compile(r"(?<!\w)\d[\d.,]*")
+_SOLO_DIGITOS = re.compile(r"\d+")
+_MILES = re.compile(r"\d{1,3}(?:[.,]\d{3})+")
+
+
+def _numeros_del_texto(plano: str) -> set[Decimal]:
+    """Los números que el mensaje declara de forma INEQUÍVOCA.
+
+    Se aceptan dos formas y nada más: dígitos puros (`120000`) y grupos de exactamente tres
+    (`120.000`, `1,200,000`). Cualquier otra —`120.5`, `120000.50`, `1.2.3`— **no aporta
+    evidencia**, porque `120.000` puede ser ciento veinte mil o ciento veinte coma cero según
+    la plaza y esta guarda no tiene forma de saber cuál.
+
+    Ante duda → no autorizar. El coste conocido es que un presupuesto con centavos no es
+    autorizable por esta gramática; se prefiere eso a inventar un valor persistente.
+    """
+    valores: set[Decimal] = set()
+    for token in _TOKEN_NUMERICO.findall(plano):
+        token = token.rstrip(".,")                    # "…120000." al cerrar una frase
+        if _SOLO_DIGITOS.fullmatch(token):
+            valores.add(Decimal(token))
+        elif _MILES.fullmatch(token):
+            valores.add(Decimal(token.replace(".", "").replace(",", "")))
+    return valores
+
+
+# Cláusulas. Acotan el alcance de una negación —"tengo un perro y deben aceptarlo" autoriza,
+# "no necesito que acepten mascotas" no— y, sobre todo, ACOTAN EL ALCANCE DE UN NÚMERO.
+#
+# La puntuación NO corta entre dígitos: en "120.000" ese punto es un separador de miles, no
+# un fin de cláusula. Sin esa excepción el número se parte en "120" y "000" y un presupuesto
+# perfectamente declarado deja de autorizarse. Lo destapó el test de B3.
+_CLAUSULA = re.compile(r"(?<!\d)[,;.:]|[,;.:](?!\d)|[!?¡¿]|\by\b|\bpero\b|\baunque\b")
+_NEGACION = re.compile(r"\b(no|ni|tampoco|sin)\b")
+
+
+def _evidencia_objective(mutacion, plano: str) -> bool:
+    patron = _EVIDENCIA_OBJECTIVE.get(mutacion.objective)
+    return patron is not None and bool(patron.search(plano))
+
+
+def _numero_junto_a_su_dimension(plano: str, valor, *dimension: re.Pattern) -> bool:
+    """¿Alguna cláusula evidencia esta dimensión **y** este número a la vez?
+
+    **Por cláusula, y es una frontera de Fair Housing, no una preferencia de estilo.** Buscar
+    el número en todo el mensaje convierte el conteo de personas en evidencia de un requisito
+    de propiedad: `"tenemos 2 niños y al menos 3 dormitorios"` trae dimensión, mínimo y un
+    `2`, y autorizaría `SetBedroomsMin(2)` — el peor caso del §7, y plausible.
+
+    La guarda de dimensión no lo veía: el texto SÍ habla de dormitorios. Lo que hay que
+    exigir es que el número salga de la misma cláusula que la dimensión que va a escribir.
+    """
+    return any(
+        all(p.search(clausula) for p in dimension)
+        and any(n == valor for n in _numeros_del_texto(clausula))
+        for clausula in _CLAUSULA.split(plano)
+    )
+
+
+def _evidencia_budget(mutacion, plano: str) -> bool:
+    moneda = _MONEDA_ISO.get(mutacion.currency)
+    if moneda is None:
+        return False
+    return _numero_junto_a_su_dimension(plano, mutacion.amount, _DIM_BUDGET, moneda)
+
+
+def _evidencia_bedrooms(mutacion, plano: str) -> bool:
+    return _numero_junto_a_su_dimension(
+        plano, mutacion.bedrooms_min, _DIM_BEDROOMS, _MINIMO)
+
+
+def _evidencia_area(mutacion, plano: str) -> bool:
+    return _numero_junto_a_su_dimension(
+        plano, mutacion.area_m2_min, _DIM_AREA, _MINIMO)
+
+
+def _evidencia_pets(_mutacion, plano: str) -> bool:
+    """`SetPetsRequired` no lleva payload, así que "valor exacto" aquí significa que el texto
+    expresa **positivamente** el requisito de que la propiedad admita mascotas.
+
+    La operación ES la afirmación —`False` no es representable y dejar de necesitarlo es
+    `ClearPetsRequired`—, así que una mención negada no puede convertirse en el requisito.
+    Sin este chequeo, `"no necesito que acepten mascotas"` traía sustantivo y verbo de
+    requisito y autorizaba justo lo contrario de lo que dice.
+    """
+    if not _PETS_SUSTANTIVO.search(plano):
+        return False
+    return any(_PETS_REQUISITO.search(clausula) and not _NEGACION.search(clausula)
+               for clausula in _CLAUSULA.split(plano))
+
+
+# ── La retractación · lo que autoriza un `Clear*` ──────────────────────────────────
+
+_RETRACCION = re.compile(
+    r"\bya no\b|\bquita\b|\bquitar\b|\bquitame\b|\belimina\b|\beliminar\b|"
+    r"\bborra\b|\bborrar\b|\bolvida\b|\bolvidar\b|\bdescarta\b|\bdescartar\b")
+"""**Un `no` a secas NUNCA es retractación.** §5: *"La negación no es borrado. Es la confusión
+que más fácilmente convierte un CLEAR en pérdida silenciosa de estado."* `"no quiero comprar"`
+es AMBIGUOUS en esa matriz —¿alquila, o retira el objetivo?—, no un borrado."""
+
+# Vocabulario de dimensión PROPIO de los `Clear*`, separado del de los `Set*` (N4). Motivo
+# concreto: "ya no necesito un mínimo de área" no dice `m2` ni `metros cuadrados`, dice
+# "área". Meter `area` en el vocabulario de los `Set*` debilitaría esa guarda sin necesidad.
+_DIM_BUDGET_CLEAR = re.compile(r"\b(presupuesto|budget|limite|tope|maximo|max)\b")
+_DIM_AREA_CLEAR = re.compile(r"(\bm2\b|\bm²|metros? cuadrados?|square meters?|"
+                             r"\barea\b|\bsuperficie\b)")
+
+
+def _retractacion_de(*dimension: re.Pattern):
+    """Construye el verificador de un `Clear*`: retractación explícita **Y** su dimensión.
+
+    Las dos condiciones, no una. Con solo el marcador, un *"ya no"* sobre los dormitorios
+    autorizaría borrar el objetivo por vecindad en la misma frase.
+
+    Esta función no recibe estado, así que no demuestra que el campo existiera antes: sólo
+    que el texto autoriza la INTENCIÓN de borrar esa dimensión. Que borrar algo vacío sea un
+    no-op es del reducer y del store, no de aquí.
+    """
+    def verificar(_mutacion, plano: str) -> bool:
+        return bool(_RETRACCION.search(plano)) and all(p.search(plano) for p in dimension)
+
+    return verificar
+
+
+_VERIFICADOR: dict[type, Callable[[object, str], bool]] = {
+    SetObjective: _evidencia_objective,
+    SetBudgetMax: _evidencia_budget,
+    SetBedroomsMin: _evidencia_bedrooms,
+    SetAreaM2Min: _evidencia_area,
+    SetPetsRequired: _evidencia_pets,
+    ClearObjective: _retractacion_de(_DIM_OBJECTIVE),
+    ClearBudgetMax: _retractacion_de(_DIM_BUDGET_CLEAR),
+    ClearBedroomsMin: _retractacion_de(_DIM_BEDROOMS, _MINIMO),
+    ClearAreaM2Min: _retractacion_de(_DIM_AREA_CLEAR, _MINIMO),
+    ClearPetsRequired: _retractacion_de(_PETS_SUSTANTIVO),
+}
+"""**Total sobre `BuyerMutationV0`, y comprobado por meta-test.** Los diez, incluidos los
+cinco `Clear*` que antes no tenían entrada y quedaban autorizados por omisión."""
 
 
 class TraduccionNoAutorizada(Exception):
@@ -120,29 +305,30 @@ class TraduccionNoAutorizada(Exception):
 
 
 def autorizar_traduccion(mutacion, texto: str) -> None:
-    """Levanta si el texto no da soporte explícito a la dimensión de la mutación.
+    """Levanta si el texto no evidencia **exactamente** la mutación propuesta.
 
-    Comprueba **dimensión, no valor**: que el texto hable de presupuesto, no que hable de
-    *este* presupuesto. Cerrar esa segunda mitad —y la autorización por omisión de los
-    `Clear*`— es `[PENDIENTE · E3.2b.1a-B]`, no una propiedad que esta función ya tenga.
+    Exactamente quiere decir dimensión Y valor: `"quiero alquilar"` no autoriza
+    `SetObjective(BUY)` aunque hable inequívocamente del objetivo. Y un `Clear*` exige
+    retractación explícita de su propia dimensión — la negación no basta.
 
-    Los `Clear*` no aparecen en `_VOCABULARIO`, y hay que ser exacto sobre lo que eso
-    significa hoy: **no se comprueba nada sobre ellos**. `_VOCABULARIO.get` devuelve `None` y
-    la función retorna sin validar, así que quedan **autorizados por omisión**. La intención
-    es que su autorización sea la retractación explícita —y por eso no se les exige
-    vocabulario de la dimensión que están borrando—, pero nadie la comprueba todavía:
-    `resolver_intramensaje` resuelve conflictos entre declaraciones, no verifica que un
-    `Clear` venga de una retractación. `[PENDIENTE · E3.2b.1a-B]`
+    **Fail closed.** Un tipo sin entrada en `_VERIFICADOR` no se autoriza. Antes hacía lo
+    contrario —`return` cuando no había vocabulario—, que es como los cinco `Clear*` quedaban
+    autorizados por omisión: nadie los había añadido a la tabla, así que pasaban todos.
+
+    Sigue siendo una GUARDA, no un intérprete: recibe una mutación ya propuesta y responde
+    sí/no. No decide qué mutación crear, y no resuelve conflictos — si el texto soporta
+    `BUY` y `RENT`, autoriza las dos y C1-C3 deciden después. Duplicar aquí esa política
+    daría dos copias que se desincronizarían.
     """
-    patrones = _VOCABULARIO.get(type(mutacion))
-    if patrones is None:
-        return
-    plano = _norm(texto)
-    for patron in patrones:
-        if not re.search(patron, plano):
-            raise TraduccionNoAutorizada(
-                f"{type(mutacion).__name__} sin soporte textual para su dimensión"
-            )
+    verificador = _VERIFICADOR.get(type(mutacion))
+    if verificador is None:
+        raise TraduccionNoAutorizada(
+            f"{type(mutacion).__name__} no tiene verificador de evidencia: no se autoriza"
+        )
+    if not verificador(mutacion, _norm(texto)):
+        raise TraduccionNoAutorizada(
+            f"{type(mutacion).__name__} sin evidencia textual de su valor exacto"
+        )
 
 
 # ── La unión cerrada de afirmaciones ───────────────────────────────────────────────

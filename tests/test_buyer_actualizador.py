@@ -35,6 +35,7 @@ from app.buyer.extractor import (
     construir_lote,
 )
 from app.buyer.interprete import PropuestaV0
+from app.buyer.reductor import reducir
 from app.buyer.mensaje import IdentifiedUserMessage
 from app.buyer.store import (
     BuyerContextV0, BuyerIdempotencyConflict, BuyerRevisionConflict, RevisionPersistida,
@@ -85,7 +86,8 @@ class _StoreDoble:
 
         clave = (buyer_id, source_message_id)
         if clave in self.por_mensaje:
-            ya = historial[self.por_mensaje[clave] - 1]
+            ya = next(r for r in historial
+                      if r.context_revision == self.por_mensaje[clave])
             if _canonico(ya) != _canonico(contexto):
                 raise BuyerIdempotencyConflict(
                     f"{source_message_id} ya produjo un estado distinto")
@@ -96,7 +98,10 @@ class _StoreDoble:
             raise BuyerRevisionConflict(
                 f"esperaba {expected_revision}, la cabeza está en {actual}")
 
-        nueva = (actual or 0) + 1
+        # IDÉNTICO al store real: la primera revisión es 0, no 1. Que el doble numerara
+        # desde 1 hacía que esta suite y la de Postgres afirmaran cosas distintas sobre
+        # `revision`, y sólo una podía ser cierta. Hay meta-test que lo vigila.
+        nueva = 0 if actual is None else actual + 1
         guardado = contexto.model_copy(update={"context_revision": nueva,
                                                "updated_at": T0})
         historial.append(guardado)
@@ -170,7 +175,7 @@ def test_G3_un_lote_solo_TURN_ONLY_persiste_una_revision_sin_cambio(store):
 
     assert r.estado is EstadoActualizacion.NO_OP
     assert r.persistido and r.procesado
-    assert r.revision == 1
+    assert r.revision == 0, "la primera revisión del store real es 0" 
 
 
 def test_G3_el_no_op_SELLA_el_mensaje_y_una_reinterpretacion_posterior_DIVERGE(store):
@@ -354,7 +359,7 @@ def test_G7_el_primer_contexto_nace_sin_revision_y_el_store_le_pone_la_suya(stor
     r = _correr(B1, _msg(), _proponente(_p("durable", mutacion=_BUD)))
 
     assert r.estado is EstadoActualizacion.CREADA
-    assert r.revision == 1
+    assert r.revision == 0, "la primera revisión del store real es 0"
     assert r.contexto.buyer_id == B1
     assert r.contexto.financial.budget_max.amount == Decimal(120000)
 
@@ -385,3 +390,185 @@ def test_G8_los_seis_desenlaces_son_distinguibles_sin_leer_excepciones():
 ])
 def test_G8_persistido_y_procesado_no_se_infieren_del_contexto(estado, persistido):
     assert ResultadoUpdater(estado).persistido is persistido
+
+
+# ══ GATE 6b · E3.2b.3a · la divergencia se mide POR RUTA y con procedencia ══════════
+#
+# Dos defectos que el skip de Postgres estaba tapando, los dos en `rutas_divergentes`:
+#
+#   1 · con `base=None` devolvía LAS CINCO rutas, así que la primera escritura concurrente
+#       sobre un comprador nuevo SIEMPRE daba conflicto — incluso entre rutas disjuntas. El
+#       test `budget || bedrooms` no estaba "sin verificar": contradecía la implementación.
+#
+#   2 · comparaba valor y preguntas, pero NO la procedencia. Redeclarar el mismo valor desde
+#       otro mensaje cambia `field_evidence` y no cambia nada más, así que la ruta parecía
+#       intacta y otro escritor podía rebasarse encima. R7 acaba de congelar que la evidencia
+#       vigente es parte de lo que sostiene el valor.
+
+
+def _con_budget(ctx, monto=120000, mid="m-base"):
+    return reducir(ctx, construir_lote(_msg(mid=mid, texto=f"máximo {monto} USD"),
+                                       [AfirmacionDurable(
+                                           mutacion=SetBudgetMax(amount=Decimal(monto),
+                                                                 currency=USD),
+                                           motivo="tope")]), T0)
+
+
+def _con_bedrooms(ctx, n=2, mid="m-base"):
+    return reducir(ctx, construir_lote(_msg(mid=mid, texto=f"al menos {n} dormitorios"),
+                                       [AfirmacionDurable(mutacion=SetBedroomsMin(bedrooms_min=n),
+                                                          motivo="mínimo")]), T0)
+
+
+def _vacio():
+    return BuyerContextV0(buyer_id=B1, updated_at=T0)
+
+
+@pytest.mark.parametrize("construir,esperada", [
+    (_con_budget, "financial.budget_max"),
+    (_con_bedrooms, "property_requirements.bedrooms_min"),
+])
+def test_G6b_desde_VACIO_solo_diverge_la_ruta_que_se_escribio(construir, esperada):
+    """EL DEFECTO QUE EL SKIP ESCONDÍA.
+
+    `base=None` significa "cuando leí no había estado", no "todo cambió". Devolver las cinco
+    rutas hacía que la primera escritura concurrente sobre un comprador nuevo diera conflicto
+    aunque las dos conversaciones tocaran dimensiones distintas — que es justo el caso que la
+    política congelada manda rebasar.
+    """
+    assert rutas_divergentes(None, construir(_vacio())) == {esperada}
+
+
+def test_G6b_dos_primeras_escrituras_DISJUNTAS_se_rebasan(store):
+    """`budget || bedrooms` sobre un comprador nuevo: ninguna toca lo de la otra, así que la
+    que pierde la carrera se rebasa y las dos sobreviven."""
+    _correr(B1, _msg(mid="m-A", texto="máximo 120000 USD"),
+            _proponente(_p("durable", mutacion=_BUD)))
+
+    original = store.cargar_ultima
+    import app.buyer.actualizador as _a
+
+    async def leer_rancio(buyer_id, *, db=None):
+        _a.cargar_ultima = original
+        return None          # B leyó ANTES de que A escribiera: base=None
+
+    _a.cargar_ultima = leer_rancio
+    r = _correr(B1, _msg(mid="m-B", texto="al menos 2 dormitorios"),
+                _proponente(_p("durable", mutacion=_BED)))
+    _a.cargar_ultima = original
+
+    assert r.estado is EstadoActualizacion.CREADA
+    assert r.contexto.property_requirements.bedrooms_min == 2
+    assert r.contexto.financial.budget_max.amount == Decimal(120000), \
+        "el rebase perdió la primera escritura"
+
+
+def test_G6b_dos_primeras_escrituras_SOLAPADAS_dan_conflicto(store):
+    """`budget || budget` sobre un comprador nuevo: sigue sin haber last-write-wins."""
+    _correr(B1, _msg(mid="m-A", texto="máximo 120000 USD"),
+            _proponente(_p("durable", mutacion=_BUD)))
+
+    original = store.cargar_ultima
+    import app.buyer.actualizador as _a
+
+    async def leer_rancio(buyer_id, *, db=None):
+        _a.cargar_ultima = original
+        return None
+
+    _a.cargar_ultima = leer_rancio
+    r = _correr(B1, _msg(mid="m-B", texto="máximo 90000 USD"),
+                _proponente(_p("durable",
+                               mutacion=SetBudgetMax(amount=Decimal(90000), currency=USD))))
+    _a.cargar_ultima = original
+
+    assert r.estado is EstadoActualizacion.CONFLICTO
+    assert store.revisiones[B1][-1].financial.budget_max.amount == Decimal(120000)
+
+
+def test_G6b_redeclarar_el_MISMO_valor_desde_otro_mensaje_SI_es_divergencia():
+    """El segundo defecto. El valor no cambia pero la procedencia sí, y R7 congela que la
+    evidencia vigente es parte de lo que sostiene el valor.
+
+    Sin esto, otro escritor sobre esa misma ruta se rebasaría encima creyéndola intacta — y
+    el resultado citaría un mensaje que ya no es el que respalda el valor final.
+    """
+    base = _con_budget(_vacio(), mid="m-1")
+    tras_A = _con_budget(base, mid="m-A")          # mismo 120000, otro mensaje
+
+    assert base.financial.budget_max == tras_A.financial.budget_max
+    assert "financial.budget_max" in rutas_divergentes(base, tras_A)
+
+
+def test_G6b_la_procedencia_OPERACIONAL_no_cuenta_como_divergencia():
+    """El límite del arreglo anterior: R-IDEMP-1 ya decidió que `evidence_id` y `retrieved_at`
+    de una `USER_DECLARED` no son estado. Si contaran aquí, un replay parecería divergencia y
+    volveríamos al problema que R-IDEMP-1 cerró, por otra puerta."""
+    base = _con_budget(_vacio(), mid="m-1")
+    otro_instante = reducir(_vacio(), construir_lote(
+        _msg(mid="m-1", texto="máximo 120000 USD"),
+        [AfirmacionDurable(mutacion=_BUD, motivo="tope")]),
+        T0 + dt.timedelta(seconds=45))
+
+    assert rutas_divergentes(base, otro_instante) == frozenset()
+
+
+def test_G6b_un_TURN_ONLY_concurrente_no_bloquea_un_cambio_independiente(store):
+    """`touched_paths` vacío ⇒ nunca solapa con nada."""
+    _correr(B1, _msg(mid="m-A", texto="máximo 120000 USD"),
+            _proponente(_p("durable", mutacion=_BUD)))
+
+    original = store.cargar_ultima
+    import app.buyer.actualizador as _a
+
+    async def leer_rancio(buyer_id, *, db=None):
+        _a.cargar_ultima = original
+        return None
+
+    _a.cargar_ultima = leer_rancio
+    r = _correr(B1, _msg(mid="m-B", texto="¿qué tal el barrio?"),
+                _proponente(_p("turn_only")))
+    _a.cargar_ultima = original
+
+    assert r.estado is EstadoActualizacion.NO_OP
+    assert r.contexto.financial.budget_max.amount == Decimal(120000)
+
+
+def test_G6b_una_AMBIGUA_concurrente_sobre_la_ruta_de_una_durable_SOLAPA(store):
+    """Abrir una pregunta sobre el presupuesto reclama el presupuesto: si otra conversación lo
+    declaró a la vez, no son independientes."""
+    _correr(B1, _msg(mid="m-A", texto="máximo 120000 USD"),
+            _proponente(_p("durable", mutacion=_BUD)))
+
+    original = store.cargar_ultima
+    import app.buyer.actualizador as _a
+
+    async def leer_rancio(buyer_id, *, db=None):
+        _a.cargar_ultima = original
+        return None
+
+    _a.cargar_ultima = leer_rancio
+    r = _correr(B1, _msg(mid="m-B", texto="unos 90000 más o menos"),
+                _proponente(_p("ambiguous", campo=F.BUDGET_MAX)))
+    _a.cargar_ultima = original
+
+    assert r.estado is EstadoActualizacion.CONFLICTO
+
+
+def test_G6b_el_doble_numera_como_el_store_REAL():
+    """META-TEST de fidelidad. El store real arranca en 0 (`0 if actual is None else actual+1`)
+    y el doble arrancaba en 1. Una divergencia así hace que los asserts sobre `revision` de la
+    suite offline y los de la suite Postgres afirmen cosas distintas, y sólo una sea cierta.
+    """
+    import inspect
+
+    from app.buyer import store as store_real
+
+    fuente = inspect.getsource(store_real._ejecutar_anexo)
+    assert "nueva = 0 if actual is None else actual + 1" in fuente, (
+        "cambió la numeración del store real: revisar `_StoreDoble`")
+
+    doble = _StoreDoble()
+    ctx = BuyerContextV0(buyer_id=B1, updated_at=T0)
+    primera = asyncio.run(doble.anexar_revision(B1, "m-1", ctx, None))
+    segunda = asyncio.run(doble.anexar_revision(B1, "m-2", ctx, primera.revision))
+    assert (primera.revision, segunda.revision) == (0, 1)

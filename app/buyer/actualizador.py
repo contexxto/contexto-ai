@@ -161,18 +161,51 @@ _LECTORES = {
 """Cerrado sobre las cinco rutas de V0. Si aparece una sexta, el meta-test la caza."""
 
 
+def _estado_semantico(contexto: BuyerContextV0 | None, ruta: str):
+    """Todo lo que define una ruta a efectos de "¿la tocó alguien?".
+
+    No basta el valor. Una ruta la sostienen tres cosas, y cambiar cualquiera es tocarla:
+
+    ```
+    valor           lo que el comprador declaró
+    pregunta        si esa dimensión está abierta esperando respuesta
+    procedencia     QUÉ declaración sostiene el valor vigente
+    ```
+
+    **La procedencia es la que faltaba, y R7 la había congelado ya.** Redeclarar los mismos
+    120000 desde otro mensaje deja el valor idéntico y cambia la evidencia; sin mirarla, otro
+    escritor se rebasaba encima creyendo la ruta intacta, y el estado final acababa citando un
+    mensaje que ya no era el que respaldaba el valor.
+
+    Se compara `source_id` y no la evidencia entera: `evidence_id` y `retrieved_at` de una
+    `USER_DECLARED` no son estado —lo decidió R-IDEMP-1— y contarlos aquí haría que un replay
+    pareciera divergencia, reabriendo por otra puerta lo que aquella regla cerró.
+    """
+    if contexto is None:
+        return None
+    return (
+        _LECTORES[ruta](contexto),
+        any(q.about_field == ruta for q in contexto.unresolved_questions),
+        next((fe.evidence.source_id for fe in contexto.field_evidence if fe.field == ruta),
+             None),
+    )
+
+
 def rutas_divergentes(base: BuyerContextV0 | None, otro: BuyerContextV0) -> frozenset[str]:
     """Qué rutas cambiaron entre el estado que leímos y el que hay ahora.
 
-    Se comparan también las preguntas abiertas: si otra conversación abrió un `unresolved`
-    sobre una ruta, esa ruta está en disputa aunque su valor no haya cambiado.
+    **`base is None` significa "cuando leí no había estado", no "todo cambió".** Devolver las
+    cinco rutas hacía que la PRIMERA escritura concurrente sobre un comprador nuevo diera
+    conflicto aunque las dos conversaciones tocaran dimensiones distintas — exactamente el
+    caso que la política manda rebasar. Se compara contra el contexto vacío: lo que el otro
+    escribió sobre la nada es lo que él tocó, y nada más.
     """
-    if base is None:
-        return frozenset(_LECTORES)
-    distintas = {ruta for ruta, leer in _LECTORES.items() if leer(base) != leer(otro)}
-    preguntas_base = {q.about_field for q in base.unresolved_questions}
-    preguntas_otro = {q.about_field for q in otro.unresolved_questions}
-    return frozenset(distintas | (preguntas_base ^ preguntas_otro) - {None})
+    referencia = base if base is not None else BuyerContextV0(
+        buyer_id=otro.buyer_id, updated_at=otro.updated_at)
+    return frozenset(
+        ruta for ruta in _LECTORES
+        if _estado_semantico(referencia, ruta) != _estado_semantico(otro, ruta)
+    )
 
 
 # ── El orquestador ─────────────────────────────────────────────────────────────────

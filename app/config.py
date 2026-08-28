@@ -34,6 +34,14 @@ class Settings(BaseSettings):
     # real. Encenderlo es un acto deliberado por entorno, no algo que llegue con un deploy.
     buyer_updater_shadow: bool = False
 
+    # E3.2b.5 · a QUIÉN alcanza la sombra. Encender el flag NO basta: hace falta además
+    # estar aquí. Es una conjunción y falla cerrada — vacía significa NADIE, nunca "sin
+    # restricción", y no existe comodín. La razón es que la sombra hace `commit()`: sin
+    # esta segunda llave, un booleano sería la única distancia entre `OFF` y escribir
+    # memoria durable de todos los usuarios autenticados del despliegue.
+    # Ids de `auth.users` separados por comas. Los pone el entorno, nunca el repositorio.
+    buyer_shadow_allowlist: str = ""
+
     # En producción (Render + Supabase) se puede pasar la DATABASE_URL completa
     # para evitar problemas de IPv6. Si está presente, tiene precedencia.
     database_url_override: str = ""

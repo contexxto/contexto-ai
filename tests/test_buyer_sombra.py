@@ -39,8 +39,16 @@ def _mensajes(texto="máximo 120000 USD", mid="m-1"):
 
 @pytest.fixture
 def encendida(monkeypatch):
-    """Enciende el flag y neutraliza la base: estos tests miden la POLÍTICA de la sombra."""
+    """Enciende el flag y neutraliza la base: estos tests miden la POLÍTICA de la sombra.
+
+    Desde E3.2b.5 encender el flag ya no basta —la activación es una conjunción con la
+    allowlist—, así que la fixture habilita explícitamente las dos identidades que usan los
+    tests de este fichero. La puerta de allowlist tiene su propia suite en
+    `test_buyer_shadow_allowlist.py`; aquí se da por concedida a propósito, para que estos
+    tests sigan midiendo lo suyo y no se vuelvan verdes por el motivo equivocado.
+    """
     monkeypatch.setattr(sombra.settings, "buyer_updater_shadow", True)
+    monkeypatch.setattr(sombra.settings, "buyer_shadow_allowlist", f"{B1},otro-uid")
     llamadas = []
 
     async def _actualizar(buyer_id, mensaje, *, retrieved_at, db=None, **kw):
@@ -127,6 +135,7 @@ def test_sin_ESQUEMA_la_sombra_se_calla_y_avisa_UNA_vez(monkeypatch, caplog):
     """Un despliegue sin migrar es una condición estable: repetir la traza en cada turno
     ahogaría el log sin añadir información."""
     monkeypatch.setattr(sombra.settings, "buyer_updater_shadow", True)
+    monkeypatch.setattr(sombra.settings, "buyer_shadow_allowlist", B1)
     monkeypatch.setattr(sombra, "_esquema_ausente_avisado", False)
 
     class _Sesion:
@@ -162,6 +171,7 @@ def test_NINGUN_fallo_del_updater_se_propaga_al_turno(explota, monkeypatch, capl
     que escapara de aquí llegaría al `create_task` y, según el runtime, a un
     `unhandled exception` — ruido en producción por una capa que aún no da valor."""
     monkeypatch.setattr(sombra.settings, "buyer_updater_shadow", True)
+    monkeypatch.setattr(sombra.settings, "buyer_shadow_allowlist", B1)
 
     async def _revienta(*a, **k):
         raise explota
@@ -200,6 +210,7 @@ def test_cada_desenlace_deja_rastro_con_su_nivel(estado, nivel, monkeypatch, cap
     estados distintos; `CONFLICTO` es `warning` porque hay una actualización que NO se aplicó
     y alguien tendrá que decidir qué hacer con ella."""
     monkeypatch.setattr(sombra.settings, "buyer_updater_shadow", True)
+    monkeypatch.setattr(sombra.settings, "buyer_shadow_allowlist", B1)
 
     async def _actualizar(*a, **k):
         return ResultadoUpdater(estado, revision=3, motivo="por qué")

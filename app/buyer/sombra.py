@@ -24,15 +24,27 @@ Consumir `unresolved_questions` para repreguntar es otra unidad. Hasta que exist
 sistema registra preguntas que nadie hace — y decirlo así evita el peor final posible para
 toda esta fase: dar por cerrado el ciclo porque el pipeline "ya corre".
 
-## Las cuatro puertas, en orden
+## Las cinco puertas, en orden
 
 ```
 FLAG      apagada por defecto. Sin ella no se ejecuta ni una línea del updater.
 AUTH      sin usuario autenticado no hay raíz: un anónimo no crea estado durable.
+ALLOWLIST E3.2b.5 · además del flag, estar habilitado. Vacía = NADIE.
 COSTURA   `ultimo_mensaje_usuario_identificado` — F3.0b, que llevaba desde su
           creación sin consumidor. Éste es el primero.
 ESQUEMA   si las tablas no están, se registra UNA vez y se calla. Un despliegue sin
           migrar no puede convertir cada turno en una traza de error.
+```
+
+La tercera puerta se añadió DESPUÉS de cerrar E3.2b.4, y por algo que ese cierre dejó
+explícito: **la sombra hace `commit()`**. Encender el flag no es empezar a observar, es
+empezar a escribir memoria durable de personas reales. Un booleano no puede ser la única
+distancia entre `OFF` y todos los autenticados del despliegue, así que la activación es
+una CONJUNCIÓN y falla cerrada:
+
+```
+buyer_updater_shadow == True   AND   user_id ∈ BUYER_SHADOW_ALLOWLIST   →   corre
+cualquier otra combinación                                              →   NADIE
 ```
 
 ## Aislamiento
@@ -61,6 +73,51 @@ _TABLAS = ("buyer_context_heads", "buyer_context_revisions")
 _esquema_ausente_avisado = False
 """Se avisa UNA vez, no en cada turno. Un despliegue sin migrar es una condición estable:
 repetir la traza en cada mensaje ahogaría el log sin añadir información."""
+
+_allowlist_vacia_avisado = False
+"""Igual que el del esquema, y por lo mismo: flag encendido con allowlist vacía es una
+configuración rota —alguien creyó que activó el canary— pero es estable."""
+
+
+def _habilitados() -> frozenset[str]:
+    """Los ids que el ENTORNO habilitó, normalizados para comparar.
+
+    Se normaliza a minúsculas porque un `user_id` de `auth.users` es un UUID —hex, y su
+    comparación es insensible a caja por definición—, así que esto no ensancha el conjunto:
+    evita que un canary quede apagado en silencio porque alguien pegó el id en mayúsculas.
+    Las entradas vacías (comas de más) se descartan, que es lo que hace que `"a,,b"` sean dos
+    ids y no tres, uno de ellos la cadena vacía.
+    """
+    crudo = getattr(settings, "buyer_shadow_allowlist", "") or ""
+    return frozenset(p.strip().lower() for p in crudo.split(",") if p.strip())
+
+
+def _autorizado(user_id: str) -> bool:
+    """La tercera puerta. **Fail-closed: la única forma de devolver `True` es pertenecer.**
+
+    No hay rama de comodín, y su ausencia es la propiedad —no una omisión—: `"*"`, `"all"` o
+    `"1"` son identificadores literales que nadie tiene, así que reciben la misma respuesta
+    que una lista vacía. Tampoco hay `in` sobre la cadena cruda de configuración, que dejaría
+    entrar a cualquier id que sea trozo de otro.
+
+    Una allowlist vacía con el flag encendido no es reposo: es alguien creyendo que activó el
+    canary. Devuelve `False` —nadie corre— pero lo dice en el log, una vez.
+    """
+    global _allowlist_vacia_avisado
+
+    habilitados = _habilitados()
+    if not habilitados:
+        if not _allowlist_vacia_avisado:
+            _allowlist_vacia_avisado = True
+            logger.warning(
+                "buyer shadow inactivo: BUYER_UPDATER_SHADOW está encendido pero la "
+                "allowlist (BUYER_SHADOW_ALLOWLIST) está vacía, así que no corre para "
+                "nadie. Añadir el user_id del canary para activarlo.")
+        return False
+
+    # El rechazo NO se registra: es el caso normal —todo usuario no-canary pasa por aquí en
+    # cada turno— y anotarlo convertiría el log en una lista de quién conversó.
+    return user_id.strip().lower() in habilitados
 
 
 async def _hay_esquema(db) -> bool:
@@ -95,6 +152,11 @@ async def actualizar_en_sombra(user, messages) -> None:
             return
         if user is None or not (getattr(user, "user_id", "") or "").strip():
             # Un anónimo no tiene raíz. No es un error del turno: es que no hay comprador.
+            return
+        if not _autorizado(user.user_id):
+            # Canary: estar autenticado no basta. Se sale ANTES de la costura y ANTES de
+            # abrir sesión de base, para que un usuario no habilitado no consuma ni una
+            # conexión del pool ni deje media transacción por ahí.
             return
 
         mensaje = ultimo_mensaje_usuario_identificado(messages)

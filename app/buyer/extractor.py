@@ -33,7 +33,7 @@ EVIDENCIA EXACTA   no es   "todos los tokens necesarios existen en el mensaje"
 ```
 
 Esa distinción no es retórica: cada vez que se relajó costó una autorización falsa, y las
-tres formas de relajarla aparecieron por separado.
+cuatro formas de relajarla aparecieron por separado.
 
 **LOCAL.** La evidencia vive en UNA cláusula. Repartida por el mensaje, dos hechos sin
 relación suman un tercero que nadie declaró: `"tenemos 2 niños y al menos 3 dormitorios"`
@@ -49,6 +49,12 @@ contrario de lo que dijo el usuario. La matriz del §5 lo congela como AMBIGUOUS
 comprobar la dimensión dejaba pasar `SetObjective(BUY)` ante `"quiero alquilar"`. Y ningún
 `Clear*` se autoriza por omisión: necesita retractación explícita de su propia dimensión, en
 su propia cláusula.
+
+**DEL TIPO DE LA MUTACIÓN.** El predicado tiene que significar lo que la mutación afirma, no
+sólo caer cerca de su vocabulario. `SetPetsRequired` admitía verbos genéricos de requisito, y
+`"necesito un veterinario cerca para mi perro"` cumplía LOCAL, POSITIVA y VINCULADA sin
+afirmar en ningún momento que la propiedad admita mascotas. *Predicado relacionado con una
+mascota* no es *predicado de admisión de mascotas*.
 
 ## Routing POR AFIRMACIÓN, no por mensaje
 
@@ -140,17 +146,29 @@ _DIM_BEDROOMS = re.compile(r"\b(dormitorio|dormitorios|habitacion|habitaciones|"
 _DIM_AREA = re.compile(r"(\bm2\b|\bm²|metros? cuadrados?|square meters?)")
 _PETS_SUSTANTIVO = re.compile(r"\b(mascota|mascotas|perro|perros|gato|gatos|pet|pets)\b")
 
-# El verbo de requisito es genérico —"necesito", "deben", "acepten"— y NO relaciona nada con
-# la mascota por sí solo: en "necesito 2 dormitorios" pide dormitorios. Por eso se exige el
-# sustantivo EN SU MISMA CLÁUSULA, sin excepciones.
+# PREDICADO DE ADMISIÓN, y solo eso. Cada alternativa significa *admitir* por sí misma, en
+# cualquier contexto. No hay verbos genéricos de requisito —`necesito`, `debe`, `tiene que`—
+# y su ausencia es la propiedad, no un olvido: con ellos, cualquier cláusula que pidiera algo
+# y nombrara un animal evidenciaba que la propiedad admite mascotas. "Necesito un veterinario
+# cerca para mi perro" pide un veterinario.
 #
-# Hubo una vía anafórica —el clítico de objeto, "aceptarlo"— para admitir *"tengo un perro y
-# deben aceptarlo"*, donde el sustantivo vive en la cláusula anterior. Se eliminó: el clítico
-# no dice a qué refiere, así que *"tengo un perro; el banco debe aceptarlo"* autorizaba un
-# requisito de mascotas. Ver `_evidencia_pets`.
-_PETS_REQUISITO = re.compile(
-    r"\b(acepte|acepten|admita|admitan|permita|permitan|"
-    r"necesito|necesitamos|debe|deben|tiene que|allowed|required)\b")
+#     predicado RELACIONADO con una mascota   ≠   predicado DE ADMISIÓN de mascotas
+#
+# `required` se retiró con ellos: "pets required" diría que la propiedad EXIGE mascotas, que
+# no es lo que `SetPetsRequired` afirma. `allowed` sí se queda — "pets allowed" es admisión
+# inequívoca — y tiene su caso en la sección K.
+#
+# Los infinitivos están porque hacen falta: `"el edificio debe permitir perros"` pasaba por
+# `debe`, no por `permitir`, que ni siquiera figuraba. Era un test verde por la razón
+# equivocada.
+#
+# Las formas con clítico —`aceptarlo`— NO casan: `\baceptar\b` exige frontera de palabra y en
+# "aceptarlo" viene una letra. Es deliberado; ver `_evidencia_pets`.
+_PETS_ADMISION = re.compile(
+    r"\b(acepta|acepte|acepten|aceptan|aceptar|"
+    r"admite|admita|admitan|admiten|admitir|"
+    r"permite|permita|permitan|permiten|permitir|"
+    r"allow|allows|allowed)\b")
 
 
 # ── La evidencia del VALOR ─────────────────────────────────────────────────────────
@@ -272,12 +290,19 @@ def _evidencia_pets(_mutacion, plano: str) -> bool:
     misma cláusula afirmativa** exija que la propiedad admita mascotas.
 
     ```
-    "necesito que acepten mascotas"             sustantivo + requisito juntos   →  SÍ
+    "necesito que acepten mascotas"             admisión + sustantivo juntos    →  SÍ
     "busco algo que admita gatos"               idem                            →  SÍ
+    "el edificio debe permitir perros"          por `permitir`, no por `debe`   →  SÍ
+    "necesito un veterinario para mi perro"     pide un veterinario             →  NO
     "tengo un perro; necesito 2 dormitorios"    dos hechos sin relación         →  NO
     "tengo un perro; el banco debe aceptarlo"   el clítico no dice a qué refiere→  NO
     "tengo un perro y deben aceptarlo"          tampoco, y es deliberado        →  NO
     ```
+
+    El predicado tiene que ser **de admisión**, no un requisito cualquiera que caiga cerca de
+    un animal. Es el cuarto término de "evidencia exacta", el que estaba implícito y no
+    garantizado: la evidencia ha de ser LOCAL, POSITIVA, VINCULADA **y semánticamente del tipo
+    de la mutación**.
 
     Una regla, sin excepciones — y la última línea es una decisión REVERTIDA. Hubo una vía
     anafórica que aceptaba el clítico de objeto (`aceptarlo`) con el sustantivo en otra
@@ -297,7 +322,7 @@ def _evidencia_pets(_mutacion, plano: str) -> bool:
     decir: dice que esto no puede probarlo. El intérprete podrá clasificarlo AMBIGUOUS, que
     es donde vive lo que se entiende pero no se puede acreditar.
     """
-    return any(_PETS_REQUISITO.search(clausula) and _PETS_SUSTANTIVO.search(clausula)
+    return any(_PETS_ADMISION.search(clausula) and _PETS_SUSTANTIVO.search(clausula)
                for clausula in _afirmativas(plano))
 
 

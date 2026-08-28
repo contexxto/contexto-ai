@@ -13,7 +13,9 @@ ENTREGADO   caracterización · multi-mutation · matrices · C1-C5 congeladas
             E3.2b.1a-B.1 · evidencia LOCAL, POSITIVA y VINCULADA — cerró los tres
             huecos de asociación que la revisión forense encontró
             E3.2b.1a-B.2 · mascotas fail-closed — se retira la excepción anafórica;
-            sin soporte de coreferencia en V0 · defecto 4 CERRADO
+            sin soporte de coreferencia en V0
+            E3.2b.1a-B.3 · predicado de ADMISIÓN — el predicado tiene que significar
+            lo que la mutación afirma · defecto 4 CERRADO
 PENDIENTE   intérprete text → Afirmacion (NOT STARTED)
 
 GATE        HOLD — los cuatro defectos de §6b cerrados; falta el intérprete
@@ -413,7 +415,27 @@ EVIDENCIA EXACTA   no es   "todos los tokens necesarios existen en el mensaje"
 LOCAL      la evidencia vive en UNA cláusula — nada se presta entre cláusulas vecinas
 POSITIVA   esa cláusula afirma; una cláusula negada no evidencia, contradice
 DEL VALOR  sostiene el valor concreto, no sólo la dimensión que lo contiene
+DEL TIPO   el predicado SIGNIFICA lo que la mutación afirma, no cae cerca de su vocabulario
 ```
+
+El cuarto término lo añadió E3.2b.1a-B.3, y salió del mismo sitio que los otros: una
+autorización falsa. `SetPetsRequired` aceptaba verbos genéricos de requisito, así que
+
+```
+"necesito un veterinario cerca para mi perro"   + SetPetsRequired()   →  autorizaba
+"el edificio debe tener parque para perros"     + SetPetsRequired()   →  autorizaba
+```
+
+cumplían LOCAL, POSITIVA y VINCULADA —una sola cláusula, sin negación, con mascota y con
+verbo de requisito— sin afirmar en ningún punto que la propiedad admita mascotas. Ahora el
+vocabulario es un **predicado de admisión** cerrado (aceptar · admitir · permitir · allow), y
+`necesito`, `debe`, `deben`, `tiene que` y `required` quedan fuera por definición, con un
+test estructural que lo comprueba.
+
+Ese cambio destapó además que el positivo `"el edificio debe permitir perros"` estaba verde
+**por `debe`**: `permitir` no figuraba en el vocabulario, sólo `permita|permitan`. Un test
+verde por la razón equivocada, que es exactamente lo que el §6c advierte que un verde no
+demuestra.
 
 La polaridad se juzga **por cláusula y no por mensaje**: una negación en otra cláusula no
 puede costar un hecho que el usuario sí declaró (*"no tengo mascotas, pero quiero comprar"*

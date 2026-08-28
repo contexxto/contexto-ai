@@ -1008,3 +1008,87 @@ def test_J_no_queda_gramatica_anaforica_en_el_modulo():
     from app.buyer import extractor as E
 
     assert not hasattr(E, "_PETS_ANAFORICO")
+
+
+# ══ K · PREDICADO DE ADMISIÓN · el cuarto término de "exacta" ═══════════════════════
+#
+# La propiedad no era LOCAL + POSITIVA + VINCULADA. Faltaba el término que estaba implícito
+# en la palabra "exacta" y que el vocabulario no garantizaba:
+#
+#     LOCAL + POSITIVA + VINCULADA + SEMÁNTICAMENTE DEL TIPO DE LA MUTACIÓN
+#
+# `_PETS_REQUISITO` mezclaba verbos de ADMISIÓN —aceptar, admitir, permitir— con verbos
+# GENÉRICOS de requisito —necesito, debe, deben, tiene que—. Con eso, cualquier cláusula que
+# pidiera algo y mencionara un animal evidenciaba que la propiedad admite mascotas.
+#
+#     predicado RELACIONADO con una mascota   ≠   predicado DE ADMISIÓN de mascotas
+
+
+@pytest.mark.parametrize("texto", [
+    "necesito un veterinario cerca para mi perro",
+    "necesito un parque cerca para mi perro",
+    "el edificio debe tener parque para perros",
+    "deben tener veterinario cerca porque tengo perro",
+    "necesito guardería para mi gato",
+])
+def test_K_un_requisito_GENERICO_junto_a_una_mascota_no_es_admision(texto):
+    """Todos cumplen LOCAL, POSITIVA y VINCULADA: una sola cláusula, sin negación, con
+    sustantivo de mascota y verbo de requisito. Y ninguno afirma que la propiedad admita
+    mascotas — piden veterinario, parque o guardería.
+
+    Es el mismo error de asociación de siempre, pero un nivel más adentro: ya no entre
+    cláusulas, sino entre el predicado y el tipo de la mutación.
+    """
+    with pytest.raises(TraduccionNoAutorizada):
+        autorizar_traduccion(SetPetsRequired(), texto)
+
+
+@pytest.mark.parametrize("texto", [
+    "necesito que acepten mascotas",
+    "busco algo que admita gatos",
+    "busco depto que acepte mi gato",
+    "el edificio debe permitir perros",
+    "busco un depto con pets allowed",
+])
+def test_K_un_predicado_DE_ADMISION_sigue_autorizando(texto):
+    """`"el edificio debe permitir perros"` está aquí por un motivo concreto: **pasaba por
+    `debe`**, no por `permitir`, que ni siquiera estaba en el vocabulario (tenía `permita` y
+    `permitan`, no el infinitivo).
+
+    Era un test verde por la razón equivocada — justo lo que el gate del §6c dice que un
+    verde no demuestra. Ahora pasa por el predicado de admisión.
+    """
+    autorizar_traduccion(SetPetsRequired(), texto)
+
+
+def test_K_el_predicado_de_admision_NO_contiene_verbos_genericos():
+    """Estructural, y de las que valen: un caso puede corregirse a mano y dejar el
+    vocabulario ancho para el siguiente. `necesito`, `debe` o `tiene que` no significan
+    admisión en ningún contexto, así que no pueden vivir en este predicado.
+    """
+    from app.buyer import extractor as E
+
+    for generico in ("necesito", "necesitamos", "debe", "deben", "tiene que", "required"):
+        assert not E._PETS_ADMISION.search(generico), (
+            f"{generico!r} no es un predicado de admisión de mascotas")
+
+
+@pytest.mark.parametrize("texto", [
+    "el edificio debe permitir bicicletas; tengo un perro",
+    "permiten estacionamiento, tengo un gato",
+    "aceptan pago con tarjeta y tengo un perro",
+])
+def test_K_una_admision_DE_OTRA_COSA_no_evidencia_mascotas(texto):
+    """El predicado de admisión tiene que admitir **la mascota**, no cualquier cosa.
+
+    Lo escribió la mutación M13, no el diseño. Al estrechar el vocabulario a verbos de
+    admisión, M13 —quitar la exigencia de que el sustantivo esté en la misma cláusula— dejó
+    de caer: ningún test tenía ya una cláusula con verbo de admisión y sin mascota, porque
+    esa combinación la producían antes los genéricos (`necesito`, `debe`).
+
+    Diagnóstico antes de tocar nada: la propiedad SIGUE siendo observable —"debe permitir
+    bicicletas" lo demuestra—, así que era hueco de cobertura y no código redundante. Es el
+    mismo patrón que ya apareció con S3 y con el índice del AMBIGUOUS generado.
+    """
+    with pytest.raises(TraduccionNoAutorizada):
+        autorizar_traduccion(SetPetsRequired(), texto)

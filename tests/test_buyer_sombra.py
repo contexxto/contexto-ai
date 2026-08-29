@@ -240,22 +240,56 @@ def test_cada_desenlace_deja_rastro_con_su_nivel(estado, nivel, monkeypatch, cap
 
 
 def test_la_sombra_NO_toca_la_respuesta_ni_las_tarjetas():
-    """Estructural sobre el endpoint: la llamada a la sombra no puede aparecer entre el
-    cálculo de `reply`/`results` y su retorno, ni asignarse a nada.
+    """Estructural sobre el endpoint: la sombra es fire-and-forget y su salida no se usa.
 
     Es la propiedad que separa "el pipeline ya corre" de "el pipeline ya decide", y la fase
     entera depende de no confundirlas.
+
+    E3.2b.4a reescribió este guard. La versión anterior exigía `len(llamadas) == 1` sobre todo
+    el fichero, y ese número era un PROXY de la propiedad: valía mientras hubiera un solo
+    camino. En cuanto el turno SSE recibió su propia llamada —porque `chat()` retorna antes de
+    la del camino no-stream— el conteo pasó a ser sencillamente falso, y un conteo falso
+    presiona para relajar el guard en vez de para afirmar lo que importa. Ahora se afirma
+    directamente: UNA llamada por RAMA, cada una envuelta en `create_task`, ninguna asignada
+    ni esperada. Es más estricto que contar, no menos — un `await` colado, una asignación o
+    una tercera llamada en cualquier otra función caen aquí. Misma lección que los guards de
+    E3.2b.4: enumerar la propiedad, no las instancias.
     """
+    import ast
     import pathlib
-    import re
 
-    codigo = pathlib.Path("app/routers/chat.py").read_text(encoding="utf-8")
-    llamadas = re.findall(r"^.*actualizar_en_sombra\(.*$", codigo, re.MULTILINE)
+    fuente = pathlib.Path("app/routers/chat.py").read_text(encoding="utf-8")
+    arbol = ast.parse(fuente)
 
-    assert len(llamadas) == 1, f"se esperaba UNA llamada a la sombra: {llamadas}"
-    assert "create_task" in llamadas[0], "la sombra tiene que ser fire-and-forget"
-    assert "=" not in llamadas[0].split("create_task")[0], \
-        "el resultado de la sombra no puede asignarse a nada"
+    def _llamadas_en(nombre_funcion):
+        for nodo in ast.walk(arbol):
+            if isinstance(nodo, (ast.FunctionDef, ast.AsyncFunctionDef)) \
+                    and nodo.name == nombre_funcion:
+                return [n for n in ast.walk(nodo) if isinstance(n, ast.Call)
+                        and isinstance(n.func, ast.Name)
+                        and n.func.id == "actualizar_en_sombra"]
+        return None
+
+    # Exactamente una por rama, y las dos ramas son excluyentes: `chat()` retorna en el
+    # `if stream:`, así que un turno real invoca la sombra UNA vez, nunca dos.
+    for funcion in ("chat", "_stream_agent"):
+        encontradas = _llamadas_en(funcion)
+        assert encontradas is not None, f"no existe {funcion}() en chat.py"
+        assert len(encontradas) == 1, \
+            f"{funcion}() invoca la sombra {len(encontradas)} veces, se esperaba 1"
+
+    # Y en NINGUNA otra función del fichero.
+    todas = [n for n in ast.walk(arbol) if isinstance(n, ast.Call)
+             and isinstance(n.func, ast.Name) and n.func.id == "actualizar_en_sombra"]
+    assert len(todas) == 2, f"la sombra se invoca desde un tercer sitio: {len(todas)} llamadas"
+
+    # Cada llamada, envuelta en `create_task` y sin que su valor vaya a ninguna parte.
+    for linea in [l for l in fuente.splitlines() if "actualizar_en_sombra(" in l]:
+        assert "create_task" in linea, f"la sombra tiene que ser fire-and-forget: {linea!r}"
+        assert "await actualizar_en_sombra" not in linea, \
+            f"la sombra no puede esperarse desde el camino crítico: {linea!r}"
+        assert "=" not in linea.split("create_task")[0], \
+            f"el resultado de la sombra no puede asignarse: {linea!r}"
 
 
 def test_la_sombra_no_importa_nada_del_carril_de_respuesta():

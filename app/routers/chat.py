@@ -610,13 +610,17 @@ def _texto_del_chunk(chunk) -> str:
     return ""
 
 
-async def _stream_agent(message: str, session_id: str) -> AsyncIterator[str]:
+async def _stream_agent(message: str, session_id: str, user=None) -> AsyncIterator[str]:
     """Streams agent token chunks como Server-Sent Events, con memoria de sesión.
 
     Emite, en orden: `tool_call` (al arrancar cada herramienta), `token` (la prosa),
     `panel` (tarjetas + map_seed, lo mismo que devuelve el camino no-stream) y `done`.
     El `panel` es lo que faltaba para que el front pudiera abandonar el POST bloqueante:
     sin él, streamear dejaba al usuario con prosa y sin ficha.
+
+    `user` (E3.2b.4a) viaja hasta aquí porque el endpoint RETORNA en el `if stream:`, antes
+    de la línea que cablea la sombra. Sin este parámetro, el turno que usa la gente de verdad
+    era el único que no actualizaba la memoria del comprador — un `200 OK` con cero filas.
     """
     config = _langgraph_config(session_id)
     # Modo del lente del turno ANTERIOR: se lee ANTES de arrancar, porque el input
@@ -660,6 +664,12 @@ async def _stream_agent(message: str, session_id: str) -> AsyncIterator[str]:
         _valores = (_st.values or {}) if (_st and _st.values) else {}
         _msgs = _valores.get("messages", [])
         asyncio.create_task(registrar_intencion(session_id, _msgs))
+        # E3.2b.4a · SOMBRA en el camino stream. Va aquí y no en el endpoint porque `chat()`
+        # ya retornó: éste es el único punto del turno SSE donde existe el estado final. Los
+        # mensajes son los del hilo —con el `id` que asignó LangGraph—, no una reconstrucción
+        # a partir de `message`. Fire-and-forget, igual que la línea de arriba: el turno ya
+        # emitió sus tokens y la sombra no participa en el `panel` que falta por salir.
+        asyncio.create_task(actualizar_en_sombra(user, _msgs))
 
         # Mismas tarjetas que el nodo `encaje` ya armó (las que describe la prosa que
         # acabamos de emitir); solo se reconstruyen si el nodo no corrió o degradó.
@@ -743,8 +753,11 @@ async def chat(
     import asyncio as _aio
     _aio.create_task(marcar_actividad_lead(payload.session_id))
     if stream:
+        # `user` cruza el branch: este `return` es lo que dejaba la sombra sin invocar en el
+        # camino SSE (E3.2b.4a). La llamada vive DENTRO de `_stream_agent`, no aquí, porque
+        # aquí todavía no existe el estado final del grafo.
         return StreamingResponse(
-            _stream_agent(payload.message, payload.session_id),
+            _stream_agent(payload.message, payload.session_id, user),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )

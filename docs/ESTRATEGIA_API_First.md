@@ -24,6 +24,16 @@ Apaleo no le vende "software" al hotel: le vende un **motor API-first** que el s
 4. **Sandbox + self-service API keys:** docs, Swagger, sandbox reseteable → "low-touch prototyping".
 5. **Ecosistema / Store:** terceros construyen sobre Contexto.
 
+> **📌 Nota de vigencia · 29-ago-2026.** La referencia a **MACH y microservicios** del punto 1
+> describe un **patrón externo estudiado** (Apaleo) y **no constituye una decisión arquitectónica
+> vigente de Contexto AI**. La doctrina actual es explícita:
+> **`Capability architecture` ≠ `microservice architecture`**, y la política es
+> `logical capability → contract → implementation in modular monolith → evidence → optional later extraction`.
+> **Ningún microservicio queda autorizado por esta referencia**, y el monolito debe volverse más
+> modular, no distribuirse. Criterios de extracción física en
+> `docs/agentic_decision_system/canon/CONTEXT_CAPABILITY_ARCHITECTURE_0.1.md` §5 y §6.
+> El texto histórico de arriba se conserva tal como se escribió.
+
 ## Taxonomía de APIs (esquema Business / Development / Setup)
 
 ### Business APIs (el corazón — el foso)

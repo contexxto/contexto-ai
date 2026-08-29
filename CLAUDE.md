@@ -75,6 +75,17 @@ es lo CONTRARIO: **poseer** datos abiertos (OSM/Overture) ya PROCESADOS y guarda
 activo propio. Alquilar Nominatim en vivo = NO. Construir nuestro dataset desde datos
 abiertos = SÍ, es el norte. Un futuro yo NO debe leer esto como "reactivar Nominatim".
 
+**📌 Nota de reconciliación (29-ago-2026) — esta decisión NO se retira; se reencuadra.** Lo de
+arriba es el **`DATA MOAT`** y sigue vigente tal cual: poseer la capa de datos, OSM/Overture
+normalizados y guardados, ruteo propio, procedencia, verificaciones. La Declaración de Frontera 0.1
+añade encima una segunda capa, **`COMPANY MOAT` — todavía HIPÓTESIS, no verificada**: identidad
+resuelta entre sistemas, contexto local con vigencia y ámbito, reglas y su aplicabilidad, evidencia
+con autoridad, metodologías locales, correcciones humanas, `DecisionTrace` reproducible y outcomes.
+**Los datos siguen siendo necesarios; la doctrina nueva sostiene que por sí solos no son
+suficientes.** Desarrollo completo en `docs/agentic_decision_system/canon/PROJECT_AI_MASTER_STRATEGY_0.3.md` §10.
+Esto no revierte la decisión de junio de 2026, no cambia ninguna otra decisión de este archivo y no
+autoriza trabajo nuevo.
+
 ---
 
 ## 🔒 Restricciones de seguridad permanentes

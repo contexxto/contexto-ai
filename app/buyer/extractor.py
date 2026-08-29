@@ -110,6 +110,7 @@ from app.buyer.boundary import (
     SetPetsRequired,
     campo_de_mutacion,
 )
+from app.config import settings
 from app.contracts.buyer_v0 import Objective
 
 _CERRADO = ConfigDict(frozen=True, extra="forbid")
@@ -187,10 +188,44 @@ _MONEDA_ISO: dict[BuyerCurrencyV0, re.Pattern] = {
     BuyerCurrencyV0.USD: re.compile(r"\busd\b"),
     BuyerCurrencyV0.MXN: re.compile(r"\bmxn\b"),
 }
-"""**Solo el código ISO literal.** El símbolo `$` no resuelve USD y `pesos` no implica MXN:
-las dos están congeladas como AMBIGUOUS en la matriz del §4. Aceptar `dolares` reabriría lo
-mismo por otra puerta —hay ocho dólares en el mundo— así que el coste de que
-`"máximo 120000 dólares"` no autorice es deliberado, no un olvido."""
+"""**El código ISO literal, que acredita SIEMPRE y sin depender del mercado.** El símbolo `$`
+no resuelve USD y `pesos` no implica MXN: las dos siguen congeladas como AMBIGUOUS en la
+matriz del §4."""
+
+_DENOMINACION_DE_MERCADO: dict[BuyerCurrencyV0, re.Pattern] = {
+    BuyerCurrencyV0.USD: re.compile(r"\b(dolar|dolares)\b"),
+}
+"""G16 · cómo se nombra cada moneda en habla natural. **Sólo acredita si el mercado del
+despliegue declara esa misma moneda.**
+
+`dolares` sin contexto seguiría siendo ambiguo —hay ocho dólares en el mundo, y ése era el
+argumento original de esta guarda—. Lo que cambió es que ahora existe un contexto
+determinista que puede resolverlo: `BUYER_MARKET_CURRENCY`. En un despliegue que declara
+USD, "900 dólares" no es ambiguo; en uno que no declara nada, lo sigue siendo.
+
+MXN no está aquí a propósito: "pesos" nombra a más de una moneda de la región y no fue el
+fallo observado. Añadirlo exige su propia evidencia, no una simetría estética."""
+
+
+def _patron_de_moneda(currency: BuyerCurrencyV0) -> re.Pattern | None:
+    """El patrón que acredita ESTA moneda, dado el mercado del despliegue.
+
+    La correspondencia se exige entre las TRES: la moneda que propone la mutación, la
+    denominación que aparece en el texto y la que declara el mercado. Por eso el mercado no
+    puede acreditar una mutación en otra moneda —comparar `settings` con `currency` es lo que
+    lo impide— ni convertir `"900 euros"` en dólares, porque `euros` no está en ningún patrón.
+
+    **El mercado CONFIRMA, no ORIGINA.** Sin denominación en el texto no hay nada que
+    confirmar: el número desnudo no se acredita por mucho mercado que haya declarado, y ésa es
+    la propiedad que separa esto de fabricar un dato que la persona no dijo.
+    """
+    iso = _MONEDA_ISO.get(currency)
+    if iso is None:
+        return None
+    if (getattr(settings, "buyer_market_currency", "") or "") != currency.value:
+        return iso
+    natural = _DENOMINACION_DE_MERCADO.get(currency)
+    return iso if natural is None else re.compile(f"(?:{iso.pattern}|{natural.pattern})")
 
 # El lookbehind `(?<!\w)` es lo que impide que el "2" de `m2` cuente como un número que el
 # usuario dijo. Sin él, "mínimo 80 m2" ofrecería {80, 2} y autorizaría un área mínima de 2.
@@ -271,7 +306,7 @@ def _numero_junto_a_su_dimension(plano: str, valor, *dimension: re.Pattern) -> b
 
 
 def _evidencia_budget(mutacion, plano: str) -> bool:
-    moneda = _MONEDA_ISO.get(mutacion.currency)
+    moneda = _patron_de_moneda(mutacion.currency)
     if moneda is None:
         return False
     return _numero_junto_a_su_dimension(plano, mutacion.amount, _DIM_BUDGET, moneda)

@@ -1,6 +1,8 @@
 import os
+import re
 
 from dotenv import dotenv_values
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # pydantic-settings prioriza variables del shell sobre .env por diseño.
@@ -41,6 +43,45 @@ class Settings(BaseSettings):
     # memoria durable de todos los usuarios autenticados del despliegue.
     # Ids de `auth.users` separados por comas. Los pone el entorno, nunca el repositorio.
     buyer_shadow_allowlist: str = ""
+
+    # G16 · el mercado monetario que ESTE DESPLIEGUE del Buyer Harness puede usar como
+    # contexto determinista para acreditar expresiones monetarias que por sí solas serían
+    # ambiguas ("900 dólares"). NO es la moneda del comprador ni parte de `BuyerContextV0`:
+    # es política del sistema, y por eso vive aquí y no en el contrato.
+    #
+    # Vacío = no hay contexto declarado = comportamiento anterior a G16 (fail-closed). Nace
+    # de un fallo REAL: el canary del 2026-08-29 dijo "presupuesto máximo de 900 dólares" y
+    # la memoria guardó `null` + una repregunta por la moneda, porque la guarda sólo admitía
+    # el código ISO literal. La regla era correcta en abstracto —hay ocho dólares en el
+    # mundo— y equivocada en la plaza donde el producto opera.
+    #
+    # SUCESOR ESPERADO: si algún día un mismo backend sirve varios mercados a la vez, esto
+    # se queda corto y lo reemplaza un contexto de mercado por sesión/caso de decisión
+    # (país + localidad + moneda). No se construye ahora a propósito.
+    buyer_market_currency: str = ""
+
+    @field_validator("buyer_market_currency", mode="before")
+    @classmethod
+    def _normalizar_mercado(cls, v):
+        """Vacío o ISO-4217 de tres letras. Un valor mal escrito FALLA EL ARRANQUE.
+
+        Se normaliza la caja para que `usd` y `USD` no sean configuraciones distintas, y se
+        rechaza el resto en vez de degradarlo a vacío: un `dolares` que simplemente "no
+        acreditara" sería indistinguible de un canary averiado, y el operador buscaría el
+        fallo en el sitio equivocado. Fallar aquí es seguro en este despliegue — Render no
+        promueve un contenedor que no arranca, así que sigue sirviendo la versión anterior.
+
+        Misma regla conceptual que `common_v0.Money.currency`; no se abre un catálogo de
+        monedas, que sería otra fuente de verdad que mantener.
+        """
+        if v is None:
+            return ""
+        v = str(v).strip().upper()
+        if v and not re.fullmatch(r"[A-Z]{3}", v):
+            raise ValueError(
+                "BUYER_MARKET_CURRENCY debe ser un código ISO-4217 de tres letras "
+                f"(por ejemplo USD) o quedar vacío; llegó {v!r}")
+        return v
 
     # En producción (Render + Supabase) se puede pasar la DATABASE_URL completa
     # para evitar problemas de IPv6. Si está presente, tiene precedencia.

@@ -579,10 +579,31 @@ def _auditar_prosa(session_id: str, reply: str, valores: dict | None) -> None:
 
 
 def _ultima_respuesta(messages) -> str:
-    """La última respuesta del LLM sin tool_calls pendientes."""
+    """La última respuesta del LLM sin tool_calls pendientes, **siempre como texto**.
+
+    G18 · TR1-B. Antes devolvía `m.content` en crudo y la anotación `-> str` era una promesa
+    incumplida: con herramientas atadas, `AIMessage.content` es una LISTA de bloques tipados
+    —lo mismo que `_texto_del_chunk` documenta unas líneas más abajo—. Esa lista llegaba al
+    verificador de prosa y reventaba en su primer regex, abortando de golpe los SIETE
+    chequeos, que viven en una sola expresión sumada: procedencia de caminabilidad y Fair
+    Housing incluidos. El `except` de `_auditar_prosa` lo dejaba en un `warning` y el turno
+    se servía igual, así que el guardián quedaba fail-open sin decirlo. Observado en
+    producción el 2026-08-29.
+
+    Se reutiliza `_texto_del_chunk` a propósito: escribir aquí una segunda lectura del
+    formato de Anthropic es exactamente cómo se desincronizan dos caminos que deberían
+    coincidir. Sólo se extraen bloques `text` — un `tool_use` no es prosa, y por el otro
+    consumidor (`reply` del camino no-stream) acabaría en la burbuja del usuario.
+
+    Se exige texto NO VACÍO para aceptar un mensaje como respuesta: un `AIMessage` que sólo
+    trae bloques no textuales no es una respuesta, y devolver `""` por él dejaría al verificador
+    auditando la nada y al carril de respuesta sin qué mostrar. Sin candidato utilizable se
+    conserva el centinela que la función ya usaba.
+    """
     return next(
-        (m.content for m in reversed(messages)
-         if isinstance(m, AIMessage) and not getattr(m, "tool_calls", None)),
+        (texto for m in reversed(messages)
+         if isinstance(m, AIMessage) and not getattr(m, "tool_calls", None)
+         and (texto := _texto_del_chunk(m))),
         "Sin respuesta del agente.",
     )
 

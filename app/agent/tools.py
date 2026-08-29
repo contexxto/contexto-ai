@@ -18,6 +18,9 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.database import AsyncSessionLocal
+# La traducción de `walk_score_fuente` vive en `encaje` y se IMPORTA, no se copia: tener dos
+# tablas fue exactamente el fallo de procedencia del 2026-08-29 (G19.0).
+from app.encaje import resolver_procedencia_caminabilidad
 from app.entorno import limpiar_texto_servicios
 from app.entorno_curacion import aplicar_curacion
 from app.estilo_vida import evaluar_concepto_estilo_vida
@@ -128,6 +131,32 @@ def _limpiar_servicios_en(row: dict) -> dict:
     return row
 
 
+def _con_procedencia_caminable(row: dict) -> dict:
+    """G19-A · el valor de caminabilidad nunca sale de aquí sin decir de dónde viene.
+
+    Estas tools son la frontera donde el dato se vuelve consumible por el modelo, y hasta el
+    2026-08-29 entregaban `walk_score_fuente` EN CRUDO: con NULL —que es el estado de los 40
+    activos de producción— el modelo recibía `null` y rellenaba el hueco. En el turno del
+    canary escribió *"caminabilidad 100, calculada sobre los comercios reales del sector"*
+    mientras la tarjeta, que sí lee la procedencia, decía "estimada por zona".
+
+    La política ya existía; lo que faltaba era que viajara por este carril. Estaba atada a
+    `encaje._score_caminable`, que sólo corre cuando la persona PIDIÓ caminabilidad — o sea,
+    la procedencia dependía de la relevancia del dato para el ranking en vez de acompañar al
+    dato por ser narrable. Aquí se separan esas dos cosas.
+
+    `walk_score_fuente` se conserva intacto: sigue siendo el código (`osm` | `heuristico` |
+    `null`) para quien lo compare. El campo derivado es aditivo.
+
+    Sin `caminabilidad` no se emite procedencia: declarar "estimación por zona" donde no hay
+    estimación sería el mismo relleno, en la dirección contraria.
+    """
+    if isinstance(row, dict) and row.get("caminabilidad") is not None:
+        row["caminabilidad_procedencia"] = resolver_procedencia_caminabilidad(
+            row.get("walk_score_fuente"))
+    return row
+
+
 @tool
 async def tool_search_nearby_assets(
     latitude: float,
@@ -205,7 +234,7 @@ async def tool_search_nearby_assets(
             "message": f"No registered assets within {used} m of this point.",
         })
 
-    rows = [_limpiar_servicios_en(r) for r in rows]
+    rows = [_con_procedencia_caminable(_limpiar_servicios_en(r)) for r in rows]
     return json.dumps({
         "assets": rows, "total": len(rows), "radius_searched_m": used,
         "note": "distancia_metros = how far each asset is from the search point; be honest about distance if it is large.",
@@ -293,7 +322,7 @@ async def tool_find_assets_by_text(query: str) -> str:
 
     for r in rows:
         r.pop("_rank", None)
-    rows = [_limpiar_servicios_en(r) for r in rows]
+    rows = [_con_procedencia_caminable(_limpiar_servicios_en(r)) for r in rows]
     return json.dumps({"assets": rows, "total": len(rows)}, default=str)
 
 
@@ -389,7 +418,7 @@ async def tool_fetch_asset_lifecycle_specs(activo_id: str) -> str:
     if curaciones:
         row["servicios_cercanos"] = aplicar_curacion(row.get("servicios_cercanos"), curaciones)
 
-    return json.dumps({"specs": _con_antiguedades(_limpiar_servicios_en(row))}, default=str)
+    return json.dumps({"specs": _con_antiguedades(_con_procedencia_caminable(_limpiar_servicios_en(row)))}, default=str)
 
 
 async def _geocode_google(address: str, key: str) -> dict | None:

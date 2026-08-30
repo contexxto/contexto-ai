@@ -59,6 +59,80 @@ def _desde_ultimo_turno(messages) -> list:
     return messages if ultimo is None else messages[ultimo:]
 
 
+_GEOCODE_TOOL = "tool_geocode_address"
+_RELACION_TOOL = "tool_search_nearby_assets"
+
+
+def _json_de(m):
+    """El cuerpo de un ToolMessage, o None si no es JSON."""
+    c = getattr(m, "content", None)
+    if not isinstance(c, str):
+        return None
+    try:
+        d = json.loads(c)
+    except Exception:      # noqa: BLE001 - muchos tool results no son JSON
+        return None
+    return d if isinstance(d, dict) else None
+
+
+def _relacion_territorial_del_turno(messages) -> dict | None:
+    """G20-B1 - la relacion territorial que ESTE turno demostro, o None.
+
+    SOLO DEL TURNO ACTUAL, sin fallback al historial. `_collect_asset_ids` si cae al hilo
+    completo (`or _ids_en(messages, limit)`) y para ids eso es compatibilidad razonable;
+    para AUTORIDAD territorial seria gobernar la respuesta de hoy con la busqueda de ayer.
+
+    EL LABEL SE LIGA AL PUNTO, NO AL TURNO. `tool_search_nearby_assets` recibe tres floats
+    y no conoce la consulta: el toponimo vive solo en el geocode. Pero que ambos aparezcan
+    en el mismo turno NO prueba que uno origino al otro - el modelo puede geocodificar un
+    sitio y buscar alrededor de otro punto. Se exige IGUALDAD EXACTA de coordenadas, sin
+    tolerancia: una tolerancia espacial convertiria una conveniencia numerica en autoridad
+    semantica. Sin coincidencia, la relacion existe pero el lugar NO se nombra.
+
+    Se usa `address_input` -lo que se pidio geocodificar- y nunca `address_resolved`, que
+    es la interpretacion del proveedor y traeria jerarquia territorial no demostrada
+    ("La Floresta, Mariscal Sucre, Distrito Metropolitano..."). El resuelto se conserva
+    como evidencia del geocoder, no como autoridad para nombrar.
+    """
+    turno = _desde_ultimo_turno(messages)
+
+    relacion = None
+    for m in turno:
+        if getattr(m, "type", "") != "tool" or (getattr(m, "name", "") or "") != _RELACION_TOOL:
+            continue
+        d = _json_de(m)
+        if d and d.get("pertenencia_territorial"):
+            relacion = d
+    if relacion is None:
+        return None
+
+    fuera = {
+        "pertenencia_territorial": relacion.get("pertenencia_territorial"),
+        "relacion_recuperacion": relacion.get("relacion_recuperacion"),
+        "ancla_busqueda": relacion.get("ancla_busqueda"),
+        "radius_requested_m": relacion.get("radius_requested_m"),
+        "radius_searched_m": relacion.get("radius_searched_m"),
+        "distancia_metros": None,
+        "consulta": None,
+    }
+    activos = relacion.get("assets") or []
+    if activos and isinstance(activos[0], dict):
+        fuera["distancia_metros"] = activos[0].get("distancia_metros")
+
+    ancla = fuera["ancla_busqueda"] or {}
+    for m in turno:
+        if getattr(m, "type", "") != "tool" or (getattr(m, "name", "") or "") != _GEOCODE_TOOL:
+            continue
+        g = _json_de(m)
+        if not g or not g.get("found"):
+            continue
+        if (g.get("latitude") == ancla.get("latitude")
+                and g.get("longitude") == ancla.get("longitude")
+                and ancla.get("latitude") is not None):
+            fuera["consulta"] = g.get("address_input")
+    return fuera
+
+
 def _ids_en(messages, limit: int) -> list[str]:
     """IDs de inmueble que las tools de búsqueda devolvieron en estos mensajes, en orden."""
     ids: list[str] = []
@@ -602,6 +676,10 @@ async def construir_panel(messages, *, session_id: str, preferencias: dict | Non
         "descartadas": [c for c in cards if c["id"] not in vistos],
         "preferencias": preferencias or {},
         "priorizado": (prioritario, motivo),
+        # G20-B1 - aditivo. No participa del ranking ni del recorte: describe QUE RELACION
+        # probo el retrieval de ESTE turno, para que el bloque autoritativo pueda decir que
+        # afirmacion autoriza esa evidencia.
+        "relacion_territorial": _relacion_territorial_del_turno(messages),
     }
 
 

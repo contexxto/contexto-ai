@@ -776,7 +776,8 @@ def _build_graph() -> StateGraph:
             "cards": panel["cards"],
             "descartadas": panel["descartadas"],
             "encaje_contexto": bloque_autoritativo(
-                panel["cards"], prefs, panel["descartadas"], panel["priorizado"]),
+                panel["cards"], prefs, panel["descartadas"], panel["priorizado"],
+                relacion_territorial=panel.get("relacion_territorial")),
         }
 
     graph = StateGraph(AgentState)

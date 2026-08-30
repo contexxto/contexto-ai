@@ -151,9 +151,76 @@ def _linea_opcion(c: dict, tope, por_mes: bool) -> str:
     return " · ".join(trozos)
 
 
+def _seccion_territorial(rel: dict | None) -> list[str]:
+    """G20-B1 · de la evidencia territorial a la AFIRMACIÓN que autoriza.
+
+    G19-A y G20-A hicieron legible lo que SABEMOS. Para la procedencia bastó; para la
+    relación territorial no. En el canary limpio del 2026-08-30 —hilo sin un solo mensaje
+    previo— el modelo recibió `pertenencia_territorial: unknown` en el resultado de tool y
+    escribió igual «1 departamento en arriendo EN LA FLORESTA». Enunciar el estado de la
+    evidencia no gobierna la afirmación.
+
+        evidencia  ≠  autorización de afirmación
+
+    Por eso esta sección vive aquí y no en la tool: es el canal que el sistema ya trata
+    como autoritativo y el único con obediencia demostrada —las frases obligatorias de
+    presupuesto no se violaron en ninguno de los 13 turnos del corpus.
+
+    UNKNOWN NO ES UNA NEGACIÓN. No se autoriza «está fuera» ni «no pertenece»: tampoco eso
+    está demostrado. `unknown` se traduce en RESTRICCIÓN sobre lo afirmable, no en su
+    contrario.
+
+    Y la política NO es «no menciones el barrio». Las tres familias acreditadas —referencia
+    a la consulta, POI con nombre propio y proximidad al punto— se nombran explícitamente
+    como permitidas. Prohibir el topónimo entero degradaría el producto para arreglar un
+    claim: el 24% de las coincidencias del patrón ingenuo en el corpus real eran el gancho
+    de cierre («¿cómo es vivir en La Floresta?»), que es conducta deseada.
+    """
+    if not rel or rel.get("relacion_recuperacion") != "within_radius":
+        return []
+    lugar = rel.get("consulta")
+    dist = rel.get("distancia_metros")
+
+    out = ["", "──────── RELACIÓN TERRITORIAL · QUÉ PUEDES AFIRMAR ────────",
+           "LA EVIDENCIA DE ESTE TURNO:"]
+    if lugar:
+        out.append(f"  · se geocodificó «{lugar}» y devolvió UN PUNTO — no un área, no un límite")
+    else:
+        out.append("  · el punto de búsqueda NO corresponde a ningún lugar nombrado en este turno")
+    out.append(f"  · los candidatos se recuperaron por PROXIMIDAD a ese punto (radio pedido "
+               f"{rel.get('radius_requested_m')} m, efectivo {rel.get('radius_searched_m')} m)")
+    if dist is not None:
+        out.append(f"  · el candidato mostrado está a {dist:g} m de ese punto")
+    out.append("  · pertenencia territorial: NO ESTÁ ESTABLECIDA — no existe límite ni "
+               "polígono que la demuestre, ni aquí ni en la base")
+
+    out.append("PUEDES AFIRMAR:")
+    if dist is not None:
+        out.append(f"  ✅ que el inmueble está a {dist:g} m del punto usado para la búsqueda")
+    else:
+        out.append("  ✅ la proximidad al punto usado para la búsqueda")
+    if lugar:
+        out.append(f"  ✅ que buscaste «{lugar}» — describir la consulta es correcto")
+    out.append("  ✅ los POI con nombre propio y sus tiempos, tal como vienen en los servicios "
+               "cercanos: son evidencia acreditada")
+
+    out.append("NO AFIRMES — esta evidencia no lo autoriza:")
+    if lugar:
+        out.append(f"  ❌ que el inmueble esté «en {lugar}», «dentro de» o «ubicado en» ese lugar")
+        out.append(f"  ❌ que el punto de búsqueda sea el centro, el centroide o el corazón "
+                   f"de «{lugar}»")
+    else:
+        out.append("  ❌ que el inmueble pertenezca a ningún barrio o sector")
+        out.append("  ❌ que el punto de búsqueda sea el centro o el corazón de un lugar")
+    out.append("  ❌ TAMPOCO lo contrario: no digas que está fuera ni que no pertenece. "
+               "Ninguna de las dos cosas está demostrada.")
+    return out
+
+
 def bloque_autoritativo(cards: list[dict], preferencias: dict | None,
                         descartadas: list[dict] | None = None,
-                        priorizado: tuple[str | None, str | None] = (None, None)) -> str:
+                        priorizado: tuple[str | None, str | None] = (None, None),
+                        relacion_territorial: dict | None = None) -> str:
     """Las tarjetas del turno → el bloque que el modelo recibe como verdad del turno.
 
     `cards` son EXACTAMENTE las que verá la persona, ya ordenadas. `descartadas` son las que
@@ -250,5 +317,7 @@ def bloque_autoritativo(cards: list[dict], preferencias: dict | None,
         secuencia = " · ".join(f"{i}) {_nombre(c)}" for i, c in enumerate(cards, 1))
         out += ["", "RECORDATORIO FINAL, antes de escribir: si numeras opciones, van en ESTE orden",
                 f"y ningún otro (aunque dos estén casi empatadas): {secuencia}."]
+
+    out += _seccion_territorial(relacion_territorial)
 
     return "\n".join(out)

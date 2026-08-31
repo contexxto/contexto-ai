@@ -151,7 +151,7 @@ def _linea_opcion(c: dict, tope, por_mes: bool) -> str:
     return " · ".join(trozos)
 
 
-def _seccion_territorial(rel: dict | None) -> list[str]:
+def _seccion_territorial(rel: dict | None, cards: list[dict] | None = None) -> list[str]:
     """G20-B1 · de la evidencia territorial a la AFIRMACIÓN que autoriza.
 
     G19-A y G20-A hicieron legible lo que SABEMOS. Para la procedencia bastó; para la
@@ -179,7 +179,10 @@ def _seccion_territorial(rel: dict | None) -> list[str]:
     if not rel or rel.get("relacion_recuperacion") != "within_radius":
         return []
     lugar = rel.get("consulta")
-    dist = rel.get("distancia_metros")
+    # G20-B1-R2: una distancia POR INMUEBLE VISIBLE, ligada por id. Nunca una cifra suelta.
+    distancias = rel.get("distancias") or []
+    nombres = {c.get("id"): _nombre(c) for c in (cards or []) if isinstance(c, dict)}
+    hay_cifras = any(d.get("distancia_metros") is not None for d in distancias)
 
     out = ["", "──────── RELACIÓN TERRITORIAL · QUÉ PUEDES AFIRMAR ────────",
            "LA EVIDENCIA DE ESTE TURNO:"]
@@ -189,16 +192,34 @@ def _seccion_territorial(rel: dict | None) -> list[str]:
         out.append("  · el punto de búsqueda NO corresponde a ningún lugar nombrado en este turno")
     out.append(f"  · los candidatos se recuperaron por PROXIMIDAD a ese punto (radio pedido "
                f"{rel.get('radius_requested_m')} m, efectivo {rel.get('radius_searched_m')} m)")
-    if dist is not None:
-        out.append(f"  · el candidato mostrado está a {dist:g} m de ese punto")
+    if hay_cifras:
+        # Cada cifra pegada a SU inmueble, con el MISMO nombre y el MISMO número de orden que
+        # la lista de opciones de arriba. Una distancia genérica «del candidato mostrado»
+        # atribuía la cifra del más cercano —que el filtro pudo haber ocultado— a la tarjeta
+        # que sí se ve. Ver `_distancias_ligadas` en el assembler.
+        out.append("  · distancia de CADA inmueble mostrado a ese punto. La cifra es de SU "
+                   "inmueble")
+        out.append("    y de ningún otro, y el número es el de la lista de arriba:")
+        for i, d in enumerate(distancias, 1):
+            nom = nombres.get(d.get("id")) or "Inmueble sin dirección"
+            metros = d.get("distancia_metros")
+            if metros is None:
+                out.append(f"      {i}. {nom} — SIN DISTANCIA LIGADA a este inmueble: no le "
+                           f"atribuyas ninguna")
+            else:
+                out.append(f"      {i}. {nom} — {metros:g} m")
+    else:
+        out.append("  · NINGUNA distancia quedó ligada a los inmuebles mostrados: no afirmes "
+                   "distancias en este turno")
     out.append("  · pertenencia territorial: NO ESTÁ ESTABLECIDA — no existe límite ni "
                "polígono que la demuestre, ni aquí ni en la base")
 
     out.append("PUEDES AFIRMAR:")
-    if dist is not None:
-        out.append(f"  ✅ que el inmueble está a {dist:g} m del punto usado para la búsqueda")
+    if hay_cifras:
+        out.append("  ✅ la distancia de cada inmueble EXACTAMENTE como está arriba, junto al "
+                   "inmueble al que corresponde")
     else:
-        out.append("  ✅ la proximidad al punto usado para la búsqueda")
+        out.append("  ✅ que los inmuebles se recuperaron por proximidad a ese punto — sin cifra")
     if lugar:
         out.append(f"  ✅ que buscaste «{lugar}» — describir la consulta es correcto")
     out.append("  ✅ los POI con nombre propio y sus tiempos, tal como vienen en los servicios "
@@ -212,6 +233,9 @@ def _seccion_territorial(rel: dict | None) -> list[str]:
     else:
         out.append("  ❌ que el inmueble pertenezca a ningún barrio o sector")
         out.append("  ❌ que el punto de búsqueda sea el centro o el corazón de un lugar")
+    out.append("  ❌ atribuir a un inmueble una distancia que arriba no le corresponde, ni dar "
+               "una distancia «del candidato mostrado» en general: cada cifra es de un "
+               "inmueble concreto y sólo de ése")
     out.append("  ❌ TAMPOCO lo contrario: no digas que está fuera ni que no pertenece. "
                "Ninguna de las dos cosas está demostrada.")
     return out
@@ -318,6 +342,6 @@ def bloque_autoritativo(cards: list[dict], preferencias: dict | None,
         out += ["", "RECORDATORIO FINAL, antes de escribir: si numeras opciones, van en ESTE orden",
                 f"y ningún otro (aunque dos estén casi empatadas): {secuencia}."]
 
-    out += _seccion_territorial(relacion_territorial)
+    out += _seccion_territorial(relacion_territorial, cards)
 
     return "\n".join(out)

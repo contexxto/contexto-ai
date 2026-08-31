@@ -46,7 +46,13 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from app.decision.assembler import _relacion_territorial_del_turno
 from app.encaje_contexto import bloque_autoritativo
 
-# El turno REAL del canary de producción, congelado.
+# El turno del canary de producción — pero TRANSCRITO del informe en prosa, no copiado del
+# cable. Se conserva tal cual a propósito: es la evidencia de cómo `8322e25` pasó 23/23 en
+# verde y rompió el 100% de los turnos reales. En el cable `distancia_metros` es la CADENA
+# "572.0" (`json.dumps(default=str)` sobre el Decimal de Postgres), y `f"{dist:g}"` sobre un
+# str levanta ValueError. El artefacto fiel vive en
+# tests/fixtures/g20_b1_canary_void_20260830T204022Z.json y lo usan R1 y R2.
+# NO tomar este DIST como prueba de qué emite producción.
 ANCLA = {"latitude": -0.20934, "longitude": -78.484919, "geometry_type": "point"}
 DIST = 572.0
 DIRECCION = "Calle Alemania E12-34 y Gonzalez Suarez, Quito"
@@ -87,12 +93,13 @@ def _cards():
 
 # ══ 1 · PANEL · la relación se deriva del turno actual ═══════════════════════════════
 def test_el_turno_actual_produce_relacion_territorial():
-    r = _relacion_territorial_del_turno(_turno(_geocode(), _search()))
+    r = _relacion_territorial_del_turno(_turno(_geocode(), _search()), cards=_cards())
     assert r is not None
     assert r["relacion_recuperacion"] == "within_radius"
     assert r["pertenencia_territorial"] == "unknown"
     assert r["ancla_busqueda"]["geometry_type"] == "point"
-    assert r["distancia_metros"] == DIST
+    # G20-B1-R2: la distancia ya no es un campo suelto — va ligada al id de la tarjeta.
+    assert r["distancias"] == [{"id": "ee9ff315", "distancia_metros": DIST}]
     assert r["radius_requested_m"] == 1200
     assert r["radius_searched_m"] == 1200
 
@@ -116,9 +123,9 @@ def test_dos_turnos_manda_el_ULTIMO():
     actuales = _turno(_geocode(lat=ancla_b["latitude"], lon=ancla_b["longitude"],
                                consulta="La Floresta, Quito, Ecuador"),
                       _search(ancla=ancla_b, dist=310.0))
-    r = _relacion_territorial_del_turno(previos + actuales)
+    r = _relacion_territorial_del_turno(previos + actuales, cards=_cards())
     assert r["ancla_busqueda"]["latitude"] == ancla_b["latitude"]
-    assert r["distancia_metros"] == 310.0
+    assert r["distancias"] == [{"id": "ee9ff315", "distancia_metros": 310.0}]
 
 
 def test_si_el_turno_actual_NO_busco_no_se_hereda():
@@ -154,9 +161,13 @@ def test_sin_geocode_en_el_turno_no_se_nombra_el_lugar():
 
 # ══ 4 · EL BLOQUE AUTORITATIVO · qué se puede afirmar ═══════════════════════════════
 def _bloque():
+    # G20-B1-R2: la relación se liga a las tarjetas VISIBLES por id, así que recibe las
+    # mismas `_cards()` que el bloque. Antes bastaba con los mensajes, y ahí estaba el
+    # defecto: la distancia salía de `assets[0]` aunque el filtro lo hubiera ocultado.
     return bloque_autoritativo(
         _cards(), {"operacion": "arriendo", "presupuesto_max": 900.0}, [], (None, None),
-        relacion_territorial=_relacion_territorial_del_turno(_turno(_geocode(), _search())))
+        relacion_territorial=_relacion_territorial_del_turno(
+            _turno(_geocode(), _search()), cards=_cards()))
 
 
 def test_el_bloque_declara_la_proximidad_como_lo_demostrado():

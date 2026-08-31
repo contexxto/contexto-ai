@@ -122,7 +122,66 @@ def _distancia_normalizada(v) -> float | None:
     return d
 
 
-def _relacion_territorial_del_turno(messages) -> dict | None:
+def _distancias_ligadas(activos, cards) -> list[dict]:
+    """G20-B1-R2 · una distancia por inmueble VISIBLE, ligada por identidad estable.
+
+    EL DEFECTO QUE CIERRA. Hasta R1 la distancia salía de `activos[0]` —el más cercano que
+    devolvió el SQL— y el bloque la atribuía «al candidato mostrado». Entre el resultado
+    crudo y lo que la persona ve hay dos filtros (operación, tipo), un ranking y un recorte.
+    En el turno real del canary, con `operacion: venta`, el más cercano (572 m) es ARRIENDO y
+    NO se muestra: el bloque describía a una entidad invisible. Una afirmación sobre algo que
+    la persona no puede ver es peor que un número equivocado.
+
+        la identidad de la entidad NO es metadato accesorio:
+        es parte de la AUTORIDAD de la afirmación
+
+    EL IDENTIFICADOR NO SE INVENTA. `id` ya es canónico y compartido: viene en el ToolMessage,
+    `_collect_asset_ids` lo extrae de ahí, `_fetch_cards_rows` trae la fila por ese id y
+    `_card_from_row` lo copia a la tarjeta. El bloque autoritativo ya liga por id en la
+    priorización. Éste es el mismo camino, no uno nuevo.
+
+    NUNCA POR POSICIÓN. Ni `activos[0]`, ni `zip`, ni índices paralelos: el orden del payload
+    (por distancia ascendente) y el del panel (por encaje, ya filtrado y recortado) son
+    órdenes distintos sobre poblaciones distintas. Que a veces coincidan es lo que hace
+    traicionero unir por posición.
+
+    AMBIGUO ES LO MISMO QUE AUSENTE. Dos activos con el mismo id no dejan elegir cuál
+    describe a la tarjeta, y elegir sería fabricar la correspondencia. Se omite la cifra —
+    `None`, que aguas abajo significa «no afirmes distancia para éste». La prohibición
+    territorial NO depende de esto y permanece intacta: un payload sucio no puede ser la
+    puerta por la que el modelo queda sin gobierno.
+
+    Los activos que no correspondan a ninguna tarjeta visible se descartan enteros: una
+    entidad filtrada no aporta afirmaciones sobre una entidad visible.
+    """
+    por_id: dict[str, dict] = {}
+    ambiguos: set[str] = set()
+    for a in activos or []:
+        if not isinstance(a, dict):
+            continue
+        aid = a.get("id")
+        if not isinstance(aid, str) or not aid:
+            continue          # sin identidad no es ligable, y no se le fabrica una
+        if aid in por_id:
+            ambiguos.add(aid)
+            continue
+        por_id[aid] = a
+
+    fuera = []
+    for c in cards or []:
+        cid = c.get("id") if isinstance(c, dict) else None
+        activo = None
+        if isinstance(cid, str) and cid and cid not in ambiguos:
+            activo = por_id.get(cid)
+        fuera.append({
+            "id": cid,
+            "distancia_metros": (_distancia_normalizada(activo.get("distancia_metros"))
+                                 if activo else None),
+        })
+    return fuera
+
+
+def _relacion_territorial_del_turno(messages, cards=()) -> dict | None:
     """G20-B1 - la relacion territorial que ESTE turno demostro, o None.
 
     SOLO DEL TURNO ACTUAL, sin fallback al historial. `_collect_asset_ids` si cae al hilo
@@ -159,14 +218,12 @@ def _relacion_territorial_del_turno(messages) -> dict | None:
         "ancla_busqueda": relacion.get("ancla_busqueda"),
         "radius_requested_m": relacion.get("radius_requested_m"),
         "radius_searched_m": relacion.get("radius_searched_m"),
-        "distancia_metros": None,
+        # G20-B1-R2: una entrada por inmueble VISIBLE, en el orden del panel, ligada por id.
+        # NO existe una distancia singular: era la puerta por la que se atribuía la cifra de
+        # un activo oculto al «candidato mostrado». Ver `_distancias_ligadas`.
+        "distancias": _distancias_ligadas(relacion.get("assets"), cards),
         "consulta": None,
     }
-    activos = relacion.get("assets") or []
-    if activos and isinstance(activos[0], dict):
-        # G20-B1-R1: llega como str desde `json.dumps(default=str)`. Ver el docstring.
-        fuera["distancia_metros"] = _distancia_normalizada(
-            activos[0].get("distancia_metros"))
 
     ancla = fuera["ancla_busqueda"] or {}
     for m in turno:
@@ -728,7 +785,10 @@ async def construir_panel(messages, *, session_id: str, preferencias: dict | Non
         # G20-B1 - aditivo. No participa del ranking ni del recorte: describe QUE RELACION
         # probo el retrieval de ESTE turno, para que el bloque autoritativo pueda decir que
         # afirmacion autoriza esa evidencia.
-        "relacion_territorial": _relacion_territorial_del_turno(messages),
+        # G20-B1-R2: recibe las tarjetas VISIBLES —ya filtradas, ordenadas y recortadas—
+        # porque cada distancia se liga a la entidad que la persona realmente ve, no al
+        # activo que el SQL puso primero.
+        "relacion_territorial": _relacion_territorial_del_turno(messages, cards=visibles),
     }
 
 

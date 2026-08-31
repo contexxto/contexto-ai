@@ -180,7 +180,7 @@ def test_la_relacion_territorial_se_conserva(monkeypatch):
 def test_la_distancia_queda_normalizada_a_numero(monkeypatch):
     """(3) DISTANCIA NORMALIZADA — y con el MISMO valor, no uno redondeado por el camino."""
     rel = _panel(monkeypatch)["relacion_territorial"]
-    d = rel["distancia_metros"]
+    d = _dist(rel)
     assert isinstance(d, float), f"sigue siendo {type(d).__name__}"
     assert d == 572.0
 
@@ -196,7 +196,7 @@ def test_el_contrato_autoritativo_se_emite_completo(monkeypatch):
     assert f"se geocodificó «{CONSULTA}»" in bloque
     assert "radio pedido 1200 m, efectivo 1200 m" in bloque
     # `:g` sobre 572.0 da «572», no «572.0»: la aserción fija el formato, no lo adivina
-    assert "el candidato mostrado está a 572 m de ese punto" in bloque
+    assert "— 572 m" in bloque          # G20-B1-R2: la cifra va pegada a SU inmueble
     assert "572.0 m" not in bloque
 
 
@@ -253,9 +253,26 @@ def _mensajes_con(distancia) -> list:
     return msgs
 
 
-def _rel_con(distancia):
-    """La relación que produce el borde, con `distancia_metros` forzado a un valor."""
-    return _relacion_territorial_del_turno(_mensajes_con(distancia))
+def _rel_con(monkeypatch, distancia):
+    """La relación del turno, con `distancia_metros` del activo forzado a un valor.
+
+    G20-B1-R2 cambió el contrato: la relación liga cada distancia a una tarjeta VISIBLE por
+    id, así que ya no basta con los mensajes — hay que cruzar el panel. Con `PREFS`
+    (arriendo, tope 900) el panel deja UNA tarjeta, y es justamente el activo que
+    `_mensajes_con` muta. La equivalencia de tipos se sigue probando sobre la costura real,
+    que es lo que esta unidad exigía.
+    """
+    return _panel(monkeypatch, mensajes=_mensajes_con(distancia))["relacion_territorial"]
+
+
+def _dist(rel):
+    """La distancia LIGADA a la única tarjeta visible del turno.
+
+    Ya no existe `rel["distancia_metros"]`: era la cifra suelta que R2 eliminó porque
+    permitía atribuir al «candidato mostrado» la distancia de un activo que el filtro había
+    ocultado. Ver tests/test_g20_b1_r2_binding_entidad_visible.py.
+    """
+    return rel["distancias"][0]["distancia_metros"]
 
 
 @pytest.mark.parametrize("entrada, esperado", [
@@ -267,10 +284,10 @@ def _rel_con(distancia):
     (0, 0.0),
     ("1014.4", 1014.4),
 ])
-def test_str_int_y_float_convergen_al_mismo_numero(entrada, esperado):
-    rel = _rel_con(entrada)
-    assert rel["distancia_metros"] == esperado
-    assert isinstance(rel["distancia_metros"], float)
+def test_str_int_y_float_convergen_al_mismo_numero(monkeypatch, entrada, esperado):
+    rel = _rel_con(monkeypatch, entrada)
+    assert _dist(rel) == esperado
+    assert isinstance(_dist(rel), float)
 
 
 def test_el_formato_no_depende_del_tipo_de_entrada(monkeypatch):
@@ -284,7 +301,7 @@ def test_el_formato_no_depende_del_tipo_de_entrada(monkeypatch):
     textos = {_bloque(monkeypatch, mensajes=_mensajes_con(v))
               for v in ("572.0", "572", 572, 572.0)}
     assert len(textos) == 1, "el tipo de entrada cambió el texto autoritativo"
-    assert "está a 572 m" in textos.pop()
+    assert "— 572 m" in textos.pop()
 
 
 # ══ 3 · QUÉ NO ES EVIDENCIA ════════════════════════════════════════════════════════
@@ -307,16 +324,16 @@ def test_el_formato_no_depende_del_tipo_de_entrada(monkeypatch):
     True, False,                    # bool es int en Python: `float(True)` daría 1.0
     [572.0], {"m": 572}, object(),
 ])
-def test_lo_que_no_es_una_distancia_no_se_vuelve_evidencia(basura):
-    rel = _rel_con(basura)
+def test_lo_que_no_es_una_distancia_no_se_vuelve_evidencia(monkeypatch, basura):
+    rel = _rel_con(monkeypatch, basura)
     assert rel is not None, "rechazar la distancia no puede matar la relación entera"
-    assert rel["distancia_metros"] is None, f"{basura!r} se coló como distancia"
+    assert _dist(rel) is None, f"{basura!r} se coló como distancia"
 
 
-def test_ni_NaN_ni_infinito_sobreviven_como_numero():
+def test_ni_NaN_ni_infinito_sobreviven_como_numero(monkeypatch):
     """Explícito porque `float('nan')` es un float y pasaría cualquier isinstance()."""
     for v in ("NaN", float("nan"), float("inf"), float("-inf")):
-        d = _rel_con(v)["distancia_metros"]
+        d = _dist(_rel_con(monkeypatch, v))
         assert d is None or math.isfinite(d)
 
 
@@ -334,12 +351,12 @@ def test_rechazar_la_distancia_NO_desactiva_la_prohibicion(monkeypatch):
     assert f"que el inmueble esté «en {CONSULTA}»" in bloque
     assert "no digas que está fuera ni que no pertenece" in bloque
     # sin cifra, pero con la proximidad dicha en palabras
-    assert "la proximidad al punto usado para la búsqueda" in bloque
-    assert " m de ese punto" not in bloque
+    assert "se recuperaron por proximidad a ese punto" in bloque
+    assert "NINGUNA distancia quedó ligada" in bloque
 
 
-def test_la_relacion_sigue_completa_aunque_la_distancia_se_caiga():
-    rel = _rel_con("abc")
+def test_la_relacion_sigue_completa_aunque_la_distancia_se_caiga(monkeypatch):
+    rel = _rel_con(monkeypatch, "abc")
     assert rel["pertenencia_territorial"] == "unknown"
     assert rel["relacion_recuperacion"] == "within_radius"
     assert rel["consulta"] == CONSULTA

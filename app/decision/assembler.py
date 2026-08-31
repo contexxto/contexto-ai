@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import re
 import unicodedata
 
@@ -75,6 +76,52 @@ def _json_de(m):
     return d if isinstance(d, dict) else None
 
 
+def _distancia_normalizada(v) -> float | None:
+    """G20-B1-R1 · el borde donde un dato serializado se vuelve evidencia numérica.
+
+    POR QUÉ EXISTE. `tool_search_nearby_assets` calcula la distancia con
+    `ROUND(ST_Distance(...)::numeric, 1)` y serializa con `json.dumps(..., default=str)`.
+    El `Decimal` de Postgres no es serializable, así que `default=str` lo convierte: la
+    distancia viaja por el cable como la CADENA `"572.0"`, no como número. `8322e25` la
+    copiaba literal y `encaje_contexto._seccion_territorial` la formateaba con `:g`, que
+    no acepta `str` — `ValueError` no contenida, nodo `encaje` muerto, turno abortado. Es
+    la regresión del canary del 2026-08-30T20:40:22Z, con su excepción persistida en
+    `checkpoint_writes.__error__`.
+
+    Se normaliza AQUÍ y no en la tool: el payload de la tool es el que G19-A y G20-A ya
+    validaron contra el modelo, y moverlo cambiaría un contrato probado para arreglar a su
+    consumidor. Aquí es donde el dato deja de ser transporte y pasa a ser evidencia.
+
+    FAIL-CLOSED SOBRE LA AFIRMACIÓN, NUNCA SOBRE EL CONTRATO. Lo que no puede ser una
+    distancia devuelve `None`, y `None` ya tiene significado aguas abajo: la sección
+    territorial se emite igual —con su «pertenencia NO ESTÁ ESTABLECIDA» y sus ❌— pero
+    describe la proximidad en palabras, sin cifra. Nunca se degrada a «0 m»: cero es una
+    distancia real y afirmarla sería inventar evidencia. Y jamás se apaga la prohibición:
+    un dato sucio no puede ser la puerta por la que el modelo queda sin restricción.
+
+    LOS CASOS QUE NO SON OBVIOS:
+      · `bool` va antes que `float`, porque en Python `True` ES un `int` y `float(True)`
+        daría 1.0 — una distancia de un metro fabricada a partir de una bandera.
+      · NaN e infinito son `float` legítimos y pasarían cualquier `isinstance`. `:g` los
+        formatearía sin quejarse («nan m», «inf m»), que es peor que reventar: una
+        afirmación falsa y silenciosa en el canal autoritativo.
+      · Negativo no es «cerca»: es un dato imposible, y aceptarlo escondería el bug que
+        lo produjo.
+    """
+    if v is None or isinstance(v, bool):
+        return None
+    try:
+        d = float(v)
+    except (TypeError, ValueError):
+        print(f"  [WARN] distancia_metros inservible, se omite la cifra "
+              f"({type(v).__name__}: {v!r})")
+        return None
+    if not math.isfinite(d) or d < 0:
+        print(f"  [WARN] distancia_metros fuera de dominio, se omite la cifra ({d!r})")
+        return None
+    return d
+
+
 def _relacion_territorial_del_turno(messages) -> dict | None:
     """G20-B1 - la relacion territorial que ESTE turno demostro, o None.
 
@@ -117,7 +164,9 @@ def _relacion_territorial_del_turno(messages) -> dict | None:
     }
     activos = relacion.get("assets") or []
     if activos and isinstance(activos[0], dict):
-        fuera["distancia_metros"] = activos[0].get("distancia_metros")
+        # G20-B1-R1: llega como str desde `json.dumps(default=str)`. Ver el docstring.
+        fuera["distancia_metros"] = _distancia_normalizada(
+            activos[0].get("distancia_metros"))
 
     ancla = fuera["ancla_busqueda"] or {}
     for m in turno:

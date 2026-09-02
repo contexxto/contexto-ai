@@ -245,10 +245,28 @@ def test_sin_relacion_el_bloque_es_identico_al_de_hoy():
             == bloque_autoritativo(cards, prefs, [], (None, None)))
 
 
-def test_sin_cards_sigue_devolviendo_vacio():
-    """G20-B1-NOCARDS-01 · KNOWN/DEFERRED. El borde no se toca en esta unidad."""
-    r = _relacion_territorial_del_turno(_turno(_geocode(), _search()))
-    assert bloque_autoritativo([], {}, [], (None, None), relacion_territorial=r) == ""
+def test_sin_cards_pero_CON_relacion_la_prohibicion_se_emite():
+    """G20-B1-NOCARDS-01 · CERRADO en R3.
+
+    Este test decía antes lo contrario —«sin cards sigue devolviendo vacío»— y era el
+    marcador del gate diferido: codificaba el borde como comportamiento esperado. R3 lo
+    invierte, porque un panel vacío apagaba el gobierno territorial entero justo cuando menos
+    evidencia había para sostener una afirmación de pertenencia.
+    """
+    r = _relacion_territorial_del_turno(_turno(_geocode(), _search()), cards=_cards())
+    b = bloque_autoritativo([], {}, [], (None, None), relacion_territorial=r)
+    assert b, "cero tarjetas volvió a apagar la prohibición territorial"
+    assert "pertenencia territorial: NO ESTÁ ESTABLECIDA" in b
+    assert f"que el inmueble esté «en {CONSULTA}»" in b
+    # sin tarjetas NO hay afirmaciones sobre candidatos individuales
+    assert "— 572 m" not in b
+    assert DIRECCION not in b
+
+
+def test_sin_cards_y_sin_relacion_sigue_devolviendo_vacio():
+    """La otra mitad, que R3 no cambia: sin riesgo territorial no hay contrato que emitir,
+    y `""` es la respuesta correcta — no un fallo."""
+    assert bloque_autoritativo([], {}, [], (None, None), relacion_territorial=None) == ""
 
 
 def test_el_bloque_sigue_gobernando_el_presupuesto():

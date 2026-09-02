@@ -54,3 +54,13 @@ class AgentState(_AgentStateCore, total=False):
     # endpoint para que `verificacion_prosa` pueda detectar que la respuesta lo ofreció igual
     # (ofrecer lo que no aparece es prometer lo que no hay).
     descartadas: list[dict[str, Any]]
+
+    # G20-B1-R3 · la única fila de la tabla de verdad que no se puede expresar con
+    # `encaje_contexto`: el turno PROBÓ una relación territorial y no se pudo construir
+    # NINGUNA forma del contrato —ni el enriquecido ni el fallback mínimo—. `llm_node` la lee
+    # ANTES de invocar al modelo y devuelve una salida controlada en su lugar.
+    #
+    # No es lo mismo que `encaje_contexto == ""`: ahí puede no haber riesgo territorial y el
+    # vacío ser correcto. Esta bandera dice «hay riesgo Y no hay autoridad», que es la única
+    # combinación en la que el turno no debe continuar.
+    contrato_territorial_faltante: bool

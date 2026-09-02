@@ -241,6 +241,39 @@ def _seccion_territorial(rel: dict | None, cards: list[dict] | None = None) -> l
     return out
 
 
+def bloque_territorial_minimo(relacion_territorial: dict | None) -> str:
+    """G20-B1-R3 · el contrato territorial SOLO, sin panel, sin tarjetas y sin distancias.
+
+    Es el fallback autoritativo mínimo, y su rasgo de diseño es de dónde NO depende: se arma
+    únicamente con la relación que el ToolMessage del turno demostró. Ni base, ni ranking, ni
+    `cards`. Si dependiera del panel, un fallo en `construir_panel` —que es donde vive la I/O y
+    por tanto donde más se falla— arrastraría consigo al contrato, que es exactamente el modo
+    de fallo que R3 cierra.
+
+    Se usa en dos filas de la tabla de verdad:
+
+      · hay evidencia territorial y CERO tarjetas   (G20-B1-NOCARDS-01)
+      · hay evidencia territorial y el bloque enriquecido reventó  (G20-B1-CONTAINMENT-01)
+
+    Devuelve "" cuando no hay relación que declarar: sin riesgo territorial no hay contrato
+    que emitir, y eso NO es un fallo.
+    """
+    # SIN ENTIDADES NI DISTANCIAS, y no por economía: sin tarjetas no hay sujeto visible al
+    # que ligar una cifra, y emitirla igual produciría «Inmueble sin dirección — 572 m» —
+    # una distancia huérfana, que es la forma degenerada del defecto que R2 cerró. Se vacían
+    # aquí y no en el llamador para que la función sea honesta venga de donde venga.
+    rel = dict(relacion_territorial or {}, distancias=[]) if relacion_territorial else None
+    seccion = _seccion_territorial(rel, [])
+    if not seccion:
+        return ""
+    cabecera = [
+        "════════ CONTEXTO AUTORITATIVO DE ESTE TURNO ════════",
+        "Esto NO lo escribió el usuario: es la restricción del sistema sobre lo que puedes",
+        "afirmar de la UBICACIÓN. Rige aunque no haya inmuebles que mostrar.",
+    ]
+    return "\n".join(cabecera + seccion)
+
+
 def bloque_autoritativo(cards: list[dict], preferencias: dict | None,
                         descartadas: list[dict] | None = None,
                         priorizado: tuple[str | None, str | None] = (None, None),
@@ -253,7 +286,13 @@ def bloque_autoritativo(cards: list[dict], preferencias: dict | None,
     Devuelve "" si no hay nada que declarar — un bloque vacío no debe ensuciar el prompt.
     """
     if not cards:
-        return ""
+        # G20-B1-R3 · NOCARDS-01. Sin tarjetas no hay ranking que dictar ni presupuesto que
+        # contar — pero si el turno PROBÓ una relación territorial, la prohibición se emite
+        # igual. Devolver "" aquí apagaba el gobierno territorial entero: el modelo quedaba
+        # libre de convertir «búsqueda radial alrededor de La Floresta» en «búsqueda dentro
+        # de La Floresta» justo cuando menos evidencia había para sostenerlo.
+        # Sin relación devuelve "", que es lo correcto: sin riesgo no hay contrato.
+        return bloque_territorial_minimo(relacion_territorial)
     prefs = preferencias or {}
     por_mes = _es_arriendo(cards, prefs)
     tope = prefs.get("presupuesto_max")

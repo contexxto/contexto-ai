@@ -665,6 +665,29 @@ _SIN_AUTORIDAD_TERRITORIAL = (
 )
 
 
+def _sin_seccion_territorial(bloque: str) -> str:
+    """G20-B1-R3 · recorta la autoridad TERRITORIAL de un bloque heredado de otro turno.
+
+    Se recorta en vez de apagarse porque el bloque autoritativo lleva dos cosas de naturaleza
+    distinta. Las reglas del PANEL —orden obligatorio de la lista, frases obligatorias de
+    presupuesto— gobiernan las tarjetas que la persona sigue viendo, y en un turno de
+    seguimiento («¿y ese tiene parqueadero?») deben seguir vigentes: G19 las midió obedecidas
+    13/13 y apagarlas cambiaría un defecto por otro. La sección TERRITORIAL, en cambio,
+    describe la evidencia de UNA operación de retrieval concreta; heredarla es dejar que la
+    búsqueda de ayer autorice lo que se afirma hoy.
+
+    Si al recortar no queda ninguna regla de panel —el caso del fallback mínimo, que es
+    territorial y nada más— se devuelve "" en vez de una cabecera huérfana.
+    """
+    from app.encaje_contexto import MARCA_PANEL, MARCA_TERRITORIAL
+
+    corte = bloque.find(MARCA_TERRITORIAL)
+    if corte < 0:
+        return bloque
+    resto = bloque[:corte].rstrip()
+    return resto if MARCA_PANEL in resto else ""
+
+
 def _build_graph() -> StateGraph:
     # 1. Crear el cliente Anthropic con SSL explícito
     _anthropic_client = anthropic.AsyncAnthropic(
@@ -693,16 +716,23 @@ def _build_graph() -> StateGraph:
     llm = base_llm.bind_tools(AGENT_TOOLS)
 
     async def llm_node(state: AgentState) -> dict:
-        # G20-B1-R3 · fila 5 de la tabla de verdad. El turno probó una relación territorial y
-        # NO se pudo construir ninguna forma del contrato. Invocar al modelo aquí sería
-        # dejarlo escribir sobre ubicación sin la restricción que la evidencia exige — que es
-        # justo lo que las tres unidades de G20-B1 existen para impedir. Se corta ANTES de la
-        # invocación y se devuelve una salida controlada que no afirma nada territorial.
+        # G20-B1-R3 · TODO lo que sigue se decide contra el TURNO ACTUAL. Las claves de
+        # AgentState son canales `LastValue` que LangGraph persiste entre turnos, así que
+        # leerlas sin comparar el turno sería dejar que la decisión de ayer gobierne hoy.
+        turno = sum(1 for m in state.get("messages") or [] if isinstance(m, HumanMessage))
+
+        # Fila 5 de la tabla de verdad. El turno probó una relación territorial y NO se pudo
+        # construir ninguna forma del contrato. Invocar al modelo aquí sería dejarlo escribir
+        # sobre ubicación sin la restricción que la evidencia exige — justo lo que las tres
+        # unidades de G20-B1 existen para impedir. Se corta ANTES de la invocación y se
+        # devuelve una salida controlada que no afirma nada territorial.
         #
         # Que exista salida y no un turno muerto es deliberado: el canary del 2026-08-30
         # demostró que abortar deja «Sin respuesta del agente.», que para la persona es peor
-        # y para el sistema es indistinguible de una caída.
-        if state.get("contrato_territorial_faltante"):
+        # y para el sistema es indistinguible de una caída. Y el mensaje se crea AQUÍ, nuevo:
+        # devolver el último AIMessage del hilo daría una respuesta plausible, coherente y
+        # ajena a lo que la persona acaba de preguntar.
+        if state.get("contrato_faltante_turno") == turno:
             print("  [WARN] contrato territorial no disponible: no se invoca al modelo")
             return {"messages": [AIMessage(content=_SIN_AUTORIDAD_TERRITORIAL)]}
 
@@ -710,6 +740,12 @@ def _build_graph() -> StateGraph:
         # instrucción del sistema, no algo que el usuario dijo, y así no contamina ni el
         # historial compartido ni el insumo del extractor de preferencias.
         contexto = (state.get("encaje_contexto") or "").strip()
+        # STATE-LINEAGE-01 · si el bloque es de un turno anterior, la sección TERRITORIAL se
+        # recorta: describe la evidencia de UNA operación de retrieval y no puede gobernar un
+        # turno que no la hizo. Las reglas del panel sí sobreviven — la persona sigue
+        # preguntando sobre las MISMAS tarjetas, y son las que G19 midió obedecidas 13/13.
+        if contexto and state.get("encaje_contexto_turno") != turno:
+            contexto = _sin_seccion_territorial(contexto)
         system = SystemMessage(
             content="\n\n".join(
                 p for p in (SYSTEM_PROMPT.content, _bloque_fecha(), contexto) if p
@@ -773,6 +809,9 @@ def _build_graph() -> StateGraph:
         # que nada porque decide si el turno puede terminar sin contrato: antes se preguntaba
         # por los ids, y una búsqueda territorial sin resultados salía por la puerta de atrás
         # sin emitir una sola restricción.
+        # El índice de turno marca AMBAS decisiones de este nodo. Se calcula arriba porque
+        # la fila 5 puede alcanzarse sin haber entrado siquiera al camino del panel.
+        turno = sum(1 for m in messages if isinstance(m, HumanMessage))
         relacion = _relacion_territorial_del_turno(messages)
         ids = _collect_asset_ids(messages, limit=_MAX_CARDS * 2)
         if not ids and relacion is None:
@@ -789,7 +828,6 @@ def _build_graph() -> StateGraph:
             # Las preferencias se extraen con el LLM: UNA vez por turno del usuario, aunque el
             # agente encadene varias rondas de herramientas. La llave del caché es cuántos
             # mensajes lleva escritos la persona.
-            turno = sum(1 for m in messages if isinstance(m, HumanMessage))
             if not (isinstance(prefs, dict) and state.get("preferencias_turno") == turno
                     and prefs):
                 try:
@@ -853,11 +891,12 @@ def _build_graph() -> StateGraph:
         # que `llm_node` no invoque al modelo. Es la diferencia entre «no había nada que
         # decir» y «había algo que prohibir y no pudimos decirlo».
         if relacion is not None and not contexto:
-            salida["contrato_territorial_faltante"] = True
+            salida["contrato_faltante_turno"] = turno
             return salida
 
         if contexto:
             salida["encaje_contexto"] = contexto
+            salida["encaje_contexto_turno"] = turno
         return salida
 
     graph = StateGraph(AgentState)

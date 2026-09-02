@@ -264,7 +264,8 @@ def test_si_ni_el_fallback_se_puede_construir_no_se_invoca_al_LLM(monkeypatch, c
     estado = {"messages": msgs, "preferencias": PREFS, "preferencias_turno": 1}
 
     out = asyncio.run(nodo("encaje")(estado, CFG))
-    assert out.get("contrato_territorial_faltante") is True
+    # marcado con el ÍNDICE DE TURNO, no con un booleano: ver el módulo de lineage
+    assert out.get("contrato_faltante_turno") == 1
     assert not (out.get("encaje_contexto") or "")
     assert "[WARN]" in capsys.readouterr().out
 

@@ -22,6 +22,14 @@ from app.encaje import estado_presupuesto
 
 _ARRIENDO = "arriendo"
 
+# G20-B1-R3 · las dos marcas del bloque, exportadas para que `llm_node` pueda recortar la
+# herencia sin duplicar literales. La sección territorial describe la evidencia de UNA
+# operación de retrieval y NO sobrevive al turno; las reglas del panel (orden obligatorio,
+# frases de presupuesto) sí, porque gobiernan el MISMO panel mientras la persona pregunta
+# sobre él. Ver tests/test_g20_b1_r3_lineage_del_contrato.py.
+MARCA_PANEL = "════════ MOTOR DE ENCAJE · CONTEXTO AUTORITATIVO DE ESTE TURNO ════════"
+MARCA_TERRITORIAL = "──────── RELACIÓN TERRITORIAL · QUÉ PUEDES AFIRMAR ────────"
+
 
 def _es_arriendo(cards: list[dict], preferencias: dict) -> bool:
     """¿El turno habla de canon mensual? (decide si los montos llevan '/mes')."""
@@ -184,7 +192,7 @@ def _seccion_territorial(rel: dict | None, cards: list[dict] | None = None) -> l
     nombres = {c.get("id"): _nombre(c) for c in (cards or []) if isinstance(c, dict)}
     hay_cifras = any(d.get("distancia_metros") is not None for d in distancias)
 
-    out = ["", "──────── RELACIÓN TERRITORIAL · QUÉ PUEDES AFIRMAR ────────",
+    out = ["", MARCA_TERRITORIAL,
            "LA EVIDENCIA DE ESTE TURNO:"]
     if lugar:
         out.append(f"  · se geocodificó «{lugar}» y devolvió UN PUNTO — no un área, no un límite")
@@ -299,7 +307,7 @@ def bloque_autoritativo(cards: list[dict], preferencias: dict | None,
     tope = float(tope) if isinstance(tope, (int, float)) and not isinstance(tope, bool) and tope > 0 else None
 
     out = [
-        "════════ MOTOR DE ENCAJE · CONTEXTO AUTORITATIVO DE ESTE TURNO ════════",
+        MARCA_PANEL,
         "Esto NO lo escribió el usuario. Son los números que el motor determinístico YA",
         "calculó y que la persona VERÁ en las tarjetas debajo de tu respuesta. Manda sobre",
         "tu criterio (regla 10 de tus instrucciones): copia sus frases, no recalcules nada.",

@@ -273,7 +273,7 @@ def test_toolmessages_de_un_turno_anterior_no_activan_el_contrato():
     Heredar la evidencia de ayer sería exigirle a hoy un contrato que hoy no necesita."""
     previos = _turno("respuesta vieja")
     actuales = [HumanMessage(content="¿y cuántos dormitorios?"), AIMessage(content="Dos.")]
-    a = adjudicar(TurnoObservado(previos + actuales, "", [_card(VIS_1)]))
+    a = adjudicar(TurnoObservado(previos + actuales, "", [_card(VIS_1)]), PROC_OK)
 
     assert a.veredicto == NO_APLICA
     assert a.prosa == "Dos."
@@ -357,7 +357,7 @@ def test_NO_APLICA_precede_a_VOID():
     """El orden de la precedencia: un turno sin operación territorial y sin AIMessage final es
     NO_APLICA, no VOID. No hay nada territorial que adjudicar, con prosa o sin ella."""
     msgs = [HumanMessage(content="hola"), AIMessage(content="", tool_calls=[])]
-    a = adjudicar(TurnoObservado(msgs, "", []))
+    a = adjudicar(TurnoObservado(msgs, "", []), PROC_OK)
     assert a.veredicto == NO_APLICA
 
 
@@ -505,9 +505,124 @@ def test_con_identidad_verificada_el_FAIL_si_se_atribuye():
     assert a.veredicto == a.veredicto_diagnostico == FAIL_CONTRACT
 
 
-def test_NO_APLICA_no_se_degrada_por_falta_de_identidad():
-    """Si el turno no hizo nada territorial no hay nada que atribuir a ningún SHA: degradarlo
-    a NO_ADJUDICABLE sería inventar una duda donde no hay pregunta."""
+def test_NO_APLICA_TAMBIEN_se_degrada_sin_identidad():
+    """LA SIMETRÍA, SIN EXCEPCIONES.
+
+    Parecía inocuo dejar pasar `NO_APLICA` sin identidad —no acusa a ningún SHA— pero sigue
+    ENTRANDO EN LA MUESTRA y mueve el denominador del canary: un artefacto sin procedencia
+    quedaría excluido en silencio del universo adjudicado, y la proporción de PASS se
+    calcularía sobre una base que nadie eligió.
+    """
+    from evals.adjudicador_territorial import IDENT_MISMATCH, IDENT_MISSING
     msgs = [HumanMessage(content="hola"), AIMessage(content="qué tal")]
-    a = adjudicar(TurnoObservado(msgs, "", []))
+
+    sin = adjudicar(TurnoObservado(msgs, "", []))
+    assert sin.veredicto_diagnostico == NO_APLICA        # la observación se conserva
+    assert sin.identidad == IDENT_MISSING
+    assert sin.veredicto == NO_ADJUDICABLE               # pero no entra en la muestra
+
+    discordante = Procedencia(thread_id="s", deployment_id="dep-1",
+                              sha_esperado=_SHA, sha_observado="0" * 40)
+    mal = adjudicar(TurnoObservado(msgs, "", []), discordante)
+    assert mal.veredicto_diagnostico == NO_APLICA
+    assert mal.identidad == IDENT_MISMATCH
+    assert mal.veredicto == NO_ADJUDICABLE
+
+
+def test_NO_APLICA_con_identidad_exacta_si_entra_como_NO_APLICA():
+    msgs = [HumanMessage(content="hola"), AIMessage(content="qué tal")]
+    a = adjudicar(TurnoObservado(msgs, "", []), PROC_OK)
     assert a.veredicto == a.veredicto_diagnostico == NO_APLICA
+
+
+# ══ DOS TURNOS DEL MISMO HILO · la firma no se hereda ═════════════════════════
+
+def test_la_firma_aparece_una_vez_en_el_territorial_y_cero_en_el_siguiente(monkeypatch):
+    """LA PRUEBA QUE JUNTA R3 CON LA FIRMA.
+
+    El riesgo no es que el emisor firme de más: es que el turno siguiente HEREDE el bloque del
+    anterior. `encaje_contexto` es un canal `LastValue` que LangGraph arrastra entre turnos, y
+    si el turno 2 —que no hizo ninguna operación territorial— recibiera el bloque del turno 1,
+    el adjudicador vería una firma territorial donde no hubo contrato que firmar, y trataría
+    como territorial un turno que no lo era.
+
+    Se corre el GRAFO REAL con checkpointer en memoria: es la única forma de que la herencia
+    entre turnos participe de verdad.
+    """
+    import asyncio
+    from langgraph.checkpoint.memory import MemorySaver
+    from app.agent import graph as G
+    from app.agent import tools as TOOLS
+    from app.decision import assembler
+    from app.encaje_contexto import FIRMA_TERRITORIAL
+
+    fila = {"id": "ee9ff315", "direccion_estandarizada": "Calle Alemania E12-34",
+            "caminabilidad": 100, "walk_score_fuente": None, "score_ruido_predictivo": 1,
+            "volumen_trafico_historico": 1, "densidad_poblacional_pico": 1,
+            "porcentaje_cobertura_vegetal": 40, "conectividad": None,
+            "servicios_cercanos": None, "operacion": "ARRIENDO", "precio": 630,
+            "distancia_metros": 572.0, "tipo_activo": "Departamento"}
+    card = {"id": "ee9ff315", "direccion": "Calle Alemania E12-34",
+            "tipo_activo": "Departamento", "operacion": "ARRIENDO", "precio": 630.0,
+            "imagen_url": None, "caminabilidad": 90, "caminabilidad_fuente": "osm",
+            "ruido": "BAJO", "vegetacion": 40, "lat": -0.209, "lon": -78.484,
+            "caracteristicas": {}, "servicios_cercanos": None, "conectividad": None}
+
+    async def _rows(_q, _p):
+        return [dict(fila)]
+
+    async def _cards(_ids):
+        return ([dict(card)], {})
+
+    async def _prefs(_t):
+        return {"operacion": "arriendo"}
+
+    class _LLM:
+        def __init__(self, **_kw):
+            self.guion = []
+
+        def bind_tools(self, _t):
+            return self
+
+        async def ainvoke(self, _m):
+            return self.guion.pop(0) if self.guion else AIMessage(content="listo")
+
+    creados = []
+
+    class _Fab(_LLM):
+        def __init__(self, **kw):
+            super().__init__(**kw)
+            creados.append(self)
+
+    monkeypatch.setattr(TOOLS, "_fetch_rows", _rows)
+    monkeypatch.setattr(assembler, "_fetch_cards_rows", _cards)
+    monkeypatch.setattr(G, "extraer_preferencias", _prefs)
+    monkeypatch.setattr(G, "ChatAnthropic", _Fab)
+
+    compilado = G._build_graph().compile(checkpointer=MemorySaver())
+    llm = creados[0]
+    cfg = {"configurable": {"thread_id": "hilo-firma"}}
+
+    # turno 1 · territorial
+    llm.guion = [AIMessage(content="", tool_calls=[{
+        "name": "tool_search_nearby_assets",
+        "args": {"latitude": ANCLA["latitude"], "longitude": ANCLA["longitude"],
+                 "radius_meters": 1200}, "id": "t1"}]),
+        AIMessage(content="listo")]
+    asyncio.run(compilado.ainvoke({"messages": [HumanMessage(content="Busco en La Floresta")]},
+                                  cfg))
+    ctx1 = asyncio.run(compilado.aget_state(cfg)).values.get("encaje_contexto") or ""
+    assert ctx1.count(FIRMA_TERRITORIAL) == 1, "el turno territorial debe firmar UNA vez"
+
+    # turno 2 · sin ninguna operación territorial
+    llm.guion = [AIMessage(content="listo")]
+    asyncio.run(compilado.ainvoke({"messages": [HumanMessage(content="gracias")]}, cfg))
+    system = llm  # el bloque que llega al modelo se inspecciona vía el estado + el nodo
+    ctx2 = asyncio.run(compilado.aget_state(cfg)).values.get("encaje_contexto") or ""
+
+    # el canal SIGUE trayendo el bloque del turno 1 (es LastValue), pero lo que el turno 2
+    # entrega como contrato territorial es CERO: R3 recorta la sección heredada.
+    from app.agent.graph import _sin_seccion_territorial
+    entregado = _sin_seccion_territorial(ctx2)
+    assert entregado.count(FIRMA_TERRITORIAL) == 0, (
+        "el turno no territorial heredó la firma del anterior")

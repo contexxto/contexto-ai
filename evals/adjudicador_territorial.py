@@ -197,12 +197,17 @@ class Adjudicacion:
         candidato equivocado es tan falso como absolverlo. El hecho observado se conserva
         intacto en `veredicto_diagnostico`; lo que se suspende es la ATRIBUCIÓN.
 
-        `NO_APLICA` es la única excepción: si el turno no hizo nada territorial no hay nada
-        que atribuir a ningún SHA, y degradarlo sería inventar una duda donde no hay pregunta.
+        SIN EXCEPCIONES, TAMPOCO PARA `NO_APLICA`. Parecía inocuo —si el turno no hizo nada
+        territorial, no hay nada que atribuir a ningún SHA— pero un `NO_APLICA` sin identidad
+        verificada sigue entrando en la muestra y MUEVE EL DENOMINADOR del canary: un
+        artefacto sin procedencia quedaría excluido en silencio del universo adjudicado, y la
+        proporción de PASS se calcularía sobre una base que nadie eligió. Ninguna
+        clasificación entra en la adjudicación oficial sin identidad verificada.
+
+        El diagnóstico se conserva íntegro en `veredicto_diagnostico`; lo que se suspende es
+        la ENTRADA A LA MUESTRA, no la observación.
         """
-        if self.identidad == IDENT_OK or self.veredicto_diagnostico == NO_APLICA:
-            return self.veredicto_diagnostico
-        return NO_ADJUDICABLE
+        return self.veredicto_diagnostico if self.identidad == IDENT_OK else NO_ADJUDICABLE
 
     @property
     def requiere_humano(self) -> bool:

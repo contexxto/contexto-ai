@@ -631,6 +631,44 @@ def _texto_del_chunk(chunk) -> str:
     return ""
 
 
+def _estado_inicial_del_turno(mensaje: str) -> AgentState:
+    """El estado con el que ENTRA un turno. UNO SOLO para los dos caminos del endpoint.
+
+    POR QUÉ EXISTE (STATE-LINEAGE-R1). Las claves de `AgentState` no llevan reducer: son
+    canales `LastValue` que LangGraph persiste y arrastra al turno siguiente. Había dos
+    sembrados —uno por rama— y sólo el de streaming limpiaba el panel. Por `stream=false`, un
+    turno que no buscaba nada heredaba las tarjetas del turno anterior, y el endpoint las
+    devolvía como suyas: `final_state.get("cards")` sólo reconstruye si viene vacío, y
+    heredado nunca viene vacío. De paso, `_auditar_prosa` medía la respuesta de hoy contra el
+    panel de ayer.
+
+    LA CAUSA NO FUE OLVIDAR UNA LÍNEA: fue que hubiera DOS SITIOS donde acordarse de
+    escribirla. Copiarla al otro camino habría arreglado el síntoma dejando la bifurcación
+    lista para repetirlo. Con un solo constructor, una clave nueva sólo se puede olvidar en
+    un sitio — y ese sitio tiene pruebas.
+
+    QUÉ NO SE SIEMBRA, y por qué:
+      · `messages`: lo aporta el llamador y lleva reducer `add_messages` — es el hilo.
+      · `preferencias` / `preferencias_turno`: continuidad deliberada con llave de turno.
+      · `contrato_faltante_turno` / `encaje_contexto_turno` (G20-B1-R3): se auto-protegen
+        comparándose contra el turno actual, así que un valor viejo no gobierna.
+
+    `sql_results` se reinicia porque ya lo hacían ambos caminos, pero no tiene un solo lector
+    en el repositorio: ver `DEAD-STATE-sql_results`, deuda registrada aparte.
+    """
+    return {
+        "messages": [HumanMessage(content=mensaje)],
+        "spatial_context": {},
+        "sql_results": [],
+        # Panel del turno ANTERIOR: se limpia al entrar. Si no, un turno que no busca nada
+        # heredaría el bloque autoritativo del turno pasado y el modelo hablaría de tarjetas
+        # que ya no están en pantalla.
+        "cards": [],
+        "descartadas": [],
+        "encaje_contexto": "",
+    }
+
+
 async def _stream_agent(message: str, session_id: str, user=None) -> AsyncIterator[str]:
     """Streams agent token chunks como Server-Sent Events, con memoria de sesión.
 
@@ -651,17 +689,7 @@ async def _stream_agent(message: str, session_id: str, user=None) -> AsyncIterat
         prev_mode = ((_prev.values or {}).get("spatial_context") or {}).get("focus_mode")
     except Exception:  # noqa: BLE001 — sin estado previo → sin continuidad, no error
         prev_mode = None
-    input_state: AgentState = {
-        "messages": [HumanMessage(content=message)],
-        "spatial_context": {},
-        "sql_results": [],
-        # Panel del turno ANTERIOR: se limpia al entrar. Si no, un turno que no busca nada
-        # heredaría el bloque autoritativo del turno pasado y el modelo hablaría de tarjetas
-        # que ya no están en pantalla.
-        "cards": [],
-        "descartadas": [],
-        "encaje_contexto": "",
-    }
+    input_state = _estado_inicial_del_turno(message)
 
     async for event in agent_graph.compiled_graph.astream_events(input_state, config=config, version="v2"):
         kind = event.get("event")
@@ -791,11 +819,7 @@ async def chat(
         prev_mode = ((_prev.values or {}).get("spatial_context") or {}).get("focus_mode")
     except Exception:  # noqa: BLE001 — sin estado previo → sin continuidad, no error
         prev_mode = None
-    input_state: AgentState = {
-        "messages": [HumanMessage(content=payload.message)],
-        "spatial_context": {},
-        "sql_results": [],
-    }
+    input_state = _estado_inicial_del_turno(payload.message)
 
     final_state = await agent_graph.compiled_graph.ainvoke(input_state, config=config)
     messages = final_state["messages"]

@@ -107,7 +107,11 @@ describe('el secreto se limpia cuando —y solo cuando— deja de valer', () => 
     // fijar la respuesta, y nunca dentro de un `catch`.
     const cuerpo = app.slice(app.indexOf('const trasEnvioExitoso'))
     const llamadas = cuerpo.split('\n').filter((l) => l.includes('trasEnvioExitoso()'))
-    expect(llamadas).toHaveLength(2)   // camino bloqueante + camino de streaming
+    // UNO, no dos. El segundo era el camino bloqueante de respaldo, que `SSE-FALLBACK-
+    // REEXECUTION-R1` eliminó por reejecutar el turno entero. La propiedad que esta prueba
+    // protege —borrar sólo tras confirmar el éxito, jamás en un `catch`— no cambia: cambia
+    // cuántos caminos de éxito existen.
+    expect(llamadas).toHaveLength(1)
 
     // Ninguna de las dos cae dentro de un bloque de captura de errores.
     for (const l of llamadas) expect(l.trim()).toBe('trasEnvioExitoso()')

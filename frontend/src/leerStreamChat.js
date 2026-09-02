@@ -32,6 +32,8 @@
 export const ESTADO = {
   /** Llegó `done` y hay algo que mostrar (texto, panel, o ambos). */
   EXITO: 'exito',
+  /** El servidor dijo explícitamente que el turno no pudo completarse (evento `error`). */
+  FALLIDO: 'fallido',
   /** Llegó `done` pero el turno no trajo ni prosa ni panel: anomalía, no fallo de red. */
   VACIO: 'vacio',
   /** El stream se cerró sin `done`. Puede haber texto parcial; NO es un éxito. */
@@ -57,14 +59,18 @@ const PREFIJO = 'data: '
  * conservar lo escrito y decir que se cortó, nunca presentarlo como respuesta completa.
  */
 export async function leerStreamChat(resp, { onToken, onPanel } = {}) {
-  const eventos = { token: 0, panel: 0, done: 0, ignoradosTrasDone: 0 }
+  const eventos = { meta: 0, token: 0, panel: 0, done: 0, error: 0, ignoradosTrasDone: 0 }
   let texto = ''
   let panel = null
+  let meta = null
 
   const desenlace = (estado, motivo) => ({
     estado,
     texto,
     panel,
+    // La identidad del turno (`contexto-sse/1`): execution_id, runtime_sha, service_id.
+    // Se conserva tal cual llegó, sin interpretarla: quien adjudica es otro.
+    meta,
     parcial: estado !== ESTADO.EXITO && (texto.length > 0 || panel !== null),
     motivo: motivo ?? null,
     eventos,
@@ -111,6 +117,19 @@ export async function leerStreamChat(resp, { onToken, onPanel } = {}) {
           return desenlace(ESTADO.ERROR, 'evento malformado')
         }
 
+        if (ev.meta) {
+          eventos.meta += 1
+          meta = ev.meta
+          continue
+        }
+        if (ev.error) {
+          // Terminal ALTERNATIVO. El servidor dice que no pudo completar el turno; antes
+          // este caso llegaba como un cierre sin `done` y se leía «se cortó a medias», que
+          // es distinto y menos honesto. Nunca se reintenta: el turno pudo ejecutarse entero.
+          eventos.error += 1
+          terminado = true
+          return desenlace(ESTADO.FALLIDO, `${ev.error.code ?? 'error'}/${ev.error.phase ?? '?'}`)
+        }
         if (ev.done) {
           eventos.done += 1
           terminado = true

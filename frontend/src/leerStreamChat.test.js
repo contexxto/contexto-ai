@@ -198,6 +198,64 @@ describe('terminación', () => {
   })
 })
 
+// ── el protocolo `contexto-sse/1` ─────────────────────────────────────────────
+
+const META = { meta: {
+  protocolo: 'contexto-sse/1', session_id: 's', execution_id: 'e-1',
+  runtime_sha: '581537d4994f61d1c290c04349f6b94143879c7c', service_id: 'srv-x',
+  emitido_en: '2026-09-02T21:14:07.318Z' } }
+
+describe('identidad del turno', () => {
+  it('reconoce `meta` y la conserva sin interpretarla', async () => {
+    const r = await leerStreamChat(respuesta([sse(
+      META, { token: 'hola' }, { panel: PANEL }, { done: true, execution_id: 'e-1' })]))
+
+    expect(r.estado).toBe(ESTADO.EXITO)
+    expect(r.meta.execution_id).toBe('e-1')
+    expect(r.meta.runtime_sha).toHaveLength(40)
+    expect(r.eventos.meta).toBe(1)
+    expect(r.texto).toBe('hola')       // `meta` no contamina el texto
+  })
+
+  it('sin `meta` el turno sigue funcionando: el lector no la exige', async () => {
+    const r = await leerStreamChat(respuesta([sse({ token: 'hola' }, { done: true })]))
+    expect(r.estado).toBe(ESTADO.EXITO)
+    expect(r.meta).toBeNull()          // quien adjudica decidirá que no es atribuible
+  })
+
+  it('`error` es TERMINAL: FALLIDO, no INCOMPLETO', async () => {
+    const r = await leerStreamChat(respuesta([sse(
+      META, { error: { code: 'execution_failed', phase: 'graph' }, execution_id: 'e-1' })]))
+
+    expect(r.estado).toBe(ESTADO.FALLIDO)
+    expect(r.motivo).toBe('execution_failed/graph')
+    expect(r.eventos.error).toBe(1)
+  })
+
+  it('`error` conserva el texto y el panel ya recibidos, marcados como parciales', async () => {
+    const r = await leerStreamChat(respuesta([sse(
+      META, { token: 'a medias ' }, { panel: PANEL },
+      { error: { code: 'checkpoint_not_found', phase: 'checkpoint' } })]))
+
+    expect(r.estado).toBe(ESTADO.FALLIDO)
+    expect(r.texto).toBe('a medias ')
+    expect(r.panel).toEqual(PANEL)
+    expect(r.parcial).toBe(true)
+  })
+
+  it('tras `error` no se procesa nada más, ni un `done`', async () => {
+    const onToken = vi.fn()
+    const r = await leerStreamChat(respuesta([sse(
+      META, { error: { code: 'execution_failed', phase: 'graph' } },
+      { token: 'DESPUES' }, { done: true })]), { onToken })
+
+    expect(r.estado).toBe(ESTADO.FALLIDO)
+    expect(r.texto).toBe('')
+    expect(r.eventos.done).toBe(0)
+    expect(onToken).not.toHaveBeenCalled()
+  })
+})
+
 // ── costura: que el producto llame a esto de verdad ───────────────────────────
 
 describe('costura con App.jsx', () => {
@@ -238,5 +296,18 @@ describe('costura con App.jsx', () => {
   it('el mensaje del usuario se añade a la interfaz una sola vez', () => {
     const añadidos = app.match(/\[\s*\.\.\.prev\s*,\s*userMsg\s*\]/g) || []
     expect(añadidos).toHaveLength(1)
+  })
+
+  it('App.jsx trata FALLIDO con su propia copy, distinta del corte a medias', () => {
+    // Dos `expect` independientes —«existe FALLIDO» y «existe la copy»— pasarían aunque
+    // vivieran en ramas distintas. Se afirma sobre el TRAMO que arranca en la rama FALLIDO
+    // y termina en la siguiente, que es donde la copy tiene que estar.
+    const i = app.indexOf('ESTADO.FALLIDO')
+    expect(i).toBeGreaterThan(0)
+    const tramo = app.slice(i, app.indexOf('ESTADO.VACIO', i))
+    expect(tramo.length).toBeGreaterThan(0)
+    expect(tramo).toContain('No se pudo completar este turno.')
+    // Y no se le llama «se cortó a medias», que es otro desenlace.
+    expect(tramo).not.toContain('se cortó a medias')
   })
 })

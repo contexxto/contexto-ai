@@ -1,7 +1,9 @@
 import asyncio
 import json
 import logging
+import os
 import re
+from datetime import datetime, timezone
 import secrets
 import unicodedata
 import uuid
@@ -49,6 +51,7 @@ log = logging.getLogger("intencion")
 
 # Desobediencia de la prosa al motor. Se registra, no se bloquea: ver `_auditar_prosa`.
 log_prosa = logging.getLogger("prosa")
+log_sse = logging.getLogger("sse")
 
 # ── Seguridad ────────────────────────────────────────────────
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -343,9 +346,147 @@ async def _marcar_puerta_ofrecida(config: dict) -> None:
         log.warning("no se pudo marcar la puerta como ofrecida")
 
 
-def _langgraph_config(session_id: str) -> dict:
-    """Construye el config de LangGraph con el thread_id de sesión."""
-    return {"configurable": {"thread_id": session_id}}
+def _langgraph_config(session_id: str, execution_id: str | None = None) -> dict:
+    """Config de LangGraph con el thread_id de sesión, y opcionalmente la identidad del turno.
+
+    `execution_id` viaja en `metadata` porque LangGraph **graba esa metadata en cada checkpoint
+    que escribe esa invocación**. Ésa es la única forma medida de responder «¿de quién es este
+    checkpoint?» sin inferirlo por contenido, por posición ni por «el último del hilo».
+
+    POR QUÉ HACE FALTA. Dos peticiones concurrentes sobre la MISMA conversación se permiten
+    —LangGraph no serializa ni rechaza—, cada una escribe su propio linaje, y `aget_state`
+    devuelve UNO y pierde el otro. Verificado contra Postgres local con `AsyncPostgresSaver`:
+    6 checkpoints, 0 sin `execution_id`, y el historial filtrado devuelve 3 a cada ejecución
+    sin mezclarlos.
+    """
+    cfg: dict = {"configurable": {"thread_id": session_id}}
+    if execution_id:
+        cfg["metadata"] = {"execution_id": execution_id, "protocolo": PROTOCOLO_SSE}
+    return cfg
+
+
+def _config_escritura_lateral(session_id: str) -> dict:
+    """Config para una escritura POSTERIOR al grafo (`map_seed`, `puerta_ofrecida`).
+
+    `execution_id: None` EXPLÍCITO, y no basta con omitirlo. `aupdate_state` no escribe la
+    metadata que se le pasa: escribe `{**metadata_del_checkpoint_anterior, **la_que_pasas}`
+    (`langgraph/pregel/__init__.py`). Omitir la clave la HEREDA del checkpoint que acaba de
+    escribir el grafo, así que la escritura lateral quedaba atribuida a la ejecución y con un
+    `step` mayor que el terminal.
+
+    Reproducido sobre el endpoint real: `done` anunciaba el checkpoint del step 4 (`loop`) y
+    la regla publicada —mayor `step` entre los de esa ejecución— devolvía el del step 5
+    (`update`). El campo dejaba de ser re-derivable, que es justo lo que este protocolo
+    existe para garantizar.
+    """
+    return {"configurable": {"thread_id": session_id},
+            "metadata": {"execution_id": None, "protocolo": PROTOCOLO_SSE}}
+
+
+# ── Identidad del cable (`contexto-sse/1`) ──────────────────────────────────────
+
+PROTOCOLO_SSE = "contexto-sse/1"
+
+_SHA_40 = re.compile(r"\A[0-9a-fA-F]{40}\Z")
+
+#: Vocabularios CERRADOS del evento `error`. Nada de clase de excepción, mensaje ni traza:
+#: un mensaje puede arrastrar una cadena de conexión o un fragmento de prompt, y una clase de
+#: Python filtra estructura interna sin decirle nada al adjudicador.
+#: Los `source` que escribe EL GRAFO. `"update"` (y cualquier futuro `"fork"`) es una
+#: escritura lateral y no puede ser el checkpoint terminal de un turno.
+_FUENTES_DEL_GRAFO = ("loop", "input")
+
+FASES_ERROR = ("graph", "checkpoint", "output")
+CODIGOS_ERROR = ("execution_failed", "checkpoint_read_failed",
+                 "checkpoint_not_found", "checkpoint_ambiguous", "serialization_failed")
+
+#: LOS TRES DE `checkpoint` NO SON INTERCAMBIABLES, y confundirlos le miente al adjudicador:
+#:   checkpoint_read_failed   no se pudo CONSULTAR el historial   → no se sabe nada
+#:   checkpoint_not_found     se consultó y no había ninguno      → la ejecución no dejó rastro
+#:   checkpoint_ambiguous     se consultó y había más de un       → hay rastro, no se puede
+#:                            candidato terminal                     elegir sin adivinar
+#: `execution_failed` queda RESERVADO al fallo del grafo (`phase: graph`). Una base caída no
+#: autoriza a decir que la ejecución falló: sólo que la lectura falló.
+
+
+def _identidad_runtime() -> tuple[str | None, str | None]:
+    """El SHA y el servicio que atienden ESTA petición, leídos del entorno.
+
+    `RENDER_GIT_COMMIT` se verificó en la Web Shell del servicio LIVE: presente, 40 hex, y
+    coincide con el commit desplegado a propósito **incluso en deploy manual por commit**, que
+    era el caso que la documentación de Render no cubría.
+
+    SIN FALLBACK, Y ES DELIBERADO. Ni HEAD local, ni rama, ni SHA abreviado, ni valor de
+    prueba: un backend que reportara el commit del árbol de quien lo compiló mentiría con toda
+    la apariencia de verdad. Si no hay valor válido, `null` — y un `null` honesto produce
+    `NO_ADJUDICABLE` en el canary, que es el resultado correcto.
+    """
+    crudo = os.getenv("RENDER_GIT_COMMIT") or ""
+    sha = crudo.lower() if _SHA_40.match(crudo) else None
+    return sha, (os.getenv("RENDER_SERVICE_ID") or None)
+
+
+def _log_terminal(code: str, phase: str, execution_id: str, candidatos: int | None = None) -> None:
+    """Registra un terminal `error` con campos ACOTADOS. Nunca la excepción.
+
+    El cable calla la excepción a propósito; el servidor tampoco puede gritarla. `logger
+    .exception()` es `exc_info=True`, así que volcaría la traza —y con ella el mensaje— al log:
+    una `ConnectionError("FATAL: password authentication failed for user 'x'")` acabaría
+    escrita entera. Cambiar una fuga por el cable por una fuga por el log no es un arreglo.
+
+    Se conserva lo que sirve para diagnosticar sin texto libre: el código, la fase, la
+    ejecución, y el NOMBRE de la clase —acotado, no puede contener un secreto—. Quien necesite
+    más, tiene el `execution_id` para cruzar con el checkpoint.
+    """
+    import sys as _sys
+    clase = (type(_sys.exc_info()[1]).__name__ if _sys.exc_info()[1] is not None else "-")
+    extra = f" · candidatos={candidatos}" if candidatos is not None else ""
+    log_sse.error("terminal SSE · code=%s · phase=%s · execution_id=%s · clase=%s%s",
+                  code, phase, execution_id, clase, extra)
+
+
+class _CheckpointNoAtribuible(Exception):
+    """No se pudo señalar UN checkpoint terminal de esta ejecución. Lleva su `code`."""
+
+    def __init__(self, code: str, candidatos: int):
+        super().__init__(code)
+        self.code = code
+        self.candidatos = candidatos
+
+
+async def _snapshot_de_la_ejecucion(config: dict, execution_id: str):
+    """El `StateSnapshot` terminal de ESTA ejecución. Nunca «el último del hilo».
+
+    Se filtra **en la consulta** (`aget_state_history(..., filter=...)`, que en Postgres baja a
+    un `metadata @> …`), no recorriendo el historial entero en Python: un hilo largo no puede
+    costar una lectura completa por turno.
+
+    La regla de terminalidad es ESTRUCTURAL: el checkpoint de mayor `step` **dentro de los de
+    esta ejecución**. No por texto, no por posición global, no por marca de tiempo aproximada.
+    Si hay cero, o si hay empate en el máximo, se levanta en vez de adivinar — un
+    `checkpoint_id` equivocado es peor que ninguno, porque parece preciso.
+    """
+    base = {"configurable": {"thread_id": config["configurable"]["thread_id"]}}
+    candidatos = []
+    async for snap in agent_graph.compiled_graph.aget_state_history(
+            base, filter={"execution_id": execution_id}):
+        # Sólo lo que ESCRIBIÓ EL GRAFO. Una escritura lateral (`source: "update"`) puede
+        # acabar atribuida a esta ejecución sin que nadie la etiquete —`aupdate_state` hereda
+        # la metadata del checkpoint anterior— y ganaría el `max(step)` por ser posterior.
+        # Excluirla por `source` no depende de que quien añada una escritura futura se
+        # acuerde de marcarla: el filtro de `_config_escritura_lateral` es el cinturón, esto
+        # son los tirantes.
+        if (snap.metadata or {}).get("source") in _FUENTES_DEL_GRAFO:
+            candidatos.append(snap)
+
+    if not candidatos:
+        raise _CheckpointNoAtribuible("checkpoint_not_found", 0)
+
+    tope = max((s.metadata or {}).get("step", -2) for s in candidatos)
+    terminales = [s for s in candidatos if (s.metadata or {}).get("step", -2) == tope]
+    if len(terminales) != 1:
+        raise _CheckpointNoAtribuible("checkpoint_ambiguous", len(terminales))
+    return terminales[0]
 
 
 # ── Tarjetas de resultado (chat → visual) ───────────────────────────────────
@@ -782,12 +923,39 @@ async def _stream_agent(message: str, session_id: str, user=None) -> AsyncIterat
     `user` (E3.2b.4a) viaja hasta aquí porque el endpoint RETORNA en el `if stream:`, antes
     de la línea que cablea la sombra. Sin este parámetro, el turno que usa la gente de verdad
     era el único que no actualizaba la memoria del comprador — un `200 OK` con cero filas.
+
+    IDENTIDAD DEL TURNO (`contexto-sse/1`). El primer evento es `meta`, y sale **antes de
+    invocar el grafo**: si algo revienta después, el turno ya tiene nombre. Antes, dos turnos
+    distintos de la misma conversación producían transcripts BYTE A BYTE IDÉNTICOS —208 bytes—,
+    así que ningún adjudicador podía decir cuál estaba mirando ni bajo qué código corrió.
     """
-    config = _langgraph_config(session_id)
+    execution_id = str(uuid.uuid4())
+    runtime_sha, service_id = _identidad_runtime()
+    trace_run_id = None
+
+    # `meta` PRIMERO. Antes del grafo y antes de cualquier otro `yield`: es lo que hace que un
+    # fallo temprano siga siendo atribuible.
+    yield "data: " + json.dumps({"meta": {
+        "protocolo": PROTOCOLO_SSE,
+        "session_id": session_id,
+        "execution_id": execution_id,
+        "runtime_sha": runtime_sha,
+        "service_id": service_id,
+        "emitido_en": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    }}) + "\n\n"
+
+    def _terminal_error(code: str, phase: str) -> str:
+        return "data: " + json.dumps({
+            "error": {"code": code, "phase": phase},
+            "session_id": session_id, "execution_id": execution_id,
+            "trace_run_id": trace_run_id, "checkpoint_id": None,
+            "runtime_sha": runtime_sha}) + "\n\n"
+
+    config = _langgraph_config(session_id, execution_id=execution_id)
     # Modo del lente del turno ANTERIOR: se lee ANTES de arrancar, porque el input
     # reinicia spatial_context (mismo motivo que en el camino no-stream).
     try:
-        _prev = await agent_graph.compiled_graph.aget_state(config)
+        _prev = await agent_graph.compiled_graph.aget_state(_langgraph_config(session_id))
         prev_mode = ((_prev.values or {}).get("spatial_context") or {}).get("focus_mode")
     except Exception:  # noqa: BLE001 — sin estado previo → sin continuidad, no error
         prev_mode = None
@@ -798,15 +966,46 @@ async def _stream_agent(message: str, session_id: str, user=None) -> AsyncIterat
     compuerta = _CompuertaSSE()
     try:
         async for event in agent_graph.compiled_graph.astream_events(input_state, config=config, version="v2"):
+            if trace_run_id is None:
+                # Raíz de LangGraph: el puente hacia SUS trazas. Correlación, no identidad —
+                # la identidad es `execution_id`, que existe antes que esto.
+                trace_run_id = event.get("run_id")
+
             if event.get("event") == "on_tool_start":
                 tool_name = event.get("name", "")
-                yield f"data: {json.dumps({'tool_call': tool_name})}\n\n"
+                yield ("data: " + json.dumps({"tool_call": tool_name,
+                                              "execution_id": execution_id}) + "\n\n")
                 continue
 
             for texto in compuerta.procesar(event):
-                yield f"data: {json.dumps({'token': texto, 'session_id': session_id})}\n\n"
+                yield ("data: " + json.dumps({"token": texto, "session_id": session_id,
+                                              "execution_id": execution_id}) + "\n\n")
+    except Exception:  # noqa: BLE001 — el fallo del grafo YA NO deja el cable mudo
+        # El cable calla la excepción A PROPÓSITO; el SERVIDOR no puede callarla también.
+        # Antes de esta unidad la excepción se propagaba y quedaba en los logs de Render;
+        # convertirla en un `error` limpio sin registrarla habría hecho los fallos más
+        # silenciosos que antes — cambiar un turno roto y ruidoso por uno roto y mudo.
+        _log_terminal("execution_failed", "graph", execution_id)
+        compuerta.cerrar()
+        yield _terminal_error("execution_failed", "graph")
+        return
     finally:
         compuerta.cerrar()
+
+    # El checkpoint de ESTA ejecución, no el último del hilo. Si no se puede señalar uno,
+    # el turno termina en `error` — jamás con un `checkpoint_id` inventado.
+    try:
+        _snap = await _snapshot_de_la_ejecucion(config, execution_id)
+    except _CheckpointNoAtribuible as e:
+        _log_terminal(e.code, "checkpoint", execution_id, candidatos=e.candidatos)
+        yield _terminal_error(e.code, "checkpoint")
+        return
+    except Exception:  # noqa: BLE001 — no se pudo LEER el historial: eso no es «no existe»
+        # Ni «no existe» ni «la ejecución falló». Las dos serían conclusiones que esta
+        # excepción no autoriza: lo único demostrado es que la CONSULTA no se pudo hacer.
+        _log_terminal("checkpoint_read_failed", "checkpoint", execution_id)
+        yield _terminal_error("checkpoint_read_failed", "checkpoint")
+        return
 
     # Instrumentar la intención (Fase 0): tras el stream, lee el estado final del hilo y
     # persiste. Best-effort — jamás rompe el stream (cubre el flujo del QR-lead si usa SSE).
@@ -814,8 +1013,7 @@ async def _stream_agent(message: str, session_id: str, user=None) -> AsyncIterat
     map_seed = None
     puerta = None
     try:
-        _st = await agent_graph.compiled_graph.aget_state(config)
-        _valores = (_st.values or {}) if (_st and _st.values) else {}
+        _valores = _snap.values or {}
         _msgs = _valores.get("messages", [])
         asyncio.create_task(registrar_intencion(session_id, _msgs))
         # E3.2b.4a · SOMBRA en el camino stream. Va aquí y no en el endpoint porque `chat()`
@@ -835,7 +1033,7 @@ async def _stream_agent(message: str, session_id: str, user=None) -> AsyncIterat
         # el no-stream, no se ofrecería nunca donde importa.
         puerta = _puerta_del_turno(_valores, resultados, _msgs)
         if puerta:
-            await _marcar_puerta_ofrecida(config)
+            await _marcar_puerta_ofrecida(_config_escritura_lateral(session_id))
 
         # El stream es el camino que usa la gente de verdad: si la auditoría de prosa solo
         # cubriera el no-stream, mediríamos el turno que casi nadie ejecuta.
@@ -844,8 +1042,11 @@ async def _stream_agent(message: str, session_id: str, user=None) -> AsyncIterat
 
         if map_seed:
             try:
+                # Escritura POSTERIOR al grafo: `_config_escritura_lateral` la desmarca con
+                # `execution_id: None`. Omitir la clave NO basta — `aupdate_state` hereda la
+                # metadata del checkpoint anterior. Ver esa función.
                 await agent_graph.compiled_graph.aupdate_state(
-                    config,
+                    _config_escritura_lateral(session_id),
                     {"spatial_context": {"focus_mode": map_seed["modo"],
                                          "bbox": map_seed["foco"]["bbox"],
                                          "capas": map_seed["capas"]}},
@@ -856,14 +1057,21 @@ async def _stream_agent(message: str, session_id: str, user=None) -> AsyncIterat
         pass
 
     # El panel va ANTES del done: el front lo aplica al mensaje que ya terminó de escribirse.
-    yield (
-        "data: "
-        + json.dumps({"panel": {"results": resultados or [], "map_seed": map_seed,
-                                "puerta": puerta}},
-                     default=str)
-        + "\n\n"
-    )
-    yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
+    # Sale del snapshot de ESTA ejecución, no de `aget_state`.
+    try:
+        cuerpo_panel = json.dumps({"panel": {"results": resultados or [], "map_seed": map_seed,
+                                             "puerta": puerta},
+                                   "execution_id": execution_id}, default=str)
+    except Exception:  # noqa: BLE001 — el panel no serializa: se dice, no se calla
+        _log_terminal("serialization_failed", "output", execution_id)
+        yield _terminal_error("serialization_failed", "output")
+        return
+    yield "data: " + cuerpo_panel + "\n\n"
+
+    yield "data: " + json.dumps({
+        "done": True, "session_id": session_id, "execution_id": execution_id,
+        "checkpoint_id": (_snap.config or {}).get("configurable", {}).get("checkpoint_id"),
+        "trace_run_id": trace_run_id, "runtime_sha": runtime_sha}) + "\n\n"
 
 
 @router.post(

@@ -977,6 +977,10 @@ export default function App() {
       if (r.estado === ESTADO.EXITO) {
         lastAiRef.current = r.texto
         trasEnvioExitoso()
+      } else if (r.estado === ESTADO.FALLIDO) {
+        // El servidor dijo explícitamente que no pudo. Lo ya escrito se conserva; no se
+        // reintenta, y no se le llama «se cortó a medias», que sería otra cosa.
+        setError('No se pudo completar este turno.')
       } else if (r.estado === ESTADO.VACIO) {
         // El turno terminó bien y no trajo NADA que mostrar. No se inventa prosa del agente:
         // se dice que no hubo respuesta y se deja el reintento en manos de la persona.

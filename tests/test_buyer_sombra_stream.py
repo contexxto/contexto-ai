@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import types
 
 import pytest
@@ -77,6 +78,22 @@ def grafo(monkeypatch):
     async def _aget_state(_config):
         return types.SimpleNamespace(values=_estado_final())
 
+    async def _aget_state_history(_config, filter=None, **_kw):  # noqa: A002
+        """El historial FILTRADO por `execution_id` (`SSE-PROTOCOL-IDENTITY-R1`).
+
+        Desde esa unidad, el turno SSE no lee `aget_state` —que bajo concurrencia del mismo
+        hilo devuelve una ejecución y pierde la otra— sino el checkpoint de SU ejecución. El
+        doble se pone al día: devuelve un snapshot con la metadata que el emisor espera.
+        """
+        yield types.SimpleNamespace(
+            values=_estado_final(),
+            config={"configurable": {"checkpoint_id": "ckpt-doble"}},
+            # `source: "loop"` es parte del contrato: sólo lo que escribió el GRAFO puede ser
+            # el checkpoint terminal. Una escritura lateral (`update`) hereda el execution_id
+            # y ganaría el `max(step)` sin ser de la ejecución. Ver `_FUENTES_DEL_GRAFO`.
+            metadata={"execution_id": (filter or {}).get("execution_id"),
+                      "step": 1, "source": "loop"})
+
     async def _aupdate_state(*a, **k):
         return None
 
@@ -84,6 +101,7 @@ def grafo(monkeypatch):
         compiled_graph=types.SimpleNamespace(
             astream_events=_astream_events,
             aget_state=_aget_state,
+            aget_state_history=_aget_state_history,
             aupdate_state=_aupdate_state)))
     monkeypatch.setattr(chat_mod, "_texto_del_chunk", lambda c: getattr(c, "content", ""))
     # El resto del carril legacy, neutralizado: aquí se mide la costura de la sombra.
@@ -202,10 +220,24 @@ async def test_si_la_sombra_EXPLOTA_el_SSE_sigue_entero(grafo, monkeypatch):
 # ══ G6 · cero autoridad sobre lo visible ════════════════════════════════════════════
 
 
+def _sin_identidad_de_turno(trozos):
+    """El transcript con la identidad POR EJECUCIÓN borrada, y sólo ésa.
+
+    Desde `SSE-PROTOCOL-IDENTITY-R1` el cable lleva `execution_id`, `checkpoint_id`,
+    `trace_run_id` y una marca de tiempo, y **tienen que cambiar entre dos ejecuciones**: es
+    exactamente la propiedad que esa unidad introduce. Comparar bytes crudos prohibiría eso.
+    Se normalizan esos cuatro campos —ninguno más— y se compara todo lo demás, que es donde
+    vive la propiedad de este gate: la sombra no toca prosa, panel ni orden.
+    """
+    return [re.sub(r'"(execution_id|checkpoint_id|trace_run_id|emitido_en)": "[^"]*"',
+                   r'"\1": "<norm>"', t) for t in trozos]
+
+
 async def test_la_sombra_NO_cambia_nada_de_lo_que_el_usuario_VE(grafo, espia, monkeypatch):
-    """Se corre el turno dos veces —con sombra y con la sombra arrancada de raíz— y los
-    bytes del SSE tienen que ser idénticos. Si la memoria del comprador empezara a participar
-    en el ranking, la prosa o el panel, esto lo detecta sin depender de qué campo miremos."""
+    """Se corre el turno dos veces —con sombra y con la sombra arrancada de raíz— y el SSE
+    tiene que ser idéntico salvo la identidad de cada ejecución. Si la memoria del comprador
+    empezara a participar en el ranking, la prosa o el panel, esto lo detecta sin depender de
+    qué campo miremos."""
     con = await _consumir(chat_mod._stream_agent("hola", SESION, user=_Usuario()))
 
     async def _nada(*a, **k):
@@ -213,7 +245,21 @@ async def test_la_sombra_NO_cambia_nada_de_lo_que_el_usuario_VE(grafo, espia, mo
     monkeypatch.setattr(chat_mod, "actualizar_en_sombra", _nada)
     sin = await _consumir(chat_mod._stream_agent("hola", SESION, user=_Usuario()))
 
-    assert con == sin, "la sombra alteró la salida visible del turno"
+    assert _sin_identidad_de_turno(con) == _sin_identidad_de_turno(sin), \
+        "la sombra alteró la salida visible del turno"
+
+    # Y la identidad DEBE diferir. Se afirma sobre `execution_id` EN CONCRETO: un `con != sin`
+    # a secas pasaría aunque `execution_id` desapareciera del cable, porque `emitido_en` ya
+    # basta para que los transcripts difieran.
+    def _eid(trozos):
+        for t in trozos:
+            m = re.search(r'"execution_id": "([^"]+)"', t)
+            if m:
+                return m.group(1)
+        return None
+
+    assert _eid(con) and _eid(sin), "el cable dejó de llevar execution_id"
+    assert _eid(con) != _eid(sin), "dos ejecuciones con la misma identidad"
 
 
 # ══ G8 · el camino nuevo pasa POR las puertas, no por al lado ═══════════════════════

@@ -54,8 +54,24 @@ def _estado_final():
 def grafo(monkeypatch):
     """Dobla el grafo: emite un token y deja un estado final recuperable por `aget_state`."""
     async def _astream_events(_input, config=None, version=None):
-        for ev in [{"event": "on_chat_model_stream",
-                    "data": {"chunk": types.SimpleNamespace(content="hola")}}]:
+        """Secuencia MÍNIMA PERO REAL de una invocación del modelo.
+
+        Antes bastaba un `on_chat_model_stream` suelto, porque el SSE publicaba cada trozo
+        sin mirar nada. Desde `SSE-OUTPUT-GATE-01` la publicación se decide al cerrar la
+        invocación —`on_chat_model_end`, y sólo si su salida no pide herramienta— y sólo
+        para el nodo `llm`, así que un evento huérfano y sin `metadata` ya no representa a
+        un modelo hablando: representa a uno que nunca terminó, y de ésos no sale nada.
+        Aquí se mide la costura de la sombra, no el transporte: el doble se pone al día.
+        """
+        md = {"langgraph_node": "llm", "langgraph_step": 1}
+        for ev in [
+            {"event": "on_chat_model_start", "run_id": "r1", "name": "m",
+             "metadata": md, "data": {}},
+            {"event": "on_chat_model_stream", "run_id": "r1", "name": "m", "metadata": md,
+             "data": {"chunk": types.SimpleNamespace(content="hola")}},
+            {"event": "on_chat_model_end", "run_id": "r1", "name": "m", "metadata": md,
+             "data": {"output": AIMessage(content="hola")}},
+        ]:
             yield ev
 
     async def _aget_state(_config):

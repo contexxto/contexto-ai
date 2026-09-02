@@ -631,6 +631,108 @@ def _texto_del_chunk(chunk) -> str:
     return ""
 
 
+class _CompuertaSSE:
+    """Decide QUÉ texto del modelo llega al cliente. Al final de cada invocación, no durante.
+
+    EL DEFECTO (PRE-YIELD-01). El bucle emitía cada `on_chat_model_stream` sin condición
+    alguna, así que la prosa de la ronda 1 —la que el modelo escribe ANTES de llamar a una
+    herramienta— salía cuando todavía no existían ni evidencia territorial ni contrato ni la
+    barrera de R3. Pasó en producción: el canary de `8322e25` transmitió «Perfecto, voy a
+    buscar arriendos en La Floresta dentro de tu presupuesto de $900.» antes del primer
+    `tool_use`. Esa frase concreta es acreditada, pero nada impedía «tengo tres opciones en
+    La Floresta» en el mismo hueco (H1). Y en fail-closed `llm_node` devuelve el mensaje
+    controlado SIN invocar al modelo, así que no había chunks y el turno enmudecía (H2).
+
+    LA REGLA. Los trozos se acumulan por `run_id` y no se publica nada hasta
+    `on_chat_model_end`. Ahí se mira la salida ESTRUCTURALMENTE:
+
+        con `tool_calls`  → era un preámbulo   → se descarta ENTERO
+        sin `tool_calls`  → era la respuesta   → se publica en orden, una sola vez
+
+    No se decide por regex, ni por el texto, ni por el nombre de la herramienta, ni por el
+    prompt. G20-A ya demostró que enunciar no gobierna: la única señal fiable de que un texto
+    es respuesta y no anuncio es que la invocación termine sin pedir herramienta.
+
+    ES UNA PÉRDIDA DELIBERADA. Dentro de una invocación el texto ya no llega token a token:
+    llega completo al cerrarla. Se cambia latencia percibida por gobierno de la salida — no
+    se puede presentar como «streaming intacto».
+
+    EL DISCRIMINADOR ES ESTRUCTURAL. Sólo se publica lo que emite el nodo `llm`
+    (`metadata.langgraph_node`), que es el generador de la respuesta al cliente. Hoy no hay
+    otro chat model dentro de este grafo —`extraer_preferencias` y el intérprete del buyer
+    usan el SDK crudo de Anthropic y por eso nunca aparecen en `astream_events`— pero la
+    compuerta no lo supone: si mañana alguien mete un modelo en otro nodo, su texto no sale.
+
+    LA SALIDA CONTROLADA se recupera del `on_chain_end` del propio nodo `llm`, cuyo
+    `data.output.messages` es lo que ESE paso produjo. No se lee «el último AIMessage del
+    checkpoint», que confundiría la respuesta de un turno viejo con la de hoy.
+
+    UN BUFFER INCOMPLETO NUNCA SE PUBLICA. Sólo `on_chat_model_end` vacía; si la invocación
+    revienta o se cancela antes, lo acumulado muere con la compuerta.
+    """
+
+    NODO_CLIENTE = "llm"
+
+    def __init__(self) -> None:
+        self.pendientes: dict[str, list[str]] = {}
+        self._publicados: set = set()
+
+    def procesar(self, evento: dict) -> list[str]:
+        """Los textos que este evento autoriza a publicar. Lista vacía = nada aún."""
+        metadatos = evento.get("metadata") or {}
+        if metadatos.get("langgraph_node") != self.NODO_CLIENTE:
+            return []
+
+        kind = evento.get("event")
+        run_id = evento.get("run_id")
+        paso = metadatos.get("langgraph_step")
+        datos = evento.get("data") or {}
+
+        if kind == "on_chat_model_start":
+            self.pendientes[run_id] = []
+            return []
+
+        if kind == "on_chat_model_stream":
+            # Sin `start` previo no hay buffer: se ignora en vez de abrir uno huérfano.
+            if run_id in self.pendientes:
+                if texto := _texto_del_chunk(datos.get("chunk")):
+                    self.pendientes[run_id].append(texto)
+            return []
+
+        if kind == "on_chat_model_end":
+            trozos = self.pendientes.pop(run_id, None)
+            if not trozos:
+                return []
+            if getattr(datos.get("output"), "tool_calls", None):
+                return []          # preámbulo de una llamada a herramienta
+            self._publicados.add(paso)
+            return trozos
+
+        if kind == "on_chain_end" and evento.get("name") == self.NODO_CLIENTE:
+            # El nodo cerró. Si nada se publicó en este paso, produjo su mensaje sin pasar
+            # por el modelo: es la salida controlada del fail-closed.
+            if paso in self._publicados:
+                return []
+            salida = datos.get("output")
+            mensajes = salida.get("messages") if isinstance(salida, dict) else None
+            if not mensajes:
+                return []
+            ultimo = mensajes[-1]
+            if getattr(ultimo, "tool_calls", None):
+                return []
+            texto = _texto_del_chunk(ultimo)
+            if not texto:
+                return []
+            self._publicados.add(paso)
+            return [texto]
+
+        return []
+
+    def cerrar(self) -> None:
+        """Descarta lo acumulado. Se llama SIEMPRE, también si el generador se cancela."""
+        self.pendientes.clear()
+
+
 def _estado_inicial_del_turno(mensaje: str) -> AgentState:
     """El estado con el que ENTRA un turno. UNO SOLO para los dos caminos del endpoint.
 
@@ -691,17 +793,20 @@ async def _stream_agent(message: str, session_id: str, user=None) -> AsyncIterat
         prev_mode = None
     input_state = _estado_inicial_del_turno(message)
 
-    async for event in agent_graph.compiled_graph.astream_events(input_state, config=config, version="v2"):
-        kind = event.get("event")
+    # La compuerta decide qué prosa sale; ver `_CompuertaSSE`. El `finally` corre también
+    # cuando el cliente corta la conexión: un buffer a medias jamás sobrevive al turno.
+    compuerta = _CompuertaSSE()
+    try:
+        async for event in agent_graph.compiled_graph.astream_events(input_state, config=config, version="v2"):
+            if event.get("event") == "on_tool_start":
+                tool_name = event.get("name", "")
+                yield f"data: {json.dumps({'tool_call': tool_name})}\n\n"
+                continue
 
-        if kind == "on_chat_model_stream":
-            texto = _texto_del_chunk(event["data"].get("chunk"))
-            if texto:
+            for texto in compuerta.procesar(event):
                 yield f"data: {json.dumps({'token': texto, 'session_id': session_id})}\n\n"
-
-        elif kind == "on_tool_start":
-            tool_name = event.get("name", "")
-            yield f"data: {json.dumps({'tool_call': tool_name})}\n\n"
+    finally:
+        compuerta.cerrar()
 
     # Instrumentar la intención (Fase 0): tras el stream, lee el estado final del hilo y
     # persiste. Best-effort — jamás rompe el stream (cubre el flujo del QR-lead si usa SSE).

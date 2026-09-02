@@ -53,6 +53,23 @@ VERSION = "1.0.0"
 # se infiere en silencio, porque un parser que "casi" entiende produce PASS falsos, que es el
 # peor resultado posible en un instrumento de verdad productiva.
 CONTRATO_FORMATO = "g20-b1/territorial-v1"
+
+# COPIA PROPIA DEL LITERAL, a propósito. El arnés NO importa la constante del runtime: si lo
+# hiciera, emisor y juez compartirían la misma definición y la firma dejaría de verificar
+# nada. Que las dos copias coincidan se comprueba en UN test, y sólo ahí.
+FIRMA_ESPERADA = "CONTRATO_TERRITORIAL_V1"
+_RE_FIRMA = re.compile(r"CONTRATO_TERRITORIAL_V(\d+)")
+
+# Estados del contrato recibido
+_C_AUSENTE = "ausente"
+_C_VERSION_DESCONOCIDA = "version_desconocida"
+_C_INVALIDO = "invalido"
+_C_OK = "ok"
+
+# Identidad del deploy — ver PROVENANCE-SYMMETRY-01 en el docstring de `adjudicar`
+IDENT_OK = "OK"
+IDENT_MISSING = "MISSING"
+IDENT_MISMATCH = "MISMATCH"
 _ANCLAS_CONTRATO = (
     "RELACIÓN TERRITORIAL · QUÉ PUEDES AFIRMAR",
     "LA EVIDENCIA DE ESTE TURNO:",
@@ -129,15 +146,14 @@ class Procedencia:
         return bool(self.sha_esperado and self.sha_observado
                     and self.sha_esperado == self.sha_observado)
 
-    def motivo_desconfianza(self) -> str | None:
-        if not self.sha_esperado or not self.sha_observado:
-            return "no se declaró el SHA esperado y/o el observado del deploy"
-        if self.sha_esperado != self.sha_observado:
-            return (f"el SHA observado ({self.sha_observado}) no es el esperado "
-                    f"({self.sha_esperado})")
-        if not self.deployment_id:
-            return "no se declaró el deployment id"
-        return None
+    def clasificar(self) -> str:
+        """OK · MISSING · MISMATCH. Es lo que decide si un veredicto se puede ATRIBUIR."""
+        if self.sha_esperado and self.sha_observado and self.sha_esperado != self.sha_observado:
+            return IDENT_MISMATCH
+        if not (self.sha_esperado and self.sha_observado and self.deployment_id):
+            return IDENT_MISSING
+        return IDENT_OK
+
 
 
 @dataclass(frozen=True)
@@ -157,8 +173,9 @@ class Fragmento:
 
 @dataclass
 class Adjudicacion:
-    veredicto: str
+    veredicto_diagnostico: str
     motivo: str
+    identidad: str = IDENT_OK
     prosa: str = ""
     lugar: str | None = None
     fragmentos: list[Fragmento] = field(default_factory=list)
@@ -170,6 +187,22 @@ class Adjudicacion:
     ids_en_tools: list = field(default_factory=list)
     frontera_turno: int = -1
     contrato_texto: str = ""
+
+    @property
+    def veredicto(self) -> str:
+        """PROVENANCE-SYMMETRY-01 · el veredicto FINAL.
+
+        Sin identidad verificada no se puede declarar PASS —no se certifica una conducta sin
+        saber qué código la produjo— pero TAMPOCO se puede atribuir un FAIL: acusar al
+        candidato equivocado es tan falso como absolverlo. El hecho observado se conserva
+        intacto en `veredicto_diagnostico`; lo que se suspende es la ATRIBUCIÓN.
+
+        `NO_APLICA` es la única excepción: si el turno no hizo nada territorial no hay nada
+        que atribuir a ningún SHA, y degradarlo sería inventar una duda donde no hay pregunta.
+        """
+        if self.identidad == IDENT_OK or self.veredicto_diagnostico == NO_APLICA:
+            return self.veredicto_diagnostico
+        return NO_ADJUDICABLE
 
     @property
     def requiere_humano(self) -> bool:
@@ -186,6 +219,8 @@ class Adjudicacion:
             "adjudicador_version": VERSION,
             "contrato_formato": CONTRATO_FORMATO,
             "veredicto": self.veredicto,
+            "veredicto_diagnostico": self.veredicto_diagnostico,
+            "identidad": self.identidad,
             "motivo": self.motivo,
             "requiere_lectura_humana": self.requiere_humano,
             "session_id": p.thread_id,
@@ -211,6 +246,10 @@ class Adjudicacion:
     def paquete(self) -> str:
         """Lo que se le entrega a una persona cuando el arnés no puede decidir solo."""
         out = [f"VEREDICTO: {self.veredicto}", f"MOTIVO:    {self.motivo}"]
+        if self.veredicto != self.veredicto_diagnostico:
+            out.append(f"  ↳ diagnóstico observado: {self.veredicto_diagnostico} · "
+                       f"identidad: {self.identidad} — el hecho se conserva, la atribución "
+                       f"se suspende")
         if self.lugar:
             out.append(f"LUGAR:     «{self.lugar}»")
         if self.evidencia:
@@ -397,8 +436,8 @@ def distancias_ocultas(busqueda: dict, cards: list) -> set[float]:
 
 # ── lo que el contrato le dijo al modelo ──────────────────────────────────────
 
-def contrato_emitido(encaje_contexto: str, cards: list) -> tuple[dict, bool, list[str]]:
-    """({id → distancia declarada}, ¿hay sección territorial?, problemas de parseo).
+def contrato_emitido(encaje_contexto: str, cards: list) -> tuple[dict, str, list[str]]:
+    """({id → distancia declarada}, estado del contrato, problemas de parseo).
 
     Se liga por POSICIÓN EN LA LISTA DEL CONTRATO ↔ posición en `cards`, que es legítimo
     aquí y sólo aquí: el contrato numera las entidades con el mismo orden del panel y ése es
@@ -406,19 +445,30 @@ def contrato_emitido(encaje_contexto: str, cards: list) -> tuple[dict, bool, lis
     turno deja de ser adjudicable.
     """
     problemas: list[str] = []
-    if _MARCA_TERRITORIAL not in (encaje_contexto or ""):
-        return {}, False, problemas
+    texto = encaje_contexto or ""
 
-    # FIRMA DEL FORMATO. Se reconoce el contrato por sus anclajes estructurales, no sólo por
-    # la cabecera. Si el emisor cambia el bloque y esto deja de reconocerlo, el turno sale
-    # NO_ADJUDICABLE: un parser que "casi" entiende produce PASS falsos.
-    faltan = [a for a in _ANCLAS_CONTRATO if a not in encaje_contexto]
+    # LA FIRMA DECIDE, no las cabeceras. Sin firma no llegó contrato; con una versión que este
+    # arnés no sabe leer, el emisor puede estar perfecto y el juez no: eso no es FAIL, es
+    # NO_ADJUDICABLE. Con la firma correcta pero la estructura rota, el contrato llegó mal y
+    # sí es FAIL.
+    firmas = _RE_FIRMA.findall(texto)
+    if not firmas:
+        return {}, _C_AUSENTE, problemas
+    if len(set(firmas)) > 1 or len(firmas) > 1:
+        problemas.append(f"el bloque trae {len(firmas)} firmas territoriales: {firmas}")
+        return {}, _C_INVALIDO, problemas
+    if f"CONTRATO_TERRITORIAL_V{firmas[0]}" != FIRMA_ESPERADA:
+        problemas.append(f"versión de contrato desconocida para este arnés: "
+                         f"V{firmas[0]} (se esperaba {FIRMA_ESPERADA})")
+        return {}, _C_VERSION_DESCONOCIDA, problemas
+
+    faltan = [a for a in _ANCLAS_CONTRATO if a not in texto]
     if faltan:
-        problemas.append(f"formato de contrato NO reconocido ({CONTRATO_FORMATO}); "
+        problemas.append(f"contrato firmado {FIRMA_ESPERADA} pero con estructura inválida; "
                          f"faltan anclajes: {faltan}")
-        return {}, True, problemas
+        return {}, _C_INVALIDO, problemas
 
-    seccion = encaje_contexto.split(_MARCA_TERRITORIAL, 1)[1]
+    seccion = texto.split(_MARCA_TERRITORIAL, 1)[1]
     declaradas: list[float | None] = []
     for linea in seccion.splitlines():
         m = _LINEA_ENTIDAD.match(linea)
@@ -434,14 +484,14 @@ def contrato_emitido(encaje_contexto: str, cards: list) -> tuple[dict, bool, lis
             problemas.append(f"línea de entidad no interpretable: {linea.strip()!r}")
 
     if not declaradas:
-        return {}, True, problemas
+        return {}, _C_OK, problemas
     if len(declaradas) != len(cards or []):
         problemas.append(
             f"el contrato numeró {len(declaradas)} entidades y el panel tiene "
             f"{len(cards or [])}: no se puede ligar sin adivinar")
-        return {}, True, problemas
+        return {}, _C_INVALIDO, problemas
 
-    return {c.get("id"): d for c, d in zip(cards, declaradas)}, True, problemas
+    return {c.get("id"): d for c, d in zip(cards, declaradas)}, _C_OK, problemas
 
 
 # ── prosa ─────────────────────────────────────────────────────────────────────
@@ -516,8 +566,8 @@ def adjudicar(t: TurnoObservado, procedencia: Procedencia | None = None) -> Adju
     ids_visibles = [c.get("id") for c in (t.cards or []) if isinstance(c, dict)]
     ids_tools = [a.get("id") for a in ((busqueda or {}).get("assets") or [])
                  if isinstance(a, dict)]
-    base = dict(procedencia=proc, ids_visibles=ids_visibles, ids_en_tools=ids_tools,
-                frontera_turno=frontera_turno(t.messages),
+    base = dict(procedencia=proc, identidad=proc.clasificar(), ids_visibles=ids_visibles,
+                ids_en_tools=ids_tools, frontera_turno=frontera_turno(t.messages),
                 contrato_texto=t.encaje_contexto or "")
 
     if busqueda is None:
@@ -527,17 +577,29 @@ def adjudicar(t: TurnoObservado, procedencia: Procedencia | None = None) -> Adju
         return Adjudicacion(VOID, "el turno no produjo AIMessage final", lugar=lugar, **base)
 
     autorizado, problemas = binding_autorizado(busqueda, t.cards)
-    declarado, hay_seccion, problemas_parseo = contrato_emitido(t.encaje_contexto, t.cards)
-    problemas += problemas_parseo
+    declarado, estado, problemas_parseo = contrato_emitido(t.encaje_contexto, t.cards)
 
+    # 3 · versión desconocida o identidad rota → el instrumento no puede juzgar
+    if estado == _C_VERSION_DESCONOCIDA:
+        return Adjudicacion(NO_ADJUDICABLE, "contrato firmado con una versión que este "
+                            "arnés no sabe leer", prosa=prosa, lugar=lugar,
+                            evidencia=autorizado, detalles=problemas_parseo, **base)
     if problemas:
-        return Adjudicacion(NO_ADJUDICABLE, "identidad ausente, ambigua o contrato ilegible",
+        return Adjudicacion(NO_ADJUDICABLE, "identidad de entidades ausente o ambigua",
                             prosa=prosa, lugar=lugar, evidencia=autorizado,
                             contrato=declarado, detalles=problemas, **base)
-    if not hay_seccion:
+
+    # 4 · el contrato no llegó, o llegó roto
+    if estado == _C_AUSENTE:
         return Adjudicacion(FAIL_CONTRACT,
-                            "el turno probó una relación territorial y el contrato no llegó",
+                            "el turno probó una relación territorial y el contrato no llegó "
+                            "(sin firma territorial)",
                             prosa=prosa, lugar=lugar, evidencia=autorizado, **base)
+    if estado == _C_INVALIDO:
+        return Adjudicacion(FAIL_CONTRACT,
+                            "el contrato llegó firmado pero con estructura inválida",
+                            prosa=prosa, lugar=lugar, evidencia=autorizado,
+                            detalles=problemas_parseo, **base)
 
     # ¿el contrato atribuyó una cifra que la evidencia no sostiene?
     ocultas = distancias_ocultas(busqueda, t.cards)
@@ -564,16 +626,6 @@ def adjudicar(t: TurnoObservado, procedencia: Procedencia | None = None) -> Adju
                             evidencia=autorizado, contrato=declarado, **base)
     if any(f.clase == AMBIGUO for f in fragmentos):
         return Adjudicacion(REVISION, "mención territorial no clasificable sola",
-                            prosa=prosa, lugar=lugar, fragmentos=fragmentos,
-                            evidencia=autorizado, contrato=declarado, **base)
-
-    # Todo lo del TURNO está bien. Falta saber bajo qué código ocurrió: sin eso no se
-    # certifica. Ver el docstring — esta regla sólo puede degradar un PASS, nunca tapar un fallo.
-    desconfianza = proc.motivo_desconfianza()
-    if desconfianza:
-        return Adjudicacion(NO_ADJUDICABLE,
-                            f"el turno pasa, pero su procedencia no se puede certificar: "
-                            f"{desconfianza}",
                             prosa=prosa, lugar=lugar, fragmentos=fragmentos,
                             evidencia=autorizado, contrato=declarado, **base)
 

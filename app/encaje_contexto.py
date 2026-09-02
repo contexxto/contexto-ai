@@ -30,6 +30,17 @@ _ARRIENDO = "arriendo"
 MARCA_PANEL = "════════ MOTOR DE ENCAJE · CONTEXTO AUTORITATIVO DE ESTE TURNO ════════"
 MARCA_TERRITORIAL = "──────── RELACIÓN TERRITORIAL · QUÉ PUEDES AFIRMAR ────────"
 
+# G20-B1 · CONTRACT-SIGNATURE-01. La firma la EMITE el contrato; no se deduce de sus
+# cabeceras. Un adjudicador que infiriera el formato a partir de los títulos estaría
+# reconociendo su propia suposición —una firma circular— y un cambio de redacción lo dejaría
+# validando algo que ya no entiende. Va exactamente UNA vez por bloque, tanto en el contrato
+# enriquecido como en el fallback mínimo, y NUNCA en un turno sin relación territorial: sin
+# contrato no hay nada que firmar.
+#
+# Si el formato cambia de forma incompatible, sube a V2 — y el arnés, que guarda su propia
+# copia del literal y no importa ésta, dirá NO_ADJUDICABLE en vez de adivinar.
+FIRMA_TERRITORIAL = "CONTRATO_TERRITORIAL_V1"
+
 
 def _es_arriendo(cards: list[dict], preferencias: dict) -> bool:
     """¿El turno habla de canon mensual? (decide si los montos llevan '/mes')."""
@@ -193,6 +204,7 @@ def _seccion_territorial(rel: dict | None, cards: list[dict] | None = None) -> l
     hay_cifras = any(d.get("distancia_metros") is not None for d in distancias)
 
     out = ["", MARCA_TERRITORIAL,
+           f"[{FIRMA_TERRITORIAL}] · esta sección es contrato, no sugerencia",
            "LA EVIDENCIA DE ESTE TURNO:"]
     if lugar:
         out.append(f"  · se geocodificó «{lugar}» y devolvió UN PUNTO — no un área, no un límite")

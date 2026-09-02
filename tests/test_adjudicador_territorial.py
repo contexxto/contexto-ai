@@ -127,7 +127,7 @@ def test_contrato_que_cita_la_cifra_del_activo_oculto_es_FAIL_BINDING():
     cards = [_card(VIS_1), _card(VIS_2)]
     contrato = _contrato(cards, distancias=[{"id": VIS_1, "distancia_metros": 572.0},
                                             {"id": VIS_2, "distancia_metros": 823.6}])
-    a = adjudicar(TurnoObservado(_turno(PROSA_OK), contrato, cards))
+    a = adjudicar(TurnoObservado(_turno(PROSA_OK), contrato, cards), PROC_OK)
 
     assert a.veredicto == FAIL_BINDING
     assert any("OCULTO" in d for d in a.detalles), a.detalles
@@ -193,7 +193,7 @@ def test_el_turno_incompleto_real_es_VOID():
         else:
             msgs.append(ToolMessage(content=m["content"], name=m["name"],
                                     tool_call_id=m["tool_call_id"]))
-    a = adjudicar(TurnoObservado(msgs, "", []))
+    a = adjudicar(TurnoObservado(msgs, "", []), PROC_OK)
     assert a.veredicto == VOID
     assert "AIMessage final" in a.motivo
 
@@ -202,7 +202,7 @@ def test_el_turno_incompleto_real_es_VOID():
 
 def test_turno_completo_sin_contrato_es_FAIL_CONTRACT():
     cards = [_card(VIS_1)]
-    a = adjudicar(TurnoObservado(_turno(PROSA_OK), "", cards))
+    a = adjudicar(TurnoObservado(_turno(PROSA_OK), "", cards), PROC_OK)
     assert a.veredicto == FAIL_CONTRACT
 
 
@@ -211,7 +211,7 @@ def test_turno_completo_sin_contrato_es_FAIL_CONTRACT():
 def test_claim_de_pertenencia_explicito_es_FAIL_PREVENTION():
     cards = [_card(VIS_1)]
     prosa = "Encontré 1 departamento en arriendo en La Floresta, listo para mudarte."
-    a = adjudicar(TurnoObservado(_turno(prosa), _contrato(cards), cards))
+    a = adjudicar(TurnoObservado(_turno(prosa), _contrato(cards), cards), PROC_OK)
 
     assert a.veredicto == FAIL_PREVENTION
     assert any(f.clase == MEMBERSHIP for f in a.fragmentos)
@@ -220,7 +220,7 @@ def test_claim_de_pertenencia_explicito_es_FAIL_PREVENTION():
 def test_esta_en_el_lugar_tambien_es_FAIL_PREVENTION():
     cards = [_card(VIS_1)]
     prosa = "La oficina está en La Floresta, a pocos minutos del parque."
-    a = adjudicar(TurnoObservado(_turno(prosa), _contrato(cards), cards))
+    a = adjudicar(TurnoObservado(_turno(prosa), _contrato(cards), cards), PROC_OK)
     assert a.veredicto == FAIL_PREVENTION
 
 
@@ -244,7 +244,7 @@ def test_mencion_no_clasificable_va_a_REVISION_no_a_PASS():
     """Ante duda, nunca PASS — y tampoco FAIL. La ambigüedad tiene su propio cajón."""
     cards = [_card(VIS_1)]
     prosa = "La Floresta tiene buena vida de barrio, y esta oficina te puede servir."
-    a = adjudicar(TurnoObservado(_turno(prosa), _contrato(cards), cards))
+    a = adjudicar(TurnoObservado(_turno(prosa), _contrato(cards), cards), PROC_OK)
 
     assert a.veredicto == REVISION
     assert a.requiere_humano
@@ -296,7 +296,7 @@ def test_sin_label_binding_no_se_clasifica_el_toponimo():
 def test_el_paquete_trae_todo_lo_que_una_persona_necesita():
     cards = [_card(VIS_1)]
     prosa = "La Floresta tiene buena vida de barrio."
-    p = adjudicar(TurnoObservado(_turno(prosa), _contrato(cards), cards)).paquete()
+    p = adjudicar(TurnoObservado(_turno(prosa), _contrato(cards), cards), PROC_OK).paquete()
 
     assert "VEREDICTO: REVISION" in p
     assert "EVIDENCIA AUTORIZATIVA" in p and "716.6" in p
@@ -313,7 +313,8 @@ def test_sin_SHA_un_turno_bueno_NO_es_PASS():
     cards = [_card(VIS_1)]
     a = adjudicar(TurnoObservado(_turno(PROSA_OK), _contrato(cards), cards))
     assert a.veredicto == NO_ADJUDICABLE
-    assert "procedencia" in a.motivo
+    assert a.veredicto_diagnostico == PASS      # el turno estaba bien
+    assert a.identidad == "MISSING"
 
 
 def test_SHA_discordante_NO_es_PASS():
@@ -322,7 +323,7 @@ def test_SHA_discordante_NO_es_PASS():
                        sha_esperado=_SHA, sha_observado="0" * 40)
     a = adjudicar(TurnoObservado(_turno(PROSA_OK), _contrato(cards), cards), proc)
     assert a.veredicto == NO_ADJUDICABLE
-    assert "no es el esperado" in a.motivo
+    assert a.veredicto_diagnostico == PASS and a.identidad == "MISMATCH"
 
 
 def test_sin_deployment_id_tampoco_hay_PASS():
@@ -340,14 +341,16 @@ def test_la_falta_de_SHA_no_tapa_un_FAIL_CONTRACT():
     canary mal instrumentado escondería fallos reales detrás de un NO_ADJUDICABLE."""
     cards = [_card(VIS_1)]
     a = adjudicar(TurnoObservado(_turno(PROSA_OK), "", cards))     # sin procedencia
-    assert a.veredicto == FAIL_CONTRACT
+    assert a.veredicto_diagnostico == FAIL_CONTRACT   # el hecho NO se pierde
+    assert a.veredicto == NO_ADJUDICABLE              # pero no se atribuye
 
 
 def test_la_falta_de_SHA_no_tapa_un_FAIL_BINDING():
     cards = [_card(VIS_1)]
     contrato = _contrato(cards, distancias=[{"id": VIS_1, "distancia_metros": 572.0}])
     a = adjudicar(TurnoObservado(_turno(PROSA_OK), contrato, cards))
-    assert a.veredicto == FAIL_BINDING
+    assert a.veredicto_diagnostico == FAIL_BINDING
+    assert a.veredicto == NO_ADJUDICABLE
 
 
 def test_NO_APLICA_precede_a_VOID():
@@ -371,19 +374,6 @@ def test_NO_ADJUDICABLE_precede_a_FAIL_CONTRACT():
 
 
 # ══ FIRMA DEL FORMATO · si cambia el contrato, no se infiere ══════════════════
-
-def test_contrato_con_formato_no_reconocido_es_NO_ADJUDICABLE():
-    """El arnés no importa runtime, así que RECONOCE el contrato por sus anclajes. Si el
-    emisor cambia el bloque, el parser no adivina: un parser que «casi» entiende produce PASS
-    falsos, el peor resultado en un instrumento de verdad productiva."""
-    cards = [_card(VIS_1)]
-    mutilado = _contrato(cards).replace("PUEDES AFIRMAR:", "AHORA PUEDES DECIR:")
-    a = adjudicar(TurnoObservado(_turno(PROSA_OK), mutilado, cards), PROC_OK)
-
-    assert a.veredicto == NO_ADJUDICABLE
-    assert any("formato de contrato NO reconocido" in d for d in a.detalles)
-    assert any(CONTRATO_FORMATO in d for d in a.detalles)
-
 
 # ══ TRAZABILIDAD MACHINE-READABLE ════════════════════════════════════════════
 
@@ -417,3 +407,107 @@ def test_PASS_sigue_exigiendo_lectura_humana():
     assert a.veredicto == PASS
     assert a.requiere_humano is True
     assert a.traza()["requiere_lectura_humana"] is True
+
+
+# ══ CONTRACT-SIGNATURE-01 · la firma la EMITE el runtime, no la deduce el arnés ═══
+
+def test_el_runtime_emite_la_firma_literal_una_sola_vez():
+    """La firma tiene que estar EN EL CONTRATO, no deducirse de cabeceras: una firma inferida
+    es circular — el arnés reconocería su propia suposición.
+
+    Este test es el único punto donde las dos copias del literal se comparan. El adjudicador
+    NO importa la constante de runtime; si alguien cambia una sin la otra, esto se cae.
+    """
+    from app.encaje_contexto import FIRMA_TERRITORIAL, bloque_territorial_minimo
+    from evals.adjudicador_territorial import FIRMA_ESPERADA
+
+    assert FIRMA_TERRITORIAL == FIRMA_ESPERADA == "CONTRATO_TERRITORIAL_V1"
+
+    cards = [_card(VIS_1)]
+    enriquecido = _contrato(cards)
+    assert enriquecido.count(FIRMA_TERRITORIAL) == 1
+
+    rel = {"pertenencia_territorial": "unknown", "relacion_recuperacion": "within_radius",
+           "ancla_busqueda": ANCLA, "radius_requested_m": 1200, "radius_searched_m": 1200,
+           "consulta": CONSULTA, "distancias": []}
+    assert bloque_territorial_minimo(rel).count(FIRMA_TERRITORIAL) == 1
+
+
+def test_un_turno_NO_territorial_no_lleva_firma():
+    """Sin relación territorial no hay contrato que firmar. Emitir la firma igual haría que
+    el arnés creyera que hubo contrato donde no había nada que gobernar."""
+    from app.encaje_contexto import FIRMA_TERRITORIAL
+    b = bloque_autoritativo([_card(VIS_1)], {}, [], (None, None), relacion_territorial=None)
+    assert FIRMA_TERRITORIAL not in b
+
+
+def test_firma_ausente_en_turno_territorial_completo_es_FAIL_CONTRACT():
+    cards = [_card(VIS_1)]
+    from app.encaje_contexto import FIRMA_TERRITORIAL
+    sin_firma = _contrato(cards).replace(FIRMA_TERRITORIAL, "")
+    a = adjudicar(TurnoObservado(_turno(PROSA_OK), sin_firma, cards), PROC_OK)
+    assert a.veredicto == FAIL_CONTRACT
+
+
+def test_firma_de_version_DESCONOCIDA_es_NO_ADJUDICABLE():
+    """Hay contrato y está firmado, pero con una versión que este arnés no sabe leer. No es
+    FAIL —el emisor puede estar bien— es que el instrumento no puede juzgarlo."""
+    cards = [_card(VIS_1)]
+    from app.encaje_contexto import FIRMA_TERRITORIAL
+    v2 = _contrato(cards).replace(FIRMA_TERRITORIAL, "CONTRATO_TERRITORIAL_V2")
+    a = adjudicar(TurnoObservado(_turno(PROSA_OK), v2, cards), PROC_OK)
+
+    assert a.veredicto == NO_ADJUDICABLE
+    assert any("versión" in d or "version" in d for d in a.detalles)
+
+
+def test_firmado_V1_pero_con_estructura_invalida_es_FAIL_CONTRACT():
+    cards = [_card(VIS_1)]
+    roto = _contrato(cards).replace("PUEDES AFIRMAR:", "AHORA DI:")
+    a = adjudicar(TurnoObservado(_turno(PROSA_OK), roto, cards), PROC_OK)
+    assert a.veredicto == FAIL_CONTRACT
+
+
+# ══ PROVENANCE-SYMMETRY-01 · el diagnóstico se conserva; la atribución no ════════
+
+def test_sin_identidad_el_FAIL_se_conserva_pero_no_se_atribuye():
+    """LA SIMETRÍA. Sin SHA verificado no se puede declarar PASS —no se certifica— pero
+    TAMPOCO se puede acusar al candidato de un FAIL: no se sabe qué código corrió. El hecho
+    observado se conserva en `veredicto_diagnostico`; la atribución se suspende."""
+    from evals.adjudicador_territorial import IDENT_MISSING
+    cards = [_card(VIS_1)]
+    a = adjudicar(TurnoObservado(_turno(PROSA_OK), "", cards))      # sin procedencia
+
+    assert a.veredicto_diagnostico == FAIL_CONTRACT
+    assert a.identidad == IDENT_MISSING
+    assert a.veredicto == NO_ADJUDICABLE
+    assert a.traza()["veredicto_diagnostico"] == FAIL_CONTRACT
+
+
+def test_SHA_discordante_suspende_la_atribucion():
+    from evals.adjudicador_territorial import IDENT_MISMATCH
+    cards = [_card(VIS_1)]
+    proc = Procedencia(thread_id="s", deployment_id="dep-1",
+                       sha_esperado=_SHA, sha_observado="0" * 40)
+    contrato = _contrato(cards, distancias=[{"id": VIS_1, "distancia_metros": 572.0}])
+    a = adjudicar(TurnoObservado(_turno(PROSA_OK), contrato, cards), proc)
+
+    assert a.veredicto_diagnostico == FAIL_BINDING
+    assert a.identidad == IDENT_MISMATCH
+    assert a.veredicto == NO_ADJUDICABLE
+
+
+def test_con_identidad_verificada_el_FAIL_si_se_atribuye():
+    from evals.adjudicador_territorial import IDENT_OK
+    cards = [_card(VIS_1)]
+    a = adjudicar(TurnoObservado(_turno(PROSA_OK), "", cards), PROC_OK)
+    assert a.identidad == IDENT_OK
+    assert a.veredicto == a.veredicto_diagnostico == FAIL_CONTRACT
+
+
+def test_NO_APLICA_no_se_degrada_por_falta_de_identidad():
+    """Si el turno no hizo nada territorial no hay nada que atribuir a ningún SHA: degradarlo
+    a NO_ADJUDICABLE sería inventar una duda donde no hay pregunta."""
+    msgs = [HumanMessage(content="hola"), AIMessage(content="qué tal")]
+    a = adjudicar(TurnoObservado(msgs, "", []))
+    assert a.veredicto == a.veredicto_diagnostico == NO_APLICA

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import re
 import unicodedata
 
@@ -57,6 +58,185 @@ def _desde_ultimo_turno(messages) -> list:
     (el caller ya pasó los mensajes de UN turno, como el historial), devuelve todo."""
     ultimo = max((i for i, m in enumerate(messages) if isinstance(m, HumanMessage)), default=None)
     return messages if ultimo is None else messages[ultimo:]
+
+
+_GEOCODE_TOOL = "tool_geocode_address"
+_RELACION_TOOL = "tool_search_nearby_assets"
+
+
+def _json_de(m):
+    """El cuerpo de un ToolMessage, o None si no es JSON."""
+    c = getattr(m, "content", None)
+    if not isinstance(c, str):
+        return None
+    try:
+        d = json.loads(c)
+    except Exception:      # noqa: BLE001 - muchos tool results no son JSON
+        return None
+    return d if isinstance(d, dict) else None
+
+
+def _distancia_normalizada(v) -> float | None:
+    """G20-B1-R1 · el borde donde un dato serializado se vuelve evidencia numérica.
+
+    POR QUÉ EXISTE. `tool_search_nearby_assets` calcula la distancia con
+    `ROUND(ST_Distance(...)::numeric, 1)` y serializa con `json.dumps(..., default=str)`.
+    El `Decimal` de Postgres no es serializable, así que `default=str` lo convierte: la
+    distancia viaja por el cable como la CADENA `"572.0"`, no como número. `8322e25` la
+    copiaba literal y `encaje_contexto._seccion_territorial` la formateaba con `:g`, que
+    no acepta `str` — `ValueError` no contenida, nodo `encaje` muerto, turno abortado. Es
+    la regresión del canary del 2026-08-30T20:40:22Z, con su excepción persistida en
+    `checkpoint_writes.__error__`.
+
+    Se normaliza AQUÍ y no en la tool: el payload de la tool es el que G19-A y G20-A ya
+    validaron contra el modelo, y moverlo cambiaría un contrato probado para arreglar a su
+    consumidor. Aquí es donde el dato deja de ser transporte y pasa a ser evidencia.
+
+    FAIL-CLOSED SOBRE LA AFIRMACIÓN, NUNCA SOBRE EL CONTRATO. Lo que no puede ser una
+    distancia devuelve `None`, y `None` ya tiene significado aguas abajo: la sección
+    territorial se emite igual —con su «pertenencia NO ESTÁ ESTABLECIDA» y sus ❌— pero
+    describe la proximidad en palabras, sin cifra. Nunca se degrada a «0 m»: cero es una
+    distancia real y afirmarla sería inventar evidencia. Y jamás se apaga la prohibición:
+    un dato sucio no puede ser la puerta por la que el modelo queda sin restricción.
+
+    LOS CASOS QUE NO SON OBVIOS:
+      · `bool` va antes que `float`, porque en Python `True` ES un `int` y `float(True)`
+        daría 1.0 — una distancia de un metro fabricada a partir de una bandera.
+      · NaN e infinito son `float` legítimos y pasarían cualquier `isinstance`. `:g` los
+        formatearía sin quejarse («nan m», «inf m»), que es peor que reventar: una
+        afirmación falsa y silenciosa en el canal autoritativo.
+      · Negativo no es «cerca»: es un dato imposible, y aceptarlo escondería el bug que
+        lo produjo.
+    """
+    if v is None or isinstance(v, bool):
+        return None
+    try:
+        d = float(v)
+    except (TypeError, ValueError):
+        print(f"  [WARN] distancia_metros inservible, se omite la cifra "
+              f"({type(v).__name__}: {v!r})")
+        return None
+    if not math.isfinite(d) or d < 0:
+        print(f"  [WARN] distancia_metros fuera de dominio, se omite la cifra ({d!r})")
+        return None
+    return d
+
+
+def _distancias_ligadas(activos, cards) -> list[dict]:
+    """G20-B1-R2 · una distancia por inmueble VISIBLE, ligada por identidad estable.
+
+    EL DEFECTO QUE CIERRA. Hasta R1 la distancia salía de `activos[0]` —el más cercano que
+    devolvió el SQL— y el bloque la atribuía «al candidato mostrado». Entre el resultado
+    crudo y lo que la persona ve hay dos filtros (operación, tipo), un ranking y un recorte.
+    En el turno real del canary, con `operacion: venta`, el más cercano (572 m) es ARRIENDO y
+    NO se muestra: el bloque describía a una entidad invisible. Una afirmación sobre algo que
+    la persona no puede ver es peor que un número equivocado.
+
+        la identidad de la entidad NO es metadato accesorio:
+        es parte de la AUTORIDAD de la afirmación
+
+    EL IDENTIFICADOR NO SE INVENTA. `id` ya es canónico y compartido: viene en el ToolMessage,
+    `_collect_asset_ids` lo extrae de ahí, `_fetch_cards_rows` trae la fila por ese id y
+    `_card_from_row` lo copia a la tarjeta. El bloque autoritativo ya liga por id en la
+    priorización. Éste es el mismo camino, no uno nuevo.
+
+    NUNCA POR POSICIÓN. Ni `activos[0]`, ni `zip`, ni índices paralelos: el orden del payload
+    (por distancia ascendente) y el del panel (por encaje, ya filtrado y recortado) son
+    órdenes distintos sobre poblaciones distintas. Que a veces coincidan es lo que hace
+    traicionero unir por posición.
+
+    AMBIGUO ES LO MISMO QUE AUSENTE. Dos activos con el mismo id no dejan elegir cuál
+    describe a la tarjeta, y elegir sería fabricar la correspondencia. Se omite la cifra —
+    `None`, que aguas abajo significa «no afirmes distancia para éste». La prohibición
+    territorial NO depende de esto y permanece intacta: un payload sucio no puede ser la
+    puerta por la que el modelo queda sin gobierno.
+
+    Los activos que no correspondan a ninguna tarjeta visible se descartan enteros: una
+    entidad filtrada no aporta afirmaciones sobre una entidad visible.
+    """
+    por_id: dict[str, dict] = {}
+    ambiguos: set[str] = set()
+    for a in activos or []:
+        if not isinstance(a, dict):
+            continue
+        aid = a.get("id")
+        if not isinstance(aid, str) or not aid:
+            continue          # sin identidad no es ligable, y no se le fabrica una
+        if aid in por_id:
+            ambiguos.add(aid)
+            continue
+        por_id[aid] = a
+
+    fuera = []
+    for c in cards or []:
+        cid = c.get("id") if isinstance(c, dict) else None
+        activo = None
+        if isinstance(cid, str) and cid and cid not in ambiguos:
+            activo = por_id.get(cid)
+        fuera.append({
+            "id": cid,
+            "distancia_metros": (_distancia_normalizada(activo.get("distancia_metros"))
+                                 if activo else None),
+        })
+    return fuera
+
+
+def _relacion_territorial_del_turno(messages, cards=()) -> dict | None:
+    """G20-B1 - la relacion territorial que ESTE turno demostro, o None.
+
+    SOLO DEL TURNO ACTUAL, sin fallback al historial. `_collect_asset_ids` si cae al hilo
+    completo (`or _ids_en(messages, limit)`) y para ids eso es compatibilidad razonable;
+    para AUTORIDAD territorial seria gobernar la respuesta de hoy con la busqueda de ayer.
+
+    EL LABEL SE LIGA AL PUNTO, NO AL TURNO. `tool_search_nearby_assets` recibe tres floats
+    y no conoce la consulta: el toponimo vive solo en el geocode. Pero que ambos aparezcan
+    en el mismo turno NO prueba que uno origino al otro - el modelo puede geocodificar un
+    sitio y buscar alrededor de otro punto. Se exige IGUALDAD EXACTA de coordenadas, sin
+    tolerancia: una tolerancia espacial convertiria una conveniencia numerica en autoridad
+    semantica. Sin coincidencia, la relacion existe pero el lugar NO se nombra.
+
+    Se usa `address_input` -lo que se pidio geocodificar- y nunca `address_resolved`, que
+    es la interpretacion del proveedor y traeria jerarquia territorial no demostrada
+    ("La Floresta, Mariscal Sucre, Distrito Metropolitano..."). El resuelto se conserva
+    como evidencia del geocoder, no como autoridad para nombrar.
+    """
+    turno = _desde_ultimo_turno(messages)
+
+    relacion = None
+    for m in turno:
+        if getattr(m, "type", "") != "tool" or (getattr(m, "name", "") or "") != _RELACION_TOOL:
+            continue
+        d = _json_de(m)
+        if d and d.get("pertenencia_territorial"):
+            relacion = d
+    if relacion is None:
+        return None
+
+    fuera = {
+        "pertenencia_territorial": relacion.get("pertenencia_territorial"),
+        "relacion_recuperacion": relacion.get("relacion_recuperacion"),
+        "ancla_busqueda": relacion.get("ancla_busqueda"),
+        "radius_requested_m": relacion.get("radius_requested_m"),
+        "radius_searched_m": relacion.get("radius_searched_m"),
+        # G20-B1-R2: una entrada por inmueble VISIBLE, en el orden del panel, ligada por id.
+        # NO existe una distancia singular: era la puerta por la que se atribuía la cifra de
+        # un activo oculto al «candidato mostrado». Ver `_distancias_ligadas`.
+        "distancias": _distancias_ligadas(relacion.get("assets"), cards),
+        "consulta": None,
+    }
+
+    ancla = fuera["ancla_busqueda"] or {}
+    for m in turno:
+        if getattr(m, "type", "") != "tool" or (getattr(m, "name", "") or "") != _GEOCODE_TOOL:
+            continue
+        g = _json_de(m)
+        if not g or not g.get("found"):
+            continue
+        if (g.get("latitude") == ancla.get("latitude")
+                and g.get("longitude") == ancla.get("longitude")
+                and ancla.get("latitude") is not None):
+            fuera["consulta"] = g.get("address_input")
+    return fuera
 
 
 def _ids_en(messages, limit: int) -> list[str]:
@@ -602,6 +782,13 @@ async def construir_panel(messages, *, session_id: str, preferencias: dict | Non
         "descartadas": [c for c in cards if c["id"] not in vistos],
         "preferencias": preferencias or {},
         "priorizado": (prioritario, motivo),
+        # G20-B1 - aditivo. No participa del ranking ni del recorte: describe QUE RELACION
+        # probo el retrieval de ESTE turno, para que el bloque autoritativo pueda decir que
+        # afirmacion autoriza esa evidencia.
+        # G20-B1-R2: recibe las tarjetas VISIBLES —ya filtradas, ordenadas y recortadas—
+        # porque cada distancia se liga a la entidad que la persona realmente ve, no al
+        # activo que el SQL puso primero.
+        "relacion_territorial": _relacion_territorial_del_turno(messages, cards=visibles),
     }
 
 

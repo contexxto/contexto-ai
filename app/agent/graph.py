@@ -10,7 +10,7 @@ import anthropic
 import httpx
 from langchain_anthropic import ChatAnthropic
 from langchain_core.runnables import RunnableConfig
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph import END, START, StateGraph
@@ -652,6 +652,42 @@ def _bloque_fecha() -> str:
     )
 
 
+# G20-B1-R3 · la salida controlada de la fila 5 de la tabla de verdad.
+#
+# Se emite cuando el turno probó una relación territorial y no se pudo construir NINGUNA forma
+# del contrato autoritativo. Está redactada para no afirmar nada de lo que el contrato ausente
+# habría gobernado: no nombra el lugar buscado, no dice «cerca de», no cuenta resultados y no
+# promete un plazo. Dice lo único cierto —que no puede sostener una afirmación de ubicación— y
+# lo dice sin culpar a la persona.
+_SIN_AUTORIDAD_TERRITORIAL = (
+    "Ahora mismo no puedo describir con precisión dónde queda lo que encontré, y prefiero no "
+    "afirmar una ubicación que no puedo sostener. Vuelve a preguntármelo y lo reviso de nuevo."
+)
+
+
+def _sin_seccion_territorial(bloque: str) -> str:
+    """G20-B1-R3 · recorta la autoridad TERRITORIAL de un bloque heredado de otro turno.
+
+    Se recorta en vez de apagarse porque el bloque autoritativo lleva dos cosas de naturaleza
+    distinta. Las reglas del PANEL —orden obligatorio de la lista, frases obligatorias de
+    presupuesto— gobiernan las tarjetas que la persona sigue viendo, y en un turno de
+    seguimiento («¿y ese tiene parqueadero?») deben seguir vigentes: G19 las midió obedecidas
+    13/13 y apagarlas cambiaría un defecto por otro. La sección TERRITORIAL, en cambio,
+    describe la evidencia de UNA operación de retrieval concreta; heredarla es dejar que la
+    búsqueda de ayer autorice lo que se afirma hoy.
+
+    Si al recortar no queda ninguna regla de panel —el caso del fallback mínimo, que es
+    territorial y nada más— se devuelve "" en vez de una cabecera huérfana.
+    """
+    from app.encaje_contexto import MARCA_PANEL, MARCA_TERRITORIAL
+
+    corte = bloque.find(MARCA_TERRITORIAL)
+    if corte < 0:
+        return bloque
+    resto = bloque[:corte].rstrip()
+    return resto if MARCA_PANEL in resto else ""
+
+
 def _build_graph() -> StateGraph:
     # 1. Crear el cliente Anthropic con SSL explícito
     _anthropic_client = anthropic.AsyncAnthropic(
@@ -680,10 +716,36 @@ def _build_graph() -> StateGraph:
     llm = base_llm.bind_tools(AGENT_TOOLS)
 
     async def llm_node(state: AgentState) -> dict:
+        # G20-B1-R3 · TODO lo que sigue se decide contra el TURNO ACTUAL. Las claves de
+        # AgentState son canales `LastValue` que LangGraph persiste entre turnos, así que
+        # leerlas sin comparar el turno sería dejar que la decisión de ayer gobierne hoy.
+        turno = sum(1 for m in state.get("messages") or [] if isinstance(m, HumanMessage))
+
+        # Fila 5 de la tabla de verdad. El turno probó una relación territorial y NO se pudo
+        # construir ninguna forma del contrato. Invocar al modelo aquí sería dejarlo escribir
+        # sobre ubicación sin la restricción que la evidencia exige — justo lo que las tres
+        # unidades de G20-B1 existen para impedir. Se corta ANTES de la invocación y se
+        # devuelve una salida controlada que no afirma nada territorial.
+        #
+        # Que exista salida y no un turno muerto es deliberado: el canary del 2026-08-30
+        # demostró que abortar deja «Sin respuesta del agente.», que para la persona es peor
+        # y para el sistema es indistinguible de una caída. Y el mensaje se crea AQUÍ, nuevo:
+        # devolver el último AIMessage del hilo daría una respuesta plausible, coherente y
+        # ajena a lo que la persona acaba de preguntar.
+        if state.get("contrato_faltante_turno") == turno:
+            print("  [WARN] contrato territorial no disponible: no se invoca al modelo")
+            return {"messages": [AIMessage(content=_SIN_AUTORIDAD_TERRITORIAL)]}
+
         # El bloque del motor va DENTRO del system prompt (no como un mensaje más): es
         # instrucción del sistema, no algo que el usuario dijo, y así no contamina ni el
         # historial compartido ni el insumo del extractor de preferencias.
         contexto = (state.get("encaje_contexto") or "").strip()
+        # STATE-LINEAGE-01 · si el bloque es de un turno anterior, la sección TERRITORIAL se
+        # recorta: describe la evidencia de UNA operación de retrieval y no puede gobernar un
+        # turno que no la hizo. Las reglas del panel sí sobreviven — la persona sigue
+        # preguntando sobre las MISMAS tarjetas, y son las que G19 midió obedecidas 13/13.
+        if contexto and state.get("encaje_contexto_turno") != turno:
+            contexto = _sin_seccion_territorial(contexto)
         system = SystemMessage(
             content="\n\n".join(
                 p for p in (SYSTEM_PROMPT.content, _bloque_fecha(), contexto) if p
@@ -725,11 +787,12 @@ def _build_graph() -> StateGraph:
         """
         # Import diferido: chat.py importa este módulo (grafo → tools), así que importarlo
         # arriba cerraría el ciclo. Mismo patrón que tool_connect_with_broker.
-        from app.encaje_contexto import bloque_autoritativo
+        from app.encaje_contexto import bloque_autoritativo, bloque_territorial_minimo
         # F2/E2.1: el carril de decisión ya no pasa por el router. El import tardío se
         # conserva —cerrar el ciclo arriba sigue siendo el problema que evita—, pero
         # ahora apunta al Decision Core, que no sabe nada de HTTP.
-        from app.decision.assembler import (_collect_asset_ids, _MAX_CARDS, _user_texts,
+        from app.decision.assembler import (_collect_asset_ids, _MAX_CARDS,
+                                            _relacion_territorial_del_turno, _user_texts,
                                             construir_panel)
         from app.decision.context import (CoordenadasAusentes, EncajeSinVersion,
                                           SessionIdAusente)
@@ -740,44 +803,101 @@ def _build_graph() -> StateGraph:
                                       EncajeSinVersion, DimensionSinProcedencia)
 
         messages = state.get("messages") or []
-        if not _collect_asset_ids(messages, limit=_MAX_CARDS * 2):
-            return {}  # el turno no surfaceó inventario: nada que puntuar (ni que gastar)
 
-        # Las preferencias se extraen con el LLM: UNA vez por turno del usuario, aunque el
-        # agente encadene varias rondas de herramientas. La llave del caché es cuántos
-        # mensajes lleva escritos la persona.
+        # G20-B1-R3 · INVARIANTES 1 y 3. La NECESIDAD del contrato la fija la evidencia
+        # territorial del TURNO ACTUAL —no las tarjetas, no el historial—. Se calcula ANTES
+        # que nada porque decide si el turno puede terminar sin contrato: antes se preguntaba
+        # por los ids, y una búsqueda territorial sin resultados salía por la puerta de atrás
+        # sin emitir una sola restricción.
+        # El índice de turno marca AMBAS decisiones de este nodo. Se calcula arriba porque
+        # la fila 5 puede alcanzarse sin haber entrado siquiera al camino del panel.
         turno = sum(1 for m in messages if isinstance(m, HumanMessage))
-        prefs = state.get("preferencias")
-        if not (isinstance(prefs, dict) and state.get("preferencias_turno") == turno):
+        relacion = _relacion_territorial_del_turno(messages)
+        ids = _collect_asset_ids(messages, limit=_MAX_CARDS * 2)
+        if not ids and relacion is None:
+            return {}  # fila 1: ni inventario que puntuar ni riesgo territorial que gobernar
+
+        salida: dict = {}
+        prefs: dict = state.get("preferencias") if isinstance(state.get("preferencias"), dict) else {}
+        panel = None
+
+        # ── 1. CONSTRUCCIÓN DEL PANEL ────────────────────────────────────────────
+        # Sólo si hay inventario. Sin ids no hay panel que armar y no se gasta una llamada
+        # de extracción de preferencias para nada.
+        if ids:
+            # Las preferencias se extraen con el LLM: UNA vez por turno del usuario, aunque el
+            # agente encadene varias rondas de herramientas. La llave del caché es cuántos
+            # mensajes lleva escritos la persona.
+            if not (isinstance(prefs, dict) and state.get("preferencias_turno") == turno
+                    and prefs):
+                try:
+                    prefs = await extraer_preferencias(_user_texts(messages))
+                except Exception:  # noqa: BLE001 — sin preferencias hay panel, solo que sin encaje
+                    prefs = {}
+                prefs = prefs if isinstance(prefs, dict) else {}
+            salida = {"preferencias": prefs, "preferencias_turno": turno}
+
             try:
-                prefs = await extraer_preferencias(_user_texts(messages))
-            except Exception:  # noqa: BLE001 — sin preferencias hay panel, solo que sin encaje
-                prefs = {}
-            prefs = prefs if isinstance(prefs, dict) else {}
+                session_id = (config.get("configurable") or {}).get("thread_id")
+                panel = await construir_panel(messages, session_id=session_id,
+                                              preferencias=prefs)
+            except _INTEGRIDAD_DE_LA_DECISION:
+                # Estas CUATRO no se degradan en silencio. Un session_id ausente, unas
+                # coordenadas que no existen, un motor que no declara su versión o una
+                # dimensión que mueve la decisión sin fila de procedencia (E2.3a) no son "no
+                # pude armar el panel": son condiciones que harían FALSO el DecisionContext si
+                # se rellenaran. Seguir por el camino legacy las convertiría en invisibles,
+                # que es justo el modo de fallo que F0 se pasó cerrando. Se propagan.
+                raise
+            except Exception as exc:  # noqa: BLE001 — lo OPERACIONAL nunca rompe el turno
+                print(f"  [WARN] no pude armar el panel de encaje "
+                      f"({type(exc).__name__}: {exc})")
+                panel = None
 
-        try:
-            session_id = (config.get("configurable") or {}).get("thread_id")
-            panel = await construir_panel(messages, session_id=session_id, preferencias=prefs)
-        except _INTEGRIDAD_DE_LA_DECISION:
-            # Estas CUATRO no se degradan en silencio. Un session_id ausente, unas
-            # coordenadas que no existen, un motor que no declara su versión o una dimensión
-            # que mueve la decisión sin fila de procedencia (E2.3a) no son "no pude armar el
-            # panel": son condiciones que harían FALSO el DecisionContext si se rellenaran.
-            # Seguir por el camino legacy las convertiría en invisibles, que es justo el modo
-            # de fallo que F0 se pasó cerrando. Se propagan con su nombre.
-            raise
-        except Exception as exc:  # noqa: BLE001 — lo OPERACIONAL sí es un extra y jamás rompe el turno
-            print(f"  [WARN] no pude armar el panel de encaje ({type(exc).__name__}: {exc})")
-            return {"preferencias": prefs, "preferencias_turno": turno}
+        # ── 2. CONTRATO ENRIQUECIDO ──────────────────────────────────────────────
+        # Manejador PROPIO, y ésa es la corrección de CONTAINMENT-01. Antes esta llamada vivía
+        # en el `return`, fuera de todo `try`: un ValueError de formato mataba el turno entero
+        # (canary VOID del 2026-08-30). Meterla en el `try` del panel habría sido el error
+        # contrario —confundir un fallo del contrato de autoridad con uno de la base—, así que
+        # tiene el suyo, y su fallo cae al fallback en vez de al vacío.
+        contexto = ""
+        if panel is not None:
+            salida["cards"] = panel["cards"]
+            salida["descartadas"] = panel["descartadas"]
+            try:
+                contexto = bloque_autoritativo(
+                    panel["cards"], prefs, panel["descartadas"], panel["priorizado"],
+                    relacion_territorial=panel.get("relacion_territorial"))
+            except _INTEGRIDAD_DE_LA_DECISION:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                print(f"  [WARN] no pude armar el bloque autoritativo "
+                      f"({type(exc).__name__}: {exc})")
+                contexto = ""
 
-        return {
-            "preferencias": prefs,
-            "preferencias_turno": turno,
-            "cards": panel["cards"],
-            "descartadas": panel["descartadas"],
-            "encaje_contexto": bloque_autoritativo(
-                panel["cards"], prefs, panel["descartadas"], panel["priorizado"]),
-        }
+        # ── 3. FALLBACK AUTORITATIVO MÍNIMO ──────────────────────────────────────
+        # No depende del panel ni de las tarjetas: se arma sólo con la relación que el
+        # ToolMessage del turno demostró. Por eso sobrevive a un fallo de la base.
+        if not contexto and relacion is not None:
+            try:
+                contexto = bloque_territorial_minimo(relacion)
+            except Exception as exc:  # noqa: BLE001
+                print(f"  [WARN] no pude armar ni el contrato territorial mínimo "
+                      f"({type(exc).__name__}: {exc})")
+                contexto = ""
+
+        # ── 4. DECISIÓN DE CONTINUAR ─────────────────────────────────────────────
+        # Fila 5: hay riesgo territorial y NO hay autoridad de ninguna forma. Se marca para
+        # que `llm_node` no invoque al modelo. Es la diferencia entre «no había nada que
+        # decir» y «había algo que prohibir y no pudimos decirlo».
+        if relacion is not None and not contexto:
+            salida["contrato_faltante_turno"] = turno
+            return salida
+
+        if contexto:
+            salida["encaje_contexto"] = contexto
+            salida["encaje_contexto_turno"] = turno
+        return salida
 
     graph = StateGraph(AgentState)
     graph.add_node("llm", llm_node)

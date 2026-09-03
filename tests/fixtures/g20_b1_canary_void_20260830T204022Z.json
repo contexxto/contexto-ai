@@ -1,0 +1,87 @@
+{
+  "_procedencia": {
+    "que": "El turno REAL que abortó el canary de G20-B1. Copiado del checkpointer de producción, sin reescribir: el `content` de cada ToolMessage es la cadena exacta que emitió la tool.",
+    "por_que_importa": "`distancia_metros` viaja como STRING (json.dumps(default=str) sobre el Decimal de Postgres). El fixture anterior lo transcribió del informe en prosa como float 572.0 y por eso CI pasó en verde sobre un payload que producción nunca emite.",
+    "thread_id": "session-xrYdnRd5CYUc3u_R",
+    "deployment": "dep-daa98rhf2nfc739k2gh0",
+    "commit": "8322e25eaf080698a17c80b652dc474ade131c03",
+    "ts_utc": "2026-08-30T20:40:16.200683Z .. 2026-08-30T20:40:22.483795Z",
+    "error_persistido": "ValueError(\"Unknown format code 'g' for object of type 'str'\")",
+    "regla": "NO editar a mano. Si hace falta regenerarlo, sale del checkpoint, nunca de un informe."
+  },
+  "messages": [
+    {
+      "type": "human",
+      "content": "Busco arriendo en La Floresta, con un presupuesto máximo de 900 dólares.\n\n[Contexto del sistema: la ubicación GPS del usuario es lat=-0.298947, lon=-78.559822. REGLA: usa estas coordenadas con tool_analyze_location SOLO si el usuario pregunta por \"aquí\" / \"mi zona\" / \"donde estoy\" SIN nombrar otro lugar. Si el usuario nombra un sector, barrio o dirección específicos (p. ej. \"La Carolina\", \"Cumbayá\", una calle), GEOCODIFICA ESE lugar con tool_geocode_address y analiza ESE punto — NO uses estas coordenadas y NUNCA llames al lugar analizado con el nombre que pidió el usuario si no coinciden. Para inmuebles registrados, usa tool_search_nearby_assets.]"
+    },
+    {
+      "type": "ai",
+      "content": [
+        {
+          "text": "Perfecto, voy a buscar arriendos en La Floresta dentro de tu presupuesto de $900.",
+          "type": "text",
+          "index": 0
+        },
+        {
+          "id": "toolu_01Cnz14jtUmGBu8W5QvaMAyW",
+          "input": {},
+          "name": "tool_geocode_address",
+          "type": "tool_use",
+          "caller": {
+            "type": "direct"
+          },
+          "index": 1,
+          "partial_json": "{\"address\": \"La Floresta, Quito, Ecuador\"}"
+        }
+      ],
+      "tool_calls": [
+        {
+          "name": "tool_geocode_address",
+          "args": {
+            "address": "La Floresta, Quito, Ecuador"
+          },
+          "id": "toolu_01Cnz14jtUmGBu8W5QvaMAyW"
+        }
+      ]
+    },
+    {
+      "type": "tool",
+      "content": "{\"found\": true, \"address_input\": \"La Floresta, Quito, Ecuador\", \"address_resolved\": \"La Floresta, Mariscal Sucre, Quito, Distrito Metropolitano de Quito, Pichincha, Ecuador\", \"latitude\": -0.20934, \"longitude\": -78.484919, \"geometry_type\": \"point\", \"source\": \"nominatim\", \"tip\": \"Use tool_search_nearby_assets with radius_meters=2000 for geocoded addresses (Nominatim may offset slightly).\"}",
+      "name": "tool_geocode_address",
+      "tool_call_id": "toolu_01Cnz14jtUmGBu8W5QvaMAyW"
+    },
+    {
+      "type": "ai",
+      "content": [
+        {
+          "id": "toolu_01SNMHFJx4qauLZStDPCD3cA",
+          "input": {},
+          "name": "tool_search_nearby_assets",
+          "type": "tool_use",
+          "caller": {
+            "type": "direct"
+          },
+          "index": 0,
+          "partial_json": "{\"latitude\": -0.20934, \"longitude\": -78.484919, \"radius_meters\": 1200}"
+        }
+      ],
+      "tool_calls": [
+        {
+          "name": "tool_search_nearby_assets",
+          "args": {
+            "latitude": -0.20934,
+            "longitude": -78.484919,
+            "radius_meters": 1200
+          },
+          "id": "toolu_01SNMHFJx4qauLZStDPCD3cA"
+        }
+      ]
+    },
+    {
+      "type": "tool",
+      "content": "{\"assets\": [{\"id\": \"ee9ff315-5947-40bc-be09-632ace6b7991\", \"direccion_estandarizada\": \"Calle Alemania E12-34 y Gonzalez Suarez, Quito\", \"tipo_activo\": \"Departamento\", \"piso_altura\": 12, \"caminabilidad\": 100, \"walk_score_fuente\": null, \"score_ruido_predictivo\": \"MEDIO\", \"volumen_trafico_historico\": 6800, \"densidad_poblacional_pico\": 9800, \"porcentaje_cobertura_vegetal\": \"15.30\", \"conectividad\": \"\\ud83d\\ude89 Transportes Ecuador a ~772 m \\u00b7 \\ud83d\\ude89 Cruz del Sur a ~950 m \\u00b7 \\ud83d\\ude87 El Ejido a ~1121 m\", \"servicios_cercanos\": \"\\u26ea Radio Maria a ~116 m \\u00b7 \\ud83d\\udc8a Fybeca a ~167 m \\u00b7 \\ud83c\\udfeb ecuasol software libre a ~188 m \\u00b7 \\ud83c\\udfe5 Centro Oftalmol\\u00f3gico Fundaci\\u00f3n Ecuatoriana Vista para los ciegos a ~247 m \\u00b7 \\ud83d\\uded2 Supermercado Cordero a ~275 m \\u00b7 \\ud83d\\udee1\\ufe0f UPC La Floresta a ~1006 m \\u00b7 \\ud83c\\udf33 EQ. RECONTEC 07 a ~1216 m \\u00b7 \\ud83d\\udecd\\ufe0f Centro Comercial Quitus a ~1271 m\", \"operacion\": \"ARRIENDO\", \"precio\": \"630.00\", \"distancia_metros\": \"572.0\", \"caminabilidad_procedencia\": \"estimaci\\u00f3n por zona\"}, {\"id\": \"b1810dd2-3e8c-4bc3-a27d-f80efde43cb7\", \"direccion_estandarizada\": \"Av. Gonzalez Suarez N27-160 y Alemania, Quito\", \"tipo_activo\": \"Oficina\", \"piso_altura\": 18, \"caminabilidad\": 100, \"walk_score_fuente\": null, \"score_ruido_predictivo\": \"ALTO\", \"volumen_trafico_historico\": 22000, \"densidad_poblacional_pico\": 13000, \"porcentaje_cobertura_vegetal\": \"8.50\", \"conectividad\": \"\\ud83d\\ude89 Transportes Ecuador a ~656 m \\u00b7 \\ud83d\\ude89 Cruz del Sur a ~807 m \\u00b7 \\ud83d\\ude87 El Ejido a ~1039 m\", \"servicios_cercanos\": \"\\ud83d\\udc8a Farmacia Mariscal a ~110 m \\u00b7 \\u26ea Radio Maria a ~192 m \\u00b7 \\ud83c\\udfeb CEDNIA a ~194 m \\u00b7 \\ud83d\\uded2 Micromercado a ~270 m \\u00b7 \\ud83c\\udfe5 Centro Especializado en Medicina del Deporte Asdr\\u00fabal de la Torre a ~320 m \\u00b7 \\ud83d\\udee1\\ufe0f Direcci\\u00f3n Nacional de Control de Tr\\u00e1nsito y Seguridad Vial a ~1092 m \\u00b7 \\ud83d\\udecd\\ufe0f Centro Comercial Quitus a ~1126 m \\u00b7 \\ud83c\\udf33 EQ. RECONTEC 07 a ~1214 m\", \"operacion\": \"VENTA\", \"precio\": \"147000.00\", \"distancia_metros\": \"716.6\", \"caminabilidad_procedencia\": \"estimaci\\u00f3n por zona\"}, {\"id\": \"7887ff3e-9e5e-4921-b652-f9a61ecee0b2\", \"direccion_estandarizada\": \"Av. 12 de Octubre N24-593 y Cordero, Quito\", \"tipo_activo\": \"Oficina\", \"piso_altura\": 9, \"caminabilidad\": 100, \"walk_score_fuente\": null, \"score_ruido_predictivo\": \"MEDIO\", \"volumen_trafico_historico\": 8300, \"densidad_poblacional_pico\": 10200, \"porcentaje_cobertura_vegetal\": \"20.50\", \"conectividad\": \"\\ud83d\\ude87 El Ejido a ~623 m \\u00b7 \\ud83d\\ude89 Transportes Ecuador a ~679 m \\u00b7 \\ud83d\\ude87 La Alameda a ~1103 m\", \"servicios_cercanos\": \"\\ud83c\\udfeb Hemiciclo Politecnico a ~144 m \\u00b7 \\ud83d\\udc8a Medicity a ~218 m \\u00b7 \\ud83c\\udf33 EQ. RECONTEC 07 a ~388 m \\u00b7 \\ud83c\\udfe5 Resonancia Magnetica Resomedical a ~634 m \\u00b7 \\u26ea Iglesia Cat\\u00f3lica San Vicente - La Vicentina a ~655 m \\u00b7 \\ud83d\\uded2 Xpress Market a ~696 m \\u00b7 \\ud83d\\udee1\\ufe0f UPC La Floresta a ~937 m \\u00b7 \\ud83d\\udecd\\ufe0f Centro Comercial Quitus a ~1237 m\", \"operacion\": \"VENTA\", \"precio\": \"96900.00\", \"distancia_metros\": \"823.6\", \"caminabilidad_procedencia\": \"estimaci\\u00f3n por zona\"}, {\"id\": \"8d12a906-0ba2-46cc-acfc-5b772393fe03\", \"direccion_estandarizada\": \"Calle Juan Pablo Sainz y Gonzalez Suarez, Quito\", \"tipo_activo\": \"Oficina\", \"piso_altura\": 5, \"caminabilidad\": 100, \"walk_score_fuente\": null, \"score_ruido_predictivo\": \"BAJO\", \"volumen_trafico_historico\": 1100, \"densidad_poblacional_pico\": 5200, \"porcentaje_cobertura_vegetal\": \"44.00\", \"conectividad\": \"\\ud83d\\ude89 Transportes Ecuador a ~551 m \\u00b7 \\ud83d\\ude89 Cruz del Sur a ~664 m \\u00b7 \\ud83d\\ude87 El Ejido a ~966 m\", \"servicios_cercanos\": \"\\ud83d\\udc8a Farmacia Mariscal a ~197 m \\u00b7 \\ud83c\\udfeb Ecole Travel Spanish School a ~199 m \\u00b7 \\ud83d\\uded2 Micromercado a ~323 m \\u00b7 \\u26ea Radio Maria a ~340 m \\u00b7 \\ud83c\\udfe5 Centro de Especialidades del IESS a ~375 m \\u00b7 \\ud83d\\udee1\\ufe0f Direcci\\u00f3n Nacional de Control de Tr\\u00e1nsito y Seguridad Vial a ~929 m \\u00b7 \\ud83d\\udecd\\ufe0f Centro Comercial Quitus a ~974 m \\u00b7 \\ud83c\\udf33 EQ. RECONTEC 07 a ~1228 m\", \"operacion\": \"ARRIENDO\", \"precio\": \"1460.00\", \"distancia_metros\": \"872.5\", \"caminabilidad_procedencia\": \"estimaci\\u00f3n por zona\"}, {\"id\": \"c99175a0-a2f7-4e1d-970f-382f840d4383\", \"direccion_estandarizada\": \"Av. Colon E4-50 y 12 de Octubre, La Mariscal, Quito\", \"tipo_activo\": \"Oficina\", \"piso_altura\": 7, \"caminabilidad\": 100, \"walk_score_fuente\": null, \"score_ruido_predictivo\": \"ALTO\", \"volumen_trafico_historico\": 19500, \"densidad_poblacional_pico\": 14500, \"porcentaje_cobertura_vegetal\": \"12.00\", \"conectividad\": \"\\ud83d\\ude87 El Ejido a ~364 m \\u00b7 \\ud83d\\ude89 Transportes Ecuador a ~453 m \\u00b7 \\ud83d\\ude89 Pan-American Internacional a ~851 m\", \"servicios_cercanos\": \"\\ud83c\\udfeb Instituto Tecnol\\u00f3gico Superior Galileo a ~176 m \\u00b7 \\ud83d\\udc8a Farmacias Econ\\u00f3micas a ~233 m \\u00b7 \\ud83d\\uded2 Xpress Market a ~452 m \\u00b7 \\ud83c\\udf33 EQ. RECONTEC 07 a ~456 m \\u00b7 \\ud83c\\udfe5 Resonancia Magnetica Resomedical a ~519 m \\u00b7 \\u26ea Oficinas Administrativas Iglesia de Jesucristo de los Santos de los \\u00daltimos D\\u00edas a ~534 m \\u00b7 \\ud83d\\udecd\\ufe0f Centro Comercial Quitus a ~977 m \\u00b7 \\ud83d\\udee1\\ufe0f Direcci\\u00f3n Nacional de Control de Tr\\u00e1nsito y Seguridad Vial a ~1140 m\", \"operacion\": \"ARRIENDO\", \"precio\": \"1370.00\", \"distancia_metros\": \"1014.4\", \"caminabilidad_procedencia\": \"estimaci\\u00f3n por zona\"}], \"total\": 5, \"pertenencia_territorial\": \"unknown\", \"radius_requested_m\": 1200, \"radius_searched_m\": 1200, \"ancla_busqueda\": {\"latitude\": -0.20934, \"longitude\": -78.484919, \"geometry_type\": \"point\"}, \"relacion_recuperacion\": \"within_radius\", \"note\": \"distancia_metros = how far each asset is from the search point; be honest about distance if it is large.\"}",
+      "name": "tool_search_nearby_assets",
+      "tool_call_id": "toolu_01SNMHFJx4qauLZStDPCD3cA"
+    }
+  ]
+}

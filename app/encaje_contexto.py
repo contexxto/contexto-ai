@@ -22,6 +22,25 @@ from app.encaje import estado_presupuesto
 
 _ARRIENDO = "arriendo"
 
+# G20-B1-R3 · las dos marcas del bloque, exportadas para que `llm_node` pueda recortar la
+# herencia sin duplicar literales. La sección territorial describe la evidencia de UNA
+# operación de retrieval y NO sobrevive al turno; las reglas del panel (orden obligatorio,
+# frases de presupuesto) sí, porque gobiernan el MISMO panel mientras la persona pregunta
+# sobre él. Ver tests/test_g20_b1_r3_lineage_del_contrato.py.
+MARCA_PANEL = "════════ MOTOR DE ENCAJE · CONTEXTO AUTORITATIVO DE ESTE TURNO ════════"
+MARCA_TERRITORIAL = "──────── RELACIÓN TERRITORIAL · QUÉ PUEDES AFIRMAR ────────"
+
+# G20-B1 · CONTRACT-SIGNATURE-01. La firma la EMITE el contrato; no se deduce de sus
+# cabeceras. Un adjudicador que infiriera el formato a partir de los títulos estaría
+# reconociendo su propia suposición —una firma circular— y un cambio de redacción lo dejaría
+# validando algo que ya no entiende. Va exactamente UNA vez por bloque, tanto en el contrato
+# enriquecido como en el fallback mínimo, y NUNCA en un turno sin relación territorial: sin
+# contrato no hay nada que firmar.
+#
+# Si el formato cambia de forma incompatible, sube a V2 — y el arnés, que guarda su propia
+# copia del literal y no importa ésta, dirá NO_ADJUDICABLE en vez de adivinar.
+FIRMA_TERRITORIAL = "CONTRATO_TERRITORIAL_V1"
+
 
 def _es_arriendo(cards: list[dict], preferencias: dict) -> bool:
     """¿El turno habla de canon mensual? (decide si los montos llevan '/mes')."""
@@ -151,9 +170,134 @@ def _linea_opcion(c: dict, tope, por_mes: bool) -> str:
     return " · ".join(trozos)
 
 
+def _seccion_territorial(rel: dict | None, cards: list[dict] | None = None) -> list[str]:
+    """G20-B1 · de la evidencia territorial a la AFIRMACIÓN que autoriza.
+
+    G19-A y G20-A hicieron legible lo que SABEMOS. Para la procedencia bastó; para la
+    relación territorial no. En el canary limpio del 2026-08-30 —hilo sin un solo mensaje
+    previo— el modelo recibió `pertenencia_territorial: unknown` en el resultado de tool y
+    escribió igual «1 departamento en arriendo EN LA FLORESTA». Enunciar el estado de la
+    evidencia no gobierna la afirmación.
+
+        evidencia  ≠  autorización de afirmación
+
+    Por eso esta sección vive aquí y no en la tool: es el canal que el sistema ya trata
+    como autoritativo y el único con obediencia demostrada —las frases obligatorias de
+    presupuesto no se violaron en ninguno de los 13 turnos del corpus.
+
+    UNKNOWN NO ES UNA NEGACIÓN. No se autoriza «está fuera» ni «no pertenece»: tampoco eso
+    está demostrado. `unknown` se traduce en RESTRICCIÓN sobre lo afirmable, no en su
+    contrario.
+
+    Y la política NO es «no menciones el barrio». Las tres familias acreditadas —referencia
+    a la consulta, POI con nombre propio y proximidad al punto— se nombran explícitamente
+    como permitidas. Prohibir el topónimo entero degradaría el producto para arreglar un
+    claim: el 24% de las coincidencias del patrón ingenuo en el corpus real eran el gancho
+    de cierre («¿cómo es vivir en La Floresta?»), que es conducta deseada.
+    """
+    if not rel or rel.get("relacion_recuperacion") != "within_radius":
+        return []
+    lugar = rel.get("consulta")
+    # G20-B1-R2: una distancia POR INMUEBLE VISIBLE, ligada por id. Nunca una cifra suelta.
+    distancias = rel.get("distancias") or []
+    nombres = {c.get("id"): _nombre(c) for c in (cards or []) if isinstance(c, dict)}
+    hay_cifras = any(d.get("distancia_metros") is not None for d in distancias)
+
+    out = ["", MARCA_TERRITORIAL,
+           f"[{FIRMA_TERRITORIAL}] · esta sección es contrato, no sugerencia",
+           "LA EVIDENCIA DE ESTE TURNO:"]
+    if lugar:
+        out.append(f"  · se geocodificó «{lugar}» y devolvió UN PUNTO — no un área, no un límite")
+    else:
+        out.append("  · el punto de búsqueda NO corresponde a ningún lugar nombrado en este turno")
+    out.append(f"  · los candidatos se recuperaron por PROXIMIDAD a ese punto (radio pedido "
+               f"{rel.get('radius_requested_m')} m, efectivo {rel.get('radius_searched_m')} m)")
+    if hay_cifras:
+        # Cada cifra pegada a SU inmueble, con el MISMO nombre y el MISMO número de orden que
+        # la lista de opciones de arriba. Una distancia genérica «del candidato mostrado»
+        # atribuía la cifra del más cercano —que el filtro pudo haber ocultado— a la tarjeta
+        # que sí se ve. Ver `_distancias_ligadas` en el assembler.
+        out.append("  · distancia de CADA inmueble mostrado a ese punto. La cifra es de SU "
+                   "inmueble")
+        out.append("    y de ningún otro, y el número es el de la lista de arriba:")
+        for i, d in enumerate(distancias, 1):
+            nom = nombres.get(d.get("id")) or "Inmueble sin dirección"
+            metros = d.get("distancia_metros")
+            if metros is None:
+                out.append(f"      {i}. {nom} — SIN DISTANCIA LIGADA a este inmueble: no le "
+                           f"atribuyas ninguna")
+            else:
+                out.append(f"      {i}. {nom} — {metros:g} m")
+    else:
+        out.append("  · NINGUNA distancia quedó ligada a los inmuebles mostrados: no afirmes "
+                   "distancias en este turno")
+    out.append("  · pertenencia territorial: NO ESTÁ ESTABLECIDA — no existe límite ni "
+               "polígono que la demuestre, ni aquí ni en la base")
+
+    out.append("PUEDES AFIRMAR:")
+    if hay_cifras:
+        out.append("  ✅ la distancia de cada inmueble EXACTAMENTE como está arriba, junto al "
+                   "inmueble al que corresponde")
+    else:
+        out.append("  ✅ que los inmuebles se recuperaron por proximidad a ese punto — sin cifra")
+    if lugar:
+        out.append(f"  ✅ que buscaste «{lugar}» — describir la consulta es correcto")
+    out.append("  ✅ los POI con nombre propio y sus tiempos, tal como vienen en los servicios "
+               "cercanos: son evidencia acreditada")
+
+    out.append("NO AFIRMES — esta evidencia no lo autoriza:")
+    if lugar:
+        out.append(f"  ❌ que el inmueble esté «en {lugar}», «dentro de» o «ubicado en» ese lugar")
+        out.append(f"  ❌ que el punto de búsqueda sea el centro, el centroide o el corazón "
+                   f"de «{lugar}»")
+    else:
+        out.append("  ❌ que el inmueble pertenezca a ningún barrio o sector")
+        out.append("  ❌ que el punto de búsqueda sea el centro o el corazón de un lugar")
+    out.append("  ❌ atribuir a un inmueble una distancia que arriba no le corresponde, ni dar "
+               "una distancia «del candidato mostrado» en general: cada cifra es de un "
+               "inmueble concreto y sólo de ése")
+    out.append("  ❌ TAMPOCO lo contrario: no digas que está fuera ni que no pertenece. "
+               "Ninguna de las dos cosas está demostrada.")
+    return out
+
+
+def bloque_territorial_minimo(relacion_territorial: dict | None) -> str:
+    """G20-B1-R3 · el contrato territorial SOLO, sin panel, sin tarjetas y sin distancias.
+
+    Es el fallback autoritativo mínimo, y su rasgo de diseño es de dónde NO depende: se arma
+    únicamente con la relación que el ToolMessage del turno demostró. Ni base, ni ranking, ni
+    `cards`. Si dependiera del panel, un fallo en `construir_panel` —que es donde vive la I/O y
+    por tanto donde más se falla— arrastraría consigo al contrato, que es exactamente el modo
+    de fallo que R3 cierra.
+
+    Se usa en dos filas de la tabla de verdad:
+
+      · hay evidencia territorial y CERO tarjetas   (G20-B1-NOCARDS-01)
+      · hay evidencia territorial y el bloque enriquecido reventó  (G20-B1-CONTAINMENT-01)
+
+    Devuelve "" cuando no hay relación que declarar: sin riesgo territorial no hay contrato
+    que emitir, y eso NO es un fallo.
+    """
+    # SIN ENTIDADES NI DISTANCIAS, y no por economía: sin tarjetas no hay sujeto visible al
+    # que ligar una cifra, y emitirla igual produciría «Inmueble sin dirección — 572 m» —
+    # una distancia huérfana, que es la forma degenerada del defecto que R2 cerró. Se vacían
+    # aquí y no en el llamador para que la función sea honesta venga de donde venga.
+    rel = dict(relacion_territorial or {}, distancias=[]) if relacion_territorial else None
+    seccion = _seccion_territorial(rel, [])
+    if not seccion:
+        return ""
+    cabecera = [
+        "════════ CONTEXTO AUTORITATIVO DE ESTE TURNO ════════",
+        "Esto NO lo escribió el usuario: es la restricción del sistema sobre lo que puedes",
+        "afirmar de la UBICACIÓN. Rige aunque no haya inmuebles que mostrar.",
+    ]
+    return "\n".join(cabecera + seccion)
+
+
 def bloque_autoritativo(cards: list[dict], preferencias: dict | None,
                         descartadas: list[dict] | None = None,
-                        priorizado: tuple[str | None, str | None] = (None, None)) -> str:
+                        priorizado: tuple[str | None, str | None] = (None, None),
+                        relacion_territorial: dict | None = None) -> str:
     """Las tarjetas del turno → el bloque que el modelo recibe como verdad del turno.
 
     `cards` son EXACTAMENTE las que verá la persona, ya ordenadas. `descartadas` son las que
@@ -162,14 +306,20 @@ def bloque_autoritativo(cards: list[dict], preferencias: dict | None,
     Devuelve "" si no hay nada que declarar — un bloque vacío no debe ensuciar el prompt.
     """
     if not cards:
-        return ""
+        # G20-B1-R3 · NOCARDS-01. Sin tarjetas no hay ranking que dictar ni presupuesto que
+        # contar — pero si el turno PROBÓ una relación territorial, la prohibición se emite
+        # igual. Devolver "" aquí apagaba el gobierno territorial entero: el modelo quedaba
+        # libre de convertir «búsqueda radial alrededor de La Floresta» en «búsqueda dentro
+        # de La Floresta» justo cuando menos evidencia había para sostenerlo.
+        # Sin relación devuelve "", que es lo correcto: sin riesgo no hay contrato.
+        return bloque_territorial_minimo(relacion_territorial)
     prefs = preferencias or {}
     por_mes = _es_arriendo(cards, prefs)
     tope = prefs.get("presupuesto_max")
     tope = float(tope) if isinstance(tope, (int, float)) and not isinstance(tope, bool) and tope > 0 else None
 
     out = [
-        "════════ MOTOR DE ENCAJE · CONTEXTO AUTORITATIVO DE ESTE TURNO ════════",
+        MARCA_PANEL,
         "Esto NO lo escribió el usuario. Son los números que el motor determinístico YA",
         "calculó y que la persona VERÁ en las tarjetas debajo de tu respuesta. Manda sobre",
         "tu criterio (regla 10 de tus instrucciones): copia sus frases, no recalcules nada.",
@@ -250,5 +400,7 @@ def bloque_autoritativo(cards: list[dict], preferencias: dict | None,
         secuencia = " · ".join(f"{i}) {_nombre(c)}" for i, c in enumerate(cards, 1))
         out += ["", "RECORDATORIO FINAL, antes de escribir: si numeras opciones, van en ESTE orden",
                 f"y ningún otro (aunque dos estén casi empatadas): {secuencia}."]
+
+    out += _seccion_territorial(relacion_territorial, cards)
 
     return "\n".join(out)

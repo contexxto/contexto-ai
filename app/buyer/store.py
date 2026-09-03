@@ -56,6 +56,7 @@ from pydantic import ValidationError
 from sqlalchemy import text
 
 from app.contracts.buyer_v0 import BuyerContextV0
+from app.contracts.evidence_v0 import SourceType
 from app.database import AsyncSessionLocal
 
 
@@ -126,11 +127,50 @@ def _canonico(contexto: BuyerContextV0) -> str:
     no lleva timestamp contractual del evento, así que inventarle uno violaría procedencia.
     En E3.1b este campo SÍ entraba en la comparación; los tests no lo revelaban porque sus
     fixtures usaban un timestamp fijo.
+
+    **Y se excluye la procedencia OPERACIONAL de la evidencia `USER_DECLARED`** —su
+    `evidence_id` y su `retrieved_at`— por el mismo motivo y con el mismo criterio: no son
+    estado observado del comprador. La regla, su alcance y su límite están junto a
+    `_limpiar_procedencia_operacional`, que es donde se aplica.
     """
     datos = contexto.model_dump(mode="json")
     for metadato in ("context_revision", "updated_at"):
         datos.pop(metadato, None)
+    for fe in datos.get("field_evidence") or ():
+        _limpiar_procedencia_operacional(fe.get("evidence"))
     return json.dumps(datos, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+
+
+# R-IDEMP-1 · qué de la procedencia es ESTADO y qué es artefacto del intento de procesarlo.
+#
+# Un replay del mismo mensaje construye una `EvidenceRefV0` nueva: `evidence_id` sale de
+# `uuid4()` y `retrieved_at` de un reloj. Los dos cambiaban, el canónico cambiaba con ellos, y
+# un reintento honesto acababa en `BuyerIdempotencyConflict` — acusando de no determinista a
+# un extractor que sí lo es. Es el mismo motivo por el que ya se excluían `context_revision` y
+# `updated_at`, aplicado a la evidencia.
+#
+# **Acotado a `USER_DECLARED`, y el límite es la parte importante.** Para un `PROVIDER_API`
+# con TTL, `retrieved_at` dice si el dato sigue fresco: ahí SÍ es material y sigue
+# participando. Excluirlo en general habría cambiado un defecto puntual por una pérdida
+# general de procedencia.
+#
+# Lo que justifica la excepción es lo que significa cada campo para ESTA evidencia:
+#
+#     evidence_id   "un asa nuestra, no una afirmación sobre el mundo"  (su propio contrato)
+#     retrieved_at  cuándo lo procesamos NOSOTROS — no cambia lo que la persona dijo
+#
+# Todo lo demás sigue comparándose, incluidos `source_id` —de qué mensaje salió— y
+# `observed_at` —cuándo el mundo estaba así—, que sí son afirmaciones sobre el dato.
+_OPERACIONAL_SI_LO_DIJO_EL_USUARIO = ("evidence_id", "retrieved_at")
+
+
+def _limpiar_procedencia_operacional(evidencia) -> None:
+    if not isinstance(evidencia, dict):
+        return
+    if evidencia.get("source_type") != SourceType.USER_DECLARED.value:
+        return
+    for campo in _OPERACIONAL_SI_LO_DIJO_EL_USUARIO:
+        evidencia.pop(campo, None)
 
 
 def _rehidratar(fila) -> BuyerContextV0:

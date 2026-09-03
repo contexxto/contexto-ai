@@ -44,13 +44,35 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
+    # E3.2b.3a · "si algún día una prueba necesita una base real, eso es un servicio de
+    # PostgreSQL en este job, no un secreto aquí". Ese día llegó: la concurrencia del buyer
+    # updater (dos escritores sobre la misma fila) sólo se puede demostrar con FOR UPDATE y
+    # un UNIQUE reales. Un doble en memoria prueba la política, no la serialización.
+    #
+    # Efímero y del runner: se crea y muere con el job, así que no hay secreto que filtrar
+    # ni riesgo de tocar producción.
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: buyer_store_test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d buyer_store_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+
     env:
       # Valores inertes. Ver la nota de arriba: hacen validar a Settings(), no
-      # conectan a nada. Si algún día una prueba necesita una base real, eso es
-      # un servicio de PostgreSQL en este job, no un secreto aquí.
+      # conectan a nada.
       POSTGRES_DB: test
       POSTGRES_USER: test
       POSTGRES_PASSWORD: test
+      # La base de PRUEBAS, separada a propósito de `DATABASE_URL`. Las suites que escriben
+      # comprueban que no coincidan antes de tocar nada.
+      TEST_DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/buyer_store_test
 
     steps:
       - name: Traer el código
@@ -75,6 +97,11 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements-dev.txt
 
+      # No hay paso de esquema: las suites que necesitan tablas las crean en sus propias
+      # fixtures y aplican la migración POR SU CAMINO REAL (`app.esquema_requerido`), que es
+      # la lección de AUTH-READ-GATE.1 — allí el aplicador tenía un fallo que los tests no
+      # veían porque ejecutaban el SQL por otra vía. Preparar el esquema aquí con `psql`
+      # volvería a probar el SQL sin probar el aplicador.
       - name: Correr la suite
         # Sin --maxfail: queremos el parte completo de lo que se rompió, no el
         # primer fallo. La suite entera tarda segundos.

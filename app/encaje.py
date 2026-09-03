@@ -252,16 +252,29 @@ _FUENTE_CAMINABLE = {
 _FUENTE_CAMINABLE_DESCONOCIDA = "estimación por zona"
 
 
+def resolver_procedencia_caminabilidad(fuente) -> str:
+    """`walk_score_fuente` → cómo se nombra esa procedencia. **La única traducción que existe.**
+
+    Vive aquí porque aquí nació la política, pero NO es de este módulo: la usan también las
+    tools del agente, que son la frontera donde el dato se vuelve consumible por el modelo.
+    Tener dos tablas es exactamente lo que produjo el fallo de producción del 2026-08-29 —el
+    carril de decisión degradaba el `NULL` al lado seguro y el de tools lo entregaba crudo, así
+    que el mismo activo tenía dos verdades según por dónde se mirara—. Si alguien necesita
+    traducir esto en un tercer sitio, la respuesta es importar esta función.
+
+    Ante desconocido devuelve la estimación y no la medición: no afirmar es el lado seguro.
+    """
+    return _FUENTE_CAMINABLE.get(
+        (fuente or "").strip().lower(), _FUENTE_CAMINABLE_DESCONOCIDA)
+
+
 def _score_caminable(_decl, inm) -> dict:
     ws = _num(inm.get("walk_score"))
     if ws is None:
         return _razon("caminable", "sin_dato", None,
                       "Buscabas caminable · sin caminabilidad calculada aquí", None, aporta=False)
     s = _clamp01(ws / 100)
-    fuente = _FUENTE_CAMINABLE.get(
-        (inm.get("walk_score_fuente") or "").strip().lower(),
-        _FUENTE_CAMINABLE_DESCONOCIDA,
-    )
+    fuente = resolver_procedencia_caminabilidad(inm.get("walk_score_fuente"))
     return _razon("caminable", _nivel(s), s,
                   f"Buscabas caminable · caminabilidad {int(ws)}/100", fuente)
 

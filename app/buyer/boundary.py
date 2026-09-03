@@ -213,6 +213,64 @@ def ruta_contractual(mutacion) -> str:
         raise TypeError(f"mutación fuera de la unión V0: {type(mutacion).__name__}") from None
 
 
+class BuyerFieldV0(StrEnum):
+    """Las cinco dimensiones del comprador que V0 puede tocar.
+
+    **Dominio cerrado mediante `StrEnum`; nunca una cadena libre.** El matiz importa: al
+    heredar de `StrEnum`, sus miembros **sí son** instancias de `str` —`isinstance(OBJECTIVE,
+    str)` es `True`— y decir "no es un str" sería falso. Lo que garantiza no es el tipo, es
+    el DOMINIO: `BuyerFieldV0("household.children")` levanta `ValueError`.
+
+    Existe para que una afirmación que NO lleva mutación —una ambigüedad, un rechazo— pueda
+    decir a qué dimensión pertenece. `ruta_contractual` solo funciona sobre una mutación, así
+    que antes de esto un `AMBIGUOUS` era un hecho sin dimensión: no podía competir con la
+    declaración durable que venía a invalidar, y `"120000 USD… no, 100000"` acababa
+    conservando los 120000. **Ya no**: `AfirmacionAmbiguous` exige su `BuyerFieldV0` y la
+    resolución intramensaje agrupa por él (E3.2b.1a-A, §3-§5).
+
+    **Por qué no reutilizar la ruta contractual como cadena.** Un `field: str` dejaría que
+    una ambigüedad declarara `household.children` y confiara en que algo la filtre después.
+    Es la misma superficie que la unión de mutaciones cerró; abrirla en la capa de arriba la
+    reabriría entera.
+
+    No sustituye a `ruta_contractual`: esto nombra la DIMENSIÓN, aquella el path del
+    contrato. `campo_de_mutacion` mantiene las dos alineadas.
+    """
+
+    OBJECTIVE = "objective"
+    BUDGET_MAX = "budget_max"
+    BEDROOMS_MIN = "bedrooms_min"
+    AREA_M2_MIN = "area_m2_min"
+    PETS_REQUIRED = "pets_required"
+
+
+_CAMPO_DE: dict[type[_Mutacion], BuyerFieldV0] = {
+    SetObjective: BuyerFieldV0.OBJECTIVE,
+    ClearObjective: BuyerFieldV0.OBJECTIVE,
+    SetBudgetMax: BuyerFieldV0.BUDGET_MAX,
+    ClearBudgetMax: BuyerFieldV0.BUDGET_MAX,
+    SetBedroomsMin: BuyerFieldV0.BEDROOMS_MIN,
+    ClearBedroomsMin: BuyerFieldV0.BEDROOMS_MIN,
+    SetAreaM2Min: BuyerFieldV0.AREA_M2_MIN,
+    ClearAreaM2Min: BuyerFieldV0.AREA_M2_MIN,
+    SetPetsRequired: BuyerFieldV0.PETS_REQUIRED,
+    ClearPetsRequired: BuyerFieldV0.PETS_REQUIRED,
+}
+
+
+def campo_de_mutacion(mutacion) -> BuyerFieldV0:
+    """La dimensión de una mutación. **Se deriva de la clase; nunca se elige.**
+
+    Que `Set*` y `Clear*` del mismo campo devuelvan lo mismo es el punto: son las dos
+    declaraciones que compiten por esa dimensión, y agruparlas es lo que permite resolver el
+    conflicto intramensaje antes de que llegue al reducer.
+    """
+    try:
+        return _CAMPO_DE[type(mutacion)]
+    except KeyError:                                     # pragma: no cover — unión cerrada
+        raise TypeError(f"mutación fuera de la unión V0: {type(mutacion).__name__}") from None
+
+
 # ── El resultado ───────────────────────────────────────────────────────────────────
 
 

@@ -1,0 +1,358 @@
+{
+  "unidad": "E3.2b.1b",
+  "corrido": "2026-08-28T14:27:46+00:00",
+  "config": {
+    "model": "claude-sonnet-4-5-20250929",
+    "system_sha256": "d5db15c11696471d",
+    "tool_schema_sha256": "a9dc8f1d25fa3880",
+    "max_tokens": 1500,
+    "tool_choice": {
+      "type": "tool",
+      "name": "registrar_afirmaciones"
+    },
+    "temperature": "unset",
+    "commit_sha": "1cd80a8009827a4336a63be5128714af9ec2d026+sucio",
+    "interpreter_config_sha256": "af9bf9423b36bd17"
+  },
+  "total": 19,
+  "ok": 19,
+  "fallan": 0,
+  "casos": [
+    {
+      "id": "declaracion",
+      "familia": "ancla",
+      "texto": "quiero comprar",
+      "porque": "la declaración más simple posible; si no pasa, nada del resto significa nada",
+      "ok": true,
+      "fallos": [],
+      "afirmaciones": [
+        {
+          "clase": "AfirmacionDurable",
+          "campo": "objective",
+          "motivo": "El usuario declara explícitamente su objetivo de comprar un inmueble",
+          "mutacion": {
+            "tipo": "set_objective",
+            "objective": "buy"
+          }
+        }
+      ]
+    },
+    {
+      "id": "declaracion_presupuesto",
+      "familia": "ancla",
+      "texto": "mi presupuesto máximo es 120000 USD",
+      "porque": "monto y moneda explícitos, declarados por el propio usuario",
+      "ok": true,
+      "fallos": [],
+      "afirmaciones": [
+        {
+          "clase": "AfirmacionDurable",
+          "campo": "budget_max",
+          "motivo": "El usuario declara explícitamente su presupuesto máximo con valor y moneda específicos",
+          "mutacion": {
+            "tipo": "set_budget_max",
+            "amount": "120000",
+            "currency": "USD"
+          }
+        }
+      ]
+    },
+    {
+      "id": "pregunta",
+      "familia": "modo",
+      "texto": "¿debería comprar?",
+      "porque": "una pregunta explora; no declara preferencia. Mismo verbo que la declaración. El encargo la congela como TURN_ONLY: el silencio no es clasificar",
+      "ok": true,
+      "fallos": [],
+      "afirmaciones": [
+        {
+          "clase": "AfirmacionTurnOnly",
+          "campo": null,
+          "motivo": "El usuario hace una pregunta explorando si debería comprar, no declara una preferencia propia sobre el objetivo de compr"
+        }
+      ]
+    },
+    {
+      "id": "pregunta_presupuesto",
+      "familia": "modo",
+      "texto": "¿me alcanza con 120000 USD para comprar?",
+      "porque": "trae objetivo, monto y moneda — y sigue siendo una consulta",
+      "ok": true,
+      "fallos": [],
+      "afirmaciones": [
+        {
+          "clase": "AfirmacionTurnOnly",
+          "campo": "budget_max",
+          "motivo": "El usuario hace una pregunta explorando si su presupuesto es suficiente. No está DECLARANDO una preferencia durable ('qu"
+        },
+        {
+          "clase": "AfirmacionAmbiguous",
+          "campo": "objective",
+          "motivo": "Aunque el mensaje menciona 'comprar', no es una declaración clara de preferencia ('quiero comprar') sino parte de una pr"
+        }
+      ]
+    },
+    {
+      "id": "tercero",
+      "familia": "sujeto",
+      "texto": "mi hermana quiere comprar",
+      "porque": "el deseo es de otra persona; el estado durable es del comprador de esta conversación",
+      "ok": true,
+      "fallos": [],
+      "afirmaciones": [
+        {
+          "clase": "AfirmacionTurnOnly",
+          "campo": null,
+          "motivo": "El usuario menciona que 'mi hermana quiere comprar'. Esto NO es una preferencia propia del usuario, sino información sob"
+        }
+      ]
+    },
+    {
+      "id": "tercero_presupuesto",
+      "familia": "sujeto",
+      "texto": "mi hermana busca algo de máximo 120000 USD",
+      "porque": "idem con presupuesto: tokens perfectos, sujeto equivocado",
+      "ok": true,
+      "fallos": [],
+      "afirmaciones": [
+        {
+          "clase": "AfirmacionTurnOnly",
+          "campo": null,
+          "motivo": "El usuario habla de lo que busca un TERCERO ('mi hermana'), no declara una preferencia PROPIA. Según regla 1, solo es du"
+        }
+      ]
+    },
+    {
+      "id": "cita",
+      "familia": "voz",
+      "texto": "el corredor me dijo: \"el máximo son 120000 USD\"",
+      "porque": "reportar lo que dijo otro no lo convierte en preferencia propia",
+      "ok": true,
+      "fallos": [],
+      "afirmaciones": [
+        {
+          "clase": "AfirmacionTurnOnly",
+          "campo": "budget_max",
+          "motivo": "Es una CITA de lo que dijo un tercero (el corredor). No es una declaración del PROPIO usuario sobre su preferencia. Segú"
+        }
+      ]
+    },
+    {
+      "id": "hipotesis",
+      "familia": "modo",
+      "texto": "si comprara, mi máximo sería 120000 USD",
+      "porque": "un condicional no compromete; persistirlo inventa una decisión que no se tomó",
+      "ok": true,
+      "fallos": [],
+      "afirmaciones": [
+        {
+          "clase": "AfirmacionAmbiguous",
+          "campo": "budget_max",
+          "motivo": "El usuario usa 'si comprara', una construcción hipotética condicional, no una declaración de preferencia propia durable."
+        }
+      ]
+    },
+    {
+      "id": "lugar_no_preferencia",
+      "familia": "referente",
+      "texto": "la cafetería de al lado acepta mascotas",
+      "porque": "describe el barrio; no pide que su casa admita mascotas. Cláusula positiva, predicado de admisión y sustantivo: pasaría la guarda si alguien la propusiera",
+      "ok": true,
+      "fallos": [],
+      "afirmaciones": [
+        {
+          "clase": "AfirmacionRejected",
+          "campo": null,
+          "motivo": "El usuario describe un HECHO sobre un lugar del barrio ('la cafetería de al lado acepta mascotas'), no declara una prefe"
+        }
+      ]
+    },
+    {
+      "id": "fn_moneda",
+      "familia": "no_desaparecer",
+      "texto": "mi presupuesto máximo es 120000 dólares",
+      "porque": "la guarda exige el código ISO; 'dólares' no lo es. La intención es real y no puede perderse en silencio",
+      "ok": true,
+      "fallos": [],
+      "afirmaciones": [
+        {
+          "clase": "AfirmacionAmbiguous",
+          "campo": "budget_max",
+          "motivo": "intención durable sin evidencia acreditable (SetBudgetMax sin evidencia textual de su valor exacto): El usuario declara "
+        }
+      ]
+    },
+    {
+      "id": "fn_pet_friendly",
+      "familia": "no_desaparecer",
+      "texto": "busco algo pet friendly",
+      "porque": "'pet friendly' no está en el predicado de admisión cerrado",
+      "ok": true,
+      "fallos": [],
+      "afirmaciones": [
+        {
+          "clase": "AfirmacionAmbiguous",
+          "campo": "pets_required",
+          "motivo": "intención durable sin evidencia acreditable (SetPetsRequired sin evidencia textual de su valor exacto): El usuario decla"
+        }
+      ]
+    },
+    {
+      "id": "fn_anafora",
+      "familia": "no_desaparecer",
+      "texto": "tengo un perro y deben aceptarlo",
+      "porque": "la anáfora quedó fail-closed en B.2 — a propósito, y con constancia",
+      "ok": true,
+      "fallos": [],
+      "afirmaciones": [
+        {
+          "clase": "AfirmacionAmbiguous",
+          "campo": "pets_required",
+          "motivo": "intención durable sin evidencia acreditable (SetPetsRequired sin evidencia textual de su valor exacto): El usuario decla"
+        }
+      ]
+    },
+    {
+      "id": "fh_hogar",
+      "familia": "fair_housing",
+      "texto": "tenemos dos niños",
+      "porque": "EL peor caso del §7: nunca puede volverse bedrooms_min=2. REJECTED en la matriz §4 — el sistema debe dejar constancia de que lo vio y no lo escribió",
+      "ok": true,
+      "fallos": [],
+      "afirmaciones": [
+        {
+          "clase": "AfirmacionRejected",
+          "campo": null,
+          "motivo": "El usuario menciona 'tenemos dos niños', lo cual es información sobre la composición familiar. Según las reglas, NUNCA s"
+        }
+      ]
+    },
+    {
+      "id": "fh_mixto",
+      "familia": "fair_housing",
+      "texto": "tenemos dos niños y máximo 150000 USD",
+      "porque": "C5: el hecho prohibido no puede costar el legítimo, ni al revés",
+      "ok": true,
+      "fallos": [],
+      "afirmaciones": [
+        {
+          "clase": "AfirmacionRejected",
+          "campo": null,
+          "motivo": "El usuario menciona 'tenemos dos niños', que es información sobre la composición del hogar. Según las reglas, NUNCA se d"
+        },
+        {
+          "clase": "AfirmacionDurable",
+          "campo": "budget_max",
+          "motivo": "El usuario declara explícitamente un presupuesto máximo de 150000 USD. Es una preferencia propia y clara sobre el inmueb",
+          "mutacion": {
+            "tipo": "set_budget_max",
+            "amount": "150000",
+            "currency": "USD"
+          }
+        }
+      ]
+    },
+    {
+      "id": "exacto_no_minimo",
+      "familia": "semantica_v0",
+      "texto": "busco algo de 2 dormitorios",
+      "porque": "V0 solo modela mínimos; '2 dormitorios' no declara uno",
+      "ok": true,
+      "fallos": [],
+      "afirmaciones": [
+        {
+          "clase": "AfirmacionAmbiguous",
+          "campo": "bedrooms_min",
+          "motivo": "El usuario dice '2 dormitorios' pero no especifica si es un mínimo de 2 o exactamente 2. La frase 'algo de 2 dormitorios"
+        }
+      ]
+    },
+    {
+      "id": "c3_conflicto",
+      "familia": "c1_c5",
+      "texto": "quiero comprar o alquilar",
+      "porque": "dos declaraciones incompatibles sin corrección: ambigüedad, no last-write-wins",
+      "ok": true,
+      "fallos": [],
+      "afirmaciones": [
+        {
+          "clase": "AfirmacionAmbiguous",
+          "campo": "objective",
+          "motivo": "El usuario declara que quiere 'comprar o alquilar', pero no especifica cuál de los dos es su objetivo real. La intención"
+        }
+      ]
+    },
+    {
+      "id": "c2_correccion",
+      "familia": "c1_c5",
+      "texto": "quiero comprar... no, mejor alquilar",
+      "porque": "corrección explícita: se selecciona la declaración final",
+      "ok": true,
+      "fallos": [],
+      "afirmaciones": [
+        {
+          "clase": "AfirmacionDurable",
+          "campo": "objective",
+          "motivo": "El usuario inmediatamente se corrige y cambia su preferencia a alquilar ('mejor alquilar'), retractando la intención de ",
+          "mutacion": {
+            "tipo": "set_objective",
+            "objective": "rent"
+          }
+        }
+      ]
+    },
+    {
+      "id": "multi",
+      "familia": "c1_c5",
+      "texto": "quiero comprar, máximo 120000 USD y al menos 2 dormitorios",
+      "porque": "un mensaje produce UN lote con los tres hechos",
+      "ok": true,
+      "fallos": [],
+      "afirmaciones": [
+        {
+          "clase": "AfirmacionDurable",
+          "campo": "objective",
+          "motivo": "El usuario declara explícitamente su objetivo de comprar un inmueble",
+          "mutacion": {
+            "tipo": "set_objective",
+            "objective": "buy"
+          }
+        },
+        {
+          "clase": "AfirmacionDurable",
+          "campo": "budget_max",
+          "motivo": "El usuario establece un presupuesto máximo de 120000 USD",
+          "mutacion": {
+            "tipo": "set_budget_max",
+            "amount": "120000",
+            "currency": "USD"
+          }
+        },
+        {
+          "clase": "AfirmacionDurable",
+          "campo": "bedrooms_min",
+          "motivo": "El usuario declara un mínimo de 2 dormitorios como requisito",
+          "mutacion": {
+            "tipo": "set_bedrooms_min",
+            "bedrooms_min": 2
+          }
+        }
+      ]
+    },
+    {
+      "id": "turn_only_zona",
+      "familia": "modo",
+      "texto": "muéstrame cómo es vivir en Cumbayá",
+      "porque": "consultar una zona no la hace preferencia. TURN_ONLY en la matriz §4, literal",
+      "ok": true,
+      "fallos": [],
+      "afirmaciones": [
+        {
+          "clase": "AfirmacionTurnOnly",
+          "campo": null,
+          "motivo": "El usuario hace una pregunta sobre cómo es vivir en una zona específica (Cumbayá). Es una exploración de información sob"
+        }
+      ]
+    }
+  ]
+}

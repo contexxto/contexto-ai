@@ -1,19 +1,40 @@
-# 15 · E3.2 — BUYER UPDATER · **PARCIAL: solo las precondiciones**
+# 15 · E3.2 — BUYER UPDATER · precondiciones **[esta unidad]** + índice de la fase
 
 ```
 BASELINE        8b96a2faabbdca484888f01069ddcafab373fc8b   (origin/main verificado)
 RAMA            feat/f3-buyer-updater
 
-ALCANCE ENTREGADO   §0 prestart · §1 precondiciones (+ atomicidad del fallo) · §16 migración 029
-ALCANCE PENDIENTE   §2-§15 el updater completo · §20 shadow wiring
+ALCANCE DE ESTA UNIDAD   §0 prestart · §1 precondiciones (+ atomicidad del fallo)
+                         §16 migración 029
 
-GATE E3.2       HOLD   — la mayor parte del checklist sigue sin cumplirse
+GATE E3.2       HOLD   — falta el orquestador y el shadow wiring
 ```
 
 > **Esta unidad NO entregó el Buyer Updater.** Entregó las tres precondiciones que el propio
-> prompt ordena resolver antes de tocarlo, más la migración que cierra la tercera. El
-> updater, la barrera de Fair Housing, el routing situacional, la resolución de conflictos y
-> el shadow wiring **no existen todavía**. El gate es `HOLD` por eso, no por un defecto.
+> prompt ordena resolver antes de tocarlo, más la migración que cierra la tercera. Eso sigue
+> siendo cierto y se conserva tal cual: es la historia de lo que se decidió aquí y por qué.
+
+## Estado de la fase **[actualizado tras E3.2b.2]**
+
+Lo que este documento listaba como pendiente ya no lo está del todo. El detalle vive en
+`17_PHASE_3_BUYER_EXTRACTOR_ROUTING.md`; aquí sólo el índice, para que nadie lea la cabecera
+de arriba como el estado de hoy:
+
+```
+CONSTRUIDO   app/buyer/boundary.py     frontera de mutaciones · E3.2b.0
+             app/buyer/extractor.py    guarda de evidencia + C1-C5 · E3.2b.1a
+             app/buyer/interprete.py   text → Afirmacion · E3.2b.1b
+             app/buyer/reductor.py     lote → BuyerContextV0 · E3.2b.2
+
+PENDIENTE    orquestador del updater   E3.2b.3
+             shadow wiring · §20       E3.2b.4 — NO AUTORIZADO
+             que el producto CONSUMA los unresolved
+```
+
+**La barrera de Fair Housing y el routing situacional SÍ existen** —§4-§5 del documento 17 los
+congelan y `autorizar_traduccion` los aplica—, así que la frase de arriba que decía que no
+existían quedó atrás. Las piezas están construidas y probadas; lo que falta es que alguien las
+llame.
 
 ---
 

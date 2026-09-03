@@ -210,24 +210,58 @@ def test_no_admite_campos_vacios(campo, valor):
 # ── PARIDAD: la autoridad productiva no cambió ─────────────────────────────────────
 
 
-def test_la_costura_no_esta_cableada_al_runtime():
-    """F3.0b construye la costura; E3.2 la cablea. Que ningún módulo de producción la importe
-    es lo que garantiza que el ranking visible siga saliendo del carril legacy."""
+def test_la_costura_solo_la_consume_la_SOMBRA():
+    """F3.0b construyó la costura; E3.2b.4 la cablea — **en sombra**.
+
+    La propiedad que este test protege no era "nadie importa `app.buyer`" sino lo que dice su
+    docstring original: *que el ranking visible siga saliendo del carril legacy*. Eso sigue
+    siendo cierto, y ahora se afirma directamente en vez de por el proxy del import.
+
+    Lista blanca de uno: `routers/chat.py`, y sólo para `app.buyer.sombra`. Los módulos que
+    producen lo que la persona ve —el assembler, el encaje, el match— siguen sin poder
+    tocarla, que es donde un atajo haría daño de verdad.
+    """
     import ast
     import pathlib
 
     raiz = pathlib.Path(__file__).resolve().parent.parent
+    permitidos = {("app/routers/chat.py", "app.buyer.sombra")}
+
     consumidores = []
     for py in (raiz / "app").rglob("*.py"):
         if "__pycache__" in str(py) or py.parts[-2] == "buyer":
             continue
+        rel = str(py.relative_to(raiz)).replace("\\", "/")
         arbol = ast.parse(py.read_text(encoding="utf-8"))
         for n in ast.walk(arbol):
+            modulos = []
             if isinstance(n, ast.ImportFrom) and (n.module or "").startswith("app.buyer"):
-                consumidores.append(str(py.relative_to(raiz)))
-            elif isinstance(n, ast.Import) and any(a.name.startswith("app.buyer") for a in n.names):
-                consumidores.append(str(py.relative_to(raiz)))
-    assert not consumidores, f"la costura ya se consume en producción: {consumidores}"
+                modulos = [n.module]
+            elif isinstance(n, ast.Import):
+                modulos = [a.name for a in n.names if a.name.startswith("app.buyer")]
+            for m in modulos:
+                if (rel, m) not in permitidos:
+                    consumidores.append(f"{rel} → {m}")
+
+    assert not consumidores, f"la costura se consume fuera de la sombra: {consumidores}"
+
+
+def test_el_carril_que_produce_lo_VISIBLE_no_conoce_la_memoria_del_comprador():
+    """Lo que la persona ve —tarjetas, ranking, prosa— no puede depender del BuyerContext
+    todavía. Consumirlo es otra unidad, y mezclarla con ésta haría imposible saber si un
+    cambio en el ranking vino del wiring o de la decisión de usarlo."""
+    import pathlib
+
+    raiz = pathlib.Path(__file__).resolve().parent.parent
+    visibles = ["app/decision/assembler.py", "app/encaje.py", "app/routers/match.py",
+                "app/verificacion_prosa.py"]
+
+    for rel in visibles:
+        f = raiz / rel
+        if not f.exists():
+            continue
+        texto = f.read_text(encoding="utf-8", errors="ignore")
+        assert "app.buyer" not in texto and "BuyerContext" not in texto,             f"{rel} ya consume la memoria del comprador"
 
 
 def test_el_carril_legacy_sigue_intacto():

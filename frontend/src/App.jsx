@@ -27,6 +27,7 @@ import CRM from './CRM'
 import ErrorBoundary from './ErrorBoundary'
 import Sidebar, { RailNav } from './Sidebar'
 import Campana from './Campana'
+import { ESTADO, leerStreamChat } from './leerStreamChat'
 import sphereLogo from './assets/sphere.svg'
 
 // Carga diferida ROBUSTA ante deploys. Si el chunk falla al descargarse (típico cuando un
@@ -904,13 +905,20 @@ export default function App() {
       ? `${userText}\n\n[Contexto del sistema: la ubicación GPS del usuario es lat=${g.lat}, lon=${g.lon}. REGLA: usa estas coordenadas con tool_analyze_location SOLO si el usuario pregunta por "aquí" / "mi zona" / "donde estoy" SIN nombrar otro lugar. Si el usuario nombra un sector, barrio o dirección específicos (p. ej. "La Carolina", "Cumbayá", una calle), GEOCODIFICA ESE lugar con tool_geocode_address y analiza ESE punto — NO uses estas coordenadas y NUNCA llames al lugar analizado con el nombre que pidió el usuario si no coinciden. Para inmuebles registrados, usa tool_search_nearby_assets.]`
       : userText
 
-    // El turno tarda ~18s de punta a punta. Esperarlo entero deja la pantalla muerta;
-    // por SSE el usuario ve la herramienta arrancar en ~2s y la prosa fluyendo detrás.
-    // Si el stream falla ANTES de escribir nada, caemos al POST bloqueante de siempre:
-    // peor latencia, pero jamás una pantalla rota.
+    // El turno tarda ~18s de punta a punta. Esperarlo entero deja la pantalla muerta; por SSE
+    // la prosa fluye mientras se genera.
+    //
+    // AQUÍ HABÍA UN REINTENTO AUTOMÁTICO, y era peligroso (`SSE-FALLBACK-REEXECUTION-01`). Si
+    // el stream no traía ningún `token`, este código repetía el turno por el POST bloqueante.
+    // La auditoría midió 10 de 12 condiciones que lo disparaban, y la peor no era un fallo:
+    // un turno que terminaba BIEN —`tool_call`, `panel` y `done`— se reejecutaba entero por no
+    // traer prosa, duplicando los cinco efectos que la primera ejecución ya había consumado.
+    // Se apoyaba en una equivalencia falsa: «no escribí nada al cliente» ⇒ «el servidor no
+    // hizo nada». No hay ninguna señal observable desde aquí que demuestre que la petición no
+    // llegó a empezar. Así que ya no se reintenta solo: se muestra qué pasó y decide la
+    // persona.
     const msgId = crypto.randomUUID()
     const hora = () => new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })
-    let escribio = false
 
     const parcheaMensaje = (id, cambio) => setMessages(prev => prev.map(
       m => m.id === id ? { ...m, ...cambio } : m))
@@ -926,101 +934,69 @@ export default function App() {
     const trasEnvioExitoso = () =>
       limpiarCapacidadTrasClaim({ sessionId, autenticado: !!session, exito: true })
 
-    // Camino de respaldo: el POST bloqueante de siempre, intacto.
-    const enviarBloqueante = async () => {
-      const { data } = await axios.post(`${API_BASE}/api/v1/chat/`, {
-        message: apiMessage,
-        session_id: sessionId,
-      }, { headers: apiHeadersSesion(sessionId) })
-      setMessages(prev => [...prev, {
-        id: msgId, role: 'ai', content: data.reply, time: hora(),
-        toolCalls: data.tool_calls_made > 0
-          ? Array(data.tool_calls_made).fill('tool_called')
-          : [],
-        results: Array.isArray(data.results) ? data.results : [],
-        // Directiva de mapa del turno (SPEC_Mapa_Vivo): el mapa la interpreta. Puede ser null.
-        mapSeed: data.map_seed || null,
-        // Directiva de PUERTA SUAVE. null en la enorme mayoría de los turnos: se abre solo
-        // en el callejón honesto o si la persona lo pidió (app/puerta.py).
-        puerta: data.puerta || null,
-      }])
-      lastAiRef.current = data.reply || ''
-      trasEnvioExitoso()
-    }
-
     try {
       const resp = await fetch(`${API_BASE}/api/v1/chat/?stream=true`, {
         method: 'POST',
         headers: { ...apiHeadersSesion(sessionId), 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: apiMessage, session_id: sessionId }),
       })
-      if (!resp.ok || !resp.body) throw new Error(`stream HTTP ${resp.status}`)
-
-      const reader = resp.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      let texto = ''
       const parchea = (cambio) => parcheaMensaje(msgId, cambio)
 
-      for (;;) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-
-        // SSE: los eventos se separan por línea en blanco. El resto queda en el buffer
-        // porque un chunk de red puede partir un evento por la mitad.
-        const partes = buffer.split('\n\n')
-        buffer = partes.pop() ?? ''
-
-        for (const parte of partes) {
-          const linea = parte.split('\n').find(l => l.startsWith('data: '))
-          if (!linea) continue
-          let ev
-          try { ev = JSON.parse(linea.slice(6)) } catch { continue }
-
-          if (ev.token) {
-            texto += ev.token
-            if (!escribio) {
-              escribio = true
-              setLoading(false)   // ya hay algo que mirar: fuera el spinner
-              setMessages(prev => [...prev, {
-                id: msgId, role: 'ai', content: texto, time: hora(),
-                toolCalls: [], results: [], mapSeed: null, streaming: true,
-              }])
-            } else {
-              parchea({ content: texto })
-            }
-          } else if (ev.panel) {
-            parchea({
-              results: Array.isArray(ev.panel.results) ? ev.panel.results : [],
-              // Directiva de mapa del turno (SPEC_Mapa_Vivo). Puede ser null.
-              mapSeed: ev.panel.map_seed || null,
-              puerta: ev.panel.puerta || null,
-            })
-          }
-        }
+      // La burbuja de la IA nace con lo PRIMERO que haya que mostrar, sea prosa o panel. Antes
+      // sólo nacía con un token, y por eso un turno con tarjetas y sin texto se quedaba sin
+      // dónde pintarlas — el mismo agujero que disparaba el reintento.
+      let burbuja = false
+      const aseguraBurbuja = (contenido) => {
+        if (burbuja) return
+        burbuja = true
+        setLoading(false)   // ya hay algo que mirar: fuera el spinner
+        setMessages(prev => [...prev, {
+          id: msgId, role: 'ai', content: contenido, time: hora(),
+          toolCalls: [], results: [], mapSeed: null, streaming: true,
+        }])
       }
 
-      if (!escribio) throw new Error('stream sin tokens')
-      parchea({ streaming: false })
-      lastAiRef.current = texto
-      trasEnvioExitoso()
-    } catch {
-      if (escribio) {
-        // Se cortó a mitad de la escritura: conservamos lo escrito y avisamos.
-        parcheaMensaje(msgId, { streaming: false })
-        setError('La respuesta se cortó a medias. Vuelve a preguntar.')
+      const r = await leerStreamChat(resp, {
+        onToken: (acumulado) => {
+          aseguraBurbuja(acumulado)
+          parchea({ content: acumulado })
+        },
+        onPanel: (panel) => {
+          aseguraBurbuja('')
+          parchea({
+            results: Array.isArray(panel.results) ? panel.results : [],
+            // Directiva de mapa del turno (SPEC_Mapa_Vivo). Puede ser null.
+            mapSeed: panel.map_seed || null,
+            puerta: panel.puerta || null,
+          })
+        },
+      })
+
+      if (burbuja) parchea({ streaming: false })
+
+      if (r.estado === ESTADO.EXITO) {
+        lastAiRef.current = r.texto
+        trasEnvioExitoso()
+      } else if (r.estado === ESTADO.FALLIDO) {
+        // El servidor dijo explícitamente que no pudo. Lo ya escrito se conserva; no se
+        // reintenta, y no se le llama «se cortó a medias», que sería otra cosa.
+        setError('No se pudo completar este turno.')
+      } else if (r.estado === ESTADO.VACIO) {
+        // El turno terminó bien y no trajo NADA que mostrar. No se inventa prosa del agente:
+        // se dice que no hubo respuesta y se deja el reintento en manos de la persona.
+        setError('El turno terminó sin respuesta. Vuelve a preguntar.')
       } else {
-        // El stream no llegó a escribir nada: reintento por el POST bloqueante.
-        try {
-          await enviarBloqueante()
-        } catch (err) {
-          setError(
-            err.response?.data?.detail
-            ?? 'No pudimos conectar en este momento. Reintenta en unos segundos.'
-          )
-        }
+        // INCOMPLETO o ERROR. Lo ya escrito se conserva y queda marcado como parcial: nunca
+        // se presenta como respuesta completa. Y no se repite el turno solo — el servidor
+        // pudo haberlo ejecutado entero.
+        setError(r.parcial
+          ? 'La respuesta se cortó a medias. Vuelve a preguntar.'
+          : 'No pudimos conectar en este momento. Reintenta en unos segundos.')
       }
+    } catch {
+      // Sólo llega aquí lo que revienta FUERA del lector: el propio `fetch` (red caída) o un
+      // fallo al pintar. Tampoco se reintenta.
+      setError('No pudimos conectar en este momento. Reintenta en unos segundos.')
     } finally {
       setLoading(false)
       setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 100)

@@ -18,6 +18,9 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.database import AsyncSessionLocal
+# La traducción de `walk_score_fuente` vive en `encaje` y se IMPORTA, no se copia: tener dos
+# tablas fue exactamente el fallo de procedencia del 2026-08-29 (G19.0).
+from app.encaje import resolver_procedencia_caminabilidad
 from app.entorno import limpiar_texto_servicios
 from app.entorno_curacion import aplicar_curacion
 from app.estilo_vida import evaluar_concepto_estilo_vida
@@ -128,6 +131,90 @@ def _limpiar_servicios_en(row: dict) -> dict:
     return row
 
 
+def _con_procedencia_caminable(row: dict) -> dict:
+    """G19-A · el valor de caminabilidad nunca sale de aquí sin decir de dónde viene.
+
+    Estas tools son la frontera donde el dato se vuelve consumible por el modelo, y hasta el
+    2026-08-29 entregaban `walk_score_fuente` EN CRUDO: con NULL —que es el estado de los 40
+    activos de producción— el modelo recibía `null` y rellenaba el hueco. En el turno del
+    canary escribió *"caminabilidad 100, calculada sobre los comercios reales del sector"*
+    mientras la tarjeta, que sí lee la procedencia, decía "estimada por zona".
+
+    La política ya existía; lo que faltaba era que viajara por este carril. Estaba atada a
+    `encaje._score_caminable`, que sólo corre cuando la persona PIDIÓ caminabilidad — o sea,
+    la procedencia dependía de la relevancia del dato para el ranking en vez de acompañar al
+    dato por ser narrable. Aquí se separan esas dos cosas.
+
+    `walk_score_fuente` se conserva intacto: sigue siendo el código (`osm` | `heuristico` |
+    `null`) para quien lo compare. El campo derivado es aditivo.
+
+    Sin `caminabilidad` no se emite procedencia: declarar "estimación por zona" donde no hay
+    estimación sería el mismo relleno, en la dirección contraria.
+    """
+    if isinstance(row, dict) and row.get("caminabilidad") is not None:
+        row["caminabilidad_procedencia"] = resolver_procedencia_caminabilidad(
+            row.get("walk_score_fuente"))
+    return row
+
+
+def _ancla_de(lat: float, lon: float, fuente: str) -> dict:
+    """G20-A · lo que un geocoder devuelve es UN PUNTO, y con nombre de quién lo produjo.
+
+    Hasta el 2026-08-30 la rama Google emitía `source: "google"` y la de Nominatim NO
+    emitía `source` en absoluto: en los 10 turnos del probe el modelo recibió el ancla
+    sin saber siquiera qué geocoder la había resuelto. Una sola función para las dos
+    ramas, porque tener dos formas de describir lo mismo es cómo se desincronizan.
+
+    `geometry_type` es siempre `point` y eso NO es una simplificación: es literalmente lo
+    único que estas dos APIs devuelven aquí. Un punto sigue siendo un punto aunque el
+    proveedor lo clasifique como `suburb` — recuperar esa taxonomía es GEOCODER-TYPE-LOSS-01
+    y queda fuera de este arreglo.
+    """
+    return {"latitude": lat, "longitude": lon, "geometry_type": "point", "source": fuente}
+
+
+def _relacion_de_busqueda(ancla: dict | None, radio_pedido: int, radio_usado: int) -> dict:
+    """G20-A · qué relación probó ESTA búsqueda, dicha por la búsqueda misma.
+
+    EL DEFECTO (G20.0, sobre los 10 turnos reales de PROBE-10): `tool_geocode_address`
+    resuelve "La Floresta" a un PUNTO y `tool_search_nearby_assets` recibe TRES FLOATS.
+    No hay assembler entre ambas: la relación «candidato a 572 m del punto que Nominatim
+    asocia a La Floresta» sólo existía en la cabeza del modelo, repartida entre dos
+    resultados. Con ese hueco, la prosa escribió "en La Floresta" en 10 de 10 turnos —
+    aunque cuatro de las cinco direcciones devueltas nombran González Suárez y una nombra
+    La Mariscal.
+
+    `within_radius` dice exactamente lo que hizo el SQL: el candidato pasó `ST_DWithin`.
+    No es una relación territorial y no debe leerse como tal.
+
+    LA PERTENENCIA VIVE AQUÍ, NO EN CADA ACTIVO. Por activo parecería que evaluamos su
+    geometría contra un límite y el resultado salió "unknown"; no existe tal evaluator ni
+    tal límite — `activos_inmutables` no tiene ninguna columna territorial y el único
+    MULTIPOLYGON de la base son isócronas por inmueble. A nivel de resultado dice lo único
+    cierto: esta operación de retrieval NO estableció pertenencia.
+
+    Y `unknown`, no `false`: tampoco sabemos que el inmueble esté fuera. Es el mismo lado
+    seguro que `resolver_procedencia_caminabilidad` ante un NULL.
+
+    LOS DOS RADIOS son un hallazgo del preflight, no adorno: la búsqueda se expande sola
+    (1200 → 3000 → 6000) cuando no encuentra nada, así que un inmueble a 6 km puede volver
+    como respuesta a un barrio. Con ambos campos el modelo lo ve sin reconstruir el flujo.
+    """
+    fuera: dict = {
+        "pertenencia_territorial": "unknown",
+        "radius_requested_m": radio_pedido,
+        "radius_searched_m": radio_usado,
+    }
+    if ancla is not None:
+        # Sin ancla no hay proximidad que declarar: un geocode fallido no puede fabricar
+        # una relación. La pertenencia sigue sin establecerse — no pasa a "fuera".
+        fuera["ancla_busqueda"] = {"latitude": ancla["latitude"],
+                                   "longitude": ancla["longitude"],
+                                   "geometry_type": "point"}
+        fuera["relacion_recuperacion"] = "within_radius"
+    return fuera
+
+
 @tool
 async def tool_search_nearby_assets(
     latitude: float,
@@ -199,15 +286,19 @@ async def tool_search_nearby_assets(
         if rows:
             break
 
+    relacion = _relacion_de_busqueda(
+        ancla={"latitude": latitude, "longitude": longitude},
+        radio_pedido=radius_meters, radio_usado=used)
+
     if not rows:
         return json.dumps({
-            "assets": [], "radius_searched_m": used,
+            "assets": [], **relacion,
             "message": f"No registered assets within {used} m of this point.",
         })
 
-    rows = [_limpiar_servicios_en(r) for r in rows]
+    rows = [_con_procedencia_caminable(_limpiar_servicios_en(r)) for r in rows]
     return json.dumps({
-        "assets": rows, "total": len(rows), "radius_searched_m": used,
+        "assets": rows, "total": len(rows), **relacion,
         "note": "distancia_metros = how far each asset is from the search point; be honest about distance if it is large.",
     }, default=str)
 
@@ -293,7 +384,7 @@ async def tool_find_assets_by_text(query: str) -> str:
 
     for r in rows:
         r.pop("_rank", None)
-    rows = [_limpiar_servicios_en(r) for r in rows]
+    rows = [_con_procedencia_caminable(_limpiar_servicios_en(r)) for r in rows]
     return json.dumps({"assets": rows, "total": len(rows)}, default=str)
 
 
@@ -389,7 +480,7 @@ async def tool_fetch_asset_lifecycle_specs(activo_id: str) -> str:
     if curaciones:
         row["servicios_cercanos"] = aplicar_curacion(row.get("servicios_cercanos"), curaciones)
 
-    return json.dumps({"specs": _con_antiguedades(_limpiar_servicios_en(row))}, default=str)
+    return json.dumps({"specs": _con_antiguedades(_con_procedencia_caminable(_limpiar_servicios_en(row)))}, default=str)
 
 
 async def _geocode_google(address: str, key: str) -> dict | None:
@@ -438,9 +529,7 @@ async def tool_geocode_address(address: str) -> str:
                     "found": True,
                     "address_input": address,
                     "address_resolved": g["formatted"],
-                    "latitude": g["lat"],
-                    "longitude": g["lon"],
-                    "source": "google",
+                    **_ancla_de(g["lat"], g["lon"], "google"),
                     "tip": "Google geocoding is street-accurate; radius_meters=1500 is fine.",
                 })
         except Exception:
@@ -482,8 +571,8 @@ async def tool_geocode_address(address: str) -> str:
             "found": True,
             "address_input": address,
             "address_resolved": location.address,
-            "latitude": round(location.latitude, 6),
-            "longitude": round(location.longitude, 6),
+            **_ancla_de(round(location.latitude, 6), round(location.longitude, 6),
+                        "nominatim"),
             "tip": "Use tool_search_nearby_assets with radius_meters=2000 for geocoded addresses (Nominatim may offset slightly).",
         })
 

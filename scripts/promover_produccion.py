@@ -6,45 +6,67 @@ QUÉ GARANTIZA (R1-R4 de la unidad F-02):
   R3  sin reconstrucción
   R4  solo después de una aprobación humana
 
-QUÉ NO GARANTIZA, dicho de frente. Este programa protege un JOB, no el hecho de
-publicar. Mientras «Auto-Assign Custom Production Domains» siga en ON —hoy lo está—
-un merge a `main` publica por su cuenta y esto no gobierna nada. Apagar ese
-interruptor es precondición de cutover, no una optimización, y está FUERA de esta
-unidad. Tampoco cubre INV-FRESHNESS: no comprueba que el SHA siga siendo la cabeza
-de `main` cuando la aprobación humana llega.
+PRECONDICIONES DE CUTOVER · duraderas, no una foto de un día
+Este programa gobierna un JOB. Que ese job gobierne además **el hecho de publicar**
+depende de dos condiciones externas que NO puede comprobar por sí mismo y que deben
+cumplirse antes de darle valor a su resultado:
 
-R4 MERECE UNA ADVERTENCIA APARTE. Este programa NO puede verificar que la aprobación
-humana exista: las reglas de protección de un Environment de GitHub viven en la
-consola, no en el repositorio, y ningún fichero de esta unidad puede leerlas. La
-palabra `environment:` del YAML NOMBRA una puerta; no la construye. Un Environment
-recién creado nace SIN required reviewers. Mientras nadie lo configure, R4 está
-declarado pero no ejercido, y esta unidad no puede afirmar lo contrario.
+  P-1  «Auto-Assign Custom Production Domains» del proyecto en Vercel debe estar en OFF.
+       Mientras esté en ON, un merge a la rama de producción asigna los dominios por su
+       cuenta y la promoción de este programa deja de ser la vía por la que se publica.
+       El programa NO lee ese ajuste: vive en el panel, no en la API documentada.
+  P-2  el Environment de GitHub que protege al job debe existir y llevar sus reglas
+       (revisor requerido y bypass de administradores apagado). El programa tampoco
+       puede verificarlo: las reglas de protección viven en la consola.
+
+Si P-1 o P-2 no se cumplen, este programa sigue haciendo lo que dice —promueve solo el
+artefacto aprobado, o falla cerrado— pero **no es la puerta de publicación**. Esa
+distinción no caduca y por eso se enuncia como precondición y no como estado del día.
+
+Tampoco cubre INV-FRESHNESS: no comprueba que el SHA siga siendo la cabeza de la rama
+cuando llega la aprobación humana.
+
+CONTRATO DEL TOKEN · alcance de PROYECTO
+El token se crea limitado al proyecto que se va a promover, que es el suelo de
+granularidad que ofrece Vercel: se puede bajar de cuenta a equipo y de equipo a un solo
+proyecto, pero NO existe alcance por operación. Con un token así, el ámbito queda
+implícito en la credencial y el programa **no exige ni envía identificador de equipo**.
+Entradas requeridas:
+
+  VERCEL_PROJECT_PROMOTION_TOKEN   secreto · nombre específico a propósito
+  VERCEL_PROMOTION_PROJECT_ID      identificador del proyecto
+  VERCEL_PROMOTION_ALIAS           lista de los dominios productivos, separados por comas
+
+LOS DOMINIOS PRODUCTIVOS SON MÁS DE UNO, y esto cambia la garantía
+Una promoción asigna TODOS los dominios de producción del proyecto. Reconciliar uno solo
+acreditaría la mitad del hecho. Por eso este programa exige la lista completa y solo
+declara `PROMOTED` cuando **todos** apuntan al mismo despliegue aprobado y al proyecto
+esperado. Un estado en el que unos dominios ya sirven el artefacto y otros no es
+precisamente el que hay que detectar, no el que hay que aprobar.
 
 CONTRATO DE LA API, extraído del OpenAPI oficial de Vercel (https://openapi.vercel.sh/,
-10 717 362 bytes, 297 rutas, leído el 2026-09-07). Cada campo que este programa exige
-está documentado; ninguno se infiere de la interfaz. Y cada campo que el contrato
-declara OPCIONAL se trata aquí como ausente-hasta-que-se-demuestre:
+10 717 362 bytes, 297 rutas, leído el 2026-09-07 — es una foto fechada: si el contrato
+cambia hay que releerla). Cada campo que este programa exige está documentado, y cada
+campo que el contrato declara OPCIONAL se trata aquí como ausente-hasta-que-se-demuestre:
 
   GET /v7/deployments
-      El 200 declara required: [deployments, pagination]. Este programa exige los dos
-      con el mismo rigor: un `deployments` ausente, nulo o que no sea lista es un
-      fallo, no una página vacía.
+      El 200 declara required: [deployments, pagination]. Este programa exige los dos con
+      el mismo rigor: un `deployments` ausente, nulo o que no sea lista es un fallo, no
+      una página vacía.
       El ITEM del listado declara required: [created, createdAt, creator, inspectorUrl,
-      name, projectId, readyState, type, uid, url]. `readySubstate` NO está en esa
-      lista y `gitSource` NO existe en el item. De ahí dos reglas:
+      name, projectId, readyState, type, uid, url]. `readySubstate` NO está en esa lista
+      y `gitSource` NO existe en el item. De ahí dos reglas:
         · la identidad exige SIEMPRE una segunda llamada al detalle;
         · el prefiltro por `readySubstate` solo puede EXCLUIR lo que demuestra no ser
           STAGED. Un item que omita el campo pasa al detalle. Excluirlo por ausencia
           haría invisible a un segundo candidato y desarmaría la comprobación de
           ambigüedad, que es la única defensa de R2.
       `pagination` = {count, next, prev}, las tres requeridas. `next` es un timestamp
-      nullable; `null` es la última página. Que ese valor se pase como `until` NO lo
-      dice el schema con esas palabras: es INFERIDO de que `until` es el único
-      parámetro documentado como «Get Deployments created before this timestamp».
+      nullable; `null` es la última página. Que ese valor se pase como `until` NO lo dice
+      el schema con esas palabras: es INFERIDO de que `until` es el único parámetro
+      documentado como «Get Deployments created before this timestamp».
 
   GET /v13/deployments/{idOrUrl}?withGitRepoInfo=true
-      withGitRepoInfo: "When `true`, the response includes the `gitSource` object with
-      the commit SHA, branch name, and connected repository metadata."
       El 200 es un `oneOf` de TRES variantes. `id` y `readyState` son requeridos en las
       tres. `readySubstate`, `target` y `gitSource` NO lo son en NINGUNA, y `projectId`
       solo en una. La ausencia de cualquiera descalifica al candidato.
@@ -54,29 +76,27 @@ declara OPCIONAL se trata aquí como ausente-hasta-que-se-demuestre:
           corresponde al «Staged» que presupone F-02, no una palabra de la interfaz.
       target enum: production | staging | null (null = preview)
       gitSource es a su vez un `oneOf` de 19 formas. `type` es requerido en las 19;
-      `sha` solo en 9. La identidad del repositorio se declara por repoId, o por
-      org+repo, según la forma.
-      source: el schema advierte "Best-effort guess for metrics only — not
-          authoritative; do not gate behavior on it". Por eso NO se usa.
+      `sha` solo en 9.
+      source: el schema advierte "Best-effort guess for metrics only — not authoritative;
+          do not gate behavior on it". Por eso NO se usa.
 
   POST /v10/projects/{projectId}/promote/{deploymentId}
       "Allows users to promote a deployment to production. Note: This does NOT rebuild
        the deployment." — esa frase es la prueba documental de R3.
-      Éxito documentado: 201 y 202, ambos SIN cuerpo declarado (no traen `content`).
+      Éxito documentado: 201 y 202, ambos SIN cuerpo declarado.
       Fallo documentado: 400 401 403 409 410 422.
       CUALQUIER OTRO CÓDIGO no está documentado, así que no se puede afirmar que el
       servidor rechazara: se trata como aceptación DESCONOCIDA y va a reconciliación.
-      Documentación pública y schema coinciden en los dos códigos de éxito.
 
   GET /v4/aliases/{idOrAlias}
       required: alias, created, deploymentId, projectId, uid.
-      deploymentId y projectId son además nullable: un `null` es NO RECONCILIADO,
-      jamás una coincidencia.
+      deploymentId y projectId son además nullable: un `null` es NO RECONCILIADO, jamás
+      una coincidencia.
 
 POR QUÉ SOLO BIBLIOTECA ESTÁNDAR: el job de promoción no instala requirements. urllib
 basta y no añade superficie. El transporte es inyectable para que las pruebas jamás
-toquen la red, y NO sigue redirecciones: un 30x arrastraría la cabecera Authorization
-a otro host.
+toquen la red, y NO sigue redirecciones: un 30x arrastraría la cabecera Authorization a
+otro host.
 """
 
 from __future__ import annotations
@@ -102,22 +122,18 @@ FAIL_CLOSED = "FAIL_CLOSED"
 UNKNOWN_RECONCILIATION_REQUIRED = "UNKNOWN_RECONCILIATION_REQUIRED"
 
 CODIGOS_DE_SALIDA = {
-    # Éxito ATESTIGUADO: esta ejecución emitió su único POST y después comprobó el
-    # alias. Es el ÚNICO camino verde.
+    # Éxito ATESTIGUADO: esta ejecución emitió su único POST y después comprobó que
+    # TODOS los dominios productivos convergen en el artefacto aprobado. Es el ÚNICO
+    # camino verde.
     PROMOTED: 0,
-    # UNAVAILABLE sale distinto de cero A PROPÓSITO: el SHA que aprobó el CI no tiene
-    # artefacto promovible. No se promovió nada —eso es lo importante— pero tampoco se
-    # cumplió el encargo, y un verde silencioso lo escondería.
     UNAVAILABLE: 1,
     FAIL_CLOSED: 2,
     UNKNOWN_RECONCILIATION_REQUIRED: 3,
-    # El alias YA servía el SHA aprobado ANTES de que esta ejecución hiciera nada.
+    # Los dominios YA servían el SHA aprobado ANTES de que esta ejecución hiciera nada.
     # Sigue siendo un no-op —no se repite la promoción— pero NO es una promoción
-    # atestiguada por F: observar qué sirve Vercel no demuestra que F lo promoviera,
-    # ni que la publicación esperase la aprobación humana, ni que no hubiera una
-    # promoción manual fuera del workflow. Con «Auto-Assign Custom Production Domains»
-    # en ON —hoy lo está— dejar esto en verde certificaría justo el bypass que C1
-    # declara abierto. Por eso sale distinto de cero.
+    # atestiguada por F: observar qué sirve Vercel no demuestra que F lo promoviera, ni
+    # que la publicación esperase la aprobación humana, ni que no hubiera una promoción
+    # manual fuera del workflow. Por eso sale distinto de cero.
     ALREADY_CURRENT_UNATTESTED: 4,
 }
 
@@ -131,6 +147,12 @@ DETALLES_MAXIMOS = 50
 SONDEOS_MAXIMOS = 6
 ESPERA_ENTRE_SONDEOS = 5.0
 VENTANA_MAXIMA_DE_SONDEO = 90.0
+ALIAS_MAXIMOS = 10
+
+# Con un solo dominio no se puede distinguir «todo convergió» de «convergió la mitad»,
+# que es justo el estado que hay que detectar. El proyecto tiene dos dominios de
+# producción; si algún día tuviera más, la lista crece y este suelo sigue valiendo.
+MINIMO_DE_ALIAS = 2
 
 CODIGOS_DE_EXITO_DE_PROMOCION = frozenset({201, 202})
 CODIGOS_DE_RECHAZO_DOCUMENTADOS = frozenset({400, 401, 403, 409, 410, 422})
@@ -138,8 +160,8 @@ CODIGOS_DE_RECHAZO_DOCUMENTADOS = frozenset({400, 401, 403, 409, 410, 422})
 HEX40 = re.compile(r"\A[0-9a-f]{40}\Z")
 
 # `type` es requerido en las 19 formas de gitSource. Solo se acepta la familia GitHub:
-# el CI que aprueba es GitHub Actions, así que un artefacto de otro origen no puede
-# ser «el que aprobó el CI».
+# el CI que aprueba es GitHub Actions, así que un artefacto de otro origen no puede ser
+# «el que aprobó el CI».
 TIPOS_GIT_ADMITIDOS = frozenset({"github", "github-limited", "github-custom-host"})
 
 VARIABLES_REQUERIDAS = (
@@ -161,12 +183,7 @@ class ErrorTransporte(Exception):
 
 
 def redactar(texto: str, secretos: Iterable[str]) -> str:
-    """Sustituye cualquier secreto por un marcador.
-
-    Sin suelo de longitud: un secreto corto también se redacta. Se aplica a TODO lo
-    que sale del programa. No se imprime jamás el cuerpo de una respuesta ni una
-    cabecera: solo campos que este programa elige explícitamente.
-    """
+    """Sustituye cualquier secreto por un marcador. Sin suelo de longitud."""
     salida = str(texto)
     for secreto in secretos:
         if secreto:
@@ -203,9 +220,9 @@ class ContextoGitHub:
 def validar_contexto_github(entorno: dict) -> ContextoGitHub:
     """Segunda barrera, independiente del YAML.
 
-    F-02 dejó dicho que la protección no puede depender solo de la condición `if:`:
-    un PR que borre esa línea únicamente necesita pasar `pytest`, que no inspecciona
-    .github/workflows/. Esta función vuelve a comprobar lo mismo desde dentro.
+    La protección no puede depender solo de la condición `if:`: un PR que borre esa
+    línea únicamente necesita pasar `pytest`, que no inspecciona .github/workflows/.
+    Esta función vuelve a comprobar lo mismo desde dentro.
     """
     evento = entorno.get("GITHUB_EVENT_NAME", "")
     ref = entorno.get("GITHUB_REF", "")
@@ -238,6 +255,29 @@ def validar_contexto_github(entorno: dict) -> ContextoGitHub:
     )
 
 
+def parsear_alias(crudo: str) -> tuple[str, ...]:
+    """Lista de dominios productivos, separados por comas.
+
+    Se exige más de uno: con un solo dominio no se puede distinguir la convergencia
+    completa de la parcial, y la parcial es exactamente el estado que hay que detectar.
+    """
+    hosts = tuple(
+        dict.fromkeys(h.strip().lower() for h in str(crudo).split(",") if h.strip())
+    )
+    if len(hosts) < MINIMO_DE_ALIAS:
+        raise ErrorBarrera(
+            f"se configuraron {len(hosts)} dominios productivos y hacen falta al menos "
+            f"{MINIMO_DE_ALIAS}: con uno solo no se distingue la convergencia completa "
+            "de la parcial"
+        )
+    if len(hosts) > ALIAS_MAXIMOS:
+        raise ErrorBarrera(f"{len(hosts)} dominios supera el tope de {ALIAS_MAXIMOS}")
+    for h in hosts:
+        if "/" in h or " " in h or not h:
+            raise ErrorBarrera(f"dominio con forma inesperada: {h!r}")
+    return hosts
+
+
 # ── Transporte inyectable ──────────────────────────────────────────────────────
 
 
@@ -256,9 +296,8 @@ class Transporte(Protocol):
 class _SinRedirecciones(urllib.request.HTTPRedirectHandler):
     """Convierte cualquier 30x en error.
 
-    Seguir una redirección con el opener por defecto reenvía la cabecera
-    Authorization al destino. La API de Vercel no documenta redirecciones en estas
-    rutas, así que un 30x es anómalo y aquí se trata como tal.
+    Seguir una redirección con el opener por defecto reenvía la cabecera Authorization
+    al destino. La API de Vercel no documenta redirecciones en estas rutas.
     """
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
@@ -278,8 +317,6 @@ def transporte_urllib(
                 estado=respuesta.status, cuerpo=_leer_json(respuesta.read())
             )
     except urllib.error.HTTPError as error:
-        # Un HTTPError SÍ es respuesta concluyente del servidor: hay código. Incluye
-        # los 30x, que aquí llegan como error porque no se siguen.
         try:
             cuerpo = _leer_json(error.read())
         except Exception:
@@ -293,8 +330,8 @@ def transporte_urllib(
 def _leer_json(crudo: bytes) -> object:
     """Parsea si hay JSON; devuelve None si el cuerpo está vacío o no lo es.
 
-    Los 201 y 202 de la promoción no declaran `content` en el contrato: exigir JSON
-    ahí convertiría una aceptación en un fallo de transporte.
+    Los 201 y 202 de la promoción no declaran `content` en el contrato: exigir JSON ahí
+    convertiría una aceptación en un fallo de transporte.
     """
     texto = (crudo or b"").decode("utf-8", errors="replace").strip()
     if not texto:
@@ -315,7 +352,6 @@ class ClienteVercel:
     transporte: Transporte = transporte_urllib
     dormir: Callable[[float], None] = time.sleep
     reloj: Callable[[], float] = time.monotonic
-    equipo: str | None = None
     _post_emitido: bool = field(default=False, init=False, repr=False)
 
     def _cabeceras(self) -> dict:
@@ -325,10 +361,9 @@ class ClienteVercel:
         }
 
     def _url(self, ruta: str, consulta: dict | None = None) -> str:
-        parametros = dict(consulta or {})
-        if self.equipo:
-            parametros["teamId"] = self.equipo
-        limpios = {k: v for k, v in parametros.items() if v is not None}
+        # No se envía identificador de equipo: el token está limitado al proyecto y el
+        # ámbito queda implícito en la credencial.
+        limpios = {k: v for k, v in (consulta or {}).items() if v is not None}
         sufijo = f"?{urllib.parse.urlencode(limpios)}" if limpios else ""
         return f"{BASE}{ruta}{sufijo}"
 
@@ -346,11 +381,7 @@ class ClienteVercel:
         raise ErrorTransporte(f"GET agotó {REINTENTOS_GET + 1} intentos: {ultimo}")
 
     def post_promocion(self, proyecto: str, despliegue: str) -> Respuesta:
-        """EL único POST del programa. Sin reintentos, y estructuralmente irrepetible.
-
-        F-02 §4.5: como máximo un POST por ejecución. No basta con no escribir el
-        bucle: cualquier ruta de código que intente un segundo POST revienta aquí.
-        """
+        """EL único POST del programa. Sin reintentos, y estructuralmente irrepetible."""
         if self._post_emitido:
             raise ErrorBarrera(
                 "intento de un SEGUNDO POST de promoción en la misma ejecución"
@@ -373,20 +404,15 @@ class ClienteVercel:
 def listar_despliegues_listos(cliente: ClienteVercel, proyecto: str) -> list[dict]:
     """Recorre TODAS las páginas de despliegues de producción en estado READY.
 
-    `projectId`, `target` y `state` se usan conforme a su semántica documentada: la
-    API los describe como filtros de igualdad sobre propiedades que forman parte del
-    propio predicado del candidato. La garantía presupone que Vercel cumple ese
-    contrato. El cliente vuelve a validar TODOS esos campos en cada detalle.
+    `projectId`, `target` y `state` se usan conforme a su semántica documentada: la API
+    los describe como filtros de igualdad sobre propiedades que forman parte del propio
+    predicado del candidato. La garantía presupone que Vercel cumple ese contrato, y el
+    cliente vuelve a validar TODOS esos campos en cada detalle.
 
     El filtro `sha` NO se usa porque su semántica de coincidencia exacta no está
-    documentada: su schema no declara `pattern`, `minLength` ni `maxLength`, y no hay
-    una sola frase sobre prefijos.
-
-    Precisión que corrige una versión anterior de este comentario: NO es cierto que
-    un filtro que estreche de más solo pueda producir UNAVAILABLE. Reducir dos
-    candidatos a uno escondería una ambigüedad, que es precisamente el caso que R2
-    necesita ver. Lo que justifica los tres filtros no es que «estrechen de más sin
-    consecuencia», sino su semántica documentada más la revalidación en el detalle.
+    documentada: su schema no declara `pattern`, `minLength` ni `maxLength`, y no hay una
+    sola frase sobre prefijos. Además, la comprobación de ambigüedad de R2 se hace
+    contando candidatos, y un filtro que devolviera de menos ocultaría al segundo.
     """
     encontrados: list[dict] = []
     hasta: int | None = None
@@ -405,9 +431,6 @@ def listar_despliegues_listos(cliente: ClienteVercel, proyecto: str) -> list[dic
         cuerpo = respuesta.cuerpo
         if not isinstance(cuerpo, dict):
             raise ErrorBarrera("listado con cuerpo que no es un objeto")
-        # `deployments` es un campo REQUERIDO del contrato y se exige con el mismo
-        # rigor que `pagination`. Un `or []` aquí convertiría una respuesta rota en
-        # una página vacía, y una página vacía en un candidato menos.
         elementos = cuerpo.get("deployments")
         if not isinstance(elementos, list):
             raise ErrorBarrera("el listado no trae `deployments` como lista")
@@ -422,7 +445,6 @@ def listar_despliegues_listos(cliente: ClienteVercel, proyecto: str) -> list[dic
         if siguiente is None:
             return encontrados
         hasta = siguiente
-    # Se agotó el tope sin llegar al final: NO se sabe si falta un candidato.
     raise ErrorBarrera(
         f"paginación no resuelta tras {PAGINAS_MAXIMAS} páginas; no se promueve"
     )
@@ -448,16 +470,13 @@ def _motivo_de_descarte_del_origen(origen: object, esperado: Esperado) -> str | 
         return "sin gitSource"
     tipo = origen.get("type")
     if tipo not in TIPOS_GIT_ADMITIDOS:
-        # `type` es requerido en las 19 formas: si no está, o no es de la familia
-        # GitHub, el artefacto no puede provenir del CI que aprobó.
         return f"gitSource.type {tipo!r} no es de la familia GitHub"
     duenio, _, repositorio = esperado.repositorio.partition("/")
     org = origen.get("org")
     repo = origen.get("repo")
-    # La identidad del repositorio se declara por repoId o por org+repo según la
-    # forma. Cuando vienen los nombres se exigen; cuando no, la pertenencia queda
-    # sostenida por projectId, que ya se comprobó. Es un límite declarado, no un
-    # descuido: el contrato no garantiza org/repo en todas las formas.
+    # La identidad del repositorio se declara por repoId o por org+repo según la forma.
+    # Cuando vienen los nombres se exigen; cuando no, la pertenencia queda sostenida por
+    # projectId, que ya se comprobó. Es un límite declarado, no un descuido.
     if isinstance(org, str) and org.lower() != duenio.lower():
         return f"gitSource.org {org!r} no es {duenio!r}"
     if isinstance(repo, str) and repo.lower() != repositorio.lower():
@@ -475,16 +494,10 @@ def _motivo_de_descarte_del_origen(origen: object, esperado: Esperado) -> str | 
 def motivo_de_descarte(
     detalle: dict, esperado: Esperado, identificador: str | None = None
 ) -> str | None:
-    """Devuelve None si el despliegue es promovible; si no, por qué no lo es.
-
-    Todos los campos consultados salvo `id` son opcionales en el schema, así que la
-    ausencia descalifica. No hay ninguna rama que acepte por omisión.
-    """
+    """Devuelve None si el despliegue es promovible; si no, por qué no lo es."""
     if not isinstance(detalle, dict):
         return "el detalle no es un objeto"
     if identificador is not None and detalle.get("id") != identificador:
-        # `id` es requerido en las tres variantes del detalle. Comprobarlo ata la
-        # identidad del listado con la del documento que se valida y con la del POST.
         return f"el detalle responde por {detalle.get('id')!r}, no por {identificador!r}"
     if detalle.get("projectId") != esperado.proyecto:
         return f"projectId {detalle.get('projectId')!r} no es el esperado"
@@ -493,7 +506,6 @@ def motivo_de_descarte(
     if detalle.get("readyState") != "READY":
         return f"readyState {detalle.get('readyState')!r} no es READY"
     if detalle.get("readySubstate") != "STAGED":
-        # PROMOTED ya vio tráfico de producción; ROLLING está en transición.
         return f"readySubstate {detalle.get('readySubstate')!r} no es STAGED"
     return _motivo_de_descarte_del_origen(detalle.get("gitSource"), esperado)
 
@@ -515,8 +527,7 @@ def puede_excluirse_sin_mirar_el_detalle(elemento: dict) -> bool:
 
     `readySubstate` NO es un campo requerido del item del listado. Excluir por su
     AUSENCIA haría invisible a un segundo candidato y dejaría sin disparar la
-    comprobación de ambigüedad, que es la única defensa de R2: descartar aquí no
-    cierra, abre. Por eso solo se excluye cuando el campo ESTÁ y dice otra cosa.
+    comprobación de ambigüedad, única defensa de R2: descartar aquí no cierra, abre.
     """
     substate = elemento.get("readySubstate")
     return isinstance(substate, str) and substate != "STAGED"
@@ -537,8 +548,6 @@ def seleccionar_candidato(
     ]
     sin_uid = sum(1 for d in listados if not isinstance(d.get("uid"), str))
     if sin_uid:
-        # `uid` es requerido en el item. Si falta, el listado no cumple el contrato y
-        # no se puede saber si ese elemento era un segundo candidato.
         raise ErrorBarrera(f"{sin_uid} elementos del listado sin `uid`")
     if len(preseleccion) > DETALLES_MAXIMOS:
         raise ErrorBarrera(
@@ -565,7 +574,7 @@ def seleccionar_candidato(
     return validos
 
 
-# ── (4) Alias canónico ─────────────────────────────────────────────────────────
+# ── (4) Alias · ahora TODOS los dominios productivos ───────────────────────────
 
 
 @dataclass(frozen=True)
@@ -579,9 +588,9 @@ class EstadoAlias:
 
 
 def leer_alias(cliente: ClienteVercel, alias: str) -> EstadoAlias:
-    """Lectura CANÓNICA. GET /v2/deployments/{id}/aliases no sirve para esto:
-    no devuelve deploymentId ni projectId, así que solo corrobora una hipótesis
-    ya formada. Aquí hace falta producir la identidad, no confirmarla."""
+    """Lectura CANÓNICA. GET /v2/deployments/{id}/aliases no sirve para esto: no
+    devuelve deploymentId ni projectId, así que solo corrobora una hipótesis ya formada.
+    Aquí hace falta producir la identidad, no confirmarla."""
     respuesta = cliente.get(f"/v4/aliases/{urllib.parse.quote(alias, safe='')}")
     if respuesta.estado != 200:
         raise ErrorBarrera(f"lectura del alias devolvió {respuesta.estado}")
@@ -596,45 +605,14 @@ def leer_alias(cliente: ClienteVercel, alias: str) -> EstadoAlias:
     )
 
 
-def el_alias_ya_sirve_el_sha_aprobado(
-    detalle: dict, estado: EstadoAlias, esperado: Esperado
-) -> bool:
-    """¿El alias canónico YA sirve un artefacto construido del SHA aprobado?
-
-    Predicado DISTINTO del de candidato promovible, y a propósito: aquí NO se mira
-    `readySubstate`. Un despliegue que ya sirve producción está documentado como
-    `PROMOTED`, no como `STAGED`; exigir STAGED haría que este caso nunca se
-    detectara, que es exactamente el defecto que tenía la primera versión: la
-    selección devolvía cero candidatos y el programa terminaba en UNAVAILABLE sin
-    llegar a mirar qué servía el alias.
-
-    Lo que sí se exige: que el alias esté reconciliado en el proyecto esperado, que
-    el documento responda por el mismo despliegue que nombra el alias, y que su
-    origen sea el commit aprobado, del repositorio esperado.
-    """
-    if not estado.reconciliado:
-        return False
-    if estado.proyecto != esperado.proyecto:
-        return False
-    if not isinstance(detalle, dict):
-        return False
-    if detalle.get("id") != estado.despliegue:
-        return False
-    if detalle.get("projectId") != esperado.proyecto:
-        return False
-    if detalle.get("target") != "production":
-        return False
-    return _motivo_de_descarte_del_origen(detalle.get("gitSource"), esperado) is None
+def leer_todos_los_alias(
+    cliente: ClienteVercel, hosts: Iterable[str]
+) -> dict[str, EstadoAlias]:
+    return {host: leer_alias(cliente, host) for host in hosts}
 
 
 def alias_apunta_a(estado: EstadoAlias, despliegue: str, proyecto: str) -> bool:
-    """Objetivo alcanzado solo si AMBOS identificadores coinciden y no son nulos.
-
-    La comprobación de `reconciliado` es redundante con las dos igualdades cuando
-    `despliegue` y `proyecto` son cadenas no vacías. Se conserva porque documenta la
-    regla que exige F-02 —un `null` es NO reconciliado, nunca coincidencia— y porque
-    protege el caso en que alguien llame a esta función con un objetivo vacío.
-    """
+    """Objetivo alcanzado solo si AMBOS identificadores coinciden y no son nulos."""
     if not despliegue or not proyecto:
         return False
     return (
@@ -644,38 +622,80 @@ def alias_apunta_a(estado: EstadoAlias, despliegue: str, proyecto: str) -> bool:
     )
 
 
-# ── (5) Reconciliación acotada ─────────────────────────────────────────────────
+# ── Convergencia entre dominios ────────────────────────────────────────────────
+
+TODOS = "TODOS"
+NINGUNO = "NINGUNO"
+PARCIAL = "PARCIAL"
+DIVERGENTE = "DIVERGENTE"
+NO_RECONCILIADO = "NO_RECONCILIADO"
+
+
+def clasificar_convergencia(
+    estados: dict[str, EstadoAlias], objetivo: str, proyecto: str
+) -> str:
+    """¿En qué estado están los dominios productivos respecto de un despliegue?
+
+    TODOS            cada dominio apunta al objetivo y al proyecto esperado
+    NINGUNO          ninguno apunta al objetivo, y todos coinciden entre sí
+    PARCIAL          unos sí y otros no
+    DIVERGENTE       ninguno apunta al objetivo y además NO coinciden entre sí
+    NO_RECONCILIADO  algún dominio trae nulos o un proyecto ajeno
+
+    La distinción entre PARCIAL y DIVERGENTE importa para el diagnóstico, no para la
+    decisión: las dos son fallo cerrado antes del POST, y las dos son UNKNOWN después.
+    """
+    if not estados:
+        return NO_RECONCILIADO
+    for estado in estados.values():
+        if not estado.reconciliado or estado.proyecto != proyecto:
+            return NO_RECONCILIADO
+    aciertos = sum(
+        1 for e in estados.values() if alias_apunta_a(e, objetivo, proyecto)
+    )
+    if aciertos == len(estados):
+        return TODOS
+    if aciertos > 0:
+        return PARCIAL
+    if len({e.despliegue for e in estados.values()}) > 1:
+        return DIVERGENTE
+    return NINGUNO
+
+
+# ── (5) Reconciliación acotada, sobre TODOS los dominios ───────────────────────
 
 
 def reconciliar(
     cliente: ClienteVercel,
-    alias: str,
+    hosts: tuple[str, ...],
     despliegue: str,
     proyecto: str,
     registro: Registro,
-) -> bool:
-    """Sondeo ACOTADO del alias exacto. Nunca infinito, nunca un segundo POST.
+) -> str:
+    """Sondeo ACOTADO de todos los dominios. Nunca infinito, nunca un segundo POST.
 
-    Devuelve True solo si el alias queda comprobadamente en el objetivo. Cualquier
-    otro desenlace es UNKNOWN: el éxito no se concede por ausencia de evidencia.
+    Devuelve la clasificación del último sondeo concluyente. Solo `TODOS` autoriza a
+    declarar la promoción: una convergencia parcial deja producción a medio camino, y
+    eso no es un éxito, es un incidente que hay que reconciliar a mano.
     """
     inicio = cliente.reloj()
+    ultima = NO_RECONCILIADO
     for sondeo in range(SONDEOS_MAXIMOS):
         if cliente.reloj() - inicio > VENTANA_MAXIMA_DE_SONDEO:
             registro("ventana de sondeo agotada por tiempo")
-            return False
+            return ultima
         try:
-            estado = leer_alias(cliente, alias)
+            estados = leer_todos_los_alias(cliente, hosts)
         except (ErrorBarrera, ErrorTransporte) as error:
             registro(f"sondeo {sondeo + 1}: sin lectura concluyente ({error})")
         else:
-            if alias_apunta_a(estado, despliegue, proyecto):
-                registro(f"sondeo {sondeo + 1}: alias reconciliado en el objetivo")
-                return True
-            registro(f"sondeo {sondeo + 1}: alias aún no reconciliado")
+            ultima = clasificar_convergencia(estados, despliegue, proyecto)
+            registro(f"sondeo {sondeo + 1}: convergencia {ultima}")
+            if ultima == TODOS:
+                return TODOS
         if sondeo < SONDEOS_MAXIMOS - 1:
             cliente.dormir(ESPERA_ENTRE_SONDEOS)
-    return False
+    return ultima
 
 
 # ── Orquestación ───────────────────────────────────────────────────────────────
@@ -703,19 +723,17 @@ def ejecutar(
 
     faltan = [v for v in VARIABLES_REQUERIDAS if not entorno.get(v)]
     if faltan:
-        # Fail-closed ante cualquier entrada requerida ausente. Se nombran las
-        # variables, nunca sus valores.
         registro(f"faltan variables requeridas: {', '.join(faltan)}")
         return Resultado(FAIL_CLOSED, "entrada requerida ausente")
 
     try:
         contexto = validar_contexto_github(entorno)
+        hosts = parsear_alias(entorno["VERCEL_PROMOTION_ALIAS"])
     except ErrorBarrera as error:
         registro(f"barrera del programa: {error}")
         return Resultado(FAIL_CLOSED, str(error))
 
     proyecto = entorno["VERCEL_PROMOTION_PROJECT_ID"]
-    alias = entorno["VERCEL_PROMOTION_ALIAS"]
     esperado = Esperado(
         proyecto=proyecto, sha=contexto.sha, repositorio=contexto.repositorio
     )
@@ -725,9 +743,9 @@ def ejecutar(
         transporte=transporte,
         dormir=dormir,
         reloj=reloj,
-        equipo=entorno.get("VERCEL_PROMOTION_TEAM_ID") or None,
     )
     registro(f"SHA aprobado por el CI: {contexto.sha}")
+    registro(f"dominios productivos a reconciliar: {', '.join(hosts)}")
 
     try:
         validos = seleccionar_candidato(cliente, esperado, registro)
@@ -738,31 +756,18 @@ def ejecutar(
         registro(f"listado sin respuesta concluyente: {error}")
         return Resultado(FAIL_CLOSED, "listado no concluyente")
 
-    # El alias se lee ANTES de concluir nada sobre la disponibilidad. Si ya sirve el
+    # Los alias se leen ANTES de concluir nada sobre la disponibilidad. Si ya sirven el
     # SHA aprobado, ese despliegue estará en `PROMOTED` y por tanto NO aparecerá entre
     # los candidatos: mirar solo la lista daría UNAVAILABLE y se perdería el hecho.
     try:
-        estado_alias = leer_alias(cliente, alias)
+        estados = leer_todos_los_alias(cliente, hosts)
     except (ErrorBarrera, ErrorTransporte) as error:
-        registro(f"no se pudo leer el alias canónico: {error}")
-        return Resultado(FAIL_CLOSED, "alias no legible")
+        registro(f"no se pudo leer algún dominio productivo: {error}")
+        return Resultado(FAIL_CLOSED, "dominio productivo no legible")
 
-    if estado_alias.reconciliado:
-        try:
-            servido = detalle_de(cliente, estado_alias.despliegue)
-        except (ErrorBarrera, ErrorTransporte) as error:
-            # Sin poder leer lo que sirve el alias no se descarta el caso no
-            # atestiguado, así que no se promueve.
-            registro(f"no se pudo leer lo que sirve el alias: {error}")
-            return Resultado(FAIL_CLOSED, "lo servido por el alias no es legible")
-        if el_alias_ya_sirve_el_sha_aprobado(servido, estado_alias, esperado):
-            registro(
-                "el alias YA servía el SHA aprobado antes de esta ejecución. "
-                "No se emite POST. Esto NO acredita que F lo promoviera, ni que la "
-                "publicación esperara la aprobación humana, ni que no hubiera una "
-                "promoción manual fuera del workflow."
-            )
-            return Resultado(ALREADY_CURRENT_UNATTESTED, estado_alias.despliegue)
+    previo = _estado_preexistente(cliente, estados, esperado, registro)
+    if previo is not None:
+        return previo
 
     if not validos:
         registro("cero candidatos promovibles para este SHA; no se promueve nada")
@@ -774,51 +779,112 @@ def ejecutar(
     try:
         respuesta = cliente.post_promocion(proyecto, candidato)
     except ErrorTransporte as error:
-        # Aceptación DESCONOCIDA. La continuidad documentada del timeout de la CLI
-        # no cubre este caso: la petición pudo no llegar a registrarse.
+        # Aceptación DESCONOCIDA: la petición pudo no llegar a registrarse.
         registro(f"POST sin respuesta concluyente ({error}); se pasa a reconciliar")
-        return _desenlace_incierto(cliente, alias, candidato, proyecto, registro)
+        return _desenlace_incierto(cliente, hosts, candidato, proyecto, registro)
     except ErrorBarrera as error:
         registro(f"barrera del POST: {error}")
         return Resultado(FAIL_CLOSED, str(error))
 
     if respuesta.estado in CODIGOS_DE_EXITO_DE_PROMOCION:
-        # Aceptación CONOCIDA. Aquí el reloj solo mide la espera del cliente, y la
-        # promoción sigue su curso aunque venza. Se reconcilia para poder afirmarlo.
         registro(f"promoción aceptada por el servidor ({respuesta.estado})")
-        return _desenlace_incierto(cliente, alias, candidato, proyecto, registro)
+        return _desenlace_incierto(cliente, hosts, candidato, proyecto, registro)
 
     if respuesta.estado in CODIGOS_DE_RECHAZO_DOCUMENTADOS:
         registro(f"promoción rechazada por el servidor ({respuesta.estado})")
         return Resultado(FAIL_CLOSED, f"POST devolvió {respuesta.estado}")
 
-    # Código NO documentado para este endpoint: no se puede afirmar que rechazara.
-    # Declararlo rechazo escondería una promoción que quizá sí ocurrió.
     registro(f"código no documentado tras el POST ({respuesta.estado}); se reconcilia")
-    return _desenlace_incierto(cliente, alias, candidato, proyecto, registro)
+    return _desenlace_incierto(cliente, hosts, candidato, proyecto, registro)
+
+
+def _estado_preexistente(
+    cliente: ClienteVercel,
+    estados: dict[str, EstadoAlias],
+    esperado: Esperado,
+    registro: Registro,
+) -> Resultado | None:
+    """¿Qué servían los dominios ANTES de que esta ejecución hiciera nada?
+
+    Devuelve un Resultado si hay que terminar aquí, o None si se puede seguir.
+    """
+    for host, estado in estados.items():
+        if not estado.reconciliado:
+            registro(f"{host}: alias no reconciliado (deploymentId o projectId nulos)")
+            return Resultado(FAIL_CLOSED, "dominio productivo no reconciliado")
+        if estado.proyecto != esperado.proyecto:
+            registro(f"{host}: projectId {estado.proyecto!r} no es el esperado")
+            return Resultado(FAIL_CLOSED, "dominio productivo de otro proyecto")
+
+    servidos = {e.despliegue for e in estados.values()}
+    if len(servidos) > 1:
+        registro(
+            "los dominios productivos apuntan a despliegues DISTINTOS entre sí: "
+            + ", ".join(f"{h}->{e.despliegue}" for h, e in sorted(estados.items()))
+        )
+        return Resultado(FAIL_CLOSED, "dominios divergentes")
+
+    servido = next(iter(servidos))
+    try:
+        detalle = detalle_de(cliente, servido)
+    except (ErrorBarrera, ErrorTransporte) as error:
+        registro(f"no se pudo leer lo que sirven los dominios: {error}")
+        return Resultado(FAIL_CLOSED, "lo servido por los dominios no es legible")
+
+    if el_alias_ya_sirve_el_sha_aprobado(detalle, servido, esperado):
+        registro(
+            "TODOS los dominios productivos YA servían el SHA aprobado antes de esta "
+            "ejecución. No se emite POST. Esto NO acredita que F lo promoviera, ni que "
+            "la publicación esperara la aprobación humana, ni que no hubiera una "
+            "promoción manual fuera del workflow."
+        )
+        return Resultado(ALREADY_CURRENT_UNATTESTED, servido)
+    return None
+
+
+def el_alias_ya_sirve_el_sha_aprobado(
+    detalle: dict, servido: str, esperado: Esperado
+) -> bool:
+    """¿El despliegue que sirven los dominios está construido del SHA aprobado?
+
+    Predicado DISTINTO del de candidato promovible, y a propósito: aquí NO se mira
+    `readySubstate`. Un despliegue que ya sirve producción está documentado como
+    `PROMOTED`, no como `STAGED`; exigir STAGED haría que este caso nunca se detectara.
+    """
+    if not isinstance(detalle, dict):
+        return False
+    if detalle.get("id") != servido:
+        return False
+    if detalle.get("projectId") != esperado.proyecto:
+        return False
+    if detalle.get("target") != "production":
+        return False
+    return _motivo_de_descarte_del_origen(detalle.get("gitSource"), esperado) is None
 
 
 def _desenlace_incierto(
     cliente: ClienteVercel,
-    alias: str,
+    hosts: tuple[str, ...],
     candidato: str,
     proyecto: str,
     registro: Registro,
 ) -> Resultado:
     """Cierra la ejecución DESPUÉS de que esta corrida haya emitido su único POST.
 
-    Solo se llega aquí con `post_emitido`. Por eso el PROMOTED que sale de aquí sí es
-    atestiguado: hubo un POST de esta ejecución y luego una comprobación del alias.
+    Solo la convergencia COMPLETA de todos los dominios productivos autoriza `PROMOTED`.
+    Una convergencia parcial deja producción a medio camino y es exactamente el estado
+    que no se puede declarar como éxito.
     """
-    if reconciliar(cliente, alias, candidato, proyecto, registro):
-        # Se deja constancia de CÓMO se obtuvo el éxito: por reconciliación posterior
-        # al POST, no por una respuesta concluyente del servidor.
+    resultado = reconciliar(cliente, hosts, candidato, proyecto, registro)
+    if resultado == TODOS:
         registro(
-            "PROMOTED atestiguado: POST de esta ejecución + alias comprobado por "
-            "reconciliación"
+            "PROMOTED atestiguado: POST de esta ejecución + TODOS los dominios "
+            "productivos comprobados en el artefacto aprobado"
         )
         return Resultado(PROMOTED, candidato)
-    registro("UNKNOWN / NO RETRY / REQUIERE RECONCILIACIÓN")
+    registro(
+        f"convergencia {resultado}: UNKNOWN / NO RETRY / REQUIERE RECONCILIACIÓN"
+    )
     return Resultado(UNKNOWN_RECONCILIATION_REQUIRED, candidato)
 
 
@@ -828,9 +894,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         resultado = ejecutar(entorno)
     except BaseException as error:  # noqa: BLE001 - la red de seguridad del secreto
-        # Una excepción inesperada imprimiría un traceback que GitHub Actions publica
-        # en un log de repositorio PÚBLICO. Se corta aquí, se redacta y se sale
-        # cerrado. Perder el traceback es el precio de no arriesgar el token.
+        # Una excepción inesperada imprimiría un traceback que GitHub Actions publica en
+        # un log de repositorio PÚBLICO. Se corta aquí, se redacta y se sale cerrado.
         print(
             redactar(f"fallo no previsto: {type(error).__name__}: {error}", [token]),
             file=sys.stderr,

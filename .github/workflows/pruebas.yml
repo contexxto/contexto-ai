@@ -149,3 +149,80 @@ jobs:
         # El build va DESPUÉS de los tests: si algo está roto, se ve en la prueba
         # que lo nombra, no en un error de compilación difícil de leer.
         run: npm run build
+
+  # ── Promoción a producción ──────────────────────────────────────────────────
+  # VERCEL-RELEASE-CONTROL-F-R1. Implementa R1-R4 de F-02: promover el artefacto del
+  # SHA que aprobó el CI, solo ese, sin reconstruir y solo tras aprobación humana.
+  #
+  # POR QUÉ VIVE AQUÍ Y NO EN SU PROPIO FICHERO: `needs` solo resuelve job_id del
+  # MISMO workflow, y con `workflow_run` en un fichero aparte `github.sha` pasa a ser
+  # "Last commit on default branch" — que NO es el SHA que pasó el CI. R1 se rompería
+  # en silencio. Es la condición C2 de F-02.
+  #
+  # POR QUÉ LA CONDICIÓN VA EN EL JOB Y NO EN EL BLOQUE `on`: este workflow tiene que
+  # seguir disparándose en `pull_request` para servir el check requerido `pytest`.
+  # Restringir el disparador rompería el gate entero. Se filtra aquí.
+  #
+  # LO QUE ESTE JOB NO HACE, dicho de frente: no gobierna el hecho de publicar.
+  # Mientras "Auto-Assign Custom Production Domains" siga en ON —hoy lo está— un
+  # merge a main publica en contexxto.com por su cuenta, por una vía que esto no
+  # controla. Apagarlo es precondición de cutover y está fuera de esta unidad.
+  #
+  # ESTADO DE ESTA UNIDAD: CODE LOCAL READY. El Environment
+  # `contexto-production-promotion` NO existe todavía, ni su secreto ni sus variables.
+  # Hasta que existan, este job no puede ejecutarse: falla cerrado por entrada ausente.
+  promocion-produccion:
+    needs: [pytest, frontend]
+    # success() explícito: si algún día alguien añadiera una función de estado a esta
+    # condición, el success() implícito de `needs` desaparecería sin avisar y el job
+    # correría con el CI en rojo. Declarado, se puede probar.
+    if: >-
+      success() &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # La aprobación humana. Environment NUEVO y propio: "Production" y "Preview" ya
+    # pertenecen a la integración de Vercel y tienen protection_rules VACÍAS, así que
+    # reutilizarlos dejaría el job sin puerta. Es la condición C3 de F-02.
+    environment: contexto-production-promotion
+
+    permissions:
+      contents: read
+
+    # Serializa las promociones sin cancelarlas: cancelar a mitad deja el resultado
+    # indeterminado y sin reconciliar, que es justo el estado que este diseño evita.
+    concurrency:
+      group: promocion-produccion-${{ github.ref }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Traer el código exacto que aprobó el CI
+        uses: actions/checkout@v4
+        with:
+          # El SHA exacto, no la cabeza de la rama: entre el CI y la aprobación humana
+          # pueden haber entrado más commits.
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # Sin paso de instalación: el promotor usa solo biblioteca estándar. Menos
+      # superficie, y nada que se pueda quedar rancio en una caché.
+      - name: Promover el artefacto aprobado
+        env:
+          # Nombre específico a propósito. Un `VERCEL_TOKEN` genérico invitaría a
+          # reutilizar un token de cuenta; C4 de F-02 exige que el secreto sea
+          # exclusivo de este Environment.
+          VERCEL_PROJECT_PROMOTION_TOKEN: ${{ secrets.VERCEL_PROJECT_PROMOTION_TOKEN }}
+          # Identificadores NO secretos. Quedan como referencia: esta unidad no crea
+          # el Environment ni les asigna valores reales.
+          VERCEL_PROMOTION_PROJECT_ID: ${{ vars.VERCEL_PROMOTION_PROJECT_ID }}
+          VERCEL_PROMOTION_ALIAS: ${{ vars.VERCEL_PROMOTION_ALIAS }}
+          VERCEL_PROMOTION_TEAM_ID: ${{ vars.VERCEL_PROMOTION_TEAM_ID }}
+        run: python scripts/promover_produccion.py

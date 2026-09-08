@@ -30,6 +30,20 @@
 # estas tres variables, 27 archivos de test ni siquiera llegan a recolectarse.
 # Con ellas, la suite pasa entera. No apuntan a ninguna base: las pruebas son
 # offline y no abren conexión — solo necesitan que la configuración valide.
+#
+# POR QUÉ LAS ACCIONES VAN FIJADAS POR SHA Y NO POR `@v4`: `v4` es un tag MÓVIL. Quien
+# controle el repositorio de la acción puede reapuntarlo cuando quiera, y el runner
+# ejecutaría código distinto sin que cambie una sola línea de este fichero. Para los dos
+# jobs del gate eso ya sería malo; para `promocion-produccion` es la puerta entera:
+# un humano aprueba un despliegue mirando un SHA de ESTE repositorio, y el job corre
+# después con un token de promoción de Vercel en el entorno. Si la acción puede cambiar
+# entre la aprobación y la ejecución, lo aprobado no es lo que corre — que es
+# exactamente la fuga que R1 y R4 existen para cerrar.
+#
+# El SHA es la única referencia inmutable que admite `uses:`. La versión legible va en el
+# comentario de cada línea: sin ella nadie sabe qué se está actualizando cuando toque
+# subir. Para mover una acción: resolver el tag nuevo con `git ls-remote --tags`, cambiar
+# SHA y comentario a la vez, y dejar que el PR lo revise.
 name: pruebas
 
 on:
@@ -76,10 +90,10 @@ jobs:
 
     steps:
       - name: Traer el código
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
       - name: Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
         with:
           # Coincide con el Dockerfile (python:3.11-slim). Si el runtime de
           # producción sube de versión, esta línea sube con él.
@@ -127,10 +141,10 @@ jobs:
 
     steps:
       - name: Traer el código
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
       - name: Node 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
         with:
           # El repo no fija versión de Node en ningún sitio (ni package.json, ni
           # Dockerfile, ni Vercel). Se fija aquí una LTS que cumple el mínimo de
@@ -206,7 +220,7 @@ jobs:
 
     steps:
       - name: Traer el código exacto que aprobó el CI
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
         with:
           # El SHA exacto, no la cabeza de la rama: entre el CI y la aprobación humana
           # pueden haber entrado más commits.
@@ -214,7 +228,7 @@ jobs:
           persist-credentials: false
 
       - name: Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
         with:
           python-version: '3.11'
 

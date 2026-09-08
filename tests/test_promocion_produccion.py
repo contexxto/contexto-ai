@@ -147,14 +147,21 @@ def detalle(uid: str, sha: str = SHA_BUENO, origen=None, **cambios) -> dict:
     return {k: v for k, v in cuerpo.items() if v is not _QUITAR}
 
 
-def cuerpo_alias(host: str, uid: str, proyecto: str = PROYECTO) -> dict:
-    return {
+def cuerpo_alias(host: str, uid: str = "dpl_previo", proyecto: str = PROYECTO, **cambios) -> dict:
+    """Cuerpo del 200 de GET /v4/aliases/{idOrAlias}, con sus cinco campos requeridos.
+
+    `**cambios` y `_QUITAR` siguen el mismo idioma que `detalle()` e `item_listado()`:
+    sirven para construir cuerpos que INCUMPLEN el contrato sin escribirlos a mano.
+    """
+    cuerpo = {
         "alias": host,
         "created": "x",
         "uid": f"alias_{host}",
         "deploymentId": uid,
         "projectId": proyecto,
     }
+    cuerpo.update(cambios)
+    return {k: v for k, v in cuerpo.items() if v is not _QUITAR}
 
 
 def ronda(uid_a, uid_b=None, proyecto=PROYECTO):
@@ -350,6 +357,37 @@ def test_los_dos_ya_actuales_antes_del_post_es_no_atestiguado(promotor):
     assert "NO acredita" in salida
 
 
+@pytest.mark.parametrize("substate", ["PROMOTED", "STAGED", "ROLLING"])
+def test_la_deteccion_de_lo_ya_servido_no_depende_del_readySubstate(promotor, substate):
+    """Los TRES valores del enum deben dar el MISMO veredicto.
+
+    Esta prueba existía y la reescritura de R2 la perdió al cambiar el doble de `alias=`
+    a `rondas=`. Se restaura como paramétrica y no como bucle: un bucle se detiene en el
+    primer valor que falla y solo informa de uno, así que oculta si los otros dos también
+    están rotos.
+
+    Lo que fija es que la detección de «esto ya estaba servido» NO puede colgar de
+    `readySubstate`. Un despliegue que ya sirve producción está documentado como
+    `PROMOTED`, no como `STAGED`; una versión anterior solo miraba candidatos `STAGED`,
+    veía cero y terminaba en `UNAVAILABLE` sin llegar a leer el alias, de modo que el
+    caso ni se detectaba. Por eso el listado va VACÍO aquí: si la detección dependiera
+    del listado o del substate, no habría veredicto que dar.
+    """
+    transporte = Transporte(
+        promotor,
+        paginas=[([], None)],
+        detalles={"dpl_servido": detalle("dpl_servido", readySubstate=substate)},
+        rondas=[ronda("dpl_servido")],
+    )
+    resultado, salida = correr(promotor, transporte)
+    assert resultado.estado == promotor.ALREADY_CURRENT_UNATTESTED, substate
+    assert resultado.codigo != 0, "no puede terminar verde"
+    assert resultado.estado != promotor.PROMOTED
+    assert resultado.estado != promotor.UNAVAILABLE
+    assert transporte.posts == 0
+    assert "NO acredita" in salida
+
+
 def test_solo_UNO_actual_antes_del_post_es_fail_closed_sin_post(promotor):
     """Convergencia parcial PREEXISTENTE: no se promueve, y no se disimula."""
     transporte = Transporte(
@@ -448,10 +486,15 @@ def test_cuerpo_de_alias_que_no_es_objeto_es_fail_closed(promotor, host_malo, cu
 
 @pytest.mark.parametrize("host_malo", [ALIAS_A, ALIAS_B])
 def test_identificadores_de_alias_que_no_son_cadena_no_reconcilian(promotor, host_malo):
-    """Defensa contra confusión de tipos: un 7 no es un identificador de despliegue."""
+    """Defensa contra confusión de tipos, vista DESDE FUERA: un 7 no promueve nada.
+
+    Esta prueba afirma el DESENLACE, y por sí sola no verifica la guarda de tipos: el
+    mismo `FAIL_CLOSED` se alcanza por otro camino —el `projectId` ajeno— si la guarda
+    desaparece. Se conserva porque el desenlace también hay que fijarlo; quien verifica
+    la guarda es `test_leer_alias_anula_un_deploymentId_que_no_es_cadena_util`.
+    """
     r = ronda("dpl_previo")
-    r[host_malo] = (200, {"alias": host_malo, "created": "x", "uid": "a",
-                          "deploymentId": 7, "projectId": 8})
+    r[host_malo] = (200, cuerpo_alias(host_malo, uid=7, proyecto=8))
     transporte = Transporte(
         promotor,
         paginas=[([item_listado("dpl_1")], None)],
@@ -462,6 +505,315 @@ def test_identificadores_de_alias_que_no_son_cadena_no_reconcilian(promotor, hos
     resultado, _ = correr(promotor, transporte)
     assert resultado.estado == promotor.FAIL_CLOSED
     assert transporte.posts == 0
+
+
+# ── (A1) `leer_alias` probada DIRECTAMENTE ─────────────────────────────────────
+# Por qué hace falta este doble y no basta con `Transporte`: una prueba que solo afirma
+# el desenlace no puede verificar una guarda cuando otra guarda produce ese MISMO
+# desenlace. Medido: con la guarda de tipos el motivo es «no reconciliado» y sin ella es
+# «de otro proyecto», pero los dos son FAIL_CLOSED con cero POST, así que la mutación
+# sobrevivía. Para probar una guarda hay que afirmar su efecto, no el del sistema entero.
+
+
+class ClienteDeAlias:
+    """Cliente mínimo: `leer_alias` solo necesita `.get()`. No toca la red."""
+
+    def __init__(self, promotor, cuerpo, estado=200):
+        self.p = promotor
+        self.cuerpo = cuerpo
+        self.estado = estado
+        self.rutas: list[str] = []
+
+    def get(self, ruta, consulta=None):
+        self.rutas.append(ruta)
+        return self.p.Respuesta(self.estado, self.cuerpo)
+
+
+@pytest.mark.parametrize(
+    "valor",
+    [7, 0, 7.5, True, False, None, ["dpl_x"], {"id": "dpl_x"}, b"dpl_x", "", ()],
+)
+def test_leer_alias_anula_un_deploymentId_que_no_es_cadena_util(promotor, valor):
+    cliente = ClienteDeAlias(promotor, cuerpo_alias(ALIAS_A, uid=valor))
+    estado = promotor.leer_alias(cliente, ALIAS_A)
+    assert estado.despliegue is None, f"{valor!r} no es un identificador de despliegue"
+    assert estado.reconciliado is False
+
+
+@pytest.mark.parametrize(
+    "valor",
+    [8, 0, 8.5, True, False, None, ["prj_x"], {"id": "prj_x"}, b"prj_x", "", ()],
+)
+def test_leer_alias_anula_un_projectId_que_no_es_cadena_util(promotor, valor):
+    cliente = ClienteDeAlias(promotor, cuerpo_alias(ALIAS_A, proyecto=valor))
+    estado = promotor.leer_alias(cliente, ALIAS_A)
+    assert estado.proyecto is None, f"{valor!r} no es un identificador de proyecto"
+    assert estado.reconciliado is False
+
+
+def test_leer_alias_CONSERVA_los_identificadores_cuando_si_son_cadena(promotor):
+    """El contrapunto obligatorio: la guarda anula lo inválido, no lo válido."""
+    cliente = ClienteDeAlias(promotor, cuerpo_alias(ALIAS_A, uid="dpl_x"))
+    estado = promotor.leer_alias(cliente, ALIAS_A)
+    assert estado.despliegue == "dpl_x"
+    assert estado.proyecto == PROYECTO
+    assert estado.reconciliado is True
+
+
+@pytest.mark.parametrize(
+    "devuelto,motivo",
+    [
+        (_QUITAR, "campo ausente"),
+        (None, "nulo"),
+        (7, "entero"),
+        (["contexxto.com"], "lista"),
+        ({"alias": "contexxto.com"}, "objeto"),
+        (b"contexxto.com", "bytes"),
+    ],
+)
+def test_leer_alias_rechaza_un_campo_alias_que_no_es_cadena(promotor, devuelto, motivo):
+    """`alias` es REQUERIDO en el 200 documentado: sin él no hay lectura que interpretar."""
+    cliente = ClienteDeAlias(promotor, cuerpo_alias(ALIAS_A, alias=devuelto))
+    with pytest.raises(promotor.ErrorBarrera) as error:
+        promotor.leer_alias(cliente, ALIAS_A)
+    assert "alias" in str(error.value), motivo
+
+
+@pytest.mark.parametrize(
+    "otro",
+    [ALIAS_B, "contexxto.com.ejemplo.test", "www.contexxto.com", "contexxto.co", ""],
+)
+def test_leer_alias_rechaza_la_respuesta_de_OTRO_dominio(promotor, otro):
+    cliente = ClienteDeAlias(promotor, cuerpo_alias(ALIAS_A, alias=otro))
+    with pytest.raises(promotor.ErrorBarrera) as error:
+        promotor.leer_alias(cliente, ALIAS_A)
+    assert ALIAS_A in str(error.value)
+    assert otro.lower() in str(error.value)
+
+
+@pytest.mark.parametrize("variante", ["CONTEXXTO.COM", "Contexxto.Com", "contexxto.COM"])
+def test_leer_alias_acepta_el_mismo_host_en_otras_mayusculas(promotor, variante):
+    """DNS no distingue mayúsculas: `CONTEXXTO.COM` ES contexxto.com, no otro host.
+
+    Fallar cerrado aquí sería fallar por una diferencia que no existe. La tolerancia es
+    exactamente esa y ninguna más: cualquier otro carácter distinto es otro dominio.
+
+    MEDIDO, para que la tolerancia no se lea como más ancha de lo que es: bajo `.lower()`
+    la única letra ASCII alcanzable desde un carácter no ASCII es `k` (U+212A), y ninguno
+    de los dos dominios fijados lleva `k`, así que hoy la comparación es exacta para
+    ellos. El mecanismo sí es real, y por eso se exige además que el alias devuelto sea
+    ASCII: el día que se añada un dominio con `k`, la guarda ya está puesta.
+    """
+    cliente = ClienteDeAlias(promotor, cuerpo_alias(ALIAS_A, alias=variante))
+    estado = promotor.leer_alias(cliente, ALIAS_A)
+    assert estado.reconciliado is True
+
+
+def test_leer_alias_normaliza_tambien_el_host_PEDIDO(promotor):
+    """La tolerancia tiene DOS lados y hay que anclar los dos.
+
+    `solicitado = alias.lower()` normaliza lo que se pregunta; `devuelto.lower()`
+    normaliza lo que se responde. Las pruebas de arriba solo mueven el lado devuelto,
+    porque `ALIAS_A` ya viene en minúsculas: quitar el `.lower()` del lado pedido no las
+    rompía. Esta sí.
+    """
+    cliente = ClienteDeAlias(promotor, cuerpo_alias(ALIAS_A, "dpl_x"))
+    estado = promotor.leer_alias(cliente, ALIAS_A.upper())
+    assert estado.despliegue == "dpl_x"
+    assert estado.reconciliado is True
+
+
+@pytest.mark.parametrize(
+    "devuelto,pedido,pliegue",
+    [
+        # U+212A KELVIN SIGN se minusculiza a `k`. Es el UNICO caracter no ASCII que
+        # bajo `.lower()` alcanza una letra ASCII; esta barrido y medido.
+        ("contexxto\u212Ao.test", "contexxtoko.test", "Kelvin -> k"),
+        ("\u212A.test", "k.test", "Kelvin al principio"),
+        # U+1E9E LATIN CAPITAL LETTER SHARP S se minusculiza a la ss alemana. El pedido
+        # tampoco seria ASCII, asi que este caso no representa una configuracion real:
+        # esta para fijar que la guarda mira el ALIAS DEVUELTO y no el pedido.
+        ("ma\u1E9Ea.test", "ma\u00DFa.test", "sharp S -> eszett"),
+    ],
+)
+def test_leer_alias_rechaza_un_alias_devuelto_que_no_es_ASCII(
+    promotor, devuelto, pedido, pliegue
+):
+    """El plegado Unicode puede hacer pasar por igual a dos hosts DISTINTOS.
+
+    Cada caso es un host devuelto que NO es el pedido y que, sin esta guarda, se volveria
+    igual a el al minusculizarlo. Por eso discrimina: quitar el `isascii()` deja pasar la
+    lectura en vez de cerrarla.
+
+    MEDIDO barriendo todos los puntos de codigo: bajo `.lower()` la unica letra ASCII
+    alcanzable desde un caracter no ASCII es `k`, desde U+212A. Ninguno de los dos
+    dominios fijados hoy lleva `k`, asi que esto no arregla un fallo vivo. Cierra la
+    CLASE: el dia que se anada un dominio con `k`, la trampa se activaria sin que nadie
+    la viera.
+    """
+    assert devuelto.lower() == pedido, f"el caso no ejerce el pliegue: {pliegue}"
+    cliente = ClienteDeAlias(promotor, cuerpo_alias(devuelto, "dpl_x"))
+    with pytest.raises(promotor.ErrorBarrera) as error:
+        promotor.leer_alias(cliente, pedido)
+    assert "ASCII" in str(error.value)
+
+
+@pytest.mark.parametrize("estado", [201, 202, 204, 301, 302, 400, 401, 403, 404, 500, 503])
+def test_leer_alias_exige_un_200_aunque_el_cuerpo_sea_IMPECABLE(promotor, estado):
+    """REGRESIÓN QUE INTRODUJO LA LIGADURA, y por eso esta prueba existe.
+
+    Antes de R4, la guarda `estado != 200` la verificaba de rebote una prueba que
+    respondía 403 con `{"error": "x"}`: sin la guarda, ese cuerpo no traía `deploymentId`
+    ni `projectId`, el alias quedaba sin reconciliar y se fallaba igual. Al añadir la
+    ligadura, ese cuerpo pasa a morir ANTES, por el campo `alias` ausente —mismo
+    desenlace, guarda distinta—, y la mutación que borra la guarda de estado se volvió
+    INERTE. Es el mismo patrón que dejó viva la mutación 49: una guarda nueva aguas abajo
+    enmascara a la de aguas arriba, y el arnés lo dice si se reejecuta.
+
+    El cuerpo de aquí es deliberadamente VÁLIDO: pasa la ligadura, pasa las guardas de
+    tipo, y lo único que puede rechazarlo es el código de estado.
+    """
+    cliente = ClienteDeAlias(promotor, cuerpo_alias(ALIAS_A, "dpl_x"), estado=estado)
+    with pytest.raises(promotor.ErrorBarrera) as error:
+        promotor.leer_alias(cliente, ALIAS_A)
+    assert str(estado) in str(error.value)
+
+
+def test_leer_alias_pregunta_por_el_host_PEDIDO(promotor):
+    cliente = ClienteDeAlias(promotor, cuerpo_alias(ALIAS_B))
+    promotor.leer_alias(cliente, ALIAS_B)
+    assert cliente.rutas == [f"/v4/aliases/{ALIAS_B}"]
+
+
+def test_leer_alias_ESCAPA_el_host_en_la_ruta(promotor):
+    """El nombre de la prueba anterior decia «y escapa la ruta» y no lo comprobaba: los
+    dos dominios productivos no llevan ningun caracter que haya que escapar, asi que
+    quitar `urllib.parse.quote` no rompia nada. Aqui si.
+
+    El host de este caso NO puede venir de la configuracion —`parsear_alias` rechaza los
+    que llevan `/` o espacios—, asi que el escapado es defensa en profundidad y no un
+    requisito vivo. Se prueba igual porque una funcion que compone una URL con un dato
+    ajeno tiene que escaparlo, venga de donde venga.
+    """
+    raro = "a/b?c=1&d.test"
+    cliente = ClienteDeAlias(promotor, cuerpo_alias(raro))
+    promotor.leer_alias(cliente, raro)
+    assert cliente.rutas == ["/v4/aliases/a%2Fb%3Fc%3D1%26d.test"]
+    assert "/" not in cliente.rutas[0].split("/v4/aliases/")[1]
+
+
+# ── (A2) la ligadura respuesta ↔ dominio, vista desde fuera ────────────────────
+
+
+@pytest.mark.parametrize("host_malo", [ALIAS_A, ALIAS_B])
+def test_una_respuesta_de_OTRO_dominio_ANTES_del_post_es_fail_closed_sin_post(
+    promotor, host_malo
+):
+    otro = ALIAS_B if host_malo == ALIAS_A else ALIAS_A
+    r = ronda("dpl_previo")
+    r[host_malo] = (200, cuerpo_alias(otro, "dpl_previo"))
+    transporte = Transporte(
+        promotor,
+        paginas=[([item_listado("dpl_1")], None)],
+        detalles={"dpl_1": detalle("dpl_1")},
+        rondas=[r],
+        post=(202, None),
+    )
+    resultado, salida = correr(promotor, transporte)
+    assert resultado.estado == promotor.FAIL_CLOSED
+    assert transporte.posts == 0
+    assert resultado.detalle == "dominio productivo no legible"
+    assert "se preguntó por" in salida
+
+
+@pytest.mark.parametrize("host_malo", [ALIAS_A, ALIAS_B])
+@pytest.mark.parametrize(
+    "alias_devuelto,motivo",
+    [(_QUITAR, "ausente"), (None, "nulo"), (7, "no cadena")],
+)
+def test_un_campo_alias_invalido_ANTES_del_post_es_fail_closed_sin_post(
+    promotor, host_malo, alias_devuelto, motivo
+):
+    r = ronda("dpl_previo")
+    r[host_malo] = (200, cuerpo_alias(host_malo, "dpl_previo", alias=alias_devuelto))
+    transporte = Transporte(
+        promotor,
+        paginas=[([item_listado("dpl_1")], None)],
+        detalles={"dpl_1": detalle("dpl_1")},
+        rondas=[r],
+        post=(202, None),
+    )
+    resultado, _ = correr(promotor, transporte)
+    assert resultado.estado == promotor.FAIL_CLOSED, motivo
+    assert transporte.posts == 0
+
+
+@pytest.mark.parametrize("host_malo", [ALIAS_A, ALIAS_B])
+def test_una_respuesta_de_OTRO_dominio_DESPUES_del_post_es_unknown_con_un_solo_post(
+    promotor, host_malo
+):
+    otro = ALIAS_B if host_malo == ALIAS_A else ALIAS_A
+    segunda = ronda("dpl_1")
+    segunda[host_malo] = (200, cuerpo_alias(otro, "dpl_1"))
+    transporte = Transporte(
+        promotor,
+        paginas=[([item_listado("dpl_1")], None)],
+        detalles={"dpl_1": detalle("dpl_1")},
+        rondas=[ronda("dpl_previo"), segunda],
+        post=(202, None),
+    )
+    resultado, _ = correr(promotor, transporte)
+    assert resultado.estado == promotor.UNKNOWN_RECONCILIATION_REQUIRED
+    assert resultado.estado != promotor.PROMOTED
+    assert transporte.posts == 1, "el POST ya se emitió: no se emite otro"
+
+
+@pytest.mark.parametrize("host_malo", [ALIAS_A, ALIAS_B])
+@pytest.mark.parametrize(
+    "alias_devuelto,motivo",
+    [(_QUITAR, "ausente"), (None, "nulo"), (7, "no cadena")],
+)
+def test_un_campo_alias_invalido_DESPUES_del_post_es_unknown_con_un_solo_post(
+    promotor, host_malo, alias_devuelto, motivo
+):
+    segunda = ronda("dpl_1")
+    segunda[host_malo] = (200, cuerpo_alias(host_malo, "dpl_1", alias=alias_devuelto))
+    transporte = Transporte(
+        promotor,
+        paginas=[([item_listado("dpl_1")], None)],
+        detalles={"dpl_1": detalle("dpl_1")},
+        rondas=[ronda("dpl_previo"), segunda],
+        post=(202, None),
+    )
+    resultado, _ = correr(promotor, transporte)
+    assert resultado.estado == promotor.UNKNOWN_RECONCILIATION_REQUIRED, motivo
+    assert transporte.posts == 1
+
+
+def test_los_dos_dominios_devolviendo_el_MISMO_host_no_es_convergencia(promotor):
+    """EL fail-open que cierra la ligadura, reproducido.
+
+    Los dos dominios responden con el registro de `ALIAS_A`, ya apuntando al artefacto
+    aprobado. Sin ligar la respuesta a la pregunta, `clasificar_convergencia` vería dos
+    estados idénticos y buenos, diría TODOS, y el programa declararía `PROMOTED`
+    habiendo acreditado UN solo dominio. La convergencia de dos se cumpliría con la
+    evidencia de uno, que es justo lo que R2 existe para impedir.
+    """
+    falsa = {
+        ALIAS_A: (200, cuerpo_alias(ALIAS_A, "dpl_1")),
+        ALIAS_B: (200, cuerpo_alias(ALIAS_A, "dpl_1")),
+    }
+    transporte = Transporte(
+        promotor,
+        paginas=[([item_listado("dpl_1")], None)],
+        detalles={"dpl_1": detalle("dpl_1")},
+        rondas=[ronda("dpl_previo"), falsa],
+        post=(202, None),
+    )
+    resultado, _ = correr(promotor, transporte)
+    assert resultado.estado == promotor.UNKNOWN_RECONCILIATION_REQUIRED
+    assert resultado.estado != promotor.PROMOTED
+    assert transporte.posts == 1
 
 
 @pytest.mark.parametrize("host_malo", [ALIAS_A, ALIAS_B])

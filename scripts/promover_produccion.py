@@ -92,6 +92,9 @@ campo que el contrato declara OPCIONAL se trata aquí como ausente-hasta-que-se-
       required: alias, created, deploymentId, projectId, uid.
       deploymentId y projectId son además nullable: un `null` es NO RECONCILIADO, jamás
       una coincidencia.
+      Que `alias` sea REQUERIDO es lo que permite LIGAR cada respuesta al dominio por el
+      que se preguntó. Sin esa ligadura, dos dominios que devolvieran el registro del
+      mismo host darían una convergencia `TODOS` acreditando uno solo.
 
 POR QUÉ SOLO BIBLIOTECA ESTÁNDAR: el job de promoción no instala requirements. urllib
 basta y no añade superficie. El transporte es inyectable para que las pruebas jamás
@@ -615,12 +618,52 @@ def leer_alias(cliente: ClienteVercel, alias: str) -> EstadoAlias:
     """Lectura CANÓNICA. GET /v2/deployments/{id}/aliases no sirve para esto: no
     devuelve deploymentId ni projectId, así que solo corrobora una hipótesis ya formada.
     Aquí hace falta producir la identidad, no confirmarla."""
+    solicitado = alias.lower()
     respuesta = cliente.get(f"/v4/aliases/{urllib.parse.quote(alias, safe='')}")
     if respuesta.estado != 200:
         raise ErrorBarrera(f"lectura del alias devolvió {respuesta.estado}")
     cuerpo = respuesta.cuerpo
     if not isinstance(cuerpo, dict):
         raise ErrorBarrera("alias con cuerpo que no es un objeto")
+
+    # LIGADURA de la respuesta a la pregunta. Sin esto, lo único que ata un cuerpo a un
+    # dominio es que `leer_todos_los_alias` lo guarde bajo esa clave; el cuerpo mismo
+    # nunca se comprueba. Y ahí hay un fail-open contra la garantía CENTRAL de R2: si
+    # los dos dominios devolvieran el registro del MISMO host, `clasificar_convergencia`
+    # vería dos estados idénticos, diría TODOS, y se declararía `PROMOTED` habiendo
+    # acreditado un solo dominio. La convergencia de dos se cumpliría con la evidencia
+    # de uno.
+    #
+    # No es una comprobación gratuita: `alias` es REQUERIDO en el 200 de
+    # GET /v4/aliases/{idOrAlias}, así que un cuerpo sin él ya incumple el contrato y no
+    # hay lectura válida que descartar. Se compara sin distinguir mayúsculas porque los
+    # nombres de host no las distinguen; cualquier otra diferencia es un host distinto.
+    devuelto = cuerpo.get("alias")
+    if not isinstance(devuelto, str):
+        raise ErrorBarrera(
+            f"la respuesta de {solicitado} no trae un campo `alias` que sea cadena"
+        )
+    # ASCII antes de minusculizar. `.lower()` PLIEGA caracteres: sin esta linea, un alias
+    # devuelto que NO es el host pedido puede volverse igual a el al minusculizarlo.
+    #
+    # MEDIDO, barriendo los 1 114 112 puntos de codigo: bajo `.lower()` la unica letra
+    # ASCII alcanzable desde un caracter no ASCII es `k`, desde U+212A KELVIN SIGN. Y
+    # ninguno de los dos dominios fijados hoy lleva una `k`, asi que esta guarda NO
+    # arregla un fallo vivo. Cierra la CLASE: el dia que se anada un dominio con `k` la
+    # trampa se activaria sin que nadie la viera, y ese dia esta linea ya esta puesta.
+    #
+    # No rechaza nada legitimo: Vercel guarda los dominios internacionalizados en
+    # punycode, que es ASCII. Se exige del alias DEVUELTO, que es el dato que no
+    # controlamos; el pedido sale de DOMINIOS_PRODUCTIVOS, fijado en git.
+    if not devuelto.isascii():
+        raise ErrorBarrera(
+            f"la respuesta de {solicitado} trae un alias que no es ASCII: {devuelto!r}"
+        )
+    if devuelto.lower() != solicitado:
+        raise ErrorBarrera(
+            f"se preguntó por {solicitado} y la respuesta describe a {devuelto.lower()}"
+        )
+
     despliegue = cuerpo.get("deploymentId")
     proyecto = cuerpo.get("projectId")
     return EstadoAlias(

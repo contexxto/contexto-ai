@@ -15,6 +15,7 @@ existía— y eso es un ImportError, NO un rojo de comportamiento. Lo que demues
 discriminan son las mutaciones del informe.
 """
 
+import contextlib
 import importlib.util
 import io
 import pathlib
@@ -37,20 +38,43 @@ REPO = "contexxto/contexto-ai"
 TOKEN = "tok_sintetico_no_es_un_secreto_real_0123456789"
 
 
-@pytest.fixture(scope="module")
-def promotor():
-    spec = importlib.util.spec_from_file_location("promover_produccion", _RUTA)
+_AUSENTE = object()
+
+
+@contextlib.contextmanager
+def cargar_por_ruta(nombre: str, ruta: pathlib.Path):
+    """Carga un módulo por ruta y DEJA `sys.modules` exactamente como estaba.
+
+    Registrar antes de ejecutar es obligatorio: el módulo usa
+    `from __future__ import annotations`, así que las anotaciones son cadenas y
+    dataclasses necesita resolverlas contra un módulo presente en `sys.modules`.
+
+    Pero dejar ese registro puesto contamina el resto de la sesión de pytest: es estado
+    global que sobrevive a este fichero y podría crear una dependencia de orden entre
+    ficheros de prueba. Por eso se restaura el estado previo en `finally`, sea cual sea
+    el desenlace, distinguiendo «no estaba» de «estaba con otro valor».
+
+    Vive como función propia, y no dentro de la fixture, para que se pueda probar
+    directamente: una restauración que solo se ejercita de rebote no está probada.
+    """
+    spec = importlib.util.spec_from_file_location(nombre, ruta)
     modulo = importlib.util.module_from_spec(spec)
-    # Registrar ANTES de ejecutar: el módulo usa `from __future__ import annotations`,
-    # así que las anotaciones son cadenas y dataclasses necesita resolverlas contra un
-    # módulo presente en sys.modules.
-    sys.modules[spec.name] = modulo
+    previo = sys.modules.get(nombre, _AUSENTE)
+    sys.modules[nombre] = modulo
     try:
         spec.loader.exec_module(modulo)
-    except Exception:
-        del sys.modules[spec.name]
-        raise
-    return modulo
+        yield modulo
+    finally:
+        if previo is _AUSENTE:
+            sys.modules.pop(nombre, None)
+        else:
+            sys.modules[nombre] = previo
+
+
+@pytest.fixture(scope="module")
+def promotor():
+    with cargar_por_ruta("promover_produccion", _RUTA) as modulo:
+        yield modulo
 
 
 # ── Dobles ─────────────────────────────────────────────────────────────────────
@@ -394,6 +418,53 @@ def test_cualquier_dominio_de_otro_proyecto_es_fail_closed(promotor, host_malo):
 
 
 @pytest.mark.parametrize("host_malo", [ALIAS_A, ALIAS_B])
+@pytest.mark.parametrize(
+    "cuerpo,motivo",
+    [
+        ((200, ["no", "es", "objeto"]), "cuerpo que no es objeto"),
+        ((200, "una cadena"), "cuerpo que es cadena"),
+        ((200, None), "cuerpo vacío"),
+    ],
+)
+def test_cuerpo_de_alias_que_no_es_objeto_es_fail_closed(promotor, host_malo, cuerpo, motivo):
+    """Regresión que reintrodujo la reescritura de R2 y que el arnés de 63 destapó.
+
+    La guarda `isinstance(cuerpo, dict)` de `leer_alias` había quedado sin ninguna
+    prueba que la ejercitara: su mutación nacía inerte.
+    """
+    r = ronda("dpl_previo")
+    r[host_malo] = cuerpo
+    transporte = Transporte(
+        promotor,
+        paginas=[([item_listado("dpl_1")], None)],
+        detalles={"dpl_1": detalle("dpl_1")},
+        rondas=[r],
+        post=(202, None),
+    )
+    resultado, _ = correr(promotor, transporte)
+    assert resultado.estado == promotor.FAIL_CLOSED, motivo
+    assert transporte.posts == 0
+
+
+@pytest.mark.parametrize("host_malo", [ALIAS_A, ALIAS_B])
+def test_identificadores_de_alias_que_no_son_cadena_no_reconcilian(promotor, host_malo):
+    """Defensa contra confusión de tipos: un 7 no es un identificador de despliegue."""
+    r = ronda("dpl_previo")
+    r[host_malo] = (200, {"alias": host_malo, "created": "x", "uid": "a",
+                          "deploymentId": 7, "projectId": 8})
+    transporte = Transporte(
+        promotor,
+        paginas=[([item_listado("dpl_1")], None)],
+        detalles={"dpl_1": detalle("dpl_1")},
+        rondas=[r],
+        post=(202, None),
+    )
+    resultado, _ = correr(promotor, transporte)
+    assert resultado.estado == promotor.FAIL_CLOSED
+    assert transporte.posts == 0
+
+
+@pytest.mark.parametrize("host_malo", [ALIAS_A, ALIAS_B])
 def test_cualquier_dominio_ilegible_es_fail_closed(promotor, host_malo):
     r = ronda("dpl_previo")
     r[host_malo] = (403, {"error": "x"})
@@ -426,33 +497,122 @@ def test_se_consultan_LOS_DOS_dominios_y_ninguno_mas(promotor):
 # ── (B) la lista de dominios · configuración ───────────────────────────────────
 
 
+def test_el_conjunto_de_dominios_esta_fijado_en_git(promotor):
+    """La autoridad es el repositorio, no la consola.
+
+    Una variable del Environment se cambia sin revisión y sin dejar rastro; el conjunto
+    fijado en el fuente solo cambia con un commit, que pasa por el CI y por el PR.
+    """
+    assert promotor.DOMINIOS_PRODUCTIVOS == (ALIAS_A, ALIAS_B)
+    fuente = _RUTA.read_text(encoding="utf-8")
+    assert ALIAS_A in fuente and ALIAS_B in fuente
+
+
 @pytest.mark.parametrize(
     "valor,motivo",
     [
-        (ALIAS_A, "un solo dominio"),
-        (f"{ALIAS_A},", "un solo dominio con coma sobrante"),
-        (f"{ALIAS_A},{ALIAS_A}", "el mismo dominio repetido"),
+        (ALIAS_A, "falta el segundo dominio"),
+        (ALIAS_B, "falta el primero"),
+        (f"{ALIAS_A},", "uno solo con coma sobrante"),
+        (f"{ALIAS_A},{ALIAS_A}", "el mismo repetido: sigue siendo uno"),
         (" , ", "solo separadores"),
+        (f"{ALIAS_A},{ALIAS_B},otro.example.com", "un dominio DE MÁS"),
+        (f"{ALIAS_A},preview.example.com", "un dominio ajeno en vez del segundo"),
+        ("otro.example.com,tercero.example.com", "dos dominios, pero los equivocados"),
+        (f"{ALIAS_A},{ALIAS_B.replace('six','seven')}", "un dominio casi igual"),
     ],
 )
-def test_menos_de_dos_dominios_es_fail_closed(promotor, valor, motivo):
-    """Con un solo dominio no se distingue la convergencia completa de la parcial."""
+def test_solo_el_conjunto_EXACTO_se_acepta(promotor, valor, motivo):
+    """Exigir «al menos dos» no bastaba: dos dominios cualesquiera pasaban el filtro."""
     transporte = Transporte(promotor)
     resultado, salida = correr(promotor, transporte, entorno(VERCEL_PROMOTION_ALIAS=valor))
     assert resultado.estado == promotor.FAIL_CLOSED, motivo
     assert transporte.llamadas == [], "no se llama a nada con la lista mal formada"
-    assert "al menos" in salida or "requeridas" in salida
+    assert "no coincide con la fijada en git" in salida or "requeridas" in salida
 
 
-def test_la_lista_se_normaliza_y_deduplica(promotor):
-    hosts = promotor.parsear_alias(f"  {ALIAS_A.upper()} , {ALIAS_B} ,{ALIAS_A} ")
-    assert hosts == (ALIAS_A, ALIAS_B)
+def test_el_mensaje_dice_QUE_sobra_y_QUE_falta(promotor):
+    transporte = Transporte(promotor)
+    _, salida = correr(
+        promotor, transporte, entorno(VERCEL_PROMOTION_ALIAS=f"{ALIAS_A},ajeno.example.com")
+    )
+    assert "sobran" in salida and "ajeno.example.com" in salida
+    assert "faltan" in salida and ALIAS_B in salida
+
+
+def test_la_lista_se_normaliza_deduplica_y_no_depende_del_orden(promotor):
+    # mayúsculas, espacios, duplicados y orden invertido: todo da el conjunto fijado,
+    # y SIEMPRE en el orden de git, para que la variable no pueda alterar la conducta.
+    for variante in (
+        f"  {ALIAS_A.upper()} , {ALIAS_B} ,{ALIAS_A} ",
+        f"{ALIAS_B},{ALIAS_A}",
+        f"{ALIAS_B.upper()} , {ALIAS_A}",
+    ):
+        assert promotor.parsear_alias(variante) == (ALIAS_A, ALIAS_B), variante
+
+
+def test_el_orden_configurado_no_cambia_el_resultado(promotor):
+    transporte = guion_nominal(promotor)
+    resultado, _ = correr(
+        promotor, transporte, entorno(VERCEL_PROMOTION_ALIAS=f"{ALIAS_B},{ALIAS_A}")
+    )
+    assert resultado.estado == promotor.PROMOTED
 
 
 def test_demasiados_dominios_es_fail_closed(promotor):
     muchos = ",".join(f"d{i}.example.com" for i in range(promotor.ALIAS_MAXIMOS + 1))
     with pytest.raises(promotor.ErrorBarrera):
         promotor.parsear_alias(muchos)
+
+
+def test_la_carga_por_ruta_retira_el_registro_si_no_existia():
+    """El registro del módulo es estado global: no debe sobrevivir al fichero.
+
+    Prueba DIRECTA de `cargar_por_ruta`, que es lo que usa la fixture. Una versión
+    anterior de esta prueba reimplementaba el mecanismo en vez de ejercitarlo, así que
+    romper la fixture no la hacía fallar: la mutación nacía inerte.
+    """
+    nombre = "promover_produccion_prueba_de_restauracion"
+    assert nombre not in sys.modules
+    with cargar_por_ruta(nombre, _RUTA) as modulo:
+        assert sys.modules[nombre] is modulo, "durante la carga sí debe estar registrado"
+    assert nombre not in sys.modules, "al salir, el registro debe retirarse"
+
+
+def test_la_carga_por_ruta_devuelve_el_valor_previo_si_lo_habia():
+    nombre = "promover_produccion_prueba_con_previo"
+    centinela = object()
+    sys.modules[nombre] = centinela
+    try:
+        with cargar_por_ruta(nombre, _RUTA):
+            assert sys.modules[nombre] is not centinela
+        assert sys.modules[nombre] is centinela, "debe restaurarse el valor anterior"
+    finally:
+        sys.modules.pop(nombre, None)
+
+
+def test_la_carga_por_ruta_restaura_aunque_el_modulo_reviente(tmp_path):
+    """El `finally` tiene que actuar también cuando la ejecución falla."""
+    roto = tmp_path / "modulo_roto.py"
+    roto.write_text("raise RuntimeError('a proposito')\n", encoding="utf-8")
+    nombre = "promover_produccion_prueba_rota"
+    assert nombre not in sys.modules
+    with pytest.raises(RuntimeError):
+        with cargar_por_ruta(nombre, roto):
+            pass
+    assert nombre not in sys.modules, "un fallo no puede dejar el registro puesto"
+
+
+def test_la_fixture_usa_la_carga_por_ruta():
+    """Ata la fixture con la función probada.
+
+    Sin este aserto, la fixture podría reimplementar la carga por su cuenta y las
+    pruebas de `cargar_por_ruta` dejarían de decir nada sobre lo que de verdad se usa.
+    """
+    fuente = pathlib.Path(__file__).read_text(encoding="utf-8")
+    bloque = fuente.split("def promotor():", 1)[1].split("\n\n\n", 1)[0]
+    assert "cargar_por_ruta" in bloque, "la fixture dejó de usar la carga probada"
+    assert "sys.modules" not in bloque, "la fixture no debe manipular sys.modules por su cuenta"
 
 
 def test_la_clasificacion_de_convergencia_cubre_los_cinco_casos(promotor):
@@ -938,7 +1098,9 @@ def test_los_limites_son_finitos_y_estan_en_el_codigo(promotor):
         valor = getattr(promotor, nombre)
         assert isinstance(valor, (int, float)) and valor > 0, nombre
         assert valor <= techo, f"{nombre} = {valor} pasa del techo duro {techo}"
-    assert promotor.MINIMO_DE_ALIAS >= 2
+    # el conjunto fijado en git tiene los dos dominios de producción, sin duplicados
+    assert len(promotor.DOMINIOS_PRODUCTIVOS) == 2
+    assert len(set(promotor.DOMINIOS_PRODUCTIVOS)) == 2
 
 
 def test_los_reintentos_de_get_estan_acotados(promotor):

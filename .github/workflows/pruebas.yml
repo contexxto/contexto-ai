@@ -231,9 +231,11 @@ jobs:
           VERCEL_PROJECT_PROMOTION_TOKEN: ${{ secrets.VERCEL_PROJECT_PROMOTION_TOKEN }}
           # Identificadores NO secretos.
           VERCEL_PROMOTION_PROJECT_ID: ${{ vars.VERCEL_PROMOTION_PROJECT_ID }}
-          # LISTA de los dominios productivos, separados por comas. Debe llevarlos TODOS:
-          # una promoción los asigna todos, y reconciliar uno solo acreditaría la mitad
-          # del hecho. El programa exige al menos dos y solo declara PROMOTED cuando
-          # todos convergen en el artefacto aprobado.
+          # LISTA de los dominios productivos, separados por comas. El CONJUNTO EXACTO
+          # está fijado en scripts/promover_produccion.py y esta variable se VALIDA
+          # contra él: si sobra o falta uno, se falla cerrado. La autoridad es el
+          # repositorio, no la consola, porque una variable del Environment se cambia
+          # sin revisión y sin dejar rastro. Solo se declara PROMOTED cuando TODOS los
+          # dominios convergen en el artefacto aprobado.
           VERCEL_PROMOTION_ALIAS: ${{ vars.VERCEL_PROMOTION_ALIAS }}
         run: python scripts/promover_produccion.py

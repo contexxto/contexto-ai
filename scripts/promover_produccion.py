@@ -149,10 +149,25 @@ ESPERA_ENTRE_SONDEOS = 5.0
 VENTANA_MAXIMA_DE_SONDEO = 90.0
 ALIAS_MAXIMOS = 10
 
-# Con un solo dominio no se puede distinguir «todo convergió» de «convergió la mitad»,
-# que es justo el estado que hay que detectar. El proyecto tiene dos dominios de
-# producción; si algún día tuviera más, la lista crece y este suelo sigue valiendo.
-MINIMO_DE_ALIAS = 2
+# EL CONJUNTO EXACTO DE DOMINIOS PRODUCTIVOS, FIJADO EN GIT.
+#
+# Exigir «al menos dos» no basta: una configuración con dos dominios cualesquiera
+# —uno equivocado, uno de preview, uno que ya no sirve producción— pasaría el filtro y
+# el programa reconciliaría el conjunto incorrecto creyendo que cumple. Y el contenido
+# de una variable del Environment se cambia desde la consola, sin revisión y sin dejar
+# rastro en el repositorio.
+#
+# Por eso el conjunto se fija AQUÍ y la variable se valida contra él: cambiar qué
+# dominios se reconcilian exige un commit, que pasa por el CI y por la revisión del PR.
+# La variable no desaparece —sigue siendo la que lee el programa— pero deja de ser la
+# autoridad: si discrepa del conjunto fijado, se falla cerrado.
+#
+# Medido en el panel de Vercel el 2026-09-07: Settings > Environments > Production
+# lista estos dos, y solo estos dos, como dominios de producción del proyecto.
+DOMINIOS_PRODUCTIVOS = (
+    "contexxto.com",
+    "contexto-ai-six.vercel.app",
+)
 
 CODIGOS_DE_EXITO_DE_PROMOCION = frozenset({201, 202})
 CODIGOS_DE_RECHAZO_DOCUMENTADOS = frozenset({400, 401, 403, 409, 410, 422})
@@ -256,26 +271,35 @@ def validar_contexto_github(entorno: dict) -> ContextoGitHub:
 
 
 def parsear_alias(crudo: str) -> tuple[str, ...]:
-    """Lista de dominios productivos, separados por comas.
+    """Lista de dominios productivos, validada contra el conjunto fijado en git.
 
-    Se exige más de uno: con un solo dominio no se puede distinguir la convergencia
-    completa de la parcial, y la parcial es exactamente el estado que hay que detectar.
+    No basta con exigir «al menos dos». Se exige el conjunto EXACTO: ni de más —un
+    dominio ajeno se reconciliaría como si fuera producción— ni de menos —faltando uno,
+    la convergencia parcial pasaría por completa, que es justo el fallo que esta unidad
+    existe para detectar.
+
+    Devuelve los dominios en el ORDEN FIJADO EN GIT, no en el que vengan configurados:
+    el orden de la variable no debe poder alterar el comportamiento.
     """
     hosts = tuple(
         dict.fromkeys(h.strip().lower() for h in str(crudo).split(",") if h.strip())
     )
-    if len(hosts) < MINIMO_DE_ALIAS:
-        raise ErrorBarrera(
-            f"se configuraron {len(hosts)} dominios productivos y hacen falta al menos "
-            f"{MINIMO_DE_ALIAS}: con uno solo no se distingue la convergencia completa "
-            "de la parcial"
-        )
     if len(hosts) > ALIAS_MAXIMOS:
         raise ErrorBarrera(f"{len(hosts)} dominios supera el tope de {ALIAS_MAXIMOS}")
     for h in hosts:
         if "/" in h or " " in h or not h:
             raise ErrorBarrera(f"dominio con forma inesperada: {h!r}")
-    return hosts
+    esperados = set(DOMINIOS_PRODUCTIVOS)
+    recibidos = set(hosts)
+    if recibidos != esperados:
+        sobran = sorted(recibidos - esperados)
+        faltan = sorted(esperados - recibidos)
+        raise ErrorBarrera(
+            "la lista de dominios productivos no coincide con la fijada en git"
+            + (f"; sobran {sobran}" if sobran else "")
+            + (f"; faltan {faltan}" if faltan else "")
+        )
+    return tuple(DOMINIOS_PRODUCTIVOS)
 
 
 # ── Transporte inyectable ──────────────────────────────────────────────────────

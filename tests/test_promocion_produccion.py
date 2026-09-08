@@ -23,6 +23,7 @@ import sys
 import urllib.parse
 
 import pytest
+import yaml
 
 _RUTA = (
     pathlib.Path(__file__).resolve().parent.parent / "scripts" / "promover_produccion.py"
@@ -386,6 +387,70 @@ def test_la_deteccion_de_lo_ya_servido_no_depende_del_readySubstate(promotor, su
     assert resultado.estado != promotor.UNAVAILABLE
     assert transporte.posts == 0
     assert "NO acredita" in salida
+
+
+# ── (A3) lo que sirven los dominios tiene que ser LEGIBLE ─────────────────────
+# `_estado_preexistente` lee el detalle del despliegue que sirven los dominios para
+# decidir si ya era el SHA aprobado. Si esa lectura no es concluyente, cierra.
+#
+# Esa guarda no la sostenia ninguna prueba, y es la unica que impide seguir adelante sin
+# saber que hay en produccion. Sustituir su `return Resultado(FAIL_CLOSED, ...)` por
+# `return None` dejaba la suite entera en verde y convertia este guion en PROMOTED con
+# un POST. Por eso el candidato de abajo es VALIDO: sin candidato el mutante terminaria
+# en UNAVAILABLE y la mutacion pareceria inocua.
+
+
+@pytest.mark.parametrize(
+    "respuesta,motivo",
+    [
+        ((500, {"error": "x"}), "codigo 500"),
+        ((503, None), "codigo 503"),
+        ((404, {"error": "x"}), "codigo 404: el despliegue servido ya no existe"),
+        ((200, ["no", "es", "objeto"]), "cuerpo que es lista"),
+        ((200, "una cadena"), "cuerpo que es cadena"),
+        ((200, None), "cuerpo nulo"),
+        # `None` en el doble significa que el transporte no responde: `_responder` lanza
+        # ErrorTransporte, y `cliente.get` lo reintenta de forma acotada antes de rendirse.
+        (None, "fallo de transporte"),
+    ],
+)
+def test_lo_servido_por_los_dominios_ILEGIBLE_es_fail_closed_sin_post(
+    promotor, respuesta, motivo
+):
+    transporte = Transporte(
+        promotor,
+        paginas=[([item_listado("dpl_1")], None)],
+        detalles={"dpl_1": detalle("dpl_1"), "dpl_servido": respuesta},
+        rondas=[ronda("dpl_servido"), ronda("dpl_1")],
+        post=(202, None),
+    )
+    resultado, salida = correr(promotor, transporte)
+    assert resultado.estado == promotor.FAIL_CLOSED, motivo
+    assert resultado.estado != promotor.PROMOTED
+    assert transporte.posts == 0, f"no se puede promover sin saber que hay: {motivo}"
+    # El `detalle` NOMBRA la guarda. Sin esta afirmacion, la prueba solo miraria el
+    # desenlace, y este proyecto ya sabe lo que cuesta eso.
+    assert resultado.detalle == "lo servido por los dominios no es legible"
+    assert "no se pudo leer lo que sirven los dominios" in salida
+
+
+def test_el_candidato_del_caso_anterior_SI_es_promovible(promotor):
+    """Contrapunto obligatorio: demuestra que el guion de arriba llega a promover cuando
+    lo servido SI se puede leer, y por tanto que el cero POST lo produce la guarda y no
+    la falta de candidato."""
+    transporte = Transporte(
+        promotor,
+        paginas=[([item_listado("dpl_1")], None)],
+        detalles={
+            "dpl_1": detalle("dpl_1"),
+            "dpl_servido": detalle("dpl_servido", sha=SHA_OTRO, readySubstate="PROMOTED"),
+        },
+        rondas=[ronda("dpl_servido"), ronda("dpl_1")],
+        post=(202, None),
+    )
+    resultado, _ = correr(promotor, transporte)
+    assert resultado.estado == promotor.PROMOTED
+    assert transporte.posts == 1
 
 
 def test_solo_UNO_actual_antes_del_post_es_fail_closed_sin_post(promotor):
@@ -1622,7 +1687,6 @@ def test_solo_hay_una_llamada_a_post_promocion_en_el_fuente():
 
 
 def test_el_yaml_invoca_el_programa_que_existe_y_le_pasa_lo_que_pide(promotor):
-    yaml = pytest.importorskip("yaml")
     raiz = pathlib.Path(__file__).resolve().parents[1]
     workflow = yaml.safe_load(
         (raiz / ".github" / "workflows" / "pruebas.yml").read_text(encoding="utf-8")
@@ -1651,7 +1715,6 @@ def test_el_yaml_ya_no_pasa_identificador_de_equipo(promotor):
 
 
 def test_el_secreto_solo_se_expone_al_paso_que_lo_usa(promotor):
-    yaml = pytest.importorskip("yaml")
     raiz = pathlib.Path(__file__).resolve().parents[1]
     workflow = yaml.safe_load(
         (raiz / ".github" / "workflows" / "pruebas.yml").read_text(encoding="utf-8")
@@ -1692,6 +1755,217 @@ def test_los_codigos_de_exito_y_rechazo_son_los_del_contrato(promotor):
     assert promotor.CODIGOS_DE_RECHAZO_DOCUMENTADOS == frozenset({400, 401, 403, 409, 410, 422})
     assert not (
         promotor.CODIGOS_DE_EXITO_DE_PROMOCION & promotor.CODIGOS_DE_RECHAZO_DOCUMENTADOS
+    )
+
+
+# ── (O) `main()`, el punto de entrada de verdad ───────────────────────────────
+# Todo lo demas prueba `ejecutar()`. Lo que corre en el runner es `main()`, y lo que el
+# job lee para decidir si la promocion salio bien es su CODIGO DE SALIDA. Hasta ahora
+# ninguna prueba lo invocaba: la traduccion de estado a codigo, la red de seguridad del
+# secreto y el `ESTADO=` que se imprime estaban sin cubrir.
+
+ESTADOS_Y_CODIGOS = [
+    ("PROMOTED", 0),
+    ("UNAVAILABLE", 1),
+    ("FAIL_CLOSED", 2),
+    ("UNKNOWN_RECONCILIATION_REQUIRED", 3),
+    ("ALREADY_CURRENT_UNATTESTED", 4),
+]
+
+
+def test_la_tabla_de_estados_y_codigos_es_EXACTAMENTE_esta(promotor):
+    """Se escriben los cinco pares a mano a proposito: comparar el diccionario consigo
+    mismo no probaria nada. Esto fija los VALORES, no solo la forma."""
+    assert promotor.CODIGOS_DE_SALIDA == dict(ESTADOS_Y_CODIGOS)
+    assert len(promotor.CODIGOS_DE_SALIDA) == 5
+    for nombre, _codigo in ESTADOS_Y_CODIGOS:
+        assert getattr(promotor, nombre) == nombre, (
+            f"la constante {nombre} deberia valer su propio nombre"
+        )
+
+
+@pytest.mark.parametrize("estado,codigo", ESTADOS_Y_CODIGOS)
+def test_main_devuelve_el_codigo_de_CADA_estado_y_solo_promoted_sale_en_cero(
+    promotor, monkeypatch, capsys, estado, codigo
+):
+    """Las dos garantias van juntas porque la segunda esta IMPLICADA por la primera.
+
+    Separarlas daba una prueba que no puede fallar sola: si `main` devuelve el codigo de
+    la tabla y la tabla solo tiene un cero, «solo PROMOTED sale verde» se cumple por
+    construccion. Una prueba que no puede caer sola es decoracion; aqui la afirmacion se
+    hace donde de verdad aporta, junto a la que la sostiene.
+
+    Lo que el job lee es EL CODIGO DE SALIDA. Un cero de mas es una promocion que se da
+    por buena sin estarlo.
+    """
+    monkeypatch.setattr(
+        promotor, "ejecutar", lambda *a, **k: promotor.Resultado(estado, "detalle")
+    )
+    devuelto = promotor.main([])
+    assert devuelto == codigo
+    assert (devuelto == 0) == (estado == "PROMOTED"), (
+        f"{estado} salio con {devuelto}: el unico camino verde es PROMOTED"
+    )
+    salida = capsys.readouterr().out
+    assert f"ESTADO={estado}" in salida, salida
+
+
+class _FalloDeBase(BaseException):
+    """Hereda de BaseException y NO de Exception, que es lo que hay que ejercitar.
+
+    Se define aqui en vez de usar `KeyboardInterrupt` porque pytest trata esa excepcion
+    como una peticion de aborto y termina la SESION entera: la prueba no fallaria, se
+    interrumpiria la corrida, y el arnes de mutacion lo contaria como cero fallos. Es
+    decir: usar KeyboardInterrupt hacia inerte la mutacion que cambia `BaseException`
+    por `Exception`. Medido, no supuesto.
+    """
+
+
+@pytest.mark.parametrize(
+    "excepcion",
+    [
+        RuntimeError("algo se rompio"),
+        ValueError("otra cosa"),
+        # BaseException y no Exception: la red de seguridad del secreto tiene que cubrir
+        # tambien lo que no hereda de Exception, o un traceback llegaria al log publico.
+        _FalloDeBase("no hereda de Exception"),
+    ],
+)
+def test_main_convierte_una_excepcion_INESPERADA_en_fail_closed(
+    promotor, monkeypatch, capsys, excepcion
+):
+    def revienta(*_a, **_k):
+        raise excepcion
+
+    monkeypatch.setattr(promotor, "ejecutar", revienta)
+    codigo = promotor.main([])
+    assert codigo == promotor.CODIGOS_DE_SALIDA[promotor.FAIL_CLOSED]
+    assert codigo != 0
+    capturado = capsys.readouterr()
+    assert "ESTADO=FAIL_CLOSED" in capturado.out
+    assert type(excepcion).__name__ in capturado.err
+    assert "Traceback" not in capturado.err, (
+        "un traceback en un log de repositorio publico es exactamente lo que se evita"
+    )
+
+
+def test_main_REDACTA_el_token_de_una_excepcion_inesperada(promotor, monkeypatch, capsys):
+    """El caso que justifica el `except BaseException`: el log de Actions es publico."""
+    monkeypatch.setenv("VERCEL_PROJECT_PROMOTION_TOKEN", TOKEN)
+
+    def revienta(*_a, **_k):
+        raise RuntimeError(f"fallo pidiendo https://api.vercel.com con {TOKEN} dentro")
+
+    monkeypatch.setattr(promotor, "ejecutar", revienta)
+    codigo = promotor.main([])
+    capturado = capsys.readouterr()
+    assert TOKEN not in capturado.out + capturado.err, "el token se filtro al log"
+    assert "***REDACTADO***" in capturado.err
+    assert codigo == promotor.CODIGOS_DE_SALIDA[promotor.FAIL_CLOSED]
+
+
+def test_main_no_redacta_de_menos_cuando_no_hay_token(promotor, monkeypatch, capsys):
+    """Contrapunto: sin secreto en el entorno, el mensaje sale entero. Una redaccion que
+    borrara de mas dejaria los fallos ilegibles."""
+    monkeypatch.delenv("VERCEL_PROJECT_PROMOTION_TOKEN", raising=False)
+
+    def revienta(*_a, **_k):
+        raise RuntimeError("un mensaje sin secretos")
+
+    monkeypatch.setattr(promotor, "ejecutar", revienta)
+    promotor.main([])
+    assert "un mensaje sin secretos" in capsys.readouterr().err
+
+
+class _OpenerProhibido:
+    """Sustituye al opener real. Si el programa intentara abrir una conexion, esto lo
+    convierte en un fallo ruidoso en vez de en una peticion de verdad."""
+
+    def __init__(self):
+        self.intentos = []
+
+    def open(self, peticion, timeout=None):
+        self.intentos.append(getattr(peticion, "full_url", peticion))
+        raise AssertionError(f"el programa abrio una conexion: {self.intentos}")
+
+
+def test_main_SIN_ENTRADAS_falla_cerrado_antes_de_tocar_la_red(promotor, monkeypatch, capsys):
+    """Ejecucion REAL: `ejecutar` de verdad, transporte por defecto de verdad.
+
+    Es el caso del dia del cutover si alguien olvida el secreto o las variables. Tiene
+    que cerrar por entrada ausente ANTES de construir el cliente, no despues de intentar
+    hablar con Vercel sin credencial.
+    """
+    for variable in promotor.VARIABLES_REQUERIDAS:
+        monkeypatch.delenv(variable, raising=False)
+    opener = _OpenerProhibido()
+    monkeypatch.setattr(promotor, "_OPENER", opener)
+
+    codigo = promotor.main([])
+
+    assert opener.intentos == [], "no puede haber ni un intento de conexion"
+    assert codigo == promotor.CODIGOS_DE_SALIDA[promotor.FAIL_CLOSED]
+    assert codigo != 0
+    salida = capsys.readouterr().out
+    assert "ESTADO=FAIL_CLOSED" in salida
+    assert "faltan variables requeridas" in salida
+
+
+@pytest.mark.parametrize("ausente", ["VERCEL_PROJECT_PROMOTION_TOKEN", "VERCEL_PROMOTION_PROJECT_ID", "VERCEL_PROMOTION_ALIAS"])
+def test_main_con_UNA_variable_ausente_tampoco_toca_la_red(promotor, monkeypatch, capsys, ausente):
+    """Que falten las tres es facil de acertar. Lo que hay que fijar es que basta con que
+    falte UNA."""
+    for variable, valor in entorno().items():
+        monkeypatch.setenv(variable, valor)
+    monkeypatch.delenv(ausente, raising=False)
+    opener = _OpenerProhibido()
+    monkeypatch.setattr(promotor, "_OPENER", opener)
+
+    codigo = promotor.main([])
+
+    # La afirmacion que da nombre a la prueba va PRIMERO: si va la ultima, cualquier
+    # fallo anterior reporta otra cosa y el nombre de la prueba enganaria al leer el log.
+    assert opener.intentos == [], "no puede haber ni un intento de conexion"
+    assert codigo == promotor.CODIGOS_DE_SALIDA[promotor.FAIL_CLOSED]
+    salida = capsys.readouterr().out
+    assert ausente in salida
+
+
+def test_main_es_lo_que_invoca_el_guardian_de_la_linea_de_ordenes(promotor):
+    """El bloque `if __name__ == "__main__"` tiene que llamar a `main`, o todo lo de
+    arriba estaria probando una funcion que nadie ejecuta.
+
+    Se comprueba sobre el AST y no sobre el texto porque la version textual la satisfacia
+    un COMENTARIO: `sys.exit(0)  # sys.exit(main())` la dejaba pasar, y con eso el job
+    saldria verde sobre cualquier FAIL_CLOSED. Medido.
+    """
+    import ast as _ast
+
+    arbol = _ast.parse(_RUTA.read_text(encoding="utf-8"), filename=str(_RUTA))
+    guardianes = [
+        n for n in arbol.body
+        if isinstance(n, _ast.If)
+        and isinstance(n.test, _ast.Compare)
+        and isinstance(n.test.left, _ast.Name)
+        and n.test.left.id == "__name__"
+    ]
+    assert len(guardianes) == 1, f"se esperaba un unico guardian; hay {len(guardianes)}"
+
+    llamadas = [n for n in _ast.walk(guardianes[0]) if isinstance(n, _ast.Call)]
+    salidas = [
+        c for c in llamadas
+        if isinstance(c.func, _ast.Attribute) and c.func.attr == "exit"
+    ]
+    assert len(salidas) == 1, f"el guardian debe salir una vez; sale {len(salidas)}"
+    argumentos = salidas[0].args
+    assert len(argumentos) == 1, "sys.exit tiene que recibir el codigo de main"
+    interior = argumentos[0]
+    assert isinstance(interior, _ast.Call), (
+        f"sys.exit recibe {_ast.dump(interior)[:80]}, no una llamada: el codigo de salida "
+        "no vendria de main y el job leeria un cero fijo"
+    )
+    assert isinstance(interior.func, _ast.Name) and interior.func.id == "main", (
+        "sys.exit tiene que llamar a `main`"
     )
 
 

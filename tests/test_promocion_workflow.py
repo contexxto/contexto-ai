@@ -10,23 +10,29 @@
 # y se puede leer hoy; lo que no existe todavía es el job. No es un ImportError
 # disfrazado de prueba de comportamiento.
 #
-# PyYAML NO está en requirements-dev.txt, pero SÍ está garantizado en CI: requirements.txt
-# fija `uvicorn[standard]==0.32.1`, y los metadatos de uvicorn declaran
-# `pyyaml>=5.1; extra == 'standard'`. Verificado con importlib.metadata sobre el venv del
-# repositorio, no supuesto. Si algún día se quita el extra `standard`, estas pruebas se
-# caen en recolección y hay que declarar PyYAML explícitamente.
+# PyYAML es una dependencia DIRECTA y fijada en requirements-dev.txt, y aquí se importa
+# DURO a propósito.
+#
+# Antes llegaba solo de forma transitiva y este módulo la pedía con
+# `pytest.importorskip("yaml")`. Esa forma parece prudente y es lo contrario: si PyYAML
+# faltara, estas pruebas —las que vigilan que el job de promoción no pierda su `needs`,
+# su `environment`, su condición de evento ni el anclaje por SHA— se SALTARÍAN, la suite
+# seguiría verde y nadie vería un rojo. Un gate que se apaga solo no es un gate; es un
+# gate con un interruptor que cualquier cambio de dependencias puede pulsar.
+#
+# El detalle de por qué dependencias la traían está en requirements-dev.txt, medido. Lo
+# que NO es cierto, y este fichero lo afirmaba antes, es que viniera solo de
+# `uvicorn[standard]`.
+#
+# Con la importación dura, la ausencia de PyYAML es un error de recolección ruidoso, que
+# es exactamente lo que debe ser: el entorno no reproduce el de CI y las pruebas no
+# podrían decir la verdad sobre la puerta.
 
+import ast
 from pathlib import Path
 
 import pytest
-
-yaml = pytest.importorskip(
-    "yaml",
-    reason=(
-        "PyYAML llega por uvicorn[standard]; si falta, el entorno no reproduce el de CI "
-        "y estas pruebas no dirían la verdad sobre el gate."
-    ),
-)
+import yaml
 
 RAIZ = Path(__file__).resolve().parents[1]
 PRUEBAS_YML = RAIZ / ".github" / "workflows" / "pruebas.yml"
@@ -552,3 +558,393 @@ def test_el_texto_crudo_de_pruebas_yml_no_deja_NINGUNA_referencia_movil():
         if m and not SHA_DE_40.match(m.group(1).partition("@")[2]):
             moviles.append(f"pruebas.yml:{numero} {m.group(1)}")
     assert not moviles, "quedan referencias moviles: " + ", ".join(moviles)
+
+
+# ── (8) el gate no se puede volver a apagar solo ───────────────────────────────
+# `pytest.importorskip("yaml")` convierte la falta de una dependencia en un SALTO, no en
+# un fallo. Medido en aislamiento, con `yaml` bloqueado: con importacion dura pytest da
+# «ERROR ... Interrupted: 1 error during collection»; con `importorskip` da «1 skipped»,
+# en verde. Aplicado a las pruebas que vigilan la puerta de produccion, eso es un gate
+# con interruptor.
+#
+# DE DONDE VENIA PyYAML, con la medicion delante y no de oido: NO llegaba solo por el
+# extra `standard` de uvicorn. `langchain-core==0.3.63`, fijado en requirements.txt,
+# declara `PyYAML>=5.3` SIN extra, es decir de forma incondicional; y ademas lo declaran
+# con extra fastapi[all], starlette[full], pydantic-settings[yaml] y uvicorn[standard].
+# O sea que el riesgo real nunca fue «se cae el extra y desaparece PyYAML»: era que la
+# suite dependiera de una dependencia que NADIE en este repositorio declara, y que
+# cualquier desaparicion futura se tradujera en un SALTO MUDO en vez de en un rojo. Lo
+# primero se arregla declarandola; lo segundo, importandola duro.
+#
+# DOS GUARDAS, y hacen cosas distintas:
+#   POSITIVA  los ficheros que cargan el YAML tienen que importarlo DURO y no pueden
+#             llevar ningun mecanismo de salto. Es la fuerte: no persigue deletreos,
+#             exige la forma correcta.
+#   NEGATIVA  ningun fichero de tests/ llama a `importorskip` para YAML, resolviendo
+#             tambien los alias. Cubre el resto del arbol, donde no se puede exigir una
+#             importacion que esos ficheros no necesitan.
+
+MODULOS_QUE_NO_SE_SALTAN = ("yaml",)
+REQUISITOS_DEV = RAIZ / "requirements-dev.txt"
+
+# Los ficheros que CARGAN el YAML del workflow. Si algun dia hay mas, se anaden aqui.
+FICHEROS_QUE_CARGAN_EL_YAML = (
+    "test_promocion_workflow.py",
+    "test_promocion_produccion.py",
+)
+
+
+def _ficheros_de_prueba() -> list:
+    return sorted((RAIZ / "tests").rglob("*.py"))
+
+
+def _nombres_de_importorskip(arbol: ast.AST) -> set:
+    """Nombres locales que apuntan a `importorskip`, incluidos los alias.
+
+    `from pytest import importorskip as saltar` deja el detector ciego si solo se busca
+    el deletreo original. Esto lo resuelve.
+    """
+    nombres = {"importorskip"}
+    for nodo in ast.walk(arbol):
+        if isinstance(nodo, ast.ImportFrom) and nodo.module == "pytest":
+            for alias in nodo.names:
+                if alias.name == "importorskip" and alias.asname:
+                    nombres.add(alias.asname)
+    return nombres
+
+
+def _llamadas_a_importorskip(arbol: ast.AST) -> list:
+    """(linea, primer argumento) de cada LLAMADA a importorskip del arbol.
+
+    Mira el AST y no el texto a proposito. Un `grep` daria un falso positivo con el
+    comentario de la cabecera de este mismo fichero, que nombra la forma para explicar
+    por que se retiro. Reconoce la llamada con punto, sin punto, con alias, por
+    `getattr`, con el argumento por nombre, y anidada en una funcion o en una clase.
+    """
+    nombres = _nombres_de_importorskip(arbol)
+    fuera = []
+    for nodo in ast.walk(arbol):
+        if not isinstance(nodo, ast.Call):
+            continue
+        funcion = nodo.func
+        if isinstance(funcion, ast.Attribute):
+            nombre = funcion.attr
+        elif isinstance(funcion, ast.Name):
+            nombre = funcion.id
+        elif isinstance(funcion, ast.Call) and isinstance(funcion.func, ast.Name) \
+                and funcion.func.id == "getattr" and len(funcion.args) >= 2 \
+                and isinstance(funcion.args[1], ast.Constant):
+            # `getattr(pytest, "importorskip")("yaml")`
+            nombre = funcion.args[1].value
+        else:
+            nombre = None
+        if nombre not in nombres:
+            continue
+        argumentos = list(nodo.args) + [
+            k.value for k in nodo.keywords if k.arg in (None, "modname")
+        ]
+        primero = argumentos[0] if argumentos else None
+        valor = primero.value if isinstance(primero, ast.Constant) else None
+        fuera.append((nodo.lineno, valor))
+    return fuera
+
+
+def ofensas_de_salto(fuente: str, etiqueta: str = "<memoria>") -> list:
+    """LA REGLA que decide que es una ofensa, separada para poder MEDIRLA.
+
+    Antes vivia embebida en el bucle de la prueba, y como hoy no queda ni una llamada en
+    el arbol ese bucle corre VACIO: neutralizar la condicion o vaciar la lista negra
+    dejaba la suite entera en verde. Una regla que solo se ejerce cuando alguien la
+    infringe no esta probada; se prueba dandole fuentes sinteticas.
+    """
+    arbol = ast.parse(fuente, filename=etiqueta)
+    ofensas = []
+    for linea, modulo in _llamadas_a_importorskip(arbol):
+        if modulo is None or str(modulo).split(".")[0] in MODULOS_QUE_NO_SE_SALTAN:
+            ofensas.append(f"{etiqueta}:{linea} -> {modulo!r}")
+    return ofensas
+
+
+def _importa_yaml_duro_a_nivel_de_modulo(arbol: ast.Module) -> bool:
+    """`import yaml` como sentencia DIRECTA del modulo.
+
+    Directa importa: dentro de un `try/except ImportError` seria un salto disfrazado, y
+    ese nodo no es hijo de `Module.body`.
+    """
+    return any(
+        isinstance(nodo, ast.Import) and any(a.name == "yaml" for a in nodo.names)
+        for nodo in arbol.body
+    )
+
+
+def _mecanismos_de_salto(arbol: ast.AST) -> list:
+    """Saltos que NO son `importorskip` pero apagan el gate igual.
+
+    Son las dos formas idiomaticas que escribe cualquiera que crea estar protegiendo una
+    prueba de una dependencia opcional: `pytest.skip(..., allow_module_level=True)` tras
+    un `find_spec`, y `skipif` sobre un `yaml` que quedo en None.
+    """
+    fuera = []
+    for nodo in ast.walk(arbol):
+        if isinstance(nodo, ast.Call):
+            funcion = nodo.func
+            nombre = getattr(funcion, "attr", None) or getattr(funcion, "id", None)
+            if nombre == "skip" and any(
+                k.arg == "allow_module_level" for k in nodo.keywords
+            ):
+                fuera.append(f"linea {nodo.lineno}: skip a nivel de modulo")
+            if nombre == "skipif":
+                fuera.append(f"linea {nodo.lineno}: marca skipif")
+        if isinstance(nodo, ast.Attribute) and nodo.attr == "skipif":
+            fuera.append(f"linea {nodo.lineno}: marca skipif")
+    return sorted(set(fuera))
+
+
+# ── (8a) la guarda POSITIVA ────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("nombre", FICHEROS_QUE_CARGAN_EL_YAML)
+def test_los_ficheros_que_cargan_el_yaml_lo_importan_DURO(nombre):
+    """La guarda fuerte: exige la forma correcta en vez de perseguir deletreos.
+
+    Cubre de una vez el alias del import, el `getattr`, el `find_spec` con salto a nivel
+    de modulo y el `try/except ImportError` con `skipif`: las cuatro sustituyen o
+    envuelven el `import yaml`, y ninguna deja una sentencia `import yaml` directa.
+
+    Se comprueba sobre el FUENTE y no sobre el modulo importado a proposito: si el otro
+    fichero se saltara a nivel de modulo, sus propias pruebas no correrian y esta si.
+    """
+    fichero = RAIZ / "tests" / nombre
+    assert fichero.is_file(), f"no existe {fichero}"
+    arbol = ast.parse(fichero.read_text(encoding="utf-8"), filename=str(fichero))
+    assert _importa_yaml_duro_a_nivel_de_modulo(arbol), (
+        f"{nombre} tiene que hacer `import yaml` como sentencia directa del modulo. "
+        "Envolverlo en un try/except o sustituirlo por un salto apaga el gate en silencio."
+    )
+    saltos = _mecanismos_de_salto(arbol)
+    assert not saltos, (
+        f"{nombre} lleva un mecanismo de salto: {saltos}. Las pruebas que vigilan la "
+        "puerta de produccion no pueden ser condicionales."
+    )
+    assert not ofensas_de_salto(fichero.read_text(encoding="utf-8"), nombre)
+
+
+def test_el_yaml_importado_es_el_de_verdad():
+    assert yaml.safe_load("a: 1") == {"a": 1}
+    assert hasattr(yaml, "__version__")
+
+
+# Las dos reglas de la guarda positiva se miden igual que la negativa: con fuentes
+# sinteticas. Ejercitarlas solo contra los dos ficheros REALES —que estan limpios— las
+# dejaba sin medir, y borrarlas no rompia nada. Es el mismo patron que ya habia dejado
+# muda la condicion de ofensa.
+
+FUENTES_CON_IMPORT_DURO = {
+    "import directo": "import yaml\n",
+    "import directo con mas cosas": "import os\nimport yaml\nimport sys\n",
+    "varios en la misma linea": "import os, yaml\n",
+}
+
+FUENTES_SIN_IMPORT_DURO = {
+    "dentro de un try": "try:\n    import yaml\nexcept ImportError:\n    yaml = None\n",
+    "dentro de una funcion": "def cargar():\n    import yaml\n    return yaml\n",
+    "dentro de un if": "import sys\nif sys.version_info:\n    import yaml\n",
+    "solo from yaml import": "from yaml import safe_load\n",
+    "no lo importa": "import os\n",
+}
+
+FUENTES_CON_SALTO = {
+    "skip a nivel de modulo": (
+        "import importlib.util, pytest\n"
+        'if importlib.util.find_spec("yaml") is None:\n'
+        '    pytest.skip("sin yaml", allow_module_level=True)\n'
+        "import yaml\n"
+    ),
+    "marca skipif": (
+        "import pytest\ntry:\n    import yaml\nexcept ImportError:\n    yaml = None\n"
+        '@pytest.mark.skipif(yaml is None, reason="sin yaml")\n'
+        "def test_x():\n    assert yaml\n"
+    ),
+    "skipif importado suelto": (
+        "import pytest\nfrom pytest.mark import skipif\nimport yaml\n"
+        '@skipif(False, reason="x")\ndef test_x():\n    assert yaml\n'
+    ),
+}
+
+FUENTES_SIN_SALTO = {
+    "solo el import": "import yaml\n",
+    "un skip normal dentro de una prueba": (
+        "import pytest\nimport yaml\n"
+        'def test_x():\n    pytest.skip("por otra razon")\n'
+    ),
+}
+
+
+@pytest.mark.parametrize("etiqueta", sorted(FUENTES_CON_IMPORT_DURO))
+def test_la_regla_del_import_duro_ACEPTA_lo_correcto(etiqueta):
+    arbol = ast.parse(FUENTES_CON_IMPORT_DURO[etiqueta])
+    assert _importa_yaml_duro_a_nivel_de_modulo(arbol), etiqueta
+
+
+@pytest.mark.parametrize("etiqueta", sorted(FUENTES_SIN_IMPORT_DURO))
+def test_la_regla_del_import_duro_RECHAZA_lo_que_no_lo_es(etiqueta):
+    """`try/except ImportError` es la forma mas comun de disfrazar un salto, y su nodo
+    `Import` NO es hijo directo de `Module.body`. De ahi que la regla mire `arbol.body` y
+    no `ast.walk`: con `walk` aceptaria el import envuelto y la guarda seria decorativa."""
+    arbol = ast.parse(FUENTES_SIN_IMPORT_DURO[etiqueta])
+    assert not _importa_yaml_duro_a_nivel_de_modulo(arbol), etiqueta
+
+
+@pytest.mark.parametrize("etiqueta", sorted(FUENTES_CON_SALTO))
+def test_la_regla_de_los_saltos_los_ENCUENTRA(etiqueta):
+    encontrados = _mecanismos_de_salto(ast.parse(FUENTES_CON_SALTO[etiqueta]))
+    assert encontrados, f"no ve el salto de «{etiqueta}»"
+
+
+@pytest.mark.parametrize("etiqueta", sorted(FUENTES_SIN_SALTO))
+def test_la_regla_de_los_saltos_NO_acusa_de_mas(etiqueta):
+    """Un `pytest.skip` dentro de una prueba, por una razon que no es la dependencia, es
+    legitimo: lo que se prohibe es el salto a NIVEL DE MODULO y la marca condicional."""
+    encontrados = _mecanismos_de_salto(ast.parse(FUENTES_SIN_SALTO[etiqueta]))
+    assert not encontrados, f"acusa de mas en «{etiqueta}»: {encontrados}"
+
+
+# ── (8b) la guarda NEGATIVA, y su regla MEDIDA ─────────────────────────────────
+
+FUENTES_QUE_SON_OFENSA = {
+    "con punto": 'import pytest\nyaml = pytest.importorskip("yaml")\n',
+    "sin punto": 'from pytest import importorskip\nyaml = importorskip("yaml")\n',
+    "con alias": 'from pytest import importorskip as saltar\nyaml = saltar("yaml")\n',
+    "por getattr": 'import pytest\nyaml = getattr(pytest, "importorskip")("yaml")\n',
+    "argumento por nombre": 'import pytest\nyaml = pytest.importorskip(modname="yaml")\n',
+    "submodulo": 'import pytest\nc = pytest.importorskip("yaml.cyaml")\n',
+    "anidada en funcion": 'import pytest\ndef f():\n    return pytest.importorskip("yaml")\n',
+    "dentro de una clase": 'import pytest\nclass T:\n    y = pytest.importorskip("yaml")\n',
+    "argumento no constante": 'import pytest\nm = "ya" + "ml"\ny = pytest.importorskip(m)\n',
+}
+
+FUENTES_QUE_NO_SON_OFENSA = {
+    "importacion dura": "import yaml\n",
+    "otro modulo": 'import pytest\nd = pytest.importorskip("duckdb")\n',
+    "otro modulo por nombre": 'import pytest\nd = pytest.importorskip(modname="duckdb")\n',
+    "solo una cadena": 'x = "pytest.importorskip(\'yaml\')"\n',
+    "solo un comentario": '# pytest.importorskip("yaml")\nimport yaml\n',
+    "una funcion que se llama parecido": 'import otro\notro.importorskip_de_mentira("yaml")\n',
+}
+
+
+@pytest.mark.parametrize("etiqueta", sorted(FUENTES_QUE_SON_OFENSA))
+def test_la_regla_ACUSA_cada_forma_de_saltarse_yaml(etiqueta):
+    """Mide la mitad que ACUSA. Sin estas fuentes sinteticas la regla nunca se ejerce,
+    porque hoy no queda ni una llamada en el arbol: el bucle de la guarda negativa corre
+    vacio y cualquier mutacion del filtro es indistinguible del original."""
+    ofensas = ofensas_de_salto(FUENTES_QUE_SON_OFENSA[etiqueta], etiqueta)
+    assert ofensas, f"la regla no acusa la forma «{etiqueta}»"
+
+
+@pytest.mark.parametrize("etiqueta", sorted(FUENTES_QUE_NO_SON_OFENSA))
+def test_la_regla_NO_acusa_lo_que_es_legitimo(etiqueta):
+    """Contrapunto: una regla que acusa de mas se desactiva sola en cuanto estorba."""
+    ofensas = ofensas_de_salto(FUENTES_QUE_NO_SON_OFENSA[etiqueta], etiqueta)
+    assert not ofensas, f"la regla acusa de mas en «{etiqueta}»: {ofensas}"
+
+
+def test_el_barrido_cubre_TODO_lo_que_pytest_recolectaria():
+    """Ata el barrido a un calculo INDEPENDIENTE del que hace la funcion.
+
+    Sin esto bastaba con recortar `_ficheros_de_prueba` —a una lista vacia, o a los dos
+    ficheros que ya sabemos limpios— para esconder un `importorskip` en cualquier otro
+    sitio de tests/ sin un solo rojo. Medido: las dos formas dejaban la suite en verde.
+    """
+    esperados = {p.resolve() for p in (RAIZ / "tests").rglob("*.py")}
+    obtenidos = {p.resolve() for p in _ficheros_de_prueba()}
+    assert obtenidos == esperados, (
+        f"el barrido no cubre lo mismo que pytest recolectaria. "
+        f"Le faltan: {sorted(str(p) for p in esperados - obtenidos)}"
+    )
+    assert len(obtenidos) >= 2, f"el barrido no encuentra ficheros: {obtenidos}"
+    nombres = {p.name for p in obtenidos}
+    for obligatorio in FICHEROS_QUE_CARGAN_EL_YAML:
+        assert obligatorio in nombres, f"el barrido no incluye {obligatorio}"
+    assert Path(__file__).name in nombres, "el barrido tiene que incluirse a si mismo"
+
+
+def test_ninguna_prueba_se_salta_YAML_con_importorskip():
+    """La guarda negativa sobre el arbol real.
+
+    NO se detecta a si misma: busca LLAMADAS, y aqui `importorskip` solo aparece en
+    cadenas y comentarios. Cubre `importorskip` en todos sus deletreos; los saltos que
+    no son `importorskip` los cubre la guarda positiva, y solo en los dos ficheros que
+    cargan el YAML.
+    """
+    ofensas = []
+    for fichero in _ficheros_de_prueba():
+        ofensas += ofensas_de_salto(
+            fichero.read_text(encoding="utf-8"),
+            fichero.relative_to(RAIZ).as_posix(),
+        )
+    assert not ofensas, (
+        "vuelve a haber pruebas que se saltan YAML en vez de exigirlo. PyYAML esta "
+        "fijado en requirements-dev.txt: si falta, el entorno no reproduce el de CI y "
+        "estas pruebas no dirian la verdad sobre la puerta. " + "; ".join(ofensas)
+    )
+
+
+# ── (8c) la dependencia declarada y fijada ─────────────────────────────────────
+
+
+def _normalizar_nombre(crudo: str) -> str:
+    """Normalizacion de nombres de proyecto de PEP 503.
+
+    `PyYAML`, `pyyaml` y `PYYAML` son el MISMO paquete; `Py-YAML` es OTRO, porque el
+    guion es significativo. La version anterior de esta prueba borraba los guiones y
+    aceptaba `Py-YAML==6.0.3`, que instalaria cualquier cosa menos PyYAML.
+    """
+    return re.sub(r"[-_.]+", "-", crudo).lower()
+
+
+def test_pyyaml_esta_declarado_y_FIJADO_en_requirements_dev():
+    """Sin esto, la declaracion se puede borrar y volveriamos a depender de que otros
+    paquetes sigan arrastrando PyYAML de rebote, que es de donde venia el problema."""
+    assert REQUISITOS_DEV.is_file(), f"no existe {REQUISITOS_DEV}"
+    fijaciones = []
+    for cruda in REQUISITOS_DEV.read_text(encoding="utf-8").splitlines():
+        linea = cruda.split("#")[0].strip()
+        if "==" not in linea:
+            continue
+        nombre, _, version = linea.partition("==")
+        if _normalizar_nombre(nombre.strip()) == "pyyaml":
+            fijaciones.append(version.strip())
+    assert len(fijaciones) == 1, (
+        f"se esperaba exactamente una fijacion de PyYAML en requirements-dev.txt; "
+        f"hay {fijaciones}"
+    )
+    version = fijaciones[0]
+    assert re.match(r"^\d+\.\d+(\.\d+)?$", version), (
+        f"la version de PyYAML debe ir fijada a una version exacta; es {version!r}"
+    )
+    assert yaml.__version__ == version, (
+        f"el entorno tiene PyYAML {yaml.__version__} y requirements-dev.txt fija "
+        f"{version}: el entorno no reproduce el de CI"
+    )
+
+
+@pytest.mark.parametrize(
+    "escrito,vale",
+    [
+        ("PyYAML==6.0.3", True),
+        ("pyyaml==6.0.3", True),
+        ("pyyaml == 6.0.3", True),
+        ("PyYAML==6.0.3  # con comentario", True),
+        ("Py-YAML==6.0.3", False),
+        ("py_yaml==6.0.3", False),
+        ("pyyaml-extra==6.0.3", False),
+    ],
+)
+def test_la_normalizacion_del_nombre_sigue_a_PEP_503(escrito, vale):
+    """La normalizacion tiene su propia prueba porque su primera version era falsa en
+    los dos sentidos: aceptaba `Py-YAML==6.0.3`, que es otro paquete, y rechazaba
+    `pyyaml == 6.0.3`, que es exactamente el mismo."""
+    linea = escrito.split("#")[0].strip()
+    nombre = linea.partition("==")[0].strip()
+    assert (_normalizar_nombre(nombre) == "pyyaml") is vale, escrito

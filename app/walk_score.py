@@ -19,17 +19,26 @@ from __future__ import annotations
 
 import math
 
-import httpx
-
-from app.config import settings
-
-# Endpoints públicos de Overpass (probamos en orden si uno falla).
-_OVERPASS_MIRRORS = (
-    "https://overpass-api.de/api/interpreter",
-    "https://overpass.kumi.systems/api/interpreter",
-)
-_RADIUS_M = 1600          # ~1 milla: cobertura de caminabilidad
-_TIMEOUT = 6.0            # corto: el publish no debe colgarse en una API externa
+# ── El I/O a Overpass vive ahora en `app/place/providers/overpass.py` (PLAN04-2.2) ────
+# Se MOVIO, no se copio: aqui no queda un segundo cuerpo de `_fetch_pois`, ni una segunda
+# copia de los mirrors, el radio o el plazo. Lo que se queda es TODO el calculo —haversine,
+# decaimiento, emparejado de tags, puntaje, conectividad, clasificacion de hubs y sus
+# pesos— porque es metodo de Contexto y no respuesta de un tercero. El proveedor obtiene
+# datos; la caminabilidad se calcula aqui. La separacion no es cosmetica: `PLAN04-1.2` ya
+# la adjudico en la evidencia, donde el puntaje va con `provider="contexto"` y solo los
+# insumos con `provider="overpass"`.
+#
+# `_TIMEOUT` viaja con el I/O y se reimporta: es el plazo de esa llamada HTTP, y
+# `walk_score_para` no hace mas que reenviarlo. Un solo plazo, no dos copias que se separen.
+#
+# La direccion va de aqui hacia alla y nunca al reves. La fachada mantiene vivo el import
+# historico `from app.walk_score import _fetch_pois` de `app/routers/assets.py`, que esta
+# unidad no toca.
+# Se reexportan DOS y solo dos: `_fetch_pois` porque lo importa `app/routers/assets.py`, y
+# `_TIMEOUT` porque lo usa el valor por defecto de `walk_score_para`. `_RADIUS_M` y
+# `_OVERPASS_MIRRORS` NO vuelven: nadie aqui los usa, y reexportarlos inventaria superficie
+# publica que este modulo nunca tuvo.
+from app.place.providers.overpass import _TIMEOUT, _fetch_pois  # noqa: E402,F401 — fachada
 
 # Categorías de caminabilidad → peso relativo + tags OSM que las representan.
 # Las categorías "densas" (donde más-es-mejor) suman varios POIs cercanos.
@@ -179,38 +188,6 @@ def extraer_conectividad(pois: list[dict], lat: float, lon: float, max_hubs: int
         emoji, label = _HUB_LABEL[h["clase"]]
         partes.append(f"{emoji} {h['nombre'] or label} a ~{h['distancia_m']} m")
     return {"hubs": hubs, "texto": " · ".join(partes)}
-
-
-async def _fetch_pois(lat: float, lon: float, timeout: float = _TIMEOUT) -> list[dict] | None:
-    """Consulta Overpass por POIs alrededor del punto. None si todo mirror falla."""
-    query = (
-        "[out:json][timeout:25];("
-        f"node(around:{_RADIUS_M},{lat},{lon})[shop];"
-        f"node(around:{_RADIUS_M},{lat},{lon})[amenity];"
-        f"node(around:{_RADIUS_M},{lat},{lon})[leisure=park];"
-        f"node(around:{_RADIUS_M},{lat},{lon})[leisure=garden];"
-        f"node(around:{_RADIUS_M},{lat},{lon})[highway=bus_stop];"
-        f"node(around:{_RADIUS_M},{lat},{lon})[public_transport];"
-        f"node(around:{_RADIUS_M},{lat},{lon})[railway=station];"
-        ");out body;"
-    )
-    verify = settings.ssl_verify.lower() != "false"
-    for url in _OVERPASS_MIRRORS:
-        try:
-            async with httpx.AsyncClient(verify=verify, timeout=timeout) as c:
-                resp = await c.post(url, data={"data": query},
-                                    headers={"User-Agent": "contexto_ai_v2"})
-                resp.raise_for_status()
-                elements = resp.json().get("elements", [])
-        except Exception:  # noqa: BLE001 — best-effort; probamos el siguiente mirror
-            continue
-        pois = [
-            {"lat": e["lat"], "lon": e["lon"], "tags": e.get("tags", {})}
-            for e in elements
-            if e.get("type") == "node" and "lat" in e and "lon" in e
-        ]
-        return pois
-    return None
 
 
 async def walk_score_para(lat: float, lon: float, timeout: float = _TIMEOUT) -> dict | None:

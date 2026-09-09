@@ -630,10 +630,12 @@ async def tool_analyze_location(latitude: float, longitude: float) -> str:
     return json.dumps({
         "lugar": a["lugar"],
         "caminabilidad": a["walk_score"],
-        # Este motor cuenta POIs REALES en vivo (el mismo del mapa): la caminabilidad de aquí SÍ es
-        # de comercios reales ('osm') cuando hubo POIs; sin POIs no afirmamos procedencia (None).
-        # Deja que el agente aplique la MISMA regla de proveniencia que a las tools de catastro.
-        "caminabilidad_fuente": "osm" if pois else None,
+        # La procedencia VIENE DERIVADA de la evidencia del PlaceContextV0 (PLAN04-1.2);
+        # ya no se infiere aquí. La regla anterior era `"osm" if pois else None`, y en un
+        # caso mentía: con el proveedor respondiendo y CERO POIs, el cálculo sí se hizo
+        # sobre OSM y esto afirmaba `null`. La cobertura nula ya la dice `cobertura`, que
+        # es su sitio; la procedencia dice de dónde salió el número, no cuánto había.
+        "caminabilidad_fuente": a["caminabilidad_fuente"],
         "conectividad": a["conectividad"],
         "servicios_cercanos": a["servicios_texto"],
         "pois_analizados": pois,

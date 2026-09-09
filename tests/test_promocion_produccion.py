@@ -1931,13 +1931,27 @@ def test_main_con_UNA_variable_ausente_tampoco_toca_la_red(promotor, monkeypatch
     assert ausente in salida
 
 
-def test_main_es_lo_que_invoca_el_guardian_de_la_linea_de_ordenes(promotor):
-    """El bloque `if __name__ == "__main__"` tiene que llamar a `main`, o todo lo de
-    arriba estaria probando una funcion que nadie ejecuta.
+def test_main_es_lo_que_invoca_el_guardian_de_la_linea_de_ordenes():
+    """El guardian tiene que ser EXACTAMENTE `if __name__ == "__main__":` y llamar a main.
 
-    Se comprueba sobre el AST y no sobre el texto porque la version textual la satisfacia
-    un COMENTARIO: `sys.exit(0)  # sys.exit(main())` la dejaba pasar, y con eso el job
-    saldria verde sobre cualquier FAIL_CLOSED. Medido.
+    Tres versiones de esta prueba, y las dos primeras estaban rotas:
+
+      textual   `sys.exit(0)  # sys.exit(main())` la satisfacia, porque el comentario
+                contiene el texto que se buscaba.
+      por AST   comprobaba el lado izquierdo (`__name__`) y NADA MAS. Ni el operador ni
+                el comparador. Medido: con `if __name__ == "__never__":` las 348 focales
+                pasaban, y el programa ejecutado de verdad salia con codigo 0 y sin
+                imprimir nada, es decir, el job quedaba VERDE sin haber promovido ni
+                haber fallado cerrado. Esa es la regresion que esta version cierra.
+
+    Ahora se exige la comparacion COMPLETA: un solo operador, que sea `==`, un solo
+    comparador, y que ese comparador sea la constante `"__main__"`.
+
+    No recibe la fixture `promotor` A PROPOSITO. Lee el fuente y lo parsea, asi que sigue
+    dando un veredicto util cuando el modulo ni siquiera se puede importar — que es
+    justo lo que pasa si alguien escribe `!=`: el programa se ejecuta al importarlo y
+    revienta la fixture. Una guarda que depende de que lo guardado funcione no sirve
+    precisamente el dia que deja de funcionar.
     """
     import ast as _ast
 
@@ -1950,6 +1964,22 @@ def test_main_es_lo_que_invoca_el_guardian_de_la_linea_de_ordenes(promotor):
         and n.test.left.id == "__name__"
     ]
     assert len(guardianes) == 1, f"se esperaba un unico guardian; hay {len(guardianes)}"
+    prueba = guardianes[0].test
+
+    assert len(prueba.ops) == 1 and isinstance(prueba.ops[0], _ast.Eq), (
+        f"el guardian tiene que comparar con `==`; usa "
+        f"{[type(o).__name__ for o in prueba.ops]}. Con `!=` el programa se ejecuta al "
+        "IMPORTARLO y no se ejecuta cuando se invoca como programa."
+    )
+    assert len(prueba.comparators) == 1, (
+        f"se esperaba un unico comparador; hay {len(prueba.comparators)}"
+    )
+    comparador = prueba.comparators[0]
+    assert isinstance(comparador, _ast.Constant) and comparador.value == "__main__", (
+        f"el guardian compara contra {_ast.dump(comparador)[:60]}. Cualquier cadena que "
+        "no sea `__main__` deja el bloque muerto: el programa sale con 0 sin promover y "
+        "sin fallar cerrado, y el job lo lee como exito."
+    )
 
     llamadas = [n for n in _ast.walk(guardianes[0]) if isinstance(n, _ast.Call)]
     salidas = [
@@ -1967,6 +1997,77 @@ def test_main_es_lo_que_invoca_el_guardian_de_la_linea_de_ordenes(promotor):
     assert isinstance(interior.func, _ast.Name) and interior.func.id == "main", (
         "sys.exit tiene que llamar a `main`"
     )
+
+
+class _OpenerQueRegistra:
+    """Sustituye al opener real ANTES de que el modulo lo construya."""
+
+    def __init__(self):
+        self.intentos = []
+
+    def open(self, peticion, timeout=None):
+        self.intentos.append(getattr(peticion, "full_url", peticion))
+        raise AssertionError(f"el programa abrio una conexion: {self.intentos}")
+
+
+def test_ejecutado_COMO_PROGRAMA_sin_entradas_sale_2_y_no_toca_la_red(monkeypatch, capsys):
+    """La prueba de ejecucion REAL, que es la que no se puede satisfacer leyendo el AST.
+
+    `runpy.run_path(..., run_name="__main__")` ejecuta el fichero igual que
+    `python scripts/promover_produccion.py`: el guardian se evalua de verdad. Por eso
+    cae con las TRES formas de romperlo —comparador cambiado, operador negado, salida
+    con cero fijo— y por un motivo distinto en cada caso, sin depender de como este
+    escrito el fuente.
+
+    Lo que se fija es el contrato que lee el runner: sin entradas, codigo 2,
+    `ESTADO=FAIL_CLOSED` por stdout, y ni un intento de conexion.
+    """
+    import runpy
+    import urllib.request
+
+    for variable in (
+        "VERCEL_PROJECT_PROMOTION_TOKEN",
+        "VERCEL_PROMOTION_PROJECT_ID",
+        "VERCEL_PROMOTION_ALIAS",
+    ):
+        monkeypatch.delenv(variable, raising=False)
+
+    # Se intercepta la FABRICA, no el opener ya construido: el modulo se ejecuta desde
+    # cero dentro de runpy y arma el suyo propio en tiempo de importacion.
+    opener = _OpenerQueRegistra()
+    monkeypatch.setattr(urllib.request, "build_opener", lambda *_a, **_k: opener)
+
+    with pytest.raises(SystemExit) as salida:
+        runpy.run_path(str(_RUTA), run_name="__main__")
+
+    assert opener.intentos == [], "no puede haber ni un intento de conexion"
+    assert salida.value.code == 2, (
+        f"el programa salio con {salida.value.code!r}; el runner lee ese numero y un 0 "
+        "seria una promocion dada por buena sin haber ocurrido"
+    )
+    capturado = capsys.readouterr()
+    assert "ESTADO=FAIL_CLOSED" in capturado.out, capturado.out
+    assert "faltan variables requeridas" in capturado.out
+
+
+def test_ejecutado_como_MODULO_no_hace_nada(monkeypatch, capsys):
+    """La otra mitad del contrato del guardian, y la que atrapa el `!=`.
+
+    Importar el fichero NO puede ejecutar nada: si lo hiciera, cualquier prueba que lo
+    cargue promoveria de verdad. Con `!=` pasa exactamente eso, y ademas el programa
+    deja de ejecutarse cuando se le invoca como programa.
+    """
+    import runpy
+    import urllib.request
+
+    opener = _OpenerQueRegistra()
+    monkeypatch.setattr(urllib.request, "build_opener", lambda *_a, **_k: opener)
+
+    espacio = runpy.run_path(str(_RUTA), run_name="promover_produccion_bajo_prueba")
+
+    assert opener.intentos == []
+    assert capsys.readouterr().out == "", "importarlo no puede imprimir nada"
+    assert callable(espacio["main"]), "el modulo si define main; simplemente no lo llama"
 
 
 # ── (N) precondiciones duraderas, no estados del día ───────────────────────────

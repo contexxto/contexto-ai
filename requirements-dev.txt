@@ -14,3 +14,31 @@
 
 pytest==8.3.4
 pytest-asyncio==0.25.2
+
+# PyYAML es una dependencia DIRECTA de la suite: las pruebas estructurales del gate de
+# promocion (tests/test_promocion_workflow.py y la seccion L de
+# tests/test_promocion_produccion.py) cargan .github/workflows/pruebas.yml y comprueban
+# sobre el arbol cargado que el job no pierda su `needs`, su `environment`, su condicion
+# de evento ni el anclaje por SHA de las acciones.
+#
+# DE DONDE VENIA, medido con importlib.metadata sobre el venv del repositorio y no de
+# oido: llegaba TRANSITIVAMENTE por varios caminos a la vez. `langchain-core==0.3.63`,
+# fijado en requirements.txt, declara `PyYAML>=5.3` SIN extra, es decir de forma
+# incondicional; y ademas lo declaran con extra fastapi[all], starlette[full],
+# pydantic-settings[yaml] y uvicorn[standard].
+#
+# Conviene decirlo con precision porque el comentario anterior de este repositorio
+# atribuia PyYAML solo a `uvicorn[standard]`, y con eso el riesgo parecia «que se caiga
+# ese extra». No es ese. El riesgo es que la suite dependa de algo que NADIE aqui
+# declara: mientras sea transitivo, cualquier reacomodo de dependencias de terceros
+# puede quitarlo, y ni el pin ni la revision de este repositorio lo verian venir.
+#
+# Y el agravante era la forma de pedirlo. Las pruebas usaban `pytest.importorskip("yaml")`,
+# que convierte la ausencia en un SALTO en vez de en un fallo. Medido en aislamiento, con
+# `yaml` bloqueado: con importacion dura pytest da «ERROR ... Interrupted: 1 error during
+# collection»; con `importorskip` da «1 skipped», en verde. O sea que las garantias que
+# vigilan la puerta de produccion habrian dejado de comprobarse sin que nadie viera un
+# rojo. Un gate que se apaga solo no es un gate.
+#
+# Declarada y fijada aqui, su ausencia es un fallo de instalacion, no un salto mudo.
+PyYAML==6.0.3

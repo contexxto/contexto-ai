@@ -30,6 +30,20 @@
 # estas tres variables, 27 archivos de test ni siquiera llegan a recolectarse.
 # Con ellas, la suite pasa entera. No apuntan a ninguna base: las pruebas son
 # offline y no abren conexión — solo necesitan que la configuración valide.
+#
+# POR QUÉ LAS ACCIONES VAN FIJADAS POR SHA Y NO POR `@v4`: `v4` es un tag MÓVIL. Quien
+# controle el repositorio de la acción puede reapuntarlo cuando quiera, y el runner
+# ejecutaría código distinto sin que cambie una sola línea de este fichero. Para los dos
+# jobs del gate eso ya sería malo; para `promocion-produccion` es la puerta entera:
+# un humano aprueba un despliegue mirando un SHA de ESTE repositorio, y el job corre
+# después con un token de promoción de Vercel en el entorno. Si la acción puede cambiar
+# entre la aprobación y la ejecución, lo aprobado no es lo que corre — que es
+# exactamente la fuga que R1 y R4 existen para cerrar.
+#
+# El SHA es la única referencia inmutable que admite `uses:`. La versión legible va en el
+# comentario de cada línea: sin ella nadie sabe qué se está actualizando cuando toque
+# subir. Para mover una acción: resolver el tag nuevo con `git ls-remote --tags`, cambiar
+# SHA y comentario a la vez, y dejar que el PR lo revise.
 name: pruebas
 
 on:
@@ -76,10 +90,10 @@ jobs:
 
     steps:
       - name: Traer el código
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
       - name: Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
         with:
           # Coincide con el Dockerfile (python:3.11-slim). Si el runtime de
           # producción sube de versión, esta línea sube con él.
@@ -127,10 +141,10 @@ jobs:
 
     steps:
       - name: Traer el código
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
       - name: Node 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
         with:
           # El repo no fija versión de Node en ningún sitio (ni package.json, ni
           # Dockerfile, ni Vercel). Se fija aquí una LTS que cumple el mínimo de
@@ -149,3 +163,93 @@ jobs:
         # El build va DESPUÉS de los tests: si algo está roto, se ve en la prueba
         # que lo nombra, no en un error de compilación difícil de leer.
         run: npm run build
+
+  # ── Promoción a producción ──────────────────────────────────────────────────
+  # VERCEL-RELEASE-CONTROL-F-R1. Implementa R1-R4 de F-02: promover el artefacto del
+  # SHA que aprobó el CI, solo ese, sin reconstruir y solo tras aprobación humana.
+  #
+  # POR QUÉ VIVE AQUÍ Y NO EN SU PROPIO FICHERO: `needs` solo resuelve job_id del
+  # MISMO workflow, y con `workflow_run` en un fichero aparte `github.sha` pasa a ser
+  # "Last commit on default branch" — que NO es el SHA que pasó el CI. R1 se rompería
+  # en silencio. Es la condición C2 de F-02.
+  #
+  # POR QUÉ LA CONDICIÓN VA EN EL JOB Y NO EN EL BLOQUE `on`: este workflow tiene que
+  # seguir disparándose en `pull_request` para servir el check requerido `pytest`.
+  # Restringir el disparador rompería el gate entero. Se filtra aquí.
+  #
+  # PRECONDICIONES DE CUTOVER, duraderas. Este job gobierna una PROMOCIÓN; que gobierne
+  # además el HECHO DE PUBLICAR depende de dos condiciones externas que no puede
+  # comprobar por sí mismo:
+  #
+  #   P-1  "Auto-Assign Custom Production Domains" del proyecto en Vercel debe estar en
+  #        OFF. Mientras esté en ON, un merge a la rama de producción asigna los
+  #        dominios por su cuenta y esta promoción deja de ser la vía por la que se
+  #        publica. Ese ajuste vive en el panel, no en la API documentada.
+  #   P-2  el Environment `contexto-production-promotion` debe existir CON sus reglas:
+  #        revisor requerido y bypass de administradores apagado. Nombrarlo aquí no las
+  #        crea; las reglas de protección viven en la consola.
+  #
+  # Y una condición de entrada: sin el secreto y las variables del Environment, el
+  # programa falla cerrado por entrada requerida ausente. Eso es lo diseñado.
+  promocion-produccion:
+    needs: [pytest, frontend]
+    # success() explícito: si algún día alguien añadiera una función de estado a esta
+    # condición, el success() implícito de `needs` desaparecería sin avisar y el job
+    # correría con el CI en rojo. Declarado, se puede probar.
+    if: >-
+      success() &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # La aprobación humana. Environment NUEVO y propio: "Production" y "Preview" ya
+    # pertenecen a la integración de Vercel y tienen protection_rules VACÍAS, así que
+    # reutilizarlos dejaría el job sin puerta. Es la condición C3 de F-02.
+    environment: contexto-production-promotion
+
+    permissions:
+      contents: read
+
+    # Serializa las promociones sin cancelarlas: cancelar a mitad deja el resultado
+    # indeterminado y sin reconciliar, que es justo el estado que este diseño evita.
+    concurrency:
+      group: promocion-produccion-${{ github.ref }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Traer el código exacto que aprobó el CI
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with:
+          # El SHA exacto, no la cabeza de la rama: entre el CI y la aprobación humana
+          # pueden haber entrado más commits.
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Python 3.11
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        with:
+          python-version: '3.11'
+
+      # Sin paso de instalación: el promotor usa solo biblioteca estándar. Menos
+      # superficie, y nada que se pueda quedar rancio en una caché.
+      - name: Promover el artefacto aprobado
+        env:
+          # Nombre específico a propósito. Un `VERCEL_TOKEN` genérico invitaría a
+          # reutilizar un token de cuenta; C4 de F-02 exige que el secreto sea
+          # exclusivo de este Environment.
+          # El token se crea limitado al PROYECTO, que es el suelo de granularidad que
+          # ofrece Vercel. Con ese alcance el ámbito va implícito en la credencial, así
+          # que NO se pasa identificador de equipo: una entrada menos que equivocar.
+          VERCEL_PROJECT_PROMOTION_TOKEN: ${{ secrets.VERCEL_PROJECT_PROMOTION_TOKEN }}
+          # Identificadores NO secretos.
+          VERCEL_PROMOTION_PROJECT_ID: ${{ vars.VERCEL_PROMOTION_PROJECT_ID }}
+          # LISTA de los dominios productivos, separados por comas. El CONJUNTO EXACTO
+          # está fijado en scripts/promover_produccion.py y esta variable se VALIDA
+          # contra él: si sobra o falta uno, se falla cerrado. La autoridad es el
+          # repositorio, no la consola, porque una variable del Environment se cambia
+          # sin revisión y sin dejar rastro. Solo se declara PROMOTED cuando TODOS los
+          # dominios convergen en el artefacto aprobado.
+          VERCEL_PROMOTION_ALIAS: ${{ vars.VERCEL_PROMOTION_ALIAS }}
+        run: python scripts/promover_produccion.py

@@ -34,6 +34,7 @@ import httpx
 import pytest
 
 import app.entorno as entorno
+import app.place.providers.google as _gprov
 import app.routers.assets as assets
 import app.rutas as rutas
 from app.config import settings
@@ -41,6 +42,7 @@ from app.config import settings
 _APP = Path(__file__).resolve().parents[1] / "app"
 _ENTORNO = _APP / "entorno.py"
 _RUTAS = _APP / "rutas.py"
+_PROVIDER_GOOGLE = _APP / "place" / "providers" / "google.py"
 
 
 # ══ (A) Tripwire de red — y por qué éste tiene que ser distinto ══════════════════════
@@ -125,7 +127,7 @@ def test_A3_el_gather_del_segundo_Google_ABSORBE_hasta_un_BaseException():
     que saberlo — no es un defecto que esta unidad corrija, es el motivo del diseño.
     """
     monkeypatch_url = "K"
-    resultado = asyncio.run(entorno._entorno_google(-0.18, -78.48, monkeypatch_url))
+    resultado = asyncio.run(_gprov._entorno_google(-0.18, -78.48, monkeypatch_url))
     assert resultado is None, "hoy la absorbe y devuelve None"
     intentos = _consumir_intentos()
     assert len(intentos) >= 1, "se intentó salir a la red y ni siquiera quedó rastro"
@@ -176,8 +178,10 @@ class _EspiaHTTP:
     def arma(cls, monkeypatch, respuesta=None, excepcion=None, status=200, crudo=None):
         cls.registro, cls.respuesta = [], respuesta
         cls.excepcion, cls.status, cls.crudo = excepcion, status, crudo
-        # Se sustituye el nombre `httpx` DENTRO de `app.entorno`, no el módulo compartido.
-        monkeypatch.setattr(entorno, "httpx", types.SimpleNamespace(AsyncClient=cls))
+        # Se sustituye el nombre `httpx` dentro del módulo que lo resuelve, no el módulo
+        # compartido. R0B2B: ese módulo pasó a ser el PROVIDER — el nombre viajó con el
+        # cuerpo, así que el punto de instalación viajó con él. Ninguna expectativa cambia.
+        monkeypatch.setattr(_gprov, "httpx", types.SimpleNamespace(AsyncClient=cls))
         return cls
 
     @classmethod
@@ -236,6 +240,14 @@ def _con_db(monkeypatch, resultados, revienta=False):
 
 
 # ══ (B) El mapa de los dos bloqueadores ══════════════════════════════════════════════
+def _fuente_de(nombre: str, fichero: Path) -> str:
+    texto = fichero.read_text(encoding="utf-8")
+    for n in ast.parse(texto).body:
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == nombre:
+            return ast.get_source_segment(texto, n) or ""
+    raise AssertionError(f"{nombre} no está definido en {fichero.name}")
+
+
 def _definidos(fichero: Path) -> set[str]:
     nombres = set()
     for n in ast.parse(fichero.read_text(encoding="utf-8")).body:
@@ -254,12 +266,18 @@ def test_B1_el_segundo_Google_sigue_donde_la_auditoria_lo_encontro():
     """Si algún día desaparece de aquí, este baseline deja de describir la realidad y hay
     que rehacerlo antes de mover nada."""
     en_entorno = _definidos(_ENTORNO)
-    assert {"_google_nearest", "_entorno_google", "entorno_destacado",
-            "extraer_entorno_osm", "_RADIO_M", "_TIMEOUT", "_CATEGORIAS"} <= en_entorno
+    en_prov = _definidos(_PROVIDER_GOOGLE)
+    # El cuerpo se fue; la ELECCIÓN y el cálculo puro se quedaron.
+    assert {"entorno_destacado", "extraer_entorno_osm", "_CATEGORIAS",
+            "_nombre_valido", "_formatear"} <= en_entorno
+    assert not ({"_google_nearest", "_entorno_google", "_RADIO_M", "_TIMEOUT"} & en_entorno), (
+        "quedó un segundo cuerpo o su configuración en `app/entorno.py`")
+    assert {"_google_nearest", "_entorno_google",
+            "_ENTORNO_RADIO_M", "_ENTORNO_TIMEOUT"} <= en_prov
     texto = _ENTORNO.read_text(encoding="utf-8")
     llamadas = [i + 1 for i, l in enumerate(texto.splitlines())
                 if "places.googleapis.com" in l and ".post(" in l]
-    assert len(llamadas) == 1, f"se esperaba UNA llamada a Places aquí, hay {llamadas}"
+    assert llamadas == [], f"`app/entorno.py` sigue llamando a Places en {llamadas}"
 
 
 def test_B2_los_dos_SQL_residuales_siguen_en_rutas():
@@ -271,13 +289,32 @@ def test_B2_los_dos_SQL_residuales_siguen_en_rutas():
     assert texto.count("FROM pois_vivos") == 2, "dos lecturas de la vista fuera del provider"
 
 
+def _identificadores(fuente: str) -> set[str]:
+    """Los nombres que el CÓDIGO usa. Los comentarios y docstrings quedan fuera por
+    construcción, y eso importa: el provider EXPLICA en su prosa por qué `entorno_destacado`
+    se quedó fuera, y una guarda por substring convertía esa explicación en un falso
+    positivo. Es la tercera vez en esta serie que una guarda cae por una cita en prosa; aquí
+    la guarda es nuestra y está en el radio, así que se arregla la guarda y no el texto.
+    """
+    a = ast.parse(fuente)
+    return ({x.id for x in ast.walk(a) if isinstance(x, ast.Name)} |
+            {x.attr for x in ast.walk(a) if isinstance(x, ast.Attribute)} |
+            {al.name for n in ast.walk(a) if isinstance(n, (ast.Import, ast.ImportFrom))
+             for al in n.names})
+
+
 def test_B3_la_frontera_extraida_NO_conoce_a_ninguno_de_los_dos():
     """El contrapeso: lo que ya está detrás del seam no debe empezar a depender de esto."""
     for fichero in (_APP / "place" / "providers").glob("*.py"):
         fuente = fichero.read_text(encoding="utf-8")
-        assert "places.googleapis.com" not in fuente or fichero.name == "google.py"
-        assert "_entorno_google" not in fuente and "entorno_destacado" not in fuente
-        assert "_DENTRO_POIS_SQL" not in fuente and "_PANORAMA_TRANSPORTE_SQL" not in fuente
+        usados = _identificadores(fuente)
+        llamadas = _llamadas_efectivas_a_places(fichero.parent)
+        if fichero.name != "google.py":
+            assert not [f for f, _ in llamadas if f == fichero.name]
+            assert "_entorno_google" not in usados
+        # La SELECCIÓN entre proveedores nunca se ejecuta dentro de un proveedor.
+        assert "entorno_destacado" not in usados, "un provider está eligiendo proveedor"
+        assert not {"_DENTRO_POIS_SQL", "_PANORAMA_TRANSPORTE_SQL"} & usados
 
 
 # ══ (C) Baseline del segundo Google ══════════════════════════════════════════════════
@@ -285,7 +322,7 @@ def test_C1_ocho_requests_uno_por_categoria_en_UN_solo_cliente(monkeypatch):
     """La diferencia de coste más grande con el Place path: aquí se piden las OCHO
     categorías siempre, no solo los huecos."""
     _EspiaHTTP.arma(monkeypatch, respuesta=_lugares("X"))
-    asyncio.run(entorno._entorno_google(-0.18, -78.48, "LLAVE"))
+    asyncio.run(_gprov._entorno_google(-0.18, -78.48, "LLAVE"))
     posts = _EspiaHTTP.posts()
     assert len(posts) == 8 == len(entorno._CATEGORIAS)
     assert sum(1 for e in _EspiaHTTP.registro if e["evento"] == "cliente") == 1
@@ -296,7 +333,7 @@ def test_C1_ocho_requests_uno_por_categoria_en_UN_solo_cliente(monkeypatch):
 
 def test_C2_endpoint_metodo_headers_y_payload_exactos(monkeypatch):
     _EspiaHTTP.arma(monkeypatch, respuesta=_lugares("X"))
-    asyncio.run(entorno._entorno_google(-0.18, -78.48, "LLAVE"))
+    asyncio.run(_gprov._entorno_google(-0.18, -78.48, "LLAVE"))
     p = _EspiaHTTP.posts()[0]
     assert p["url"] == "https://places.googleapis.com/v1/places:searchNearby"
     assert p["headers"] == {
@@ -317,16 +354,19 @@ def test_C2_endpoint_metodo_headers_y_payload_exactos(monkeypatch):
 def test_C3_radio_plazo_y_tope_difieren_del_provider_extraido(monkeypatch):
     """El corazón del bloqueador: misma capacidad, política distinta. Se congelan LOS DOS
     lados para que la consolidación tenga que elegir a la vista, no por descuido."""
-    import app.place.providers.google as prov
-    assert entorno._RADIO_M == 1200 and entorno._TIMEOUT == 6.0
-    assert 'radius": 3000.0' in (
-        _APP / "place" / "providers" / "google.py").read_text(encoding="utf-8")
-    assert prov._TIMEOUT == 5.0
+    assert _gprov._ENTORNO_RADIO_M == 1200 and _gprov._ENTORNO_TIMEOUT == 6.0
+    assert 'radius": 3000.0' in _PROVIDER_GOOGLE.read_text(encoding="utf-8")
+    assert _gprov._TIMEOUT == 5.0
+    # LA GUARDA QUE EL MANDATO EXIGE: mientras nadie decida unificarlas, los dos plazos
+    # tienen que seguir siendo DISTINTOS. Una sola `_TIMEOUT` gobernando los dos contratos
+    # cambiaría el plazo de una operación al tocar el de la otra.
+    assert _gprov._TIMEOUT != _gprov._ENTORNO_TIMEOUT, "GOOGLE-DUAL-POLICY-01 se fundió"
     _EspiaHTTP.arma(monkeypatch, respuesta=_lugares("X"))
-    asyncio.run(entorno._entorno_google(-0.18, -78.48, "K"))
+    asyncio.run(_gprov._entorno_google(-0.18, -78.48, "K"))
     assert _EspiaHTTP.registro[0] == {"evento": "cliente", "verify": True, "timeout": 6.0}
-    # Y la heurística de marca ancla NO existe de este lado.
-    assert "_es_marca" not in _ENTORNO.read_text(encoding="utf-8")
+    # Y la heurística de marca ancla sigue SIN aplicarse en la operación legacy, aunque
+    # ahora comparta módulo con la operación que sí la usa.
+    assert "_es_marca" not in _fuente_de("_google_nearest", _PROVIDER_GOOGLE)
 
 
 def test_C4_el_parseo_y_la_forma_de_retorno(monkeypatch):
@@ -338,7 +378,7 @@ def test_C4_el_parseo_y_la_forma_de_retorno(monkeypatch):
         {"displayName": {"text": "sin nombre"}, "location": {"latitude": -0.1800, "longitude": -78.48}},
         {"displayName": {"text": "Sin coords"}, "location": {}},
     ]})
-    out = asyncio.run(entorno._entorno_google(-0.18, -78.48, "K"))
+    out = asyncio.run(_gprov._entorno_google(-0.18, -78.48, "K"))
     assert set(out) == {"fuente", "items", "texto"}
     assert out["fuente"] == "google"
     assert all(i["nombre"] == "Cerca" for i in out["items"]), "el más cercano válido"
@@ -349,7 +389,7 @@ def test_C4_el_parseo_y_la_forma_de_retorno(monkeypatch):
 
 def test_C5_tope_de_items(monkeypatch):
     _EspiaHTTP.arma(monkeypatch, respuesta=_lugares("X"))
-    assert len(asyncio.run(entorno._entorno_google(-0.18, -78.48, "K", max_items=3))["items"]) == 3
+    assert len(asyncio.run(_gprov._entorno_google(-0.18, -78.48, "K", max_items=3))["items"]) == 3
 
 
 _FALLOS = [
@@ -368,7 +408,7 @@ def test_C6_toda_degradacion_devuelve_None_y_gasta_los_ocho_requests(caso, kw, m
     """Congelado tal cual, incluido lo caro: los ocho requests se lanzan igual, y el fallo
     se absorbe entero en `gather(return_exceptions=True)` sin registrar nada."""
     _EspiaHTTP.arma(monkeypatch, **kw)
-    assert asyncio.run(entorno._entorno_google(-0.18, -78.48, "K")) is None, caso
+    assert asyncio.run(_gprov._entorno_google(-0.18, -78.48, "K")) is None, caso
     assert len(_EspiaHTTP.posts()) == 8, "no hay corte temprano: se pagan las ocho"
 
 
@@ -668,6 +708,112 @@ def test_H3_los_dos_cuerpos_de_PostGIS_se_parchean_en_app_rutas():
 def test_H4_el_segundo_Google_NO_comparte_objeto_con_el_provider():
     """Lo contrario del caso anterior, y es la razón de que la consolidación sea trabajo de
     código y no de fachada: son dos funciones distintas, no dos nombres del mismo objeto."""
-    import app.place.providers.google as prov
-    assert entorno._google_nearest is not prov._nearest_categoria
-    assert entorno._RADIO_M != 3000
+    assert _gprov._google_nearest is not _gprov._nearest_categoria
+    assert _gprov._ENTORNO_RADIO_M != 3000
+
+
+# ══ (I) R0B2B — la guarda decisiva: CERO llamadas a Places fuera del provider ═══════
+def _llamadas_efectivas_a_places(raiz: Path) -> list[tuple[str, int]]:
+    """Sitios de llamada REALES, no menciones.
+
+    Se exige el endpoint Y un `.post(` en la misma sentencia. Buscar solo el substring
+    contaría los docstrings que lo nombran —los hay— y la guarda daría un falso positivo
+    eterno; buscar solo `.post(` contaría cualquier POST del repositorio.
+    """
+    hits = []
+    for fichero in sorted(raiz.rglob("*.py")):
+        texto = fichero.read_text(encoding="utf-8")
+        if "places:searchNearby" not in texto:
+            continue
+        for nodo in ast.walk(ast.parse(texto)):
+            if not (isinstance(nodo, ast.Call) and isinstance(nodo.func, ast.Attribute)
+                    and nodo.func.attr == "post"):
+                continue
+            for arg in ast.walk(nodo):
+                if isinstance(arg, ast.Constant) and isinstance(arg.value, str)                         and "places:searchNearby" in arg.value:
+                    hits.append((fichero.relative_to(raiz).as_posix(), nodo.lineno))
+    return hits
+
+
+def test_I1_CERO_llamadas_a_Places_fuera_del_provider():
+    """La condición de éxito de R0B2B, en una línea ejecutable."""
+    fuera = [(f, l) for f, l in _llamadas_efectivas_a_places(_APP)
+             if f != "place/providers/google.py"]
+    assert fuera == [], f"hay Google Places fuera del provider: {fuera}"
+
+
+def test_I2_y_DENTRO_del_provider_hay_exactamente_DOS():
+    """El contrapeso. Si la guarda de arriba pasara porque las llamadas desaparecieron,
+    esto se pondría rojo: son dos operaciones y tienen que seguir estando las dos."""
+    dentro = [l for f, l in _llamadas_efectivas_a_places(_APP)
+              if f == "place/providers/google.py"]
+    assert len(dentro) == 2, f"se esperaban DOS llamadas a Places en el provider: {dentro}"
+
+
+def test_I3_la_guarda_SI_PUEDE_detectar_una_segunda_implementacion(tmp_path):
+    """Mitad negativa sobre fuente fabricada: se le da un árbol con una llamada efectiva
+    fuera del provider y se exige que la vea; y otro donde el endpoint solo aparece en
+    prosa, para exigir que NO la cuente."""
+    llamada = (
+        "async def f(c):\n"
+        '    return await c.post("https://places.googleapis.com/v1/places:searchNearby")\n'
+    )
+    (tmp_path / "intruso.py").write_text(llamada, encoding="utf-8")
+    assert _llamadas_efectivas_a_places(tmp_path) == [("intruso.py", 2)]
+
+    solo_prosa = (
+        '"""Habla de https://places.googleapis.com/v1/places:searchNearby, no llama."""\n'
+        "X = 1\n"
+    )
+    (tmp_path / "intruso.py").write_text(solo_prosa, encoding="utf-8")
+    assert _llamadas_efectivas_a_places(tmp_path) == [], "contó una mención en prosa"
+
+
+def test_I4_las_DOS_politicas_conviven_y_siguen_divergiendo():
+    """`GOOGLE-DUAL-POLICY-01 · POST-2.2 DEBT`, registrada y vigilada, no corregida.
+
+    Un provider, dos operaciones, dos políticas. Esta unidad las junta físicamente y
+    prohíbe que se fundan por descuido: decidir si deben converger cambiaría el coste en
+    cuota, el radio de búsqueda y los nombres que ve un usuario, y eso no es extracción.
+    """
+    fuente = _PROVIDER_GOOGLE.read_text(encoding="utf-8")
+    # A · gap-fill del Place path
+    assert _gprov._TIMEOUT == 5.0 and 'radius": 3000.0' in fuente
+    assert '"maxResultCount": 8' in fuente
+    assert "_es_marca" in _fuente_de("_nearest_categoria", _PROVIDER_GOOGLE)
+    # B · enriquecimiento legacy
+    assert _gprov._ENTORNO_TIMEOUT == 6.0 and _gprov._ENTORNO_RADIO_M == 1200
+    assert '"maxResultCount": 5' in fuente
+    assert "_es_marca" not in _fuente_de("_google_nearest", _PROVIDER_GOOGLE)
+    # Y no hay UNA sola constante gobernando los dos contratos.
+    assert _gprov._TIMEOUT != _gprov._ENTORNO_TIMEOUT
+    assert _gprov._ENTORNO_RADIO_M != 3000
+
+
+def test_I5_la_SELECCION_no_se_movio_y_el_import_es_DIFERIDO():
+    """Dos cosas que van juntas. `entorno_destacado` elige entre Google y OSM: es política
+    entre proveedores y se queda fuera del provider. Y como el provider importa de
+    `app.entorno` su taxonomía, la delegación de vuelta TIENE que ser diferida o se cierra
+    el ciclo que el CLOSE-AUDIT ya había identificado."""
+    fuente = _ENTORNO.read_text(encoding="utf-8")
+    assert "entorno_destacado" in _definidos(_ENTORNO)
+    cabecera = fuente.split("def ")[0]
+    assert "from app.place.providers.google import" not in cabecera, (
+        "import de nivel de módulo: eso cierra el ciclo")
+    assert ("        from app.place.providers.google import _entorno_google"
+            in fuente), "la delegación diferida desapareció"
+
+
+def test_I6_no_hay_ciclo__los_dos_modulos_se_importan_en_cualquier_orden():
+    """La prueba ejecutable del no-ciclo, en intérpretes limpios y en los DOS órdenes."""
+    import subprocess
+    import sys as _sys
+    for primero, segundo in (("app.entorno", "app.place.providers.google"),
+                             ("app.place.providers.google", "app.entorno")):
+        p = subprocess.run(
+            [_sys.executable, "-c",
+             f"import importlib; importlib.import_module({primero!r}); "
+             f"importlib.import_module({segundo!r}); print('ok')"],
+            capture_output=True, text=True, cwd=str(_APP.parent), timeout=180)
+        assert p.returncode == 0 and "ok" in p.stdout, (
+            f"ciclo al importar {primero} y luego {segundo}: {p.stderr[-600:]}")

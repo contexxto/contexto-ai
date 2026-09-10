@@ -71,6 +71,14 @@ _OVERPASS = ("_OVERPASS_MIRRORS", "_RADIUS_M", "_TIMEOUT", "_fetch_pois")
 # Google, 6.0 en Overpass y 20.0 aquí. La tabla de pares aguanta; un diccionario habría
 # dejado dos de los tres sin vigilar.
 _VALHALLA = ("logger", "_TIMEOUT", "_CONTORNOS_DEFECTO", "isocrona")
+# R0B2B. Google pasa a tener DOS operaciones sobre el mismo endpoint, con politicas
+# distintas y congeladas: la A rellena huecos del Place path (radio 3000, tope 8, marca
+# ancla) y la B enriquece una ficha al publicarla (radio 1200, tope 5, ocho requests
+# incondicionales, sin marca). UN provider, dos operaciones — no dos providers. Y por eso
+# el ORIGEN deja de ser una propiedad del modulo: los simbolos de A salieron de `rutas.py`
+# y los de B de `entorno.py`.
+_GOOGLE_ENTORNO = ("_google_nearest", "_entorno_google",
+                   "_ENTORNO_RADIO_M", "_ENTORNO_TIMEOUT")
 
 # módulo destino → (su fichero, el fichero del que SALIÓ, sus símbolos)
 _EXTRAIDO = (
@@ -80,6 +88,7 @@ _EXTRAIDO = (
     (nominatim, _PROV / "nominatim.py", _APP / "agent" / "tools.py", _NOMINATIM),
     (overpass, _PROV / "overpass.py", _APP / "walk_score.py", _OVERPASS),
     (valhalla, _PROV / "valhalla.py", _APP / "isocronas.py", _VALHALLA),
+    (google, _PROV / "google.py", _APP / "entorno.py", _GOOGLE_ENTORNO),
 )
 
 # ── Por qué esto son PARES y ya no un diccionario símbolo → módulo ────────────────────
@@ -97,7 +106,10 @@ _EXTRAIDO = (
 _MOVIDOS = tuple((m, n) for m, _f, _o, ns in _EXTRAIDO for n in ns)
 _IDS = [m.__name__.rsplit(".", 1)[-1] + ":" + n for m, n in _MOVIDOS]
 _FICHERO = {m: f for m, f, _o, _ns in _EXTRAIDO}
-_ORIGEN = {m: o for m, _f, o, _ns in _EXTRAIDO}
+# El origen se indexa por PAR, no por modulo: desde R0B2B, `google` recibe simbolos de dos
+# ficheros distintos. Un dict por modulo habria hecho que la segunda entrada pisara a la
+# primera y la guarda de «no queda un segundo cuerpo» habria mirado el fichero equivocado.
+_ORIGEN = {(m, n): o for m, _f, o, ns in _EXTRAIDO for n in ns}
 
 _DUENOS: dict[str, list[str]] = {}
 for _m, _f, _o, _ns in _EXTRAIDO:
@@ -304,7 +316,7 @@ def test_el_modulo_de_origen_no_conserva_un_segundo_cuerpo(modulo, simbolo):
     Overpass de `app/walk_score.py`. Dos implementaciones del mismo nombre divergen en
     silencio — se arregla una y la otra sigue sirviendo la respuesta vieja.
     """
-    origen = _ORIGEN[modulo]
+    origen = _ORIGEN[(modulo, simbolo)]
     assert simbolo not in _definidos_en(origen), (
         f"`{simbolo}` sigue teniendo un cuerpo en `{origen.name}` además del de su "
         f"provider.")
@@ -775,3 +787,56 @@ def test_el_provider_de_overpass_conserva_su_degradacion_exacta(monkeypatch):
     monkeypatch.setattr(overpass.httpx, "AsyncClient", _ClienteCaido)
     assert asyncio.run(overpass._fetch_pois(-0.18, -78.48)) is None
     assert len(overpass._OVERPASS_MIRRORS) == 2, "se intentan dos mirrors, no uno"
+
+
+# ═════════════════════════════════════════════════════════════════════════════════════
+# (G) R0B2B — UN provider de Google, DOS operaciones
+#
+# No son dos providers. Es un proveedor comercial con dos capacidades que el producto usa
+# en momentos distintos, y cuyas politicas NO se unifican en esta fase porque hacerlo
+# cambiaria comportamiento. La divergencia esta registrada como
+# `GOOGLE-DUAL-POLICY-01 · POST-2.2 DEBT`.
+# ═════════════════════════════════════════════════════════════════════════════════════
+_OPERACION_A = ("_nearest_categoria", "_mejor_transporte", "_CAT_GOOGLE", "_TIMEOUT")
+_OPERACION_B = ("_google_nearest", "_entorno_google", "_ENTORNO_RADIO_M", "_ENTORNO_TIMEOUT")
+
+
+def test_google_tiene_DOS_operaciones_y_ambas_viven_en_UN_provider():
+    definidos = _definidos_en(_PROV / "google.py")
+    assert set(_OPERACION_A) <= definidos and set(_OPERACION_B) <= definidos
+    # Y ninguna se coló en otro provider. `_TIMEOUT` se excluye a propósito: es el HOMÓNIMO
+    # legítimo que este mismo fichero ya documenta —5.0 en Google, 6.0 en Overpass, 20.0 en
+    # Valhalla— y exigir que sea único aquí contradiría esa doctrina. Su vigilancia vive en
+    # `test_el_homonimo_TIMEOUT_tiene_DOS_valores_y_no_debe_fundirse`.
+    propios = (set(_OPERACION_A) | set(_OPERACION_B)) - {"_TIMEOUT"}
+    for otro in _PROV.glob("*.py"):
+        if otro.name == "google.py":
+            continue
+        assert not propios & _definidos_en(otro), otro.name
+
+
+def test_las_dos_operaciones_NO_comparten_configuracion():
+    """La guarda que impide que se fundan por descuido. Si un dia alguien decide que deben
+    converger, sera una decision escrita, no el efecto de reutilizar una constante."""
+    assert google._TIMEOUT != google._ENTORNO_TIMEOUT, "5.0 (A) y 6.0 (B)"
+    assert google._ENTORNO_RADIO_M == 1200
+    fuente = (_PROV / "google.py").read_text(encoding="utf-8")
+    assert 'radius": 3000.0' in fuente and "float(_ENTORNO_RADIO_M)" in fuente
+    assert '"maxResultCount": 8' in fuente and '"maxResultCount": 5' in fuente
+
+
+def test_la_SELECCION_entre_Google_y_OSM_sigue_FUERA_del_provider():
+    """`entorno_destacado` elige entre dos proveedores. Eso es orquestacion, y la
+    orquestacion no vive dentro de un proveedor — la misma regla que mantiene
+    `_servicios_con_coords` en `rutas.py`."""
+    import app.entorno as _ent
+    assert "entorno_destacado" in _definidos_en(_APP / "entorno.py")
+    assert "entorno_destacado" not in _definidos_en(_PROV / "google.py")
+    assert callable(_ent.entorno_destacado)
+
+
+def test_el_provider_de_Google_sigue_sin_importar_rutas_routers_ni_agent():
+    """La direccion no cambia porque haya entrado una operacion mas."""
+    importados = _importados_por((_PROV / "google.py").read_text(encoding="utf-8"))
+    for malo in _PROHIBIDOS:
+        assert not any(m == malo or m.startswith(malo + ".") for m in importados), malo

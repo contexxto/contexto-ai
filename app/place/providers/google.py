@@ -22,10 +22,12 @@ reintentos nuevos.
 
 from __future__ import annotations
 
+import asyncio
+
 import httpx
 
 from app.config import settings
-from app.entorno import _CATEGORIAS, _nombre_valido
+from app.entorno import _CATEGORIAS, _formatear, _nombre_valido
 from app.place.providers import _MARGEN_MARCA_M, _es_marca
 from app.walk_score import _haversine_m
 
@@ -137,3 +139,86 @@ async def _mejor_transporte(lat: float, lon: float, key: str) -> dict | None:
     if bus:
         bus["es_masivo"] = False
     return bus
+
+
+# ══════════════════════════════════════════════════════════════════════════════════════
+# OPERACION B — ENRIQUECIMIENTO LEGACY DEL ENTORNO (PLAN04-2.2-R0B2B)
+#
+# Este modulo tiene ahora DOS operaciones sobre el MISMO endpoint de Google, con politicas
+# distintas, y esto es deliberado. La operacion A —`_nearest_categoria` y compañia— rellena
+# los HUECOS del Place path: pregunta solo por lo que la capa propia no cubrio, con radio
+# 3000, tope 8 y heuristica de marca ancla. La B pregunta por las OCHO categorias siempre,
+# con radio 1200, tope 5 y sin heuristica, y sirve al enriquecimiento de una ficha al
+# publicarla.
+#
+# NO SE UNIFICAN, Y NO ES DESCUIDO. Decidir si deben converger es un cambio de
+# comportamiento —cambiaria el coste en cuota, el radio de busqueda y los nombres que ve un
+# usuario— y la FASE 2 es extraccion sin cambiar comportamiento. La divergencia queda
+# registrada como `GOOGLE-DUAL-POLICY-01 · POST-2.2 DEBT`, medida en los dos lados y con
+# guardas que exigen que los dos plazos sigan siendo DISTINTOS mientras nadie decida.
+#
+# POR ESO LAS CONSTANTES LLEVAN PREFIJO. Reutilizar `_TIMEOUT` habria hecho que una sola
+# constante gobernase dos contratos: el dia que alguien la tocara para la operacion A,
+# cambiaria en silencio el plazo de la B.
+#
+# QUIEN ELIGE ENTRE GOOGLE Y OSM NO ESTA AQUI. `entorno_destacado` se queda en
+# `app/entorno.py`: es politica de seleccion entre dos proveedores, y eso nunca vive dentro
+# de un proveedor.
+# ══════════════════════════════════════════════════════════════════════════════════════
+
+_ENTORNO_RADIO_M = 1200      # el radio de la operacion B; el de la A son 3000 m en linea
+_ENTORNO_TIMEOUT = 6.0       # su plazo propio; el de la A es `_TIMEOUT`, 5.0
+
+
+async def _google_nearest(client, cat: dict, lat: float, lon: float, key: str) -> dict | None:
+    """El lugar más cercano de UNA categoría vía Places API (New)."""
+    body = {
+        "includedTypes": [cat["google"]],
+        "maxResultCount": 5,
+        "rankPreference": "DISTANCE",
+        "languageCode": "es",
+        "locationRestriction": {
+            "circle": {"center": {"latitude": lat, "longitude": lon}, "radius": float(_ENTORNO_RADIO_M)}
+        },
+    }
+    headers = {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": key,
+        "X-Goog-FieldMask": "places.displayName,places.location",
+    }
+    resp = await client.post("https://places.googleapis.com/v1/places:searchNearby",
+                             json=body, headers=headers)
+    resp.raise_for_status()
+    mejor = None
+    for pl in resp.json().get("places", []):
+        loc = pl.get("location", {})
+        nombre = (pl.get("displayName") or {}).get("text")
+        if "latitude" not in loc or not _nombre_valido(nombre):
+            continue
+        d = _haversine_m(lat, lon, loc["latitude"], loc["longitude"])
+        if mejor is None or d < mejor[0]:
+            mejor = (d, nombre)
+    if mejor is None:
+        return None
+    return {"key": cat["key"], "emoji": cat["emoji"], "label": cat["label"],
+            "nombre": mejor[1], "distancia_m": int(mejor[0])}
+
+
+async def _entorno_google(lat: float, lon: float, key: str, max_items: int = 8) -> dict | None:
+    """
+    Enriquecimiento EN VIVO con la Places API (New) — compatible con la Clave de
+    Demo de Maps. Una llamada POR categoría (el más cercano), así garantizamos
+    colegio, UPC, etc. aunque haya muchas tiendas más cerca.
+    """
+    verify = settings.ssl_verify.lower() != "false"
+    async with httpx.AsyncClient(verify=verify, timeout=_ENTORNO_TIMEOUT) as c:
+        resultados = await asyncio.gather(
+            *[_google_nearest(c, cat, lat, lon, key) for cat in _CATEGORIAS],
+            return_exceptions=True,
+        )
+    items = [r for r in resultados if isinstance(r, dict)]
+    if not items:
+        return None  # todas fallaron o sin resultados → el llamador cae a OSM
+    items.sort(key=lambda i: i["distancia_m"])
+    items = items[:max_items]
+    return {"fuente": "google", "items": items, "texto": _formatear(items)}

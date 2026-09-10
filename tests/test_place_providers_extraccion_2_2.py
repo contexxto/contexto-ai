@@ -41,10 +41,11 @@ from pathlib import Path
 import pytest
 
 import app.agent.tools as tools
+import app.isocronas as isocronas
 import app.rutas as rutas
 import app.walk_score as walk_score
 from app.place import providers
-from app.place.providers import google, nominatim, overpass, propia
+from app.place.providers import google, nominatim, overpass, propia, valhalla
 
 _APP = Path(__file__).resolve().parents[1] / "app"
 _PROV = _APP / "place" / "providers"
@@ -65,6 +66,11 @@ _GOOGLE = ("_TIMEOUT", "_decode_polyline", "_ruta_a_pie", "_CAT_GOOGLE",
 # darse por supuesto y pasa a ser un dato de la tabla.
 _NOMINATIM = ("_reverse_geocode",)
 _OVERPASS = ("_OVERPASS_MIRRORS", "_RADIUS_M", "_TIMEOUT", "_fetch_pois")
+# R0B1C1. Valhalla es el primer proveedor que NO es de un tercero —corre auto-hospedado— y
+# aun así entra por la misma puerta. Con él, `_TIMEOUT` pasa a tener TRES dueños: 5.0 en
+# Google, 6.0 en Overpass y 20.0 aquí. La tabla de pares aguanta; un diccionario habría
+# dejado dos de los tres sin vigilar.
+_VALHALLA = ("logger", "_TIMEOUT", "_CONTORNOS_DEFECTO", "isocrona")
 
 # módulo destino → (su fichero, el fichero del que SALIÓ, sus símbolos)
 _EXTRAIDO = (
@@ -73,6 +79,7 @@ _EXTRAIDO = (
     (google, _PROV / "google.py", _APP / "rutas.py", _GOOGLE),
     (nominatim, _PROV / "nominatim.py", _APP / "agent" / "tools.py", _NOMINATIM),
     (overpass, _PROV / "overpass.py", _APP / "walk_score.py", _OVERPASS),
+    (valhalla, _PROV / "valhalla.py", _APP / "isocronas.py", _VALHALLA),
 )
 
 # ── Por qué esto son PARES y ya no un diccionario símbolo → módulo ────────────────────
@@ -101,7 +108,7 @@ for _m, _f, _o, _ns in _EXTRAIDO:
 # el paquete entero. El glob hace que un provider futuro entre aquí sin que nadie lo añada.
 def _ficheros_vigilados() -> list[Path]:
     return sorted({_APP / "rutas.py", _APP / "walk_score.py", _APP / "agent" / "tools.py",
-                   *_PROV.glob("*.py")})
+                   _APP / "isocronas.py", *_PROV.glob("*.py")})
 
 # Sonda de aislamiento: importa UN módulo en un intérprete limpio y delata lo que arrastró.
 # Se comparte entre la guarda y su mitad negativa a propósito — si fueran dos sondas
@@ -137,6 +144,11 @@ _FACHADA_RUTAS = {
     "_nearest_categoria": (google, "lo llaman `_servicios_con_coords`, `comando_mapa` y "
                                    "`recorrido_zona`"),
     "_mejor_transporte": (google, "lo llaman `_servicios_con_coords` y `recorrido_zona`"),
+    # `rutas` no es fachada de esto: es CONSUMIDOR. Liga `isocrona` a nivel de módulo desde
+    # `app/rutas.py:34` —desde mucho antes de esta unidad, y R0B1C1 no toca ese fichero— y
+    # la usa en `_accion_isocrona`. Se declara aquí porque desde fuera se ve igual: el
+    # nombre está en su espacio y por tanto es su punto de parcheo efectivo.
+    "isocrona": (valhalla, "lo liga `app/rutas.py:34` y lo usa `_accion_isocrona`"),
 }
 
 # R0B1B añade dos fachadas más, en los dos módulos de los que salieron los proveedores.
@@ -150,7 +162,17 @@ _FACHADA_WALK = {
     "_fetch_pois": (overpass, "lo importa a nivel de módulo `app/routers/assets.py`"),
     "_TIMEOUT": (overpass, "es el valor por defecto de `walk_score_para`, que se queda"),
 }
-_FACHADAS = ((rutas, _FACHADA_RUTAS), (tools, _FACHADA_TOOLS), (walk_score, _FACHADA_WALK))
+# La cuarta fachada. `app/isocronas.py` conserva los cuatro nombres que se fueron porque los
+# tres eran superficie histórica suya: `app/rutas.py` liga `isocrona` a nivel de módulo,
+# `app/routers/assets.py` la importa diferida desde aquí, y dos scripts también.
+_FACHADA_ISO = {
+    "isocrona": (valhalla, "la ligan `app/rutas.py`, `app/routers/assets.py` y dos scripts"),
+    "_TIMEOUT": (valhalla, "superficie histórica del módulo"),
+    "_CONTORNOS_DEFECTO": (valhalla, "superficie histórica del módulo"),
+    "logger": (valhalla, "el logger operativo, que conserva el nombre `app.isocronas`"),
+}
+_FACHADAS = ((rutas, _FACHADA_RUTAS), (tools, _FACHADA_TOOLS), (walk_score, _FACHADA_WALK),
+             (isocronas, _FACHADA_ISO))
 _PAR_FACHADA = tuple((mod, n) for mod, d in _FACHADAS for n in sorted(d))
 _IDS_FACHADA = [mod.__name__.rsplit(".", 1)[-1] + ":" + n for mod, n in _PAR_FACHADA]
 
@@ -454,8 +476,8 @@ def test_la_fachada_liga_el_mismo_objeto(fachada, simbolo):
 
 @pytest.mark.parametrize("fachada,declarada",
                          [(rutas, _FACHADA_RUTAS), (tools, _FACHADA_TOOLS),
-                          (walk_score, _FACHADA_WALK)],
-                         ids=["rutas", "tools", "walk_score"])
+                          (walk_score, _FACHADA_WALK), (isocronas, _FACHADA_ISO)],
+                         ids=["rutas", "tools", "walk_score", "isocronas"])
 def test_la_fachada_no_reexporta_nada_de_mas(fachada, declarada):
     """Contrapeso del anterior. Reexportarlo todo haría pasar la guarda de arriba y además
     inventaría superficie pública que el módulo nunca tuvo — lo contrario de extraer. Cada
@@ -708,7 +730,8 @@ def test_el_import_historico_de_assets_sigue_alcanzando_el_provider():
 
 
 @pytest.mark.parametrize("modulo", ["app.place.providers.nominatim",
-                                    "app.place.providers.overpass"])
+                                    "app.place.providers.overpass",
+                                    "app.place.providers.valhalla"])
 def test_los_providers_nuevos_se_importan_sin_arrastrar_la_aplicacion(modulo):
     """(C) Aislamiento, medido en un intérprete limpio: ni FastAPI, ni routers, ni agent,
     ni `app.rutas`. El AST solo ve los imports directos; esto ve los transitivos."""

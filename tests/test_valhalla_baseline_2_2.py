@@ -39,6 +39,7 @@ import httpx
 import pytest
 
 import app.isocronas as iso
+import app.place.providers.valhalla as _prov
 import app.routers.assets as assets
 import app.rutas as rutas
 from app.config import settings
@@ -166,12 +167,16 @@ class _Espia:
     def arma(cls, monkeypatch, respuesta=None, excepcion=None, status=200, crudo=None):
         cls.registro, cls.respuesta = [], respuesta
         cls.excepcion, cls.status, cls.crudo = excepcion, status, crudo
-        # Se sustituye el NOMBRE `httpx` dentro de `app.isocronas`, no el atributo del
-        # módulo httpx compartido. La primera versión hacía lo segundo y rompía cosas muy
-        # lejos: `app.agent.graph` construye su cliente de Anthropic al importarse y le
-        # pasa un httpx, así que el doble viajaba hasta ahí. Un doble tiene que llegar
-        # exactamente hasta donde llega el nombre que sustituye.
-        monkeypatch.setattr(iso, "httpx", types.SimpleNamespace(AsyncClient=cls))
+        # Se sustituye el NOMBRE `httpx` dentro del módulo que lo resuelve, no el atributo
+        # del módulo httpx compartido: `app.agent.graph` construye su cliente de Anthropic
+        # al importarse y le pasa un httpx, así que un parche global viajaba hasta allí. Un
+        # doble tiene que llegar exactamente hasta donde llega el nombre que sustituye.
+        #
+        # R0B1C1-A1: ese módulo pasó a ser el PROVIDER. Es la única línea de este fichero
+        # que la extracción obligó a mover, y no cambia ninguna expectativa: el nombre
+        # `httpx` viajó con el cuerpo, así que el punto efectivo de parcheo viajó con él.
+        # Todo lo que las secciones C, D, E y F afirman sigue afirmándose igual.
+        monkeypatch.setattr(_prov, "httpx", types.SimpleNamespace(AsyncClient=cls))
         return cls
 
     @classmethod
@@ -214,75 +219,129 @@ class _Conn:
         return [s for s in self.sql if s.upper().startswith(("SELECT", "WITH"))]
 
 
-# ══ (B) El mapa del módulo ═══════════════════════════════════════════════════════════
-def _arbol():
-    return ast.parse(_FICHERO.read_text(encoding="utf-8"))
+# ══ (B) El mapa del módulo, DESPUÉS de la extracción ═════════════════════════════════
+# Actualizada bajo `PLAN04-2.2-R0B1C1-A1`: estas cinco afirman SITIO DE DEFINICIÓN, y el
+# sitio es justo lo que R0B1C1 mueve. No se han debilitado para obtener verde — al
+# contrario: antes miraban un fichero y ahora miran los DOS, así que además de decir dónde
+# está el cuerpo pueden decir que no hay un segundo, que la fachada es alias y no
+# envoltorio, y que el provider no se llevó la persistencia.
+_PROVIDER = _APP / "place" / "providers" / "valhalla.py"
 
 
-def _fuente_de(nombre: str) -> str:
-    for n in _arbol().body:
+def _arbol(fichero: Path = None):
+    return ast.parse((fichero or _FICHERO).read_text(encoding="utf-8"))
+
+
+def _fuente_de(nombre: str, fichero: Path = None) -> str:
+    f = fichero or _FICHERO
+    for n in _arbol(f).body:
         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == nombre:
-            return ast.get_source_segment(_FICHERO.read_text(encoding="utf-8"), n) or ""
-    raise AssertionError(f"{nombre} no está definido en {_FICHERO.name}")
+            return ast.get_source_segment(f.read_text(encoding="utf-8"), n) or ""
+    raise AssertionError(f"{nombre} no está definido en {f.name}")
 
 
-def test_B1_el_modulo_tiene_exactamente_los_simbolos_esperados():
-    """Si aparece uno nuevo, el mapa de abajo deja de describir el fichero y hay que
-    reclasificarlo antes de mover nada."""
-    encontrados = set()
-    for n in _arbol().body:
+def _definidos(fichero: Path) -> set[str]:
+    """Lo que ESE fichero DEFINE. Un import no define: es la distinción que separa una
+    fachada de una segunda implementación, y `inspect` no puede verla."""
+    nombres = set()
+    for n in _arbol(fichero).body:
         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            encontrados.add(n.name)
+            nombres.add(n.name)
         elif isinstance(n, ast.Assign):
-            encontrados |= {t.id for t in n.targets if isinstance(t, ast.Name)}
-    assert encontrados == {
-        "logger", "_TIMEOUT", "_CONTORNOS_DEFECTO",      # configuración
-        "isocrona",                                       # I/O + parseo (MIXTA)
-        "_UPSERT_ISOCRONA", "guardar_isocronas_inmueble",  # persistencia
-        "_WEDGE_SQL", "buscar_por_ancla_tiempo",          # consulta de negocio
-    }, sorted(encontrados)
+            nombres |= {t.id for t in n.targets if isinstance(t, ast.Name)}
+    return nombres
 
 
-def test_B2_solo_isocrona_hace_red():
-    """`httpx` aparece en UNA sola función del módulo. Ésa es la costura extraíble."""
-    con_red = [n.name for n in _arbol().body
+def _importados_de_valhalla() -> set[str]:
+    return {a.name for n in _arbol().body
+            if isinstance(n, ast.ImportFrom) and n.module == "app.place.providers.valhalla"
+            for a in n.names}
+
+
+def test_B1_cada_fichero_define_exactamente_lo_suyo():
+    """El reparto, por los dos lados. Si un símbolo aparece en el lado equivocado —o en los
+    dos— esto se pone rojo antes de que nadie note la divergencia."""
+    assert _definidos(_PROVIDER) == {
+        "logger", "_TIMEOUT", "_CONTORNOS_DEFECTO",   # configuración de la llamada
+        "isocrona",                                    # transporte + traducción
+    }, sorted(_definidos(_PROVIDER))
+    assert _definidos(_FICHERO) == {
+        "_UPSERT_ISOCRONA", "guardar_isocronas_inmueble",   # persistencia
+        "_WEDGE_SQL", "buscar_por_ancla_tiempo",            # consulta de negocio
+    }, sorted(_definidos(_FICHERO))
+    # Y la superficie histórica de `app.isocronas` sigue completa: los cuatro nombres que
+    # se fueron vuelven por la fachada, ni uno menos ni uno inventado.
+    assert _importados_de_valhalla() == {"isocrona", "_TIMEOUT", "_CONTORNOS_DEFECTO",
+                                         "logger"}
+
+
+def test_B1b_la_fachada_es_ALIAS_y_no_hay_segundo_cuerpo():
+    """Las dos formas de arruinar una extracción, vigiladas a la vez.
+
+    Un cuerpo duplicado en el módulo viejo pasaría inadvertido para `inspect` —el import lo
+    sobrescribe en ejecución— y solo el AST del FICHERO lo ve. Un envoltorio
+    (`async def isocrona(...): return await provider...`) pasaría la prueba de "no está
+    definido en dos sitios" y aun así rompería la identidad, creando un segundo seam.
+    """
+    assert "isocrona" not in _definidos(_FICHERO), "quedó un segundo cuerpo en el módulo viejo"
+    assert iso.isocrona is _prov.isocrona, "la fachada envuelve en vez de aliasar"
+    assert iso.logger is _prov.logger, "dos loggers distintos con el mismo nombre divergirían"
+    ficheros = [_FICHERO, *sorted((_APP / "place" / "providers").glob("*.py"))]
+    dueños = [f.name for f in ficheros if "isocrona" in _definidos(f)]
+    assert dueños == ["valhalla.py"], dueños
+
+
+def test_B2_la_red_vive_en_el_PROVIDER_y_ya_no_en_isocronas():
+    """`httpx` aparece en UNA sola función, y ahora está del lado correcto de la frontera."""
+    con_red = [n.name for n in _arbol(_PROVIDER).body
+               if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+               and "httpx" in _fuente_de(n.name, _PROVIDER)]
+    assert con_red == ["isocrona"]
+    sin_red = [n.name for n in _arbol().body
                if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
                and "httpx" in _fuente_de(n.name)]
-    assert con_red == ["isocrona"]
+    assert sin_red == [], "`app/isocronas.py` volvió a hacer red"
+    assert "import httpx" not in _FICHERO.read_text(encoding="utf-8")
 
 
-def test_B3_solo_la_persistencia_y_el_negocio_tocan_la_base():
-    """Y `isocrona` no está entre ellas: ni recibe conexión ni ejecuta SQL."""
+def test_B3_la_persistencia_se_QUEDO_y_el_provider_no_se_la_llevo():
+    """La mitad que el mandato pedía discriminar: un provider que arrastre persistencia."""
     con_sql = [n.name for n in _arbol().body
                if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
                and "conn.execute" in _fuente_de(n.name)]
     assert con_sql == ["guardar_isocronas_inmueble", "buscar_por_ancla_tiempo"]
-    fuente = _fuente_de("isocrona")
-    assert "conn" not in fuente and "execute" not in fuente
+    texto_prov = _PROVIDER.read_text(encoding="utf-8")
+    for prohibido in ("sqlalchemy", "conn.execute", "app.database", "INSERT", "SELECT"):
+        assert prohibido not in texto_prov, f"el provider se llevó `{prohibido}`"
     # Estructuralmente imposible: no tiene por dónde recibir una conexión.
     assert "conn" not in iso.isocrona.__code__.co_varnames
 
 
-def test_B4_isocrona_es_MIXTA_y_el_corte_esta_entre_el_try_y_el_bucle():
-    """La costura mínima, dicha con precisión: dentro de `isocrona` conviven el I/O (el
-    `try` con httpx) y el PARSEO de la respuesta (el bucle sobre `features`), que es puro.
-    Una extracción honesta parte por ahí; llevarse el bucle al provider sería llevarse
-    interpretación, no transporte."""
-    fuente = _fuente_de("isocrona")
+def test_B4_la_TRADUCCION_viajo_con_el_transporte_y_no_quedo_partida():
+    """`isocrona` nunca fue "I/O puro": pide el polígono Y traduce `features` al vocabulario
+    de Contexto. Las dos mitades tenían que viajar juntas — dejar el parseo en el módulo
+    viejo habría partido una función en dos módulos por una frontera imaginaria."""
+    fuente = _fuente_de("isocrona", _PROVIDER)
     assert "httpx.AsyncClient" in fuente and 'fc.get("features"' in fuente
-    # El parseo no depende de httpx: opera sobre el dict ya decodificado.
+    # El parseo sigue sin depender de httpx: opera sobre el dict ya decodificado.
     cuerpo = fuente.split("return None", 1)[1]
     assert "httpx" not in cuerpo and "features" in cuerpo
+    # Y no quedó rastro de la traducción del otro lado. Se busca el CÓDIGO que traduce
+    # —no la palabra suelta: `features` es también el nombre de un parámetro de la
+    # persistencia, y una guarda por substring habría dado un falso positivo eterno.
+    viejo = _FICHERO.read_text(encoding="utf-8")
+    for rastro in ('fc.get("features"', 'props.get("contour")', '"minutos": minutos_val'):
+        assert rastro not in viejo, f"la traducción quedó partida: `{rastro}`"
 
 
-def test_B5_el_unico_POST_a_valhalla_del_repositorio_esta_aqui():
+def test_B5_el_unico_POST_a_valhalla_del_repositorio_esta_en_el_provider():
     """Si algún día aparece un segundo cliente de Valhalla, esta guarda lo delata antes de
-    que la extracción cree dos verdades."""
+    que existan dos verdades."""
     llamadas = [(p.name, i + 1)
                 for p in _APP.rglob("*.py")
                 for i, l in enumerate(p.read_text(encoding="utf-8").splitlines())
                 if "isochrone" in l and ".post(" in l]
-    assert llamadas == [("isocronas.py", 48)], llamadas
+    assert [n for n, _ in llamadas] == ["valhalla.py"], llamadas
     # `app/models.py` tambien nombra `/isochrone`, pero en prosa. Se busca el SITIO DE
     # LLAMADA, no la mencion: una guarda por substring habria dado un falso positivo eterno.
 
@@ -588,10 +647,18 @@ def test_F9_caso_D_sin_coordenadas_lee_pero_no_llama(monkeypatch):
 
 
 # ══ (G) El seam ══════════════════════════════════════════════════════════════════════
-def test_G1_donde_se_define_hoy():
-    assert iso.isocrona.__module__ == "app.isocronas"
+def test_G1_donde_se_define_ahora_y_que_sigue_ligado():
+    """Actualizada bajo `PLAN04-2.2-R0B1C1-A1`. El objeto declara su origen nuevo; la
+    persistencia y el negocio declaran que NO se movieron; y la fachada liga el mismo
+    objeto, que es lo que hace que nada de lo de arriba tenga que cambiar."""
+    assert iso.isocrona.__module__ == "app.place.providers.valhalla"
     assert iso.guardar_isocronas_inmueble.__module__ == "app.isocronas"
     assert iso.buscar_por_ancla_tiempo.__module__ == "app.isocronas"
+    # La fachada, por identidad y no por igualdad.
+    assert iso.isocrona is _prov.isocrona
+    assert iso._TIMEOUT is _prov._TIMEOUT
+    assert iso._CONTORNOS_DEFECTO is _prov._CONTORNOS_DEFECTO
+    assert iso.logger is _prov.logger
 
 
 def test_G2_rutas_importa_a_NIVEL_DE_MODULO_asi_que_se_parchea_en_rutas():

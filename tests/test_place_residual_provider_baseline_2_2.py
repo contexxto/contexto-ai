@@ -26,6 +26,7 @@ from __future__ import annotations
 import ast
 import asyncio
 import json
+import re
 import socket
 import types
 from pathlib import Path
@@ -43,6 +44,7 @@ _APP = Path(__file__).resolve().parents[1] / "app"
 _ENTORNO = _APP / "entorno.py"
 _RUTAS = _APP / "rutas.py"
 _PROVIDER_GOOGLE = _APP / "place" / "providers" / "google.py"
+_PROVIDER_PROPIA = _APP / "place" / "providers" / "propia.py"
 
 
 # ══ (A) Tripwire de red — y por qué éste tiene que ser distinto ══════════════════════
@@ -280,13 +282,24 @@ def test_B1_el_segundo_Google_sigue_donde_la_auditoria_lo_encontro():
     assert llamadas == [], f"`app/entorno.py` sigue llamando a Places en {llamadas}"
 
 
-def test_B2_los_dos_SQL_residuales_siguen_en_rutas():
+def test_B2_el_SQL_de_pois_vivos_ya_NO_esta_en_rutas():
+    """Actualizada bajo R0B2C: describía el estado PRE-extracción. Ahora describe el reparto
+    resultante — el SQL en el provider, la conexión y la prosa en el llamador."""
     en_rutas = _definidos(_RUTAS)
-    assert {"_DENTRO_POIS_SQL", "_DENTRO_ACTIVOS_SQL", "_PANORAMA_TRANSPORTE_SQL",
-            "_contenido_isocrona", "_panorama_transporte", "_frase_dentro"} <= en_rutas
+    en_propia = _definidos(_PROVIDER_PROPIA)
+    # Lo que se queda: el catastro, la prosa y los dos consumidores.
+    assert {"_DENTRO_ACTIVOS_SQL", "_contenido_isocrona",
+            "_panorama_transporte", "_frase_dentro"} <= en_rutas
+    # Lo que se fue: los dos SQL y sus dos ejecuciones.
+    assert not ({"_DENTRO_POIS_SQL", "_PANORAMA_TRANSPORTE_SQL"} & en_rutas)
+    assert {"_DENTRO_POIS_SQL", "_PANORAMA_TRANSPORTE_SQL",
+            "_pois_dentro_geometria", "_filas_panorama_transporte"} <= en_propia
     texto = _RUTAS.read_text(encoding="utf-8")
-    assert texto.count("engine.connect()") == 2, "dos conexiones, ni una más"
-    assert texto.count("FROM pois_vivos") == 2, "dos lecturas de la vista fuera del provider"
+    # Las DOS conexiones siguen aquí: abrir el recurso es del llamador, y de eso depende que
+    # `_contenido_isocrona` siga cubriendo sus dos tablas con una sola.
+    # `PLACE-PROPIA-CONNECTION-OWNERSHIP-01 · ACCEPTED SEAM`.
+    assert texto.count("engine.connect()") == 2
+    assert texto.count("conn.execute") == 1, "solo queda la del catastro"
 
 
 def _identificadores(fuente: str) -> set[str]:
@@ -314,7 +327,9 @@ def test_B3_la_frontera_extraida_NO_conoce_a_ninguno_de_los_dos():
             assert "_entorno_google" not in usados
         # La SELECCIÓN entre proveedores nunca se ejecuta dentro de un proveedor.
         assert "entorno_destacado" not in usados, "un provider está eligiendo proveedor"
-        assert not {"_DENTRO_POIS_SQL", "_PANORAMA_TRANSPORTE_SQL"} & usados
+        # R0B2C: los dos SQL de `pois_vivos` viven ahora en `propia.py`, y solo ahí.
+        if fichero.name != "propia.py":
+            assert not {"_DENTRO_POIS_SQL", "_PANORAMA_TRANSPORTE_SQL"} & usados
 
 
 # ══ (C) Baseline del segundo Google ══════════════════════════════════════════════════
@@ -817,3 +832,165 @@ def test_I6_no_hay_ciclo__los_dos_modulos_se_importan_en_cualquier_orden():
             capture_output=True, text=True, cwd=str(_APP.parent), timeout=180)
         assert p.returncode == 0 and "ok" in p.stdout, (
             f"ciclo al importar {primero} y luego {segundo}: {p.stderr[-600:]}")
+
+# ══ (J) R0B2C — CERO SQL efectivo de `pois_vivos` fuera del provider ═════════════════
+def _sql_efectivo_de_pois_vivos(raiz: Path) -> list[tuple[str, int]]:
+    """Literales SQL que leen la vista, no menciones.
+
+    Se mira el AST y solo `ast.Constant` de tipo `str`: así un comentario que la nombre —los
+    hay, y explican por qué se consulta— no cuenta, y el nombre de una prueba tampoco.
+    """
+    hits = []
+    for fichero in sorted(raiz.rglob("*.py")):
+        texto = fichero.read_text(encoding="utf-8")
+        if "pois_vivos" not in texto:
+            continue
+        for nodo in ast.walk(ast.parse(texto)):
+            if isinstance(nodo, ast.Constant) and isinstance(nodo.value, str) \
+                    and re.search(r"\b(?:FROM|JOIN)\s+pois_vivos\b", nodo.value, re.I):
+                hits.append((fichero.relative_to(raiz).as_posix(), nodo.lineno))
+    return hits
+
+
+def test_J1_rutas_no_ejecuta_NINGUNA_consulta_a_pois_vivos():
+    """`RUTAS_EFFECTIVE_POIS_VIVOS_SQL = 0`, la condición de éxito de R0B2C."""
+    fuera = [(f, l) for f, l in _sql_efectivo_de_pois_vivos(_APP)
+             if not f.startswith("place/providers/")]
+    assert fuera == [], f"queda SQL de la capa propia fuera del provider: {fuera}"
+    assert "conn.execute" in _RUTAS.read_text(encoding="utf-8"), (
+        "el `execute` del CATASTRO sí se queda: no es de la capa de POIs")
+
+
+def test_J2_y_los_dos_SQL_trasladados_SI_estan_en_propia():
+    """Contrapeso: si la guarda de arriba pasara porque el SQL desapareció, esto se pone
+    rojo. `PROPIA_RESIDUAL_SQL_IN_PROVIDER = 2/2`."""
+    en_propia = [l for f, l in _sql_efectivo_de_pois_vivos(_APP) if f.endswith("propia.py")]
+    # 4 del corte de R0B1A (tres `FROM` y el `JOIN` de verificación) + los 2 de R0B2C.
+    assert len(en_propia) == 6, en_propia
+    fuente = _PROVIDER_PROPIA.read_text(encoding="utf-8")
+    assert "_DENTRO_POIS_SQL = text(" in fuente
+    assert "_PANORAMA_TRANSPORTE_SQL = text(" in fuente
+
+
+def test_J3_la_guarda_SI_PUEDE_detectar_una_consulta_fabricada_fuera(tmp_path):
+    """Mitad negativa: se le da un intruso con SQL real y se exige que lo vea; y otro donde
+    `pois_vivos` solo aparece en prosa, para exigir que NO lo cuente."""
+    real = 'from sqlalchemy import text\nQ = text("SELECT 1 FROM pois_vivos")\n'
+    (tmp_path / "intruso.py").write_text(real, encoding="utf-8")
+    assert _sql_efectivo_de_pois_vivos(tmp_path) == [("intruso.py", 2)]
+    prosa = '# habla de pois_vivos pero no la consulta\nX = 1\n'
+    (tmp_path / "intruso.py").write_text(prosa, encoding="utf-8")
+    assert _sql_efectivo_de_pois_vivos(tmp_path) == [], "contó una mención en prosa"
+
+
+def test_J4_el_provider_recibe_la_conexion_y_NO_la_abre():
+    """`PLACE-PROPIA-CONNECTION-OWNERSHIP-01 · ACCEPTED SEAM`, hecho explícito.
+
+    Los dos helpers nuevos reciben `conn`. No abren conexión, y no pueden: no tienen por
+    dónde. De eso depende que `_contenido_isocrona` siga cubriendo sus DOS tablas con UNA
+    sola conexión — moverla habría sido un cambio de comportamiento, no una extracción.
+    """
+    import app.place.providers.propia as propia
+    for nombre in ("_pois_dentro_geometria", "_filas_panorama_transporte"):
+        fuente = _fuente_de(nombre, _PROVIDER_PROPIA)
+        assert "engine.connect()" not in fuente, f"`{nombre}` abre conexión propia"
+        assert "conn" in getattr(propia, nombre).__code__.co_varnames
+
+
+def _nodo_de(nombre: str, fichero: Path):
+    """El nodo AST de esa función, tomado del árbol del módulo.
+
+    Se usa el árbol entero en vez de reparsear el trozo de fuente: reparsear obliga a
+    reindentar, y reindentar a mano es exactamente donde se cuelan los accidentes.
+    """
+    arbol = ast.parse(fichero.read_text(encoding="utf-8"))
+    for n in arbol.body:
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == nombre:
+            return n
+    raise AssertionError(f"{nombre} no está definido en {fichero.name}")
+
+
+def test_J5_el_provider_NO_captura_excepciones_ni_registra():
+    """La política de error se queda en el llamador. Un `except` aquí —o el aviso de capa
+    caída que este módulo ya sabe emitir— cambiaría lo que ve el operador en un flujo que
+    hoy no registra nada.
+
+    Se mide sobre el AST, no por substring: `"log." not in fuente` no veía
+    `logger.warning(...)`, y `"try" not in fuente` casaba con la palabra `geometry`.
+    """
+    for nombre in ("_pois_dentro_geometria", "_filas_panorama_transporte"):
+        nodo = _nodo_de(nombre, _PROVIDER_PROPIA)
+        assert not [n for n in ast.walk(nodo) if isinstance(n, (ast.Try, ast.ExceptHandler))], (
+            f"`{nombre}` captura: la política de error es del llamador")
+        registradores = {n.func.value.id for n in ast.walk(nodo)
+                         if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                         and isinstance(n.func.value, ast.Name)}
+        assert not ({"log", "logger", "logging"} & registradores), registradores
+        usados = {x.id for x in ast.walk(nodo) if isinstance(x, ast.Name)}
+        assert "_avisar_capa_caida" not in usados
+
+
+def test_J6_el_provider_NO_se_llevo_la_prosa_ni_el_catastro():
+    """La costura autorizada es `SQL → filas`; todo lo posterior se queda."""
+    fuente = _PROVIDER_PROPIA.read_text(encoding="utf-8")
+    en_propia = _definidos(_PROVIDER_PROPIA)
+    assert "_DENTRO_ACTIVOS_SQL" not in en_propia, "R0B2C arrastró el catastro"
+    assert "_frase_dentro" not in en_propia
+    # `activos_inmutables` SÍ aparece ya en `propia.py`, pero desde R0B1A y en otro sitio:
+    # el `JOIN` de `_VERIFICACION_ENTORNO_SQL`. Lo que hay que comprobar es que ninguno de
+    # los DOS helpers de R0B2C lo toque — una guarda por substring sobre el fichero entero
+    # habría dado un falso positivo por código que no es de esta unidad.
+    for nombre in ("_pois_dentro_geometria", "_filas_panorama_transporte"):
+        assert "activos_inmutables" not in _fuente_de(nombre, _PROVIDER_PROPIA)
+    for prosa in ("acciones", "🚏", "🚇", "_ETIQUETA_MASIVO", "_RADIO_PANORAMA_M"):
+        assert prosa not in fuente, f"la experiencia se coló en el provider: {prosa}"
+    # Y todo eso sigue en el llamador.
+    en_rutas = _definidos(_RUTAS)
+    assert {"_DENTRO_ACTIVOS_SQL", "_frase_dentro", "_ETIQUETA_MASIVO",
+            "_RADIO_PANORAMA_M", "_RADIO_MASIVO_M", "_es_generico"} <= en_rutas
+
+
+def test_J7_la_politica_viaja_como_PARAMETRO_y_se_USA(monkeypatch):
+    """El helper recibe los dos parámetros de política y los USA — no los resuelve solo.
+
+    Dos correcciones respecto a la primera versión, las dos por lo mismo: leer no es medir.
+
+    (a) Comprobaba `"_TRANSPORTE_MASIVO" not in fuente` sobre el texto de la función. El
+        docstring de la propia función nombra la constante para explicar de dónde viene, y
+        eso ponía la guarda roja por PROSA. Ahora se miran los identificadores del AST.
+    (b) Y sobre todo: nada exigía que los argumentos LLEGARAN al SQL. Un helper con la
+        firma correcta que ignorase `masivo`/`max_m` y cableara los literales dentro pasaba
+        en verde — y `test_F4` tampoco lo veía, porque compara contra las mismas constantes
+        que el llamador le pasa. Ahora se invoca con centinelas que no existen en el código.
+    """
+    nodo = _nodo_de("_filas_panorama_transporte", _PROVIDER_PROPIA)
+    params = [a.arg for a in nodo.args.args]
+    assert params == ["conn", "lat", "lon", "masivo", "max_m"], params
+    usados = {x.id for x in ast.walk(nodo) if isinstance(x, ast.Name)}
+    assert not ({"_TRANSPORTE_MASIVO", "_RADIO_MASIVO_M", "_RADIO_PANORAMA_M"} & usados), (
+        "el helper resuelve la política por su cuenta en vez de recibirla")
+
+    # Y se ejercita: centinelas que no aparecen en ninguna parte del código.
+    import app.place.providers.propia as propia
+    reg = {"connects": 0, "sql": [], "params": []}
+    conn = _Conn([[]], reg)
+    asyncio.run(propia._filas_panorama_transporte(conn, 1.5, -2.5, ["ZZZ"], 77))
+    assert reg["params"][0] == {"lat": 1.5, "lon": -2.5, "max_m": 77, "masivo": ["ZZZ"]}, (
+        "los argumentos no llegaron al SQL: el helper los ignora")
+
+
+def test_J8_la_politica_del_panorama_esta_fijada_a_VALORES_LITERALES():
+    """Añadida en R0B2C, y por una razón que conviene dejar escrita.
+
+    `test_F4` comprueba que el helper recibe `masivo` comparándolo con
+    `rutas._TRANSPORTE_MASIVO` — es decir, contra la misma constante que le pasan. Esa
+    aserción es TAUTOLÓGICA: cambiar la constante cambia los dos lados a la vez y la guarda
+    sigue verde. El arnés lo destapó (la mutación de `masivo` nació INERTE).
+
+    No se toca `test_F4`: el §10 de este mandato congela ese bloque byte a byte. Se añade
+    aquí el contrapeso que sí mide, contra valores literales. La tautología queda reportada
+    como deuda del baseline, no corregida por cuenta propia.
+    """
+    assert rutas._TRANSPORTE_MASIVO == ["metro", "estacion_tren", "terminal_bus", "estacion"]
+    assert rutas._RADIO_MASIVO_M == 2500
+    assert rutas._RADIO_PANORAMA_M == 800

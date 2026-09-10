@@ -77,6 +77,8 @@ from app.place.assembler import (  # noqa: E402,F401 — fachada de compatibilid
 # que antes de la extraccion, y el baseline de R0B0 no cambia ni una linea.
 from app.place.providers.propia import (  # noqa: E402,F401 — fachada
     _CATS_ENTORNO,
+    _filas_panorama_transporte,
+    _pois_dentro_geometria,
     _TRANSPORTE_MASIVO,
     _avisar_capa_caida,
     _nearest_propio,
@@ -616,14 +618,8 @@ def _extraer_minutos(p: str) -> int:
 
 # Qué hay DENTRO de la isócrona: la promesa de "todo lo que alcanzas" solo se cumple si se
 # dice QUÉ se alcanza. El polígono sin contenido es un mapa bonito; con contenido es la verdad
-# del lugar (que es el producto). Los POIs ya están en nuestra capa: un ST_Contains los saca.
-_DENTRO_POIS_SQL = text("""
-    SELECT categoria, count(*)::int AS n
-    FROM pois_vivos
-    WHERE ST_Contains(ST_SetSRID(ST_GeomFromGeoJSON(:geo), 4326), geom)
-    GROUP BY categoria
-    ORDER BY n DESC
-""")
+# del lugar (que es el producto). Los POIs ya están en nuestra capa y el SQL que los saca vive
+# en `app/place/providers/propia.py` desde PLAN04-2.2; aquí se queda quién lo pide y qué dice.
 
 # Tope de categorías nombradas: el canon manda cápsulas, no volcado (el exceso de
 # información paraliza — Iyengar & Lepper). Con 9 categorías la frase se vuelve un informe;
@@ -686,7 +682,7 @@ async def _contenido_isocrona(geometry: dict) -> str:
     try:
         geo = _json.dumps(geometry)
         async with engine.connect() as conn:
-            filas = (await conn.execute(_DENTRO_POIS_SQL, {"geo": geo})).mappings().all()
+            filas = await _pois_dentro_geometria(conn, geo)
             activos = (await conn.execute(_DENTRO_ACTIVOS_SQL, {"geo": geo})).scalar() or 0
         return _frase_dentro(list(filas), int(activos))
     except Exception:  # noqa: BLE001 — el contenido es un extra; el contorno ya vale por sí solo
@@ -718,19 +714,6 @@ async def _accion_isocrona(lat: float, lon: float, p: str) -> dict:
 # ── Panorama de transporte: TODAS las paradas cercanas + la estación masiva ──
 # "Transporte" a secas no es "llévame al Metro": es "¿con qué me muevo desde aquí?".
 # La ruta única al hub masivo (ignorando 15 paradas más cercanas) responde otra pregunta.
-_PANORAMA_TRANSPORTE_SQL = text("""
-    SELECT nombre, categoria_overture, ST_Y(geom) AS lat, ST_X(geom) AS lon,
-        ROUND(ST_Distance(geom::geography,
-              ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography))::int AS distancia_m,
-        (categoria_overture = ANY(:masivo)) AS es_masivo
-    FROM pois_vivos
-    WHERE categoria = 'transporte'
-      AND ST_DWithin(geom::geography,
-                     ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, :max_m)
-    ORDER BY geom <-> ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)
-    LIMIT 60
-""")
-
 _RADIO_PANORAMA_M = 800     # paradas a ≤10 min a pie (~80 m/min)
 _RADIO_MASIVO_M = 2500      # el Metro/terminal se nombra aunque quede más lejos
 
@@ -750,9 +733,8 @@ async def _panorama_transporte(lat: float, lon: float) -> dict:
     tenemos paradas y estaciones, no los recorridos de las líneas."""
     try:
         async with engine.connect() as conn:
-            filas = (await conn.execute(_PANORAMA_TRANSPORTE_SQL, {
-                "lat": lat, "lon": lon, "max_m": _RADIO_MASIVO_M, "masivo": _TRANSPORTE_MASIVO,
-            })).mappings().all()
+            filas = await _filas_panorama_transporte(
+                conn, lat, lon, _TRANSPORTE_MASIVO, _RADIO_MASIVO_M)
     except Exception:  # noqa: BLE001 — sin capa, el llamador cae al flujo de ruta única
         filas = []
     if not filas:

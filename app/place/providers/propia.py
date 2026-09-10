@@ -303,3 +303,72 @@ async def _nearest_propio(lat: float, lon: float, cat: str,
             cands[0],
         )
     return elegido
+
+
+# ══════════════════════════════════════════════════════════════════════════════════════
+# LECTURAS DE `pois_vivos` QUE SERVIAN A LAS ACCIONES DEL CHAT (PLAN04-2.2-R0B2C)
+#
+# Estas dos consultas vivian en `app/rutas.py` con su propio `engine.connect()`. Eran las
+# ultimas lecturas de la capa propia fuera de la frontera, y por eso el CLOSE-AUDIT las
+# marco como bloqueador: la fila 2.2 nombra a la capa propia entre los cinco proveedores.
+#
+# QUIEN ABRE LA CONEXION SIGUE SIENDO EL LLAMADOR, Y ES DELIBERADO. Estos dos helpers
+# RECIBEN una conexion ya abierta en vez de abrirla. Mover el `engine.connect()` aqui
+# habria partido en dos la unica conexion de `_contenido_isocrona` —que cubre esta consulta
+# y la del catastro— y eso es un cambio de comportamiento medible, no una extraccion. La
+# frontera que 2.2 pide es la del SQL, no la del recurso:
+#   `PLACE-PROPIA-CONNECTION-OWNERSHIP-01 · ACCEPTED SEAM`.
+#
+# Y NO CAPTURAN NADA. La politica de excepcion sigue donde estaba: si la base falla, el
+# error sube hasta el `try` del llamador, que decide degradar. Un `except` aqui —o un aviso
+# de capa caida, que este modulo ya sabe emitir— cambiaria lo que ve el operador en un
+# flujo que hoy no registra nada.
+#
+# LO QUE NO VIAJO: la prosa. La clasificacion masivo/parada, el dedup, el tope de nombres,
+# los minutos, los pines y el texto se quedan en `rutas.py`. El proveedor entrega filas.
+# ══════════════════════════════════════════════════════════════════════════════════════
+
+_DENTRO_POIS_SQL = text("""
+    SELECT categoria, count(*)::int AS n
+    FROM pois_vivos
+    WHERE ST_Contains(ST_SetSRID(ST_GeomFromGeoJSON(:geo), 4326), geom)
+    GROUP BY categoria
+    ORDER BY n DESC
+""")
+
+
+async def _pois_dentro_geometria(conn, geo: str):
+    """Los POIs vivos DENTRO de un poligono, agrupados por categoria.
+
+    Recibe la conexion; no la abre. Devuelve las filas tal cual las da la base.
+    """
+    return (await conn.execute(_DENTRO_POIS_SQL, {"geo": geo})).mappings().all()
+
+
+_PANORAMA_TRANSPORTE_SQL = text("""
+    SELECT nombre, categoria_overture, ST_Y(geom) AS lat, ST_X(geom) AS lon,
+        ROUND(ST_Distance(geom::geography,
+              ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography))::int AS distancia_m,
+        (categoria_overture = ANY(:masivo)) AS es_masivo
+    FROM pois_vivos
+    WHERE categoria = 'transporte'
+      AND ST_DWithin(geom::geography,
+                     ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, :max_m)
+    ORDER BY geom <-> ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)
+    LIMIT 60
+""")
+
+
+async def _filas_panorama_transporte(conn, lat: float, lon: float, masivo, max_m):
+    """Las paradas y estaciones de transporte alrededor de un punto, en crudo.
+
+    Recibe la conexion y los dos parametros de politica —que subtipos cuentan como
+    masivos y hasta donde buscar—; no decide ninguno de los dos ni los lee de su propio
+    modulo. (Ojo con la prosa facil: `_TRANSPORTE_MASIVO` se DEFINE aqui arriba desde
+    R0B1A, y el llamador lo toma de la fachada para devolverlo como argumento. Es un
+    viaje de ida y vuelta que preexiste a esta unidad; lo que este helper garantiza es
+    que no lo resuelve por su cuenta.) Devuelve filas, no experiencia.
+    """
+    return (await conn.execute(_PANORAMA_TRANSPORTE_SQL, {
+        "lat": lat, "lon": lon, "max_m": max_m, "masivo": masivo,
+    })).mappings().all()

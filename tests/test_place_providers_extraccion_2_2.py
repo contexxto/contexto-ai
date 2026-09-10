@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import re
 import socket
 import subprocess
 import sys
@@ -79,6 +80,12 @@ _VALHALLA = ("logger", "_TIMEOUT", "_CONTORNOS_DEFECTO", "isocrona")
 # y los de B de `entorno.py`.
 _GOOGLE_ENTORNO = ("_google_nearest", "_entorno_google",
                    "_ENTORNO_RADIO_M", "_ENTORNO_TIMEOUT")
+# R0B2C. Las dos ultimas lecturas de `pois_vivos` que quedaban fuera de la frontera. Salen
+# de `rutas.py` y son el primer caso de la serie en que el provider RECIBE la conexion en
+# vez de abrirla: quien abre el recurso sigue siendo el llamador, y de eso depende que
+# `_contenido_isocrona` cubra sus dos tablas con una sola conexion.
+_PROPIA_RESIDUAL = ("_DENTRO_POIS_SQL", "_pois_dentro_geometria",
+                    "_PANORAMA_TRANSPORTE_SQL", "_filas_panorama_transporte")
 
 # módulo destino → (su fichero, el fichero del que SALIÓ, sus símbolos)
 _EXTRAIDO = (
@@ -89,6 +96,7 @@ _EXTRAIDO = (
     (overpass, _PROV / "overpass.py", _APP / "walk_score.py", _OVERPASS),
     (valhalla, _PROV / "valhalla.py", _APP / "isocronas.py", _VALHALLA),
     (google, _PROV / "google.py", _APP / "entorno.py", _GOOGLE_ENTORNO),
+    (propia, _PROV / "propia.py", _APP / "rutas.py", _PROPIA_RESIDUAL),
 )
 
 # ── Por qué esto son PARES y ya no un diccionario símbolo → módulo ────────────────────
@@ -161,6 +169,11 @@ _FACHADA_RUTAS = {
     # la usa en `_accion_isocrona`. Se declara aquí porque desde fuera se ve igual: el
     # nombre está en su espacio y por tanto es su punto de parcheo efectivo.
     "isocrona": (valhalla, "lo liga `app/rutas.py:34` y lo usa `_accion_isocrona`"),
+    # R0B2C: los dos helpers nuevos SÍ vuelven por la fachada porque los llama el código que
+    # se quedó (`_contenido_isocrona` y `_panorama_transporte`). Los dos SQL NO vuelven: no
+    # los usa nadie aquí y reexportarlos inventaría superficie que `app.rutas` nunca tuvo.
+    "_pois_dentro_geometria": (propia, "lo llama `_contenido_isocrona`"),
+    "_filas_panorama_transporte": (propia, "lo llama `_panorama_transporte`"),
 }
 
 # R0B1B añade dos fachadas más, en los dos módulos de los que salieron los proveedores.
@@ -840,3 +853,91 @@ def test_el_provider_de_Google_sigue_sin_importar_rutas_routers_ni_agent():
     importados = _importados_por((_PROV / "google.py").read_text(encoding="utf-8"))
     for malo in _PROHIBIDOS:
         assert not any(m == malo or m.startswith(malo + ".") for m in importados), malo
+
+
+# ══ (H) R0B2C — la capa propia, entera detras de la frontera ════════════════════════
+_SQL_POIS_VIVOS = re.compile(r"\b(?:FROM|JOIN)\s+pois_vivos\b", re.I)
+
+
+def _sql_de_pois_vivos_en(raiz: Path) -> list[tuple[str, int]]:
+    """Literales SQL que leen la vista. Mira el AST y solo cadenas: un comentario que la
+    nombre —los hay— no cuenta."""
+    hits = []
+    for fichero in sorted(raiz.rglob("*.py")):
+        texto = fichero.read_text(encoding="utf-8")
+        if "pois_vivos" not in texto:
+            continue
+        for nodo in ast.walk(ast.parse(texto)):
+            if (isinstance(nodo, ast.Constant) and isinstance(nodo.value, str)
+                    and _SQL_POIS_VIVOS.search(nodo.value)):
+                hits.append((fichero.name, nodo.lineno))
+    return hits
+
+
+def test_la_guarda_de_SQL_NO_PUEDE_estar_muerta(tmp_path):
+    """LA MITAD NEGATIVA, y la razon exacta de que exista.
+
+    La primera version de la guarda de abajo nacio INERTE: al escribirla, los `\\b` del
+    patron se convirtieron en bytes 0x08 literales y el regex no podia casar con ningun
+    SQL. Pasaba en verde aplicada al `rutas.py` de ANTES de la extraccion — el que si
+    tenia las dos consultas. El arnes de mutacion no la cazo, porque la guarda gemela del
+    fichero hermano cubre la misma invariante: la buena tapaba a la muerta.
+
+    Leccion, y por eso este contrapeso: cuando una invariante se vigila desde DOS ficheros,
+    cada copia tiene que demostrar por si misma que puede ponerse roja.
+    """
+    assert _SQL_POIS_VIVOS.search("SELECT 1 FROM pois_vivos WHERE x"), (
+        "el patron no casa ni con el SQL mas simple: esta muerto")
+    (tmp_path / "intruso.py").write_text(
+        'from sqlalchemy import text\nQ = text("SELECT 1 FROM pois_vivos")\n',
+        encoding="utf-8")
+    assert _sql_de_pois_vivos_en(tmp_path) == [("intruso.py", 2)]
+    (tmp_path / "intruso.py").write_text("# menciona pois_vivos y ya\nX = 1\n",
+                                         encoding="utf-8")
+    assert _sql_de_pois_vivos_en(tmp_path) == [], "conto una mencion en prosa"
+
+
+def test_la_capa_propia_ya_no_tiene_SQL_fuera_del_provider():
+    """`RUTAS_EFFECTIVE_POIS_VIVOS_SQL = 0`. Era el segundo bloqueador del CLOSE-AUDIT."""
+    del_provider = {p.name for p in _PROV.glob("*.py")}
+    fuera = [(f, l) for f, l in _sql_de_pois_vivos_en(_APP) if f not in del_provider]
+    assert fuera == [], f"SQL de la capa propia fuera de `providers/`: {fuera}"
+
+
+def test_el_provider_de_propia_no_genera_experiencia():
+    """La costura de R0B2C es `SQL -> filas`. Los pines, las etiquetas y el texto del
+    panorama se quedaron en `rutas.py`.
+
+    Se mira el CODIGO, no el texto: la cabecera que esta unidad anadio a `propia.py`
+    explica que estas lecturas servian a las acciones del chat, y una guarda por substring
+    convertia esa explicacion en un falso positivo — el mismo accidente que ya ocurrio
+    tres veces en esta serie.
+    """
+    fuente = (_PROV / "propia.py").read_text(encoding="utf-8")
+    usados = _identificadores(fuente)
+    for experiencia in ("_ETIQUETA_MASIVO", "_RADIO_PANORAMA_M", "_es_generico",
+                        "acciones", "etiqueta", "_frase_dentro"):
+        assert experiencia not in usados, experiencia
+    for emoji in ("\N{BUS STOP}", "\N{METRO}"):
+        assert emoji not in fuente, emoji      # un emoji no puede ser identificador
+    assert {"_ETIQUETA_MASIVO", "_RADIO_PANORAMA_M", "_es_generico",
+            "_frase_dentro"} <= _definidos_en(_APP / "rutas.py")
+
+
+def test_los_helpers_de_propia_reciben_la_conexion_y_no_la_abren():
+    """`PLACE-PROPIA-CONNECTION-OWNERSHIP-01 · ACCEPTED SEAM`. No es un blocker: es la
+    decision que permite que el numero de conexiones no cambie.
+
+    Se miran los PARAMETROS, no `co_varnames` entero: ese incluye las variables locales, y
+    un helper que abriera su propia conexion en una local llamada `conn` habria pasado.
+    """
+    fuente = (_PROV / "propia.py").read_text(encoding="utf-8")
+    arbol = ast.parse(fuente)
+    for nombre in ("_pois_dentro_geometria", "_filas_panorama_transporte"):
+        codigo = getattr(propia, nombre).__code__
+        params = codigo.co_varnames[:codigo.co_argcount]
+        assert params[0] == "conn", f"`{nombre}` no recibe la conexion: {params}"
+        cuerpo = ast.get_source_segment(fuente, next(
+            n for n in arbol.body
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == nombre))
+        assert "engine" not in cuerpo, f"`{nombre}` abre su propia conexion"

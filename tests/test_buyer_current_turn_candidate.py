@@ -27,7 +27,9 @@ from langchain_core.messages import HumanMessage
 
 from app.buyer import actualizador as act
 from app.buyer import candidato as cand
-from app.buyer.actualizador import CandidatoTurno, actualizar, computar_candidato
+from app.buyer.actualizador import (
+    CandidatoTurno, ComputoCandidato, actualizar, computar_candidato,
+)
 from app.buyer.boundary import (
     BuyerCurrencyV0, ClearPetsRequired, SetBudgetMax, SetPetsRequired,
 )
@@ -390,13 +392,76 @@ def test_T12c_langgraph_config_no_transporta_el_candidato():
         assert prohibido not in volcado
 
 
-def test_T13_chat_DESCARTA_el_resultado():
-    """La llamada es una sentencia de expresión, no una asignación: nadie se queda con él."""
-    arbol = ast.parse(CHAT.read_text(encoding="utf-8"))
-    for n in ast.walk(arbol):
-        if isinstance(n, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
-            assert "observar_candidato_del_turno" not in ast.dump(n), (
-                "el candidato se está guardando en una variable de chat.py")
+def _enlaces_de_la_sonda(fuente: str | None = None) -> list[ast.AST]:
+    """Toda sentencia de chat.py que GUARDE el resultado de la sonda en algún sitio."""
+    arbol = ast.parse(fuente if fuente is not None else CHAT.read_text(encoding="utf-8"))
+    return [n for n in ast.walk(arbol)
+            if isinstance(n, (ast.Assign, ast.AnnAssign, ast.AugAssign))
+            and "observar_candidato_del_turno" in ast.dump(n)]
+
+
+def _usos_de_la_observacion(fuente: str | None = None,
+                            nombre: str = "observacion_candidato"):
+    """Cada lectura del nombre, y cuáles de ellas pasan por un atributo.
+
+    Devuelve `(cargas, atributos)`. Si son del mismo tamaño, el objeto NUNCA viaja entero:
+    toda lectura es `observacion_candidato.<algo>`, jamás `f(observacion_candidato)`.
+    """
+    arbol = ast.parse(fuente if fuente is not None else CHAT.read_text(encoding="utf-8"))
+    cargas = [n for n in ast.walk(arbol) if isinstance(n, ast.Name)
+              and n.id == nombre and isinstance(n.ctx, ast.Load)]
+    atributos = [n for n in ast.walk(arbol) if isinstance(n, ast.Attribute)
+                 and isinstance(n.value, ast.Name) and n.value.id == nombre]
+    return cargas, atributos
+
+
+def test_T13_chat_RETIENE_el_computo_pero_SOLO_para_persistirlo():
+    """R0C INVIERTE la propiedad que R0B congeló aquí, y conviene decirlo entero.
+
+    R0B afirmaba: *"la llamada es una sentencia de expresión, no una asignación: nadie se
+    queda con él."* Eso era correcto **para R0B**, donde el candidato se calculaba y se
+    tiraba. R0C existe precisamente para no tirarlo: el cómputo tiene que llegar vivo a la
+    persistencia, porque reinterpretar el turno para guardarlo es la deuda que esta unidad
+    cierra.
+
+    Así que la garantía cambia de sitio, no desaparece. Lo que ahora se afirma:
+
+    ```
+    SE GUARDA      sí — en un nombre local, y sólo en uno
+    NO SE GUARDA   en ningún atributo, dict, estado ni config (eso sería fuga)
+    SE LEE         sólo por `.computo`; el objeto nunca viaja entero
+    ```
+
+    El aislamiento respecto de la decisión no lo sostiene este test solo: T12 (imports),
+    T12b (`AgentState`) y T12c (`_langgraph_config`) siguen prohibiendo que el candidato
+    llegue al grafo, al estado o al prompt. Éste añade la pieza que faltaba: **el único
+    consumidor del valor retenido es la persistencia.**
+    """
+    enlaces = _enlaces_de_la_sonda()
+    assert enlaces, "R0C REQUIERE que chat.py retenga el cómputo; ya no se descarta"
+
+    nombres = set()
+    for n in enlaces:
+        assert isinstance(n, ast.Assign), \
+            "el cómputo se guarda con una asignación simple, no con `+=` ni anotada"
+        assert len(n.targets) == 1, "un solo destino: nada de desempaquetados ni alias"
+        destino = n.targets[0]
+        assert isinstance(destino, ast.Name), (
+            "el cómputo se guarda en un ATRIBUTO o SUBÍNDICE: eso lo saca del ámbito léxico "
+            f"y lo mete en una estructura que puede viajar ({ast.dump(destino)})")
+        nombres.add(destino.id)
+
+    assert nombres == {"observacion_candidato"}, \
+        f"el cómputo vive bajo más de un nombre en chat.py: {sorted(nombres)}"
+
+    cargas, atributos = _usos_de_la_observacion()
+    assert cargas, "el cómputo se guarda y no se lee: sería un cálculo pagado y tirado"
+    assert len(cargas) == len(atributos), (
+        "la observación viaja ENTERA a algún sitio; sólo puede leerse por atributo "
+        f"({len(cargas)} lecturas, {len(atributos)} por atributo)")
+    assert {a.attr for a in atributos} == {"computo"}, (
+        "chat.py lee algo más que `.computo` de la observación: el desenlace, la duración y "
+        f"el candidato no gobiernan el turno ({sorted({a.attr for a in atributos})})")
 
 
 def _llamadas_a_la_sonda(fuente: str | None = None) -> list[ast.Call]:
@@ -594,12 +659,54 @@ def test_T17d_romper_la_correccion_del_turno_se_detecta(canary, store):
     assert _canonico(obs.candidato.contexto) != _canonico(base)
 
 
-def test_T17e_romper_el_aislamiento_candidato_decision_se_detecta():
-    """Si `chat.py` asignara el resultado, T13 lo vería."""
-    roto = ast.parse("async def f(u, m):\n"
-                     "    x = await observar_candidato_del_turno(u, m)\n")
-    assert any(isinstance(n, ast.Assign) and "observar_candidato_del_turno" in ast.dump(n)
-               for n in ast.walk(roto))
+@pytest.mark.parametrize("roto", [
+    'estado["cand"] = await observar_candidato_del_turno(u, m)',
+    "self.cand = await observar_candidato_del_turno(u, m)",
+    "cfg['configurable']['cand'] = await observar_candidato_del_turno(u, m)",
+])
+def test_T17e_meter_el_computo_en_una_ESTRUCTURA_se_detecta(roto):
+    """LA MITAD NEGATIVA de T13, reescrita: ya no basta con "¿se asigna?".
+
+    R0C hace que asignar sea lo CORRECTO, así que el detector tiene que mirar el DESTINO. Si
+    sólo comprobara que existe una asignación, T13 sería cierto y vacío — pasaría igual con
+    el cómputo guardado dentro del estado del grafo, que es justo la fuga que se prohíbe.
+    """
+    (enlace,) = _enlaces_de_la_sonda(f"async def f(u, m, estado, cfg, self):\n    {roto}\n")
+    assert isinstance(enlace, ast.Assign)
+    assert not isinstance(enlace.targets[0], ast.Name), \
+        f"T13 no vería esta fuga: {roto}"
+
+
+def test_T17e2_la_forma_BUENA_pasa_el_mismo_detector():
+    """El control positivo: si rechazara todo destino, T17e sería cierto y vacío."""
+    (enlace,) = _enlaces_de_la_sonda(
+        "async def f(u, m):\n"
+        "    observacion_candidato = await observar_candidato_del_turno(u, m)\n")
+    assert isinstance(enlace.targets[0], ast.Name)
+    assert enlace.targets[0].id == "observacion_candidato"
+
+
+def test_T17f_pasar_la_observacion_ENTERA_se_detecta():
+    """Si chat.py entregara el objeto completo a alguien, T13 lo vería.
+
+    Es distinto de la fuga por estructura: aquí no se guarda en ninguna parte, se PASA — y
+    quien lo reciba puede leerle el desenlace o la duración y decidir con ellos.
+    """
+    cargas, atributos = _usos_de_la_observacion(
+        "def f(observacion_candidato):\n"
+        "    registrar(observacion_candidato)\n"
+        "    return observacion_candidato.computo\n")
+    assert len(cargas) == 2 and len(atributos) == 1, \
+        "el detector no distingue pasar el objeto de leerle un atributo"
+
+
+def test_T17g_leer_OTRO_atributo_de_la_observacion_se_detecta():
+    """Si el turno consultara el desenlace o la duración, T13 lo vería."""
+    _, atributos = _usos_de_la_observacion(
+        "def f(observacion_candidato):\n"
+        "    if observacion_candidato.desenlace is CALCULADO:\n"
+        "        return observacion_candidato.duracion_ms\n")
+    assert {a.attr for a in atributos} == {"desenlace", "duracion_ms"} != {"computo"}
 
 
 # ══ PARIDAD ════════════════════════════════════════════════════════════════════════
@@ -623,7 +730,21 @@ def test_paridad_AGENT_TOOLS_no_cambia():
 
 
 def test_la_observacion_es_un_tipo_cerrado():
+    """R0C: transporta el CÓMPUTO, y `candidato` es derivado.
+
+    Dos campos independientes para el mismo dato pueden divergir, y el que divergiría sería
+    el que decide. Por eso `candidato` es propiedad y no campo — y esta prueba lo congela.
+    """
     obs = ObservacionCandidato(DesenlaceCandidato.DESACTIVADA)
     assert set(ObservacionCandidato.__dataclass_fields__) == {
-        "desenlace", "candidato", "duracion_ms"}
-    assert obs.hubo_computo is False
+        "desenlace", "computo", "duracion_ms"}
+    assert "candidato" not in ObservacionCandidato.__dataclass_fields__
+    assert isinstance(getattr(ObservacionCandidato, "candidato"), property)
+    assert obs.hubo_computo is False and obs.candidato is None
+
+
+def test_el_computo_transportado_trae_la_BASE_completa():
+    """Lo que `CandidatoTurno` por sí solo no puede dar: `rutas_divergentes` necesita el
+    objeto base, no el entero `base_context_revision`."""
+    assert set(ComputoCandidato.__dataclass_fields__) >= {
+        "candidato", "contexto_base", "base"}

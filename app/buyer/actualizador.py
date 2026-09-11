@@ -94,7 +94,25 @@ class EstadoActualizacion(StrEnum):
     """
 
     CREADA = "creada"
-    """Revisión nueva con cambio semántico real."""
+    """Revisión nueva con cambio semántico real, **persistida sobre la base que se leyó**."""
+
+    REBASEADA = "rebaseada"
+    """Revisión nueva persistida DESPUÉS de un `BuyerRevisionConflict`.
+
+    Misma evidencia, misma extracción, misma política — **base distinta**. El reductor volvió
+    a correr sobre el estado vigente, así que el resultado materializado **puede no ser** el
+    candidato que se calculó al empezar el turno.
+
+    POR QUÉ NO ES `CREADA` (F3-CANDIDATE-COMMIT-R0C). Hasta ahora los dos desenlaces
+    compartían nombre y la diferencia se perdía. Importa cuando llegue la trazabilidad: una
+    explicación no puede decir *«recomendamos esto porque tu estado era X»* si la decisión usó
+    un candidato sobre la revisión 4 y la memoria acabó materializada tras rebasar sobre la 5.
+    Todavía no hay autoridad de decisión, así que se hace observable **antes** de que tenga
+    consecuencias.
+
+    NO significa «segunda escritura». Dos escritores SECUENCIALES dan `CREADA` y `CREADA`:
+    sin conflicto de revisión no hay rebase.
+    """
 
     NO_OP = "no_op"
     """Revisión nueva SIN cambio semántico. Existe para sellar el `source_message_id`."""
@@ -119,10 +137,18 @@ class ResultadoUpdater:
     revision: int | None = None
     motivo: str | None = None
 
+    rebasado: bool = False
+    """¿La revisión se materializó tras un rebase? Redundante con `estado is REBASEADA` a
+    propósito: quien sólo quiera saber «¿hubo concurrencia?» no tiene que comparar enums."""
+
+    base_revision: int | None = None
+    """La revisión desde la que se REDUJO lo que se persistió. Con rebase **no** es
+    `revision - 1`: es la base nueva sobre la que hubo que volver a reducir."""
+
     @property
     def persistido(self) -> bool:
-        return self.estado in (EstadoActualizacion.CREADA, EstadoActualizacion.NO_OP,
-                               EstadoActualizacion.REPLAY)
+        return self.estado in (EstadoActualizacion.CREADA, EstadoActualizacion.REBASEADA,
+                               EstadoActualizacion.NO_OP, EstadoActualizacion.REPLAY)
 
     @property
     def procesado(self) -> bool:
@@ -314,6 +340,85 @@ async def computar_candidato(
         base=base)
 
 
+async def persistir_computo(computo: ComputoCandidato, *, db=None) -> ResultadoUpdater:
+    """PERSIST, sin COMPUTE. Materializa un `ComputoCandidato` **sin volver a interpretar**.
+
+    F3-CANDIDATE-COMMIT-R0C. Es la segunda mitad de `actualizar()`, extraída para que el
+    camino de sombra pueda persistir el cómputo que R0B ya hizo antes de la decisión, en vez
+    de rehacerlo. `actualizar()` la llama: una sola política de persistencia, una sola
+    implementación.
+
+    **No llama a `interpretar_mensaje` ni construye un lote.** Recibe el que ya existe.
+
+    ## EL REBASE: misma evidencia, base nueva
+
+    Ante `BuyerRevisionConflict` el arreglo no es reinterpretar a la persona —eso decidiría
+    con una extracción distinta de la del primer intento—, sino volver a reducir:
+
+    ```
+    lote X (el mismo)  +  base nueva  →  reducir  →  candidato rebasado
+    ```
+
+    Y antes de rebasar se comprueba el SOLAPE: si la escritura concurrente tocó una ruta que
+    este lote también toca, **no se escribe** y el desenlace es `CONFLICTO`. Nunca
+    last-write-wins: dos declaraciones sobre la misma dimensión, sin nada que autorice elegir
+    una, no se resuelven adivinando.
+
+    ## POR QUÉ EL RESULTADO DISTINGUE `CREADA` DE `REBASEADA`
+
+    Porque no son lo mismo y compartían nombre. Sin rebase, lo persistido es semánticamente
+    el candidato original. Con rebase, es **otro** cómputo: misma evidencia y misma política,
+    pero sobre un estado que cambió mientras tanto. Llamar «el mismo candidato» a los dos
+    haría invisible justo la divergencia que la trazabilidad va a necesitar.
+    """
+    if computo.candidato is None:
+        return ResultadoUpdater(computo.estado, motivo=computo.motivo)
+
+    artefacto = computo.candidato
+    buyer_id = artefacto.buyer_id
+    lote = artefacto.lote
+    tocadas = rutas_tocadas(lote)
+    base = computo.base
+    contexto_base = computo.contexto_base
+    candidato = artefacto.contexto
+    rebasado = False
+
+    for intento in (1, 2):
+        try:
+            persistida = await anexar_revision(
+                buyer_id, artefacto.source_message_id, candidato,
+                expected_revision=contexto_base.context_revision, db=db)
+        except BuyerIdempotencyConflict as e:
+            return ResultadoUpdater(EstadoActualizacion.FALLIDO, motivo=str(e))
+        except BuyerRevisionConflict as e:
+            if intento == 2:
+                return ResultadoUpdater(EstadoActualizacion.CONFLICTO, motivo=str(e))
+            ultima = await cargar_ultima(buyer_id, db=db)
+            if ultima is None:
+                return ResultadoUpdater(EstadoActualizacion.CONFLICTO, motivo=str(e))
+            solapan = tocadas & rutas_divergentes(base, ultima)
+            if solapan:
+                # NO last-write-wins. Es C1 entre mensajes: dos declaraciones sobre la misma
+                # dimensión, sin nada que autorice elegir una, no se resuelven adivinando.
+                return ResultadoUpdater(
+                    EstadoActualizacion.CONFLICTO,
+                    motivo=f"otra conversación tocó {sorted(solapan)} desde la base leída")
+            logger.info("rebase del updater sobre la revisión %s (disjunto de %s)",
+                        ultima.context_revision, sorted(tocadas))
+            # Se REDUCE otra vez sobre la base nueva, con el MISMO `lote` y el MISMO
+            # `retrieved_at`. Cero interpretaciones.
+            base = ultima
+            contexto_base = base
+            candidato = reducir(contexto_base, lote, artefacto.retrieved_at)
+            rebasado = True
+            continue
+
+        return _clasificar(persistida, contexto_base, rebasado)
+
+    return ResultadoUpdater(EstadoActualizacion.CONFLICTO,
+                            motivo="no se pudo rebasar sobre el estado vigente")
+
+
 async def actualizar(
     buyer_id: str,
     mensaje,
@@ -334,70 +439,37 @@ async def actualizar(
     """
     computo = await computar_candidato(
         buyer_id, mensaje, retrieved_at=retrieved_at, proponente=proponente, db=db)
-    if computo.candidato is None:
-        return ResultadoUpdater(computo.estado, motivo=computo.motivo)
-
-    lote = computo.candidato.lote
-    tocadas = rutas_tocadas(lote)
-    base = computo.base
-    contexto_base = computo.contexto_base
-    candidato = computo.candidato.contexto
-
-    for intento in (1, 2):
-        try:
-            persistida = await anexar_revision(
-                buyer_id, mensaje.message_id, candidato,
-                expected_revision=contexto_base.context_revision, db=db)
-        except BuyerIdempotencyConflict as e:
-            return ResultadoUpdater(EstadoActualizacion.FALLIDO, motivo=str(e))
-        except BuyerRevisionConflict as e:
-            if intento == 2:
-                return ResultadoUpdater(EstadoActualizacion.CONFLICTO, motivo=str(e))
-            ultima = await cargar_ultima(buyer_id, db=db)
-            if ultima is None:
-                return ResultadoUpdater(EstadoActualizacion.CONFLICTO, motivo=str(e))
-            solapan = tocadas & rutas_divergentes(base, ultima)
-            if solapan:
-                # NO last-write-wins. Es C1 entre mensajes: dos declaraciones sobre la misma
-                # dimensión, sin nada que autorice elegir una, no se resuelven adivinando.
-                return ResultadoUpdater(
-                    EstadoActualizacion.CONFLICTO,
-                    motivo=f"otra conversación tocó {sorted(solapan)} desde la base leída")
-            logger.info("rebase del updater sobre la revisión %s (disjunto de %s)",
-                        ultima.context_revision, sorted(tocadas))
-            # El rebase REDUCE OTRA VEZ sobre la base nueva, pero NO vuelve a interpretar:
-            # `lote` es el mismo. Es exactamente lo que hacía el bucle antes de la extracción
-            # —`reducir` al principio de cada iteración— sólo que ahora la primera reducción
-            # la trae `computar_candidato` y aquí sólo se rehace cuando de verdad cambió la
-            # base. Reinterpretar en un rebase habría hecho que el reintento decidiera con
-            # una extracción distinta de la del primer intento.
-            base = ultima
-            contexto_base = base
-            candidato = reducir(contexto_base, lote, retrieved_at)
-            continue
-
-        return _clasificar(persistida, contexto_base)
-
-    return ResultadoUpdater(EstadoActualizacion.CONFLICTO,
-                            motivo="no se pudo rebasar sobre el estado vigente")
+    return await persistir_computo(computo, db=db)
 
 
-def _clasificar(persistida, contexto_base: BuyerContextV0) -> ResultadoUpdater:
+def _clasificar(persistida, contexto_base: BuyerContextV0,
+                rebasado: bool = False) -> ResultadoUpdater:
     """Traduce lo que hizo el store a un desenlace que el llamante pueda leer sin adivinar.
 
     `creada=False` es el replay: el mensaje ya estaba procesado con el mismo resultado. Se
     distingue de `NO_OP` —que sí escribió— porque no es lo mismo *"ya estaba hecho"* que
     *"acabo de sellar un mensaje que no cambió nada"*.
+
+    `rebasado` separa `CREADA` de `REBASEADA` (R0C). **El `NO_OP` no se desdobla**: si no
+    hubo cambio semántico, que la base se moviera por el camino no cambia lo que se sella —
+    la revisión existe para sellar el mensaje, y sigue sellándolo igual.
     """
     if not persistida.creada:
         return ResultadoUpdater(EstadoActualizacion.REPLAY, persistida.contexto,
                                 persistida.revision,
-                                motivo="el mensaje ya se había procesado con el mismo estado")
+                                motivo="el mensaje ya se había procesado con el mismo estado",
+                                rebasado=rebasado,
+                                base_revision=contexto_base.context_revision)
 
     from app.buyer.store import _canonico
 
     cambio = _canonico(persistida.contexto) != _canonico(contexto_base)
+    if not cambio:
+        estado = EstadoActualizacion.NO_OP
+    else:
+        estado = (EstadoActualizacion.REBASEADA if rebasado
+                  else EstadoActualizacion.CREADA)
     return ResultadoUpdater(
-        EstadoActualizacion.CREADA if cambio else EstadoActualizacion.NO_OP,
-        persistida.contexto, persistida.revision,
-        motivo=None if cambio else "sin cambio semántico; la revisión sella el mensaje")
+        estado, persistida.contexto, persistida.revision,
+        motivo=None if cambio else "sin cambio semántico; la revisión sella el mensaje",
+        rebasado=rebasado, base_revision=contexto_base.context_revision)

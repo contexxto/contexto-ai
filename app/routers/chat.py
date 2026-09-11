@@ -1008,8 +1008,8 @@ async def _stream_agent(message: str, session_id: str, user=None) -> AsyncIterat
     #
     # SE DESCARTA EL RESULTADO. En R0B el candidato se calcula y no lo consume nadie: no
     # entra al estado, ni al config, ni al prompt, ni a `construir_panel`.
-    await observar_candidato_del_turno(user, input_state["messages"],
-                                       retrieved_at=datetime.now(timezone.utc))
+    observacion_candidato = await observar_candidato_del_turno(
+        user, input_state["messages"], retrieved_at=datetime.now(timezone.utc))
 
     # La compuerta decide qué prosa sale; ver `_CompuertaSSE`. El `finally` corre también
     # cuando el cliente corta la conexión: un buffer a medias jamás sobrevive al turno.
@@ -1071,7 +1071,12 @@ async def _stream_agent(message: str, session_id: str, user=None) -> AsyncIterat
         # mensajes son los del hilo —con el `id` que asignó LangGraph—, no una reconstrucción
         # a partir de `message`. Fire-and-forget, igual que la línea de arriba: el turno ya
         # emitió sus tokens y la sombra no participa en el `panel` que falta por salir.
-        asyncio.create_task(actualizar_en_sombra(user, _msgs))
+        # R0C · si el turno calculó un cómputo, NO se lanza tarea suelta: se persiste ESE
+        # cómputo más abajo, esperado, entre el `panel` y el `done`. Sin cómputo, el carril
+        # legacy conserva intacto su `create_task` — R0C sólo cambia el timing donde hay algo
+        # determinista que persistir.
+        if observacion_candidato.computo is None:
+            asyncio.create_task(actualizar_en_sombra(user, _msgs))
 
         # Mismas tarjetas que el nodo `encaje` ya armó (las que describe la prosa que
         # acabamos de emitir); solo se reconstruyen si el nodo no corrió o degradó.
@@ -1117,6 +1122,19 @@ async def _stream_agent(message: str, session_id: str, user=None) -> AsyncIterat
         yield _terminal_error("serialization_failed", "output")
         return
     yield "data: " + cuerpo_panel + "\n\n"
+
+    # R0C · PERSISTENCIA ESPERADA, ENTRE EL PANEL Y EL `done`.
+    #
+    # El panel NO paga la escritura: ya salió. Y `done` pasa a significar algo más fuerte que
+    # antes —que la TENTATIVA de persistir terminó—, que es la frontera útil para el turno
+    # siguiente. Sigue siendo fail-open: si la persistencia falla, se registra y `done` sale
+    # igual. Por eso la propiedad es «N+1 fresco TRAS UNA PERSISTENCIA EXITOSA», nunca
+    # «N+1 siempre fresco».
+    if observacion_candidato.computo is not None:
+        try:
+            await actualizar_en_sombra(user, _msgs, computo=observacion_candidato.computo)
+        except Exception:  # noqa: BLE001 — la sombra jamás tumba un turno que iba bien
+            log.exception("buyer candidate commit falló y quedó aislado")
 
     yield "data: " + json.dumps({
         "done": True, "session_id": session_id, "execution_id": execution_id,
@@ -1207,8 +1225,8 @@ async def chat(
 
     # R0B · el mismo candidato en sombra, en el camino no-stream. Ver la nota gemela en
     # `_stream_agent`: dos llamadores, una sola función, y el resultado se descarta.
-    await observar_candidato_del_turno(user, input_state["messages"],
-                                       retrieved_at=datetime.now(timezone.utc))
+    observacion_candidato = await observar_candidato_del_turno(
+        user, input_state["messages"], retrieved_at=datetime.now(timezone.utc))
 
     final_state = await agent_graph.compiled_graph.ainvoke(input_state, config=config)
     messages = final_state["messages"]
@@ -1223,7 +1241,10 @@ async def chat(
     # participa en la respuesta**: `reply` y `results` ya están decididos más abajo por el
     # carril legacy, que sigue siendo el único que habla con el usuario. Mismo contrato que
     # las dos tareas de arriba — si falla, falla sola. Apagada por defecto tras un flag.
-    _aio.create_task(actualizar_en_sombra(user, messages))
+    # R0C · mismo criterio que en el camino SSE: con cómputo se espera (abajo, antes del
+    # `return`); sin él, el carril legacy conserva su tarea suelta.
+    if observacion_candidato.computo is None:
+        _aio.create_task(actualizar_en_sombra(user, messages))
     # Las tarjetas ya las armó el nodo `encaje` del grafo, ANTES de que el modelo escribiera:
     # devolver ESAS es lo que garantiza que el panel sea el mismo del que habla la respuesta
     # (y de paso evita repetir la extracción de preferencias y la consulta a la BD). Solo se
@@ -1252,6 +1273,17 @@ async def chat(
     puerta = _puerta_del_turno(final_state, results, messages)
     if puerta:
         await _marcar_puerta_ofrecida(config)
+
+    # R0C · PERSISTENCIA ESPERADA ANTES DEL `return`, gemela de la del camino SSE. Aquí no
+    # hay un `panel` que proteger —la respuesta sale entera de una vez—, así que la escritura
+    # se espera justo antes de devolver. Fail-open igual: un fallo se registra y la respuesta
+    # que la persona ya tenía calculada sale de todos modos.
+    if observacion_candidato.computo is not None:
+        try:
+            await actualizar_en_sombra(user, messages,
+                                       computo=observacion_candidato.computo)
+        except Exception:  # noqa: BLE001 — la sombra jamás tumba un turno que iba bien
+            log.exception("buyer candidate commit falló y quedó aislado")
 
     return ChatResponse(
         reply=reply,

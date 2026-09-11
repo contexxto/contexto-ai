@@ -70,7 +70,7 @@ import time
 from dataclasses import dataclass
 from enum import StrEnum
 
-from app.buyer.actualizador import CandidatoTurno, computar_candidato
+from app.buyer.actualizador import CandidatoTurno, ComputoCandidato, computar_candidato
 from app.buyer.mensaje import ultimo_mensaje_usuario_identificado
 from app.buyer.sombra import _habilitados
 from app.config import settings
@@ -92,17 +92,29 @@ class DesenlaceCandidato(StrEnum):
 
 @dataclass(frozen=True)
 class ObservacionCandidato:
-    """El desenlace, con el artefacto cuando lo hay.
+    """El desenlace, con el CÓMPUTO COMPLETO cuando lo hay.
 
-    A DIFERENCIA de `ObservacionLectura` (1B), esto **sí** puede transportar el cómputo: R0C
-    lo necesita para persistir exactamente este candidato en vez de reinterpretar el turno.
-    La frontera de R0B no está en el tipo, entonces, sino en el llamador: `chat.py` descarta
-    el resultado, y una prueba comprueba por AST que no lo asigna a nada.
+    A DIFERENCIA de `ObservacionLectura` (1B), esto **sí** transporta el cómputo: R0C lo
+    necesita para persistir exactamente este candidato en vez de reinterpretar el turno.
+
+    LLEVA EL `ComputoCandidato`, NO SÓLO EL `CandidatoTurno` (R0C). El artefacto por sí solo
+    no basta para un rebase correcto: `rutas_divergentes(base, ultima)` necesita la **base
+    completa**, y `base_context_revision` es un entero del que no se puede reconstruir. Con
+    sólo el artefacto, la fase de persistencia tendría que volver a cargar «la revisión que
+    cree que era la base» — y eso es exactamente perder información y adivinarla después.
+
+    `candidato` queda como **propiedad derivada**, no como segundo campo: dos copias
+    independientes del mismo dato pueden divergir, y la que divergiría sería la que decide.
     """
 
     desenlace: DesenlaceCandidato
-    candidato: CandidatoTurno | None = None
+    computo: ComputoCandidato | None = None
     duracion_ms: int | None = None
+
+    @property
+    def candidato(self) -> CandidatoTurno | None:
+        """El artefacto, derivado del cómputo. Nunca una copia almacenada aparte."""
+        return self.computo.candidato if self.computo is not None else None
 
     @property
     def hubo_computo(self) -> bool:
@@ -156,7 +168,7 @@ async def observar_candidato_del_turno(principal, mensajes, *, retrieved_at,
 
     _registrar(DesenlaceCandidato.CALCULADO, computo.candidato, arranque, None)
     return ObservacionCandidato(DesenlaceCandidato.CALCULADO,
-                                candidato=computo.candidato, duracion_ms=_ms(arranque))
+                                computo=computo, duracion_ms=_ms(arranque))
 
 
 def _ms(arranque: float) -> int:

@@ -222,6 +222,98 @@ def _contexto_inicial(buyer_id: str, retrieved_at: datetime) -> BuyerContextV0:
     return BuyerContextV0(buyer_id=buyer_id, context_revision=None, updated_at=retrieved_at)
 
 
+@dataclass(frozen=True)
+class CandidatoTurno:
+    """El estado del comprador que ESTE turno produciría. Calculado, **no persistido**.
+
+    F3-CURRENT-TURN-CANDIDATE-R0B. Lleva todo lo que hace falta para que una unidad
+    posterior persista **exactamente este cómputo** sin volver a interpretar el turno —y eso
+    es la razón de que exista como artefacto y no como un simple `BuyerContextV0`:
+    `interpretar_mensaje` usa el LLM, y dos llamadas sobre el mismo texto pueden no coincidir.
+    Reinterpretar sería decidir con un candidato y persistir otro.
+
+    ```
+    source_message_id      la identidad canónica que acuñó el servidor (R0A)
+    base_context_revision  DESDE QUÉ revisión se redujo — no la que acabará persistida
+    retrieved_at           el instante inyectado, el mismo que usó el reductor
+    lote                   la extracción EXACTA; sin ella habría que reinterpretar
+    contexto               el candidato
+    ```
+
+    `base_context_revision` se llama así y no `context_revision` a propósito: es la base
+    desde la que se computó, y **no hay ninguna garantía de que sea la revisión anterior a la
+    que se persista**. Si otra conversación escribe en medio, el store rebasa y el resultado
+    final puede diferir. R0B no lo resuelve; lo deja nombrado.
+    """
+
+    buyer_id: str
+    source_message_id: str
+    base_context_revision: int | None
+    retrieved_at: datetime
+    lote: object
+    contexto: BuyerContextV0
+
+
+@dataclass(frozen=True)
+class ComputoCandidato:
+    """El desenlace de la fase COMPUTE. `candidato` sólo existe si `estado is LISTO`."""
+
+    estado: EstadoActualizacion | None
+    motivo: str | None = None
+    candidato: CandidatoTurno | None = None
+    contexto_base: BuyerContextV0 | None = None
+    base: BuyerContextV0 | None = None
+
+
+async def computar_candidato(
+    buyer_id: str,
+    mensaje,
+    *,
+    retrieved_at: datetime,
+    proponente=None,
+    db=None,
+) -> ComputoCandidato:
+    """COMPUTE, sin PERSIST: interpreta, lee la base y reduce. **No escribe nada.**
+
+    Es la primera mitad de `actualizar()`, extraída para que el camino de sombra del turno
+    actual y el updater productivo compartan **una sola política**. `actualizar()` la llama:
+    no hay dos implementaciones de precedencia, conflicto, `explícito > inferido`, corrección
+    ni moneda — hay una, y vive donde siempre vivió.
+
+    Cero escrituras: ni `anexar_revision`, ni `commit`, ni DDL. Lo único que toca la base es
+    el `SELECT` de `cargar_ultima`.
+    """
+    if not (buyer_id or "").strip():
+        return ComputoCandidato(
+            EstadoActualizacion.FALLIDO,
+            motivo="sin comprador autenticado: un anónimo no crea estado durable")
+
+    lote = await interpretar_mensaje(mensaje, proponente)
+
+    if not lote.afirmaciones:
+        # Cero propuestas puede ser un fallo del modelo. Sellar el mensaje aquí lo daría por
+        # procesado para siempre; dejarlo sin sellar permite reintentarlo.
+        return ComputoCandidato(
+            EstadoActualizacion.VACIO,
+            motivo="el intérprete no produjo afirmaciones: no se sella el mensaje")
+
+    base = await cargar_ultima(buyer_id, db=db)
+    contexto_base = base if base is not None else _contexto_inicial(buyer_id, retrieved_at)
+    contexto = reducir(contexto_base, lote, retrieved_at)
+
+    return ComputoCandidato(
+        estado=None,
+        candidato=CandidatoTurno(
+            buyer_id=buyer_id,
+            source_message_id=mensaje.message_id,
+            base_context_revision=contexto_base.context_revision,
+            retrieved_at=retrieved_at,
+            lote=lote,
+            contexto=contexto),
+        contexto_base=contexto_base,
+        base=base)
+
+
 async def actualizar(
     buyer_id: str,
     mensaje,
@@ -236,27 +328,22 @@ async def actualizar(
     petición ni del modelo. Un anónimo no puede crear estado durable, y por eso el vacío se
     rechaza aquí en vez de dejar que el store lo descubra: un `buyer_id` vacío que llega al
     store ya viajó por media aplicación.
+
+    PERSIST. La mitad de cómputo vive en `computar_candidato`, que esta función llama: el
+    camino de sombra del turno actual (R0B) usa la MISMA, así que no hay dos políticas.
     """
-    if not (buyer_id or "").strip():
-        return ResultadoUpdater(
-            EstadoActualizacion.FALLIDO,
-            motivo="sin comprador autenticado: un anónimo no crea estado durable")
+    computo = await computar_candidato(
+        buyer_id, mensaje, retrieved_at=retrieved_at, proponente=proponente, db=db)
+    if computo.candidato is None:
+        return ResultadoUpdater(computo.estado, motivo=computo.motivo)
 
-    lote = await interpretar_mensaje(mensaje, proponente)
-
-    if not lote.afirmaciones:
-        # Cero propuestas puede ser un fallo del modelo. Sellar el mensaje aquí lo daría por
-        # procesado para siempre; dejarlo sin sellar permite reintentarlo.
-        return ResultadoUpdater(
-            EstadoActualizacion.VACIO,
-            motivo="el intérprete no produjo afirmaciones: no se sella el mensaje")
-
+    lote = computo.candidato.lote
     tocadas = rutas_tocadas(lote)
-    base = await cargar_ultima(buyer_id, db=db)
+    base = computo.base
+    contexto_base = computo.contexto_base
+    candidato = computo.candidato.contexto
 
     for intento in (1, 2):
-        contexto_base = base if base is not None else _contexto_inicial(buyer_id, retrieved_at)
-        candidato = reducir(contexto_base, lote, retrieved_at)
         try:
             persistida = await anexar_revision(
                 buyer_id, mensaje.message_id, candidato,
@@ -278,7 +365,15 @@ async def actualizar(
                     motivo=f"otra conversación tocó {sorted(solapan)} desde la base leída")
             logger.info("rebase del updater sobre la revisión %s (disjunto de %s)",
                         ultima.context_revision, sorted(tocadas))
+            # El rebase REDUCE OTRA VEZ sobre la base nueva, pero NO vuelve a interpretar:
+            # `lote` es el mismo. Es exactamente lo que hacía el bucle antes de la extracción
+            # —`reducir` al principio de cada iteración— sólo que ahora la primera reducción
+            # la trae `computar_candidato` y aquí sólo se rehace cuando de verdad cambió la
+            # base. Reinterpretar en un rebase habría hecho que el reintento decidiera con
+            # una extracción distinta de la del primer intento.
             base = ultima
+            contexto_base = base
+            candidato = reducir(contexto_base, lote, retrieved_at)
             continue
 
         return _clasificar(persistida, contexto_base)

@@ -58,6 +58,18 @@ class Settings(BaseSettings):
     # de canarios divergirían.
     buyer_context_read_shadow: bool = False
 
+    # F3-CURRENT-TURN-CANDIDATE-R0B · canary del CANDIDATO del turno actual. Apagado.
+    #
+    # TERCER FLAG, y los tres son distintos porque los tres cuestan cosas distintas:
+    #   buyer_updater_shadow             → una ESCRITURA en memoria durable
+    #   buyer_context_read_shadow        → un SELECT
+    #   buyer_current_turn_candidate_shadow → un SELECT **más una llamada al LLM**
+    # Reutilizar uno obligaría a pagar el caro para poder observar el barato.
+    #
+    # La COHORTE se sigue compartiendo (`buyer_shadow_allowlist`): son los mismos canarios,
+    # y dos listas para el mismo conjunto divergirían.
+    buyer_current_turn_candidate_shadow: bool = False
+
     # G16 · el mercado monetario que ESTE DESPLIEGUE del Buyer Harness puede usar como
     # contexto determinista para acreditar expresiones monetarias que por sí solas serían
     # ambiguas ("900 dólares"). NO es la moneda del comprador ni parte de `BuyerContextV0`:

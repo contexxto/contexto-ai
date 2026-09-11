@@ -14,6 +14,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.security.api_key import APIKeyHeader
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
+from app.buyer.candidato import observar_candidato_del_turno
 from app.buyer.lectura_runtime import observar_lectura_runtime
 from app.buyer.sombra import actualizar_en_sombra
 from pydantic import BaseModel, Field
@@ -996,6 +997,20 @@ async def _stream_agent(message: str, session_id: str, user=None) -> AsyncIterat
         prev_mode = None
     input_state = _estado_inicial_del_turno(message)
 
+    # F3-CURRENT-TURN-CANDIDATE-R0B · el candidato del turno, en sombra.
+    #
+    # AQUÍ y no antes del branch porque el HumanMessage CANÓNICO nace en
+    # `_estado_inicial_del_turno`, y el candidato tiene que usar ESE mensaje —con el id que
+    # acuñó R0A— y no una copia. Son DOS puntos de llamada (stream y no-stream) de UNA sola
+    # función: la lógica no se duplica, y `computar_candidato` es la misma que usa el updater
+    # productivo. Adelantar la construcción del mensaje para tener un solo punto tocaría el
+    # constructor que R0A acaba de congelar.
+    #
+    # SE DESCARTA EL RESULTADO. En R0B el candidato se calcula y no lo consume nadie: no
+    # entra al estado, ni al config, ni al prompt, ni a `construir_panel`.
+    await observar_candidato_del_turno(user, input_state["messages"],
+                                       retrieved_at=datetime.now(timezone.utc))
+
     # La compuerta decide qué prosa sale; ver `_CompuertaSSE`. El `finally` corre también
     # cuando el cliente corta la conexión: un buffer a medias jamás sobrevive al turno.
     compuerta = _CompuertaSSE()
@@ -1189,6 +1204,11 @@ async def chat(
     except Exception:  # noqa: BLE001 — sin estado previo → sin continuidad, no error
         prev_mode = None
     input_state = _estado_inicial_del_turno(payload.message)
+
+    # R0B · el mismo candidato en sombra, en el camino no-stream. Ver la nota gemela en
+    # `_stream_agent`: dos llamadores, una sola función, y el resultado se descarta.
+    await observar_candidato_del_turno(user, input_state["messages"],
+                                       retrieved_at=datetime.now(timezone.utc))
 
     final_state = await agent_graph.compiled_graph.ainvoke(input_state, config=config)
     messages = final_state["messages"]

@@ -173,21 +173,131 @@ def test_la_superficie_de_producto_solo_toca_la_SOMBRA():
     assert atajos == [], f"el producto salta la sombra y llama directo: {atajos}"
 
 
-def test_el_ORQUESTADOR_solo_lo_consume_la_sombra():
-    """La contraparte: el único consumidor del orquestador en `app/` es `sombra.py`.
+def _consumidores_de(simbolo: str, excluir: set[str] = frozenset()) -> set[str]:
+    """Qué ficheros de `app/` importan o invocan `simbolo`. **Por AST, no por texto.**
 
-    Mantiene la propiedad que el guard anterior protegía —que nadie lo invoque por su cuenta—
-    ahora que la sombra sí está autorizada a hacerlo.
+    POR QUÉ DEJÓ DE SERVIR EL TEXTO (F3-CURRENT-TURN-CANDIDATE-R0B). Esta guarda decía
+    «contiene `buyer.actualizador`» y con eso inferia autoridad de escritura. Servía mientras
+    ese módulo expusiera UNA capacidad. Tras la extracción COMPUTE/PERSIST expone dos con
+    perfiles opuestos —`actualizar` escribe, `computar_candidato` no—, y un censo que no las
+    distingue protege menos de lo que aparenta: o marca al inocente, o para no marcarlo hay
+    que relajarlo hasta que no marque a nadie.
+
+    Mirar el AST permite congelar por SÍMBOLO. Y nunca por número de línea: una guarda que se
+    rompe porque alguien añadió un comentario enseña a ignorarla.
     """
-    llamantes = []
+    fuera = set()
     for f in (RAIZ / "app").rglob("*.py"):
-        if "__pycache__" in f.parts or f.name in ("actualizador.py", "sombra.py"):
+        rel = str(f.relative_to(RAIZ)).replace("\\", "/")
+        if "__pycache__" in f.parts or rel in excluir:
             continue
-        texto = f.read_text(encoding="utf-8", errors="ignore")
-        if "buyer.actualizador" in texto or "ResultadoUpdater" in texto:
-            llamantes.append(str(f.relative_to(RAIZ)))
+        try:
+            arbol = ast.parse(f.read_text(encoding="utf-8", errors="ignore"))
+        except SyntaxError:  # pragma: no cover
+            continue
+        for n in ast.walk(arbol):
+            if isinstance(n, ast.ImportFrom) and any(a.name == simbolo for a in n.names):
+                fuera.add(rel)
+            elif isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == simbolo:
+                fuera.add(rel)
+            elif isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) \
+                    and n.func.attr == simbolo:
+                fuera.add(rel)
+    return fuera
 
-    assert llamantes == [], f"el orquestador tiene un consumidor fuera de la sombra: {llamantes}"
+
+def test_el_ORQUESTADOR_solo_lo_consume_la_sombra():
+    """EL ESCRITOR. `actualizar()` es COMPUTE + PERSIST, y su único consumidor productivo
+    sigue siendo la sombra — ni el candidato de R0B, ni el router, ni el agente, ni la
+    decisión.
+
+    Es la misma propiedad de siempre; lo que cambió es el instrumento, no el listón.
+    """
+    esperado = {"app/buyer/sombra.py"}
+    hallados = _consumidores_de("actualizar", excluir={"app/buyer/actualizador.py"})
+    assert hallados == esperado, (
+        f"el escritor tiene consumidores fuera de la sombra: {sorted(hallados - esperado)}")
+
+
+def test_el_censo_del_ESCRITOR_sabe_ver_un_intruso():
+    """LA MITAD NEGATIVA: un censo que mirase el sitio equivocado daría «sólo la sombra»
+    para siempre."""
+    intruso = ast.parse(
+        "from app.buyer.actualizador import actualizar\n"
+        "async def colarse(b, m):\n    return await actualizar(b, m)\n")
+    visto = any(
+        (isinstance(n, ast.ImportFrom) and any(a.name == "actualizar" for a in n.names))
+        or (isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "actualizar")
+        for n in ast.walk(intruso))
+    assert visto, "el censo por AST no vería un consumidor no autorizado del escritor"
+
+
+def test_la_fase_COMPUTE_solo_la_consumen_el_escritor_y_el_candidato():
+    """`computar_candidato()` NO escribe, así que su lista es otra — y también cerrada.
+
+    Dos consumidores y ninguno más: el escritor, porque la fase COMPUTE tiene que ser la
+    misma que usa al persistir, y el candidato de sombra de R0B. Que sean exactamente estos
+    dos es lo que sostiene `ONE POLICY, ONE COMPUTE IMPLEMENTATION`.
+    """
+    esperado = {"app/buyer/candidato.py"}
+    hallados = _consumidores_de("computar_candidato", excluir={"app/buyer/actualizador.py"})
+    assert hallados == esperado, (
+        f"la fase COMPUTE tiene consumidores inesperados: {sorted(hallados - esperado)}")
+
+
+def test_el_ESCRITOR_usa_la_MISMA_fase_COMPUTE():
+    """La otra mitad de lo anterior: si `actualizar` dejara de llamarla, habría dos caminos
+    de cómputo y el candidato podría divergir de lo que se persiste."""
+    arbol = ast.parse((RAIZ / "app" / "buyer" / "actualizador.py").read_text(encoding="utf-8"))
+    fn = next(n for n in ast.walk(arbol)
+              if isinstance(n, ast.AsyncFunctionDef) and n.name == "actualizar")
+    llamadas = [n.func.id for n in ast.walk(fn)
+                if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)]
+    assert "computar_candidato" in llamadas, "el escritor dejó de usar la fase COMPUTE común"
+    assert "interpretar_mensaje" not in llamadas, "el escritor reinterpreta por su cuenta"
+
+
+def test_el_censo_de_COMPUTE_sabe_ver_un_TERCER_consumidor():
+    """LA MITAD NEGATIVA de la anterior."""
+    tercero = ast.parse("from app.buyer.actualizador import computar_candidato\n")
+    assert any(isinstance(n, ast.ImportFrom)
+               and any(a.name == "computar_candidato" for a in n.names)
+               for n in ast.walk(tercero))
+
+
+def test_el_CANDIDATO_no_puede_escribir():
+    """R0B calcula y no persiste. Se comprueba por AST sobre su fuente, no por `grep`.
+
+    Ni `actualizar`, ni `anexar_revision`, ni `commit`, ni SQL de mutación. Lo que puede
+    hacer está declarado en su docstring: leer, interpretar, reducir y observar.
+    """
+    fuente = (RAIZ / "app" / "buyer" / "candidato.py").read_text(encoding="utf-8")
+    arbol = ast.parse(fuente)
+    llamadas = {n.func.id for n in ast.walk(arbol)
+                if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+    llamadas |= {n.func.attr for n in ast.walk(arbol)
+                 if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)}
+    importados = {a.name for n in ast.walk(arbol) if isinstance(n, ast.ImportFrom)
+                  for a in n.names}
+    for prohibido in ("actualizar", "anexar_revision", "commit", "rollback", "execute"):
+        assert prohibido not in llamadas, f"el candidato llama a `{prohibido}`"
+        assert prohibido not in importados, f"el candidato importa `{prohibido}`"
+    for sql in ("INSERT", "UPDATE ", "DELETE"):
+        literales = [c.value for c in ast.walk(arbol)
+                     if isinstance(c, ast.Constant) and isinstance(c.value, str)]
+        cuerpo = [t for t in literales if t != ast.get_docstring(arbol)]
+        assert not any(sql in t.upper() for t in cuerpo), f"el candidato lleva SQL: {sql}"
+
+
+def test_la_guarda_de_NO_ESCRITURA_sabe_ver_una_escritura():
+    """LA MITAD NEGATIVA: la sonda tiene que ver una llamada de persistencia."""
+    roto = ast.parse("from app.buyer.store import anexar_revision\n"
+                     "async def f():\n    await anexar_revision(1, 2, 3, None)\n")
+    llamadas = {n.func.id for n in ast.walk(roto)
+                if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+    importados = {a.name for n in ast.walk(roto) if isinstance(n, ast.ImportFrom)
+                  for a in n.names}
+    assert "anexar_revision" in llamadas and "anexar_revision" in importados
 
 
 def test_el_store_no_expone_endpoints():

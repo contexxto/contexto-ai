@@ -399,14 +399,109 @@ def test_T13_chat_DESCARTA_el_resultado():
                 "el candidato se está guardando en una variable de chat.py")
 
 
+def _llamadas_a_la_sonda(fuente: str | None = None) -> list[ast.Call]:
+    arbol = ast.parse(fuente if fuente is not None else CHAT.read_text(encoding="utf-8"))
+    return [n for n in ast.walk(arbol)
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+            and n.func.id == "observar_candidato_del_turno"]
+
+
+def _principal_de(llamada: ast.Call) -> ast.AST | None:
+    """El nodo que aporta el principal: el primer posicional, o el keyword `principal`."""
+    for kw in llamada.keywords:
+        if kw.arg == "principal":
+            return kw.value
+    return llamada.args[0] if llamada.args else None
+
+
+def _es_el_usuario_confiable(nodo) -> bool:
+    """Sólo el símbolo `user`, desnudo.
+
+    Un `ast.Name` y nada más. Queda fuera todo lo demás por construcción: un `Attribute`
+    (`user.user_id`), una `Call` (`CurrentUser(...)`, `SimpleNamespace(...)`), un `Subscript`
+    (`state["user"]`) o cualquier otro nombre (`payload`, `request`). No se compara texto:
+    se compara la FORMA del nodo.
+    """
+    return isinstance(nodo, ast.Name) and nodo.id == "user"
+
+
 def test_T13b_hay_DOS_llamadores_de_UNA_sola_funcion():
     """Stream y no-stream, porque el mensaje canónico nace tras el branch. Lo que no puede
     haber es dos implementaciones."""
+    assert len(_llamadas_a_la_sonda()) == 2
+
+
+# ══ E1 · PROCEDENCIA DEL PRINCIPAL EN EL PUNTO DE LLAMADA ══════════════════════════
+#
+# POR QUÉ HACÍA FALTA. `T13b` cuenta llamadores; no dice QUÉ recibe cada uno. Y
+# `candidato.py` deriva la identidad con `getattr(principal, "user_id", "")`, que acepta
+# cualquier objeto con ese atributo — igual que el seam de la sombra. Eso reduce la
+# superficie pero no constituye autoridad: quien la aporta es el llamador. Sin esta guarda,
+# alguien podría pasar un principal reconstruido y las 46 pruebas anteriores seguirían verdes.
+#
+# La formulación correcta, y la que se usa desde aquí:
+#
+#     BUYER_ID_DIRECT_INPUT             = NO
+#     PRINCIPAL_PROVENANCE_AT_CALL_SITE = PASS
+#     CROSS_OWNER                       = PASS UNDER TRUSTED AUTH PRINCIPAL
+#
+# Nunca «cross-owner imposible por construcción».
+
+
+def test_E1_TODOS_los_llamadores_pasan_el_usuario_autenticado():
+    """Las dos llamadas reciben exactamente `user`, el objeto que ya viaja por el runtime."""
+    llamadas = _llamadas_a_la_sonda()
+    assert len(llamadas) == 2, f"cambió el número de llamadores: {len(llamadas)}"
+    for i, llamada in enumerate(llamadas):
+        nodo = _principal_de(llamada)
+        assert nodo is not None, f"la llamada {i} no aporta principal"
+        assert _es_el_usuario_confiable(nodo), (
+            f"la llamada {i} pasa `{ast.dump(nodo)[:80]}` en vez del símbolo `user`")
+
+
+def test_E1b_chat_no_RECONSTRUYE_un_principal_para_esta_costura():
+    """No `CurrentUser(...)`, no `SimpleNamespace(...)`, no un dict equivalente.
+
+    Se quiere el objeto que ya existe, no uno con los mismos campos: una copia pasaría una
+    comparación por igualdad y rompería la cadena de procedencia sin que nadie lo viera.
+    """
     arbol = ast.parse(CHAT.read_text(encoding="utf-8"))
-    llamadas = [n for n in ast.walk(arbol)
-                if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
-                and n.func.id == "observar_candidato_del_turno"]
-    assert len(llamadas) == 2
+    construidos = {n.func.id for n in ast.walk(arbol)
+                   if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+    for fabrica in ("CurrentUser", "SimpleNamespace"):
+        assert fabrica not in construidos, f"`chat.py` construye `{fabrica}`"
+    for llamada in _llamadas_a_la_sonda():
+        assert not isinstance(_principal_de(llamada), ast.Call), (
+            "el principal de la sonda sale de una llamada, no del runtime")
+
+
+@pytest.mark.parametrize("forma", [
+    "observar_candidato_del_turno(payload, m)",
+    "observar_candidato_del_turno(Principal(user_id=payload.user_id), m)",
+    "observar_candidato_del_turno(state['user'], m)",
+    "observar_candidato_del_turno(user.user_id, m)",
+    "observar_candidato_del_turno(request.user, m)",
+    "observar_candidato_del_turno(dict(user_id=user.user_id), m)",
+    "observar_candidato_del_turno(principal=payload.user, mensajes=m)",
+])
+def test_E1c_la_sonda_RECHAZA_un_principal_no_confiable(forma):
+    """LA MITAD NEGATIVA, y sin ella E1 podría estar mirando el sitio equivocado.
+
+    Siete formas plausibles de colar otra identidad —el cuerpo, un objeto reconstruido, el
+    estado, el id suelto, la petición, un dict, y la variante por keyword—. Todas deben
+    resultar inválidas. Se construyen sólo aquí, nunca en producción.
+    """
+    (llamada,) = _llamadas_a_la_sonda(forma)
+    assert not _es_el_usuario_confiable(_principal_de(llamada)), (
+        f"la sonda daría por confiable: {forma}")
+
+
+def test_E1d_la_sonda_ACEPTA_la_forma_buena():
+    """El control positivo del detector: si rechazara todo, E1c sería cierto y vacío."""
+    for buena in ("observar_candidato_del_turno(user, m)",
+                  "observar_candidato_del_turno(principal=user, mensajes=m)"):
+        (llamada,) = _llamadas_a_la_sonda(buena)
+        assert _es_el_usuario_confiable(_principal_de(llamada)), buena
 
 
 # ══ T14 · ANÓNIMO ══════════════════════════════════════════════════════════════════

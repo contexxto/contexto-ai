@@ -875,6 +875,40 @@ class _CompuertaSSE:
         self.pendientes.clear()
 
 
+#: Prefijo del identificador canónico del mensaje. Existe para que, mirando una fila de
+#: `checkpoints` o una `EvidenceRef`, se sepa sin ambigüedad que ese id lo acuñó ESTE
+#: servidor en el ingreso y no `add_messages` durante el procesamiento.
+_PREFIJO_ID_MENSAJE = "msg-"
+
+
+def _acunar_id_de_mensaje() -> str:
+    """La identidad canónica del mensaje de este turno. **El servidor la acuña; nadie más.**
+
+    F3-TURN-IDENTITY-R0A. Hasta ahora el `id` lo ponía `add_messages` al ingerir el mensaje,
+    o sea DESPUÉS de que el turno ya estaba en marcha. Medido contra `langgraph 0.2.60` y
+    `langchain-core 0.3.63`: un `id` puesto por nosotros **se conserva** a través del grafo y
+    del checkpoint, y `add_messages` sólo genera uno cuando falta.
+
+    QUÉ CAMBIA Y QUÉ NO. Cambia **quién** acuña la identidad, no qué es. El mensaje sigue
+    siendo el mismo y su id sigue siendo opaco; lo que gana es que existe **antes** del
+    grafo, así que el Buyer updater y LangGraph pueden referirse a la misma evidencia sin
+    que nadie la reconstruya. `buyer/mensaje.py` prohíbe FABRICAR un id para un mensaje que
+    ya existe sin él —sería procedencia inventada—; esto es lo contrario: constituir la
+    identidad en el punto de ingreso, donde el mensaje nace.
+
+    NO SE DERIVA DE NADA. Ni del texto, ni de `session_id`, ni de `buyer_id`, ni de la
+    petición. Derivarlo del texto haría que dos personas distintas diciendo lo mismo
+    compartieran evidencia; derivarlo de `session_id` confundiría la autoridad del HILO con
+    la identidad del MENSAJE, que es justo la confusión que AUTH-READ-GATE.1 cerró.
+
+    LO QUE ESTO **NO** RESUELVE, y conviene no creérselo: un reintento HTTP del mismo turno
+    entra por aquí otra vez y recibe un id NUEVO. `add_messages` deduplica cuando se reutiliza
+    EL MISMO id —medido—, pero eso es dedup intra-turno, no idempotencia entre peticiones.
+    `CROSS_REQUEST_IDEMPOTENCY` sigue sin resolver y no lo resuelve esta unidad.
+    """
+    return f"{_PREFIJO_ID_MENSAJE}{uuid.uuid4()}"
+
+
 def _estado_inicial_del_turno(mensaje: str) -> AgentState:
     """El estado con el que ENTRA un turno. UNO SOLO para los dos caminos del endpoint.
 
@@ -901,7 +935,7 @@ def _estado_inicial_del_turno(mensaje: str) -> AgentState:
     en el repositorio: ver `DEAD-STATE-sql_results`, deuda registrada aparte.
     """
     return {
-        "messages": [HumanMessage(content=mensaje)],
+        "messages": [HumanMessage(content=mensaje, id=_acunar_id_de_mensaje())],
         "spatial_context": {},
         "sql_results": [],
         # Panel del turno ANTERIOR: se limpia al entrar. Si no, un turno que no busca nada

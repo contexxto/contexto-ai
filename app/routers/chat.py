@@ -14,6 +14,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.security.api_key import APIKeyHeader
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
+from app.buyer.lectura_runtime import observar_lectura_runtime
 from app.buyer.sombra import actualizar_en_sombra
 from pydantic import BaseModel, Field
 from sqlalchemy import text
@@ -1114,6 +1115,27 @@ async def chat(
     # no bloquea la respuesta y nunca rompe el chat. Cubre stream y no-stream (corre antes del branch).
     import asyncio as _aio
     _aio.create_task(marcar_actividad_lead(payload.session_id))
+
+    # F3-TOOLS-MIN-1B · canary de LECTURA del BuyerContext. UN SOLO LLAMADOR.
+    #
+    # AQUÍ Y NO EN OTRO SITIO. Es el punto más temprano que cumple las cinco condiciones a la
+    # vez: el JWT ya se verificó, `user` ya es `CurrentUser` o `None`, `_exigir_autoridad` ya
+    # pasó, la reclamación de un hilo anónimo ya ocurrió, y el branch stream/no-stream
+    # todavía no se ha tomado. Cablearlo después del branch costaría DOS llamadores —el
+    # defecto exacto de E3.2b.4, que dejó el camino SSE sin sombra y se descubrió en
+    # producción con `200 OK` y cero filas.
+    #
+    # SE ESPERA (`await`), al contrario que las tres líneas fire-and-forget de arriba. La
+    # propiedad que esta unidad demuestra es «la lectura se completó con el principal
+    # correcto», y una tarea suelta cuyo desenlace nadie espera no demuestra ni que terminó
+    # ni con quién. Se paga con latencia; por eso vive tras `flag ∧ allowlist`.
+    #
+    # SE DESCARTA EL RESULTADO. `observar_lectura_runtime` devuelve un desenlace, nunca el
+    # `BuyerContextV0`: en LEVEL 1 el contexto está DISPONIBLE en runtime y no lo consume
+    # nadie. Que el tipo no pueda transportarlo es lo que impide que el siguiente que pase
+    # por aquí lo enchufe al prompt o al panel sin que el diff lo delate.
+    await observar_lectura_runtime(user)
+
     if stream:
         # `user` cruza el branch: este `return` es lo que dejaba la sombra sin invocar en el
         # camino SSE (E3.2b.4a). La llamada vive DENTRO de `_stream_agent`, no aquí, porque

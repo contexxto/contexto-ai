@@ -217,15 +217,23 @@ def test_la_costura_solo_la_consume_la_SOMBRA():
     docstring original: *que el ranking visible siga saliendo del carril legacy*. Eso sigue
     siendo cierto, y ahora se afirma directamente en vez de por el proxy del import.
 
-    Lista blanca de uno: `routers/chat.py`, y sólo para `app.buyer.sombra`. Los módulos que
-    producen lo que la persona ve —el assembler, el encaje, el match— siguen sin poder
-    tocarla, que es donde un atajo haría daño de verdad.
+    Lista blanca de dos: `routers/chat.py`, y sólo para `app.buyer.sombra` (escritura, E3.2b.4)
+    y `app.buyer.lectura_runtime` (lectura, F3-TOOLS-MIN-1B). Los módulos que producen lo que
+    la persona ve —el assembler, el encaje, el match— siguen sin poder tocarla, que es donde
+    un atajo haría daño de verdad.
+
+    F3-TOOLS-MIN-1B añadió la segunda entrada DELIBERADAMENTE, y la guarda la exigió: el
+    mismo fichero ya permitido, un módulo hermano del mismo paquete, y ni el assembler ni el
+    encaje ni el match rozados. La propiedad que este test protege —el ranking visible sale
+    del carril legacy— sigue intacta, y la afirma directamente el test hermano
+    `test_el_carril_que_produce_lo_VISIBLE_no_conoce_la_memoria_del_comprador`.
     """
     import ast
     import pathlib
 
     raiz = pathlib.Path(__file__).resolve().parent.parent
-    permitidos = {("app/routers/chat.py", "app.buyer.sombra")}
+    permitidos = {("app/routers/chat.py", "app.buyer.sombra"),
+                  ("app/routers/chat.py", "app.buyer.lectura_runtime")}
 
     consumidores = []
     for py in (raiz / "app").rglob("*.py"):

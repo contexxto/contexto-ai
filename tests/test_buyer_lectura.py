@@ -300,11 +300,29 @@ def _llamadores(objetivos: set[str], ficheros) -> list[str]:
 _OBJETIVOS = {"leer_contexto_del_principal", "PrincipalNoAutenticado"}
 
 
-def test_T8_PRODUCTION_READ_CALLERS_es_cero():
-    """VERDE A PROPÓSITO. No es un defecto: 1A construye la capacidad y 1B decide quién la
-    consume. La unidad que cablee un lector tendrá que cambiar esta guarda deliberadamente,
-    que es justo lo que se quiere — que nadie la conecte sin darse cuenta."""
-    assert _llamadores(_OBJETIVOS, _ficheros_de_app()) == []
+def test_T8_PRODUCTION_READ_CALLERS_es_exactamente_la_sonda():
+    """ACTUALIZADA POR F3-TOOLS-MIN-1B, DELIBERADAMENTE — y la guarda funcionó.
+
+    En 1A esta prueba exigía CERO llamadores y decía: «la unidad que cablee un lector tendrá
+    que cambiar esta guarda deliberadamente, que es justo lo que se quiere — que nadie la
+    conecte sin darse cuenta». 1B cableó el lector y la prueba se puso ROJA. Eso es la guarda
+    haciendo su trabajo, no una regresión.
+
+    Lo que ahora se congela es más fuerte que «cero»: el lector tiene **exactamente un
+    consumidor**, y es la sonda de runtime. Un segundo llamador —o uno distinto— vuelve a
+    poner esto en rojo, que es lo que impide que el consumo de BuyerContext se extienda sin
+    que nadie lo decida. `PRODUCTIVE_DECISION_CONSUMERS` sigue siendo 0: la sonda lee y
+    descarta.
+    """
+    hallados = _llamadores(_OBJETIVOS, _ficheros_de_app())
+    # Por FICHERO y SÍMBOLO, nunca por número de línea: una guarda que se rompe porque
+    # alguien añadió un comentario enseña a ignorarla.
+    ficheros = {h.split(":")[0] for h in hallados}
+    simbolos = {h.split(" ", 1)[1] for h in hallados}
+    assert ficheros == {"lectura_runtime.py"}, (
+        f"el lector tiene consumidores fuera de la sonda de 1B: {sorted(ficheros)}")
+    assert simbolos == {"import", "leer_contexto_del_principal", "PrincipalNoAutenticado"}, (
+        f"cambió la forma del consumo dentro de la sonda: {sorted(simbolos)}")
 
 
 def test_T8b_el_censo_SABE_ver_un_llamador(tmp_path):

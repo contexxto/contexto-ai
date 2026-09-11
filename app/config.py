@@ -44,6 +44,20 @@ class Settings(BaseSettings):
     # Ids de `auth.users` separados por comas. Los pone el entorno, nunca el repositorio.
     buyer_shadow_allowlist: str = ""
 
+    # F3-TOOLS-MIN-1B · canary de LECTURA del BuyerContext. Apagado por defecto.
+    #
+    # ES UN FLAG PROPIO Y NO EL DEL UPDATER, y la separación es la decisión: leer y escribir
+    # son capacidades distintas. `buyer_updater_shadow` enciende algo que hace `commit()`
+    # sobre la memoria durable de una persona real; esto enciende un `SELECT`. Un solo
+    # booleano para los dos obligaría a encender la ESCRITURA para poder observar la
+    # LECTURA, que es justo el trueque que no queremos ofrecer.
+    #
+    # La COHORTE sí se comparte: `buyer_shadow_allowlist` gobierna las dos, con el mismo
+    # parser normalizado y fail-closed. Compartir la lista no acopla los flags —cada
+    # capacidad sigue necesitando el suyo—, y dos listas separadas para el mismo conjunto
+    # de canarios divergirían.
+    buyer_context_read_shadow: bool = False
+
     # G16 · el mercado monetario que ESTE DESPLIEGUE del Buyer Harness puede usar como
     # contexto determinista para acreditar expresiones monetarias que por sí solas serían
     # ambiguas ("900 dólares"). NO es la moneda del comprador ni parte de `BuyerContextV0`:

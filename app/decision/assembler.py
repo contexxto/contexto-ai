@@ -41,6 +41,7 @@ from app.preferencias import extraer_preferencias
 import uuid
 from datetime import datetime, timezone
 
+from app.decision.runtime_capture import depositar
 from app.decision.context import (
     assemble_decision_context_v0,
     decidir_ranking,
@@ -833,6 +834,15 @@ async def construir_panel(messages, *, session_id: str, preferencias: dict | Non
     if isinstance(fetched, Exception) or fetched is None:
         return vacio
     rows, curaciones = fetched
+
+    # R0F · el puente. Se deposita AQUÍ y no dentro del núcleo, y la diferencia importa:
+    # `_decidir_desde_filas` tiene que seguir siendo una función pura de sus argumentos, sin
+    # leer estado ambiente. Aquí las entradas ya existen y todavía no se ha decidido nada.
+    #
+    # Sin buzón activo esto es un no-op: la captura es observabilidad opcional y el panel se
+    # comporta EXACTAMENTE igual con ella y sin ella.
+    depositar(rows, curaciones, ids)
+
     return _decidir_desde_filas(rows, curaciones, ids=ids,
                                 preferencias=preferencias, messages=messages,
                                 session_id=session_id)

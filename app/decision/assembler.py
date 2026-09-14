@@ -628,44 +628,47 @@ def _priorizado_por_el_modelo(messages) -> tuple[str | None, str | None]:
     return aid, motivo
 
 
-async def construir_panel(messages, *, session_id: str, preferencias: dict | None = None) -> dict:
-    """El PANEL del turno: {cards, descartadas, preferencias, priorizado}.
+def _decidir_desde_filas(rows, curaciones, *, ids, preferencias, messages,
+                         session_id: str) -> dict:
+    """EL NÚCLEO DE LA DECISIÓN VISIBLE. Puro: filas ya leídas → panel.
 
-    Fuente ÚNICA de lo que la persona verá y de lo que el modelo lee como contexto
-    autoritativo (app/encaje_contexto.py). Que ambos salgan de aquí es lo que garantiza
-    que la prosa y las tarjetas no puedan contar historias distintas.
+    F3-DECISION-CORE-EXTRACTION-R0D. Extracción **verbatim** del tramo que vivía dentro de
+    `construir_panel`: filtros, encaje, ranking, contrato, recorte y relación territorial.
+    No cambia una sola regla — no era el objetivo y habría sido imposible de verificar.
 
-    `cards` son las que se muestran (ya ordenadas por encaje y recortadas); `descartadas`
-    las que el corte del panel dejó fuera — se nombran para que el modelo sepa que existen
-    y NO las ofrezca, en vez de que reaparezcan de memoria en la prosa.
+    ## POR QUÉ EXISTE COMO FUNCIÓN
 
-    `preferencias`: si se pasa explícito (ya extraídas por el caller), NO vuelve a llamar al
-    LLM — las usa tal cual. Lo usan el nodo `encaje` del grafo (que las extrae una vez por
-    turno) y get_session_history (una vez por carga de historial).
+    Para poder ejecutarse DOS veces sobre **las mismas filas**. Esa es la única razón. Una
+    segunda llamada a `construir_panel` volvería a consultar la base: mismos ids, sí, pero
+    otro snapshot y otra ida a la DB dentro del turno. Recibiendo `rows` como argumento, el
+    «mismo universo» deja de ser una promesa y pasa a ser identidad de objeto.
+
+    R0D **no** hace esa segunda llamada, y este módulo sigue sin conocer la memoria del
+    comprador. (Dicho así a propósito: el guard que vigila esa independencia es TEXTUAL, así
+    que escribir aquí el nombre del paquete lo habría puesto rojo — un guard detectándose a sí
+    mismo en la prosa que lo explica. Ya ha pasado varias veces en este repositorio.)
+
+    ## LO QUE NO PUEDE HACER
+
+    Cero I/O: ni DB, ni red, ni herramientas, ni LLM, ni checkpoint, ni mutación de sesión.
+    Todo lo que necesita entra por argumentos. Hay un guard estructural que lo vigila, con su
+    mitad negativa — un núcleo sintético que llame a la base tiene que ser detectado.
+
+    Dos cosas siguen sin ser deterministas y es deliberado: `_nuevo_scope_id()` (uuid4) y
+    `_ahora_utc()`. Ninguna sale en el panel ni toca el orden —viven en la identidad del
+    `DecisionContextV0`, que aquí se construye y se consume— y las dos ya estaban apartadas
+    en funciones propias justamente para poder inyectarlas desde las pruebas.
+
+    Args:
+        rows: las filas YA obtenidas por `_fetch_cards_rows`. No se vuelven a pedir.
+        curaciones: overlay del corredor (Catastro Vivo) para esas mismas filas.
+        ids: el universo del turno, en su orden de recuperación. No se reconstruye desde
+            las tarjetas: se recibe, que es lo que hace comparable una segunda ejecución.
+        preferencias: las necesidades declaradas. **Es el único eje que una futura unidad
+            variará**; todo lo demás se mantiene constante por construcción.
+        messages: para la priorización declarada por el modelo y la relación territorial.
+        session_id: identidad del ensamblado; `assemble_decision_context_v0` la exige.
     """
-    vacio = {"cards": [], "descartadas": [], "preferencias": preferencias or {},
-             "priorizado": (None, None)}
-    # Recolectamos con holgura (2× el tope visible) para que el filtro de operación de abajo
-    # tenga material y no adelgace de más los resultados; luego se recorta a _MAX_CARDS.
-    ids = _collect_asset_ids(messages, limit=_MAX_CARDS * 2)
-    if not ids:
-        return vacio
-    if preferencias is not None:
-        # Ya extraídas por el caller (p.ej. historial): solo falta el fetch de las filas.
-        fetched = await _fetch_cards_rows(ids)
-    else:
-        # Turno EN VIVO: extracción de preferencias (LLM) y fetch de tarjetas EN PARALELO;
-        # ninguna bloquea a la otra. Ambas degradan solas (prefs → {}, fetch → None).
-        prefs, fetched = await asyncio.gather(
-            extraer_preferencias(_user_texts(messages)),
-            _fetch_cards_rows(ids),
-            return_exceptions=True,
-        )
-        preferencias = prefs if isinstance(prefs, dict) else {}
-        vacio["preferencias"] = preferencias
-    if isinstance(fetched, Exception) or fetched is None:
-        return vacio
-    rows, curaciones = fetched
 
     by_id: dict[str, dict] = {}
     for r in rows:
@@ -790,6 +793,49 @@ async def construir_panel(messages, *, session_id: str, preferencias: dict | Non
         # activo que el SQL puso primero.
         "relacion_territorial": _relacion_territorial_del_turno(messages, cards=visibles),
     }
+
+
+async def construir_panel(messages, *, session_id: str, preferencias: dict | None = None) -> dict:
+    """El PANEL del turno: {cards, descartadas, preferencias, priorizado}.
+
+    Fuente ÚNICA de lo que la persona verá y de lo que el modelo lee como contexto
+    autoritativo (app/encaje_contexto.py). Que ambos salgan de aquí es lo que garantiza
+    que la prosa y las tarjetas no puedan contar historias distintas.
+
+    `cards` son las que se muestran (ya ordenadas por encaje y recortadas); `descartadas`
+    las que el corte del panel dejó fuera — se nombran para que el modelo sepa que existen
+    y NO las ofrezca, en vez de que reaparezcan de memoria en la prosa.
+
+    `preferencias`: si se pasa explícito (ya extraídas por el caller), NO vuelve a llamar al
+    LLM — las usa tal cual. Lo usan el nodo `encaje` del grafo (que las extrae una vez por
+    turno) y get_session_history (una vez por carga de historial).
+    """
+    vacio = {"cards": [], "descartadas": [], "preferencias": preferencias or {},
+             "priorizado": (None, None)}
+    # Recolectamos con holgura (2× el tope visible) para que el filtro de operación de abajo
+    # tenga material y no adelgace de más los resultados; luego se recorta a _MAX_CARDS.
+    ids = _collect_asset_ids(messages, limit=_MAX_CARDS * 2)
+    if not ids:
+        return vacio
+    if preferencias is not None:
+        # Ya extraídas por el caller (p.ej. historial): solo falta el fetch de las filas.
+        fetched = await _fetch_cards_rows(ids)
+    else:
+        # Turno EN VIVO: extracción de preferencias (LLM) y fetch de tarjetas EN PARALELO;
+        # ninguna bloquea a la otra. Ambas degradan solas (prefs → {}, fetch → None).
+        prefs, fetched = await asyncio.gather(
+            extraer_preferencias(_user_texts(messages)),
+            _fetch_cards_rows(ids),
+            return_exceptions=True,
+        )
+        preferencias = prefs if isinstance(prefs, dict) else {}
+        vacio["preferencias"] = preferencias
+    if isinstance(fetched, Exception) or fetched is None:
+        return vacio
+    rows, curaciones = fetched
+    return _decidir_desde_filas(rows, curaciones, ids=ids,
+                                preferencias=preferencias, messages=messages,
+                                session_id=session_id)
 
 
 def _encaje_de(row: dict, preferencias: dict | None) -> dict | None:

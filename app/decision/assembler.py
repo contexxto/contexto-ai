@@ -41,7 +41,7 @@ from app.preferencias import extraer_preferencias
 import uuid
 from datetime import datetime, timezone
 
-from app.decision.runtime_capture import depositar
+from app.decision.runtime_capture import comprometer, comprometer_vacia
 from app.decision.context import (
     assemble_decision_context_v0,
     decidir_ranking,
@@ -817,6 +817,10 @@ async def construir_panel(messages, *, session_id: str, preferencias: dict | Non
     # tenga material y no adelgace de más los resultados; luego se recorta a _MAX_CARDS.
     ids = _collect_asset_ids(messages, limit=_MAX_CARDS * 2)
     if not ids:
+        # Un panel vacío SUSTITUYE al que hubiera antes, así que la captura previa no puede
+        # sobrevivir como si todavía correspondiera. Se registra el vacío y no se inventan
+        # filas: nunca pasaron por el núcleo.
+        comprometer_vacia()
         return vacio
     if preferencias is not None:
         # Ya extraídas por el caller (p.ej. historial): solo falta el fetch de las filas.
@@ -832,20 +836,26 @@ async def construir_panel(messages, *, session_id: str, preferencias: dict | Non
         preferencias = prefs if isinstance(prefs, dict) else {}
         vacio["preferencias"] = preferencias
     if isinstance(fetched, Exception) or fetched is None:
+        comprometer_vacia()
         return vacio
     rows, curaciones = fetched
 
-    # R0F · el puente. Se deposita AQUÍ y no dentro del núcleo, y la diferencia importa:
-    # `_decidir_desde_filas` tiene que seguir siendo una función pura de sus argumentos, sin
-    # leer estado ambiente. Aquí las entradas ya existen y todavía no se ha decidido nada.
-    #
-    # Sin buzón activo esto es un no-op: la captura es observabilidad opcional y el panel se
-    # comporta EXACTAMENTE igual con ella y sin ella.
-    depositar(rows, curaciones, ids)
+    panel = _decidir_desde_filas(rows, curaciones, ids=ids,
+                                 preferencias=preferencias, messages=messages,
+                                 session_id=session_id)
 
-    return _decidir_desde_filas(rows, curaciones, ids=ids,
-                                preferencias=preferencias, messages=messages,
-                                session_id=session_id)
+    # R0F1 · el puente, y el orden es la corrección entera.
+    #
+    # Esto se COMPROMETE después de que la decisión existió, no antes. `encaje` corre una vez
+    # por ronda de herramientas —el grafo es un bucle— así que una ronda posterior que
+    # reventara después de depositar habría dejado la caja apuntando a un panel que el nodo
+    # descartó, mientras la persona seguía viendo el anterior. Un contrafactual sobre esas
+    # entradas no mediría el campo: mediría el arnés.
+    #
+    # Va fuera del núcleo a propósito: `_decidir_desde_filas` sigue siendo una función pura de
+    # sus argumentos, sin estado ambiente. Sin buzón activo esto es un no-op.
+    comprometer(rows, curaciones, ids, panel)
+    return panel
 
 
 def _encaje_de(row: dict, preferencias: dict | None) -> dict | None:

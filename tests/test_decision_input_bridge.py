@@ -206,7 +206,7 @@ def test_T6_el_nucleo_NO_lee_estado_ambiente():
                   if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
                   and n.name == "_decidir_desde_filas")
     volcado = ast.dump(nucleo)
-    for prohibido in ("depositar", "caja_actual", "capturar_entradas_de_decision",
+    for prohibido in ("comprometer", "caja_actual", "capturar_entradas_de_decision",
                       "ContextVar", "runtime_capture"):
         assert prohibido not in volcado, f"el núcleo toca el canal: {prohibido}"
 
@@ -215,7 +215,20 @@ def test_T6_el_nucleo_NO_lee_estado_ambiente():
                  and n.name == "construir_panel")
     llamadas = {getattr(n.func, "id", None) for n in ast.walk(panel)
                 if isinstance(n, ast.Call)}
-    assert "depositar" in llamadas, "nadie deposita: el puente no existiría"
+    assert "comprometer" in llamadas, "nadie compromete: el puente no existiría"
+    assert "comprometer_vacia" in llamadas, \
+        "las salidas vacías no registran nada: dejarían viva una captura obsoleta"
+
+    # R0F1 · el commit va DESPUÉS del núcleo. Es la propiedad entera de esta corrección, y
+    # se afirma por POSICIÓN: si volviera a ir delante, una ronda que reventara dejaría la
+    # caja apuntando a un panel que nadie vio.
+    nucleo_en = [n.lineno for n in ast.walk(panel) if isinstance(n, ast.Call)
+                 and getattr(n.func, "id", None) == "_decidir_desde_filas"]
+    commit_en = [n.lineno for n in ast.walk(panel) if isinstance(n, ast.Call)
+                 and getattr(n.func, "id", None) == "comprometer"]
+    assert nucleo_en and commit_en
+    assert max(commit_en) > max(nucleo_en), \
+        "se compromete ANTES de decidir: es exactamente el defecto que R0F1 cierra"
 
 
 # ══ T7-T10 · EL PUENTE NO PUEDE LLEVAR AL COMPRADOR ════════════════════════════════
@@ -236,7 +249,8 @@ una comprobación estructural y no léxica."""
 def test_T7_el_tipo_de_captura_no_tiene_DONDE_poner_al_comprador():
     """Por los campos del dataclass, no por intención: lo que no existe no se puede llenar."""
     campos = set(rc.DecisionInputCapture.__dataclass_fields__)
-    assert campos == {"rows", "curaciones", "ids"}, f"la captura creció: {sorted(campos)}"
+    assert campos == {"rows", "curaciones", "ids", "witness"}, \
+        f"la captura creció: {sorted(campos)}"
 
     fuente = CAPTURA.read_text(encoding="utf-8")
     arbol = ast.parse(fuente)
@@ -347,9 +361,16 @@ def test_T13b_el_canal_NO_es_un_singleton_de_modulo():
 
     assert destinos == ["_captura_actual"], \
         f"el módulo guarda estado suelto además del canal: {destinos}"
-    volcado = ast.dump(arbol)
+    # Se miran los IDENTIFICADORES, no el volcado entero: `ast.dump` incluye los
+    # docstrings, y el módulo explica en prosa que `session_id` NO viaja en la captura. El
+    # guard se detectaba a sí mismo en la frase que lo justifica — la novena vez que en este
+    # repositorio una comprobación por subcadena muerde su propia documentación.
+    identificadores = {n.id for n in ast.walk(arbol) if isinstance(n, ast.Name)}
+    identificadores |= {n.attr for n in ast.walk(arbol) if isinstance(n, ast.Attribute)}
+    identificadores |= {a.arg for n in ast.walk(arbol)
+                        if isinstance(n, ast.arguments) for a in n.args + n.kwonlyargs}
     for prohibido in ("session_id", "thread_id", "registry", "cache"):
-        assert prohibido not in volcado, f"el canal se indexa por {prohibido}"
+        assert prohibido not in identificadores, f"el canal se indexa por {prohibido}"
 
 
 # ══ T14-T17 · CICLO DE VIDA ════════════════════════════════════════════════════════
@@ -467,8 +488,8 @@ def test_T22_MUTACION_una_caja_COMPARTIDA_rompe_el_aislamiento(monkeypatch):
     filas = {"A": [_row("a-1")], "B": [_row("b-1")]}
 
     for etiqueta in ("A", "B"):
-        compartida.entradas = rc.DecisionInputCapture(rows=filas[etiqueta],
-                                                      curaciones={}, ids=["x"])
+        compartida.entradas = rc.DecisionInputCapture(rows=filas[etiqueta], curaciones={},
+                                                      ids=["x"], witness=())
     assert compartida.entradas.rows is filas["B"], \
         "una caja compartida no se pisa: el test no mide nada"
     assert compartida.entradas.rows is not filas["A"], \
@@ -493,7 +514,8 @@ def test_T23_MUTACION_rebindear_desde_una_tarea_hija_NO_cruza():
 
             # 2 · mutar la caja compartida: visible fuera.
             async def deposita():
-                rc.depositar([_row("z")], {}, ["z"])
+                rc.comprometer([_row("z")], {}, ["z"],
+                               {"cards": [], "descartadas": []})
 
             await asyncio.create_task(deposita())
             return tras_rebind is caja, caja.hay_captura

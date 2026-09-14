@@ -459,8 +459,8 @@ def test_T13_chat_RETIENE_el_computo_pero_SOLO_para_persistirlo():
     assert len(cargas) == len(atributos), (
         "la observación viaja ENTERA a algún sitio; sólo puede leerse por atributo "
         f"({len(cargas)} lecturas, {len(atributos)} por atributo)")
-    assert {a.attr for a in atributos} == {"computo"}, (
-        "chat.py lee algo más que `.computo` de la observación: el desenlace, la duración y "
+    assert {a.attr for a in atributos} == {"computo", "desenlace"}, (
+        "chat.py lee de la observación algo más que el cómputo y su desenlace: la duración y "
         f"el candidato no gobiernan el turno ({sorted({a.attr for a in atributos})})")
 
 

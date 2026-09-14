@@ -417,11 +417,21 @@ def _linea_de_la_sonda() -> int:
                 and n.func.id == "observar_lectura_runtime")
 
 
-def test_T9_el_lector_de_1A_sigue_con_UN_solo_llamador_runtime():
-    """`leer_contexto_del_principal` pasa de 0 a 1 llamador, y ese llamador es la sonda."""
+def test_T9_los_llamadores_del_lector_de_1A_son_un_conjunto_EXACTO():
+    """De 0 a 1 en 1B, de 1 a 2 en R0G — y cada salto lo exigió esta guarda antes de ocurrir.
+
+    Se congelan NOMBRES, no un conteo: `len(...) == 2` lo cumplirían también dos llamadores
+    equivocados, y entonces la guarda dejaría de vigilar lo único que importa —QUIÉN lee la
+    memoria del comprador—. Sin comodín y sin `startswith("app/buyer")`.
+    """
     fuera_de_la_sonda = _llamadores({"leer_contexto_del_principal"},
                                     _ficheros_de_app({MODULO, APP / "buyer" / "lectura.py"}))
-    assert fuera_de_la_sonda == [], f"alguien más llama al lector: {fuera_de_la_sonda}"
+    # Por fichero, no por línea: el número se mueve con cualquier comentario.
+    assert {h.split(":")[0] for h in fuera_de_la_sonda} == {"decision_shadow.py"}, (
+        f"alguien más llama al lector: {fuera_de_la_sonda}")
+    assert len(fuera_de_la_sonda) == 1, (
+        f"el comparador lo llama {len(fuera_de_la_sonda)} veces; una lectura por turno")
+
     dentro = _llamadores({"leer_contexto_del_principal"}, [MODULO])
     assert len(dentro) == 1, f"la sonda lo llama {len(dentro)} veces"
 

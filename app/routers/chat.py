@@ -17,6 +17,8 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from app.buyer.candidato import observar_candidato_del_turno
 from app.buyer.lectura_runtime import observar_lectura_runtime
 from app.buyer.sombra import actualizar_en_sombra
+from app.buyer.decision_shadow import (
+    observar_sombra_de_decision, registrar as registrar_sombra_de_decision)
 from app.decision.runtime_capture import capturar_entradas_de_decision
 from pydantic import BaseModel, Field
 from sqlalchemy import text
@@ -1145,6 +1147,20 @@ async def _stream_agent(message: str, session_id: str, user=None) -> AsyncIterat
             except Exception:  # noqa: BLE001 — la sombra jamás tumba un turno que iba bien
                 log.exception("buyer candidate commit falló y quedó aislado")
 
+        # R0G · el contrafactual de mascotas, en sombra y apagado por defecto.
+        #
+        # Va DESPUÉS del panel y de la persistencia: el panel ya salió, así que esto no
+        # retrasa lo que la persona lee. Fail-open — si el experimento falla, el turno sigue.
+        #
+        # El resultado NO se asigna a nada visible. Su único consumidor es el registro.
+        try:
+            registrar_sombra_de_decision(await observar_sombra_de_decision(
+                user, desenlace_candidato=observacion_candidato.desenlace,
+        computo=observacion_candidato.computo, cards=resultados, descartadas=_valores.get("descartadas"),
+                preferencias=_valores.get("preferencias"), messages=_msgs, session_id=session_id))
+        except Exception:  # noqa: BLE001 — el experimento jamás tumba un turno que iba bien
+            log.exception("buyer decision shadow falló y quedó aislado")
+
         yield "data: " + json.dumps({
             "done": True, "session_id": session_id, "execution_id": execution_id,
             "checkpoint_id": (_snap.config or {}).get("configurable", {}).get("checkpoint_id"),
@@ -1296,6 +1312,20 @@ async def chat(
                                            computo=observacion_candidato.computo)
             except Exception:  # noqa: BLE001 — la sombra jamás tumba un turno que iba bien
                 log.exception("buyer candidate commit falló y quedó aislado")
+
+        # R0G · el contrafactual de mascotas, en sombra y apagado por defecto.
+        #
+        # Va DESPUÉS del panel y de la persistencia: el panel ya salió, así que esto no
+        # retrasa lo que la persona lee. Fail-open — si el experimento falla, el turno sigue.
+        #
+        # El resultado NO se asigna a nada visible. Su único consumidor es el registro.
+        try:
+            registrar_sombra_de_decision(await observar_sombra_de_decision(
+                user, desenlace_candidato=observacion_candidato.desenlace,
+        computo=observacion_candidato.computo, cards=results, descartadas=final_state.get("descartadas"),
+                preferencias=final_state.get("preferencias"), messages=messages, session_id=payload.session_id))
+        except Exception:  # noqa: BLE001 — el experimento jamás tumba un turno que iba bien
+            log.exception("buyer decision shadow falló y quedó aislado")
 
         return ChatResponse(
             reply=reply,

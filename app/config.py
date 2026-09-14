@@ -70,6 +70,15 @@ class Settings(BaseSettings):
     # y dos listas para el mismo conjunto divergirían.
     buyer_current_turn_candidate_shadow: bool = False
 
+    # R0G · COMPARAR no es COMPUTAR ni ESCRIBIR. Los otros tres flags encienden un coste
+    # (una escritura, un SELECT, una llamada al LLM); éste enciende una SEGUNDA pasada del
+    # núcleo de decisión, en sombra, sobre las mismas filas. Es el más barato de todos y aun
+    # así lleva interruptor propio: que la persistencia esté encendida no puede implicar que
+    # se empiece a comparar. La cohorte SÍ se comparte (`buyer_shadow_allowlist`).
+    #
+    # `buyer_updater_shadow` NO es requisito: comparar no exige permiso de escritura.
+    buyer_shadow_decision_compare: bool = False
+
     # G16 · el mercado monetario que ESTE DESPLIEGUE del Buyer Harness puede usar como
     # contexto determinista para acreditar expresiones monetarias que por sí solas serían
     # ambiguas ("900 dólares"). NO es la moneda del comprador ni parte de `BuyerContextV0`:

@@ -317,12 +317,25 @@ def test_T8_PRODUCTION_READ_CALLERS_es_exactamente_la_sonda():
     hallados = _llamadores(_OBJETIVOS, _ficheros_de_app())
     # Por FICHERO y SÍMBOLO, nunca por número de línea: una guarda que se rompe porque
     # alguien añadió un comentario enseña a ignorarla.
-    ficheros = {h.split(":")[0] for h in hallados}
-    simbolos = {h.split(" ", 1)[1] for h in hallados}
-    assert ficheros == {"lectura_runtime.py"}, (
-        f"el lector tiene consumidores fuera de la sonda de 1B: {sorted(ficheros)}")
-    assert simbolos == {"import", "leer_contexto_del_principal", "PrincipalNoAutenticado"}, (
-        f"cambió la forma del consumo dentro de la sonda: {sorted(simbolos)}")
+    #
+    # Y se congela el MAPA fichero → símbolos, no dos conjuntos planos. Con conjuntos
+    # sueltos, un consumidor equivocado que importara los mismos nombres pasaría
+    # desapercibido: la combinación importa tanto como los elementos.
+    consumo: dict[str, set[str]] = {}
+    for h in hallados:
+        fichero, simbolo = h.split(":")[0], h.split(" ", 1)[1]
+        consumo.setdefault(fichero, set()).add(simbolo)
+
+    assert consumo == {
+        # 1B · la sonda de runtime: lee y descarta.
+        "lectura_runtime.py": {"import", "leer_contexto_del_principal",
+                               "PrincipalNoAutenticado"},
+        # R0G · el comparador en sombra. NO es una fuente ordinaria: sólo llega aquí cuando
+        # compare y candidate están encendidos, el principal y la cohorte pasan, la captura
+        # COINCIDE con el panel visible, el turno corresponde al desenlace real «sin
+        # afirmaciones» y no existe un cómputo que ya traiga la memoria efectiva.
+        "decision_shadow.py": {"import", "leer_contexto_del_principal"},
+    }, f"el consumo del lector cambió de forma: {sorted(hallados)}"
 
 
 def test_T8b_el_censo_SABE_ver_un_llamador(tmp_path):

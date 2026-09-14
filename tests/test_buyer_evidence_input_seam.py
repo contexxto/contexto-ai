@@ -243,7 +243,12 @@ def test_la_costura_solo_la_consume_la_SOMBRA():
     raiz = pathlib.Path(__file__).resolve().parent.parent
     permitidos = {("app/routers/chat.py", "app.buyer.sombra"),
                   ("app/routers/chat.py", "app.buyer.lectura_runtime"),
-                  ("app/routers/chat.py", "app.buyer.candidato")}
+                  ("app/routers/chat.py", "app.buyer.candidato"),
+                  # R0G · el comparador en sombra. CUARTA ampliación, y la cuarta vez que
+                  # esta guarda la exigió antes de que ocurriera. Mismo fichero ya permitido,
+                  # otro módulo hermano del mismo paquete, y ni el assembler ni el encaje ni
+                  # el match rozados. Sigue sin haber comodín: el par se escribe entero.
+                  ("app/routers/chat.py", "app.buyer.decision_shadow")}
 
     consumidores = []
     for py in (raiz / "app").rglob("*.py"):

@@ -182,17 +182,34 @@ CREATE INDEX IF NOT EXISTS ix_transacciones_inventory_class ON transacciones_tem
 -- Crear una tabla en `public` bajo Supabase puede exponerla por PostgREST si existen grants
 -- por defecto. Estas dos no son una API nueva y no deben ser legibles por nadie todavía.
 --
--- Se activa RLS SIN crear ninguna política: con RLS habilitada y cero políticas, PostgreSQL
--- deniega a todo rol que no sea el dueño de la tabla, exista o no el GRANT. Es la cerradura
--- más fuerte disponible y no depende de que `anon` o `authenticated` existan — así que la
--- migración también aplica en una base local de pruebas.
+-- Se activa RLS SIN crear ninguna política. QUÉ SIGNIFICA ESO EXACTAMENTE, porque la
+-- versión corta —«RLS sin políticas deniega a todo el mundo»— es falsa, y es justo la frase
+-- sobre la que se apoyaría quien venga después:
+--
+--   roles SUJETOS a RLS    sin política no hay ninguna fila que puedan leer ni escribir.
+--                          Acceso cero, tengan el GRANT que tengan
+--   el DUEÑO de la tabla   NO queda sujeto: aquí se usa ENABLE y no FORCE ROW LEVEL
+--                          SECURITY. Es deliberado — la 031 escribe estas dos tablas, y lo
+--                          hace como dueño
+--   roles con BYPASSRLS    RLS no les aplica en absoluto. Para ellos manda el GRANT y nada
+--                          más
+--
+-- Y ESTA MIGRACIÓN NO REVOCA NADA. Los permisos que el entorno conceda por su cuenta
+-- —`ALTER DEFAULT PRIVILEGES` sobre el esquema, si los hay— siguen intactos después de
+-- aplicarla. RLS los neutraliza para quien está sujeto a RLS; para el resto, no.
+--
+-- Medido en producción el 2026-09-15: los permisos por defecto dan DML completo a `anon`,
+-- `authenticated` y `service_role`, y `service_role` tiene BYPASSRLS. Ahí RLS detiene a los
+-- dos primeros y NO al tercero. No es una excepción de estas dos tablas: es la postura de
+-- las 31 que ya existen, y éstas no guardan ningún dato personal.
 --
 -- Deliberadamente NO se hace REVOKE sobre `anon`/`authenticated`: el aplicador corre con el
 -- rol de la aplicación, que puede no tener permiso para revocar, y un REVOKE fallido tumbaría
--- la migración entera. RLS sin políticas ya cubre el caso.
+-- la migración entera. RLS cubre a quien está sujeto a RLS; lo que quede fuera es decisión
+-- de otra unidad, con su propia autorización.
 --
--- El rol de auditoría TAMPOCO recibe SELECT aquí: la superficie de evidencia será una VIEW,
--- en otra unidad.
+-- CERO políticas se crean aquí. El rol de auditoría TAMPOCO recibe SELECT: la superficie de
+-- evidencia será una VIEW, en otra unidad.
 ALTER TABLE inventory_source          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE inventory_ingestion_event ENABLE ROW LEVEL SECURITY;
 

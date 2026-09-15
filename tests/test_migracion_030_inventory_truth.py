@@ -7,12 +7,20 @@ QUÉ CONGELA, y qué NO.
                propiedad y anuncio, y sin un solo consumidor productivo
     NO congela que el inventario sea real, ni que la procedencia esté poblada. Eso es 030B
 
-## POR QUÉ SE PRUEBA EL SQL COMO TEXTO Y NO SÓLO CONTRA UNA BASE
+## QUÉ PRUEBA ESTE FICHERO Y QUÉ NO PRUEBA
 
-Porque la propiedad que más importa es una AUSENCIA —que nadie lea estas columnas— y las
-ausencias no se ven ejecutando. Los tests de estructura miran el fichero; los de aplicación
-real, cuando hay base local, comprueban que además el SQL es válido. Hacen falta los dos: un
-SQL válido que exponga la tabla por PostgREST pasaría el primero y fallaría el propósito.
+Estos tests leen el SQL como TEXTO. Ninguno abre una conexión, así que NO prueban que
+PostgreSQL acepte el fichero ni que aplicarlo produzca el esquema descrito.
+
+Se prueba como texto porque la propiedad que más importa es una AUSENCIA —que nadie lea
+estas columnas, que ninguna tabla nueva quede expuesta— y las ausencias no se ven
+ejecutando: un SQL perfectamente válido que expusiera la tabla por PostgREST pasaría una
+prueba de aplicación y fallaría el propósito.
+
+Que además es válido y hace lo que dice se comprobó APARTE, contra un PostgreSQL local y
+desechable, con un arnés que vive en el scratchpad de la sesión —necesita crear y borrar
+bases enteras— y cuyo resultado está en el informe de la unidad. Ese arnés no está en el
+repositorio, así que esta suite no lo sustituye.
 """
 
 from __future__ import annotations
@@ -328,9 +336,16 @@ def test_030A_NO_escribe_ni_una_fila():
 
 
 def test_las_tablas_nuevas_NO_quedan_expuestas():
-    """Crear una tabla en `public` bajo Supabase puede exponerla por PostgREST. RLS sin
-    políticas deniega a todo rol que no sea el dueño, exista o no el GRANT — y no depende de
-    que `anon` o `authenticated` existan, así que la migración también aplica en local."""
+    """Crear una tabla en `public` bajo Supabase puede exponerla por PostgREST.
+
+    LO QUE RLS SIN POLÍTICAS HACE, Y LO QUE NO: deja sin acceso a los roles SUJETOS a RLS,
+    tengan el GRANT que tengan. NO alcanza al dueño de la tabla —aquí se usa ENABLE, no
+    FORCE— ni a los roles con BYPASSRLS, para los que manda el GRANT. Y la migración no
+    revoca los permisos que el entorno conceda por su cuenta.
+
+    Lo que este test comprueba, por tanto, es acotado y es lo que la migración sí controla:
+    que RLS quede activada en las dos tablas y que el fichero no conceda nada ni cree
+    ninguna política."""
     for tabla in ("inventory_source", "inventory_ingestion_event"):
         assert f"ALTER TABLE {tabla} ENABLE ROW LEVEL SECURITY" in \
             re.sub(r"\s+", " ", EJECUTABLE), f"{tabla} sin RLS"

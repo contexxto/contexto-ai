@@ -3,12 +3,17 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy import text
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from app.agent.graph import setup_checkpointer, shutdown_checkpointer, get_checkpointer
+from app.agent.graph import (
+    get_checkpointer,
+    setup_checkpointer,
+    shutdown_checkpointer,
+    sondear_pool_checkpointer,
+)
 from app.config import settings
 from app.database import AsyncSessionLocal
 from app.limiter import limiter
@@ -152,3 +157,73 @@ async def health_check():
         # "volatil" = las conversaciones NO persisten; reiniciar el servicio.
         "memoria": "postgres" if memoria_ok else "volatil",
     }
+
+
+# ══ Readiness: dos preguntas que `/health` mezclaba ═══════════════════════════════════
+#
+# `/health` responde 200 tanto si la memoria está sana como si está rota, y el aviso va en
+# el CUERPO. Eso fue una decisión correcta para lo que había — pero Render sólo evalúa el
+# CÓDIGO HTTP, nunca el cuerpo, así que ningún supervisor podía reaccionar a un
+# `status: degraded`. De ahí la separación:
+#
+#   /live   ¿está vivo este proceso?            → jamás toca la base. Es lo que mira Render.
+#   /ready  ¿puede servir de verdad?            → base + memoria durable. Monitor externo.
+#   /health se conserva SIN CAMBIOS OBSERVABLES por compatibilidad (hay consumidores).
+#
+# POR QUÉ RENDER MIRA `/live` Y NO `/ready`: un `/ready` que devuelve 503 porque Supabase
+# está saturada haría que Render deje de enrutar tráfico y acabe reiniciando — el mismo
+# bucle de reinicios que `/health` evita devolviendo 200, entrando por la otra puerta. La
+# distinción sólo sirve si quien la consume puede actuar distinto: Render reinicia, un
+# monitor externo avisa. `/ready` es para avisar y para diagnosticar.
+TIMEOUT_READY_S = 3.0
+
+
+@app.get("/live", tags=["System"])
+async def liveness():
+    """¿Responde este proceso? Nada más.
+
+    NO toca la base, NO toca el engine y NO toca el checkpointer — ni siquiera para
+    preguntar si existe. Su única afirmación es que el event loop atiende. Si algún día
+    esto consulta algo, deja de ser un liveness y se convierte en otro `/ready` con el
+    nombre cambiado, con el bucle de reinicios de regalo.
+    """
+    return {"status": "alive"}
+
+
+@app.get("/ready", tags=["System"])
+async def readiness():
+    """200 sólo si el servicio puede servir de verdad; 503 en cualquier otro caso.
+
+    Tres condiciones, y las tres tienen que cumplirse:
+
+      1. SQLAlchemy/asyncpg completa una consulta inocua;
+      2. existe el checkpointer durable;
+      3. el pool de psycopg completa SU PROPIA consulta inocua.
+
+    La 3 no es redundante con la 1: son dos stacks distintos (asyncpg en Python puro vs.
+    psycopg/libpq en C) contra la misma base, y un fallo asimétrico —uno sano, el otro no—
+    es exactamente el que hoy deja la app respondiendo 200 sin historial. Y la 3 no es
+    redundante con la 2: que el objeto exista no prueba que el pool atienda hoy.
+
+    EN PRODUCCIÓN, `MemorySaver` NO PUEDE PRODUCIR UN 200: sin checkpointer durable la
+    condición 2 falla, y sin pool la 3 también. Esa es la regla que convierte la
+    degradación silenciosa del 2026-08-18 en una señal que alguien puede ver.
+
+    El cuerpo del 503 es GENÉRICO a propósito: este endpoint no está autenticado, y el
+    detalle de por qué la base no responde es información operativa que no tiene por qué
+    viajar a quien pregunte. El detalle vive en los logs.
+    """
+    async def _sondear_todo() -> None:
+        await _sondear_db()
+        if get_checkpointer() is None:
+            raise RuntimeError("checkpointer durable ausente")
+        await sondear_pool_checkpointer()
+
+    try:
+        # Timeout GLOBAL, no por sonda: lo que importa es que la respuesta entera llegue
+        # acotada. Tres cortes de 3 s encadenados serían 9 s de espera para un chequeo.
+        await asyncio.wait_for(_sondear_todo(), timeout=TIMEOUT_READY_S)
+    except Exception:  # noqa: BLE001
+        return JSONResponse(status_code=503, content={"status": "not_ready"})
+
+    return {"status": "ready"}

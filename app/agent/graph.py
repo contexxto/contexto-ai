@@ -937,6 +937,27 @@ def get_checkpointer():
     return _checkpointer
 
 
+async def sondear_pool_checkpointer() -> None:
+    """`SELECT 1` por el pool de psycopg. Lanza si no se puede; la acota quien la llama.
+
+    POR QUÉ EXISTE UNA SONDA PROPIA, y no basta con `get_checkpointer() is not None`:
+    son dos preguntas distintas. Que el objeto exista sólo dice que el montaje terminó
+    ALGUNA VEZ; que el pool pueda atender una consulta HOY es otra cosa, y es la que le
+    importa a quien va a confiar en la memoria. `min_size=1` agrava la diferencia: UNA
+    conexión buena al arrancar da el pool por bueno, y una degradación posterior no
+    vuelve a imprimir nada.
+
+    Y es una sonda SEPARADA de la de SQLAlchemy a propósito: son DOS stacks distintos
+    (asyncpg en Python puro vs. psycopg/libpq en C) contra la misma base. Un fallo que
+    afecte a uno y no al otro es precisamente el que hoy pasa desapercibido — la
+    asimetría deja la app respondiendo 200 sin historial.
+    """
+    if _pool is None:
+        raise RuntimeError("el pool del checkpointer no está montado")
+    async with _pool.connection() as conexion:
+        await conexion.execute("SELECT 1")
+
+
 def _checkpointer_conn_str() -> str:
     conn_str = settings.database_url_override or (
         f"postgresql://{settings.postgres_user}:{settings.postgres_password}"
@@ -944,6 +965,54 @@ def _checkpointer_conn_str() -> str:
     )
     # psycopg (no asyncpg) para el checkpointer
     return conn_str.replace("postgresql+asyncpg://", "postgresql://")
+
+
+class CheckpointerStartupError(Exception):
+    """El checkpointer durable no pudo montarse en producción. MENSAJE CONSTANTE.
+
+    POR QUÉ UNA CLASE PROPIA Y NO `RuntimeError`: hace el fallo operacional identificable
+    sin necesitar el mensaje del driver. Quien lea el traceback sabe QUÉ falló por el
+    nombre de la clase, y eso es todo lo que necesita para actuar.
+
+    CONTRATO, y es lo que cierra una fuga REPRODUCIDA (2026-09-16). La excepción que
+    abandona `setup_checkpointer()`:
+
+      · lleva un mensaje CONSTANTE, sin nada interpolado del entorno;
+      · tiene `__cause__ is None` — no encadena explícitamente la original;
+      · tiene `__suppress_context__ is True`, de modo que la original NO APARECE en las
+        superficies estándar de traceback y logging que verificamos.
+
+    DICHO CON PRECISIÓN, porque la diferencia importa: `from None` **no borra** la
+    excepción original del objeto. `__context__` sigue apuntando a ella —Python lo fija
+    solo al lanzar dentro de un `except`— y lo que hace `from None` es marcar que los
+    formateadores no deben presentarla. El contrato que aquí se garantiza es de NO
+    EXPOSICIÓN en las superficies verificadas, no de ausencia del objeto en memoria. Quien
+    inspeccione la excepción con un formateador propio que ignore `__suppress_context__`,
+    o que lea `__context__` a mano, sí puede llegar al texto original.
+
+    POR QUÉ ESO BASTA: el texto del driver arrastra la conninfo entera —host, usuario,
+    contraseña— y el nivel siguiente NO es silencioso: Starlette la mete en
+    `traceback.format_exc()` y la envía como `lifespan.startup.failed`
+    (routing.py:702,706), y uvicorn la registra con `exc_info=exc` (lifespan/on.py:96-97).
+    Ambos respetan `__suppress_context__`. Medido: con el `raise` desnudo el centinela
+    aparecía en los 4571 bytes del mensaje ASGI y en los 6049 del logger; con `from None`,
+    en ninguno de los dos.
+
+    Conseguir que `__context__` sea realmente `None` exigiría lanzar fuera del `except`,
+    lo que añade control de flujo por un invariante que la fuga medida no necesita. Se
+    descartó a propósito; si alguna vez hace falta, es otra unidad.
+
+    PROHIBIDO `raise CheckpointerStartupError(...) from exc`. Medido en las tres variantes:
+
+        raise desnudo (el bug)   -> FUGA en mensaje ASGI y en exc_info
+        ... from exc            -> FUGA en mensaje ASGI y en exc_info
+        ... from None           -> limpio en ambos
+
+    `from exc` parece la mejora razonable —"conservemos el contexto para diagnosticar"— y
+    reintroduce exactamente la vulnerabilidad. La clase del fallo original se conserva por
+    otra vía: se imprime a stdout, que está bajo nuestro control y sí va saneado.
+    `test_readiness_fail_closed.py` tiene una guarda de AST que muerde si alguien lo cambia.
+    """
 
 
 async def setup_checkpointer() -> None:
@@ -999,19 +1068,59 @@ async def setup_checkpointer() -> None:
         compiled_graph = _graph_builder.compile(checkpointer=checkpointer)
         print("  Checkpointer Postgres (Supabase) ACTIVO — sesiones persistentes")
     except Exception as exc:  # noqa: BLE001
-        # GRITAR, no susurrar. Esta degradación NO rompe nada visible: la app sigue
-        # respondiendo 200 en todo, pero sin historial — los títulos caen al genérico
-        # "Conversación sin título" y las conversaciones no abren. El 2026-08-18 corrió
-        # así en producción sin que nadie lo notara hasta revisar los logs a mano.
-        # La causa típica es el techo de 15 del Session Pooler: si el deploy reinicia
-        # mientras otro cliente (¡incluido el backend LOCAL!) tiene tomadas las
-        # conexiones, este pool no abre y el grafo arranca sin memoria.
+        # DOS COMPORTAMIENTOS, y la diferencia es el entorno — no un interruptor nuevo.
+        #
+        # El 2026-08-18 este bloque degradó a MemorySaver en PRODUCCIÓN: la app siguió
+        # respondiendo 200 en todo, sin historial, 1h26m, y se detectó de casualidad. Ese
+        # es el fallo silencioso que esta unidad cierra. En producción ya no se degrada:
+        # se limpia lo que quedó a medias y se ABORTA el arranque, para que el despliegue
+        # no progrese y la versión anterior siga sirviendo.
+        #
+        # Fuera de producción SÍ se conserva MemorySaver: levantar el backend local no
+        # debe exigir una base. Es la misma doctrina de `es_produccion` en app/config.py —
+        # una configuración ausente no abre una puerta, pero tampoco estorba en local.
+        #
+        # LO QUE NO SALE DE AQUÍ, y es deliberado: el texto de la excepción. Puede arrastrar
+        # la conninfo entera —host, usuario, contraseña— y el destino no es sólo este stdout:
+        # Starlette formatea el traceback en `lifespan.startup.failed` y uvicorn lo registra
+        # con `exc_info`, que acaban en los logs de Render. Se conserva la CLASE, que sirve
+        # para diagnosticar sin filtrar, y se imprime SÓLO a stdout.
+        diagnostico = f"{type(exc).__module__}.{type(exc).__name__}"
+
+        # Limpieza del montaje parcial: `_pool.open()` pudo dejar conexiones abiertas antes
+        # de vencer, y el proceso puede seguir vivo (fuera de producción). Un pool huérfano
+        # consume del techo de 15 del Session Pooler, que es justo el recurso escaso.
+        pool_parcial, _pool = _pool, None
+        _checkpointer = None
+        if pool_parcial is not None:
+            try:
+                await pool_parcial.close()
+            except Exception:  # noqa: BLE001
+                # Cerrar un pool que nunca abrió puede fallar; no es motivo para tapar la
+                # causa real, que es `exc`.
+                pass
+
+        if settings.es_produccion:
+            print("=" * 72)
+            print("  MEMORIA ROTA en PRODUCCIÓN — se aborta el arranque (fail-closed).")
+            print("  No se degrada a MemorySaver: una app sin historial que responde 200")
+            print("  es indistinguible de una sana, y así corrió 1h26m el 2026-08-18.")
+            print(f"  Clase del fallo: {diagnostico}")
+            print("  Si es un timeout del pool, revisa quién más tiene conexiones abiertas")
+            print("  contra el techo de 15 del Session Pooler. Ver app/config.py.")
+            print("=" * 72)
+            # `from None` NO es cosmético: suprime el contexto para que ni Starlette ni
+            # uvicorn puedan formatear el mensaje del driver. JAMÁS cambiar a `from exc`
+            # ni a un `raise` desnudo — ver el contrato en CheckpointerStartupError.
+            # El mensaje es CONSTANTE: no se interpola nada del entorno, ni siquiera la
+            # clase del fallo, que ya quedó impresa arriba.
+            raise CheckpointerStartupError("checkpointer startup failed") from None
+
         print("=" * 72)
         print("  MEMORIA ROTA — checkpointer Postgres NO disponible; usando MemorySaver.")
         print("  Las conversaciones NO persisten: sin títulos y sin historial.")
-        print(f"  Causa: {exc}")
-        print("  Si es EMAXCONNSESSION: revisa quién más tiene conexiones abiertas y")
-        print("  REINICIA el servicio — no se arregla solo. Ver app/config.py.")
+        print(f"  Clase del fallo: {diagnostico}")
+        print("  Fuera de producción esto es tolerable; en producción abortaría el arranque.")
         print("=" * 72)
 
 

@@ -1,0 +1,18 @@
+{
+  "bundle_version": "v1",
+  "acquired_at": "2026-09-16T18:36:55Z",
+  "source": "Supabase Dashboard > proyecto contexto-ai > Database Settings > SSL Configuration > Download Certificate",
+  "source_filename": "prod-ca-2021.crt",
+  "certificate_count": 1,
+  "certificates": [
+    {
+      "sha256_der": "807025ad50d4ed219d2c9c7d299c004f824eb00cf7f65afef607d07b72e6cafa",
+      "subject": "C=US, ST=Delware, L=New Castle, O=Supabase Inc, CN=Supabase Root 2021 CA",
+      "issuer": "C=US, ST=Delware, L=New Castle, O=Supabase Inc, CN=Supabase Root 2021 CA",
+      "serial": "6CBC4CA1DEB63F692D0A2024C67289C2D13D54F6",
+      "not_before": "Apr 28 10:56:53 2021 GMT",
+      "not_after": "Apr 26 10:56:53 2031 GMT"
+    }
+  ],
+  "nota": "El fingerprint canonico es SHA-256 de los bytes DER, NO del texto PEM. Reverificar contra el panel antes de confiar en la fecha de expiracion: es la caducidad del ancla, no un compromiso del proveedor de no rotar antes."
+}

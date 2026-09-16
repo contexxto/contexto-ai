@@ -12,7 +12,18 @@ services:
     dockerfilePath: ./Dockerfile
     plan: starter          # $7/mes — no duerme (free tier sí duerme)
     region: oregon
-    healthCheckPath: /health
+    # Documenta /live, NO /ready: Render solo evalua el CODIGO HTTP, y un /ready que
+    # devuelve 503 porque Supabase esta saturada haria que Render deje de enrutar y
+    # acabe reiniciando — el bucle que /health evita devolviendo 200. /ready es para un
+    # monitor externo.
+    #
+    # ALCANCE DE ESTE VALOR, con su fecha: en `contexto-ai-oregon`, VERIFICADO el
+    # 2026-09-16, no existe una Blueprint instance asociada (la cuenta no tiene ninguna),
+    # por eso este valor es DOCUMENTAL en el despliegue actual y el Health Check Path real
+    # —hoy VACIO— se configura en el panel. Si el servicio pasa a estar gestionado por
+    # Blueprint, `healthCheckPath` SI puede aplicarse desde este archivo. No es una
+    # propiedad general de Render: es un hecho de este servicio, y caduca.
+    healthCheckPath: /live
     envVars:
       # DATABASE_URL_OVERRIDE tiene precedencia sobre los parámetros individuales.
       # Usar Session Pooler de Supabase para IPv4 (puerto 5432, host aws-0-us-west-2).

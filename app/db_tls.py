@@ -94,29 +94,70 @@ class TLSPolicyError(RuntimeError):
 
 
 # ── Clasificación loopback vs remoto ──────────────────────────────────────────────────
+def _es_host_loopback(host: str) -> bool:
+    if not host:
+        return False
+    if host.strip().lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host.strip()).is_loopback   # 127.0.0.0/8 y ::1
+    except ValueError:
+        return False                                             # es un nombre, no una IP
+
+
+def hosts_declarados(url: str) -> list[str]:
+    """TODOS los hosts que la URL declara, no sólo el del netloc.
+
+    ESTO ES EL ARREGLO DE UN BYPASS COMPLETO, reproducido el 2026-09-16. Mirar sólo
+    `urlparse(url).hostname` deja pasar esto:
+
+        postgresql+asyncpg://u:p@localhost:5432/postgres?host=aws-1-…pooler.supabase.com
+
+    El netloc dice `localhost`, así que la política lo declaraba exento y devolvía `{}` —
+    ni TLS, ni G1, ni nada. Pero LOS DOS DRIVERS HONRAN EL PARÁMETRO: el dialecto asyncpg de
+    SQLAlchemy lo resuelve en `create_connect_args` y libpq lo toma de la query del URI.
+    Medido: ambos acababan conectando al host remoto con el modo por defecto (`prefer`),
+    que es exactamente el estado del que esta unidad dice sacarnos. Y no es ningún truco:
+    `?host=` es sintaxis documentada de los dos.
+
+    `hostaddr` es la variante con más filo: libpq conserva `host` para verificar el
+    certificado pero abre el TCP contra la IP de `hostaddr`. Una URL con netloc `localhost`
+    y `?hostaddr=<ip remota>` parecía local por partida doble.
+
+    libpq además admite listas separadas por comas en ambos, así que se parten.
+    """
+    try:
+        partes = urlparse(url)
+    except ValueError:
+        return []
+    hosts = []
+    if partes.hostname:
+        hosts.append(partes.hostname)
+    try:
+        consulta = dict(parse_qsl(partes.query, keep_blank_values=True))
+    except ValueError:
+        return hosts
+    for clave in ("host", "hostaddr"):
+        for nombre, valor in consulta.items():
+            if nombre.lower() == clave and valor:
+                hosts.extend(p for p in valor.split(",") if p.strip())
+    return hosts
+
+
 def es_loopback(url: str) -> bool:
-    """¿La URL apunta inequívocamente a esta máquina?
+    """¿La URL apunta inequívocamente a esta máquina, por TODAS sus vías?
 
     SIN RESOLVER DNS, a propósito. Si preguntáramos al resolver, quien controle el DNS
     decidiría si ciframos: un nombre que hoy resuelve a 127.0.0.1 puede resolver mañana a
     otra cosa, y la exención de desarrollo se convertiría en un agujero remoto. Aquí sólo
     cuenta lo que la URL dice literalmente.
 
-    Ante una URL ilegible o sin host devuelve False — es decir, exige `verify-full`. El
-    modo conservador es el que cifra y verifica.
+    Exento sólo si declara al menos un host y TODOS son loopback. Basta que uno no lo sea
+    —incluido el que venga por `?host=` o `?hostaddr=`— para exigir `verify-full`. Ante una
+    URL ilegible o sin host: remota. El modo conservador es el que cifra y verifica.
     """
-    try:
-        host = urlparse(url).hostname
-    except ValueError:
-        return False
-    if not host:
-        return False
-    if host.lower() == "localhost":
-        return True
-    try:
-        return ipaddress.ip_address(host).is_loopback      # 127.0.0.0/8 y ::1
-    except ValueError:
-        return False                                        # es un nombre, no una IP
+    hosts = hosts_declarados(url)
+    return bool(hosts) and all(_es_host_loopback(h) for h in hosts)
 
 
 # ── G1 · la URL compartida no puede traer política TLS ────────────────────────────────
@@ -136,9 +177,22 @@ def exigir_url_sin_parametros_tls(url: str) -> None:
         consulta = urlparse(url).query
     except ValueError:
         raise TLSPolicyError("la URL de la base no se puede analizar") from None
+    claves = [c.lower() for c, _ in parse_qsl(consulta, keep_blank_values=True)]
+
+    # El destino no se redirige desde la query. Aunque `hosts_declarados()` ya impide que
+    # un `?host=` remoto se disfrace de loopback, esto cierra el otro lado: una URL REMOTA
+    # con `?host=` deja el destino ambiguo —netloc dice una cosa, la query otra— y cada
+    # driver resuelve esa ambigüedad a su manera. Con `hostaddr` es peor: libpq verifica el
+    # certificado contra `host` mientras abre el TCP contra otra IP.
+    redirige = sorted({c for c in claves if c in ("host", "hostaddr")})
+    if redirige:
+        raise TLSPolicyError(
+            "la URL de la base redirige el destino desde la query y eso deja ambiguo contra "
+            f"quién se verifica el certificado: {redirige}"
+        )
+
     encontrados = sorted({
-        clave for clave, _ in parse_qsl(consulta, keep_blank_values=True)
-        if clave.lower().startswith("ssl") or clave.lower() in _EXTRA_PROHIBIDAS
+        c for c in claves if c.startswith("ssl") or c in _EXTRA_PROHIBIDAS
     })
     if encontrados:
         raise TLSPolicyError(

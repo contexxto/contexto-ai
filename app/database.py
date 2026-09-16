@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.pool import NullPool
 
+from app import db_tls
 from app.config import settings
 
 _PUERTO_TRANSACCION = 6543
@@ -55,7 +56,7 @@ def opciones_de_engine(url: str) -> dict:
     sin abrir una conexión: ver tests/test_database_pooler.py.
     """
     if es_pooler_de_transaccion(url):
-        return {
+        return _con_tls({
             "echo": False,
             # PgBouncer YA agrupa; agrupar otra vez encima acumula prepared statements
             # inútiles en el servidor. La advertencia del dialecto es explícita en esto.
@@ -74,15 +75,32 @@ def opciones_de_engine(url: str) -> dict:
                 # statement para que dos clientes multiplexados no reclamen el mismo.
                 "prepared_statement_name_func": lambda: f"__asyncpg_{uuid4()}__",
             },
-        }
+        }, url)
     # Session Pooler (producción): pooling del lado cliente, con presupuesto acotado.
-    return {
+    return _con_tls({
         "echo": False,
         "pool_pre_ping": True,
         "pool_size": settings.db_pool_size,
         "max_overflow": settings.db_max_overflow,
         "pool_recycle": 3600,
-    }
+    }, url)
+
+
+def _con_tls(opciones: dict, url: str) -> dict:
+    """Añade la política TLS del núcleo a unas opciones de engine ya decididas.
+
+    La política NO se escribe aquí: se pide a `app.db_tls`, que es el único sitio donde
+    vive. Este módulo sólo la cablea. Si alguna vez hay dos respuestas a "¿qué verifica
+    producción?", será porque alguien copió política a este archivo.
+
+    Se FUSIONA por clave en vez de asignar `connect_args` entero: la rama del 6543 ya trae
+    sus tres opciones de prepared statements, y pisarlas devolvería el fallo intermitente
+    de PgBouncer que esas opciones existen para evitar.
+    """
+    tls = db_tls.connect_args_asyncpg(url)
+    if not tls:                                      # loopback: sin cambios
+        return opciones
+    return {**opciones, "connect_args": {**opciones.get("connect_args", {}), **tls}}
 
 
 engine = create_async_engine(settings.database_url, **opciones_de_engine(settings.database_url))

@@ -18,6 +18,9 @@ from sqlalchemy.pool import NullPool
 
 from app.database import es_pooler_de_transaccion, opciones_de_engine
 
+# Ancla de confianza para las URL remotas de este módulo (ver tests/ayuda_tls.py).
+from tests.ayuda_tls import ancla_de_confianza  # noqa: F401
+
 SESION = "postgresql+asyncpg://u:p@aws-1-us-west-2.pooler.supabase.com:5432/postgres"
 TRANSACCION = "postgresql+asyncpg://u:p@aws-1-us-west-2.pooler.supabase.com:6543/postgres"
 

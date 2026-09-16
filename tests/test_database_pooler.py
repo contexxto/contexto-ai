@@ -18,6 +18,9 @@ from sqlalchemy.pool import NullPool
 
 from app.database import es_pooler_de_transaccion, opciones_de_engine
 
+# Ancla de confianza para las URL remotas de este módulo (ver tests/ayuda_tls.py).
+from tests.ayuda_tls import ancla_de_confianza  # noqa: F401
+
 SESION = "postgresql+asyncpg://u:p@aws-1-us-west-2.pooler.supabase.com:5432/postgres"
 TRANSACCION = "postgresql+asyncpg://u:p@aws-1-us-west-2.pooler.supabase.com:6543/postgres"
 
@@ -69,8 +72,24 @@ def test_sesion_si_agrupa_y_con_presupuesto_acotado():
 
 
 def test_sesion_no_toca_los_prepared_statements():
-    """Contra el Session Pooler los prepared statements son válidos y convienen."""
-    assert "connect_args" not in opciones_de_engine(SESION)
+    """Contra el Session Pooler los prepared statements son válidos y convienen.
+
+    Lo que se afirma es la AUSENCIA DE LAS TRES CLAVES de prepared statements — no la
+    ausencia de `connect_args` entera, que es lo que decía el assert anterior.
+
+    Era más ancho que su propio título: prohibía cualquier `connect_args`, incluida la que
+    la política TLS necesita para entregar el `SSLContext` de `verify-full`. Un test más
+    ancho que lo que declara defender deja de documentar una decisión y pasa a bloquear
+    cambios que no tienen nada que ver con ella — y quien lo encuentre en rojo no sabrá si
+    rompió los prepared statements o simplemente añadió una opción legítima.
+    """
+    ca = opciones_de_engine(SESION).get("connect_args", {})
+    for clave in (
+        "prepared_statement_cache_size",
+        "statement_cache_size",
+        "prepared_statement_name_func",
+    ):
+        assert clave not in ca, f"el modo sesión no debe tocar {clave}"
 
 
 # ══ Lo que nunca puede mezclarse ══════════════════════════════════════════════════════

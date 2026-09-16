@@ -28,6 +28,9 @@ from fastapi.testclient import TestClient
 
 import main
 
+# Ancla de confianza para las URL remotas de este módulo (ver tests/ayuda_tls.py).
+from tests.ayuda_tls import ancla_de_confianza  # noqa: F401
+
 
 # ══ Andamiaje ═════════════════════════════════════════════════════════════════════════
 class _Explota(Exception):

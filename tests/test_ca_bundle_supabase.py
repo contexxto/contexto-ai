@@ -27,6 +27,7 @@ import hashlib
 import json
 import re
 import socket
+import ssl
 from ast import Dict as AstDict, literal_eval, parse, walk
 from contextlib import contextmanager
 from pathlib import Path
@@ -34,6 +35,9 @@ from pathlib import Path
 import pytest
 from cryptography import x509
 from cryptography.hazmat.primitives.serialization import Encoding
+
+# Ancla de confianza para las URL remotas de este módulo (ver tests/ayuda_tls.py).
+from tests.ayuda_tls import ancla_de_confianza  # noqa: F401
 
 
 _RAIZ = Path(__file__).resolve().parents[1]
@@ -268,14 +272,21 @@ _TOKENS_TLS_POSTGRES = (
 
 
 @pytest.mark.parametrize("ruta", _CAMINOS_DE_CONEXION)
-def test_TB8_no_se_anadio_configuracion_tls_a_los_caminos_de_conexion(ruta):
+def test_TB8_la_politica_tls_no_esta_duplicada_en_los_caminos_de_conexion(ruta):
     texto = (_RAIZ / ruta).read_text(encoding="utf-8")
     encontrados = [t for t in _TOKENS_TLS_POSTGRES if t in texto]
     assert not encontrados, (
-        f"{ruta} menciona {encontrados} — esta unidad NO activa TLS. "
-        "Si esto falla porque llegó la unidad de verify-full, la prueba debe MOVERSE "
-        "a afirmar la nueva política, no borrarse."
+        f"{ruta} menciona {encontrados}: la política TLS se copió fuera de app/db_tls.py"
     )
+
+
+def test_TB8c_la_politica_si_existe_y_vive_entera_en_db_tls():
+    """Control POSITIVO del anterior, y no es ceremonia: sin él, borrar `app/db_tls.py` de
+    un plumazo dejaría verde a la prueba de arriba. "No hay política duplicada" y "no hay
+    política" son indistinguibles si sólo se mira la ausencia."""
+    politica = (_RAIZ / "app" / "db_tls.py").read_text(encoding="utf-8")
+    for obligado in ("verify-full", "check_hostname", "CERT_REQUIRED", "sslrootcert"):
+        assert obligado in politica, f"app/db_tls.py perdió {obligado!r}"
 
 
 def test_TB8b_no_se_anadio_ninguna_variable_de_configuracion_tls():
@@ -293,29 +304,52 @@ _URL_SESION = "postgresql+asyncpg://u:p@db.example.com:5432/postgres"
 _URL_TRANSACCION = "postgresql+asyncpg://u:p@db.example.com:6543/postgres"
 
 
-def test_TB9_el_engine_no_cambia_su_postura_tls():
-    """Conjunto de claves CONGELADO para la rama de producción (5432).
+def test_TB9_el_engine_remoto_exige_verify_full_y_conserva_lo_demas():
+    """La rama de PRODUCCIÓN (5432 remoto) entrega un `SSLContext`, no una cadena.
 
-    Deliberadamente más estrecho que `tests/test_database_pooler.py`, que afirma la ausencia
-    de `connect_args` entera: aquel assert es más ancho que la política que dice defender, y
-    estrecharlo pertenece a la unidad que active verify-full, en su propio commit.
+    Se afirma el conjunto de claves COMPLETO y no sólo que `ssl` esté presente: así, una
+    opción que aparezca o desaparezca por accidente se ve aquí y no en producción.
     """
     opciones = opciones_de_engine(_URL_SESION)
-    assert set(opciones) == {"echo", "pool_pre_ping", "pool_size", "max_overflow", "pool_recycle"}
+    assert set(opciones) == {
+        "echo", "pool_pre_ping", "pool_size", "max_overflow", "pool_recycle", "connect_args",
+    }
+    assert set(opciones["connect_args"]) == {"ssl"}
+    ctx = opciones["connect_args"]["ssl"]
+    assert isinstance(ctx, ssl.SSLContext)
+    assert ctx.check_hostname is True, "sin check_hostname esto sería verify-ca, no verify-full"
+    assert ctx.verify_mode is ssl.CERT_REQUIRED
+    assert ctx.get_ca_certs(), "el contexto no cargó ninguna ancla"
 
-    # La rama 6543 sí lleva connect_args — y sólo por prepared statements.
-    assert set(opciones_de_engine(_URL_TRANSACCION)["connect_args"]) == {
+
+def test_TB9b_la_fusion_no_pisa_los_prepared_statements_del_6543():
+    """El fallo evidente al añadir TLS: asignar `connect_args` entero y borrar de paso las
+    tres opciones de prepared statements del modo transacción — devolviendo el error
+    intermitente de PgBouncer que esas opciones existen justamente para evitar."""
+    ca = opciones_de_engine(_URL_TRANSACCION)["connect_args"]
+    assert set(ca) == {
         "prepared_statement_cache_size",
         "statement_cache_size",
         "prepared_statement_name_func",
+        "ssl",
     }
+    assert isinstance(ca["ssl"], ssl.SSLContext)
 
 
-def test_TB9b_ninguna_rama_del_engine_pasa_parametros_tls():
+def test_TB9c_loopback_no_exige_el_ancla_productiva():
+    """La exención de desarrollo es una propiedad de la URL, no un interruptor."""
+    o = opciones_de_engine("postgresql+asyncpg://u:p@localhost:5432/postgres")
+    assert "connect_args" not in o
+
+
+def test_TB9d_el_engine_nunca_pasa_sslmode_como_cadena():
+    """G5. `sslmode` NO es el oráculo de la postura de asyncpg: con un `SSLContext`
+    explícito puede no aparecer en ningún sitio y la conexión estar verificando hostname
+    igualmente. Quien audite esto tiene que mirar el contexto, no buscar la palabra."""
     for url in (_URL_SESION, _URL_TRANSACCION):
-        crudo = repr(opciones_de_engine(url))
-        for token in ("ssl", "sslmode", "sslrootcert"):
-            assert token not in crudo.lower(), f"{url} produce opciones con {token!r}"
+        ca = opciones_de_engine(url)["connect_args"]
+        assert "sslmode" not in ca and "sslrootcert" not in ca
+        assert not isinstance(ca["ssl"], str)
 
 
 # ══ T-B10 ═════════════════════════════════════════════════════════════════════════════
@@ -330,13 +364,18 @@ def test_TB10_la_conninfo_del_checkpointer_no_gana_parametros_tls(monkeypatch):
         assert token not in conn
 
 
-def test_TB10b_el_pool_del_checkpointer_no_recibe_kwargs_tls():
+def test_TB10b_el_pool_recibe_la_politica_por_kwargs_y_solo_desde_db_tls():
     """Por AST, no por texto: sobrevive a un reformateo y muerde ante un `kwargs` nuevo.
 
-    Y hace falta que muerda AQUÍ. `AsyncConnectionPool.__init__` guarda sus `kwargs` sin
-    validarlos (psycopg_pool/base.py) — un parámetro mal puesto no se nota al construir el
-    pool, sino en el primer checkout, ya en caliente. asyncpg, en cambio, falla al construir.
-    Esa asimetría es la razón de fijar el conjunto de claves por análisis estático.
+    Y hace falta que muerda AQUÍ. `AsyncConnectionPool.__init__` guarda sus `kwargs` **sin
+    validarlos**: un `sslrootcert` mal escrito no falla al construir el pool sino en el
+    primer checkout — ya en caliente, y disfrazado de timeout del pool, que no se parece en
+    nada a la causa. asyncpg, en cambio, falla al construir. El análisis estático es la
+    única comprobación que muerde antes de arrancar.
+
+    Por eso no basta con "los kwargs traen sslmode": se exige que la política llegue por
+    `db_tls.kwargs_psycopg` y no como literales escritos a mano aquí. Literales escritos a
+    mano serían una segunda copia de la política, libre de divergir de la de asyncpg.
     """
     arbol = parse((_RAIZ / "app" / "agent" / "graph.py").read_text(encoding="utf-8"))
     llamadas = [
@@ -348,12 +387,21 @@ def test_TB10b_el_pool_del_checkpointer_no_recibe_kwargs_tls():
 
     (kwargs_nodo,) = [k.value for k in llamadas[0].keywords if k.arg == "kwargs"]
     assert isinstance(kwargs_nodo, AstDict)
-    claves = {literal_eval(k) for k in kwargs_nodo.keys}
-    assert claves == {"autocommit", "prepare_threshold", "row_factory"}, (
-        f"el pool del checkpointer recibe kwargs nuevos: {claves}"
+
+    literales = {literal_eval(k) for k in kwargs_nodo.keys if k is not None}
+    assert literales == {"autocommit", "prepare_threshold", "row_factory"}, (
+        f"el pool del checkpointer recibe kwargs literales nuevos: {literales}"
     )
 
-    # Y la conninfo se le pasa como `conninfo=`, no concatenada con parámetros TLS.
+    # Un `**algo` aparece en el AST como una clave None. Debe haber exactamente uno y ser
+    # la llamada a la política — nunca un dict armado en el sitio.
+    expandidos = [v for k, v in zip(kwargs_nodo.keys, kwargs_nodo.values) if k is None]
+    assert len(expandidos) == 1, f"se esperaba UN `**` en kwargs, hay {len(expandidos)}"
+    (exp,) = expandidos
+    assert exp.__class__.__name__ == "Call", "el `**` del pool no es una llamada"
+    assert getattr(exp.func, "attr", None) == "kwargs_psycopg"
+    assert getattr(exp.func.value, "id", None) == "db_tls"
+
     conninfo = [k.value for k in llamadas[0].keywords if k.arg == "conninfo"]
     assert conninfo and conninfo[0].__class__.__name__ == "Name", (
         "la conninfo del pool dejó de ser una variable — revisar que nadie le concatene TLS"

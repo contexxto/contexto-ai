@@ -18,6 +18,7 @@ from langgraph.prebuilt import ToolNode, tools_condition
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
+from app import db_tls
 from app.agent.state import AgentState
 from app.agent.tools import AGENT_TOOLS
 from app.config import settings
@@ -1056,6 +1057,11 @@ async def setup_checkpointer() -> None:
                 #     grafo cae a MemorySaver y te quedas sin historial — reproducido.
                 "prepare_threshold": None if _transaccion else 0,
                 "row_factory": dict_row,   # el saver espera filas tipo dict
+                # Política TLS del núcleo. Va por `kwargs=` y NO concatenada a la
+                # conninfo: en psycopg los kwargs del pool GANAN sobre la cadena, así que
+                # este es el único canal que la URL compartida no puede contradecir. Vacío
+                # si la URL es loopback. Ver app/db_tls.py.
+                **db_tls.kwargs_psycopg(conn_str),
             },
         )
         # 30 s (no 10): un arranque lento es molesto; arrancar sin memoria es un incidente.

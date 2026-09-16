@@ -14,3 +14,14 @@
 
 pytest==8.3.4
 pytest-asyncio==0.25.2
+
+# El arnes TLS de R2C1 (tests/arnes_postgres_tls.py) emite la CA y el certificado de
+# servidor del PostgreSQL efimero contra el que corren T1/T2/T3. Ya venia instalada de
+# forma transitiva por pyjwt[crypto], pero una prueba de SEGURIDAD no deberia depender de
+# lo que resuelva otro paquete: si pyjwt cambiara de extras, T1/T2/T3 dejarian de poder
+# ejecutarse y el fallo apareceria como un error de import, no como lo que es.
+#
+# Va aqui y NO en requirements.txt a proposito: Render no la instala por esta via y el
+# runtime de produccion no la necesita. Sin pin exacto para no pelearse con lo que resuelva
+# pyjwt[crypto]==2.10.1, que exige >=3.4.0.
+cryptography>=42

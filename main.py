@@ -190,6 +190,40 @@ async def liveness():
     return {"status": "alive"}
 
 
+class _FalloDeSonda(Exception):
+    """Envuelve el fallo de UNA sonda para que el 503 sea ATRIBUIBLE. Mensaje saneado.
+
+    POR QUÉ EXISTE. El 2026-09-16 hubo un `/ready` = 503 en producción y no se pudo
+    averiguar la causa: el handler capturaba todo en un `except` opaco y no registraba nada,
+    mientras su propio docstring prometía que "el detalle vive en los logs". No vivía. Un
+    booleano `ready/not_ready` basta para que un supervisor actúe; no basta para operar un
+    cambio de infraestructura sensible, donde hace falta saber CUÁL de los tres caminos
+    falló — si no, un fallo ajeno al cambio se le atribuye al cambio.
+
+    QUÉ LLEVA: el nombre de la sonda y la CLASE de la excepción original. Nada más.
+    `str(exc)` no viaja, y por eso el `raise ... from None` de quien la levanta no es un
+    detalle de estilo: el texto del driver arrastra la conninfo entera —host, usuario,
+    contraseña— y este objeto acaba en los logs. Es el mismo contrato que `db_tls` y
+    `CheckpointerStartupError`, por la misma razón medida en R2B1.
+    """
+
+    def __init__(self, sonda: str, clase: str):
+        super().__init__(sonda)        # str(exc) == el nombre de la sonda, y nada más
+        self.sonda = sonda
+        self.clase = clase
+
+
+def _registrar_sonda_fallida(sonda: str, clase: str) -> None:
+    """Una línea, dos campos, formato fijo y parseable. No hay tercera cosa que decir.
+
+    Va a stdout —que es lo que Render recoge— como el resto de los avisos operativos de
+    este servicio. Deliberadamente NO incluye el mensaje de la excepción, ni su `repr`, ni
+    traceback: la pregunta que hay que poder responder es "¿qué camino falló?", y el texto
+    del driver no la responde mejor a cambio de arriesgar una fuga.
+    """
+    print(f"ready_probe_failed probe={sonda} error_class={clase}", flush=True)
+
+
 @app.get("/ready", tags=["System"])
 async def readiness():
     """200 sólo si el servicio puede servir de verdad; 503 en cualquier otro caso.
@@ -211,19 +245,67 @@ async def readiness():
 
     El cuerpo del 503 es GENÉRICO a propósito: este endpoint no está autenticado, y el
     detalle de por qué la base no responde es información operativa que no tiene por qué
-    viajar a quien pregunte. El detalle vive en los logs.
+    viajar a quien pregunte.
+
+    EN LOS LOGS QUEDA, PERO SÓLO ESTO — y conviene ser exacto, porque la versión anterior de
+    este docstring prometía "el detalle" y no dejaba ninguno:
+
+        ready_probe_failed probe=<asyncpg|checkpointer|psycopg_pool|global_timeout> error_class=<Clase>
+
+    Dos campos: qué sonda falló y de qué clase fue la excepción. NO se registra el mensaje
+    de la excepción, ni su `repr`, ni el traceback — el texto de un driver de Postgres
+    arrastra la conninfo entera. Con la sonda y la clase se distingue un timeout de pool de
+    un checkpointer ausente o de un fallo del engine, que es exactamente lo que hacía falta
+    y no había.
     """
     async def _sondear_todo() -> None:
-        await _sondear_db()
-        if get_checkpointer() is None:
-            raise RuntimeError("checkpointer durable ausente")
-        await sondear_pool_checkpointer()
+        """Las MISMAS tres sondas, en el MISMO orden. Lo único nuevo es quién dice cuál falló.
+
+        Cada una se envuelve por separado para poder atribuir el fallo. El `from None` es
+        obligatorio: sin él, la excepción del driver viaja encadenada dentro de la nuestra y
+        cualquier formateador que ignore `__suppress_context__` la publicaría con la
+        conninfo dentro. Medido en R2B1 — `from exc` filtra igual que un `raise` desnudo.
+
+        `except Exception` y no `except BaseException` también es deliberado:
+        `CancelledError` NO es `Exception`, así que cuando el timeout global cancela una
+        sonda a media ejecución la cancelación pasa de largo y `wait_for` la convierte en
+        `TimeoutError` — que es justo como debe contabilizarse.
+        """
+        try:
+            await _sondear_db()
+        except Exception as exc:  # noqa: BLE001
+            raise _FalloDeSonda("asyncpg", type(exc).__name__) from None
+
+        try:
+            if get_checkpointer() is None:
+                raise RuntimeError("checkpointer durable ausente")
+        except Exception as exc:  # noqa: BLE001
+            raise _FalloDeSonda("checkpointer", type(exc).__name__) from None
+
+        try:
+            await sondear_pool_checkpointer()
+        except Exception as exc:  # noqa: BLE001
+            raise _FalloDeSonda("psycopg_pool", type(exc).__name__) from None
 
     try:
-        # Timeout GLOBAL, no por sonda: lo que importa es que la respuesta entera llegue
-        # acotada. Tres cortes de 3 s encadenados serían 9 s de espera para un chequeo.
+        # Timeout GLOBAL, no por sonda, y sigue en TIMEOUT_READY_S: lo que importa es que la
+        # respuesta entera llegue acotada. Tres cortes de 3 s encadenados serían 9 s de
+        # espera para un chequeo.
         await asyncio.wait_for(_sondear_todo(), timeout=TIMEOUT_READY_S)
-    except Exception:  # noqa: BLE001
-        return JSONResponse(status_code=503, content={"status": "not_ready"})
+    except _FalloDeSonda as fallo:
+        _registrar_sonda_fallida(fallo.sonda, fallo.clase)
+    except (asyncio.TimeoutError, TimeoutError) as exc:
+        # El timeout global cortó antes de que ninguna sonda concluyera. No se sabe cuál
+        # habría fallado —sólo que el conjunto no cupo en el presupuesto—, y decir otra cosa
+        # sería inventarse una atribución.
+        _registrar_sonda_fallida("global_timeout", type(exc).__name__)
+    except Exception as exc:  # noqa: BLE001
+        # RED DE SEGURIDAD, no una quinta sonda. Hoy nada puede caer aquí: las tres sondas
+        # están envueltas y el timeout tiene su rama. Existe porque el contrato HTTP dice
+        # 503 y sin esto una excepción imprevista daría 500. Si esta línea aparece alguna
+        # vez en los logs, el diagnóstico es que ESTA instrumentación tiene un hueco.
+        _registrar_sonda_fallida("sin_atribuir", type(exc).__name__)
+    else:
+        return {"status": "ready"}
 
-    return {"status": "ready"}
+    return JSONResponse(status_code=503, content={"status": "not_ready"})

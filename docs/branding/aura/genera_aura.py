@@ -19,10 +19,15 @@ La profundidad sale de OSCURECER el centro, no de aclarar los bordes.
 La comprobación se hace sobre el ARCHIVO ya guardado (WebP con pérdida), no sobre la imagen en
 memoria: es el archivo lo que se sirve.
 
-Las estrellas viven solo en el 36 % superior de la imagen vertical (281 px en un teléfono de 360):
-en una pantalla de 720 de alto la leyenda cae a 324 px, y una estrella pegada al texto lo ensucia.
-Esa garantía vale para teléfonos en vertical. En una tableta en vertical (768×1024) la imagen
-escala al doble y alguna estrella llega a la altura de la leyenda: caso menor, aceptado.
+Las estrellas viven arriba y se APAGAN antes de llegar al texto: a pleno brillo hasta el 20 % del
+alto de la imagen vertical (156 px en un teléfono de 360) y desvaneciéndose hasta el 30 % (234 px);
+las grandes, solo hasta el 22 %. Una estrella pegada a la leyenda la ensucia: leída en el teléfono
+de Carlos (360 × ~650 útiles en una pestaña de Chrome), un punto entre dos palabras parecía un
+apóstrofo. La primera versión llegaba al 36 % (281 px), calculada para una pantalla de 720 donde la
+leyenda cae a 324; en la suya la leyenda está a ~270 px en reposo y a ~240 con un borrador de dos
+líneas. Con cuatro líneas de borrador la leyenda sube a ~215 y toca la franja que ya se apaga.
+Esto vale para teléfonos en vertical. En una tableta en vertical (768×1024) la imagen escala al
+doble y alguna estrella llega a la altura de la leyenda: caso menor, aceptado.
 """
 import io
 import sys
@@ -56,10 +61,18 @@ def suave(t):
     return t * t * (3 - 2 * t)
 
 
+MARGEN = 24   # px de --bg PLANO en cada borde fundido, antes de que empiece la rampa
+
+
 def mascara_borde(w, h, arriba, abajo, lados):
-    """255 en el interior, 0 en los bordes, con rampas suaves. Fracciones del alto / ancho."""
-    fila = [int(255 * suave(y / (h * arriba)) * suave((h - 1 - y) / (h * abajo))) for y in range(h)]
-    col = [int(255 * (suave(x / (w * lados)) * suave((w - 1 - x) / (w * lados)) if lados else 1.0)) for x in range(w)]
+    """255 en el interior, 0 en los bordes, con rampas suaves. Fracciones del alto / ancho.
+
+    La rampa no empieza en el píxel 0 sino tras MARGEN px planos: WebP con pérdida trabaja por
+    bloques y, con algo de señal a un par de píxeles, deja el borde a ±1 nivel (pasó: 27,27,27 en
+    la fila 0 de la apaisada al mover las estrellas). Con el margen el borde sale exacto.
+    """
+    fila = [int(255 * suave((y - MARGEN) / (h * arriba)) * suave((h - 1 - MARGEN - y) / (h * abajo))) for y in range(h)]
+    col = [int(255 * (suave((x - MARGEN) / (w * lados)) * suave((w - 1 - MARGEN - x) / (w * lados)) if lados else 1.0)) for x in range(w)]
     mv = Image.new('L', (1, h)); mv.putdata(fila); mv = mv.resize((w, h))
     mh = Image.new('L', (w, 1)); mh.putdata(col); mh = mh.resize((w, h))
     return ImageChops.multiply(mv, mh)
@@ -87,13 +100,17 @@ def aura(w, h, apaisado):
     d = ImageDraw.Draw(cielo, 'RGBA')
     rnd = mulberry(SEMILLA)
     s = (w / 369) if not apaisado else (h / 800)          # densidad de la maqueta
-    n = 200 if not apaisado else 320
+    n = 170 if not apaisado else 320
+    # Las estrellas no terminan en una raya: brillan a pleno hasta PLENA y se apagan hasta ZONA
+    # (fracciones del alto de la imagen). Ver el docstring: por qué .30 y no .36.
+    plena, zona = (.20, .30) if not apaisado else (.30, .46)
     for _ in range(n):
-        x, y = rnd() * w, rnd() * h * (.36 if not apaisado else .46)
+        x, y = rnd() * w, rnd() * h * zona
         r = (.35 + rnd() * 1.1) * s
-        d.ellipse((x - r, y - r, x + r, y + r), fill=(255, 255, 255, int((.18 + rnd() * .42) * 255)))
+        apagado = 1 - suave((y / h - plena) / (zona - plena))
+        d.ellipse((x - r, y - r, x + r, y + r), fill=(255, 255, 255, int((.18 + rnd() * .42) * apagado * 255)))
     for _ in range(12 if not apaisado else 18):
-        x, y = rnd() * w, rnd() * h * (.30 if not apaisado else .40)
+        x, y = rnd() * w, rnd() * h * (.22 if not apaisado else .34)
         r = (1.3 + rnd() * .9) * s
         brillo(cielo, x, y, 7 * s, (255, 255, 255), .35)
         ImageDraw.Draw(cielo, 'RGBA').ellipse((x - r, y - r, x + r, y + r), fill=(255, 255, 255, 242))

@@ -232,6 +232,11 @@ body::before { content: none; }
 .dock-pill[data-amplio] > .dock-enviar { margin-left: auto; }
 /* −9: el botón mide 36 y su icono 18; así el pin queda alineado con el borde izquierdo del texto. */
 .dock-pill[data-amplio] > .dock-geo { margin-left: -9px; }
+/* El aire vertical del campo es un borde TRANSPARENTE (App.jsx, AIRE_CAMPO). En colores forzados
+   (alto contraste de Windows) el navegador sustituye border-color por un color del sistema y
+   pintaría dos franjas opacas de 10 px: ahí el borde toma el color del fondo forzado.
+   !important porque borderColor va en el style en línea. */
+@media (forced-colors: active) { .dock-input { border-color: Canvas !important; } }
 
 /* El placeholder del campo de escribir, siempre en una línea: en la píldora el campo es estrecho
    (141 px en un teléfono de 320) y partido en dos asomaba cortado bajo la primera línea.

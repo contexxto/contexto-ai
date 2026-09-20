@@ -918,10 +918,17 @@ export default function App() {
   // Girar el teléfono o estrechar la ventana también re-envuelve el texto sin tocar `input`. Con
   // el overflow oculto por debajo del máximo, lo que sobrara quedaba recortado e inalcanzable
   // hasta la siguiente tecla.
+  // Lo mismo cuando LLEGA LA FUENTE: Geist carga con display=swap; quien escribe en una primera
+  // visita lenta ve el texto en la fuente de respaldo, y al llegar Geist (algo más ancha) el
+  // texto se re-envuelve sin que nada vuelva a medir.
   useEffect(() => {
     const medir = () => { if (inputRef.current) ajustarAltoCampo(inputRef.current) }
     window.addEventListener('resize', medir)
-    return () => window.removeEventListener('resize', medir)
+    document.fonts?.addEventListener?.('loadingdone', medir)
+    return () => {
+      window.removeEventListener('resize', medir)
+      document.fonts?.removeEventListener?.('loadingdone', medir)
+    }
   }, [])
 
   const handleScroll = useCallback(() => {

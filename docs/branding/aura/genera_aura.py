@@ -126,8 +126,9 @@ def main():
         destino = Path(sys.argv[1]) / nombre if len(sys.argv) > 1 else PUBLIC / nombre
         # Se codifica en memoria, se comprueba y SOLO ENTONCES se escribe: un fallo no pisa el
         # archivo bueno de public/. Se comprueban los bytes exactos que se van a servir, con las
-        # filas (y columnas) COMPLETAS y tolerancia 0. El margen es estrecho (el codificador ya
-        # mete ±1 a dos píxeles del borde): con otro libwebp el assert puede saltar, y para eso está.
+        # filas (y columnas) COMPLETAS y tolerancia 0. MARGEN deja 24 px planos de --bg para que
+        # el codificador no toque el borde (medido en lo commiteado: al menos 35 filas o columnas
+        # exactas en cada borde); si con otro libwebp el assert salta, para eso está.
         buf = io.BytesIO()
         im.save(buf, 'WEBP', quality=84, method=6)
         servido = Image.open(io.BytesIO(buf.getvalue())).convert('RGB')

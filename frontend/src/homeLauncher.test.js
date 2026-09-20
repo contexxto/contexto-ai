@@ -178,7 +178,14 @@ describe('la píldora no toca lo que tiene historial de bugs de teclado', () => 
 
   it('girar el teléfono o estrechar la ventana vuelve a medir', () => {
     // Con el overflow oculto por debajo del máximo, el texto re-envuelto quedaba inalcanzable.
-    expect(app).toMatch(/const medir = \(\) => \{ if \(inputRef\.current\) ajustarAltoCampo\(inputRef\.current\) \}\s*window\.addEventListener\('resize', medir\)\s*return \(\) => window\.removeEventListener\('resize', medir\)/)
+    const i = app.indexOf('const medir = () => { if (inputRef.current) ajustarAltoCampo(inputRef.current) }')
+    expect(i).toBeGreaterThan(-1)
+    const efecto = app.slice(i, app.indexOf('}, [])', i))
+    expect(efecto).toContain("window.addEventListener('resize', medir)")
+    expect(efecto).toContain("window.removeEventListener('resize', medir)")
+    // Geist carga con display=swap: al llegar, el texto se re-envuelve sin evento input ni resize.
+    expect(efecto).toContain("document.fonts?.addEventListener?.('loadingdone', medir)")
+    expect(efecto).toContain("document.fonts?.removeEventListener?.('loadingdone', medir)")
   })
 
   it('el overflow del campo lo gobierna la función: oculto al medir y con el campo vacío', () => {
@@ -260,9 +267,14 @@ describe('las dos formas de la píldora: una fila, o el campo a todo el ancho', 
     // ancho o el alto actuales del campo volvería a estrecharlo, y así sin fin.
     expect(criterio).toContain('measureText(texto).width > hueco')
     expect(criterio).toContain('const hueco = pildora.clientWidth - PAD_PILDORA_UNA_FILA - ANCHO_BOTONES_PILDORA')
-    for (const prohibido of ['el.clientWidth', 'el.offsetWidth', 'el.scrollHeight', 'el.scrollWidth', 'getBoundingClientRect', 'dataset']) {
-      expect(criterio).not.toContain(prohibido)
-    }
+    // Lista BLANCA, no negra: una cláusula de layout puede escribirse de muchas formas
+    // (el.clientHeight, cs.height, pildora.offsetHeight…) y todas oscilan igual.
+    expect([...criterio.matchAll(/\bel\.(\w+)/g)].map((m) => m[1])).toEqual(['value'])
+    expect([...criterio.matchAll(/\bpildora\.(\w+)/g)].map((m) => m[1])).toEqual(['clientWidth'])
+    expect([...criterio.matchAll(/\bcs\.(\w+)/g)].map((m) => m[1])).toEqual(['fontStyle', 'fontWeight', 'fontSize', 'fontFamily'])
+    // Sin esta línea el canvas mide a 10px sans-serif: el texto sale estrecho y la forma amplia
+    // no se dispara nunca (el defecto del teléfono vuelve con todo en verde).
+    expect(criterio).toContain('lienzoDeMedir.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`')
     // Vacío nunca es amplio; un salto de línea siempre lo es.
     expect(criterio).toContain('if (!texto) return false')
     expect(criterio).toContain("if (texto.includes('\\n')) return true")
@@ -273,19 +285,27 @@ describe('las dos formas de la píldora: una fila, o el campo a todo el ancho', 
     expect(app).toContain('const PAD_PILDORA_UNA_FILA = 18 + 5')
     expect(css).toContain('.dock-pill { padding: 5px 5px 5px 18px; }')
     expect(css).toContain('.dock-enviar { margin-left: 4px; }')
-    expect(pildora).toContain('gap:2')
+    expect(pildora).toContain('gap:2,')
+    // Los 36 + 36 de la constante salen del width en línea de ubicación y «+»; el 44 lo vigila
+    // «Voz y Enviar son el mismo círculo».
+    const botones = app.slice(app.indexOf('className="dock-geo"'), app.indexOf('{input.trim() ? ('))
+    expect(botones.split('width:36, height:44,').length).toBe(3)
   })
 
   it('primero la forma y después el alto: la forma cambia el ancho del campo', () => {
     const forma = ajustar.indexOf('noCabeEnUnaLinea(el, pildora)')
     expect(forma).toBeGreaterThan(-1)
     expect(forma).toBeLessThan(ajustar.indexOf("el.style.height = 'auto'"))
-    expect(ajustar).toContain("pildora.dataset.amplio = '1'")
-    expect(ajustar).toContain('delete pildora.dataset.amplio')
+    expect(ajustar).toContain("if (noCabeEnUnaLinea(el, pildora)) pildora.dataset.amplio = '1'")
+    expect(ajustar).toContain('else delete pildora.dataset.amplio')
   })
 
   it('es el mismo DOM en las dos formas: flex-wrap y CSS, sin estado ni remontar el textarea', () => {
     expect(pildora).toContain("flexWrap:'wrap'")
+    // Hijo DIRECTO: de eso dependen `el.parentElement` y los `>` del CSS. Con un envoltorio,
+    // data-amplio caería en él y la forma amplia moriría en silencio.
+    expect(pildora.split('<').length).toBe(2)
+    expect(ajustar).toContain('const pildora = el.parentElement')
     // Un padding en línea ganaría al de la forma amplia.
     expect(pildora).not.toContain('padding')
     expect(app).not.toContain('data-amplio')
@@ -293,6 +313,8 @@ describe('las dos formas de la píldora: una fila, o el campo a todo el ancho', 
     expect(css).toContain('.dock-pill[data-amplio] > .dock-input { flex-basis: 100%; }')
     expect(css).toContain('.dock-pill[data-amplio] > .dock-enviar { margin-left: auto; }')
     expect(css).toContain('.dock-pill[data-amplio] > .dock-geo { margin-left: -9px; }')
+    // El aire del campo es un borde transparente: en colores forzados se pintaría opaco.
+    expect(css).toContain('@media (forced-colors: active) { .dock-input { border-color: Canvas !important; } }')
     expect(app.split('className="dock-geo"').length).toBe(2)
   })
 })

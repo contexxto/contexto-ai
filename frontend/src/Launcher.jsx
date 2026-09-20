@@ -68,8 +68,12 @@ export default function Launcher({ onSend, onAnalyzeLocation, onOpenMap, onBroke
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', minHeight: '100%', textAlign: 'center' }}>
       {/* El fondo de aura NO vive aquí: lo pinta App detrás de toda el área principal (header y
           campo de escribir incluidos), con la misma condición que monta esta pantalla. */}
-      {/* Lo primero de la pantalla: con el teclado abierto el hueco mide ~150 px y se ve solo el
-          principio del bloque. Más abajo, el aviso volvía a quedar bajo el pliegue. */}
+      {/* Lo primero de la pantalla: con el teclado CERRADO (que es como se toca una entrada) queda
+          a la vista sin scroll, también con el aviso puesto (visto en el teléfono). Más abajo
+          volvía a quedar bajo el pliegue.
+          Límite conocido: Chrome de Android no encoge la página al abrir el teclado, la SUBE para
+          mostrar el campo, así que con el teclado abierto se ve el FINAL del bloque (leyenda,
+          entradas y campo) y este aviso queda arriba, fuera de vista, hasta cerrarlo. */}
       {aviso && <div style={{ margin: '0 auto', flexShrink: 0, width: '100%', maxWidth: 560, textAlign: 'left' }}>{aviso}</div>}
 
       <div style={{ flex: '1 1 0' }} />
@@ -82,7 +86,9 @@ export default function Launcher({ onSend, onAnalyzeLocation, onOpenMap, onBroke
 
       <div style={{ flex: '.9 1 0' }} />
 
-      <div style={{ color: 'var(--text-dim)', fontSize: '.95rem', margin: '0 0 26px', flexShrink: 0 }}>
+      {/* 12 px fijos arriba: los espaciadores ceden a cero, y con el aviso puesto más un borrador de
+          cuatro líneas la leyenda quedaba pegada al logotipo (visto en el teléfono). */}
+      <div style={{ color: 'var(--text-dim)', fontSize: '.95rem', margin: '12px 0 26px', flexShrink: 0 }}>
         Cada lugar tiene un aura.
       </div>
 

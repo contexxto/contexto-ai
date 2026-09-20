@@ -406,9 +406,14 @@ function Thinking() {
 }
 
 // ── Alto del campo de escribir ──────────────────────────────
-// Crece con el texto hasta cuatro líneas COMPLETAS: 4 × 24 de línea + 20 de padding. Con 120 la
+// Crece con el texto hasta cuatro líneas COMPLETAS: 4 × 24 de línea + 20 de aire. Con 120 la
 // quinta línea asomaba cortada.
-const ALTO_MAX_CAMPO = 116
+// El aire (10 arriba y 10 abajo) es un BORDE transparente, no padding: un textarea con scroll
+// pinta texto dentro de su padding, y con cinco líneas la primera quedaba pegada al canto de la
+// píldora (visto en el teléfono de Carlos). El texto nunca entra en un borde. Y el borde sigue
+// siendo del textarea: tocarlo enfoca el campo, así que el área táctil sigue midiendo 44.
+const AIRE_CAMPO = 10
+const ALTO_MAX_CAMPO = 4 * 24 + 2 * AIRE_CAMPO
 
 // Se llama desde onInput (teclado), desde un efecto de App (dictado por voz, volver de otra vista,
 // cambio de ancho del campo: nada de eso emite el evento input) y al redimensionar la ventana.
@@ -423,7 +428,8 @@ function ajustarAltoCampo(el) {
   // Vacío: se queda en el alto natural de una fila. Medir scrollHeight aquí contaría el
   // PLACEHOLDER: al borrar todo el texto la píldora quedaba a 80 px en vez de volver a 56.
   if (!el.value) return
-  const alto = el.scrollHeight
+  // scrollHeight no cuenta los bordes y el alto (border-box) sí.
+  const alto = el.scrollHeight + 2 * AIRE_CAMPO
   el.style.height = Math.min(alto, ALTO_MAX_CAMPO) + 'px'
   if (alto > ALTO_MAX_CAMPO) el.style.overflowY = 'auto'
 }
@@ -2286,10 +2292,12 @@ export default function App() {
             style={{
               // flex:1 + minWidth:0 → ocupa lo que dejen los botones y puede encogerse.
               // 1rem y no .98: por debajo de 16 px iOS hace zoom al enfocar el campo.
-              // padding 10 → una línea mide 44 px, el alto de los botones: todo centrado.
+              // 24 de línea + 10 y 10 de borde transparente → una línea mide 44 px, el alto de los
+              // botones: todo centrado. Borde y no padding: ver AIRE_CAMPO.
               // SIN overflowY aquí: lo gobierna ajustarAltoCampo (arriba explica por qué).
-              flex:1, minWidth:0, display:'block', background:'none', border:'none', outline:'none',
-              color:'var(--text)', fontSize:'1rem', resize:'none', padding:'10px 0',
+              flex:1, minWidth:0, display:'block', background:'none', outline:'none',
+              borderStyle:'solid', borderColor:'transparent', borderWidth:`${AIRE_CAMPO}px 0`,
+              color:'var(--text)', fontSize:'1rem', resize:'none', padding:0,
               lineHeight:1.5, maxHeight:ALTO_MAX_CAMPO,
               fontFamily:'inherit',
             }}

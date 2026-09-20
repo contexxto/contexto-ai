@@ -194,11 +194,26 @@ describe('la píldora no toca lo que tiene historial de bugs de teclado', () => 
   })
 
   it('el máximo son cuatro líneas completas', () => {
-    // 4 × 24 de línea + 20 de padding. Con 120 la quinta línea asomaba cortada.
-    expect(app).toContain('const ALTO_MAX_CAMPO = 116')
+    // 4 × 24 de línea + 20 de aire. Con 120 la quinta línea asomaba cortada.
+    expect(app).toContain('const AIRE_CAMPO = 10')
+    expect(app).toContain('const ALTO_MAX_CAMPO = 4 * 24 + 2 * AIRE_CAMPO')
     expect(campo).toContain('maxHeight:ALTO_MAX_CAMPO')
-    expect(campo).toContain("padding:'10px 0'")
     expect(campo).toContain('lineHeight:1.5')
+  })
+
+  it('el aire del campo es borde y no padding: el texto con scroll no toca el canto de la píldora', () => {
+    // Un textarea con scroll pinta texto dentro de su padding: con cinco líneas la primera
+    // quedaba pegada al borde superior de la píldora (visto en el teléfono). En un borde no entra.
+    expect(campo).toContain("borderStyle:'solid', borderColor:'transparent', borderWidth:`${AIRE_CAMPO}px 0`")
+    expect(campo).toContain('padding:0,')
+    expect(campo).not.toContain("border:'none'")
+    // scrollHeight no cuenta los bordes; el alto (border-box) sí.
+    expect(ajustar).toContain('const alto = el.scrollHeight + 2 * AIRE_CAMPO')
+  })
+
+  it('la leyenda nunca se pega al logotipo', () => {
+    // Los espaciadores ceden a cero; con el aviso puesto y un borrador largo no quedaba aire.
+    expect(launcher).toContain("margin: '12px 0 26px'")
   })
 
   it('el placeholder va en una sola línea', () => {

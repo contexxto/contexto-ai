@@ -2192,15 +2192,22 @@ export default function App() {
             </div>
           )
         )}
+        {/* LA PÍLDORA (fase 2). Una sola fila: campo · ubicación · «+» · Voz/Enviar. Antes eran
+            dos pisos (el campo arriba, los botones abajo) y, hasta la fase 1, una fila estática
+            «Para: Contexto AI» encima. Lo que NO cambió, a propósito, es todo lo que tiene
+            historial de bugs de teclado en la PWA de Android: el textarea es el mismo nodo con
+            el mismo ref, value, onChange, onKeyDown (isComposing), disabled, rows y onInput; no
+            hay focus() ni scrollIntoView nuevos.
+            Radio FIJO de 28: con una línea se lee como píldora (alto 56) y, al crecer, como
+            rectángulo redondeado — sin estado ni medición. Los botones se alinean ABAJO
+            (flex-end) para bajar con el texto. */}
         <div style={{
+          display:'flex', alignItems:'flex-end', gap:2,
+          minHeight:56, padding:'5px 5px 5px 18px', borderRadius:28,
           background:'var(--surface-1)',
-          border:`1px solid ${listening ? 'var(--teal)' : 'var(--border)'}`, borderRadius:16, padding:'12px 14px',
+          border:`1px solid ${listening ? 'var(--teal)' : 'var(--border)'}`,
           transition:'border-color .2s',
         }}>
-          {/* Aquí había una fila estática «Para: Contexto AI» con su separador (herencia de
-              ASI:One). No tenía lógica: con varios corredores, con QUIÉN se habla lo dice la
-              franja de arriba. Se retiró el 2026-09-20 y devolvió ~50 px a la pantalla. El
-              campo y sus botones quedan intactos: la píldora va en su propio PR. */}
           <textarea
             ref={inputRef}
             value={input}
@@ -2218,76 +2225,85 @@ export default function App() {
             disabled={loading}
             rows={1}
             style={{
-              display:'block', width:'100%', background:'none', border:'none', outline:'none',
-              color:'var(--text)', fontSize:'.98rem', resize:'none',
+              // flex:1 + minWidth:0 → ocupa lo que dejen los botones y puede encogerse.
+              // 1rem y no .98: por debajo de 16 px iOS hace zoom al enfocar el campo.
+              // padding 10 → una línea mide 44 px, el alto de los botones: todo centrado.
+              flex:1, minWidth:0, display:'block', background:'none', border:'none', outline:'none',
+              color:'var(--text)', fontSize:'1rem', resize:'none', padding:'10px 0',
               lineHeight:1.5, maxHeight:120, overflowY:'auto',
-              fontFamily:'inherit', marginBottom:12,
+              fontFamily:'inherit',
             }}
             onInput={e => {
               e.target.style.height = 'auto'
-              e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'
+              // Vacío: se queda en el alto natural de una fila. Medir scrollHeight aquí contaría
+              // el PLACEHOLDER, que en la píldora (campo estrecho) puede partirse en dos líneas:
+              // al borrar todo el texto la píldora quedaba a 80 px en vez de volver a 56.
+              if (e.target.value) e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'
             }}
           />
-          {/* Fila inferior: ubicación + "+" (izq) · Voz/Enviar (der) */}
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-            <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-              <button
-                onClick={toggleGeo}
-                disabled={geoLoading}
-                title={geo ? 'Ubicación activa — toca para quitar' : 'Compartir mi ubicación'}
-                style={{
-                  background:'none', border:'none', borderRadius:999, width:34, height:34, flexShrink:0, cursor:'pointer',
-                  display:'flex', alignItems:'center', justifyContent:'center',
-                  color: geo ? 'var(--teal-bright)' : 'var(--text-muted)', transition:'color .15s',
-                }}
-              >
-                {geoLoading
-                  ? <RefreshCw size={18} style={{ animation:'spin 1s linear infinite' }}/>
-                  : <MapPin size={18}/>}
-              </button>
-              <button
-                onClick={() => setAttachOpen(true)}
-                title="Adjuntar — busca en el inventario por foto"
-                style={{
-                  background:'none', border:'none', borderRadius:999, width:34, height:34, flexShrink:0, cursor:'pointer',
-                  display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text-muted)',
-                }}
-              >
-                <Plus size={20}/>
-              </button>
-            </div>
-            {/* Voz (vacío) ↔ Enviar (con texto), como ASI:One */}
-            {input.trim() ? (
-              <button
-                onClick={() => sendMessage()}
-                disabled={loading}
-                title="Enviar"
-                style={{
-                  background:'var(--teal-bright)', border:'none', borderRadius:999,
-                  width:44, height:44, flexShrink:0, cursor: loading ? 'default' : 'pointer',
-                  display:'flex', alignItems:'center', justifyContent:'center', color:'#06201C',
-                }}
-              >
-                {loading
-                  ? <RefreshCw size={18} style={{ animation:'spin 1s linear infinite' }}/>
-                  : <ArrowUp size={20}/>}
-              </button>
-            ) : (
-              <button
-                onClick={startVoice}
-                title={listening ? 'Escuchando… toca para detener' : 'Hablar (dictado por voz)'}
-                style={{
-                  display:'inline-flex', alignItems:'center', gap:8, flexShrink:0,
-                  padding:'10px 16px', borderRadius:999, border:'none', cursor:'pointer',
-                  background: listening ? 'var(--teal)' : 'var(--teal-bright)', color:'#06201C',
-                  fontWeight:600, fontSize:'.9rem', fontFamily:'inherit',
-                  animation: listening ? 'pulseGlow 1.2s ease-in-out infinite' : 'none',
-                }}
-              >
-                <AudioLines size={17}/> Voz
-              </button>
-            )}
-          </div>
+          {/* ubicación · «+» · Voz/Enviar — mismos handlers que antes */}
+          <button
+            onClick={toggleGeo}
+            disabled={geoLoading}
+            title={geo ? 'Ubicación activa — toca para quitar' : 'Compartir mi ubicación'}
+            aria-label={geo ? 'Quitar mi ubicación' : 'Compartir mi ubicación'}
+            style={{
+              background:'none', border:'none', borderRadius:999, width:36, height:44, flexShrink:0, cursor:'pointer',
+              display:'flex', alignItems:'center', justifyContent:'center',
+              color: geo ? 'var(--teal-bright)' : 'var(--text-muted)', transition:'color .15s',
+            }}
+          >
+            {geoLoading
+              ? <RefreshCw size={18} style={{ animation:'spin 1s linear infinite' }}/>
+              : <MapPin size={18}/>}
+          </button>
+          <button
+            onClick={() => setAttachOpen(true)}
+            title="Adjuntar — busca en el inventario por foto"
+            aria-label="Adjuntar una foto"
+            style={{
+              background:'none', border:'none', borderRadius:999, width:36, height:44, flexShrink:0, cursor:'pointer',
+              display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text-muted)',
+            }}
+          >
+            <Plus size={20}/>
+          </button>
+          {/* Voz (vacío) ↔ Enviar (con texto). Los dos son el MISMO círculo de 44: al escribir
+              la primera letra el botón no cambia de tamaño ni empuja el campo. El aro en
+              --teal-text no se ve en oscuro (teal sobre teal) y en claro le da al botón el
+              contorno que el teal sobre gris claro no tenía (1.4:1 → ≥ 3:1). */}
+          {input.trim() ? (
+            <button
+              onClick={() => sendMessage()}
+              disabled={loading}
+              title="Enviar"
+              aria-label="Enviar"
+              style={{
+                background:'var(--teal-bright)', border:'1px solid var(--teal-text)', borderRadius:999,
+                width:44, height:44, marginLeft:4, flexShrink:0, cursor: loading ? 'default' : 'pointer',
+                display:'flex', alignItems:'center', justifyContent:'center', color:'#06201C',
+              }}
+            >
+              {loading
+                ? <RefreshCw size={18} style={{ animation:'spin 1s linear infinite' }}/>
+                : <ArrowUp size={20}/>}
+            </button>
+          ) : (
+            <button
+              onClick={startVoice}
+              title={listening ? 'Escuchando… toca para detener' : 'Hablar (dictado por voz)'}
+              aria-label={listening ? 'Detener el dictado' : 'Dictar por voz'}
+              style={{
+                display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0,
+                width:44, height:44, marginLeft:4, borderRadius:999, cursor:'pointer',
+                border:'1px solid var(--teal-text)',
+                background: listening ? 'var(--teal)' : 'var(--teal-bright)', color:'#06201C',
+                animation: listening ? 'pulseGlow 1.2s ease-in-out infinite' : 'none',
+              }}
+            >
+              <AudioLines size={20}/>
+            </button>
+          )}
         </div>
         {listening && (
           <div style={{ marginTop:8, fontSize:'.72rem', color:'var(--teal-text)',

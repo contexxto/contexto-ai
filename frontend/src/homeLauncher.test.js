@@ -115,6 +115,33 @@ describe('el camino de corredores no termina en un 401', () => {
   })
 })
 
+describe('la píldora no toca lo que tiene historial de bugs de teclado', () => {
+  // La zona del campo de escribir ya costó varios defectos en la PWA de Android (Enter que
+  // enviaba a medias, el documento desplazándose 56 px). La píldora cambió su FORMA; esto
+  // vigila que no cambie su comportamiento.
+  it('Enter sigue respetando la composición del teclado predictivo', () => {
+    expect(app).toContain("e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing")
+  })
+
+  it('nadie desplaza el documento: ni scrollIntoView ni focus sin preventScroll', () => {
+    expect(app).not.toContain('scrollIntoView(')
+    expect(app.split('.focus(').length).toBe(app.split('.focus({ preventScroll: true })').length)
+  })
+
+  it('el campo vacío vuelve a una fila sin medir el placeholder', () => {
+    // En un campo estrecho el placeholder puede partirse en dos líneas y scrollHeight lo cuenta:
+    // al borrar todo el texto la píldora se quedaba a 80 px. Medido en la app a 360×720.
+    expect(app).toContain('if (e.target.value) e.target.style.height = Math.min(e.target.scrollHeight, 120)')
+  })
+
+  it('Voz y Enviar son el mismo círculo: escribir la primera letra no mueve el campo', () => {
+    const i = app.indexOf('{input.trim() ? (')
+    expect(i).toBeGreaterThan(-1)
+    const bloque = app.slice(i, i + 1500)
+    expect(bloque.split('width:44, height:44, marginLeft:4').length).toBe(3)
+  })
+})
+
 describe('LogoContexto.jsx sigue siendo el que sale de logo.json', () => {
   const geo = JSON.parse(readFileSync(join(SRC, '..', '..', 'docs', 'branding', 'logo', 'logo.json'), 'utf8'))
   const logo = readFileSync(join(SRC, 'LogoContexto.jsx'), 'utf8')

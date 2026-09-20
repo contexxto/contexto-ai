@@ -216,6 +216,23 @@ body::before { content: none; }
 /* Sin movimiento: se conserva el retraso (es lo que evita el parpadeo) y se quita el fundido. */
 @media (prefers-reduced-motion: reduce) { .home-aura { animation-duration: 1ms; } }
 
+/* La píldora de escribir y sus DOS FORMAS (App.jsx, noCabeEnUnaLinea).
+   · Una fila (vacía, o el texto cabe en una línea): campo · ubicación · «+» · Voz/Enviar.
+   · Amplia (data-amplio, lo pone ajustarAltoCampo): el campo ocupa todo el ancho y los botones
+     bajan a una segunda fila, la ubicación y el «+» a la izquierda y Voz/Enviar a la derecha.
+     Con los botones al lado, en un teléfono el texto se quedaba en una columna de ~180 px.
+   Lo que cambia con la forma vive AQUÍ y no en el style del JSX: un style en línea gana a
+   cualquier regla y la forma amplia no podría cambiarlo.
+   Si se tocan los paddings de la forma de una fila, PAD_PILDORA_UNA_FILA (App.jsx) va con ellos. */
+.dock-pill { padding: 5px 5px 5px 18px; }
+.dock-pill[data-amplio] { padding: 5px 14px 8px 18px; }
+.dock-input { flex: 1 1 0; min-width: 0; padding: 0; }
+.dock-pill[data-amplio] > .dock-input { flex-basis: 100%; }
+.dock-enviar { margin-left: 4px; }
+.dock-pill[data-amplio] > .dock-enviar { margin-left: auto; }
+/* −9: el botón mide 36 y su icono 18; así el pin queda alineado con el borde izquierdo del texto. */
+.dock-pill[data-amplio] > .dock-geo { margin-left: -9px; }
+
 /* El placeholder del campo de escribir, siempre en una línea: en la píldora el campo es estrecho
    (141 px en un teléfono de 320) y partido en dos asomaba cortado bajo la primera línea.
    El color es el que DESIGN_SYSTEM.md le asigna (--text-dim, AA en los dos temas): sin regla lo

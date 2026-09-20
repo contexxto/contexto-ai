@@ -415,14 +415,48 @@ function Thinking() {
 const AIRE_CAMPO = 10
 const ALTO_MAX_CAMPO = 4 * 24 + 2 * AIRE_CAMPO
 
+// ── Las dos formas de la píldora ────────────────────────────
+// Vacía, o con un texto que cabe en una línea: UNA fila (campo · ubicación · «+» · Voz/Enviar).
+// En cuanto el texto no cabe, forma AMPLIA: el campo ocupa todo el ancho y los botones bajan a
+// una segunda fila. Con los botones al lado, el texto se quedaba en una columna de ~180 px en un
+// teléfono y «chocaba» con ellos (visto por Carlos en el aparato; en producción usa todo el ancho).
+//
+// El criterio es el ancho del TEXTO medido en un canvas, NO el layout actual. Si dependiera del
+// layout oscilaría: al ensancharse el campo el texto vuelve a caber en una línea, la píldora se
+// estrecharía, el texto dejaría de caber… Medir el texto da la misma respuesta en las dos formas.
+// Un desajuste de un píxel con el ajuste real de línea es inocuo: las dos formas admiten varias
+// líneas. La forma se marca con data-amplio en la píldora (el padre del textarea) y el CSS hace el
+// resto (index.css, .dock-pill): React no conoce ese atributo y no lo pisa.
+const ANCHO_BOTONES_PILDORA = 36 + 36 + 44 + 4 + 3 * 2   // ubicación, «+», Voz/Enviar, su margen y tres huecos
+const PAD_PILDORA_UNA_FILA = 18 + 5                       // izquierda + derecha de .dock-pill en la forma de una fila
+let lienzoDeMedir = null
+function noCabeEnUnaLinea(el, pildora) {
+  const texto = el.value
+  if (!texto) return false
+  if (texto.includes('\n')) return true
+  const cs = getComputedStyle(el)
+  lienzoDeMedir = lienzoDeMedir || document.createElement('canvas').getContext('2d')
+  lienzoDeMedir.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`
+  // El hueco del campo en la forma de UNA fila, se esté en la forma que se esté: sale del ancho
+  // de la píldora (que no cambia con la forma) y de constantes, nunca del ancho actual del campo.
+  const hueco = pildora.clientWidth - PAD_PILDORA_UNA_FILA - ANCHO_BOTONES_PILDORA
+  return lienzoDeMedir.measureText(texto).width > hueco
+}
+
 // Se llama desde onInput (teclado), desde un efecto de App (dictado por voz, volver de otra vista,
 // cambio de ancho del campo: nada de eso emite el evento input) y al redimensionar la ventana.
+// Primero decide la FORMA (cambia el ancho del campo) y después mide el alto.
 // El overflow se gobierna AQUÍ y no en el style del textarea:
 //  · oculto mientras se mide: una barra de scroll clásica (escritorio) estrecha el campo durante
 //    la medición y el alto salía con una línea de más;
 //  · oculto con el campo vacío: nunca hay barra sobre el placeholder;
 //  · auto solo cuando el texto pasa del máximo.
 function ajustarAltoCampo(el) {
+  const pildora = el.parentElement
+  if (pildora) {
+    if (noCabeEnUnaLinea(el, pildora)) pildora.dataset.amplio = '1'
+    else delete pildora.dataset.amplio
+  }
   el.style.overflowY = 'hidden'
   el.style.height = 'auto'
   // Vacío: se queda en el alto natural de una fila. Medir scrollHeight aquí contaría el
@@ -2260,11 +2294,14 @@ export default function App() {
             focus() ni scrollIntoView nuevos. onInput mide igual que antes, ahora desde
             ajustarAltoCampo, que también corre cuando el texto llega por dictado.
             Radio FIJO de 28: con una línea se lee como píldora (alto 56) y, al crecer, como
-            rectángulo redondeado — sin estado ni medición. Los botones se alinean ABAJO
-            (flex-end) para bajar con el texto. */}
-        <div style={{
-          display:'flex', alignItems:'flex-end', gap:2,
-          minHeight:56, padding:'5px 5px 5px 18px', borderRadius:28,
+            rectángulo redondeado. Los botones se alinean ABAJO (flex-end) para bajar con el texto.
+            DOS FORMAS (ver noCabeEnUnaLinea): una fila, o —cuando el texto no cabe en una línea—
+            el campo a todo el ancho y los botones en una segunda fila. Es el MISMO DOM en las
+            dos: flex-wrap y un data-amplio que pone ajustarAltoCampo; el textarea no se remonta.
+            El padding y lo que cambia con la forma viven en .dock-pill (index.css). */}
+        <div className="dock-pill" style={{
+          display:'flex', flexWrap:'wrap', alignItems:'flex-end', gap:2,
+          minHeight:56, borderRadius:28,
           // Sobre el aura (chat vacío) el campo es translúcido; con mensajes, la superficie de siempre.
           background: isEmpty ? 'var(--home-dock-bg)' : 'var(--surface-1)',
           border:`1px solid ${listening ? 'var(--teal)' : 'var(--border)'}`,
@@ -2286,18 +2323,18 @@ export default function App() {
             placeholder="Pregúntame lo que sea…"
             disabled={loading}
             rows={1}
-            // .dock-input (index.css): el placeholder en UNA línea con puntos suspensivos. A 320 px
-            // el campo mide 141 y «Pregúntame lo que sea…» se partía en dos.
+            // .dock-input (index.css): el placeholder en UNA línea con puntos suspensivos (a 320 px
+            // el campo mide 141 y «Pregúntame lo que sea…» se partía en dos), y el flex y el
+            // padding del campo, que cambian con la forma de la píldora y por eso no van aquí.
             className="dock-input"
             style={{
-              // flex:1 + minWidth:0 → ocupa lo que dejen los botones y puede encogerse.
               // 1rem y no .98: por debajo de 16 px iOS hace zoom al enfocar el campo.
               // 24 de línea + 10 y 10 de borde transparente → una línea mide 44 px, el alto de los
               // botones: todo centrado. Borde y no padding: ver AIRE_CAMPO.
               // SIN overflowY aquí: lo gobierna ajustarAltoCampo (arriba explica por qué).
-              flex:1, minWidth:0, display:'block', background:'none', outline:'none',
+              display:'block', background:'none', outline:'none',
               borderStyle:'solid', borderColor:'transparent', borderWidth:`${AIRE_CAMPO}px 0`,
-              color:'var(--text)', fontSize:'1rem', resize:'none', padding:0,
+              color:'var(--text)', fontSize:'1rem', resize:'none',
               lineHeight:1.5, maxHeight:ALTO_MAX_CAMPO,
               fontFamily:'inherit',
             }}
@@ -2309,6 +2346,7 @@ export default function App() {
             disabled={geoLoading}
             title={geo ? 'Ubicación activa — toca para quitar' : 'Compartir mi ubicación'}
             aria-label={geo ? 'Quitar mi ubicación' : 'Compartir mi ubicación'}
+            className="dock-geo"
             style={{
               background:'none', border:'none', borderRadius:999, width:36, height:44, flexShrink:0, cursor:'pointer',
               display:'flex', alignItems:'center', justifyContent:'center',
@@ -2341,9 +2379,10 @@ export default function App() {
               disabled={loading}
               title="Enviar"
               aria-label="Enviar"
+              className="dock-enviar"
               style={{
                 background:'var(--teal-bright)', border:'1px solid var(--teal-text)', borderRadius:999,
-                width:44, height:44, marginLeft:4, flexShrink:0, cursor: loading ? 'default' : 'pointer',
+                width:44, height:44, flexShrink:0, cursor: loading ? 'default' : 'pointer',
                 display:'flex', alignItems:'center', justifyContent:'center', color:'#06201C',
               }}
             >
@@ -2356,9 +2395,10 @@ export default function App() {
               onClick={startVoice}
               title={listening ? 'Escuchando… toca para detener' : 'Hablar (dictado por voz)'}
               aria-label={listening ? 'Detener el dictado' : 'Dictar por voz'}
+              className="dock-enviar"
               style={{
                 display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0,
-                width:44, height:44, marginLeft:4, borderRadius:999, cursor:'pointer',
+                width:44, height:44, borderRadius:999, cursor:'pointer',
                 border:'1px solid var(--teal-text)',
                 background: listening ? 'var(--teal)' : 'var(--teal-bright)', color:'#06201C',
                 animation: listening ? 'pulseGlow 1.2s ease-in-out infinite' : 'none',

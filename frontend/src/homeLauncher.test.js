@@ -205,7 +205,8 @@ describe('la píldora no toca lo que tiene historial de bugs de teclado', () => 
     // Un textarea con scroll pinta texto dentro de su padding: con cinco líneas la primera
     // quedaba pegada al borde superior de la píldora (visto en el teléfono). En un borde no entra.
     expect(campo).toContain("borderStyle:'solid', borderColor:'transparent', borderWidth:`${AIRE_CAMPO}px 0`")
-    expect(campo).toContain('padding:0,')
+    expect(campo).not.toContain('padding')
+    expect(css).toContain('.dock-input { flex: 1 1 0; min-width: 0; padding: 0; }')
     expect(campo).not.toContain("border:'none'")
     // scrollHeight no cuenta los bordes; el alto (border-box) sí.
     expect(ajustar).toContain('const alto = el.scrollHeight + 2 * AIRE_CAMPO')
@@ -230,7 +231,69 @@ describe('la píldora no toca lo que tiene historial de bugs de teclado', () => 
     const j = app.indexOf('{listening && (', i)
     expect(i).toBeGreaterThan(-1)
     expect(j).toBeGreaterThan(i)
-    expect(app.slice(i, j).split('width:44, height:44, marginLeft:4').length).toBe(3)
+    const bloque = app.slice(i, j)
+    expect(bloque.split('width:44, height:44,').length).toBe(3)
+    // El margen de los dos lo pone la MISMA clase (cambia con la forma de la píldora).
+    expect(bloque.split('className="dock-enviar"').length).toBe(3)
+    expect(bloque).not.toContain('marginLeft')
+  })
+})
+
+describe('las dos formas de la píldora: una fila, o el campo a todo el ancho', () => {
+  // Con los botones al lado, en un teléfono el texto se quedaba en una columna de ~180 px y
+  // «chocaba» con ellos (visto por Carlos en el aparato). Cuando el texto no cabe en una línea,
+  // el campo ocupa todo el ancho y los botones bajan a una segunda fila.
+  const css = sinComentariosCss(readFileSync(join(SRC, 'index.css'), 'utf8'))
+  const corta = (desde) => {
+    const i = app.indexOf(desde)
+    return i === -1 ? '' : app.slice(i, app.indexOf('\n}', i))
+  }
+  const criterio = corta('function noCabeEnUnaLinea(el, pildora) {')
+  const ajustar = corta('function ajustarAltoCampo(el) {')
+  const pildora = (() => {
+    const i = app.indexOf('<div className="dock-pill"')
+    return i === -1 ? '' : app.slice(i, app.indexOf('<textarea', i))
+  })()
+
+  it('el criterio mide el TEXTO, no el layout actual: si no, la forma oscilaría', () => {
+    // Al ensancharse el campo el texto vuelve a caber en una línea; un criterio que mirase el
+    // ancho o el alto actuales del campo volvería a estrecharlo, y así sin fin.
+    expect(criterio).toContain('measureText(texto).width > hueco')
+    expect(criterio).toContain('const hueco = pildora.clientWidth - PAD_PILDORA_UNA_FILA - ANCHO_BOTONES_PILDORA')
+    for (const prohibido of ['el.clientWidth', 'el.offsetWidth', 'el.scrollHeight', 'el.scrollWidth', 'getBoundingClientRect', 'dataset']) {
+      expect(criterio).not.toContain(prohibido)
+    }
+    // Vacío nunca es amplio; un salto de línea siempre lo es.
+    expect(criterio).toContain('if (!texto) return false')
+    expect(criterio).toContain("if (texto.includes('\\n')) return true")
+  })
+
+  it('las constantes del criterio son las del CSS de la forma de una fila', () => {
+    expect(app).toContain('const ANCHO_BOTONES_PILDORA = 36 + 36 + 44 + 4 + 3 * 2')
+    expect(app).toContain('const PAD_PILDORA_UNA_FILA = 18 + 5')
+    expect(css).toContain('.dock-pill { padding: 5px 5px 5px 18px; }')
+    expect(css).toContain('.dock-enviar { margin-left: 4px; }')
+    expect(pildora).toContain('gap:2')
+  })
+
+  it('primero la forma y después el alto: la forma cambia el ancho del campo', () => {
+    const forma = ajustar.indexOf('noCabeEnUnaLinea(el, pildora)')
+    expect(forma).toBeGreaterThan(-1)
+    expect(forma).toBeLessThan(ajustar.indexOf("el.style.height = 'auto'"))
+    expect(ajustar).toContain("pildora.dataset.amplio = '1'")
+    expect(ajustar).toContain('delete pildora.dataset.amplio')
+  })
+
+  it('es el mismo DOM en las dos formas: flex-wrap y CSS, sin estado ni remontar el textarea', () => {
+    expect(pildora).toContain("flexWrap:'wrap'")
+    // Un padding en línea ganaría al de la forma amplia.
+    expect(pildora).not.toContain('padding')
+    expect(app).not.toContain('data-amplio')
+    expect(app.split('<textarea').length).toBe(2)
+    expect(css).toContain('.dock-pill[data-amplio] > .dock-input { flex-basis: 100%; }')
+    expect(css).toContain('.dock-pill[data-amplio] > .dock-enviar { margin-left: auto; }')
+    expect(css).toContain('.dock-pill[data-amplio] > .dock-geo { margin-left: -9px; }')
+    expect(app.split('className="dock-geo"').length).toBe(2)
   })
 })
 

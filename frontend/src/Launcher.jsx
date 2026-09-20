@@ -73,7 +73,10 @@ export default function Launcher({ onSend, onAnalyzeLocation, onOpenMap, onBroke
           volvía a quedar bajo el pliegue.
           Límite conocido: Chrome de Android no encoge la página al abrir el teclado, la SUBE para
           mostrar el campo, así que con el teclado abierto se ve el FINAL del bloque (leyenda,
-          entradas y campo) y este aviso queda arriba, fuera de vista, hasta cerrarlo. */}
+          entradas y campo) y este aviso quedaría arriba, fuera de vista. En la práctica no pasa
+          al enviar con el botón: tocarlo le quita el foco al campo, el teclado se cierra solo y
+          el aviso queda a la vista, con el borrador intacto (visto en el teléfono). Solo quedaría
+          escondido al enviar con el Enter del teclado, que lo deja abierto. */}
       {aviso && <div style={{ margin: '0 auto', flexShrink: 0, width: '100%', maxWidth: 560, textAlign: 'left' }}>{aviso}</div>}
 
       <div style={{ flex: '1 1 0' }} />

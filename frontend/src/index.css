@@ -56,6 +56,11 @@
   --home-row-bg:     rgba(255,255,255,.07);
   --home-row-border: rgba(255,255,255,.085);
   --home-row-hover:  rgba(255,255,255,.11);
+  /* El fondo de aura de la home vacía: SOLO en oscuro. Lo genera docs/branding/aura/genera_aura.py
+     y sus cuatro bordes son exactamente --bg, así que no hay costura con la barra de estado, ni
+     con el chat cuando llega el primer mensaje. Launcher.jsx lo pinta en una capa fija. */
+  --home-aura:       url(/aura-home-dark.webp);
+  --home-dock-bg:    rgba(40,40,40,.72);      /* --surface-1 translúcido: el campo sobre el aura */
 
   --text:        #FFFFFF;
   --text-mid:    #C9C9C9;
@@ -117,6 +122,8 @@ html[data-theme="light"] {
   --home-row-bg:     rgba(9,9,11,.04);
   --home-row-border: rgba(9,9,11,.08);
   --home-row-hover:  rgba(9,9,11,.07);
+  --home-aura:       none;                    /* en claro la home es plana: los brillos sobre blanco leen como vidrio sucio */
+  --home-dock-bg:    var(--surface-1);
 
   --text:        #09090B;
   --text-mid:    #52525B;
@@ -185,8 +192,18 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Fondo plano estilo ASI:One: sin aura viva en el fondo. La marca "aura" vive en el contenido. */
+/* Fondo plano (--bg) en TODO el shell. La única excepción es la home VACÍA en tema oscuro:
+   Launcher.jsx pinta --home-aura en una capa fija detrás de todo y la retira con el primer
+   mensaje. Nada aquí, ni en body ni en body::before, vuelve a pintar un aura global:
+   content:none se queda como candado. */
 body::before { content: none; }
+
+/* En pantallas apaisadas (escritorio) la imagen vertical se recortaría al ancho y no llegaría a
+   fundirse con --bg: ahí va la variante apaisada, que se funde por los cuatro lados. */
+@media (min-aspect-ratio: 1/1) {
+  :root { --home-aura: url(/aura-home-dark-wide.webp); }
+  html[data-theme="light"] { --home-aura: none; }
+}
 
 /* Chrome dibuja un anillo de foco en contenedores con scroll al navegar con flechas.
    Lo quitamos SOLO en divs (no interactivos); botones/inputs conservan su foco. */

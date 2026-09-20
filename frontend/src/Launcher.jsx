@@ -66,6 +66,14 @@ export default function Launcher({ onSend, onAnalyzeLocation, onOpenMap, onBroke
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', minHeight: '100%', textAlign: 'center' }}>
+      {/* El aura (fase 2): capa FIJA detrás de todo el shell, solo mientras esta pantalla existe.
+          Anclada al ANCHO (100% auto) y arriba: abrir el teclado cambia el alto del viewport y un
+          `cover` la re-encuadraría. Donde la imagen no llega se ve --bg, que es exactamente el
+          color de sus bordes. Depende de que ningún ancestro tenga transform, filter, opacity ni
+          isolation (hoy ninguno: App.jsx, del shell al área de mensajes); si alguno lo gana, la
+          capa deja de ser fija al viewport. En claro el token vale `none`: home plana. */}
+      <div aria-hidden="true" style={{ position: 'fixed', inset: 0, zIndex: -1, pointerEvents: 'none',
+                                       background: 'var(--home-aura) top center / 100% auto no-repeat, var(--bg)' }} />
       {/* Lo primero de la pantalla: con el teclado abierto el hueco mide ~150 px y se ve solo el
           principio del bloque. Más abajo, el aviso volvía a quedar bajo el pliegue. */}
       {aviso && <div style={{ margin: '0 auto', flexShrink: 0, width: '100%', maxWidth: 560, textAlign: 'left' }}>{aviso}</div>}

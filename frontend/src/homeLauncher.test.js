@@ -20,7 +20,7 @@
  * (tests/test_intenciones_entrada.py), que además exige que Launcher.jsx no defina textos.
  */
 
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -139,6 +139,32 @@ describe('la píldora no toca lo que tiene historial de bugs de teclado', () => 
     expect(i).toBeGreaterThan(-1)
     const bloque = app.slice(i, i + 1500)
     expect(bloque.split('width:44, height:44, marginLeft:4').length).toBe(3)
+  })
+})
+
+describe('el aura: solo en la home vacía, solo en oscuro, sin costuras', () => {
+  const css = readFileSync(join(SRC, 'index.css'), 'utf8')
+
+  it('la pinta el Launcher (que solo existe con el chat vacío), no App ni body', () => {
+    expect(launcher).toContain("background: 'var(--home-aura) top center / 100% auto no-repeat, var(--bg)'")
+    expect(launcher).toContain("position: 'fixed', inset: 0, zIndex: -1, pointerEvents: 'none'")
+    expect(app).not.toContain('--home-aura')
+    expect(css).toContain('body::before { content: none; }')
+  })
+
+  it('anclada al ancho y no con cover: abrir el teclado no la re-encuadra', () => {
+    expect(launcher).not.toContain('/ cover')
+  })
+
+  it('en claro no hay aura, tampoco en apaisado', () => {
+    const valores = [...css.matchAll(/--home-aura:\s*([^;]+);/g)].map((m) => m[1].trim())
+    expect(valores).toEqual(['url(/aura-home-dark.webp)', 'none', 'url(/aura-home-dark-wide.webp)', 'none'])
+  })
+
+  it('las dos imágenes existen donde el token las busca', () => {
+    for (const f of ['aura-home-dark.webp', 'aura-home-dark-wide.webp']) {
+      expect(existsSync(join(SRC, '..', 'public', f))).toBe(true)
+    }
   })
 })
 

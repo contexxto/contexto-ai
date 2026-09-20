@@ -2204,7 +2204,8 @@ export default function App() {
         <div style={{
           display:'flex', alignItems:'flex-end', gap:2,
           minHeight:56, padding:'5px 5px 5px 18px', borderRadius:28,
-          background:'var(--surface-1)',
+          // Sobre el aura (chat vacío) el campo es translúcido; con mensajes, la superficie de siempre.
+          background: isEmpty ? 'var(--home-dock-bg)' : 'var(--surface-1)',
           border:`1px solid ${listening ? 'var(--teal)' : 'var(--border)'}`,
           transition:'border-color .2s',
         }}>

@@ -174,8 +174,11 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, o
               <NavItem icon={<Shield size={17} />} label="Revisión" onClick={onReview} />
             </>
           )}
-          {user && user.rol !== 'corredor' && user.rol !== 'inmobiliaria' && onUpgrade && (
-            <NavItem icon={<Briefcase size={17} />} label="Conviértete en corredor" onClick={onUpgrade} />
+          {/* También SIN sesión: el enlace «¿Corredor o inmobiliaria?» salió de la pantalla
+              inicial (2026-09-20) y este es ahora el único camino de captación de corredores. */}
+          {user?.rol !== 'corredor' && user?.rol !== 'inmobiliaria' && onUpgrade && (
+            <NavItem icon={<Briefcase size={17} />}
+              label={user ? 'Conviértete en corredor' : 'Para corredores e inmobiliarias'} onClick={onUpgrade} />
           )}
         </div>
 
@@ -379,8 +382,9 @@ export function RailNav({ user, onNew, onPublish, onMap, onReview, onCRM, onUpgr
           <RailButton icon={<Shield size={18} />} title="Revisión" onClick={onReview} />
         </>
       )}
-      {user && !corredor && onUpgrade && (
-        <RailButton icon={<Briefcase size={18} />} title="Conviértete en corredor" onClick={onUpgrade} />
+      {!corredor && onUpgrade && (
+        <RailButton icon={<Briefcase size={18} />}
+          title={user ? 'Conviértete en corredor' : 'Para corredores e inmobiliarias'} onClick={onUpgrade} />
       )}
     </div>
   )

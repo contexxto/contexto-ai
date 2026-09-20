@@ -18,6 +18,7 @@ import { createPortal } from 'react-dom'
 import axios from 'axios'
 import { Bell, ArrowLeft } from 'lucide-react'
 import { API_BASE, apiHeaders, apiHeadersSesion } from './api'
+import { BOTON_REDONDO } from './homeEstilos'
 
 const CADENCIA = 40000   // red de seguridad; lo inmediato llega por el Service Worker
 const ANCHO_MOVIL = 640
@@ -30,7 +31,7 @@ function haceCuanto(iso) {
   return `hace ${Math.floor(s / 86400)} d`
 }
 
-export default function Campana({ sessionId, onAbrir }) {
+export default function Campana({ sessionId, onAbrir, redonda = false }) {
   const [datos, setDatos] = useState({ hilos: [], no_leidas: 0 })
   const [abierta, setAbierta] = useState(false)
   const [movil, setMovil] = useState(() => window.innerWidth < ANCHO_MOVIL)
@@ -139,12 +140,14 @@ export default function Campana({ sessionId, onAbrir }) {
 
   return (
     <div ref={caja} style={{ position: 'relative', display: 'flex' }}>
-      <button onClick={() => setAbierta((a) => !a)} title="Notificaciones"
+      <button onClick={() => setAbierta((a) => !a)} title="Notificaciones" aria-label="Notificaciones"
         style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text)',
-                 padding: 4, display: 'flex', position: 'relative' }}>
+                 padding: 4, display: 'flex', position: 'relative',
+                 // Home vacía: el mismo botón redondo que el de menú (una sola definición).
+                 ...(redonda ? BOTON_REDONDO : null) }}>
         <Bell size={20} />
         {datos.no_leidas > 0 && (
-          <span style={{ position: 'absolute', top: -1, right: -2, minWidth: 16, height: 16,
+          <span style={{ position: 'absolute', top: redonda ? 4 : -1, right: redonda ? 4 : -2, minWidth: 16, height: 16,
                          padding: '0 4px', borderRadius: 999, background: 'var(--coral)', color: '#fff',
                          fontSize: '.62rem', fontWeight: 800, display: 'grid', placeItems: 'center' }}>
             {datos.no_leidas > 9 ? '9+' : datos.no_leidas}

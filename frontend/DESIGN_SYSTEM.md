@@ -33,6 +33,8 @@ el default es **dark**. Init anti-flash en `index.html`; toggle en `src/theme.js
 | `--text-dim` | `#959595` | `#676772` | Texto terciario / placeholder (AA: 5.69:1 / 5.59:1 sobre `--bg`) |
 | `--accent` | `#2DBDB6` | `#1C746F` | Links / títulos de acento (claro 5.56:1) |
 | `--home-row-bg` / `-border` / `-hover` | blanco al 7 % / 8,5 % / 11 % | tinta al 4 % / 8 % / 7 % | Solo la home vacía: filas del Launcher y botones redondos del header |
+| `--home-aura` | `url(/aura-home-dark.webp)` (apaisado: `-wide`) | `none` | Fondo de la home vacía. En claro no hay aura: los brillos sobre blanco leen como vidrio sucio |
+| `--home-dock-bg` | `rgba(40,40,40,.72)` | `var(--surface-1)` | La píldora de escribir sobre el aura (con mensajes vuelve a `--surface-1`) |
 
 **Constantes (ambos temas):** marca teal (`--teal #2DBDB6`, `--teal-bright #5EEAD4`,
 `--teal-deep #1A7A76`), coral (`--coral #E0685A`), semánticos
@@ -65,6 +67,8 @@ el default es **dark**. Init anti-flash en `index.html`; toggle en `src/theme.js
 - **Botón contorno:** `background: transparent`, `border: 1px var(--border)`, texto `var(--text)`.
 - **Fila de la home:** `background: var(--home-row-bg)`, `border: 1px var(--home-row-border)`, radio 14, padding `10 16`, texto `var(--text)` `.92rem/400` línea 1.25, flecha `arrow-down-left` 18 en `var(--text-dim)`, hover → `var(--home-row-hover)`. 40 px una línea, 58 dos. La línea es decorativa (≈1.3:1): el control se identifica por su texto (≥ 12:1) y por la flecha (≥ 4.1:1 en hover oscuro; es un gráfico, umbral 3:1). No poner texto en `--text-dim` dentro de la fila. No reutiliza `--map-*` (esa familia no tiene tema claro).
 - **Botón redondo de la home:** 44 × 44, radio 50 %, mismos `--home-row-bg` / `--home-row-border`. Solo con el chat vacío.
+- **Píldora de escribir (dock):** una fila — campo · ubicación · «+» · Voz/Enviar — con radio fijo 28, alto 56 con una línea y 128 como máximo (cuatro líneas completas: `ALTO_MAX_CAMPO = 116` = 4 × 24 + 20 de padding). Fondo `var(--surface-1)`; sobre el aura, `var(--home-dock-bg)`. Campo a `1rem` (por debajo de 16 px iOS hace zoom al enfocar), placeholder en una línea y en `var(--text-dim)` (`.dock-input`). Voz y Enviar son el **mismo** círculo de 44 con aro `--teal-text`: escribir la primera letra no mueve nada. Los botones son solo icono y llevan `aria-label`. El alto y el overflow los gobierna `ajustarAltoCampo` (App.jsx), no el `style`. El dock del Mapa Vivo (`MapView.jsx`) aún no adopta esta receta.
+- **Aura de la home:** `.home-aura` (index.css), montada por App **solo con el chat vacío y solo en tema oscuro** (`--home-aura: none` en claro). Capa absoluta en el área principal, `z-index: -1`, sin eventos, anclada al ancho (`100% auto`, nunca `cover`). Entra con 200 ms de retraso y 400 de fundido. Las imágenes salen de `docs/branding/aura/genera_aura.py` y sus bordes son exactamente `--bg`: no se sustituyen por una foto ni por un degradado que no cumpla esa regla.
 - **Chip:** `background: var(--surface-2)`, `border: 1px var(--border)`, texto `var(--text)`, ícono `var(--text-mid)`, radio 10, hover → `var(--surface-3)`.
 - **Card:** `background: var(--surface-1/2)`, `border: 1px var(--border)`, radio 13–16.
 - **Input/dock:** `background: var(--surface-1)`, `border: 1px var(--border)`, radio 16, placeholder `var(--text-dim)`.

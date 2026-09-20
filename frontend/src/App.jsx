@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, lazy, Suspense } from 'react'
 import axios from 'axios'
 import {
   Send, MapPin, RefreshCw, Trash2, Copy, CheckCheck, ChevronDown, PanelLeft,
@@ -403,6 +403,29 @@ function Thinking() {
       </div>
     </div>
   )
+}
+
+// ── Alto del campo de escribir ──────────────────────────────
+// Crece con el texto hasta cuatro líneas COMPLETAS: 4 × 24 de línea + 20 de padding. Con 120 la
+// quinta línea asomaba cortada.
+const ALTO_MAX_CAMPO = 116
+
+// Se llama desde onInput (teclado), desde un efecto de App (dictado por voz, volver de otra vista,
+// cambio de ancho del campo: nada de eso emite el evento input) y al redimensionar la ventana.
+// El overflow se gobierna AQUÍ y no en el style del textarea:
+//  · oculto mientras se mide: una barra de scroll clásica (escritorio) estrecha el campo durante
+//    la medición y el alto salía con una línea de más;
+//  · oculto con el campo vacío: nunca hay barra sobre el placeholder;
+//  · auto solo cuando el texto pasa del máximo.
+function ajustarAltoCampo(el) {
+  el.style.overflowY = 'hidden'
+  el.style.height = 'auto'
+  // Vacío: se queda en el alto natural de una fila. Medir scrollHeight aquí contaría el
+  // PLACEHOLDER: al borrar todo el texto la píldora quedaba a 80 px en vez de volver a 56.
+  if (!el.value) return
+  const alto = el.scrollHeight
+  el.style.height = Math.min(alto, ALTO_MAX_CAMPO) + 'px'
+  if (alto > ALTO_MAX_CAMPO) el.style.overflowY = 'auto'
 }
 
 // ── Main App ────────────────────────────────────────────────
@@ -835,6 +858,31 @@ export default function App() {
     const el = scrollRef.current
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
   }, [messages, loading])
+
+  // El alto del campo se vuelve a medir cuando cambia algo que onInput no ve. No enfoca ni
+  // desplaza el documento: solo toca el alto, el overflow y el scroll INTERNO del textarea.
+  //  · input: el dictado por voz (y cualquier setInput) no emite el evento input; el campo se
+  //    quedaba en una línea con el texto dictado escondido.
+  //  · listening: pasadas las cuatro líneas, lo que se está dictando caía bajo el pliegue
+  //    (asignar value por programa no mueve el scroll): mientras se dicta, el campo va al final.
+  //  · view / openAnuncioId / anuncioMode: mapa, CRM, revisión y anuncio DESMONTAN el chat; al
+  //    volver hay un textarea nuevo con el borrador de antes y `input` no cambió.
+  //  · isMobile / sidebarCollapsed: cambian el ANCHO del campo, y con él las líneas del texto.
+  useLayoutEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    ajustarAltoCampo(el)
+    if (listening) el.scrollTop = el.scrollHeight
+  }, [input, listening, view, openAnuncioId, anuncioMode, isMobile, sidebarCollapsed])
+
+  // Girar el teléfono o estrechar la ventana también re-envuelve el texto sin tocar `input`. Con
+  // el overflow oculto por debajo del máximo, lo que sobrara quedaba recortado e inalcanzable
+  // hasta la siguiente tecla.
+  useEffect(() => {
+    const medir = () => { if (inputRef.current) ajustarAltoCampo(inputRef.current) }
+    window.addEventListener('resize', medir)
+    return () => window.removeEventListener('resize', medir)
+  }, [])
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current
@@ -1932,6 +1980,12 @@ export default function App() {
         onDrop={handleDrop}
         style={{ flex:1, minWidth:0, position:'relative',
                  height:'var(--app-h, 100dvh)', overflow:'hidden' }}>
+      {/* El aura (fase 2): solo con el chat vacío y solo en oscuro (en claro el token vale none).
+          Vive AQUÍ, en el área principal, y no dentro del Launcher: así queda centrada en el
+          contenido (el menú lateral no le tapa el fundido izquierdo) y fuera del contenedor con
+          scroll de los mensajes, donde WebKit tiene historial con las capas fijas.
+          Todo lo demás está en .home-aura (index.css). */}
+      {isEmpty && <div className="home-aura" aria-hidden="true" />}
       <div style={{ width:'100%', maxWidth:1280, margin:'0 auto', display:'flex', flexDirection:'column',
                     height:'var(--app-h, 100dvh)', minHeight:0, padding:isMobile ? '0 14px' : '0 32px' }}>
 
@@ -2196,8 +2250,9 @@ export default function App() {
             dos pisos (el campo arriba, los botones abajo) y, hasta la fase 1, una fila estática
             «Para: Contexto AI» encima. Lo que NO cambió, a propósito, es todo lo que tiene
             historial de bugs de teclado en la PWA de Android: el textarea es el mismo nodo con
-            el mismo ref, value, onChange, onKeyDown (isComposing), disabled, rows y onInput; no
-            hay focus() ni scrollIntoView nuevos.
+            el mismo ref, value, onChange, onKeyDown (isComposing), disabled y rows; no hay
+            focus() ni scrollIntoView nuevos. onInput mide igual que antes, ahora desde
+            ajustarAltoCampo, que también corre cuando el texto llega por dictado.
             Radio FIJO de 28: con una línea se lee como píldora (alto 56) y, al crecer, como
             rectángulo redondeado — sin estado ni medición. Los botones se alinean ABAJO
             (flex-end) para bajar con el texto. */}
@@ -2225,22 +2280,20 @@ export default function App() {
             placeholder="Pregúntame lo que sea…"
             disabled={loading}
             rows={1}
+            // .dock-input (index.css): el placeholder en UNA línea con puntos suspensivos. A 320 px
+            // el campo mide 141 y «Pregúntame lo que sea…» se partía en dos.
+            className="dock-input"
             style={{
               // flex:1 + minWidth:0 → ocupa lo que dejen los botones y puede encogerse.
               // 1rem y no .98: por debajo de 16 px iOS hace zoom al enfocar el campo.
               // padding 10 → una línea mide 44 px, el alto de los botones: todo centrado.
+              // SIN overflowY aquí: lo gobierna ajustarAltoCampo (arriba explica por qué).
               flex:1, minWidth:0, display:'block', background:'none', border:'none', outline:'none',
               color:'var(--text)', fontSize:'1rem', resize:'none', padding:'10px 0',
-              lineHeight:1.5, maxHeight:120, overflowY:'auto',
+              lineHeight:1.5, maxHeight:ALTO_MAX_CAMPO,
               fontFamily:'inherit',
             }}
-            onInput={e => {
-              e.target.style.height = 'auto'
-              // Vacío: se queda en el alto natural de una fila. Medir scrollHeight aquí contaría
-              // el PLACEHOLDER, que en la píldora (campo estrecho) puede partirse en dos líneas:
-              // al borrar todo el texto la píldora quedaba a 80 px en vez de volver a 56.
-              if (e.target.value) e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'
-            }}
+            onInput={e => ajustarAltoCampo(e.target)}
           />
           {/* ubicación · «+» · Voz/Enviar — mismos handlers que antes */}
           <button
@@ -2271,8 +2324,9 @@ export default function App() {
           </button>
           {/* Voz (vacío) ↔ Enviar (con texto). Los dos son el MISMO círculo de 44: al escribir
               la primera letra el botón no cambia de tamaño ni empuja el campo. El aro en
-              --teal-text no se ve en oscuro (teal sobre teal) y en claro le da al botón el
-              contorno que el teal sobre gris claro no tenía (1.4:1 → ≥ 3:1). */}
+              --teal-text apenas se nota en oscuro (teal sobre teal, un filo algo más claro) y en
+              claro le da al botón el contorno que el teal sobre gris claro no tenía
+              (1.4:1 → ≥ 3:1). */}
           {input.trim() ? (
             <button
               onClick={() => sendMessage()}

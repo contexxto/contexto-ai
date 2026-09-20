@@ -57,8 +57,9 @@
   --home-row-border: rgba(255,255,255,.085);
   --home-row-hover:  rgba(255,255,255,.11);
   /* El fondo de aura de la home vacía: SOLO en oscuro. Lo genera docs/branding/aura/genera_aura.py
-     y sus cuatro bordes son exactamente --bg, así que no hay costura con la barra de estado, ni
-     con el chat cuando llega el primer mensaje. Launcher.jsx lo pinta en una capa fija. */
+     y sus bordes superior e inferior (y los laterales en la variante apaisada) son exactamente
+     --bg, así que no hay costura con la barra de estado, ni con el chat cuando llega el primer
+     mensaje. App.jsx lo monta en .home-aura (más abajo), capa absoluta del área principal. */
   --home-aura:       url(/aura-home-dark.webp);
   --home-dock-bg:    rgba(40,40,40,.72);      /* --surface-1 translúcido: el campo sobre el aura */
 
@@ -193,14 +194,46 @@ body {
 }
 
 /* Fondo plano (--bg) en TODO el shell. La única excepción es la home VACÍA en tema oscuro:
-   Launcher.jsx pinta --home-aura en una capa fija detrás de todo y la retira con el primer
-   mensaje. Nada aquí, ni en body ni en body::before, vuelve a pintar un aura global:
+   App.jsx monta .home-aura detrás del área principal mientras el chat está vacío y la retira con
+   el primer mensaje. Nada aquí, ni en body ni en body::before, vuelve a pintar un aura global:
    content:none se queda como candado. */
 body::before { content: none; }
 
+/* La capa del aura. Absoluta dentro del área principal (position:relative + overflow:hidden en
+   App.jsx), no fija al viewport: queda centrada en el contenido y el menú lateral no le tapa el
+   fundido. z-index -1 la manda debajo de todo el contenido; ningún ancestro pinta fondo.
+   Anclada al ANCHO (100% auto) y arriba, nunca `cover`: abrir el teclado cambia el alto y un
+   cover la re-encuadraría. Donde la imagen no llega se ve --bg, que es el color exacto de sus
+   bordes superior e inferior (y de los laterales en la variante apaisada).
+   Entra con retraso y fundido: al restaurar una conversación el chat está vacío unos instantes,
+   y sin el retraso el cielo parpadeaba antes de que llegaran los mensajes. */
+.home-aura {
+  position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: var(--home-aura) top center / 100% auto no-repeat;
+  animation: aura-in 400ms var(--ease) 200ms both;
+}
+@keyframes aura-in { from { opacity: 0; } to { opacity: 1; } }
+/* Sin movimiento: se conserva el retraso (es lo que evita el parpadeo) y se quita el fundido. */
+@media (prefers-reduced-motion: reduce) { .home-aura { animation-duration: 1ms; } }
+
+/* El placeholder del campo de escribir, siempre en una línea: en la píldora el campo es estrecho
+   (141 px en un teléfono de 320) y partido en dos asomaba cortado bajo la primera línea.
+   El color es el que DESIGN_SYSTEM.md le asigna (--text-dim, AA en los dos temas): sin regla lo
+   ponía cada navegador. opacity:1 porque Firefox lo atenúa por su cuenta. */
+.dock-input::placeholder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-dim); opacity: 1; }
+
 /* En pantallas apaisadas (escritorio) la imagen vertical se recortaría al ancho y no llegaría a
-   fundirse con --bg: ahí va la variante apaisada, que se funde por los cuatro lados. */
-@media (min-aspect-ratio: 1/1) {
+   fundirse con --bg: ahí va la variante apaisada, que se funde por los cuatro lados.
+   El corte es la relación de aspecto del viewport, no el ancho. Probado y descartado: darle la
+   apaisada a una tableta en vertical (768×1024) deja un recuadro de cielo de 432 px arriba con
+   el logotipo a caballo de su borde. Ahí se queda la vertical, con las estrellas más grandes y
+   alguna a la altura de la leyenda: caso menor, aceptado. Igual que una ventana vertical de más
+   de 768 px con menú lateral (tableta grande): la vertical no funde sus lados y hace canto con
+   el menú.
+   El piso de 600 px de ancho es por el TECLADO: donde abrirlo encoge el viewport, un teléfono
+   corto (360×640) se queda con menos alto que ancho y, sin el piso, el cielo saltaba a la
+   apaisada al tocar el campo. Ningún teléfono en vertical llega a 600 de ancho. */
+@media (min-aspect-ratio: 1/1) and (min-width: 600px) {
   :root { --home-aura: url(/aura-home-dark-wide.webp); }
   html[data-theme="light"] { --home-aura: none; }
 }

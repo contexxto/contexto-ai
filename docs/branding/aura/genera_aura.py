@@ -5,17 +5,26 @@ dependencias fuera de Pillow.
   python genera_aura.py      → escribe frontend/public/aura-home-dark.webp (vertical, 1080×2340)
                                 y  frontend/public/aura-home-dark-wide.webp (apaisado, 1920×1080)
 
-REGLA QUE NO SE NEGOCIA: los cuatro bordes de la imagen son exactamente --bg (#1C1C1C).
+REGLA QUE NO SE NEGOCIA: los bordes de la imagen son exactamente --bg (#1C1C1C). Arriba y abajo
+en las dos variantes; los lados, solo en la apaisada (la vertical ocupa todo el ancho del teléfono
+y no tiene nada a los lados con qué hacer costura). Caso aceptado: una ventana vertical de más de
+768 px de ancho (tableta grande) tiene menú lateral Y variante vertical, que hace canto con él.
   · Arriba: es el color de la barra de estado de la PWA (theme-color). Otro tono dibuja una costura.
   · Abajo: la imagen se ancla al ANCHO (background-size: 100% auto) para que abrir el teclado no la
     re-encuadre; donde la imagen no llega se ve --bg, y el primer mensaje del chat continúa sobre
     el mismo color, sin salto.
-  · Lados (apaisado): el menú lateral y el borde de la ventana son --bg.
+  · Lados (apaisado): la capa ocupa el área principal (App.jsx la monta ahí, no sobre el viewport),
+    así que el fundido izquierdo se ve junto al menú lateral en vez de quedar debajo de él.
 La profundidad sale de OSCURECER el centro, no de aclarar los bordes.
+La comprobación se hace sobre el ARCHIVO ya guardado (WebP con pérdida), no sobre la imagen en
+memoria: es el archivo lo que se sirve.
 
 Las estrellas viven solo en el 36 % superior de la imagen vertical (281 px en un teléfono de 360):
 en una pantalla de 720 de alto la leyenda cae a 324 px, y una estrella pegada al texto lo ensucia.
+Esa garantía vale para teléfonos en vertical. En una tableta en vertical (768×1024) la imagen
+escala al doble y alguna estrella llega a la altura de la leyenda: caso menor, aceptado.
 """
+import io
 import sys
 from pathlib import Path
 
@@ -88,7 +97,7 @@ def aura(w, h, apaisado):
         r = (1.3 + rnd() * .9) * s
         brillo(cielo, x, y, 7 * s, (255, 255, 255), .35)
         ImageDraw.Draw(cielo, 'RGBA').ellipse((x - r, y - r, x + r, y + r), fill=(255, 255, 255, 242))
-    # El cielo se funde con --bg en los cuatro bordes.
+    # El cielo se funde con --bg arriba y abajo siempre; a los lados, solo en apaisado.
     m = mascara_borde(w, h, arriba=.10, abajo=.30, lados=(.14 if apaisado else 0))
     return Image.composite(cielo, Image.new('RGB', (w, h), BG), m)
 
@@ -97,13 +106,22 @@ def main():
     for nombre, (w, h), apaisado in (('aura-home-dark.webp', (1080, 2340), False),
                                      ('aura-home-dark-wide.webp', (1920, 1080), True)):
         im = aura(w, h, apaisado)
-        esquinas = {im.getpixel(p) for p in ((0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1), (w // 2, 0), (w // 2, h - 1))}
-        assert esquinas == {BG}, f'{nombre}: un borde no es --bg → {esquinas}'
-        if apaisado:
-            assert {im.getpixel((0, h // 2)), im.getpixel((w - 1, h // 2))} == {BG}, f'{nombre}: los lados no son --bg'
         destino = Path(sys.argv[1]) / nombre if len(sys.argv) > 1 else PUBLIC / nombre
-        im.save(destino, 'WEBP', quality=84, method=6)
-        print(f'{destino.name}: {w}×{h}, {destino.stat().st_size // 1024} KB · bordes = --bg')
+        # Se codifica en memoria, se comprueba y SOLO ENTONCES se escribe: un fallo no pisa el
+        # archivo bueno de public/. Se comprueban los bytes exactos que se van a servir, con las
+        # filas (y columnas) COMPLETAS y tolerancia 0. El margen es estrecho (el codificador ya
+        # mete ±1 a dos píxeles del borde): con otro libwebp el assert puede saltar, y para eso está.
+        buf = io.BytesIO()
+        im.save(buf, 'WEBP', quality=84, method=6)
+        servido = Image.open(io.BytesIO(buf.getvalue())).convert('RGB')
+        bordes = {'arriba': servido.crop((0, 0, w, 1)), 'abajo': servido.crop((0, h - 1, w, h))}
+        if apaisado:
+            bordes.update(izquierda=servido.crop((0, 0, 1, h)), derecha=servido.crop((w - 1, 0, w, h)))
+        for lado, franja in bordes.items():
+            colores = {c for _, c in franja.getcolors(maxcolors=w + h)}
+            assert colores == {BG}, f'{nombre}: el borde de {lado} no es --bg en el archivo → {sorted(colores)[:4]}'
+        destino.write_bytes(buf.getvalue())
+        print(f'{destino.name}: {w}×{h}, {destino.stat().st_size // 1024} KB · bordes = --bg ({", ".join(bordes)})')
 
 
 if __name__ == '__main__':

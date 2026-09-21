@@ -13,6 +13,33 @@ retocar contornos a mano. Parte del logo que dibujó Carlos (isotipo de cuatro f
 | `logo.json` | La geometría (contornos, blancos entre letras, retícula). |
 | `genera_logo.py` | Construye todo lo anterior. Solo necesita Pillow (para medir los blancos). |
 | `genera_componente.py` | Reescribe `frontend/src/LogoContexto.jsx` desde `logo.json`. |
+| `genera_iconos.py` | Escribe los PNG de `frontend/public/` desde `logo.json`. `--check` audita los que hay. |
+
+## Los iconos de mapa de bits
+
+`genera_iconos.py` escribe `icon-192`, `icon-512`, `icon-512-maskable`, `apple-touch-icon` (180)
+y `badge-96`. Hasta el 2026-09-20 estaban hechos a mano y habían derivado sin que nadie lo
+notara: su segundo color era `#2DBDB6`, un teal oscurecido, en lugar de la pizarra `#3A3D44`,
+y llevaban la retícula antigua de calle ancha.
+
+Cuánto ocupa el signo depende de quién recorta, y por eso no es un solo número:
+
+| | del lienzo | por qué |
+|---|---|---|
+| `any` | 0,66 | nadie lo enmascara |
+| `maskable` | 0,52 | Android recorta a un círculo del 80 %: el signo entero tiene que caber |
+| `apple-touch-icon` | 0,62 | iOS aplica su máscara de superelipse |
+| `badge-96` | 0,70 | se pinta a 24 px en la barra de estado; silueta blanca sobre transparente |
+
+Cada archivo se comprueba antes de escribirse —paleta de marca, esquinas, centrado, tamaño del
+signo y, en el maskable, que nada se salga del círculo seguro— y `tests/test_iconos_marca.py`
+repite esa comprobación en cada corrida de CI sobre los archivos que de verdad se sirven. No se
+comparan bytes: local corre Pillow 12 y CI Pillow 11.
+
+El favicon NO sale de aquí. A 16-32 px la calle de un módulo del maestro se cierra y el signo se
+empasta; por eso `sphere-favicon.svg` conserva la retícula de calle ancha, que es la regla de
+tamaño óptico de la tabla de arriba. `og-cover.png` tampoco: lleva titular y bajada en Geist, y
+eso no es geometría.
 
 ## Construcción
 

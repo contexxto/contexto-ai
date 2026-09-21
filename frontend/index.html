@@ -15,7 +15,9 @@
 
     <!-- PWA: instalable en el teléfono (ícono en inicio, abre en / → directo al agente) -->
     <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <!-- iOS pide 180x180 y compone sobre el icono su propia máscara; con /icon-192.png
+         lo reescalaba. Ambos salen de docs/branding/logo/genera_iconos.py. -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />

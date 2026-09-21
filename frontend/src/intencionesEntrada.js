@@ -46,7 +46,7 @@ export const INTENCIONES = [
     id: 'transporte',
     label: 'Busca cerca del Metro o de mi trabajo',
     accion: 'send',
-    intent: '🚇 Quiero vivir cerca del Metro o de mi trabajo',
+    intent: 'Quiero vivir cerca del Metro o de mi trabajo',
   },
   {
     id: 'area-verde',
@@ -63,7 +63,7 @@ export const INTENCIONES = [
     accion: 'send',
     // Antes decía «Dime qué me conviene para mi presupuesto» — pedía un veredicto.
     // Ahora declara el dato y pide lo que el motor sí puede responder.
-    intent: '💰 Quiero ver qué entra en mi presupuesto. Te digo mi tope y me muestras ' +
+    intent: 'Quiero ver qué entra en mi presupuesto. Te digo mi tope y me muestras ' +
             'lo que sí calza, sin pasarte.',
   },
   { id: 'corredor', label: 'Soy corredor', accion: 'broker' },

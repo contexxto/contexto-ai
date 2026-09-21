@@ -232,6 +232,21 @@ body::before { content: none; }
 .dock-pill[data-amplio] > .dock-enviar { margin-left: auto; }
 /* −9: el botón mide 36 y su icono 18; así el pin queda alineado con el borde izquierdo del texto. */
 .dock-pill[data-amplio] > .dock-geo { margin-left: -9px; }
+/* MIENTRAS SE DICTA (App.jsx): la ubicación y el «+» ceden su sitio —y su ancho, 36 + 36— a
+   ✕ Descartar y ■ Detener. En la forma amplia ✕ se queda a la izquierda, donde iba el pin, y
+   ■ va pegado a Enviar: lo que tira el texto, lejos de lo que lo conserva. La tercera regla
+   le quita a Enviar el margen automático, o el hueco libre se repartiría entre los dos. */
+.dock-pill[data-amplio] > .dock-descartar { margin-left: -9px; }
+.dock-pill[data-amplio] > .dock-detener { margin-left: auto; }
+.dock-pill[data-amplio] > .dock-detener + .dock-enviar { margin-left: 4px; }
+/* La señal de «grabando» es el pulso del propio ■ (el keyframe pulseGlow vive en App.jsx). */
+.dock-detener-punto {
+  display: flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; border-radius: 999px;
+  background: color-mix(in srgb, var(--teal) 16%, transparent);
+  animation: pulseGlow 1.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) { .dock-detener-punto { animation: none; } }
 /* El aire vertical del campo es un borde TRANSPARENTE (App.jsx, AIRE_CAMPO). En colores forzados
    (alto contraste de Windows) el navegador sustituye border-color por un color del sistema y
    pintaría dos franjas opacas de 10 px: ahí el borde toma el color del fondo forzado.

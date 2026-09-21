@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import {
-  MapPin, RefreshCw, LocateFixed, AudioLines, ArrowUp, HelpCircle, Plus, Minus,
+  MapPin, RefreshCw, LocateFixed, AudioLines, ArrowUp, HelpCircle, Plus, Minus, X, Square,
   Footprints, TrainFront, Cross, Pill, ShoppingCart, Trees, GraduationCap, Film, Lightbulb, MessageCircle, Palette, ChevronRight, ChevronLeft,
 } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import { ATRIBUCION } from './atribucion'
+import { SILENCIO_MAX_MS, textoDeSesion, textoVisible, unirSinRepetir } from './dictado'
 
 // Estilo de mapa oscuro premium (CARTO dark-matter, gratuito, sin token).
 const DARK_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
@@ -254,6 +255,7 @@ export default function MapView({ seedIds, encajeById } = {}) {
   const recRef = useRef(null)     // SpeechRecognition
   const vozFinalRef = useRef('')  // finales acumulados del dictado (sobreviven reinicios del motor)
   const vozStopRef = useRef(false) // true = el usuario pidió detener el dictado (no reiniciar)
+  const vozIgnorarRef = useRef(false) // true = lo que aún entregue el motor ya no se escribe (descartado o enviado)
   const watchIdRef = useRef(null) // id de watchPosition (ubicación en segundo plano)
 
   // Afford de scroll de los chips: estado inicial de bordes (¿hay overflow?) al montar y
@@ -432,8 +434,10 @@ export default function MapView({ seedIds, encajeById } = {}) {
     const map = mapRef.current
     if (!q || mapaLoading || !map) return
     // Enviar termina el dictado (con auto-reinicio activo, si no, el mic seguiría
-    // escribiendo sobre el input recién vaciado).
-    if (recRef.current) { vozStopRef.current = true; try { recRef.current.stop() } catch { /* ya detenido */ } }
+    // escribiendo sobre el input recién vaciado). Y lo que el motor entregue DESPUÉS ya no se
+    // escribe: stop() todavía devuelve el final de lo que quedaba por transcribir, y aquí el
+    // campo ya se vació (preguntarAlMapa): la pregunta enviada volvía a aparecer en él.
+    if (recRef.current) { vozStopRef.current = true; vozIgnorarRef.current = true; try { recRef.current.stop() } catch { /* ya detenido */ } }
     if (tourTimer.current) { clearTimeout(tourTimer.current); tourTimer.current = null }
     setTour(null)
     setMapaLoading(true); setMapaMsg(null)
@@ -503,38 +507,44 @@ export default function MapView({ seedIds, encajeById } = {}) {
     rec.continuous = !esAndroid
     vozFinalRef.current = ''   // BASE confirmada (sobrevive reinicios)
     vozStopRef.current = false
+    vozIgnorarRef.current = false
     let sesionFinal = ''       // final-only de ESTA sesión
+    let ultimaVoz = Date.now() // tras SILENCIO_MAX_MS sin oír nada, se detiene (dictado.js)
     rec.onresult = e => {
-      // Reconstruir desde 0 y COLAPSAR entradas que extienden a la anterior (Android manda
-      // fotos acumulativas de la misma frase); segmentos distintos se unen CON espacio.
-      const fins = [], ints = []
-      for (let i = 0; i < e.results.length; i++) {
-        const r = e.results[i]
-        const t = (r[0]?.transcript || '').trim()
-        if (!t) continue
-        const arr = r.isFinal ? fins : ints
-        const prev = arr[arr.length - 1]
-        if (prev && (t.toLowerCase().startsWith(prev.toLowerCase()) || prev.toLowerCase().startsWith(t.toLowerCase()))) {
-          arr[arr.length - 1] = t.length >= prev.length ? t : prev
-        } else arr.push(t)
-      }
-      const fin = fins.join(' ')
+      // Descartado o ya enviado: un resultado tardío no vuelve a llenar el campo recién vaciado.
+      if (vozIgnorarRef.current) return
+      // Reconstruir desde 0 y unir SIN REPETIR (Android parte y reentrega frases): dictado.js.
+      const { fin, parcial } = textoDeSesion(e.results)
+      if (fin || parcial) ultimaVoz = Date.now()
       sesionFinal = fin
-      const base = vozFinalRef.current
-      setMapaInput([base, fin, ints.join(' ')].filter(Boolean).join(' ').replace(/\s{2,}/g, ' '))
+      setMapaInput(textoVisible(vozFinalRef.current, fin, parcial))
     }
     rec.onerror = e => {
       if (e?.error === 'not-allowed' || e?.error === 'service-not-allowed') vozStopRef.current = true
     }
     rec.onend = () => {
-      if (!vozStopRef.current) {
-        if (sesionFinal.trim()) vozFinalRef.current = (vozFinalRef.current + ' ' + sesionFinal).trim()
-        sesionFinal = ''
+      vozFinalRef.current = unirSinRepetir(vozFinalRef.current, sesionFinal)
+      sesionFinal = ''
+      if (!vozStopRef.current && Date.now() - ultimaVoz < SILENCIO_MAX_MS) {
         try { rec.start(); return } catch { /* cierre normal abajo */ }
       }
       setEscuchando(false)
     }
     recRef.current = rec; setEscuchando(true); rec.start()
+  }
+  // Mientras se dicta: ■ Detener y ✕ Descartar, los mismos del chat del home (App.jsx, stopVoice y
+  // discardVoice). Detener usa stop(), que todavía entrega el final de la última frase; descartar
+  // usa abort() y marca antes, por el motor que aun así mande un resultado tarde. `escuchando` lo
+  // apaga onend: apagarlo aquí dejaría arrancar otro motor con este todavía cerrando.
+  function detenerVoz() {
+    vozStopRef.current = true
+    try { recRef.current?.stop() } catch { /* ya detenido */ }
+  }
+  function descartarVoz() {
+    vozStopRef.current = true
+    vozIgnorarRef.current = true
+    try { recRef.current?.abort() } catch { /* ya detenido */ }
+    setMapaInput('')
   }
   // Tarjeta de aura proactiva (barrio + Walk Score + titular) para una coordenada.
   async function cargarAura(lat, lon) {
@@ -955,29 +965,55 @@ export default function MapView({ seedIds, encajeById } = {}) {
             </div>
           )}
 
-          {/* Fila 3: input con pin geo + chip "Voz" (Voz vacío ↔ Enviar con texto, como el launcher) */}
+          {/* Fila 3: input con pin geo + chip "Voz" (Voz vacío ↔ Enviar con texto, como el launcher).
+              MIENTRAS SE DICTA: ✕ Descartar · campo · ■ Detener · Enviar, como en el chat del home. Antes
+              el chip Voz era también el botón de detener y, en cuanto el dictado escribía la primera
+              palabra, pasaba a ser Enviar: no había forma de parar el micrófono sin preguntar. El ✕
+              ocupa el sitio y el tamaño del pin (34): el campo no se mueve al empezar a dictar. */}
           <form onSubmit={preguntarAlMapa} style={{ display: 'flex', gap: 8, alignItems: 'center',
             background: 'var(--map-chip)', border: `1px solid ${escuchando ? 'var(--teal)' : 'var(--map-border)'}`,
             borderRadius: 14, padding: '6px 8px', transition: 'border-color .2s' }}>
+            {escuchando ? (
+              <button type="button" onClick={descartarVoz} title="Descartar lo dictado" aria-label="Descartar el dictado"
+                style={{ background: 'none', border: 'none', width: 34, height: 34, flexShrink: 0, cursor: 'pointer',
+                         display: 'grid', placeItems: 'center', color: 'var(--map-text)', opacity: .7 }}>
+                <X size={19} />
+              </button>
+            ) : (
             <button type="button" onClick={ubicarme} disabled={ubicando} title={ubicado ? 'Ubicación activa' : 'Usar mi ubicación'}
               style={{ background: 'none', border: 'none', width: 34, height: 34, flexShrink: 0, cursor: 'pointer',
                        display: 'grid', placeItems: 'center', color: ubicado ? 'var(--teal-bright)' : 'var(--teal)' }}>
               {ubicando ? <RefreshCw size={17} style={{ animation: 'spin 1s linear infinite' }} /> : <MapPin size={17} />}
             </button>
+            )}
             <input value={mapaInput} onChange={e => setMapaInput(e.target.value)}
               placeholder='Pregúntale al mapa: "ruta al Metro"…'
-              style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: 'var(--map-text)', fontSize: 14, padding: '4px 4px', fontFamily: 'inherit' }} />
-            {mapaInput.trim() ? (
-              <button type="submit" disabled={mapaLoading} title="Preguntar"
+              // minWidth 0: sin él un <input> no encoge por debajo de su ancho intrínseco (~199 px) y,
+              // en un teléfono de 360, el botón de la derecha se salía de la barra (35 px el chip Voz).
+              style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none', color: 'var(--map-text)', fontSize: 14, padding: '4px 4px', fontFamily: 'inherit' }} />
+            {/* ■ con el pulso de «grabando» (index.css, .dock-detener-punto). El cromo del mapa es oscuro
+                en los dos temas: --teal-bright, y no --teal-text, que en claro es un teal oscuro. */}
+            {escuchando && (
+              <button type="button" onClick={detenerVoz} title="Detener el dictado — lo dictado se queda en el campo" aria-label="Detener el dictado"
+                style={{ background: 'none', border: 'none', width: 34, height: 40, flexShrink: 0, cursor: 'pointer',
+                         display: 'grid', placeItems: 'center', color: 'var(--teal-bright)' }}>
+                <span className="dock-detener-punto" aria-hidden="true"><Square size={12} fill="currentColor" /></span>
+              </button>
+            )}
+            {/* Mientras se escucha es SIEMPRE Enviar (apagado hasta la primera palabra): el botón no
+                cambia de oficio a mitad del dictado. */}
+            {(escuchando || mapaInput.trim()) ? (
+              <button type="submit" disabled={mapaLoading || !mapaInput.trim()} title="Preguntar" aria-label="Preguntar"
                 style={{ background: 'var(--teal-bright)', border: 'none', borderRadius: 999, width: 40, height: 40, flexShrink: 0,
-                         display: 'grid', placeItems: 'center', cursor: mapaLoading ? 'default' : 'pointer', color: '#06201C', opacity: mapaLoading ? 0.6 : 1 }}>
+                         display: 'grid', placeItems: 'center', cursor: mapaLoading || !mapaInput.trim() ? 'default' : 'pointer', color: '#06201C',
+                         opacity: mapaLoading ? 0.6 : (mapaInput.trim() ? 1 : .45) }}>
                 {mapaLoading ? <RefreshCw size={17} style={{ animation: 'spin 1s linear infinite' }} /> : <ArrowUp size={19} />}
               </button>
             ) : (
-              <button type="button" onClick={dictarVoz} title={escuchando ? 'Escuchando… toca para detener' : 'Hablar (dictado por voz)'}
+              <button type="button" onClick={dictarVoz} title="Hablar (dictado por voz)"
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 7, flexShrink: 0, padding: '9px 15px', borderRadius: 999,
-                         border: 'none', cursor: 'pointer', background: escuchando ? 'var(--teal)' : 'var(--teal-bright)', color: '#06201C',
-                         fontWeight: 700, fontSize: '.86rem', fontFamily: 'inherit', animation: escuchando ? 'pulseGlow 1.2s ease-in-out infinite' : 'none' }}>
+                         border: 'none', cursor: 'pointer', background: 'var(--teal-bright)', color: '#06201C',
+                         fontWeight: 700, fontSize: '.86rem', fontFamily: 'inherit' }}>
                 <AudioLines size={16} /> Voz
               </button>
             )}

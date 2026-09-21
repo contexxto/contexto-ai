@@ -3,7 +3,7 @@ import axios from 'axios'
 import {
   Send, MapPin, RefreshCw, Trash2, Copy, CheckCheck, ChevronDown, PanelLeft,
   Share2, Volume2, ThumbsUp, ThumbsDown, ArrowUpToLine, Plus, ArrowUp, AudioLines,
-  Wrench, MessageCircle, Handshake, Check, Bell, Mic
+  Wrench, MessageCircle, Handshake, Check, Bell, Mic, X, Square
 } from 'lucide-react'
 import { supabase, authEnabled } from './supabaseClient'
 import Auth from './Auth'
@@ -32,6 +32,7 @@ import isotipo from './assets/isotipo.svg'
 import { LogoHorizontal, ALTO_MIN_HORIZONTAL } from './LogoContexto'
 import { BOTON_REDONDO } from './homeEstilos'
 import { maquetaMensaje, rellenoColumna } from './maquetaMensaje'
+import { SILENCIO_MAX_MS, textoDeSesion, textoVisible, unirSinRepetir } from './dictado'
 
 // Carga diferida ROBUSTA ante deploys. Si el chunk falla al descargarse (típico cuando un
 // deploy purgó el hash viejo mientras el usuario tenía la app abierta → "Failed to fetch
@@ -529,6 +530,7 @@ export default function App() {
   const recognitionRef = useRef(null)
   const voiceFinalRef = useRef('')      // finales acumulados del dictado (sobreviven reinicios del motor)
   const voiceStopRef = useRef(false)    // true = el usuario pidió detener (no auto-reiniciar)
+  const voiceIgnorarRef = useRef(false) // true = lo que aún entregue el motor ya no se escribe (descartado o enviado)
   const lastAiRef = useRef('')   // última respuesta del agente (para bloquear ecos/reenvíos)
   const [modoCorredor, setModoCorredor] = useState(false)  // handoff en vivo: el lead habla con el corredor (no el AI)
   const handoffSeenRef = useRef(0)                          // último id de mensaje de handoff visto
@@ -957,8 +959,9 @@ export default function App() {
     const userText = (text ?? input).trim()
     if (!userText || loading) return
     // Enviar termina el dictado (con auto-reinicio activo, si no, el mic seguiría
-    // escribiendo sobre el input recién vaciado).
-    if (recognitionRef.current) { voiceStopRef.current = true; try { recognitionRef.current.stop() } catch { /* ya detenido */ } }
+    // escribiendo sobre el input recién vaciado). Y lo que el motor entregue DESPUÉS ya no se
+    // escribe: stop() todavía devuelve el final de lo que quedaba por transcribir.
+    if (recognitionRef.current) { voiceStopRef.current = true; voiceIgnorarRef.current = true; try { recognitionRef.current.stop() } catch { /* ya detenido */ } }
     // Guard: nunca reenviar la respuesta anterior del agente como si fuera del usuario
     // (eco por copiar/pegar o lazo de audio). Una pregunta real jamás es idéntica.
     if (lastAiRef.current && userText === lastAiRef.current.trim()) {
@@ -1470,8 +1473,8 @@ export default function App() {
   // Dictado por voz (Web Speech API) — "hablarle al agente".
   // continuous=true + acumulación de finales + auto-reinicio: sin esto, el motor se
   // detiene en la PRIMERA pausa al hablar y Chrome corta solo tras unos segundos de
-  // silencio → "se corta y no transcribe el mensaje completo". El dictado ahora solo
-  // termina cuando el usuario vuelve a tocar el botón (o al enviar el mensaje).
+  // silencio → "se corta y no transcribe el mensaje completo". El dictado solo termina cuando
+  // la persona lo decide: ■ Detener (stopVoice), ✕ Descartar (discardVoice) o Enviar.
   const startVoice = useCallback(() => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SR) { setError('El dictado por voz no está disponible en este navegador. Prueba en Chrome.'); return }
@@ -1488,46 +1491,57 @@ export default function App() {
     rec.continuous = !esAndroid
     voiceFinalRef.current = ''   // BASE: texto confirmado de sesiones previas (sobrevive los reinicios del motor)
     voiceStopRef.current = false
+    voiceIgnorarRef.current = false
     let sesionFinal = ''         // final-only de ESTA sesión (se commitea a la base al reiniciar)
+    let ultimaVoz = Date.now()   // la última vez que se oyó algo: tras SILENCIO_MAX_MS sin nada, se detiene
     rec.onresult = (e) => {
-      // Reconstruir SIEMPRE desde 0 y COLAPSAR entradas que extienden a la anterior: en
-      // Android cada entrada puede ser una foto acumulativa de la misma frase (se reemplaza,
-      // no se suma). Los segmentos distintos (desktop) se unen CON espacio — antes se
-      // pegaban: "La Carolinaque esté…".
-      const fins = [], ints = []
-      for (let i = 0; i < e.results.length; i++) {
-        const r = e.results[i]
-        const t = (r[0]?.transcript || '').trim()
-        if (!t) continue
-        const arr = r.isFinal ? fins : ints
-        const prev = arr[arr.length - 1]
-        if (prev && (t.toLowerCase().startsWith(prev.toLowerCase()) || prev.toLowerCase().startsWith(t.toLowerCase()))) {
-          arr[arr.length - 1] = t.length >= prev.length ? t : prev
-        } else arr.push(t)
-      }
-      const fin = fins.join(' ')
+      // Descartado o ya enviado: un resultado tardío no vuelve a llenar el campo recién vaciado.
+      if (voiceIgnorarRef.current) return
+      // Reconstruir SIEMPRE desde 0 y unir SIN REPETIR: Android parte una frase en finales que se
+      // pisan y la vuelve a entregar al reiniciar la sesión (la regla y el caso, en dictado.js).
+      const { fin, parcial } = textoDeSesion(e.results)
+      if (fin || parcial) ultimaVoz = Date.now()
       sesionFinal = fin
-      const base = voiceFinalRef.current
-      setInput([base, fin, ints.join(' ')].filter(Boolean).join(' ').replace(/\s{2,}/g, ' '))
+      setInput(textoVisible(voiceFinalRef.current, fin, parcial))
     }
     rec.onerror = (e) => {
       // 'no-speech'/'aborted' son benignos (silencio); el permiso negado sí termina.
       if (e?.error === 'not-allowed' || e?.error === 'service-not-allowed') voiceStopRef.current = true
     }
     rec.onend = () => {
-      if (!voiceStopRef.current) {
-        // Commitear el final de esta sesión a la base ANTES de reiniciar (con espacio, sin duplicar).
-        if (sesionFinal.trim()) voiceFinalRef.current = (voiceFinalRef.current + ' ' + sesionFinal).trim()
-        sesionFinal = ''
+      // Commitear el final de esta sesión a la base, sin repetir lo que ya estaba.
+      voiceFinalRef.current = unirSinRepetir(voiceFinalRef.current, sesionFinal)
+      sesionFinal = ''
+      // Se reinicia solo mientras haya voz: tras SILENCIO_MAX_MS callado se detiene y deja el texto.
+      if (!voiceStopRef.current && Date.now() - ultimaVoz < SILENCIO_MAX_MS) {
         try { rec.start(); return } catch { /* si el motor no puede reiniciar, cerramos abajo */ }
       }
       setListening(false)
-      setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 50)
+      // El foco vuelve al campo solo si quedó texto por corregir (■ Detener o fin del motor). Tras
+      // descartar o enviar no hay nada que editar, y en el teléfono enfocar reabre el teclado.
+      if (!voiceIgnorarRef.current) setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 50)
     }
     recognitionRef.current = rec
     setListening(true)
     rec.start()
   }, [listening])
+
+  // ■ Detener: corta el micrófono y DEJA lo dictado en el campo, para corregirlo antes de enviar.
+  // stop() y no abort(): stop() todavía entrega el final de la última frase, y aquí se quiere.
+  const stopVoice = useCallback(() => {
+    voiceStopRef.current = true
+    try { recognitionRef.current?.stop() } catch { /* ya detenido */ }
+  }, [])
+
+  // ✕ Descartar: corta el micrófono y tira lo dictado. abort() no entrega resultados; la marca
+  // cubre al motor que aun así mande uno tarde. `listening` lo apaga onend, como al detener: si
+  // se apagara aquí, un toque rápido en Voz arrancaría otro motor con el anterior aún cerrando.
+  const discardVoice = useCallback(() => {
+    voiceStopRef.current = true
+    voiceIgnorarRef.current = true
+    try { recognitionRef.current?.abort() } catch { /* ya detenido */ }
+    setInput('')
+  }, [])
 
   // Ubicación del usuario, estilo Uber: se autoriza UNA vez y queda activa en tiempo
   // real (watchPosition). Si el navegador ya tiene el permiso concedido, al abrir la
@@ -2280,7 +2294,8 @@ export default function App() {
             </div>
           )
         )}
-        {/* LA PÍLDORA (fase 2). Una sola fila: campo · ubicación · «+» · Voz/Enviar. Antes eran
+        {/* LA PÍLDORA (fase 2). Una sola fila: campo · ubicación · «+» · Voz/Enviar (mientras se
+            dicta: campo · ✕ Descartar · ■ Detener · Enviar, mismos anchos). Antes eran
             dos pisos (el campo arriba, los botones abajo) y, hasta la fase 1, una fila estática
             «Para: Contexto AI» encima. Lo que NO cambió, a propósito, es todo lo que tiene
             historial de bugs de teclado en la PWA de Android: el textarea es el mismo nodo con
@@ -2334,7 +2349,43 @@ export default function App() {
             }}
             onInput={e => ajustarAltoCampo(e.target)}
           />
-          {/* ubicación · «+» · Voz/Enviar — mismos handlers que antes */}
+          {/* MIENTRAS SE DICTA: ✕ Descartar · ■ Detener · Enviar. Antes, en cuanto el dictado
+              escribía la primera palabra, el botón Voz (que también detenía) pasaba a ser Enviar:
+              no quedaba forma de parar sin enviar, y un toque para detener podía caer sobre un
+              Enviar recién aparecido. Ahora cada acción tiene su sitio y ninguno cambia de
+              significado mientras se escucha. ✕ y ■ ocupan los huecos de la ubicación y el «+»
+              con su MISMO ancho (36 + 36): ANCHO_BOTONES_PILDORA sigue valiendo y el criterio de
+              la forma no se entera. El textarea es el mismo nodo: solo cambian sus hermanos. */}
+          {listening ? (<>
+          <button
+            onClick={discardVoice}
+            title="Descartar lo dictado"
+            aria-label="Descartar el dictado"
+            className="dock-descartar"
+            style={{
+              background:'none', border:'none', borderRadius:999, width:36, height:44, flexShrink:0, cursor:'pointer',
+              display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text-muted)',
+            }}
+          >
+            <X size={20}/>
+          </button>
+          <button
+            onClick={stopVoice}
+            title="Detener el dictado — lo dictado se queda en el campo"
+            aria-label="Detener el dictado"
+            className="dock-detener"
+            style={{
+              background:'none', border:'none', borderRadius:999, width:36, height:44, flexShrink:0, cursor:'pointer',
+              display:'flex', alignItems:'center', justifyContent:'center', color:'var(--teal-text)',
+            }}
+          >
+            {/* El pulso (index.css, .dock-detener-punto) es la señal de «grabando»: vive en el
+                control que lo apaga. Web Speech no da el nivel del micrófono, así que no se
+                dibuja una onda que no mediría nada. */}
+            <span className="dock-detener-punto" aria-hidden="true"><Square size={12} fill="currentColor"/></span>
+          </button>
+          </>) : (<>
+          {/* ubicación · «+» — mismos handlers que antes */}
           <button
             onClick={toggleGeo}
             disabled={geoLoading}
@@ -2362,22 +2413,26 @@ export default function App() {
           >
             <Plus size={20}/>
           </button>
+          </>)}
           {/* Voz (vacío) ↔ Enviar (con texto). Los dos son el MISMO círculo de 44: al escribir
               la primera letra el botón no cambia de tamaño ni empuja el campo. El aro en
               --teal-text apenas se nota en oscuro (teal sobre teal, un filo algo más claro) y en
               claro le da al botón el contorno que el teal sobre gris claro no tenía
-              (1.4:1 → ≥ 3:1). */}
-          {input.trim() ? (
+              (1.4:1 → ≥ 3:1).
+              Mientras se dicta es SIEMPRE Enviar, también con el campo aún vacío (apagado hasta
+              que llegue la primera palabra): el círculo no cambia de oficio a mitad del dictado. */}
+          {(listening || input.trim()) ? (
             <button
               onClick={() => sendMessage()}
-              disabled={loading}
+              disabled={loading || !input.trim()}
               title="Enviar"
               aria-label="Enviar"
               className="dock-enviar"
               style={{
                 background:'var(--teal-bright)', border:'1px solid var(--teal-text)', borderRadius:999,
-                width:44, height:44, flexShrink:0, cursor: loading ? 'default' : 'pointer',
+                width:44, height:44, flexShrink:0, cursor: loading || !input.trim() ? 'default' : 'pointer',
                 display:'flex', alignItems:'center', justifyContent:'center', color:'#06201C',
+                opacity: input.trim() ? 1 : .45, transition:'opacity .15s',
               }}
             >
               {loading
@@ -2387,15 +2442,14 @@ export default function App() {
           ) : (
             <button
               onClick={startVoice}
-              title={listening ? 'Escuchando… toca para detener' : 'Hablar (dictado por voz)'}
-              aria-label={listening ? 'Detener el dictado' : 'Dictar por voz'}
+              title="Hablar (dictado por voz)"
+              aria-label="Dictar por voz"
               className="dock-enviar"
               style={{
                 display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0,
                 width:44, height:44, borderRadius:999, cursor:'pointer',
                 border:'1px solid var(--teal-text)',
-                background: listening ? 'var(--teal)' : 'var(--teal-bright)', color:'#06201C',
-                animation: listening ? 'pulseGlow 1.2s ease-in-out infinite' : 'none',
+                background:'var(--teal-bright)', color:'#06201C',
               }}
             >
               <AudioLines size={20}/>

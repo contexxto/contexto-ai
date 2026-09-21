@@ -207,3 +207,62 @@ async def test_generar_letrero_png_sin_telefono_no_pinta_caja():
     )
     img = Image.open(io.BytesIO(png))
     assert not _contiene_color_en_franja(img, _TEAL, y_min=img.size[1] // 2)
+
+
+# ── La marca del letrero (2026-09-21) ────────────────────────────────────────────────────────
+# El encabezado escribía «CONTEXTO AI» como texto, con la marca anterior. Ahora pega el lockup
+# horizontal (signo + la palabra de la E de tres barras) que rasteriza desde logo.json
+# docs/branding/logo/genera_letrero_marca.py, con la palabra en blanco sobre la franja oscura.
+
+_TEAL_MARCA = (0x5E, 0xEA, 0xD4)   # el teal del signo (logo.json), distinto del _TEAL de la banda
+_PIZARRA = (0x3A, 0x3D, 0x44)
+
+
+def _cuenta(img, color, caja, tol=6):
+    rgb = img.convert("RGB")
+    px = rgb.load()
+    x0, y0, x1, y1 = caja
+    return sum(1 for y in range(y0, y1) for x in range(x0, x1)
+               if all(abs(px[x, y][i] - color[i]) <= tol for i in range(3)))
+
+
+async def test_el_encabezado_lleva_el_logotipo():
+    png = await _generar_letrero_png(
+        activo_id="00000000-0000-0000-0000-000000000000",
+        direccion="Calle de prueba", tipo_activo="Departamento",
+        operacion="arriendo", telefono_wsp=None,
+    )
+    img = Image.open(io.BytesIO(png))
+    # El signo ocupa x ∈ [60, 140) de la franja (80 px de alto, centrado en 116): su cuadro y su
+    # círculo teal, y los dos cuadros pizarra. La palabra, blanca, de x≈160 en adelante.
+    assert _cuenta(img, _TEAL_MARCA, (60, 18, 140, 98)) > 1500, "falta el teal del signo"
+    assert _cuenta(img, _PIZARRA, (60, 18, 140, 98)) > 1500, "faltan los cuadros pizarra del signo"
+    assert _cuenta(img, (255, 255, 255), (160, 40, 410, 76), tol=30) > 300, "falta la palabra"
+
+
+def test_el_letrero_ya_no_escribe_la_marca_anterior():
+    import inspect
+
+    from app.routers import assets
+
+    assert "CONTEXTO AI" not in inspect.getsource(assets._generar_letrero_png)
+
+
+def test_el_lockup_del_letrero_es_el_que_saldria_del_maestro():
+    """Propiedades y parecido, no bytes: Pillow cambia su LANCZOS entre versiones."""
+    import sys
+    from pathlib import Path
+
+    from PIL import ImageChops
+
+    from app.routers.assets import _LOCKUP_LETRERO
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "docs" / "branding" / "logo"))
+    import genera_letrero_marca as gen
+
+    en_disco = Image.open(_LOCKUP_LETRERO).convert("RGBA")
+    assert gen.verifica(en_disco) == []
+    nuevo = gen.lockup()
+    assert en_disco.size == nuevo.size
+    dif = ImageChops.difference(en_disco, nuevo).getextrema()
+    assert max(d[1] for d in dif) <= 24, f"el PNG en disco se aparta del que saldría: {dif}"

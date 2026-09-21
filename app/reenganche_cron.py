@@ -237,7 +237,7 @@ async def _escanear_reenganches(db) -> dict:
                 title="Novedad sobre el inmueble que viste",
                 body=c["mensaje"],
                 url=f"/a/{c['activo_id']}",
-                email_subject="Contexto AI · una novedad verificada para ti",
+                email_subject="Contexto · una novedad verificada para ti",
             )
             enviados_comprador += 1
         except Exception as exc:  # noqa: BLE001
@@ -256,7 +256,7 @@ async def _escanear_reenganches(db) -> dict:
                 body=(f"Tienes {n} interesado{plural} dormido{plural} con dato verificado "
                       "para retomar por valor. Míralos en tu CRM."),
                 url="/?crm=1",
-                email_subject="Contexto AI · interesados para reenganchar",
+                email_subject="Contexto · interesados para reenganchar",
             )
             notificados += 1
         except Exception as exc:  # noqa: BLE001

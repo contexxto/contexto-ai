@@ -1077,7 +1077,7 @@ async def _stream_agent(message: str, session_id: str, user=None) -> AsyncIterat
 @router.post(
     "/",
     response_model=ChatResponse,
-    summary="Consultar al Agente Contexto AI",
+    summary="Consultar al agente de Contexto",
     description=(
         "Envía un mensaje al agente con memoria de sesión. "
         "Reutiliza el mismo `session_id` para mantener el hilo conversacional. "

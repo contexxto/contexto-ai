@@ -4,6 +4,8 @@ import json
 import logging
 import re
 import uuid
+from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 import segno
@@ -262,6 +264,19 @@ def _url_del_qr(activo_id) -> str:
     return f"{base}?utm_source=letrero&utm_medium=qr"
 
 
+# El logotipo del letrero: el lockup horizontal (signo + la palabra de la E de tres barras), con la
+# palabra en blanco para la franja oscura. No se dibuja aquí: lo rasteriza desde logo.json
+# docs/branding/logo/genera_letrero_marca.py, y tests/test_letrero_banner.py comprueba que el que
+# hay en disco es el que saldría. Hasta el 2026-09-21 el letrero escribía «CONTEXTO AI» como texto.
+_LOCKUP_LETRERO = Path(__file__).resolve().parents[1] / "marca" / "lockup-letrero.png"
+
+
+@lru_cache(maxsize=1)
+def _lockup_letrero():
+    from PIL import Image
+    return Image.open(_LOCKUP_LETRERO).convert("RGBA")
+
+
 def _fuente_letrero(size: int, negrita: bool = False):
     from PIL import ImageFont
     for path in (_FUENTES_BOLD if negrita else _FUENTES_REGULAR):
@@ -346,11 +361,16 @@ async def _generar_letrero_png(
     op_texto = {"arriendo": "SE ARRIENDA", "venta": "SE VENDE"}.get(operacion, "DISPONIBLE")
 
     # ── Encabezado de marca: barra en tinta con un acento de color a la derecha ──
+    # El logotipo a la izquierda, centrado en la franja; la frase a la derecha, antes del acento.
     header_h = 116
     draw.rectangle([0, 0, W, header_h], fill=_INK)
     draw.rectangle([W - 14, 0, W, header_h], fill=acc)
-    draw.text((60, 30), "CONTEXTO AI", font=_fuente_letrero(46, True), fill=_WHITE)
-    draw.text((62, 82), "Cada lugar tiene un aura", font=_fuente_letrero(22), fill=(180, 210, 206))
+    marca = _lockup_letrero()
+    img.paste(marca, (60, (header_h - marca.height) // 2), marca)
+    frase, fuente_frase = "Cada lugar tiene un aura", _fuente_letrero(22)
+    fb = draw.textbbox((0, 0), frase, font=fuente_frase)
+    draw.text((W - 14 - 46 - (fb[2] - fb[0]) - fb[0], (header_h - (fb[3] - fb[1])) // 2 - fb[1]),
+              frase, font=fuente_frase, fill=(180, 210, 206))
 
     # ── Banda de operación: bloque de color full-width con "SE ARRIENDA"/"SE VENDE" auto-fit
     # (reemplaza la foto — feedback en vivo: en el letrero FÍSICO lo que se lee de lejos es

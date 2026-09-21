@@ -15,6 +15,7 @@ retocar contornos a mano. Parte del logo que dibujó Carlos (isotipo de cuatro f
 | `genera_componente.py` | Reescribe `frontend/src/LogoContexto.jsx` desde `logo.json`: `Isotipo`, `Logotipo`, `LogoHorizontal` (+ `ALTO_MIN_HORIZONTAL`) y `LogoVertical`. Antes de escribir comprueba que el lockup horizontal calculado sea idéntico a `contexto-horizontal.svg`. |
 | `genera_iconos.py` | Escribe los PNG de `frontend/public/` desde `logo.json`. `--check` audita los que hay. |
 | `genera_og_cover.py` | Pone el lockup horizontal en `og-cover.png`. `--check` audita el que hay. |
+| `genera_letrero_marca.py` | Escribe `app/marca/lockup-letrero.png`: el lockup horizontal con la palabra en blanco, 80 px de alto, que el backend pega en la franja oscura del letrero imprimible «SE ARRIENDA/SE VENDE» (hasta el 2026-09-21 escribía «CONTEXTO AI» como texto). Usa el mismo dibujo que `genera_og_cover.py`. `--check` audita el que hay. |
 
 ## Los iconos de mapa de bits
 

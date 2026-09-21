@@ -46,6 +46,11 @@ describe('la cabecera del chat', () => {
   it('no empareja el signo suelto con la palabra', () => {
     expect(cabeceraConMensajes()).not.toContain('src={isotipo}')
   })
+
+  it('en computadora con el menú abierto no repite el logotipo: el menú ya lo lleva arriba', () => {
+    // Carlos, 2026-09-21, al lado de ChatGPT: el logotipo salía dos veces, en el menú y en la cabecera.
+    expect(app).toMatch(/\{!isEmpty && \(isMobile \|\| sidebarCollapsed\) && \(/)
+  })
 })
 
 describe('las intenciones de entrada', () => {

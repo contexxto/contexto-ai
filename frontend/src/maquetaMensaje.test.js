@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { codigoDesnudo } from './codigoDesnudo'
-import { ANCHO_COLUMNA_PC, maquetaMensaje, rellenoColumna } from './maquetaMensaje'
+import { ANCHO_COLUMNA_PC, LETRA_MENSAJE, maquetaMensaje, rellenoColumna } from './maquetaMensaje'
 
 describe('los mensajes', () => {
   it('la respuesta ocupa todo el renglón: sin tope y sin relleno a los lados', () => {
@@ -38,6 +38,27 @@ describe('la columna', () => {
   })
 })
 
+describe('la letra', () => {
+  it('los mensajes van a 16 px, con el interlineado de siempre', () => {
+    expect(LETRA_MENSAJE).toEqual({ fontSize: '1rem', lineHeight: 1.65 })
+  })
+
+  it('títulos, tablas y filas de encaje de las respuestas crecen con ella (em, no rem)', () => {
+    const SRC = dirname(fileURLToPath(import.meta.url))
+    const css = readFileSync(join(SRC, 'index.css'), 'utf8')
+    expect(css).toMatch(/\.ai-content h2, \.ai-content h3 \{[^}]*font-size: 1\.087em;/)
+    expect(css).toMatch(/\.ai-content h2 \{ font-size: 1\.141em; \}/)
+    expect(css).toMatch(/\.ai-content h4 \{[^}]*font-size: 1em;/)
+    expect(css).toMatch(/\.ai-content table \{[^}]*font-size: \.913em;/)
+    // Fuera del chat (CRM, leads) la fila de encaje conserva su .9rem; dentro, relativa a la letra.
+    expect(css).toMatch(/\.enc-fila \{ font-size: \.9rem; \}/)
+    expect(css).toMatch(/\.ai-content \.enc-fila \{ font-size: \.978em; \}/)
+    const md = readFileSync(join(SRC, 'markdown.js'), 'utf8')
+    expect(md).toContain('<div class="enc-fila" style="')
+    expect(md).not.toMatch(/enc-fila" style="[^"]*font-size/)
+  })
+})
+
 describe('App.jsx usa la maqueta', () => {
   const SRC = dirname(fileURLToPath(import.meta.url))
   const app = codigoDesnudo(readFileSync(join(SRC, 'App.jsx'), 'utf8'), 'App.jsx')
@@ -55,6 +76,25 @@ describe('App.jsx usa la maqueta', () => {
     expect(mensaje).not.toContain('src={isotipo}')
     expect(mensaje).not.toMatch(/>\s*Tú\s*</)
     expect(mensaje).not.toMatch(/paddingLeft/)
+  })
+
+  it('la letra de los mensajes sale de la maqueta, en el chat y en la conversación compartida', () => {
+    expect(mensaje).toContain('...LETRA_MENSAJE')
+    expect(app).not.toMatch(/fontSize:\s*'\.92rem',\s*lineHeight:\s*1\.65/)
+  })
+
+  it('la conversación compartida usa la misma maqueta: sin signo, sin tope del 80 %, misma columna', () => {
+    const inicio = app.indexOf('if (shareToken) {')
+    // El fin se ancla en CÓDIGO (la barra para seguir la conversación): codigoDesnudo quita los comentarios.
+    const fin = app.indexOf('paddingBottom:16, paddingTop:10', inicio)
+    expect(inicio).toBeGreaterThan(-1)
+    expect(fin).toBeGreaterThan(inicio)
+    const visor = app.slice(inicio, fin)
+    expect(visor).toMatch(/maquetaMensaje\(\{\s*isUser:\s*esTuyo\s*\}\)/)
+    expect(visor).toContain('...LETRA_MENSAJE')
+    expect(visor).toContain('maxWidth:ANCHO_COLUMNA_PC + 48')
+    expect(visor).not.toContain("maxWidth:'80%'")
+    expect(visor.match(/<img src=\{isotipo\}/g)).toBeNull()
   })
 
   it('la lista de mensajes y el campo de escribir comparten la columna', () => {

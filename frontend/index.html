@@ -48,7 +48,17 @@
 
     <!-- Tema anti-flash: aplica dark/light antes de renderizar -->
     <script>
-      try { document.documentElement.setAttribute('data-theme', localStorage.getItem('contexto_theme') === 'light' ? 'light' : 'dark'); } catch (e) {}
+      try {
+        var t = localStorage.getItem('contexto_theme') === 'light' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', t);
+        // La barra del sistema sigue el tema de la APP, no el del sistema operativo. Por eso
+        // NO se usa <meta name="theme-color" media="(prefers-color-scheme: …)">: el tema vive
+        // en localStorage (theme.js), así que con el teléfono en oscuro y la app en claro esa
+        // variante dejaría la barra negra sobre una app blanca. Los dos literales son los --bg
+        // de index.css y un test (temaBarra.test.js) se pone rojo si el token cambia y esto no.
+        var m = document.querySelector('meta[name="theme-color"]');
+        if (m) m.setAttribute('content', t === 'light' ? '#FFFFFF' : '#1C1C1C');
+      } catch (e) {}
     </script>
     <!-- Warm-up del backend (Render se duerme tras inactividad y el primer golpe del día
          tarda 30-60s): este ping lo despierta APENAS carga el HTML, en paralelo a que el

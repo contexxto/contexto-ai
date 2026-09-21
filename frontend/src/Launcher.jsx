@@ -1,45 +1,62 @@
 import { useState } from 'react'
-import { MapPin, Map, CalendarClock, Train, Trees, Wallet, Building2, Sparkles } from 'lucide-react'
-import { INTENCIONES, FILAS } from './intencionesEntrada'
+import { ArrowDownLeft, RefreshCw } from 'lucide-react'
+import { INTENCIONES, HOME } from './intencionesEntrada'
+import LogoVertical from './LogoContexto'
 
-// ── Launcher (pantalla inicial limpia, estilo ASI:One) ──────────────────────
+// ── Launcher (pantalla inicial) ──────────────────────────────────────────────
 // Presentational: sin estado de negocio. Recibe callbacks y dispara las MISMAS
-// acciones que ya existían en App (sendMessage / analizarMiUbicacion / mapa /
-// upgrade). Reemplaza el hero del estado vacío. Superficies planas, cero glow.
+// acciones que ya existían en App (sendMessage / analizarMiUbicacion / mapa).
+//
+// Dirección (2026-09-20): la referencia de esta pantalla es el inicio de Comet, NO
+// ASI:One. Una sola jerarquía: la marca con aire, una leyenda, cuatro entradas a
+// ancho completo que dicen qué va a pasar, y el campo de escribir (que vive en App).
+// Lo que salió de aquí a propósito: el título, los ocho chips, el botón «Analiza dónde
+// estás» (la zona actual es la segunda entrada) y el enlace de corredores (la home es
+// del habitante; el corredor entra por el menú lateral).
+//
+// El aire se reparte con tres espaciadores flexibles que se encogen a cero antes que
+// nada: el centrado nunca provoca scroll. Antes había 150 px fijos arriba y el bloque
+// medía 642 px contra un hueco de ~440 en un teléfono de 360×720.
+//
+// `aviso` es el hueco para el mensaje de error de App (p. ej. permiso de ubicación
+// negado): con el bloque a pantalla completa, pintarlo después del Launcher lo dejaba
+// bajo el pliegue y la entrada de la zona fallaba en silencio. Va ARRIBA del todo.
+// OJO al comentar: tests/test_intenciones_entrada.py lee este archivo como TEXTO, comentarios
+// incluidos, y falla si aparece la palabra intent seguida de dos puntos.
 
 // Los textos viven en ./intencionesEntrada (fuente única): cada intención rinde también
 // como página indexable y como guion del canal, y repetirlos aquí los desincronizaba.
-// Aquí solo se les pone cara.
-const ICONO = {
-  zona: MapPin, mapa: Map, 'vivir-un-ano': CalendarClock, transporte: Train,
-  'area-verde': Trees, presupuesto: Wallet, corredor: Building2, aura: Sparkles,
-}
-const CHIPS = INTENCIONES.map((i) => ({ ...i, icon: ICONO[i.id] || Sparkles }))
-const ROWS = FILAS
+// HOME elige cuáles (cuatro ids, en orden): aquí solo se les pone forma.
+const ENTRADAS = HOME.map((id) => INTENCIONES.find((i) => i.id === id)).filter(Boolean)
 
-function Chip({ icon: Icon, label, onClick }) {
+function Entrada({ label, busy, onClick }) {
   const [hover, setHover] = useState(false)
   return (
     <button
       onClick={onClick}
+      disabled={busy}
+      aria-busy={busy || undefined}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
-        display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap',
-        padding: '8px 14px', borderRadius: 10, cursor: 'pointer',
-        background: hover ? 'var(--surface-3)' : 'var(--surface-2)',
-        border: '1px solid var(--border)', color: 'var(--text)',
-        fontSize: '.83rem', fontWeight: 500, fontFamily: 'inherit',
-        transition: 'background .15s',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14,
+        width: '100%', textAlign: 'left', padding: '10px 16px', borderRadius: 14,
+        cursor: busy ? 'default' : 'pointer',
+        background: hover && !busy ? 'var(--home-row-hover)' : 'var(--home-row-bg)',
+        border: '1px solid var(--home-row-border)', color: 'var(--text)',
+        fontSize: '.92rem', lineHeight: 1.25, fontWeight: 400, fontFamily: 'inherit',
+        transition: 'background var(--dur-fast) var(--ease)',
       }}
     >
-      <Icon size={16} style={{ color: 'var(--text-mid)', flexShrink: 0 }} />
-      {label}
+      <span>{busy ? 'Ubicándote…' : label}</span>
+      {busy
+        ? <RefreshCw size={18} style={{ color: 'var(--text-dim)', flexShrink: 0, animation: 'spin 1s linear infinite' }} />
+        : <ArrowDownLeft size={18} style={{ color: 'var(--text-dim)', flexShrink: 0 }} />}
     </button>
   )
 }
 
-export default function Launcher({ onSend, onAnalyzeLocation, onOpenMap, onBroker, geoLoading, isMobile }) {
+export default function Launcher({ onSend, onAnalyzeLocation, onOpenMap, onBroker, geoLoading, isMobile, aviso }) {
   const fire = (c) => {
     if (c.accion === 'geo') onAnalyzeLocation()
     else if (c.accion === 'map') onOpenMap()
@@ -48,56 +65,43 @@ export default function Launcher({ onSend, onAnalyzeLocation, onOpenMap, onBroke
   }
 
   return (
-    <div style={{
-      display: 'flex', flexDirection: 'column', alignItems: 'center',
-      paddingTop: isMobile ? 150 : 130, textAlign: 'center',
-    }}>
-      <h1 style={{
-        fontFamily: 'var(--font-display)', fontWeight: 700,
-        fontSize: isMobile ? '1.55rem' : '2rem', letterSpacing: '-.02em',
-        color: 'var(--text)', lineHeight: 1.15, margin: '0 0 28px',
-      }}>
-        ¿Con qué te ayudo hoy?
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', minHeight: '100%', textAlign: 'center' }}>
+      {/* El fondo de aura NO vive aquí: lo pinta App detrás de toda el área principal (header y
+          campo de escribir incluidos), con la misma condición que monta esta pantalla. */}
+      {/* Lo primero de la pantalla: con el teclado CERRADO (que es como se toca una entrada) queda
+          a la vista sin scroll, también con el aviso puesto (visto en el teléfono). Más abajo
+          volvía a quedar bajo el pliegue.
+          Límite conocido: Chrome de Android no encoge la página al abrir el teclado, la SUBE para
+          mostrar el campo, así que con el teclado abierto se ve el FINAL del bloque (leyenda,
+          entradas y campo) y este aviso quedaría arriba, fuera de vista. En la práctica no pasa
+          al enviar con el botón: tocarlo le quita el foco al campo, el teclado se cierra solo y
+          el aviso queda a la vista, con el borrador intacto (visto en el teléfono). Solo quedaría
+          escondido al enviar con el Enter del teclado, que lo deja abierto. */}
+      {aviso && <div style={{ margin: '0 auto', flexShrink: 0, width: '100%', maxWidth: 560, textAlign: 'left' }}>{aviso}</div>}
+
+      <div style={{ flex: '1 1 0' }} />
+
+      {/* El único encabezado de la pantalla: su nombre accesible sale del logotipo («Contexto»).
+          margin 0: el margen por defecto de un h1 rompería el centrado sin scroll. */}
+      <h1 style={{ margin: 0, display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
+        <LogoVertical size={isMobile ? 76 : 88} />
       </h1>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 11, alignItems: 'center', maxWidth: 500 }}>
-        {ROWS.map((row, ri) => (
-          <div key={ri} style={{ display: 'flex', justifyContent: 'center', gap: 11, flexWrap: 'wrap' }}>
-            {row.map((idx) => {
-              const c = CHIPS[idx]
-              return <Chip key={idx} icon={c.icon} label={c.label} onClick={() => fire(c)} />
-            })}
-          </div>
-        ))}
-      </div>
+      <div style={{ flex: '.9 1 0' }} />
 
-      <div style={{ color: 'var(--text-mid)', fontSize: '1rem', margin: '38px 0 20px' }}>
+      {/* 12 px fijos arriba: los espaciadores ceden a cero, y con el aviso puesto más un borrador de
+          cuatro líneas la leyenda quedaba pegada al logotipo (visto en el teléfono). */}
+      <div style={{ color: 'var(--text-dim)', fontSize: '.95rem', margin: '12px 0 26px', flexShrink: 0 }}>
         Cada lugar tiene un aura.
       </div>
 
-      <button
-        onClick={onAnalyzeLocation}
-        disabled={geoLoading}
-        style={{
-          display: 'inline-flex', alignItems: 'center', gap: 10,
-          padding: '14px 26px', borderRadius: 12, border: 'none',
-          cursor: geoLoading ? 'default' : 'pointer',
-          background: 'var(--teal-bright)', color: '#06201C',
-          fontWeight: 700, fontSize: '1rem', fontFamily: 'inherit',
-        }}
-      >
-        <MapPin size={18} /> {geoLoading ? 'Ubicándote…' : 'Analiza dónde estás'}
-      </button>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0, width: '100%', maxWidth: 560, margin: '0 auto' }}>
+        {ENTRADAS.map((c) => (
+          <Entrada key={c.id} label={c.label} busy={c.accion === 'geo' && geoLoading} onClick={() => fire(c)} />
+        ))}
+      </div>
 
-      <button
-        onClick={onBroker}
-        style={{
-          marginTop: 24, background: 'none', border: 'none', cursor: 'pointer',
-          color: 'var(--text-dim)', fontSize: '.76rem', fontFamily: 'inherit', whiteSpace: 'nowrap',
-        }}
-      >
-        ¿Corredor o inmobiliaria? Recibe leads calificados →
-      </button>
+      <div style={{ flex: '.7 1 0' }} />
     </div>
   )
 }

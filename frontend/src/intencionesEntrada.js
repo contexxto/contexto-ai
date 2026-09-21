@@ -31,11 +31,11 @@
 // en vez de declarar un dato.
 
 export const INTENCIONES = [
-  { id: 'zona', label: 'Analiza mi zona', accion: 'geo' },
-  { id: 'mapa', label: 'Explorar el mapa', accion: 'map' },
+  { id: 'zona', label: 'Analiza la zona donde estoy', accion: 'geo' },
+  { id: 'mapa', label: 'Explora el Mapa Vivo de Quito', accion: 'map' },
   {
     id: 'vivir-un-ano',
-    label: '¿Podría vivir aquí un año?',
+    label: '¿Podría vivir aquí un año? Ruido, transporte y qué resuelvo a pie',
     accion: 'send',
     // No es un consejo: es el producto. La pregunta que el Place Graph responde con
     // dato medido y citado, y la que ningún portal puede contestar.
@@ -44,7 +44,7 @@ export const INTENCIONES = [
   },
   {
     id: 'transporte',
-    label: 'Cerca del Metro',
+    label: 'Busca cerca del Metro o de mi trabajo',
     accion: 'send',
     intent: '🚇 Quiero vivir cerca del Metro o de mi trabajo',
   },
@@ -75,5 +75,16 @@ export const INTENCIONES = [
   },
 ]
 
-// Filas escalonadas 2-2-2-2 (el patrón visual del Launcher).
-export const FILAS = [[0, 1], [2, 3], [4, 5], [6, 7]]
+// ── LA HOME (2026-09-20) ────────────────────────────────────────────────────────────
+// La pantalla inicial muestra CUATRO entradas de una, a ancho completo: el producto
+// primero, la zona actual, el mapa y una necesidad. Por id y no por posición: reordenar
+// INTENCIONES no cambia la home.
+//
+// Las cuatro hablan con una sola voz: la pregunta del producto, y tres órdenes a Contexto
+// en imperativo. A ancho completo cabe una frase que dice qué va a pasar; una etiqueta de
+// dos palabras dejaba la fila vacía.
+//
+// Área verde, presupuesto, «Soy corredor» y el aura ya NO se siembran desde la home. Siguen
+// aquí porque rinden como página indexable y guion del canal, y porque el test de la
+// whitelist del encaje las busca en este archivo. El corredor entra por el menú lateral.
+export const HOME = ['vivir-un-ano', 'zona', 'mapa', 'transporte']

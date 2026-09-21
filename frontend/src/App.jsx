@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, lazy, Suspense } from 'react'
 import axios from 'axios'
 import {
   Send, MapPin, RefreshCw, Trash2, Copy, CheckCheck, ChevronDown, PanelLeft,
@@ -29,6 +29,7 @@ import Sidebar, { RailNav } from './Sidebar'
 import Campana from './Campana'
 import { ESTADO, leerStreamChat } from './leerStreamChat'
 import sphereLogo from './assets/sphere.svg'
+import { BOTON_REDONDO } from './homeEstilos'
 
 // Carga diferida ROBUSTA ante deploys. Si el chunk falla al descargarse (típico cuando un
 // deploy purgó el hash viejo mientras el usuario tenía la app abierta → "Failed to fetch
@@ -404,6 +405,69 @@ function Thinking() {
   )
 }
 
+// ── Alto del campo de escribir ──────────────────────────────
+// Crece con el texto hasta cuatro líneas COMPLETAS: 4 × 24 de línea + 20 de aire. Con 120 la
+// quinta línea asomaba cortada.
+// El aire (10 arriba y 10 abajo) es un BORDE transparente, no padding: un textarea con scroll
+// pinta texto dentro de su padding, y con cinco líneas la primera quedaba pegada al canto de la
+// píldora (visto en el teléfono de Carlos). El texto nunca entra en un borde. Y el borde sigue
+// siendo del textarea: tocarlo enfoca el campo, así que el área táctil sigue midiendo 44.
+const AIRE_CAMPO = 10
+const ALTO_MAX_CAMPO = 4 * 24 + 2 * AIRE_CAMPO
+
+// ── Las dos formas de la píldora ────────────────────────────
+// Vacía, o con un texto que cabe en una línea: UNA fila (campo · ubicación · «+» · Voz/Enviar).
+// En cuanto el texto no cabe, forma AMPLIA: el campo ocupa todo el ancho y los botones bajan a
+// una segunda fila. Con los botones al lado, el texto se quedaba en una columna de ~180 px en un
+// teléfono y «chocaba» con ellos (visto por Carlos en el aparato; en producción usa todo el ancho).
+//
+// El criterio es el ancho del TEXTO medido en un canvas, NO el layout actual. Si dependiera del
+// layout oscilaría: al ensancharse el campo el texto vuelve a caber en una línea, la píldora se
+// estrecharía, el texto dejaría de caber… Medir el texto da la misma respuesta en las dos formas.
+// Un desajuste de un píxel con el ajuste real de línea es inocuo: las dos formas admiten varias
+// líneas. La forma se marca con data-amplio en la píldora (el padre del textarea) y el CSS hace el
+// resto (index.css, .dock-pill): React no conoce ese atributo y no lo pisa.
+const ANCHO_BOTONES_PILDORA = 36 + 36 + 44 + 4 + 3 * 2   // ubicación, «+», Voz/Enviar, su margen y tres huecos
+const PAD_PILDORA_UNA_FILA = 18 + 5                       // izquierda + derecha de .dock-pill en la forma de una fila
+let lienzoDeMedir = null
+function noCabeEnUnaLinea(el, pildora) {
+  const texto = el.value
+  if (!texto) return false
+  if (texto.includes('\n')) return true
+  const cs = getComputedStyle(el)
+  lienzoDeMedir = lienzoDeMedir || document.createElement('canvas').getContext('2d')
+  lienzoDeMedir.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`
+  // El hueco del campo en la forma de UNA fila, se esté en la forma que se esté: sale del ancho
+  // de la píldora (que no cambia con la forma) y de constantes, nunca del ancho actual del campo.
+  const hueco = pildora.clientWidth - PAD_PILDORA_UNA_FILA - ANCHO_BOTONES_PILDORA
+  return lienzoDeMedir.measureText(texto).width > hueco
+}
+
+// Se llama desde onInput (teclado), desde un efecto de App (dictado por voz, volver de otra vista,
+// cambio de ancho del campo: nada de eso emite el evento input) y al redimensionar la ventana.
+// Primero decide la FORMA (cambia el ancho del campo) y después mide el alto.
+// El overflow se gobierna AQUÍ y no en el style del textarea:
+//  · oculto mientras se mide: una barra de scroll clásica (escritorio) estrecha el campo durante
+//    la medición y el alto salía con una línea de más;
+//  · oculto con el campo vacío: nunca hay barra sobre el placeholder;
+//  · auto solo cuando el texto pasa del máximo.
+function ajustarAltoCampo(el) {
+  const pildora = el.parentElement
+  if (pildora) {
+    if (noCabeEnUnaLinea(el, pildora)) pildora.dataset.amplio = '1'
+    else delete pildora.dataset.amplio
+  }
+  el.style.overflowY = 'hidden'
+  el.style.height = 'auto'
+  // Vacío: se queda en el alto natural de una fila. Medir scrollHeight aquí contaría el
+  // PLACEHOLDER: al borrar todo el texto la píldora quedaba a 80 px en vez de volver a 56.
+  if (!el.value) return
+  // scrollHeight no cuenta los bordes y el alto (border-box) sí.
+  const alto = el.scrollHeight + 2 * AIRE_CAMPO
+  el.style.height = Math.min(alto, ALTO_MAX_CAMPO) + 'px'
+  if (alto > ALTO_MAX_CAMPO) el.style.overflowY = 'auto'
+}
+
 // ── Main App ────────────────────────────────────────────────
 // Los chips de INTENCIÓN viven ahora en Launcher.jsx (pantalla inicial limpia).
 export default function App() {
@@ -513,6 +577,15 @@ export default function App() {
   const [rol, setRol] = useState(null)                    // rol del usuario (cliente/corredor/inmobiliaria)
   const [publishOpen, setPublishOpen] = useState(false)   // modal "Mis publicaciones"
   const [upgradeOpen, setUpgradeOpen] = useState(false)   // modal "Conviértete en corredor"
+  // El camino de corredores. ConvierteteCorredor es un upgrade de rol: necesita sesión, y sin
+  // ella su POST devolvía 401 («Falta el token…») en un modal sin salida. Pasaba ya desde el
+  // enlace de la home; ahora que el menú es el único camino de captación, sin sesión se abre
+  // el REGISTRO, que ya trae el selector corredor/inmobiliaria (la misma ruta que /?corredor=1).
+  const abrirCorredor = () => {
+    setView('chat')
+    if (authEnabled && !session) { setAuthMode('signup'); setAuthOpen(true) }
+    else setUpgradeOpen(true)
+  }
   const [shareOpen, setShareOpen] = useState(false)       // modal "Compartir conversación"
   const [attachOpen, setAttachOpen] = useState(false)     // hoja "Adjuntar" (el "+" del dock → búsqueda visual)
   const [shared, setShared] = useState(null)              // datos de una conversación compartida (visor)
@@ -818,9 +891,45 @@ export default function App() {
   // haya por encima, incluido el documento — asi se iba el header fuera de pantalla en
   // la PWA instalada. Movemos solo la lista de mensajes, que es lo que se quiere mover.
   useEffect(() => {
+    // Con el chat vacío no hay nada que seguir. Sin esta guarda el efecto corría al montar y,
+    // si la pantalla inicial medía más que el hueco, la home se abría por el fondo con el
+    // título fuera de pantalla (medido: 642 px de Launcher en ~440 de hueco).
+    if (messages.length === 0) return
     const el = scrollRef.current
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
   }, [messages, loading])
+
+  // El alto del campo se vuelve a medir cuando cambia algo que onInput no ve. No enfoca ni
+  // desplaza el documento: solo toca el alto, el overflow y el scroll INTERNO del textarea.
+  //  · input: el dictado por voz (y cualquier setInput) no emite el evento input; el campo se
+  //    quedaba en una línea con el texto dictado escondido.
+  //  · listening: pasadas las cuatro líneas, lo que se está dictando caía bajo el pliegue
+  //    (asignar value por programa no mueve el scroll): mientras se dicta, el campo va al final.
+  //  · view / openAnuncioId / anuncioMode: mapa, CRM, revisión y anuncio DESMONTAN el chat; al
+  //    volver hay un textarea nuevo con el borrador de antes y `input` no cambió.
+  //  · isMobile / sidebarCollapsed: cambian el ANCHO del campo, y con él las líneas del texto.
+  useLayoutEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    ajustarAltoCampo(el)
+    if (listening) el.scrollTop = el.scrollHeight
+  }, [input, listening, view, openAnuncioId, anuncioMode, isMobile, sidebarCollapsed])
+
+  // Girar el teléfono o estrechar la ventana también re-envuelve el texto sin tocar `input`. Con
+  // el overflow oculto por debajo del máximo, lo que sobrara quedaba recortado e inalcanzable
+  // hasta la siguiente tecla.
+  // Lo mismo cuando LLEGA LA FUENTE: Geist carga con display=swap; quien escribe en una primera
+  // visita lenta ve el texto en la fuente de respaldo, y al llegar Geist (algo más ancha) el
+  // texto se re-envuelve sin que nada vuelva a medir.
+  useEffect(() => {
+    const medir = () => { if (inputRef.current) ajustarAltoCampo(inputRef.current) }
+    window.addEventListener('resize', medir)
+    document.fonts?.addEventListener?.('loadingdone', medir)
+    return () => {
+      window.removeEventListener('resize', medir)
+      document.fonts?.removeEventListener?.('loadingdone', medir)
+    }
+  }, [])
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current
@@ -1339,7 +1448,8 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deepLinkId, anuncioMode, sessionId, modoCorredor, hilosCorredor.length, hiloSeleccionado])
 
-  // "Analiza dónde estás": pide la ubicación y dispara el análisis del lugar (global).
+  // La entrada «Analiza la zona donde estoy» de la home: pide la ubicación y dispara el
+  // análisis del lugar (global).
   const analizarMiUbicacion = useCallback(() => {
     const MSG = '¿Cómo es vivir aquí? Analiza el lugar donde estoy ahora.'
     if (geo) { sendMessage(MSG); return }
@@ -1581,6 +1691,22 @@ export default function App() {
   }, [sessionId])
 
   const isEmpty = messages.length === 0 && !loading
+  // El aviso de error vive en DOS sitios. Con mensajes, al final de la lista (donde el
+  // auto-scroll lo alcanza). Con el chat vacío, el Launcher ocupa todo el alto y pintarlo
+  // después lo dejaba bajo el pliegue: negar el permiso de ubicación fallaba en silencio.
+  const avisoError = error ? (
+    <div role="alert" style={{
+      background:'var(--error-bg)', border:'1px solid var(--error-border)', borderRadius:10,
+      padding:'12px 16px', color:'var(--error-text)', fontSize:'.87rem', marginBottom:12,
+      display:'flex', justifyContent:'space-between', alignItems:'center',
+    }}>
+      <span>{error}</span>
+      <button onClick={() => setError(null)}
+        style={{ background:'none', border:'none', cursor:'pointer', color:'var(--error-text)', fontSize:16 }}>
+        ×
+      </button>
+    </div>
+  ) : null
 
   // Página de anuncio del QR (/a/{id}) — landing pública del inmueble. El CTA abre
   // el chat con el agente (runtime propio) y dispara el informe.
@@ -1723,7 +1849,7 @@ export default function App() {
       onMap={() => { setMapSeed(null); setMapEncaje(null); setView('map') }}
       onReview={() => setView('review')}
       onCRM={abrirCRM}
-      onUpgrade={() => { setView('chat'); setUpgradeOpen(true) }}
+      onUpgrade={abrirCorredor}
       onExpand={() => setSidebarCollapsed(false)}
     />
   )
@@ -1746,7 +1872,7 @@ export default function App() {
           onMap={() => { setMapSeed(null); setMapEncaje(null); setView('map') }}
           onReview={() => setView('review')}
           onCRM={abrirCRM}
-          onUpgrade={() => { setView('chat'); setUpgradeOpen(true) }}
+          onUpgrade={abrirCorredor}
           puedeInstalar={puedeInstalar}
           onInstalar={instalarApp}
           mobile={false}
@@ -1770,7 +1896,7 @@ export default function App() {
               onMap={() => { setMapSeed(null); setMapEncaje(null); setView('map'); setSidebarOpen(false) }}
               onReview={() => { setView('review'); setSidebarOpen(false) }}
               onCRM={abrirCRM}
-              onUpgrade={() => { setView('chat'); setUpgradeOpen(true); setSidebarOpen(false) }}
+              onUpgrade={() => { abrirCorredor(); setSidebarOpen(false) }}
               puedeInstalar={puedeInstalar}
               onInstalar={instalarApp}
               mobile={true}
@@ -1862,7 +1988,7 @@ export default function App() {
           onMap={() => { setMapSeed(null); setMapEncaje(null); setView('map') }}
           onReview={() => setView('review')}
           onCRM={abrirCRM}
-          onUpgrade={() => { setView('chat'); setUpgradeOpen(true) }}
+          onUpgrade={abrirCorredor}
           puedeInstalar={puedeInstalar}
           onInstalar={instalarApp}
           mobile={false}
@@ -1886,7 +2012,7 @@ export default function App() {
               onMap={() => { setMapSeed(null); setMapEncaje(null); setView('map'); setSidebarOpen(false) }}
               onReview={() => { setView('review'); setSidebarOpen(false) }}
               onCRM={abrirCRM}
-              onUpgrade={() => { setView('chat'); setUpgradeOpen(true); setSidebarOpen(false) }}
+              onUpgrade={() => { abrirCorredor(); setSidebarOpen(false) }}
               puedeInstalar={puedeInstalar}
               onInstalar={instalarApp}
               mobile={true}
@@ -1901,6 +2027,12 @@ export default function App() {
         onDrop={handleDrop}
         style={{ flex:1, minWidth:0, position:'relative',
                  height:'var(--app-h, 100dvh)', overflow:'hidden' }}>
+      {/* El aura (fase 2): solo con el chat vacío y solo en oscuro (en claro el token vale none).
+          Vive AQUÍ, en el área principal, y no dentro del Launcher: así queda centrada en el
+          contenido (el menú lateral no le tapa el fundido izquierdo) y fuera del contenedor con
+          scroll de los mensajes, donde WebKit tiene historial con las capas fijas.
+          Todo lo demás está en .home-aura (index.css). */}
+      {isEmpty && <div className="home-aura" aria-hidden="true" />}
       <div style={{ width:'100%', maxWidth:1280, margin:'0 auto', display:'flex', flexDirection:'column',
                     height:'var(--app-h, 100dvh)', minHeight:0, padding:isMobile ? '0 14px' : '0 32px' }}>
 
@@ -1920,9 +2052,13 @@ export default function App() {
       )}
 
       {/* ── Header ── */}
+      {/* Con el chat VACÍO la marca ya está en el centro de la pantalla (Launcher), así que el
+          header muestra solo sus dos acciones, en botones redondos, y sin el nombre. Con
+          mensajes vuelve el header de siempre. */}
       <header style={{
         position:'relative', display:'flex', alignItems:'center', justifyContent:'center',
-        padding:'16px 0 12px',
+        padding: isEmpty ? 0 : '16px 0 12px',
+        minHeight: 56,                  // igual en los dos estados: el header no salta al enviar
         flexShrink:0,
       }}>
         {/* Botón de menú/panel — anclado a la izquierda; el logo va centrado (estilo ASI:One).
@@ -1931,33 +2067,38 @@ export default function App() {
         {(isMobile || !sidebarCollapsed) && (
           <div style={{ position:'absolute', left:0, top:'50%', transform:'translateY(-50%)' }}>
             {isMobile ? (
-              <button onClick={() => setSidebarOpen(true)} title="Conversaciones"
+              <button onClick={() => setSidebarOpen(true)} title="Conversaciones" aria-label="Conversaciones"
                 style={{ background:'none', border:'none', cursor:'pointer',
-                         color:'var(--text)', padding:4, display:'flex', flexShrink:0 }}>
+                         color:'var(--text)', padding:4, display:'flex', flexShrink:0,
+                         ...(isEmpty ? BOTON_REDONDO : null) }}>
                 <PanelLeft size={22} />
               </button>
             ) : (
               <button onClick={() => setSidebarCollapsed(true)}
                 title="Ocultar barra lateral"
                 style={{ background:'none', border:'none', cursor:'pointer',
-                         color:'var(--text-muted)', padding:4, display:'flex', flexShrink:0 }}>
+                         color:'var(--text-muted)', padding:4, display:'flex', flexShrink:0,
+                         ...(isEmpty ? BOTON_REDONDO : null) }}>
                 <PanelLeft size={20} />
               </button>
             )}
           </div>
         )}
-        <div style={{ display:'flex', alignItems:'center', gap:9 }}>
-          <img src={sphereLogo} alt="Contexto" width={isMobile ? 26 : 30} height={isMobile ? 26 : 30}
-               style={{ display:'block', flexShrink:0 }} />
-          <div style={{ fontWeight:800, fontSize:isMobile ? '1rem' : '1.05rem', letterSpacing:'-.3px' }}>
-            Contexto
+        {!isEmpty && (
+          <div style={{ display:'flex', alignItems:'center', gap:9 }}>
+            <img src={sphereLogo} alt="Contexto" width={isMobile ? 26 : 30} height={isMobile ? 26 : 30}
+                 style={{ display:'block', flexShrink:0 }} />
+            <div style={{ fontWeight:800, fontSize:isMobile ? '1rem' : '1.05rem', letterSpacing:'-.3px' }}>
+              Contexto
+            </div>
           </div>
-        </div>
+        )}
         {/* Campana a la derecha, espejo del toggle de la izquierda. Es el canal de avisos
             que no depende de permisos del navegador ni de que nadie revise su correo. */}
         <div style={{ position:'absolute', right:0, top:'50%', transform:'translateY(-50%)' }}>
           <Campana
             sessionId={sessionId}
+            redonda={isEmpty}
             onAbrir={(n) => {
               // El aviso trae el hilo entero: la conversación Y con cuál corredor. Sin el
               // segundo dato, abrir el aviso de un corredor podía mostrar el chat del otro.
@@ -2005,9 +2146,10 @@ export default function App() {
             onSend={sendMessage}
             onAnalyzeLocation={analizarMiUbicacion}
             onOpenMap={() => { setMapSeed(null); setMapEncaje(null); setView('map') }}
-            onBroker={() => setUpgradeOpen(true)}
+            onBroker={abrirCorredor}
             geoLoading={geoLoading}
             isMobile={isMobile}
+            aviso={avisoError}
           />
         )}
 
@@ -2026,19 +2168,7 @@ export default function App() {
 
         {loading && <Thinking />}
 
-        {error && (
-          <div style={{
-            background:'var(--error-bg)', border:'1px solid var(--error-border)', borderRadius:10,
-            padding:'12px 16px', color:'var(--error-text)', fontSize:'.87rem', marginBottom:12,
-            display:'flex', justifyContent:'space-between', alignItems:'center',
-          }}>
-            <span>{error}</span>
-            <button onClick={() => setError(null)}
-              style={{ background:'none', border:'none', cursor:'pointer', color:'var(--error-text)', fontSize:16 }}>
-              ×
-            </button>
-          </div>
-        )}
+        {!isEmpty && avisoError}
 
         <div ref={bottomRef} />
       </div>
@@ -2163,23 +2293,27 @@ export default function App() {
             </div>
           )
         )}
-        <div style={{
-          background:'var(--surface-1)',
-          border:`1px solid ${listening ? 'var(--teal)' : 'var(--border)'}`, borderRadius:16, padding:'12px 14px',
+        {/* LA PÍLDORA (fase 2). Una sola fila: campo · ubicación · «+» · Voz/Enviar. Antes eran
+            dos pisos (el campo arriba, los botones abajo) y, hasta la fase 1, una fila estática
+            «Para: Contexto AI» encima. Lo que NO cambió, a propósito, es todo lo que tiene
+            historial de bugs de teclado en la PWA de Android: el textarea es el mismo nodo con
+            el mismo ref, value, onChange, onKeyDown (isComposing), disabled y rows; no hay
+            focus() ni scrollIntoView nuevos. onInput mide igual que antes, ahora desde
+            ajustarAltoCampo, que también corre cuando el texto llega por dictado.
+            Radio FIJO de 28: con una línea se lee como píldora (alto 56) y, al crecer, como
+            rectángulo redondeado. Los botones se alinean ABAJO (flex-end) para bajar con el texto.
+            DOS FORMAS (ver noCabeEnUnaLinea): una fila, o —cuando el texto no cabe en una línea—
+            el campo a todo el ancho y los botones en una segunda fila. Es el MISMO DOM en las
+            dos: flex-wrap y un data-amplio que pone ajustarAltoCampo; el textarea no se remonta.
+            El padding y lo que cambia con la forma viven en .dock-pill (index.css). */}
+        <div className="dock-pill" style={{
+          display:'flex', flexWrap:'wrap', alignItems:'flex-end', gap:2,
+          minHeight:56, borderRadius:28,
+          // Sobre el aura (chat vacío) el campo es translúcido; con mensajes, la superficie de siempre.
+          background: isEmpty ? 'var(--home-dock-bg)' : 'var(--surface-1)',
+          border:`1px solid ${listening ? 'var(--teal)' : 'var(--border)'}`,
           transition:'border-color .2s',
         }}>
-          {/* Fila "Para:" — selector de destino, estilo ASI:One */}
-          <div style={{ display:'flex', alignItems:'center', gap:9, marginBottom:11 }}>
-            <span style={{ fontSize:'.78rem', color:'var(--text-dim)' }}>Para:</span>
-            <span style={{ display:'inline-flex', alignItems:'center', gap:7, padding:'5px 11px', borderRadius:999,
-                           border:'1px solid var(--border)', background:'var(--surface-2)' }}>
-              <img src={sphereLogo} alt="" width={14} height={14} style={{ display:'block' }} />
-              <span style={{ fontSize:'.8rem', fontWeight:600, color:'var(--text)' }}>Contexto</span>
-              <span style={{ fontSize:'.74rem', color:'var(--text-dim)' }}>AI</span>
-            </span>
-          </div>
-          <div style={{ height:1, background:'var(--border)', margin:'0 -14px 12px' }} />
-          {/* Campo en su propia línea (como "Ask anything") */}
           <textarea
             ref={inputRef}
             value={input}
@@ -2196,77 +2330,90 @@ export default function App() {
             placeholder="Pregúntame lo que sea…"
             disabled={loading}
             rows={1}
+            // .dock-input (index.css): el placeholder en UNA línea con puntos suspensivos (a 320 px
+            // el campo mide 141 y «Pregúntame lo que sea…» se partía en dos), y el flex y el
+            // padding del campo, que cambian con la forma de la píldora y por eso no van aquí.
+            className="dock-input"
             style={{
-              display:'block', width:'100%', background:'none', border:'none', outline:'none',
-              color:'var(--text)', fontSize:'.98rem', resize:'none',
-              lineHeight:1.5, maxHeight:120, overflowY:'auto',
-              fontFamily:'inherit', marginBottom:12,
+              // 1rem y no .98: por debajo de 16 px iOS hace zoom al enfocar el campo.
+              // 24 de línea + 10 y 10 de borde transparente → una línea mide 44 px, el alto de los
+              // botones: todo centrado. Borde y no padding: ver AIRE_CAMPO.
+              // SIN overflowY aquí: lo gobierna ajustarAltoCampo (arriba explica por qué).
+              display:'block', background:'none', outline:'none',
+              borderStyle:'solid', borderColor:'transparent', borderWidth:`${AIRE_CAMPO}px 0`,
+              color:'var(--text)', fontSize:'1rem', resize:'none',
+              lineHeight:1.5, maxHeight:ALTO_MAX_CAMPO,
+              fontFamily:'inherit',
             }}
-            onInput={e => {
-              e.target.style.height = 'auto'
-              e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'
-            }}
+            onInput={e => ajustarAltoCampo(e.target)}
           />
-          {/* Fila inferior: ubicación + "+" (izq) · Voz/Enviar (der) */}
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-            <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-              <button
-                onClick={toggleGeo}
-                disabled={geoLoading}
-                title={geo ? 'Ubicación activa — toca para quitar' : 'Compartir mi ubicación'}
-                style={{
-                  background:'none', border:'none', borderRadius:999, width:34, height:34, flexShrink:0, cursor:'pointer',
-                  display:'flex', alignItems:'center', justifyContent:'center',
-                  color: geo ? 'var(--teal-bright)' : 'var(--text-muted)', transition:'color .15s',
-                }}
-              >
-                {geoLoading
-                  ? <RefreshCw size={18} style={{ animation:'spin 1s linear infinite' }}/>
-                  : <MapPin size={18}/>}
-              </button>
-              <button
-                onClick={() => setAttachOpen(true)}
-                title="Adjuntar — busca en el inventario por foto"
-                style={{
-                  background:'none', border:'none', borderRadius:999, width:34, height:34, flexShrink:0, cursor:'pointer',
-                  display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text-muted)',
-                }}
-              >
-                <Plus size={20}/>
-              </button>
-            </div>
-            {/* Voz (vacío) ↔ Enviar (con texto), como ASI:One */}
-            {input.trim() ? (
-              <button
-                onClick={() => sendMessage()}
-                disabled={loading}
-                title="Enviar"
-                style={{
-                  background:'var(--teal-bright)', border:'none', borderRadius:999,
-                  width:44, height:44, flexShrink:0, cursor: loading ? 'default' : 'pointer',
-                  display:'flex', alignItems:'center', justifyContent:'center', color:'#06201C',
-                }}
-              >
-                {loading
-                  ? <RefreshCw size={18} style={{ animation:'spin 1s linear infinite' }}/>
-                  : <ArrowUp size={20}/>}
-              </button>
-            ) : (
-              <button
-                onClick={startVoice}
-                title={listening ? 'Escuchando… toca para detener' : 'Hablar (dictado por voz)'}
-                style={{
-                  display:'inline-flex', alignItems:'center', gap:8, flexShrink:0,
-                  padding:'10px 16px', borderRadius:999, border:'none', cursor:'pointer',
-                  background: listening ? 'var(--teal)' : 'var(--teal-bright)', color:'#06201C',
-                  fontWeight:600, fontSize:'.9rem', fontFamily:'inherit',
-                  animation: listening ? 'pulseGlow 1.2s ease-in-out infinite' : 'none',
-                }}
-              >
-                <AudioLines size={17}/> Voz
-              </button>
-            )}
-          </div>
+          {/* ubicación · «+» · Voz/Enviar — mismos handlers que antes */}
+          <button
+            onClick={toggleGeo}
+            disabled={geoLoading}
+            title={geo ? 'Ubicación activa — toca para quitar' : 'Compartir mi ubicación'}
+            aria-label={geo ? 'Quitar mi ubicación' : 'Compartir mi ubicación'}
+            className="dock-geo"
+            style={{
+              background:'none', border:'none', borderRadius:999, width:36, height:44, flexShrink:0, cursor:'pointer',
+              display:'flex', alignItems:'center', justifyContent:'center',
+              color: geo ? 'var(--teal-bright)' : 'var(--text-muted)', transition:'color .15s',
+            }}
+          >
+            {geoLoading
+              ? <RefreshCw size={18} style={{ animation:'spin 1s linear infinite' }}/>
+              : <MapPin size={18}/>}
+          </button>
+          <button
+            onClick={() => setAttachOpen(true)}
+            title="Adjuntar — busca en el inventario por foto"
+            aria-label="Adjuntar una foto"
+            style={{
+              background:'none', border:'none', borderRadius:999, width:36, height:44, flexShrink:0, cursor:'pointer',
+              display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text-muted)',
+            }}
+          >
+            <Plus size={20}/>
+          </button>
+          {/* Voz (vacío) ↔ Enviar (con texto). Los dos son el MISMO círculo de 44: al escribir
+              la primera letra el botón no cambia de tamaño ni empuja el campo. El aro en
+              --teal-text apenas se nota en oscuro (teal sobre teal, un filo algo más claro) y en
+              claro le da al botón el contorno que el teal sobre gris claro no tenía
+              (1.4:1 → ≥ 3:1). */}
+          {input.trim() ? (
+            <button
+              onClick={() => sendMessage()}
+              disabled={loading}
+              title="Enviar"
+              aria-label="Enviar"
+              className="dock-enviar"
+              style={{
+                background:'var(--teal-bright)', border:'1px solid var(--teal-text)', borderRadius:999,
+                width:44, height:44, flexShrink:0, cursor: loading ? 'default' : 'pointer',
+                display:'flex', alignItems:'center', justifyContent:'center', color:'#06201C',
+              }}
+            >
+              {loading
+                ? <RefreshCw size={18} style={{ animation:'spin 1s linear infinite' }}/>
+                : <ArrowUp size={20}/>}
+            </button>
+          ) : (
+            <button
+              onClick={startVoice}
+              title={listening ? 'Escuchando… toca para detener' : 'Hablar (dictado por voz)'}
+              aria-label={listening ? 'Detener el dictado' : 'Dictar por voz'}
+              className="dock-enviar"
+              style={{
+                display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0,
+                width:44, height:44, borderRadius:999, cursor:'pointer',
+                border:'1px solid var(--teal-text)',
+                background: listening ? 'var(--teal)' : 'var(--teal-bright)', color:'#06201C',
+                animation: listening ? 'pulseGlow 1.2s ease-in-out infinite' : 'none',
+              }}
+            >
+              <AudioLines size={20}/>
+            </button>
+          )}
         </div>
         {listening && (
           <div style={{ marginTop:8, fontSize:'.72rem', color:'var(--teal-text)',

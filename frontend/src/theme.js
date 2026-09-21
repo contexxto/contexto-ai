@@ -9,8 +9,22 @@ export function getTheme() {
   try { return localStorage.getItem(KEY) === 'light' ? 'light' : 'dark' } catch { return 'dark' }
 }
 
+// Color de la barra del sistema por tema. Son los `--bg` de index.css, repetidos aquí
+// porque el <meta> se escribe desde JS: el tema de Contexto vive en localStorage, NO en
+// `prefers-color-scheme`, así que la variante declarativa
+// (<meta name="theme-color" media="(prefers-color-scheme: light)">) daría el color del
+// SISTEMA y no el de la app — teléfono en oscuro + app en claro = barra negra sobre blanco.
+// El mismo par está en el script anti-flash de index.html, para que la barra ya salga bien
+// en el primer pintado. `temaBarra.test.js` vigila que los tres sitios no se separen.
+export const COLOR_BARRA = { dark: '#1C1C1C', light: '#FFFFFF' }
+
 export function applyTheme(t) {
-  try { document.documentElement.setAttribute('data-theme', t === 'light' ? 'light' : 'dark') } catch { /* noop */ }
+  const theme = t === 'light' ? 'light' : 'dark'
+  try { document.documentElement.setAttribute('data-theme', theme) } catch { /* noop */ }
+  try {
+    const meta = document.querySelector('meta[name="theme-color"]')
+    if (meta) meta.setAttribute('content', COLOR_BARRA[theme])
+  } catch { /* noop */ }
 }
 
 export function setTheme(t) {

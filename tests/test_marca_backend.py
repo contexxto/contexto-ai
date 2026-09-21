@@ -4,14 +4,19 @@ El nombre de la marca en lo que el backend le muestra a las personas: «Contexto
 La marca con «AI» se retiró el 2026-08-19 en la app, pero el backend la seguía usando donde la
 gente la ve: el agente se presentaba como «Contexto AI», los asuntos de los correos de reenganche
 la llevaban y el letrero imprimible la escribía en su franja (Carlos, 2026-09-21, con la foto de un
-letrero). Esta prueba lee cada cadena del código de app/ con `ast` —lo que puede llegar a una
-persona— y deja fuera los comentarios y las docstrings de módulo, que no salen de ahí.
+letrero). Y main.py, en la raíz, la ponía en el título de la documentación de la API y en /health.
+Esta prueba lee cada cadena de app/ y de main.py con `ast` —lo que puede llegar a una persona— y
+deja fuera los comentarios y las docstrings de módulo, que no salen de ahí.
 """
 import ast
 import re
 from pathlib import Path
 
-APP = Path(__file__).resolve().parents[1] / "app"
+RAIZ = Path(__file__).resolve().parents[1]
+APP = RAIZ / "app"
+# Lo que sirve el backend: el paquete app/ y el punto de entrada. Los scripts sueltos de la raíz
+# (semillas, importadores) no llegan a nadie.
+FUENTES = sorted(APP.rglob("*.py")) + [RAIZ / "main.py"]
 MARCA_ANTERIOR = re.compile(r"contexto\s+ai\b", re.IGNORECASE)
 
 
@@ -25,8 +30,8 @@ def _cadenas_visibles(fuente: str):
 
 
 def test_ninguna_cadena_del_backend_dice_contexto_ai():
-    halladas = [f"{p.relative_to(APP.parent)}:{n}: {v[:60]!r}"
-                for p in sorted(APP.rglob("*.py"))
+    halladas = [f"{p.relative_to(RAIZ)}:{n}: {v[:60]!r}"
+                for p in FUENTES
                 for n, v in _cadenas_visibles(p.read_text(encoding="utf-8"))
                 if MARCA_ANTERIOR.search(v)]
     assert halladas == []

@@ -290,20 +290,23 @@ div:focus, div:focus-visible { outline: none; }
   user-select: text;
   -webkit-touch-callout: default;
 }
+/* Los tamaños van en em, relativos a la letra del mensaje (LETRA_MENSAJE, maquetaMensaje.js): así
+   títulos, tablas y filas de encaje crecen con ella. Con la letra en .92rem son los mismos de antes
+   (1rem = 1.087em, 1.05rem = 1.141em, .92rem = 1em, .84rem = .913em, .9rem = .978em). */
 .ai-content h2, .ai-content h3 {
   font-family: var(--font-display); font-weight: 700;
-  margin: .9rem 0 .35rem; color: var(--accent); font-size: 1rem;
+  margin: .9rem 0 .35rem; color: var(--accent); font-size: 1.087em;
   letter-spacing: -0.3px;
 }
-.ai-content h2 { font-size: 1.05rem; }
+.ai-content h2 { font-size: 1.141em; }
 .ai-content h4 {
   font-family: var(--font-display); font-weight: 600;
-  margin: .7rem 0 .3rem; color: var(--text); font-size: .92rem;
+  margin: .7rem 0 .3rem; color: var(--text); font-size: 1em;
 }
 .ai-content p  { margin: .35rem 0; line-height: 1.65; }
 .ai-content em { color: var(--text-mid); font-style: italic; }
 .ai-content table {
-  border-collapse: collapse; width: 100%; margin: .7rem 0; font-size: .84rem;
+  border-collapse: collapse; width: 100%; margin: .7rem 0; font-size: .913em;
 }
 .ai-content th, .ai-content td {
   border: 1px solid var(--border); padding: 6px 10px; text-align: left; vertical-align: top;
@@ -318,6 +321,10 @@ div:focus, div:focus-visible { outline: none; }
   background: var(--surface-2); padding: 1px 5px; border-radius: 4px;
   font-size: .84em; color: var(--teal-text); font-family: var(--font-mono);
 }
+
+/* Fila de ENCAJE (markdown.js): .9rem fuera del chat (CRM, leads); dentro, relativa a la letra. */
+.enc-fila { font-size: .9rem; }
+.ai-content .enc-fila { font-size: .978em; }
 
 /* Tarjeta de ENCAJE (markdown.js): anotaciones ✅/⚠️ legibles en ambos temas.
    El teal usa --accent (consciente del tema); el ámbar se oscurece en claro para no lavarse. */

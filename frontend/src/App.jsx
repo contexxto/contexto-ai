@@ -31,7 +31,7 @@ import { ESTADO, leerStreamChat } from './leerStreamChat'
 import isotipo from './assets/isotipo.svg'
 import { LogoHorizontal, ALTO_MIN_HORIZONTAL } from './LogoContexto'
 import { BOTON_REDONDO } from './homeEstilos'
-import { maquetaMensaje, rellenoColumna } from './maquetaMensaje'
+import { ANCHO_COLUMNA_PC, LETRA_MENSAJE, maquetaMensaje, rellenoColumna } from './maquetaMensaje'
 import { SILENCIO_MAX_MS, textoDeSesion, textoVisible, unirSinRepetir } from './dictado'
 
 // Carga diferida ROBUSTA ante deploys. Si el chunk falla al descargarse (típico cuando un
@@ -253,7 +253,7 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
             border: 'none',
             boxShadow: isUser ? '0 4px 18px rgba(45,189,182,.22)' : 'none',
             color: isUser ? '#fff' : 'inherit',
-            fontSize:'.92rem', lineHeight:1.65,
+            ...LETRA_MENSAJE,
             position:'relative',
           }}>
             {isUser ? (
@@ -1770,7 +1770,9 @@ export default function App() {
   // Visor público de conversación compartida (solo lectura)
   if (shareToken) {
     return (
-      <div style={{ height:'var(--app-h, 100dvh)', maxWidth:820, margin:'0 auto', padding:isMobile ? '0 16px' : '0 24px',
+      // La misma columna que el chat (maquetaMensaje.js): 768 px de texto en computadora, la
+      // pantalla entera menos 14 px por lado en el teléfono.
+      <div style={{ height:'var(--app-h, 100dvh)', maxWidth:ANCHO_COLUMNA_PC + 48, margin:'0 auto', padding:isMobile ? '0 14px' : '0 24px',
                     display:'flex', flexDirection:'column' }}>
         <header style={{ display:'flex', alignItems:'center', gap:10, padding:'16px 0 12px', flexShrink:0 }}>
           <div>
@@ -1791,21 +1793,25 @@ export default function App() {
           <div style={{ color:'var(--text-muted)', padding:'40px 0', textAlign:'center' }}>Cargando…</div>
         )}
         <div style={{ paddingBottom:24 }}>
-          {shared?.messages?.map((m, i) => (
-            <div key={i} style={{ display:'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start',
-                                  marginBottom:16, gap:10 }}>
-              {m.role !== 'user' && <img src={isotipo} alt="" width={30} height={30} style={{ flexShrink:0 }} />}
-              <div style={{ maxWidth:'80%',
-                            padding: m.role === 'user' ? '10px 14px' : 0,
-                            borderRadius: m.role === 'user' ? '18px 18px 4px 18px' : 0,
-                            background: m.role === 'user' ? 'linear-gradient(135deg, var(--teal-deep), var(--teal))' : 'transparent',
-                            color: m.role === 'user' ? '#fff' : 'inherit', fontSize:'.92rem', lineHeight:1.65 }}>
-                {m.role === 'user'
-                  ? <span>{limpiarCtx(m)}</span>
-                  : <div className="ai-content" dangerouslySetInnerHTML={{ __html: renderMarkdown(m.content) }} />}
+          {shared?.messages?.map((m, i) => {
+            // Como en el chat: sin el signo ni «Tú», la respuesta de lado a lado y tu mensaje en su
+            // burbuja a la derecha. Antes aquí: signo de 30 px y tope del 80 %.
+            const esTuyo = m.role === 'user'
+            const { contenedor, relleno } = maquetaMensaje({ isUser: esTuyo })
+            return (
+              <div key={i} style={{ display:'flex', justifyContent: esTuyo ? 'flex-end' : 'flex-start', marginBottom:16 }}>
+                <div style={{ ...contenedor, padding: relleno,
+                              borderRadius: esTuyo ? '18px 18px 4px 18px' : 0,
+                              background: esTuyo ? 'linear-gradient(135deg, var(--teal-deep), var(--teal))' : 'transparent',
+                              boxShadow: esTuyo ? '0 4px 18px rgba(45,189,182,.22)' : 'none',
+                              color: esTuyo ? '#fff' : 'inherit', ...LETRA_MENSAJE }}>
+                  {esTuyo
+                    ? <span>{limpiarCtx(m)}</span>
+                    : <div className="ai-content" dangerouslySetInnerHTML={{ __html: renderMarkdown(m.content) }} />}
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
         </div>
 
@@ -2087,10 +2093,12 @@ export default function App() {
             )}
           </div>
         )}
-        {!isEmpty && (
+        {!isEmpty && (isMobile || sidebarCollapsed) && (
           // El lockup de la marca al alto mínimo en que la palabra se lee (96 px): el mismo del
           // menú lateral (#148). Antes, el signo con «Contexto» escrito a mano en la letra de la
           // interfaz — lo que Carlos vio en su teléfono el 2026-09-21: «aún sigue lo viejo».
+          // En computadora con el menú abierto el menú ya lo lleva arriba: no se repite (Carlos,
+          // 2026-09-21, comparándolo con ChatGPT, que lo pone una sola vez).
           <LogoHorizontal alto={ALTO_MIN_HORIZONTAL} style={{ color:'var(--text)' }} />
         )}
         {/* Campana a la derecha, espejo del toggle de la izquierda. Es el canal de avisos

@@ -11,6 +11,10 @@
 
 export const ANCHO_COLUMNA_PC = 768
 
+// La letra de los mensajes (los tuyos y las respuestas), igual en el chat y en la conversación
+// compartida: un solo sitio para cambiarla.
+export const LETRA_MENSAJE = { fontSize: '.92rem', lineHeight: 1.65 }
+
 export function maquetaMensaje({ isUser }) {
   return {
     contenedor: isUser ? { maxWidth: '85%' } : { flex: '1 1 auto', minWidth: 0 },

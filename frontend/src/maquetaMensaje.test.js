@@ -57,6 +57,25 @@ describe('App.jsx usa la maqueta', () => {
     expect(mensaje).not.toMatch(/paddingLeft/)
   })
 
+  it('la letra de los mensajes sale de la maqueta, en el chat y en la conversación compartida', () => {
+    expect(mensaje).toContain('...LETRA_MENSAJE')
+    expect(app).not.toMatch(/fontSize:\s*'\.92rem',\s*lineHeight:\s*1\.65/)
+  })
+
+  it('la conversación compartida usa la misma maqueta: sin signo, sin tope del 80 %, misma columna', () => {
+    const inicio = app.indexOf('if (shareToken) {')
+    // El fin se ancla en CÓDIGO (la barra para seguir la conversación): codigoDesnudo quita los comentarios.
+    const fin = app.indexOf('paddingBottom:16, paddingTop:10', inicio)
+    expect(inicio).toBeGreaterThan(-1)
+    expect(fin).toBeGreaterThan(inicio)
+    const visor = app.slice(inicio, fin)
+    expect(visor).toMatch(/maquetaMensaje\(\{\s*isUser:\s*esTuyo\s*\}\)/)
+    expect(visor).toContain('...LETRA_MENSAJE')
+    expect(visor).toContain('maxWidth:ANCHO_COLUMNA_PC + 48')
+    expect(visor).not.toContain("maxWidth:'80%'")
+    expect(visor.match(/<img src=\{isotipo\}/g)).toBeNull()
+  })
+
   it('la lista de mensajes y el campo de escribir comparten la columna', () => {
     expect(app).toContain("padding:`20px ${rellenoColumna({ enTelefono: isMobile })}`")
     expect(app).toContain("padding:`14px ${rellenoColumna({ enTelefono: isMobile })} 18px`")

@@ -31,7 +31,7 @@ import { ESTADO, leerStreamChat } from './leerStreamChat'
 import isotipo from './assets/isotipo.svg'
 import { LogoHorizontal, ALTO_MIN_HORIZONTAL } from './LogoContexto'
 import { BOTON_REDONDO } from './homeEstilos'
-import { maquetaMensaje } from './maquetaMensaje'
+import { maquetaMensaje, rellenoColumna } from './maquetaMensaje'
 
 // Carga diferida ROBUSTA ante deploys. Si el chunk falla al descargarse (típico cuando un
 // deploy purgó el hash viejo mientras el usuario tenía la app abierta → "Failed to fetch
@@ -169,7 +169,7 @@ function ActBtn({ title, onClick, active, children }) {
   )
 }
 
-function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onOpenMap, isLast, sessionId, mapBboxRef, isMobile }) {
+function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onOpenMap, isLast, sessionId, mapBboxRef }) {
   const isUser = msg.role === 'user'
   // Mensaje de un CORREDOR de carne y hueso, no del agente. Se pinta como respuesta
   // (a la izquierda) pero NO lleva nada de la interfaz del agente: pulgares, escuchar,
@@ -226,8 +226,8 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
     setSpeaking(true); synth.speak(u)
   }
 
-  // En el teléfono, de lado a lado; en computadora, como estaba. La regla y su porqué: maquetaMensaje.js.
-  const { conSigno, sangria, contenedor, relleno } = maquetaMensaje({ isUser, enTelefono: isMobile })
+  // Sin signo ni «Tú»: la respuesta ocupa todo el renglón. La regla y su porqué: maquetaMensaje.js.
+  const { contenedor, relleno } = maquetaMensaje({ isUser })
 
   return (
     <div style={{
@@ -235,12 +235,8 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
       alignItems: isUser ? 'flex-end' : 'flex-start',
       marginBottom:16,
     }}>
-      {/* ── Fila: avatar + burbuja de texto ── */}
-      <div style={{ display:'flex', gap:10, alignSelf:'stretch', justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
-        {!isUser && conSigno && (
-          <img src={isotipo} alt="Contexto" width={32} height={32}
-               style={{ flexShrink:0, display:'block' }} />
-        )}
+      {/* ── Fila: burbuja de texto ── */}
+      <div style={{ display:'flex', alignSelf:'stretch', justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
         <div style={contenedor}>
           {msg.toolCalls?.length > 0 && (
             <div style={{ marginBottom:6, fontSize:'.72rem', color:'var(--text-muted)',
@@ -269,19 +265,11 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
             )}
           </div>
         </div>
-        {isUser && conSigno && (
-          <div style={{
-            width:32, height:32, borderRadius:'50%', flexShrink:0,
-            background:'var(--surface-3)', color:'var(--text)', display:'flex', alignItems:'center',
-            justifyContent:'center', fontSize:13, fontWeight:600,
-          }}>Tú</div>
-        )}
       </div>
 
-      {/* ── Tarjetas: FUERA del tope de la burbuja, ancho completo del chat ──
-           paddingLeft = sangria para alinear con el inicio del texto */}
+      {/* ── Tarjetas: FUERA del tope de la burbuja, ancho completo de la columna ── */}
       {!isUser && msg.results?.length > 0 && (
-        <div style={{ paddingLeft: sangria, width:'100%', boxSizing:'border-box' }}>
+        <div style={{ width:'100%', boxSizing:'border-box' }}>
           {/* ★ Mapa Vivo (modo ZONA): la semilla de mapa NACE en el hilo — los
               resultados del turno leídos como espacio. Invitación viva que se abre
               al mapa completo, no un botón del rail. (docs/SPEC_Mapa_Vivo.md) */}
@@ -312,14 +300,14 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
           se leen completos aunque nadie deje nada — nunca es una condición para ver algo.
           Cuándo aparece lo decidió el motor (app/puerta.py); aquí solo se pinta. */}
       {!isUser && msg.puerta && (
-        <div style={{ paddingLeft: sangria, width: '100%', boxSizing: 'border-box' }}>
+        <div style={{ width: '100%', boxSizing: 'border-box' }}>
           <PuertaAlerta puerta={msg.puerta} sessionId={sessionId} />
         </div>
       )}
 
       {/* ── Botones de acción (solo del agente: ver esCorredor) ── */}
       {!isUser && !esCorredor && (
-        <div style={{ paddingLeft: sangria, display:'flex', alignItems:'center', gap:8, marginTop:6, flexWrap:'wrap' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:6, flexWrap:'wrap' }}>
           {/* Compartir destacado */}
           <button onClick={onShare} title="Compartir esta conversación"
             style={{
@@ -354,7 +342,7 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
       {/* ── Nudge contextual: tras análisis sustanciosos, solo en la última respuesta ── */}
       {sustancioso && isLast && (
         <div style={{
-          paddingLeft: sangria, width:'100%', boxSizing:'border-box', marginTop:12,
+          width:'100%', boxSizing:'border-box', marginTop:12,
         }}>
           <div style={{
             padding:'11px 13px', borderRadius:14,
@@ -377,7 +365,7 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
       )}
 
       {/* ── Timestamp ── */}
-      <div style={{ paddingLeft: isUser ? 0 : sangria, fontSize:'.72rem', color:'var(--text-muted)', marginTop:4,
+      <div style={{ fontSize:'.72rem', color:'var(--text-muted)', marginTop:4,
                     textAlign: isUser ? 'right' : 'left' }}>
         {msg.time}
       </div>
@@ -2138,7 +2126,8 @@ export default function App() {
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        style={{ flex:1, overflowY:'auto', padding:'20px 0', position:'relative' }}
+        // En computadora, mensajes y campo de escribir en la misma columna centrada (maquetaMensaje.js).
+        style={{ flex:1, overflowY:'auto', padding:`20px ${rellenoColumna({ enTelefono: isMobile })}`, position:'relative' }}
       >
         {isEmpty && (
           <Launcher
@@ -2162,7 +2151,7 @@ export default function App() {
               setMapEncaje(encajeById && Object.keys(encajeById).length ? encajeById : null)
               setView('map')
             }}
-            onShare={() => setShareOpen(true)} isMobile={isMobile} />
+            onShare={() => setShareOpen(true)} />
         ))}
 
         {loading && <Thinking />}
@@ -2195,7 +2184,7 @@ export default function App() {
 
       {/* ── Input ── */}
       <div style={{
-        padding:'14px 0 18px', flexShrink:0,
+        padding:`14px ${rellenoColumna({ enTelefono: isMobile })} 18px`, flexShrink:0,
       }}>
         {/* Antes esto era solo `deepLinkId`: el botón de corredor existía únicamente en el
             chat del QR. La conversación normal (la mayoría) se quedaba sin salida al humano

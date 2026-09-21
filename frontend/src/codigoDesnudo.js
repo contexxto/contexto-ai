@@ -27,7 +27,12 @@ export function codigoDesnudo(fuente, nombre = 'App.jsx') {
     throw new Error(`${nombre} no parsea (${errors.length}): ${errors[0]?.message ?? ''}`)
   }
 
-  const caracteres = [...fuente]
+  // `split('')` y NO `[...fuente]`: los `start`/`end` de oxc son desplazamientos en unidades
+  // UTF-16, las mismas de `String.prototype.slice`. El spread itera por CODE POINT, así que un
+  // solo carácter astral (App.jsx lleva un emoji en una cadena) corre un índice todos los
+  // rangos que vienen después: sobrevive la primera `/` de cada comentario y se borra el
+  // carácter que lo SIGUE — el `}` de cada `{/* … */}`. Lo fija `codigoDesnudo.test.js`.
+  const caracteres = fuente.split('')
   for (const c of comments) {
     for (let i = c.start; i < c.end; i++) {
       if (caracteres[i] !== '\n') caracteres[i] = ' '

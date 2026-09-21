@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import { Camera, Image as ImageIcon, Paperclip } from 'lucide-react'
-import isotipo from './assets/isotipo.svg'
+import { LogoHorizontal, ALTO_MIN_HORIZONTAL } from './LogoContexto'
 
 // ── Hoja "Adjuntar" (el "+" del dock) ───────────────────────────────────────
 // Réplica del panel de ASI:One (Cámara / Fotos / Subir archivo), pero anclada al
@@ -50,10 +50,7 @@ export default function AttachSheet({ onClose, onPickPhoto }) {
         boxShadow: '0 -22px 50px rgba(0,0,0,.55)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-            <img src={isotipo} alt="" width={20} height={20} style={{ display: 'block' }} />
-            <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text)' }}>Contexto</span>
-          </div>
+          <LogoHorizontal alto={ALTO_MIN_HORIZONTAL} style={{ color: 'var(--text)' }} />
           <span style={{ fontSize: '.72rem', fontWeight: 600, letterSpacing: '.12em', color: 'var(--text-dim)' }}>
             ADJUNTAR
           </span>

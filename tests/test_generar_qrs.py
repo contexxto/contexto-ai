@@ -22,29 +22,26 @@ def test_qr_svg_inline_es_svg():
     assert "<?xml" not in svg  # inline → sin declaración XML
 
 
-def test_el_letrero_lleva_el_isotipo_maestro_y_no_una_copia():
-    """El signo del letrero se LEE de frontend/src/assets/isotipo.svg. Hasta el 2026-09-21 era una
-    copia pegada del signo de calle ancha, que derivó junto con él."""
+def test_el_letrero_lleva_el_lockup_maestro_y_no_una_copia():
+    """La marca del letrero se LEE de docs/branding/logo/contexto-horizontal.svg: signo y palabra
+    del maestro. Hasta el 2026-09-21 ponía el signo con «Contexto» escrito en su tipografía (y antes
+    una copia pegada del signo viejo, que derivó con él)."""
     import re
 
-    signo = gq._isotipo(44, "0")
-    maestro = (_ROOT / "docs" / "branding" / "logo" / "contexto-isotipo.svg").read_text(encoding="utf-8")
+    lockup = gq._lockup(44)
+    maestro = (_ROOT / "docs" / "branding" / "logo" / "contexto-horizontal.svg").read_text(encoding="utf-8")
     formas = re.search(r"<svg[^>]*>(.*)</svg>", maestro, re.S).group(1)
-    assert formas in signo, "el letrero ya no lleva las formas del isotipo maestro"
-    assert 'viewBox="0 0 24 24"' not in signo, "volvió el lienzo del signo viejo"
+    assert formas in lockup, "el letrero ya no lleva el lockup maestro"
+    card = gq._letrero_card({"id": "x", "direccion": "Calle"}, "https://app.test", uid="0")
+    assert not re.search(r">\s*Contexto\s*<", card), "volvió la palabra escrita a mano"
 
 
-def test_isotipo_escala_y_sin_ids_colisionables():
-    a = gq._isotipo(44, "0")
-    b = gq._isotipo(44, "1")
-    assert 'width="44"' in a and 'height="44"' in a
+def test_lockup_escala_y_sin_ids_colisionables():
+    a = gq._lockup(44)
+    assert 'height="44"' in a and 'width="189.09"' in a  # 44 × 56,9 / 13,24: la proporción del lienzo
     assert a.lstrip().startswith("<svg") and a.rstrip().endswith("</svg>")
-    # El mark del Brand Kit v2026.1 (commit 32d6110, 2026-08-20) es plano: sin
-    # <defs> ni gradientes, así que no hay ids que puedan colisionar al repetir
-    # el mark en una página. Esa colisión era justo lo que el uid evitaba en la
-    # marca anterior; hoy el parámetro se conserva por firma y no altera la salida.
+    # Plano, sin <defs> ni gradientes: repetir el lockup en una página no choca ids.
     assert 'id="' not in a
-    assert a == b
 
 
 def test_letrero_incrusta_deeplink_y_direccion():
@@ -52,7 +49,7 @@ def test_letrero_incrusta_deeplink_y_direccion():
     card = gq._letrero_card(activo, "https://app.test", uid="0")
     assert "https://app.test/a/abc-123" in card  # deep-link permanente
     assert "Av. Test 100 y Quito" in card        # dirección visible
-    assert card.count("<svg") == 2               # signo + QR
+    assert card.count("<svg") == 2               # lockup + QR
     assert "CADA LUGAR TIENE UN AURA" in card
 
 

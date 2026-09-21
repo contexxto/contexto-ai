@@ -42,6 +42,7 @@ USO
 import argparse
 import csv
 import os
+import re
 import sys
 from html import escape
 from pathlib import Path
@@ -92,29 +93,25 @@ C_CORAL = "#E0685A"
 C_TEXT = "#EDEBF2"
 C_MUTED = "#9C99AC"
 
-# El signo de Contexto: se LEE del mismo archivo que usa la app, que genera
-# docs/branding/logo/genera_iconos.py desde el isotipo maestro. Antes había aquí
-# una copia pegada del signo de calle ancha y derivó con él; una copia es una
-# segunda verdad esperando separarse. El signo es plano, sin ids: {uid} ya no
-# hace falta, pero se acepta por compatibilidad.
-SIGNO_APP = Path(__file__).resolve().parent.parent / "frontend" / "src" / "assets" / "isotipo.svg"
+# La marca de Contexto: el lockup horizontal (signo + palabra) se LEE del maestro que
+# escribe docs/branding/logo/genera_logo.py, el mismo que la app usa en sus cabeceras.
+# Antes el letrero ponía el signo y la palabra «Contexto» escrita en su tipografía, y
+# antes aún una copia pegada del signo viejo que derivó con él: una copia es una
+# segunda verdad esperando separarse. El lockup es plano, sin ids, y su palabra se
+# pinta con currentColor (el color del texto del letrero).
+LOCKUP_MAESTRO = Path(__file__).resolve().parent.parent / "docs" / "branding" / "logo" / "contexto-horizontal.svg"
 
 
-def _isotipo(size: int, uid: str) -> str:
-    svg = SIGNO_APP.read_text(encoding="utf-8").strip()
-    return svg.replace("<svg ", f'<svg width="{size}" height="{size}" ', 1)
+def _lockup(alto: int) -> str:
+    svg = LOCKUP_MAESTRO.read_text(encoding="utf-8").strip()
+    _, _, w, h = (float(n) for n in re.search(r'viewBox="([^"]+)"', svg).group(1).split())
+    return svg.replace("<svg ", f'<svg height="{alto}" width="{alto * w / h:.2f}" ', 1)
 
 
 def _qr_svg_inline(url: str, scale: int = 6) -> str:
     """Devuelve el QR como markup SVG inline (sin XML decl), fondo blanco, dark Aura."""
     qr = segno.make(url, error="h")  # alta corrección → tolera desgaste del letrero
     return qr.svg_inline(scale=scale, border=2, dark=C_BG, light="#ffffff")
-
-
-def _wordmark() -> str:
-    # Solo "Contexto". El lockup con "AI" en gradiente era de la marca
-    # anterior, retirada el 2026-08-19.
-    return '<span style="font-weight:800;letter-spacing:-.02em">Contexto</span>'
 
 
 def _letrero_card(activo: dict, app_url: str, uid: str) -> str:
@@ -125,10 +122,7 @@ def _letrero_card(activo: dict, app_url: str, uid: str) -> str:
     qr = _qr_svg_inline(deep)
     return f"""
 <section class="letrero">
-  <div class="brand">
-    <span class="signo">{_isotipo(44, uid)}</span>
-    <span class="wm">{_wordmark()}</span>
-  </div>
+  <div class="brand">{_lockup(44)}</div>
   <div class="qrpanel">{qr}</div>
   <h1 class="addr">{direccion}</h1>
   <p class="cta">Escanéame para conocer <b>este lugar</b></p>
@@ -158,9 +152,7 @@ body {{
   display: flex; flex-direction: column; align-items: center; text-align: center;
   page-break-inside: avoid; break-inside: avoid;
 }}
-.brand {{ display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }}
-.brand .signo {{ filter: drop-shadow(0 0 10px rgba(45,189,182,.45)); line-height: 0; }}
-.brand .wm {{ font-size: 22px; }}
+.brand {{ line-height: 0; margin-bottom: 18px; color: {C_TEXT}; }}
 .qrpanel {{
   background: #fff; border-radius: 20px; padding: 14px;
   box-shadow: 0 0 0 6px rgba(255,255,255,.04), 0 0 30px rgba(45,189,182,.18);

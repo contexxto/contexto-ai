@@ -1759,10 +1759,9 @@ export default function App() {
       <div style={{ height:'var(--app-h, 100dvh)', maxWidth:820, margin:'0 auto', padding:isMobile ? '0 16px' : '0 24px',
                     display:'flex', flexDirection:'column' }}>
         <header style={{ display:'flex', alignItems:'center', gap:10, padding:'16px 0 12px', flexShrink:0 }}>
-          <img src={isotipo} alt="Contexto" width={32} height={32} />
           <div>
-            <div style={{ fontWeight:800, letterSpacing:'-.02em' }}>Contexto</div>
-            <div style={{ fontSize:'.72rem', color:'var(--text-muted)' }}>Conversación compartida · solo lectura</div>
+            <LogoHorizontal alto={ALTO_MIN_HORIZONTAL} style={{ color:'var(--text)' }} />
+            <div style={{ fontSize:'.72rem', color:'var(--text-muted)', marginTop:4 }}>Conversación compartida · solo lectura</div>
           </div>
           <a href="/" style={{ marginLeft:'auto', fontSize:'.8rem', color:'var(--teal-text)',
                                textDecoration:'none', border:'1px solid rgba(45,189,182,.3)',

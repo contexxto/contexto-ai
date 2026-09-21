@@ -3,6 +3,7 @@ import axios from 'axios'
 import { MapPin, MessageCircle, ShieldCheck, Footprints, Trees, Volume2, BedDouble, Bath, Car, Ruler, Check, TrendingUp, AlertTriangle, ArrowLeft, ChevronLeft, ChevronRight, Sparkles, Wrench } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import isotipo from './assets/isotipo.svg'
+import { LogoHorizontal, ALTO_MIN_HORIZONTAL } from './LogoContexto'
 
 // Mapa Vivo AURA-SINGLE: lazy (arrastra MapLibre) → no engorda el bundle del anuncio.
 const AuraSingleMap = lazy(() => import('./AuraSingleMap'))
@@ -106,8 +107,7 @@ export default function AnuncioView({ id, onChat, onBack, onExpandMap }) {
             <ArrowLeft size={20} />
           </button>
         )}
-        <img src={isotipo} width={24} height={24} alt="" style={{ filter: 'drop-shadow(0 0 6px rgba(45,189,182,.4))' }} />
-        <span style={{ fontWeight: 800, fontSize: '.95rem', letterSpacing: '-.02em' }}>Contexto</span>
+        <LogoHorizontal alto={ALTO_MIN_HORIZONTAL} style={{ color: C.text }} />
         <span style={{ marginLeft: 'auto', fontSize: '.66rem', color: C.muted }}>Letrero inteligente</span>
       </div>
 

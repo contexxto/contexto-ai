@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { MapPin, Target, ShieldCheck, Compass, Footprints, BadgeCheck, Users, RefreshCw, Layers, Camera, Building2, Volume2, Clock, ArrowRight, Sun, Moon, Check } from 'lucide-react'
 import { getTheme, toggleTheme } from './theme'
 import './QueEs.css'
-import isotipo from './assets/isotipo.svg'
+import { LogoHorizontal, ALTO_MIN_HORIZONTAL } from './LogoContexto'
 
 // El signo de Contexto es el MISMO archivo que usa la app. Aquí había una copia dibujada a mano
 // («mismo mark del header de la app», decía): cuando el signo cambió el 2026-09-21, la copia se
@@ -32,7 +32,7 @@ export default function QueEs({ onStart, onBroker, onLogin }) {
     <div className="qe">
       {/* NAV */}
       <nav><div className="wrap nav-in">
-        <a className="brand" href="/"><img src={isotipo} alt="" /> Contexto</a>
+        <a className="brand" href="/"><LogoHorizontal alto={ALTO_MIN_HORIZONTAL} /></a>
         <div className="nav-links">
           <a href="#que-es">Qué es</a>
           <a href="#features">Características</a>
@@ -188,7 +188,7 @@ export default function QueEs({ onStart, onBroker, onLogin }) {
 
       {/* FOOTER */}
       <footer><div className="wrap foot">
-        <a className="brand" href="/" style={{ fontSize: '.98rem' }}><img src={isotipo} alt="" /> Contexto</a>
+        <a className="brand" href="/"><LogoHorizontal alto={ALTO_MIN_HORIZONTAL} /></a>
         <div className="cols">
           <a href="#que-es">Qué es</a>
           <a href="#features">Características</a>

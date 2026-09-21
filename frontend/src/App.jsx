@@ -29,6 +29,7 @@ import Sidebar, { RailNav } from './Sidebar'
 import Campana from './Campana'
 import { ESTADO, leerStreamChat } from './leerStreamChat'
 import sphereLogo from './assets/sphere.svg'
+import { BOTON_REDONDO } from './homeEstilos'
 
 // Carga diferida ROBUSTA ante deploys. Si el chunk falla al descargarse (típico cuando un
 // deploy purgó el hash viejo mientras el usuario tenía la app abierta → "Failed to fetch
@@ -513,6 +514,15 @@ export default function App() {
   const [rol, setRol] = useState(null)                    // rol del usuario (cliente/corredor/inmobiliaria)
   const [publishOpen, setPublishOpen] = useState(false)   // modal "Mis publicaciones"
   const [upgradeOpen, setUpgradeOpen] = useState(false)   // modal "Conviértete en corredor"
+  // El camino de corredores. ConvierteteCorredor es un upgrade de rol: necesita sesión, y sin
+  // ella su POST devolvía 401 («Falta el token…») en un modal sin salida. Pasaba ya desde el
+  // enlace de la home; ahora que el menú es el único camino de captación, sin sesión se abre
+  // el REGISTRO, que ya trae el selector corredor/inmobiliaria (la misma ruta que /?corredor=1).
+  const abrirCorredor = () => {
+    setView('chat')
+    if (authEnabled && !session) { setAuthMode('signup'); setAuthOpen(true) }
+    else setUpgradeOpen(true)
+  }
   const [shareOpen, setShareOpen] = useState(false)       // modal "Compartir conversación"
   const [attachOpen, setAttachOpen] = useState(false)     // hoja "Adjuntar" (el "+" del dock → búsqueda visual)
   const [shared, setShared] = useState(null)              // datos de una conversación compartida (visor)
@@ -818,6 +828,10 @@ export default function App() {
   // haya por encima, incluido el documento — asi se iba el header fuera de pantalla en
   // la PWA instalada. Movemos solo la lista de mensajes, que es lo que se quiere mover.
   useEffect(() => {
+    // Con el chat vacío no hay nada que seguir. Sin esta guarda el efecto corría al montar y,
+    // si la pantalla inicial medía más que el hueco, la home se abría por el fondo con el
+    // título fuera de pantalla (medido: 642 px de Launcher en ~440 de hueco).
+    if (messages.length === 0) return
     const el = scrollRef.current
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
   }, [messages, loading])
@@ -1339,7 +1353,8 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deepLinkId, anuncioMode, sessionId, modoCorredor, hilosCorredor.length, hiloSeleccionado])
 
-  // "Analiza dónde estás": pide la ubicación y dispara el análisis del lugar (global).
+  // La entrada «Analiza la zona donde estoy» de la home: pide la ubicación y dispara el
+  // análisis del lugar (global).
   const analizarMiUbicacion = useCallback(() => {
     const MSG = '¿Cómo es vivir aquí? Analiza el lugar donde estoy ahora.'
     if (geo) { sendMessage(MSG); return }
@@ -1581,6 +1596,22 @@ export default function App() {
   }, [sessionId])
 
   const isEmpty = messages.length === 0 && !loading
+  // El aviso de error vive en DOS sitios. Con mensajes, al final de la lista (donde el
+  // auto-scroll lo alcanza). Con el chat vacío, el Launcher ocupa todo el alto y pintarlo
+  // después lo dejaba bajo el pliegue: negar el permiso de ubicación fallaba en silencio.
+  const avisoError = error ? (
+    <div role="alert" style={{
+      background:'var(--error-bg)', border:'1px solid var(--error-border)', borderRadius:10,
+      padding:'12px 16px', color:'var(--error-text)', fontSize:'.87rem', marginBottom:12,
+      display:'flex', justifyContent:'space-between', alignItems:'center',
+    }}>
+      <span>{error}</span>
+      <button onClick={() => setError(null)}
+        style={{ background:'none', border:'none', cursor:'pointer', color:'var(--error-text)', fontSize:16 }}>
+        ×
+      </button>
+    </div>
+  ) : null
 
   // Página de anuncio del QR (/a/{id}) — landing pública del inmueble. El CTA abre
   // el chat con el agente (runtime propio) y dispara el informe.
@@ -1723,7 +1754,7 @@ export default function App() {
       onMap={() => { setMapSeed(null); setMapEncaje(null); setView('map') }}
       onReview={() => setView('review')}
       onCRM={abrirCRM}
-      onUpgrade={() => { setView('chat'); setUpgradeOpen(true) }}
+      onUpgrade={abrirCorredor}
       onExpand={() => setSidebarCollapsed(false)}
     />
   )
@@ -1746,7 +1777,7 @@ export default function App() {
           onMap={() => { setMapSeed(null); setMapEncaje(null); setView('map') }}
           onReview={() => setView('review')}
           onCRM={abrirCRM}
-          onUpgrade={() => { setView('chat'); setUpgradeOpen(true) }}
+          onUpgrade={abrirCorredor}
           puedeInstalar={puedeInstalar}
           onInstalar={instalarApp}
           mobile={false}
@@ -1770,7 +1801,7 @@ export default function App() {
               onMap={() => { setMapSeed(null); setMapEncaje(null); setView('map'); setSidebarOpen(false) }}
               onReview={() => { setView('review'); setSidebarOpen(false) }}
               onCRM={abrirCRM}
-              onUpgrade={() => { setView('chat'); setUpgradeOpen(true); setSidebarOpen(false) }}
+              onUpgrade={() => { abrirCorredor(); setSidebarOpen(false) }}
               puedeInstalar={puedeInstalar}
               onInstalar={instalarApp}
               mobile={true}
@@ -1862,7 +1893,7 @@ export default function App() {
           onMap={() => { setMapSeed(null); setMapEncaje(null); setView('map') }}
           onReview={() => setView('review')}
           onCRM={abrirCRM}
-          onUpgrade={() => { setView('chat'); setUpgradeOpen(true) }}
+          onUpgrade={abrirCorredor}
           puedeInstalar={puedeInstalar}
           onInstalar={instalarApp}
           mobile={false}
@@ -1886,7 +1917,7 @@ export default function App() {
               onMap={() => { setMapSeed(null); setMapEncaje(null); setView('map'); setSidebarOpen(false) }}
               onReview={() => { setView('review'); setSidebarOpen(false) }}
               onCRM={abrirCRM}
-              onUpgrade={() => { setView('chat'); setUpgradeOpen(true); setSidebarOpen(false) }}
+              onUpgrade={() => { abrirCorredor(); setSidebarOpen(false) }}
               puedeInstalar={puedeInstalar}
               onInstalar={instalarApp}
               mobile={true}
@@ -1920,9 +1951,13 @@ export default function App() {
       )}
 
       {/* ── Header ── */}
+      {/* Con el chat VACÍO la marca ya está en el centro de la pantalla (Launcher), así que el
+          header muestra solo sus dos acciones, en botones redondos, y sin el nombre. Con
+          mensajes vuelve el header de siempre. */}
       <header style={{
         position:'relative', display:'flex', alignItems:'center', justifyContent:'center',
-        padding:'16px 0 12px',
+        padding: isEmpty ? 0 : '16px 0 12px',
+        minHeight: 56,                  // igual en los dos estados: el header no salta al enviar
         flexShrink:0,
       }}>
         {/* Botón de menú/panel — anclado a la izquierda; el logo va centrado (estilo ASI:One).
@@ -1931,33 +1966,38 @@ export default function App() {
         {(isMobile || !sidebarCollapsed) && (
           <div style={{ position:'absolute', left:0, top:'50%', transform:'translateY(-50%)' }}>
             {isMobile ? (
-              <button onClick={() => setSidebarOpen(true)} title="Conversaciones"
+              <button onClick={() => setSidebarOpen(true)} title="Conversaciones" aria-label="Conversaciones"
                 style={{ background:'none', border:'none', cursor:'pointer',
-                         color:'var(--text)', padding:4, display:'flex', flexShrink:0 }}>
+                         color:'var(--text)', padding:4, display:'flex', flexShrink:0,
+                         ...(isEmpty ? BOTON_REDONDO : null) }}>
                 <PanelLeft size={22} />
               </button>
             ) : (
               <button onClick={() => setSidebarCollapsed(true)}
                 title="Ocultar barra lateral"
                 style={{ background:'none', border:'none', cursor:'pointer',
-                         color:'var(--text-muted)', padding:4, display:'flex', flexShrink:0 }}>
+                         color:'var(--text-muted)', padding:4, display:'flex', flexShrink:0,
+                         ...(isEmpty ? BOTON_REDONDO : null) }}>
                 <PanelLeft size={20} />
               </button>
             )}
           </div>
         )}
-        <div style={{ display:'flex', alignItems:'center', gap:9 }}>
-          <img src={sphereLogo} alt="Contexto" width={isMobile ? 26 : 30} height={isMobile ? 26 : 30}
-               style={{ display:'block', flexShrink:0 }} />
-          <div style={{ fontWeight:800, fontSize:isMobile ? '1rem' : '1.05rem', letterSpacing:'-.3px' }}>
-            Contexto
+        {!isEmpty && (
+          <div style={{ display:'flex', alignItems:'center', gap:9 }}>
+            <img src={sphereLogo} alt="Contexto" width={isMobile ? 26 : 30} height={isMobile ? 26 : 30}
+                 style={{ display:'block', flexShrink:0 }} />
+            <div style={{ fontWeight:800, fontSize:isMobile ? '1rem' : '1.05rem', letterSpacing:'-.3px' }}>
+              Contexto
+            </div>
           </div>
-        </div>
+        )}
         {/* Campana a la derecha, espejo del toggle de la izquierda. Es el canal de avisos
             que no depende de permisos del navegador ni de que nadie revise su correo. */}
         <div style={{ position:'absolute', right:0, top:'50%', transform:'translateY(-50%)' }}>
           <Campana
             sessionId={sessionId}
+            redonda={isEmpty}
             onAbrir={(n) => {
               // El aviso trae el hilo entero: la conversación Y con cuál corredor. Sin el
               // segundo dato, abrir el aviso de un corredor podía mostrar el chat del otro.
@@ -2005,9 +2045,10 @@ export default function App() {
             onSend={sendMessage}
             onAnalyzeLocation={analizarMiUbicacion}
             onOpenMap={() => { setMapSeed(null); setMapEncaje(null); setView('map') }}
-            onBroker={() => setUpgradeOpen(true)}
+            onBroker={abrirCorredor}
             geoLoading={geoLoading}
             isMobile={isMobile}
+            aviso={avisoError}
           />
         )}
 
@@ -2026,19 +2067,7 @@ export default function App() {
 
         {loading && <Thinking />}
 
-        {error && (
-          <div style={{
-            background:'var(--error-bg)', border:'1px solid var(--error-border)', borderRadius:10,
-            padding:'12px 16px', color:'var(--error-text)', fontSize:'.87rem', marginBottom:12,
-            display:'flex', justifyContent:'space-between', alignItems:'center',
-          }}>
-            <span>{error}</span>
-            <button onClick={() => setError(null)}
-              style={{ background:'none', border:'none', cursor:'pointer', color:'var(--error-text)', fontSize:16 }}>
-              ×
-            </button>
-          </div>
-        )}
+        {!isEmpty && avisoError}
 
         <div ref={bottomRef} />
       </div>
@@ -2168,18 +2197,10 @@ export default function App() {
           border:`1px solid ${listening ? 'var(--teal)' : 'var(--border)'}`, borderRadius:16, padding:'12px 14px',
           transition:'border-color .2s',
         }}>
-          {/* Fila "Para:" — selector de destino, estilo ASI:One */}
-          <div style={{ display:'flex', alignItems:'center', gap:9, marginBottom:11 }}>
-            <span style={{ fontSize:'.78rem', color:'var(--text-dim)' }}>Para:</span>
-            <span style={{ display:'inline-flex', alignItems:'center', gap:7, padding:'5px 11px', borderRadius:999,
-                           border:'1px solid var(--border)', background:'var(--surface-2)' }}>
-              <img src={sphereLogo} alt="" width={14} height={14} style={{ display:'block' }} />
-              <span style={{ fontSize:'.8rem', fontWeight:600, color:'var(--text)' }}>Contexto</span>
-              <span style={{ fontSize:'.74rem', color:'var(--text-dim)' }}>AI</span>
-            </span>
-          </div>
-          <div style={{ height:1, background:'var(--border)', margin:'0 -14px 12px' }} />
-          {/* Campo en su propia línea (como "Ask anything") */}
+          {/* Aquí había una fila estática «Para: Contexto AI» con su separador (herencia de
+              ASI:One). No tenía lógica: con varios corredores, con QUIÉN se habla lo dice la
+              franja de arriba. Se retiró el 2026-09-20 y devolvió ~50 px a la pantalla. El
+              campo y sus botones quedan intactos: la píldora va en su propio PR. */}
           <textarea
             ref={inputRef}
             value={input}

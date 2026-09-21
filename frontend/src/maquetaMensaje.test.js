@@ -1,10 +1,10 @@
 /**
- * El ancho de los mensajes del chat: en el teléfono, de lado a lado; en computadora, como estaba.
+ * El ancho del chat: mensajes sin signo ni «Tú», de lado a lado; en computadora, una columna centrada.
  *
  * Carlos, 2026-09-21, con capturas de Perplexity y de Contexto lado a lado: «es importante la
- * distribución del texto en la ventana, en el ejemplo aprovecha de lado a lado». Medido a 369 px:
- * la respuesta ocupaba 227 px (62 %) — la columna del signo (42), el tope del 78 % y 30 px de
- * relleno a la derecha. Eligió la variante A en su teléfono: 332 px (90 %).
+ * distribución del texto en la ventana, en el ejemplo aprovecha de lado a lado». En el teléfono la
+ * respuesta ocupaba 227 de 369 px (62 %): eligió la «A». En computadora, con la captura de su pantalla,
+ * el renglón llegaba a 875 px (121 caracteres): eligió la «D», columna de 768 px como ChatGPT y Perplexity.
  */
 
 import { readFileSync } from 'node:fs'
@@ -12,41 +12,29 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { codigoDesnudo } from './codigoDesnudo'
-import { maquetaMensaje } from './maquetaMensaje'
+import { ANCHO_COLUMNA_PC, maquetaMensaje, rellenoColumna } from './maquetaMensaje'
 
-describe('en el teléfono', () => {
-  const ia = maquetaMensaje({ isUser: false, enTelefono: true })
-  const tu = maquetaMensaje({ isUser: true, enTelefono: true })
-
-  it('la respuesta no lleva signo ni sangría', () => {
-    expect(ia.conSigno).toBe(false)
-    expect(ia.sangria).toBe(0)
-  })
-
+describe('los mensajes', () => {
   it('la respuesta ocupa todo el renglón: sin tope y sin relleno a los lados', () => {
+    const ia = maquetaMensaje({ isUser: false })
     expect(ia.contenedor).not.toHaveProperty('maxWidth')
-    expect(ia.contenedor).toMatchObject({ flex: '1 1 auto', minWidth: 0 })
+    expect(ia.contenedor).toEqual({ flex: '1 1 auto', minWidth: 0 })
     expect(ia.relleno).toBe('2px 0')
   })
 
-  it('tu mensaje sigue en su burbuja a la derecha, sin «Tú»', () => {
-    expect(tu.conSigno).toBe(false)
-    expect(tu.contenedor).toEqual({ maxWidth: '85%' })
-    expect(tu.relleno).toBe('10px 14px')
+  it('tu mensaje sigue en su burbuja a la derecha', () => {
+    expect(maquetaMensaje({ isUser: true })).toEqual({ contenedor: { maxWidth: '85%' }, relleno: '10px 14px' })
   })
 })
 
-describe('en computadora no cambia nada', () => {
-  it('la respuesta: signo, sangría de 42, tope del 78 % y relleno a la derecha', () => {
-    expect(maquetaMensaje({ isUser: false, enTelefono: false })).toEqual({
-      conSigno: true, sangria: 42, contenedor: { maxWidth: '78%' }, relleno: '2px 30px 2px 2px',
-    })
+describe('la columna', () => {
+  it('en computadora mide 768 px y se centra con lo que sobra a cada lado', () => {
+    expect(ANCHO_COLUMNA_PC).toBe(768)
+    expect(rellenoColumna({ enTelefono: false })).toBe('max(0px, calc((100% - 768px) / 2))')
   })
 
-  it('tu mensaje: «Tú» y tope del 78 %', () => {
-    expect(maquetaMensaje({ isUser: true, enTelefono: false })).toEqual({
-      conSigno: true, sangria: 42, contenedor: { maxWidth: '78%' }, relleno: '10px 14px',
-    })
+  it('en el teléfono es la pantalla entera', () => {
+    expect(rellenoColumna({ enTelefono: true })).toBe('0px')
   })
 })
 
@@ -56,25 +44,21 @@ describe('App.jsx usa la maqueta', () => {
   const inicio = app.indexOf('function Message(')
   const mensaje = app.slice(inicio, app.indexOf('\nfunction ', inicio + 1))
 
-  it('le pasa al mensaje si está en el teléfono', () => {
-    expect(mensaje).toMatch(/function Message\(\{[^}]*\bisMobile\b[^}]*\}\)/)
-    expect(mensaje).toMatch(/maquetaMensaje\(\{\s*isUser,\s*enTelefono:\s*isMobile\s*\}\)/)
-    // La llamada lleva funciones flecha: su «=>» corta cualquier [^>]*. Se recorta hasta el «/>».
-    const i = app.indexOf('<Message ')
-    expect(i, 'no encontré <Message …/>').toBeGreaterThan(-1)
-    expect(app.slice(i, app.indexOf('/>', i))).toContain('isMobile={isMobile}')
-  })
-
-  it('el signo y el «Tú» solo aparecen cuando la maqueta los lleva', () => {
-    expect(mensaje).toMatch(/\{!isUser && conSigno && \(\s*<img src=\{isotipo\}/)
-    expect(mensaje).toMatch(/\{isUser && conSigno && \(/)
-  })
-
-  it('el ancho, el relleno y la sangría salen de la maqueta, no escritos a mano', () => {
+  it('el mensaje toma ancho y relleno de la maqueta, no escritos a mano', () => {
+    expect(mensaje).toMatch(/maquetaMensaje\(\{\s*isUser\s*\}\)/)
     expect(mensaje).toContain('<div style={contenedor}>')
     expect(mensaje).toMatch(/padding:\s*relleno,/)
     expect(mensaje).not.toMatch(/maxWidth:\s*'78%'/)
-    expect(mensaje).not.toMatch(/paddingLeft:\s*(isUser \? 0 : )?(42|AVATAR_INDENT)\b/)
-    expect(mensaje.match(/paddingLeft:\s*(isUser \? 0 : )?sangria/g)).toHaveLength(5)
+  })
+
+  it('ningún mensaje lleva el signo ni «Tú», ni sangría para ellos', () => {
+    expect(mensaje).not.toContain('src={isotipo}')
+    expect(mensaje).not.toMatch(/>\s*Tú\s*</)
+    expect(mensaje).not.toMatch(/paddingLeft/)
+  })
+
+  it('la lista de mensajes y el campo de escribir comparten la columna', () => {
+    expect(app).toContain("padding:`20px ${rellenoColumna({ enTelefono: isMobile })}`")
+    expect(app).toContain("padding:`14px ${rellenoColumna({ enTelefono: isMobile })} 18px`")
   })
 })

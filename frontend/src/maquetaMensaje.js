@@ -1,24 +1,24 @@
-// Cómo se reparte el ancho de un mensaje del chat.
+// Cómo se reparte el ancho del chat.
 //
-// En el teléfono la respuesta va de lado a lado. Carlos lo pidió el 2026-09-21 con Perplexity de
-// referencia y eligió esta forma (la «A») mirando cuatro variantes en su teléfono: sin el signo ni
-// «Tú» en cada mensaje —el logotipo ya está en la cabecera—, sin el tope del 78 % y sin los 30 px de
-// relleno a la derecha. A 369 px de ancho el texto pasó de 227 px (62 %) a 332 px (90 %).
+// Los mensajes, en el teléfono y en computadora: sin el signo ni «Tú» en cada uno —el logotipo ya está
+// en la cabecera—; la respuesta ocupa todo el renglón de la columna; tu mensaje, en su burbuja a la
+// derecha. Carlos lo eligió el 2026-09-21 mirando variantes, con Perplexity de referencia: la «A» en el
+// teléfono (a 369 px la respuesta pasó de 227 px, el 62 %, a 335, el 91 %) y la «D» en computadora.
 //
-// En computadora sigue como estaba: con la columna de hasta 1280 px, un renglón de todo el ancho se
-// lee mal, y su columna de lectura está por decidir.
+// La columna, solo en computadora: mensajes y campo de escribir en 768 px centrados, como ChatGPT y
+// Perplexity. A 1536 px de ancho el renglón medía 875 px (121 caracteres); ahora 762 (81). En el
+// teléfono la columna es la pantalla entera.
 
-export function maquetaMensaje({ isUser, enTelefono }) {
-  const conSigno = !enTelefono
+export const ANCHO_COLUMNA_PC = 768
+
+export function maquetaMensaje({ isUser }) {
   return {
-    // El signo del asistente y el «Tú» del usuario, cada uno en su columna.
-    conSigno,
-    // Sangría de tarjetas, botones y hora para alinearlos con el texto: 32 del signo + 10 de hueco.
-    sangria: conSigno ? 42 : 0,
-    // La burbuja del usuario se queda a la derecha; la respuesta, en el teléfono, ocupa todo el renglón.
-    contenedor: isUser
-      ? { maxWidth: conSigno ? '78%' : '85%' }
-      : conSigno ? { maxWidth: '78%' } : { flex: '1 1 auto', minWidth: 0 },
-    relleno: isUser ? '10px 14px' : conSigno ? '2px 30px 2px 2px' : '2px 0',
+    contenedor: isUser ? { maxWidth: '85%' } : { flex: '1 1 auto', minWidth: 0 },
+    relleno: isUser ? '10px 14px' : '2px 0',
   }
+}
+
+// Relleno a cada lado que centra la columna: lo que sobra de los 768 px, nunca negativo.
+export function rellenoColumna({ enTelefono }) {
+  return enTelefono ? '0px' : `max(0px, calc((100% - ${ANCHO_COLUMNA_PC}px) / 2))`
 }

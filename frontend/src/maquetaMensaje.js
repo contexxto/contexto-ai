@@ -12,8 +12,11 @@
 export const ANCHO_COLUMNA_PC = 768
 
 // La letra de los mensajes (los tuyos y las respuestas), igual en el chat y en la conversación
-// compartida: un solo sitio para cambiarla.
-export const LETRA_MENSAJE = { fontSize: '.92rem', lineHeight: 1.65 }
+// compartida: un solo sitio para cambiarla. 16 px, como ChatGPT y como la base de lectura de los
+// teléfonos (Carlos, 2026-09-21, tras compararla en su teléfono con la de antes, .92rem = 14,7 px).
+// Con la columna de 768 px el renglón baja de ~81 a ~75 caracteres. Títulos, tablas y filas de
+// encaje van en em (index.css) y crecen con ella.
+export const LETRA_MENSAJE = { fontSize: '1rem', lineHeight: 1.65 }
 
 export function maquetaMensaje({ isUser }) {
   return {

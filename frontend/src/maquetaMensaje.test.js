@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { codigoDesnudo } from './codigoDesnudo'
-import { ANCHO_COLUMNA_PC, maquetaMensaje, rellenoColumna } from './maquetaMensaje'
+import { ANCHO_COLUMNA_PC, LETRA_MENSAJE, maquetaMensaje, rellenoColumna } from './maquetaMensaje'
 
 describe('los mensajes', () => {
   it('la respuesta ocupa todo el renglón: sin tope y sin relleno a los lados', () => {
@@ -35,6 +35,27 @@ describe('la columna', () => {
 
   it('en el teléfono es la pantalla entera', () => {
     expect(rellenoColumna({ enTelefono: true })).toBe('0px')
+  })
+})
+
+describe('la letra', () => {
+  it('los mensajes van a 16 px, con el interlineado de siempre', () => {
+    expect(LETRA_MENSAJE).toEqual({ fontSize: '1rem', lineHeight: 1.65 })
+  })
+
+  it('títulos, tablas y filas de encaje de las respuestas crecen con ella (em, no rem)', () => {
+    const SRC = dirname(fileURLToPath(import.meta.url))
+    const css = readFileSync(join(SRC, 'index.css'), 'utf8')
+    expect(css).toMatch(/\.ai-content h2, \.ai-content h3 \{[^}]*font-size: 1\.087em;/)
+    expect(css).toMatch(/\.ai-content h2 \{ font-size: 1\.141em; \}/)
+    expect(css).toMatch(/\.ai-content h4 \{[^}]*font-size: 1em;/)
+    expect(css).toMatch(/\.ai-content table \{[^}]*font-size: \.913em;/)
+    // Fuera del chat (CRM, leads) la fila de encaje conserva su .9rem; dentro, relativa a la letra.
+    expect(css).toMatch(/\.enc-fila \{ font-size: \.9rem; \}/)
+    expect(css).toMatch(/\.ai-content \.enc-fila \{ font-size: \.978em; \}/)
+    const md = readFileSync(join(SRC, 'markdown.js'), 'utf8')
+    expect(md).toContain('<div class="enc-fila" style="')
+    expect(md).not.toMatch(/enc-fila" style="[^"]*font-size/)
   })
 })
 

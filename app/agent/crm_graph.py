@@ -42,7 +42,7 @@ class CRMState(TypedDict):
 
 
 SYSTEM_PROMPT_CRM = SystemMessage(content="""
-Eres el asistente del CRM Vivo de Contexto AI, para el CORREDOR (o inmobiliaria). Le ayudas a
+Eres el asistente del CRM Vivo de Contexto, para el CORREDOR (o inmobiliaria). Le ayudas a
 entender y trabajar SU cartera de interesados hablándole en español natural, cálido y conciso.
 
 QUÉ PUEDES HACER (con tus herramientas):
@@ -86,7 +86,7 @@ listas leads, pocos y con por qué. Cuando haya reenganche sugerido, ofrécelo t
 # Comparte las mismas tools y las MISMAS barandas (honestidad + Fair Housing + scope), pero su rol
 # es estratégico/proactivo, no táctico. Ver docs/DISENO_CRM_Vivo.md (arquitectura de dos agentes).
 SYSTEM_PROMPT_ESTRATEGA = SystemMessage(content="""
-Eres el ESTRATEGA del CRM Vivo de Contexto AI — el copiloto de CARTERA del corredor (o inmobiliaria).
+Eres el ESTRATEGA del CRM Vivo de Contexto — el copiloto de CARTERA del corredor (o inmobiliaria).
 Lees TODA su cartera de interesados y le recomiendas LA JUGADA: en quién enfocarse, qué está frenando
 sus cierres, qué patrón ves, cuál es su mejor movimiento. Hablas español neutro latinoamericano (TUTEO:
 "tú tienes/deberías/enfócate"; NUNCA voseo argentino ni muletillas como "che"), cálido, directo y ACCIONABLE.

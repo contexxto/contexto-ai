@@ -22,7 +22,7 @@ from app.routers import alertas, assets, auth, chat, ingest, match, review, visi
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("Contexto AI API iniciando...")
+    print("Contexto API iniciando...")
 
     # AUTH-READ-GATE.1 · HOLD-2 — lo PRIMERO, antes de abrir nada.
     #
@@ -55,14 +55,14 @@ async def lifespan(app: FastAPI):
     from app.notifications import revisar_canales, disparar as _disparar
     _disparar(revisar_canales())
     yield
-    print("Contexto AI API apagando...")
+    print("Contexto API apagando...")
     await detener_cron()
     await detener_rescate()
     await shutdown_checkpointer()
 
 
 app = FastAPI(
-    title="Contexto AI",
+    title="Contexto",
     description="Catastro Vivo e Inmutable — API de Inteligencia Inmobiliaria",
     version="2.0.0",
     lifespan=lifespan,
@@ -151,7 +151,7 @@ async def health_check():
 
     return {
         "status": "healthy" if (db_ok and memoria_ok) else "degraded",
-        "service": "Contexto AI V2",
+        "service": "Contexto",
         # "up" | "timeout" (responde pero saturada) | "down" (no se pudo conectar)
         "database": db_estado,
         # "volatil" = las conversaciones NO persisten; reiniciar el servicio.

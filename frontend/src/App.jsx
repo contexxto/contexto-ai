@@ -32,6 +32,7 @@ import isotipo from './assets/isotipo.svg'
 import { LogoHorizontal, ALTO_MIN_HORIZONTAL } from './LogoContexto'
 import { BOTON_REDONDO } from './homeEstilos'
 import { maquetaMensaje, rellenoColumna } from './maquetaMensaje'
+import { SILENCIO_MAX_MS, textoDeSesion, textoVisible, unirSinRepetir } from './dictado'
 
 // Carga diferida ROBUSTA ante deploys. Si el chunk falla al descargarse (típico cuando un
 // deploy purgó el hash viejo mientras el usuario tenía la app abierta → "Failed to fetch
@@ -1492,38 +1493,27 @@ export default function App() {
     voiceStopRef.current = false
     voiceIgnorarRef.current = false
     let sesionFinal = ''         // final-only de ESTA sesión (se commitea a la base al reiniciar)
+    let ultimaVoz = Date.now()   // la última vez que se oyó algo: tras SILENCIO_MAX_MS sin nada, se detiene
     rec.onresult = (e) => {
       // Descartado o ya enviado: un resultado tardío no vuelve a llenar el campo recién vaciado.
       if (voiceIgnorarRef.current) return
-      // Reconstruir SIEMPRE desde 0 y COLAPSAR entradas que extienden a la anterior: en
-      // Android cada entrada puede ser una foto acumulativa de la misma frase (se reemplaza,
-      // no se suma). Los segmentos distintos (desktop) se unen CON espacio — antes se
-      // pegaban: "La Carolinaque esté…".
-      const fins = [], ints = []
-      for (let i = 0; i < e.results.length; i++) {
-        const r = e.results[i]
-        const t = (r[0]?.transcript || '').trim()
-        if (!t) continue
-        const arr = r.isFinal ? fins : ints
-        const prev = arr[arr.length - 1]
-        if (prev && (t.toLowerCase().startsWith(prev.toLowerCase()) || prev.toLowerCase().startsWith(t.toLowerCase()))) {
-          arr[arr.length - 1] = t.length >= prev.length ? t : prev
-        } else arr.push(t)
-      }
-      const fin = fins.join(' ')
+      // Reconstruir SIEMPRE desde 0 y unir SIN REPETIR: Android parte una frase en finales que se
+      // pisan y la vuelve a entregar al reiniciar la sesión (la regla y el caso, en dictado.js).
+      const { fin, parcial } = textoDeSesion(e.results)
+      if (fin || parcial) ultimaVoz = Date.now()
       sesionFinal = fin
-      const base = voiceFinalRef.current
-      setInput([base, fin, ints.join(' ')].filter(Boolean).join(' ').replace(/\s{2,}/g, ' '))
+      setInput(textoVisible(voiceFinalRef.current, fin, parcial))
     }
     rec.onerror = (e) => {
       // 'no-speech'/'aborted' son benignos (silencio); el permiso negado sí termina.
       if (e?.error === 'not-allowed' || e?.error === 'service-not-allowed') voiceStopRef.current = true
     }
     rec.onend = () => {
-      if (!voiceStopRef.current) {
-        // Commitear el final de esta sesión a la base ANTES de reiniciar (con espacio, sin duplicar).
-        if (sesionFinal.trim()) voiceFinalRef.current = (voiceFinalRef.current + ' ' + sesionFinal).trim()
-        sesionFinal = ''
+      // Commitear el final de esta sesión a la base, sin repetir lo que ya estaba.
+      voiceFinalRef.current = unirSinRepetir(voiceFinalRef.current, sesionFinal)
+      sesionFinal = ''
+      // Se reinicia solo mientras haya voz: tras SILENCIO_MAX_MS callado se detiene y deja el texto.
+      if (!voiceStopRef.current && Date.now() - ultimaVoz < SILENCIO_MAX_MS) {
         try { rec.start(); return } catch { /* si el motor no puede reiniciar, cerramos abajo */ }
       }
       setListening(false)

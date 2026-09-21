@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import { ATRIBUCION } from './atribucion'
+import { SILENCIO_MAX_MS, textoDeSesion, textoVisible, unirSinRepetir } from './dictado'
 
 // Estilo de mapa oscuro premium (CARTO dark-matter, gratuito, sin token).
 const DARK_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
@@ -508,34 +509,23 @@ export default function MapView({ seedIds, encajeById } = {}) {
     vozStopRef.current = false
     vozIgnorarRef.current = false
     let sesionFinal = ''       // final-only de ESTA sesión
+    let ultimaVoz = Date.now() // tras SILENCIO_MAX_MS sin oír nada, se detiene (dictado.js)
     rec.onresult = e => {
       // Descartado o ya enviado: un resultado tardío no vuelve a llenar el campo recién vaciado.
       if (vozIgnorarRef.current) return
-      // Reconstruir desde 0 y COLAPSAR entradas que extienden a la anterior (Android manda
-      // fotos acumulativas de la misma frase); segmentos distintos se unen CON espacio.
-      const fins = [], ints = []
-      for (let i = 0; i < e.results.length; i++) {
-        const r = e.results[i]
-        const t = (r[0]?.transcript || '').trim()
-        if (!t) continue
-        const arr = r.isFinal ? fins : ints
-        const prev = arr[arr.length - 1]
-        if (prev && (t.toLowerCase().startsWith(prev.toLowerCase()) || prev.toLowerCase().startsWith(t.toLowerCase()))) {
-          arr[arr.length - 1] = t.length >= prev.length ? t : prev
-        } else arr.push(t)
-      }
-      const fin = fins.join(' ')
+      // Reconstruir desde 0 y unir SIN REPETIR (Android parte y reentrega frases): dictado.js.
+      const { fin, parcial } = textoDeSesion(e.results)
+      if (fin || parcial) ultimaVoz = Date.now()
       sesionFinal = fin
-      const base = vozFinalRef.current
-      setMapaInput([base, fin, ints.join(' ')].filter(Boolean).join(' ').replace(/\s{2,}/g, ' '))
+      setMapaInput(textoVisible(vozFinalRef.current, fin, parcial))
     }
     rec.onerror = e => {
       if (e?.error === 'not-allowed' || e?.error === 'service-not-allowed') vozStopRef.current = true
     }
     rec.onend = () => {
-      if (!vozStopRef.current) {
-        if (sesionFinal.trim()) vozFinalRef.current = (vozFinalRef.current + ' ' + sesionFinal).trim()
-        sesionFinal = ''
+      vozFinalRef.current = unirSinRepetir(vozFinalRef.current, sesionFinal)
+      sesionFinal = ''
+      if (!vozStopRef.current && Date.now() - ultimaVoz < SILENCIO_MAX_MS) {
         try { rec.start(); return } catch { /* cierre normal abajo */ }
       }
       setEscuchando(false)

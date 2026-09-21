@@ -112,7 +112,7 @@ describe('mientras se dicta en el mapa: descartar, detener o preguntar', () => {
     const guarda = dictar.indexOf('if (vozIgnorarRef.current) return')
     expect(entra).toBeGreaterThan(-1)
     expect(guarda).toBeGreaterThan(entra)
-    expect(guarda).toBeLessThan(dictar.indexOf('const fins = []'))   // lo PRIMERO del handler
+    expect(guarda).toBeLessThan(dictar.indexOf('textoDeSesion(e.results)'))   // lo PRIMERO del handler
     const rearme = dictar.indexOf('vozIgnorarRef.current = false')
     expect(rearme).toBeGreaterThan(-1)
     expect(rearme).toBeLessThan(entra)

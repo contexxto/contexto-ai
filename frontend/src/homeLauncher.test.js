@@ -332,7 +332,7 @@ describe('mientras se dicta: descartar, detener o enviar — y ningún botón ca
     const guarda = dictado.indexOf('if (voiceIgnorarRef.current) return')
     expect(entra).toBeGreaterThan(-1)
     expect(guarda).toBeGreaterThan(entra)
-    expect(guarda).toBeLessThan(dictado.indexOf('const fins = []'))   // lo PRIMERO del handler
+    expect(guarda).toBeLessThan(dictado.indexOf('textoDeSesion(e.results)'))   // lo PRIMERO del handler
     // Cada dictado nuevo vuelve a escuchar.
     const rearme = dictado.indexOf('voiceIgnorarRef.current = false')
     expect(rearme).toBeGreaterThan(-1)

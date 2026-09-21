@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import axios from 'axios'
 import { Plus, Pin, PinOff, Pencil, Trash2, MoreHorizontal, MessageSquare, LogOut, Home, Map, Shield, Users, Briefcase, Sun, Moon, PanelLeft, Download } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
-import sphereLogo from './assets/sphere.svg'
+import { LogoHorizontal, ALTO_MIN_HORIZONTAL } from './LogoContexto'
 import { getTheme, toggleTheme } from './theme'
 
 // Paleta vía tokens del design system → adapta a tema oscuro/claro.
@@ -141,8 +141,11 @@ export default function Sidebar({ sessionId, onSelect, onNew, reloadKey, user, o
     }}>
       {/* Header con logo (como ASI:One) */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '16px 18px 14px', borderBottom: `1px solid ${C.border}` }}>
-        <img src={sphereLogo} alt="" width={22} height={22} style={{ display: 'block' }} />
-        <span style={{ fontSize: '1.05rem', fontWeight: 800, color: C.text, letterSpacing: '-.02em' }}>Contexto</span>
+        {/* El lockup horizontal de la marca (generado desde logo.json, isotipo MAESTRO), al tamaño en
+            que la palabra llega a su mínimo legible de 96 px: la «opción 3 con el tamaño de las
+            anteriores» que eligió Carlos el 2026-09-21. Antes: sphere.svg + «Contexto» compuesto en
+            la letra de la interfaz, y a 16,8 px, por debajo del mínimo del logotipo. */}
+        <LogoHorizontal alto={ALTO_MIN_HORIZONTAL} style={{ color: C.text }} />
         {mobile && onClose && (
           <button onClick={onClose} title="Cerrar menú"
             style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: C.dim, display: 'flex', padding: 4 }}>

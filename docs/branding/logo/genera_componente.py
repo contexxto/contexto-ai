@@ -36,9 +36,9 @@ src = f"""// ── Logotipo de Contexto ─────────────
 // radio {i['radio']:g}, y el círculo un 4 % mayor que el lado (a igual medida se ve más pequeño);
 // por eso rebasa la retícula en {i['respiro']:g} y el viewBox lleva ese respiro: sin él, sale recortado.
 //
-// Este isotipo es el MAESTRO. Solo, va desde 48 px; por debajo se sigue usando assets/sphere.svg,
-// su versión de tamaño pequeño (calle más ancha, 24 px). Dentro del lockup horizontal va desde
-// {alto_min_h:g} px: ahí la palabra llega a su mínimo legible de {MIN_PALABRA_PX} px (decisión de Carlos, 2026-09-21).
+// Este isotipo es el MAESTRO, y desde el 2026-09-21 es el único signo de Contexto: el favicon
+// (public/favicon.svg) y el signo de la app (assets/isotipo.svg) son sus mismas formas. Dentro del
+// lockup horizontal va desde {alto_min_h:g} px: ahí la palabra llega a su mínimo legible de {MIN_PALABRA_PX} px.
 // El logotipo hereda el color del texto (currentColor): blanco en oscuro, tinta en claro.
 
 const LETRAS = [

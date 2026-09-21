@@ -92,21 +92,17 @@ C_CORAL = "#E0685A"
 C_TEXT = "#EDEBF2"
 C_MUTED = "#9C99AC"
 
-# Mark de Contexto incrustado. Geometría idéntica a
-# frontend/src/assets/sphere.svg, que es la que usa la app.
-# Reemplazó a la esfera de la marca anterior (2026-08-19); no tiene
-# gradientes, así que {uid} ya no hace falta pero se acepta por compatibilidad.
-SPHERE_SVG = """
-<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 24 24" fill="none">
-  <rect x="3" y="3" width="7" height="7" rx="1.6" fill="#5EEAD4"/>
-  <rect x="14" y="3" width="7" height="7" rx="1.6" fill="#3A3D44"/>
-  <rect x="3" y="14" width="7" height="7" rx="1.6" fill="#3A3D44"/>
-  <circle cx="17.5" cy="17.5" r="4" fill="#5EEAD4"/>
-</svg>"""
+# El signo de Contexto: se LEE del mismo archivo que usa la app, que genera
+# docs/branding/logo/genera_iconos.py desde el isotipo maestro. Antes había aquí
+# una copia pegada del signo de calle ancha y derivó con él; una copia es una
+# segunda verdad esperando separarse. El signo es plano, sin ids: {uid} ya no
+# hace falta, pero se acepta por compatibilidad.
+SIGNO_APP = Path(__file__).resolve().parent.parent / "frontend" / "src" / "assets" / "isotipo.svg"
 
 
-def _sphere(size: int, uid: str) -> str:
-    return SPHERE_SVG.format(size=size, uid=uid)
+def _isotipo(size: int, uid: str) -> str:
+    svg = SIGNO_APP.read_text(encoding="utf-8").strip()
+    return svg.replace("<svg ", f'<svg width="{size}" height="{size}" ', 1)
 
 
 def _qr_svg_inline(url: str, scale: int = 6) -> str:
@@ -130,7 +126,7 @@ def _letrero_card(activo: dict, app_url: str, uid: str) -> str:
     return f"""
 <section class="letrero">
   <div class="brand">
-    <span class="sphere">{_sphere(44, uid)}</span>
+    <span class="signo">{_isotipo(44, uid)}</span>
     <span class="wm">{_wordmark()}</span>
   </div>
   <div class="qrpanel">{qr}</div>
@@ -163,7 +159,7 @@ body {{
   page-break-inside: avoid; break-inside: avoid;
 }}
 .brand {{ display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }}
-.brand .sphere {{ filter: drop-shadow(0 0 10px rgba(45,189,182,.45)); line-height: 0; }}
+.brand .signo {{ filter: drop-shadow(0 0 10px rgba(45,189,182,.45)); line-height: 0; }}
 .brand .wm {{ font-size: 22px; }}
 .qrpanel {{
   background: #fff; border-radius: 20px; padding: 14px;

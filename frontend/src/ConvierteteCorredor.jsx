@@ -2,7 +2,7 @@ import { useState } from 'react'
 import axios from 'axios'
 import { X, AlertTriangle, Briefcase, Building2 } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
-import sphereLogo from './assets/sphere.svg'
+import isotipo from './assets/isotipo.svg'
 
 const C = {
   bg: 'var(--bg)', panel: 'var(--surface-1)', teal: 'var(--teal)', tealHi: 'var(--teal-bright)',
@@ -60,7 +60,7 @@ export default function ConvierteteCorredor({ onClose, onUpgraded }) {
         </button>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-          <img src={sphereLogo} width={28} height={28} alt="Contexto" />
+          <img src={isotipo} width={28} height={28} alt="Contexto" />
           <div style={{ fontWeight: 800, fontSize: '1.05rem' }}>Conviértete en corredor</div>
         </div>
         <p style={{ fontSize: '.82rem', color: C.muted, margin: '0 0 16px' }}>

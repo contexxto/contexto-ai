@@ -29,6 +29,7 @@ import Sidebar, { RailNav } from './Sidebar'
 import Campana from './Campana'
 import { ESTADO, leerStreamChat } from './leerStreamChat'
 import isotipo from './assets/isotipo.svg'
+import { LogoHorizontal, ALTO_MIN_HORIZONTAL } from './LogoContexto'
 import { BOTON_REDONDO } from './homeEstilos'
 
 // Carga diferida ROBUSTA ante deploys. Si el chunk falla al descargarse (típico cuando un
@@ -2085,13 +2086,10 @@ export default function App() {
           </div>
         )}
         {!isEmpty && (
-          <div style={{ display:'flex', alignItems:'center', gap:9 }}>
-            <img src={isotipo} alt="Contexto" width={isMobile ? 26 : 30} height={isMobile ? 26 : 30}
-                 style={{ display:'block', flexShrink:0 }} />
-            <div style={{ fontWeight:800, fontSize:isMobile ? '1rem' : '1.05rem', letterSpacing:'-.3px' }}>
-              Contexto
-            </div>
-          </div>
+          // El lockup de la marca al alto mínimo en que la palabra se lee (96 px): el mismo del
+          // menú lateral (#148). Antes, el signo con «Contexto» escrito a mano en la letra de la
+          // interfaz — lo que Carlos vio en su teléfono el 2026-09-21: «aún sigue lo viejo».
+          <LogoHorizontal alto={ALTO_MIN_HORIZONTAL} style={{ color:'var(--text)' }} />
         )}
         {/* Campana a la derecha, espejo del toggle de la izquierda. Es el canal de avisos
             que no depende de permisos del navegador ni de que nadie revise su correo. */}

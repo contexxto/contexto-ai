@@ -7,8 +7,9 @@
 // radio 1.35, y el círculo un 4 % mayor que el lado (a igual medida se ve más pequeño);
 // por eso rebasa la retícula en 0.12 y el viewBox lleva ese respiro: sin él, sale recortado.
 //
-// Este isotipo es el MAESTRO, para 48 px o más. Por debajo se sigue usando
-// assets/sphere.svg, que es su versión de tamaño pequeño (calle más ancha, 24 px).
+// Este isotipo es el MAESTRO. Solo, va desde 48 px; por debajo se sigue usando assets/sphere.svg,
+// su versión de tamaño pequeño (calle más ancha, 24 px). Dentro del lockup horizontal va desde
+// 32 px: ahí la palabra llega a su mínimo legible de 96 px (decisión de Carlos, 2026-09-21).
 // El logotipo hereda el color del texto (currentColor): blanco en oscuro, tinta en claro.
 
 const LETRAS = [
@@ -37,6 +38,26 @@ export function Logotipo({ width = 152, style }) {
   return (
     <svg width={width} viewBox="-1 -2.5 995.45 105" role="img" aria-label="Contexto" style={{ display: 'block', height: 'auto', ...style }}>
       <g fill="currentColor">
+        {LETRAS.map((l, i) => <path key={i} transform={`translate(${l.x} 0)`} d={l.d} />)}
+      </g>
+    </svg>
+  )
+}
+
+// Versión horizontal (para cabeceras): el MISMO lienzo que docs/branding/logo/contexto-horizontal.svg
+// — caja alta de 4 módulos centrada en el isotipo y 4 de separación —. `alto` es el del isotipo, y
+// el ancho sale de la proporción del lienzo. Por debajo de ALTO_MIN_HORIZONTAL la palabra baja de
+// 96 px y deja de leerse.
+export const ALTO_MIN_HORIZONTAL = 32
+
+export function LogoHorizontal({ alto = ALTO_MIN_HORIZONTAL, style }) {
+  return (
+    <svg height={alto} width={alto * 4.297583} viewBox="-0.12 -0.12 56.9 13.24" role="img" aria-label="Contexto" style={{ display: 'block', ...style }}>
+      <rect x="0" y="0" width="6" height="6" rx="1.35" fill="#5EEAD4" />
+      <rect x="7" y="0" width="6" height="6" rx="1.35" fill="#3A3D44" />
+      <rect x="0" y="7" width="6" height="6" rx="1.35" fill="#3A3D44" />
+      <circle cx="10" cy="10" r="3.12" fill="#5EEAD4" />
+      <g fill="currentColor" transform="translate(17 4.5) scale(0.04000)">
         {LETRAS.map((l, i) => <path key={i} transform={`translate(${l.x} 0)`} d={l.d} />)}
       </g>
     </svg>

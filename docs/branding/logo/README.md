@@ -8,11 +8,11 @@ retocar contornos a mano. Parte del logo que dibujó Carlos (isotipo de cuatro f
 |---|---|
 | `contexto-vertical.svg` | Versión principal: isotipo arriba, logotipo debajo (al doble de ancho). |
 | `contexto-horizontal.svg` | Para cabeceras: isotipo a la izquierda, caja alta = 4 módulos. |
-| `contexto-isotipo.svg` | El signo solo, maestro (≥ 48 px). Por debajo: `frontend/src/assets/sphere.svg`. |
+| `contexto-isotipo.svg` | El signo solo, maestro (≥ 48 px). Por debajo: `frontend/src/assets/sphere.svg`. Dentro del lockup horizontal va desde 32 px (ver «Tamaños»). |
 | `contexto-logotipo.svg` | La palabra sola. Hereda `currentColor`. |
 | `logo.json` | La geometría (contornos, blancos entre letras, retícula). |
 | `genera_logo.py` | Construye todo lo anterior. Solo necesita Pillow (para medir los blancos). |
-| `genera_componente.py` | Reescribe `frontend/src/LogoContexto.jsx` desde `logo.json`. |
+| `genera_componente.py` | Reescribe `frontend/src/LogoContexto.jsx` desde `logo.json`: `Isotipo`, `Logotipo`, `LogoHorizontal` (+ `ALTO_MIN_HORIZONTAL`) y `LogoVertical`. Antes de escribir comprueba que el lockup horizontal calculado sea idéntico a `contexto-horizontal.svg`. |
 | `genera_iconos.py` | Escribe los PNG de `frontend/public/` desde `logo.json`. `--check` audita los que hay. |
 | `genera_og_cover.py` | Pone el lockup horizontal en `og-cover.png`. `--check` audita el que hay. |
 
@@ -75,6 +75,20 @@ decisiones que conviene no re-derivar:
   parejas, amortiguado al 55 %.
 - **Color:** teal `#5EEAD4`, pizarra `#3A3D44`; el logotipo hereda el color del texto.
 - **Mínimos:** logotipo ≥ 96 px de ancho; área de respeto = medio lado del isotipo (3 módulos).
+
+## Tamaños
+
+El mínimo que manda es el de la **palabra**: por debajo de 96 px de ancho, sus astas de 11/100 bajan de un píxel y deja de leerse. De ahí salen los demás:
+
+| Uso | Signo | Desde |
+|---|---|---|
+| Signo solo | `Isotipo` (maestro) | 48 px |
+| Signo solo, pequeño | `assets/sphere.svg` (calle ancha) | por debajo de 48 px |
+| Lockup horizontal (cabeceras) | `LogoHorizontal`, con el isotipo maestro | 32 px de alto = `ALTO_MIN_HORIZONTAL` |
+
+`ALTO_MIN_HORIZONTAL` no se decide aparte: es el menor alto en que la palabra del lockup llega a 96 px (32 × 39,738 / 13,24 = 96,04), y `genera_componente.py` lo calcula.
+
+**Por qué el maestro baja a 32 px dentro del lockup (decisión de Carlos, 2026-09-21).** Para la cabecera del menú lateral se probaron en su teléfono tres variantes: el signo pequeño solo, el signo pequeño con la palabra, y el lockup con el isotipo maestro. Eligió el maestro, al tamaño de las otras dos. A 32 px su calle mide 2,5 px —6-7 píxeles reales en su teléfono—, así que la regla de 48 px sigue valiendo para el signo **solo**, donde tiene que sostenerse sin la palabra al lado. Nunca se empareja `sphere.svg` con la palabra: el lockup lleva siempre el maestro.
 
 Para cambiar algo: edita los parámetros de `genera_logo.py`, corre los dos scripts y revisa el
 resultado. No edites `LogoContexto.jsx` ni los `.svg` a mano.

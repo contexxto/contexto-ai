@@ -8,7 +8,7 @@ retocar contornos a mano. Parte del logo que dibujó Carlos (isotipo de cuatro f
 |---|---|
 | `contexto-vertical.svg` | Versión principal: isotipo arriba, logotipo debajo (al doble de ancho). |
 | `contexto-horizontal.svg` | Para cabeceras: isotipo a la izquierda, caja alta = 4 módulos. |
-| `contexto-isotipo.svg` | El signo solo, maestro (≥ 48 px). Por debajo: `frontend/src/assets/sphere.svg`. Dentro del lockup horizontal va desde 32 px (ver «Tamaños»). |
+| `contexto-isotipo.svg` | El signo, maestro. También es el favicon (`frontend/public/favicon.svg`, copia exacta). Ver «Tamaños». |
 | `contexto-logotipo.svg` | La palabra sola. Hereda `currentColor`. |
 | `logo.json` | La geometría (contornos, blancos entre letras, retícula). |
 | `genera_logo.py` | Construye todo lo anterior. Solo necesita Pillow (para medir los blancos). |
@@ -37,9 +37,12 @@ signo y, en el maskable, que nada se salga del círculo seguro— y `tests/test_
 repite esa comprobación en cada corrida de CI sobre los archivos que de verdad se sirven. No se
 comparan bytes: local corre Pillow 12 y CI Pillow 11.
 
-El favicon NO sale de aquí. A 16-32 px la calle de un módulo del maestro se cierra y el signo se
-empasta; por eso `sphere-favicon.svg` conserva la retícula de calle ancha, que es la regla de
-tamaño óptico de la tabla de arriba.
+**El favicon es el isotipo maestro (decisión de Carlos, 2026-09-21).** Hasta ese día era
+`sphere-favicon.svg`, de calle ancha, por la regla de tamaño óptico. Carlos la revocó para el favicon
+al ver el signo viejo en los accesos directos de Chrome, junto a todo lo demás ya con el nuevo. El
+costo, dicho: en una pestaña de 16 px la calle del maestro mide 1,2 px. A cambio el maestro va ceñido
+al lienzo —el favicon viejo dejaba 12,5 % de margen por lado—, así que el signo ocupa 16 px y no 12.
+`genera_iconos.py` lo copia byte a byte desde `contexto-isotipo.svg` y `--check` lo audita.
 
 ## La tarjeta de compartir
 
@@ -83,7 +86,8 @@ El mínimo que manda es el de la **palabra**: por debajo de 96 px de ancho, sus 
 | Uso | Signo | Desde |
 |---|---|---|
 | Signo solo | `Isotipo` (maestro) | 48 px |
-| Signo solo, pequeño | `assets/sphere.svg` (calle ancha) | por debajo de 48 px |
+| Favicon (pestañas, accesos directos) | `favicon.svg` = isotipo maestro | cualquier tamaño (16 px en una pestaña) |
+| Signo pequeño dentro de la app | `assets/sphere.svg` (calle ancha) | por debajo de 48 px — pendiente de revisar |
 | Lockup horizontal (cabeceras) | `LogoHorizontal`, con el isotipo maestro | 32 px de alto = `ALTO_MIN_HORIZONTAL` |
 
 `ALTO_MIN_HORIZONTAL` no se decide aparte: es el menor alto en que la palabra del lockup llega a 96 px (32 × 39,738 / 13,24 = 96,04), y `genera_componente.py` lo calcula.

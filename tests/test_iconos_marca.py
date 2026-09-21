@@ -71,6 +71,48 @@ def test_el_html_apunta_a_iconos_que_existen():
         assert (gi.PUBLIC / ref.lstrip("/")).exists(), f"index.html apunta a {ref}, que no está"
 
 
+# ── El favicon (decisión de Carlos, 2026-09-21) ─────────────────────────────────────────
+# Hasta ese día era sphere-favicon.svg, de calle ancha, por una regla de tamaño óptico. Carlos la
+# revocó al ver el signo viejo en los accesos directos de Chrome, al lado de todo lo demás ya con
+# el nuevo. Ahora el favicon ES el isotipo maestro, byte a byte.
+
+
+def _favicon_svg_enlazado():
+    import re
+
+    html = (_RAIZ / "frontend" / "index.html").read_text(encoding="utf-8")
+    html = re.sub(r"<!--.*?-->", "", html, flags=re.S)
+    m = re.search(r'<link[^>]*rel="icon"[^>]*type="image/svg\+xml"[^>]*href="([^"]+)"', html)
+    assert m, "index.html ya no declara un favicon SVG"
+    return html, m.group(1)
+
+
+def _es_el_maestro(contenido: bytes) -> bool:
+    return contenido == gi.MAESTRO.read_bytes()
+
+
+def test_el_favicon_es_el_isotipo_maestro():
+    _, ref = _favicon_svg_enlazado()
+    servido = (gi.PUBLIC / ref.lstrip("/")).read_bytes()
+    assert _es_el_maestro(servido), f"{ref} no es docs/branding/logo/contexto-isotipo.svg"
+
+
+def test_el_signo_de_calle_ancha_ya_no_es_el_favicon():
+    html, ref = _favicon_svg_enlazado()
+    assert "sphere-favicon" not in html
+    assert not (gi.PUBLIC / "sphere-favicon.svg").exists(), "el favicon viejo sigue en public/"
+
+
+def test_rechaza_el_favicon_viejo_de_calle_ancha():
+    """Control: la comparación no es decorativa. La geometría vieja (retícula de 24, calle de 4)."""
+    viejo = (b'<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none">'
+             b'<rect x="3" y="3" width="7" height="7" rx="1.6" fill="#5EEAD4"/>'
+             b'<rect x="14" y="3" width="7" height="7" rx="1.6" fill="#3A3D44"/>'
+             b'<rect x="3" y="14" width="7" height="7" rx="1.6" fill="#3A3D44"/>'
+             b'<circle cx="17.5" cy="17.5" r="4" fill="#5EEAD4"/></svg>')
+    assert not _es_el_maestro(viejo)
+
+
 # ── Controles positivos ─────────────────────────────────────────────────────────────────
 # Sin esto, los tests de arriba pasarían igual con un verificador que devuelve [] siempre.
 

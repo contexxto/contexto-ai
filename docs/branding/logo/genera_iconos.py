@@ -11,9 +11,14 @@ número de la marca se vuelve a teclear.
 
 Qué NO toca, a propósito:
 
-- `sphere-favicon.svg` y `src/assets/sphere.svg`. El favicon vive a 16-32 px y el README fija la
-  regla de tamaño óptico: el isotipo maestro es para ≥ 48 px y por debajo va `sphere.svg`, de
-  calle más ancha. A 16 px la calle de 1 módulo del maestro se cierra y el signo se empasta.
+- `src/assets/sphere.svg`, el signo de calle ancha que la app usa por dentro (cabecera del chat,
+  avatar, ventanas). Cambiarlo es otra decisión, pendiente.
+
+El favicon SÍ sale de aquí desde el 2026-09-21: `favicon.svg` es una copia exacta de
+`contexto-isotipo.svg`, el maestro. Antes era `sphere-favicon.svg`, de calle ancha, por una regla de
+tamaño óptico (el maestro solo desde 48 px); Carlos la revocó para el favicon al ver el signo viejo
+en los accesos directos de Chrome. El nombre cambió a propósito: Chrome guarda los favicons en su
+propia base y un nombre nuevo lo obliga a pedirlo otra vez.
 - `og-cover.png`. Lleva titular y bajada en Geist; no es geometría y no sale de `logo.json`.
 
 Cada archivo se comprueba SOBRE LOS BYTES QUE SE VAN A SERVIR y solo entonces se escribe —el
@@ -181,9 +186,22 @@ SALIDAS = [
 ]
 
 
+FAVICON = PUBLIC / "favicon.svg"
+MAESTRO = AQUI / "contexto-isotipo.svg"
+
+
 def main():
     check = "--check" in sys.argv
     malos = []
+    # El favicon es el isotipo maestro, byte a byte: ni un redondeo propio que pueda derivar.
+    if check:
+        igual = FAVICON.exists() and FAVICON.read_bytes() == MAESTRO.read_bytes()
+        print(f"{'BIEN' if igual else 'MAL ':9} favicon.svg")
+        if not igual:
+            malos.append("favicon.svg: no es contexto-isotipo.svg")
+    else:
+        FAVICON.write_bytes(MAESTRO.read_bytes())
+        print(f"escrito   favicon.svg  (copia de contexto-isotipo.svg, {FAVICON.stat().st_size} bytes)")
     for nombre, lado, clase in SALIDAS:
         destino = PUBLIC / nombre
         fraccion = FRACCION[clase]

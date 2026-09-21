@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, lazy, Suspense } from 'react'
 import axios from 'axios'
 import {
   Send, MapPin, RefreshCw, Trash2, Copy, CheckCheck, ChevronDown, PanelLeft,
@@ -403,6 +403,69 @@ function Thinking() {
       </div>
     </div>
   )
+}
+
+// ── Alto del campo de escribir ──────────────────────────────
+// Crece con el texto hasta cuatro líneas COMPLETAS: 4 × 24 de línea + 20 de aire. Con 120 la
+// quinta línea asomaba cortada.
+// El aire (10 arriba y 10 abajo) es un BORDE transparente, no padding: un textarea con scroll
+// pinta texto dentro de su padding, y con cinco líneas la primera quedaba pegada al canto de la
+// píldora (visto en el teléfono de Carlos). El texto nunca entra en un borde. Y el borde sigue
+// siendo del textarea: tocarlo enfoca el campo, así que el área táctil sigue midiendo 44.
+const AIRE_CAMPO = 10
+const ALTO_MAX_CAMPO = 4 * 24 + 2 * AIRE_CAMPO
+
+// ── Las dos formas de la píldora ────────────────────────────
+// Vacía, o con un texto que cabe en una línea: UNA fila (campo · ubicación · «+» · Voz/Enviar).
+// En cuanto el texto no cabe, forma AMPLIA: el campo ocupa todo el ancho y los botones bajan a
+// una segunda fila. Con los botones al lado, el texto se quedaba en una columna de ~180 px en un
+// teléfono y «chocaba» con ellos (visto por Carlos en el aparato; en producción usa todo el ancho).
+//
+// El criterio es el ancho del TEXTO medido en un canvas, NO el layout actual. Si dependiera del
+// layout oscilaría: al ensancharse el campo el texto vuelve a caber en una línea, la píldora se
+// estrecharía, el texto dejaría de caber… Medir el texto da la misma respuesta en las dos formas.
+// Un desajuste de un píxel con el ajuste real de línea es inocuo: las dos formas admiten varias
+// líneas. La forma se marca con data-amplio en la píldora (el padre del textarea) y el CSS hace el
+// resto (index.css, .dock-pill): React no conoce ese atributo y no lo pisa.
+const ANCHO_BOTONES_PILDORA = 36 + 36 + 44 + 4 + 3 * 2   // ubicación, «+», Voz/Enviar, su margen y tres huecos
+const PAD_PILDORA_UNA_FILA = 18 + 5                       // izquierda + derecha de .dock-pill en la forma de una fila
+let lienzoDeMedir = null
+function noCabeEnUnaLinea(el, pildora) {
+  const texto = el.value
+  if (!texto) return false
+  if (texto.includes('\n')) return true
+  const cs = getComputedStyle(el)
+  lienzoDeMedir = lienzoDeMedir || document.createElement('canvas').getContext('2d')
+  lienzoDeMedir.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`
+  // El hueco del campo en la forma de UNA fila, se esté en la forma que se esté: sale del ancho
+  // de la píldora (que no cambia con la forma) y de constantes, nunca del ancho actual del campo.
+  const hueco = pildora.clientWidth - PAD_PILDORA_UNA_FILA - ANCHO_BOTONES_PILDORA
+  return lienzoDeMedir.measureText(texto).width > hueco
+}
+
+// Se llama desde onInput (teclado), desde un efecto de App (dictado por voz, volver de otra vista,
+// cambio de ancho del campo: nada de eso emite el evento input) y al redimensionar la ventana.
+// Primero decide la FORMA (cambia el ancho del campo) y después mide el alto.
+// El overflow se gobierna AQUÍ y no en el style del textarea:
+//  · oculto mientras se mide: una barra de scroll clásica (escritorio) estrecha el campo durante
+//    la medición y el alto salía con una línea de más;
+//  · oculto con el campo vacío: nunca hay barra sobre el placeholder;
+//  · auto solo cuando el texto pasa del máximo.
+function ajustarAltoCampo(el) {
+  const pildora = el.parentElement
+  if (pildora) {
+    if (noCabeEnUnaLinea(el, pildora)) pildora.dataset.amplio = '1'
+    else delete pildora.dataset.amplio
+  }
+  el.style.overflowY = 'hidden'
+  el.style.height = 'auto'
+  // Vacío: se queda en el alto natural de una fila. Medir scrollHeight aquí contaría el
+  // PLACEHOLDER: al borrar todo el texto la píldora quedaba a 80 px en vez de volver a 56.
+  if (!el.value) return
+  // scrollHeight no cuenta los bordes y el alto (border-box) sí.
+  const alto = el.scrollHeight + 2 * AIRE_CAMPO
+  el.style.height = Math.min(alto, ALTO_MAX_CAMPO) + 'px'
+  if (alto > ALTO_MAX_CAMPO) el.style.overflowY = 'auto'
 }
 
 // ── Main App ────────────────────────────────────────────────
@@ -835,6 +898,38 @@ export default function App() {
     const el = scrollRef.current
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
   }, [messages, loading])
+
+  // El alto del campo se vuelve a medir cuando cambia algo que onInput no ve. No enfoca ni
+  // desplaza el documento: solo toca el alto, el overflow y el scroll INTERNO del textarea.
+  //  · input: el dictado por voz (y cualquier setInput) no emite el evento input; el campo se
+  //    quedaba en una línea con el texto dictado escondido.
+  //  · listening: pasadas las cuatro líneas, lo que se está dictando caía bajo el pliegue
+  //    (asignar value por programa no mueve el scroll): mientras se dicta, el campo va al final.
+  //  · view / openAnuncioId / anuncioMode: mapa, CRM, revisión y anuncio DESMONTAN el chat; al
+  //    volver hay un textarea nuevo con el borrador de antes y `input` no cambió.
+  //  · isMobile / sidebarCollapsed: cambian el ANCHO del campo, y con él las líneas del texto.
+  useLayoutEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    ajustarAltoCampo(el)
+    if (listening) el.scrollTop = el.scrollHeight
+  }, [input, listening, view, openAnuncioId, anuncioMode, isMobile, sidebarCollapsed])
+
+  // Girar el teléfono o estrechar la ventana también re-envuelve el texto sin tocar `input`. Con
+  // el overflow oculto por debajo del máximo, lo que sobrara quedaba recortado e inalcanzable
+  // hasta la siguiente tecla.
+  // Lo mismo cuando LLEGA LA FUENTE: Geist carga con display=swap; quien escribe en una primera
+  // visita lenta ve el texto en la fuente de respaldo, y al llegar Geist (algo más ancha) el
+  // texto se re-envuelve sin que nada vuelva a medir.
+  useEffect(() => {
+    const medir = () => { if (inputRef.current) ajustarAltoCampo(inputRef.current) }
+    window.addEventListener('resize', medir)
+    document.fonts?.addEventListener?.('loadingdone', medir)
+    return () => {
+      window.removeEventListener('resize', medir)
+      document.fonts?.removeEventListener?.('loadingdone', medir)
+    }
+  }, [])
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current
@@ -1932,6 +2027,12 @@ export default function App() {
         onDrop={handleDrop}
         style={{ flex:1, minWidth:0, position:'relative',
                  height:'var(--app-h, 100dvh)', overflow:'hidden' }}>
+      {/* El aura (fase 2): solo con el chat vacío y solo en oscuro (en claro el token vale none).
+          Vive AQUÍ, en el área principal, y no dentro del Launcher: así queda centrada en el
+          contenido (el menú lateral no le tapa el fundido izquierdo) y fuera del contenedor con
+          scroll de los mensajes, donde WebKit tiene historial con las capas fijas.
+          Todo lo demás está en .home-aura (index.css). */}
+      {isEmpty && <div className="home-aura" aria-hidden="true" />}
       <div style={{ width:'100%', maxWidth:1280, margin:'0 auto', display:'flex', flexDirection:'column',
                     height:'var(--app-h, 100dvh)', minHeight:0, padding:isMobile ? '0 14px' : '0 32px' }}>
 
@@ -2192,15 +2293,27 @@ export default function App() {
             </div>
           )
         )}
-        <div style={{
-          background:'var(--surface-1)',
-          border:`1px solid ${listening ? 'var(--teal)' : 'var(--border)'}`, borderRadius:16, padding:'12px 14px',
+        {/* LA PÍLDORA (fase 2). Una sola fila: campo · ubicación · «+» · Voz/Enviar. Antes eran
+            dos pisos (el campo arriba, los botones abajo) y, hasta la fase 1, una fila estática
+            «Para: Contexto AI» encima. Lo que NO cambió, a propósito, es todo lo que tiene
+            historial de bugs de teclado en la PWA de Android: el textarea es el mismo nodo con
+            el mismo ref, value, onChange, onKeyDown (isComposing), disabled y rows; no hay
+            focus() ni scrollIntoView nuevos. onInput mide igual que antes, ahora desde
+            ajustarAltoCampo, que también corre cuando el texto llega por dictado.
+            Radio FIJO de 28: con una línea se lee como píldora (alto 56) y, al crecer, como
+            rectángulo redondeado. Los botones se alinean ABAJO (flex-end) para bajar con el texto.
+            DOS FORMAS (ver noCabeEnUnaLinea): una fila, o —cuando el texto no cabe en una línea—
+            el campo a todo el ancho y los botones en una segunda fila. Es el MISMO DOM en las
+            dos: flex-wrap y un data-amplio que pone ajustarAltoCampo; el textarea no se remonta.
+            El padding y lo que cambia con la forma viven en .dock-pill (index.css). */}
+        <div className="dock-pill" style={{
+          display:'flex', flexWrap:'wrap', alignItems:'flex-end', gap:2,
+          minHeight:56, borderRadius:28,
+          // Sobre el aura (chat vacío) el campo es translúcido; con mensajes, la superficie de siempre.
+          background: isEmpty ? 'var(--home-dock-bg)' : 'var(--surface-1)',
+          border:`1px solid ${listening ? 'var(--teal)' : 'var(--border)'}`,
           transition:'border-color .2s',
         }}>
-          {/* Aquí había una fila estática «Para: Contexto AI» con su separador (herencia de
-              ASI:One). No tenía lógica: con varios corredores, con QUIÉN se habla lo dice la
-              franja de arriba. Se retiró el 2026-09-20 y devolvió ~50 px a la pantalla. El
-              campo y sus botones quedan intactos: la píldora va en su propio PR. */}
           <textarea
             ref={inputRef}
             value={input}
@@ -2217,77 +2330,90 @@ export default function App() {
             placeholder="Pregúntame lo que sea…"
             disabled={loading}
             rows={1}
+            // .dock-input (index.css): el placeholder en UNA línea con puntos suspensivos (a 320 px
+            // el campo mide 141 y «Pregúntame lo que sea…» se partía en dos), y el flex y el
+            // padding del campo, que cambian con la forma de la píldora y por eso no van aquí.
+            className="dock-input"
             style={{
-              display:'block', width:'100%', background:'none', border:'none', outline:'none',
-              color:'var(--text)', fontSize:'.98rem', resize:'none',
-              lineHeight:1.5, maxHeight:120, overflowY:'auto',
-              fontFamily:'inherit', marginBottom:12,
+              // 1rem y no .98: por debajo de 16 px iOS hace zoom al enfocar el campo.
+              // 24 de línea + 10 y 10 de borde transparente → una línea mide 44 px, el alto de los
+              // botones: todo centrado. Borde y no padding: ver AIRE_CAMPO.
+              // SIN overflowY aquí: lo gobierna ajustarAltoCampo (arriba explica por qué).
+              display:'block', background:'none', outline:'none',
+              borderStyle:'solid', borderColor:'transparent', borderWidth:`${AIRE_CAMPO}px 0`,
+              color:'var(--text)', fontSize:'1rem', resize:'none',
+              lineHeight:1.5, maxHeight:ALTO_MAX_CAMPO,
+              fontFamily:'inherit',
             }}
-            onInput={e => {
-              e.target.style.height = 'auto'
-              e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'
-            }}
+            onInput={e => ajustarAltoCampo(e.target)}
           />
-          {/* Fila inferior: ubicación + "+" (izq) · Voz/Enviar (der) */}
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-            <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-              <button
-                onClick={toggleGeo}
-                disabled={geoLoading}
-                title={geo ? 'Ubicación activa — toca para quitar' : 'Compartir mi ubicación'}
-                style={{
-                  background:'none', border:'none', borderRadius:999, width:34, height:34, flexShrink:0, cursor:'pointer',
-                  display:'flex', alignItems:'center', justifyContent:'center',
-                  color: geo ? 'var(--teal-bright)' : 'var(--text-muted)', transition:'color .15s',
-                }}
-              >
-                {geoLoading
-                  ? <RefreshCw size={18} style={{ animation:'spin 1s linear infinite' }}/>
-                  : <MapPin size={18}/>}
-              </button>
-              <button
-                onClick={() => setAttachOpen(true)}
-                title="Adjuntar — busca en el inventario por foto"
-                style={{
-                  background:'none', border:'none', borderRadius:999, width:34, height:34, flexShrink:0, cursor:'pointer',
-                  display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text-muted)',
-                }}
-              >
-                <Plus size={20}/>
-              </button>
-            </div>
-            {/* Voz (vacío) ↔ Enviar (con texto), como ASI:One */}
-            {input.trim() ? (
-              <button
-                onClick={() => sendMessage()}
-                disabled={loading}
-                title="Enviar"
-                style={{
-                  background:'var(--teal-bright)', border:'none', borderRadius:999,
-                  width:44, height:44, flexShrink:0, cursor: loading ? 'default' : 'pointer',
-                  display:'flex', alignItems:'center', justifyContent:'center', color:'#06201C',
-                }}
-              >
-                {loading
-                  ? <RefreshCw size={18} style={{ animation:'spin 1s linear infinite' }}/>
-                  : <ArrowUp size={20}/>}
-              </button>
-            ) : (
-              <button
-                onClick={startVoice}
-                title={listening ? 'Escuchando… toca para detener' : 'Hablar (dictado por voz)'}
-                style={{
-                  display:'inline-flex', alignItems:'center', gap:8, flexShrink:0,
-                  padding:'10px 16px', borderRadius:999, border:'none', cursor:'pointer',
-                  background: listening ? 'var(--teal)' : 'var(--teal-bright)', color:'#06201C',
-                  fontWeight:600, fontSize:'.9rem', fontFamily:'inherit',
-                  animation: listening ? 'pulseGlow 1.2s ease-in-out infinite' : 'none',
-                }}
-              >
-                <AudioLines size={17}/> Voz
-              </button>
-            )}
-          </div>
+          {/* ubicación · «+» · Voz/Enviar — mismos handlers que antes */}
+          <button
+            onClick={toggleGeo}
+            disabled={geoLoading}
+            title={geo ? 'Ubicación activa — toca para quitar' : 'Compartir mi ubicación'}
+            aria-label={geo ? 'Quitar mi ubicación' : 'Compartir mi ubicación'}
+            className="dock-geo"
+            style={{
+              background:'none', border:'none', borderRadius:999, width:36, height:44, flexShrink:0, cursor:'pointer',
+              display:'flex', alignItems:'center', justifyContent:'center',
+              color: geo ? 'var(--teal-bright)' : 'var(--text-muted)', transition:'color .15s',
+            }}
+          >
+            {geoLoading
+              ? <RefreshCw size={18} style={{ animation:'spin 1s linear infinite' }}/>
+              : <MapPin size={18}/>}
+          </button>
+          <button
+            onClick={() => setAttachOpen(true)}
+            title="Adjuntar — busca en el inventario por foto"
+            aria-label="Adjuntar una foto"
+            style={{
+              background:'none', border:'none', borderRadius:999, width:36, height:44, flexShrink:0, cursor:'pointer',
+              display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text-muted)',
+            }}
+          >
+            <Plus size={20}/>
+          </button>
+          {/* Voz (vacío) ↔ Enviar (con texto). Los dos son el MISMO círculo de 44: al escribir
+              la primera letra el botón no cambia de tamaño ni empuja el campo. El aro en
+              --teal-text apenas se nota en oscuro (teal sobre teal, un filo algo más claro) y en
+              claro le da al botón el contorno que el teal sobre gris claro no tenía
+              (1.4:1 → ≥ 3:1). */}
+          {input.trim() ? (
+            <button
+              onClick={() => sendMessage()}
+              disabled={loading}
+              title="Enviar"
+              aria-label="Enviar"
+              className="dock-enviar"
+              style={{
+                background:'var(--teal-bright)', border:'1px solid var(--teal-text)', borderRadius:999,
+                width:44, height:44, flexShrink:0, cursor: loading ? 'default' : 'pointer',
+                display:'flex', alignItems:'center', justifyContent:'center', color:'#06201C',
+              }}
+            >
+              {loading
+                ? <RefreshCw size={18} style={{ animation:'spin 1s linear infinite' }}/>
+                : <ArrowUp size={20}/>}
+            </button>
+          ) : (
+            <button
+              onClick={startVoice}
+              title={listening ? 'Escuchando… toca para detener' : 'Hablar (dictado por voz)'}
+              aria-label={listening ? 'Detener el dictado' : 'Dictar por voz'}
+              className="dock-enviar"
+              style={{
+                display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0,
+                width:44, height:44, borderRadius:999, cursor:'pointer',
+                border:'1px solid var(--teal-text)',
+                background: listening ? 'var(--teal)' : 'var(--teal-bright)', color:'#06201C',
+                animation: listening ? 'pulseGlow 1.2s ease-in-out infinite' : 'none',
+              }}
+            >
+              <AudioLines size={20}/>
+            </button>
+          )}
         </div>
         {listening && (
           <div style={{ marginTop:8, fontSize:'.72rem', color:'var(--teal-text)',

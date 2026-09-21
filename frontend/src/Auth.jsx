@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { X, AlertTriangle, Check, User, Briefcase, Building2 } from 'lucide-react'
 import { supabase } from './supabaseClient'
-import sphereLogo from './assets/sphere.svg'
+import isotipo from './assets/isotipo.svg'
 
 const API_BASE = import.meta.env.VITE_API_URL ?? ''
 
@@ -141,7 +141,7 @@ export default function Auth({ onClose, onAuthed, motivo = null, initialMode = '
         </button>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-          <img src={sphereLogo} width={30} height={30} alt="Contexto" />
+          <img src={isotipo} width={30} height={30} alt="Contexto" />
           <div style={{ fontWeight: 800, fontSize: '1.1rem' }}>Contexto</div>
         </div>
         <p style={{ fontSize: '.82rem', color: C.muted, margin: '0 0 14px' }}>

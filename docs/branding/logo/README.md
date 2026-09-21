@@ -87,10 +87,12 @@ El mínimo que manda es el de la **palabra**: por debajo de 96 px de ancho, sus 
 |---|---|---|
 | Signo solo | `Isotipo` (maestro) | 48 px |
 | Favicon (pestañas, accesos directos) | `favicon.svg` = isotipo maestro | cualquier tamaño (16 px en una pestaña) |
-| Signo pequeño dentro de la app | `assets/sphere.svg` (calle ancha) | por debajo de 48 px — pendiente de revisar |
+| Signo dentro de la app y en los letreros impresos | `assets/isotipo.svg`: las formas del maestro con la retícula al 75 % del lienzo (el margen del signo viejo) | 20-44 px |
 | Lockup horizontal (cabeceras) | `LogoHorizontal`, con el isotipo maestro | 32 px de alto = `ALTO_MIN_HORIZONTAL` |
 
 `ALTO_MIN_HORIZONTAL` no se decide aparte: es el menor alto en que la palabra del lockup llega a 96 px (32 × 39,738 / 13,24 = 96,04), y `genera_componente.py` lo calcula.
+
+**Un solo signo (decisión de Carlos, 2026-09-21).** Ese día se retiró `sphere.svg`, el signo de calle ancha que la app usaba por dentro en doce sitios (cabecera del chat, avatar del asistente, ventanas, cargador) y que el generador de letreros llevaba pegado aparte. Ahora todo es el maestro: el favicon ceñido, y el de la app con el margen de antes para que en esos doce sitios cambie la forma y no el tamaño. `genera_iconos.py` escribe `isotipo.svg` desde las formas de `contexto-isotipo.svg`, y `scripts/generar_qrs.py` lo lee en vez de guardar su copia.
 
 **Por qué el maestro baja a 32 px dentro del lockup (decisión de Carlos, 2026-09-21).** Para la cabecera del menú lateral se probaron en su teléfono tres variantes: el signo pequeño solo, el signo pequeño con la palabra, y el lockup con el isotipo maestro. Eligió el maestro, al tamaño de las otras dos. A 32 px su calle mide 2,5 px —6-7 píxeles reales en su teléfono—, así que la regla de 48 px sigue valiendo para el signo **solo**, donde tiene que sostenerse sin la palabra al lado. Nunca se empareja `sphere.svg` con la palabra: el lockup lleva siempre el maestro.
 

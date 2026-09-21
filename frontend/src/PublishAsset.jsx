@@ -2,7 +2,7 @@ import { useState } from 'react'
 import axios from 'axios'
 import { X, MapPin, Check, AlertTriangle } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
-import sphereLogo from './assets/sphere.svg'
+import isotipo from './assets/isotipo.svg'
 
 const C = {
   bg: 'var(--bg)', panel: 'var(--surface-1)', teal: 'var(--teal)', tealHi: 'var(--teal-bright)',
@@ -135,7 +135,7 @@ export default function PublishAsset({ onClose, existing = null }) {
         ) : (
           <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-              <img src={sphereLogo} width={30} height={30} alt="" style={{ filter: 'drop-shadow(0 0 8px rgba(45,189,182,.4))' }} />
+              <img src={isotipo} width={30} height={30} alt="" style={{ filter: 'drop-shadow(0 0 8px rgba(45,189,182,.4))' }} />
               <div style={{ fontWeight: 800, fontSize: '1.05rem' }}>{editando ? 'Editar inmueble' : 'Publicar mi inmueble'}</div>
             </div>
             <p style={{ fontSize: '.82rem', color: C.muted, margin: '0 0 16px' }}>

@@ -28,7 +28,7 @@ import ErrorBoundary from './ErrorBoundary'
 import Sidebar, { RailNav } from './Sidebar'
 import Campana from './Campana'
 import { ESTADO, leerStreamChat } from './leerStreamChat'
-import sphereLogo from './assets/sphere.svg'
+import isotipo from './assets/isotipo.svg'
 import { BOTON_REDONDO } from './homeEstilos'
 
 // Carga diferida ROBUSTA ante deploys. Si el chunk falla al descargarse (típico cuando un
@@ -236,7 +236,7 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
       {/* ── Fila: avatar + burbuja de texto ── */}
       <div style={{ display:'flex', gap:10, alignSelf:'stretch', justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
         {!isUser && (
-          <img src={sphereLogo} alt="Contexto" width={32} height={32}
+          <img src={isotipo} alt="Contexto" width={32} height={32}
                style={{ flexShrink:0, display:'block' }} />
         )}
         <div style={{ maxWidth:'78%' }}>
@@ -386,7 +386,7 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
 function Thinking() {
   return (
     <div style={{ display:'flex', gap:10, marginBottom:16 }}>
-      <img src={sphereLogo} alt="Contexto" width={32} height={32}
+      <img src={isotipo} alt="Contexto" width={32} height={32}
            style={{ flexShrink:0, display:'block', filter:'drop-shadow(0 0 8px rgba(45,189,182,.45))' }} />
       <div style={{
         padding:'14px 16px', borderRadius:'4px 18px 18px 18px',
@@ -1769,7 +1769,7 @@ export default function App() {
       <div style={{ height:'var(--app-h, 100dvh)', maxWidth:820, margin:'0 auto', padding:isMobile ? '0 16px' : '0 24px',
                     display:'flex', flexDirection:'column' }}>
         <header style={{ display:'flex', alignItems:'center', gap:10, padding:'16px 0 12px', flexShrink:0 }}>
-          <img src={sphereLogo} alt="Contexto" width={32} height={32} />
+          <img src={isotipo} alt="Contexto" width={32} height={32} />
           <div>
             <div style={{ fontWeight:800, letterSpacing:'-.02em' }}>Contexto</div>
             <div style={{ fontSize:'.72rem', color:'var(--text-muted)' }}>Conversación compartida · solo lectura</div>
@@ -1791,7 +1791,7 @@ export default function App() {
           {shared?.messages?.map((m, i) => (
             <div key={i} style={{ display:'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start',
                                   marginBottom:16, gap:10 }}>
-              {m.role !== 'user' && <img src={sphereLogo} alt="" width={30} height={30} style={{ flexShrink:0 }} />}
+              {m.role !== 'user' && <img src={isotipo} alt="" width={30} height={30} style={{ flexShrink:0 }} />}
               <div style={{ maxWidth:'80%',
                             padding: m.role === 'user' ? '10px 14px' : 0,
                             borderRadius: m.role === 'user' ? '18px 18px 4px 18px' : 0,
@@ -2086,7 +2086,7 @@ export default function App() {
         )}
         {!isEmpty && (
           <div style={{ display:'flex', alignItems:'center', gap:9 }}>
-            <img src={sphereLogo} alt="Contexto" width={isMobile ? 26 : 30} height={isMobile ? 26 : 30}
+            <img src={isotipo} alt="Contexto" width={isMobile ? 26 : 30} height={isMobile ? 26 : 30}
                  style={{ display:'block', flexShrink:0 }} />
             <div style={{ fontWeight:800, fontSize:isMobile ? '1rem' : '1.05rem', letterSpacing:'-.3px' }}>
               Contexto

@@ -113,6 +113,36 @@ def test_rechaza_el_favicon_viejo_de_calle_ancha():
     assert not _es_el_maestro(viejo)
 
 
+# ── El signo de la app (decisión de Carlos, 2026-09-21) ────────────────────────────────────
+# `sphere.svg`, de calle ancha, se usaba en doce sitios de la app. Ahora es `isotipo.svg`: las formas
+# del maestro con el margen de antes (retícula al 75 %), para que cambie la forma y no el tamaño.
+
+
+def test_el_signo_de_la_app_es_el_que_sale_del_generador():
+    assert gi.SIGNO_APP.read_bytes() == gi.svg_signo_app(), "isotipo.svg retocado a mano o desfasado"
+
+
+def test_el_signo_de_la_app_lleva_las_formas_del_maestro_con_el_margen_de_antes():
+    import re
+
+    signo = gi.SIGNO_APP.read_text(encoding="utf-8")
+    maestro = gi.MAESTRO.read_text(encoding="utf-8")
+    formas = re.search(r"<svg[^>]*>(.*)</svg>", maestro, re.S).group(1)
+    assert formas in signo
+    x, y, w, h = (float(v) for v in re.search(r'viewBox="([^"]+)"', signo).group(1).split())
+    assert abs(gi.GEO["m"] / w - 0.75) < 0.002, f"la retícula ocupa {gi.GEO['m'] / w:.3f} del lienzo, no 0,75"
+
+
+def test_ningun_componente_importa_el_signo_viejo():
+    import re
+
+    src = _RAIZ / "frontend" / "src"
+    importa = [p.name for p in src.rglob("*.jsx")
+               if re.search(r"""from\s+['"][^'"]*sphere\.svg['"]""", p.read_text(encoding="utf-8"))]
+    assert not importa, f"todavía importan sphere.svg: {importa}"
+    assert not (src / "assets" / "sphere.svg").exists(), "sphere.svg sigue en assets/"
+
+
 # ── Controles positivos ─────────────────────────────────────────────────────────────────
 # Sin esto, los tests de arriba pasarían igual con un verificador que devuelve [] siempre.
 

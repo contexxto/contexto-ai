@@ -2,7 +2,7 @@ import { useState, useEffect, lazy, Suspense } from 'react'
 import axios from 'axios'
 import { MapPin, MessageCircle, ShieldCheck, Footprints, Trees, Volume2, BedDouble, Bath, Car, Ruler, Check, TrendingUp, AlertTriangle, ArrowLeft, ChevronLeft, ChevronRight, Sparkles, Wrench } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
-import sphereLogo from './assets/sphere.svg'
+import isotipo from './assets/isotipo.svg'
 
 // Mapa Vivo AURA-SINGLE: lazy (arrastra MapLibre) → no engorda el bundle del anuncio.
 const AuraSingleMap = lazy(() => import('./AuraSingleMap'))
@@ -60,7 +60,7 @@ export default function AnuncioView({ id, onChat, onBack, onExpandMap }) {
   )
   if (!d) return (
     <div style={{ ...root, alignItems: 'center', justifyContent: 'center' }}>
-      <img src={sphereLogo} width={40} height={40} alt="" style={{ animation: 'spin 2.4s linear infinite' }} />
+      <img src={isotipo} width={40} height={40} alt="" style={{ animation: 'spin 2.4s linear infinite' }} />
       <div style={{ color: C.muted, marginTop: 12, fontSize: '.85rem' }}>Cargando inmueble…</div>
       <style>{'@keyframes spin{to{transform:rotate(360deg)}}'}</style>
     </div>
@@ -106,7 +106,7 @@ export default function AnuncioView({ id, onChat, onBack, onExpandMap }) {
             <ArrowLeft size={20} />
           </button>
         )}
-        <img src={sphereLogo} width={24} height={24} alt="" style={{ filter: 'drop-shadow(0 0 6px rgba(45,189,182,.4))' }} />
+        <img src={isotipo} width={24} height={24} alt="" style={{ filter: 'drop-shadow(0 0 6px rgba(45,189,182,.4))' }} />
         <span style={{ fontWeight: 800, fontSize: '.95rem', letterSpacing: '-.02em' }}>Contexto</span>
         <span style={{ marginLeft: 'auto', fontSize: '.66rem', color: C.muted }}>Letrero inteligente</span>
       </div>

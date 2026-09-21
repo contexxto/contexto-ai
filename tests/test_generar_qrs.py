@@ -22,9 +22,21 @@ def test_qr_svg_inline_es_svg():
     assert "<?xml" not in svg  # inline → sin declaración XML
 
 
-def test_sphere_escala_y_sin_ids_colisionables():
-    a = gq._sphere(44, "0")
-    b = gq._sphere(44, "1")
+def test_el_letrero_lleva_el_isotipo_maestro_y_no_una_copia():
+    """El signo del letrero se LEE de frontend/src/assets/isotipo.svg. Hasta el 2026-09-21 era una
+    copia pegada del signo de calle ancha, que derivó junto con él."""
+    import re
+
+    signo = gq._isotipo(44, "0")
+    maestro = (_ROOT / "docs" / "branding" / "logo" / "contexto-isotipo.svg").read_text(encoding="utf-8")
+    formas = re.search(r"<svg[^>]*>(.*)</svg>", maestro, re.S).group(1)
+    assert formas in signo, "el letrero ya no lleva las formas del isotipo maestro"
+    assert 'viewBox="0 0 24 24"' not in signo, "volvió el lienzo del signo viejo"
+
+
+def test_isotipo_escala_y_sin_ids_colisionables():
+    a = gq._isotipo(44, "0")
+    b = gq._isotipo(44, "1")
     assert 'width="44"' in a and 'height="44"' in a
     assert a.lstrip().startswith("<svg") and a.rstrip().endswith("</svg>")
     # El mark del Brand Kit v2026.1 (commit 32d6110, 2026-08-20) es plano: sin
@@ -40,7 +52,7 @@ def test_letrero_incrusta_deeplink_y_direccion():
     card = gq._letrero_card(activo, "https://app.test", uid="0")
     assert "https://app.test/a/abc-123" in card  # deep-link permanente
     assert "Av. Test 100 y Quito" in card        # dirección visible
-    assert card.count("<svg") == 2               # esfera + QR
+    assert card.count("<svg") == 2               # signo + QR
     assert "CADA LUGAR TIENE UN AURA" in card
 
 

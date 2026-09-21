@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
 import { MapPin, BedDouble, Bath, Ruler, Footprints, ChevronRight, ChevronLeft, ArrowLeftRight, Check } from 'lucide-react'
-import sphereLogo from './assets/sphere.svg'
+import isotipo from './assets/isotipo.svg'
 
 // Tarjetas de resultado en el chat — la salida VISUAL de una búsqueda conversacional.
 // El agente narra (una línea); aquí aparecen los inmuebles con foto + la intención
@@ -115,7 +115,7 @@ function ResultCard({ r, onOpen, activeId, onActive, seleccionado, onToggleCompa
           ? <img src={r.imagen_url} alt="" onError={(e) => { e.currentTarget.style.display = 'none' }}
               style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
           : <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center' }}>
-              <img src={sphereLogo} width={28} height={28} alt="" style={{ opacity: .5 }} />
+              <img src={isotipo} width={28} height={28} alt="" style={{ opacity: .5 }} />
             </div>}
         {/* Badge de operación */}
         {r.operacion && (

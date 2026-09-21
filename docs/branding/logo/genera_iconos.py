@@ -11,8 +11,11 @@ número de la marca se vuelve a teclear.
 
 Qué NO toca, a propósito:
 
-- `src/assets/sphere.svg`, el signo de calle ancha que la app usa por dentro (cabecera del chat,
-  avatar, ventanas). Cambiarlo es otra decisión, pendiente.
+- Nada de la app queda fuera desde el 2026-09-21: también escribe `src/assets/isotipo.svg`, el signo
+  que la app usa por dentro (cabecera del chat, avatar del asistente, ventanas, cargador) y que el
+  generador de letreros incrusta. Son las MISMAS formas del maestro con el margen del signo viejo
+  (la retícula ocupa el 75 % del lienzo), para que en los doce sitios cambie la forma y no el tamaño.
+  Sustituye a `sphere.svg`, de calle ancha.
 
 El favicon SÍ sale de aquí desde el 2026-09-21: `favicon.svg` es una copia exacta de
 `contexto-isotipo.svg`, el maestro. Antes era `sphere-favicon.svg`, de calle ancha, por una regla de
@@ -26,6 +29,7 @@ mismo trato que `genera_aura.py` da a las imágenes del aura—. Un icono equivo
 ninguna prueba: se ve raro en la pantalla de inicio de alguien, meses después.
 """
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -188,6 +192,25 @@ SALIDAS = [
 
 FAVICON = PUBLIC / "favicon.svg"
 MAESTRO = AQUI / "contexto-isotipo.svg"
+SIGNO_APP = RAIZ / "frontend" / "src" / "assets" / "isotipo.svg"
+# El signo viejo dejaba 3 de 24 unidades de margen por lado: su retícula ocupaba el 75 % del lienzo.
+# Se conserva, porque la app se maquetó alrededor de ese recuadro.
+RETICULA_EN_EL_LIENZO = 0.75
+
+
+def _f(v):                                      # el mismo redondeo que genera_logo.py
+    s = f"{v:.2f}".rstrip("0").rstrip(".")
+    return "0" if s in ("-0", "") else s
+
+
+def svg_signo_app():
+    """Las formas del maestro, tal cual, en un lienzo con el margen del signo viejo."""
+    maestro = MAESTRO.read_text(encoding="utf-8")
+    formas = re.search(r"<svg[^>]*>(.*)</svg>", maestro, re.S).group(1)
+    caja = GEO["m"] / RETICULA_EN_EL_LIENZO
+    margen = (caja - GEO["m"]) / 2
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{_f(-margen)} {_f(-margen)} {_f(caja)} {_f(caja)}" '
+            f'role="img" aria-label="Contexto">{formas}</svg>').encode("utf-8")
 
 
 def main():
@@ -202,6 +225,14 @@ def main():
     else:
         FAVICON.write_bytes(MAESTRO.read_bytes())
         print(f"escrito   favicon.svg  (copia de contexto-isotipo.svg, {FAVICON.stat().st_size} bytes)")
+    if check:
+        igual = SIGNO_APP.exists() and SIGNO_APP.read_bytes() == svg_signo_app()
+        print(f"{'BIEN' if igual else 'MAL ':9} src/assets/isotipo.svg")
+        if not igual:
+            malos.append("src/assets/isotipo.svg: no es el maestro con el margen de la app")
+    else:
+        SIGNO_APP.write_bytes(svg_signo_app())
+        print(f"escrito   src/assets/isotipo.svg  (formas del maestro, retícula al 75 %)")
     for nombre, lado, clase in SALIDAS:
         destino = PUBLIC / nombre
         fraccion = FRACCION[clase]

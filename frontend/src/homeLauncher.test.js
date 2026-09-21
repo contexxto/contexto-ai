@@ -234,7 +234,7 @@ describe('la píldora no toca lo que tiene historial de bugs de teclado', () => 
 
   it('Voz y Enviar son el mismo círculo: escribir la primera letra no mueve el campo', () => {
     // El bloque se delimita por estructura, no por un número de caracteres.
-    const i = app.indexOf('{input.trim() ? (')
+    const i = app.indexOf('{(listening || input.trim()) ? (')
     const j = app.indexOf('{listening && (', i)
     expect(i).toBeGreaterThan(-1)
     expect(j).toBeGreaterThan(i)
@@ -243,6 +243,127 @@ describe('la píldora no toca lo que tiene historial de bugs de teclado', () => 
     // El margen de los dos lo pone la MISMA clase (cambia con la forma de la píldora).
     expect(bloque.split('className="dock-enviar"').length).toBe(3)
     expect(bloque).not.toContain('marginLeft')
+  })
+})
+
+describe('mientras se dicta: descartar, detener o enviar — y ningún botón cambia de oficio', () => {
+  // El defecto heredado: la regla era `input.trim() ? Enviar : Voz`, y Voz era también el botón de
+  // detener. En cuanto el dictado escribía la primera palabra, «detener» se convertía en «enviar»
+  // bajo el dedo, y ya no había forma de parar el micrófono sin mandar el mensaje.
+  const css = sinComentariosCss(readFileSync(join(SRC, 'index.css'), 'utf8'))
+  // La píldora: del textarea a la línea «Escuchando…». Se delimita por estructura.
+  const pildora = (() => {
+    const i = app.indexOf('<textarea')
+    return app.slice(i, app.indexOf('{listening && (', i))
+  })()
+  const ABRE = '{listening ? (<>', MEDIO = '</>) : (<>', CIERRA = '</>)}'
+  const dictando = pildora.slice(pildora.indexOf(ABRE), pildora.indexOf(MEDIO))
+  const reposo = pildora.slice(pildora.indexOf(MEDIO), pildora.indexOf(CIERRA))
+  const principal = pildora.slice(pildora.indexOf('{(listening || input.trim()) ? ('))
+  const funcion = (nombre) => {
+    const i = app.indexOf(`const ${nombre} = useCallback(`)
+    return i === -1 ? '' : app.slice(i, app.indexOf('\n  }, [', i))
+  }
+
+  it('las dos ramas existen y el textarea queda fuera: dictar no remonta el campo', () => {
+    for (const marca of [ABRE, MEDIO, CIERRA]) expect(pildora.split(marca).length).toBe(2)
+    expect(pildora.indexOf(ABRE)).toBeLessThan(pildora.indexOf(MEDIO))
+    expect(pildora.indexOf(MEDIO)).toBeLessThan(pildora.indexOf(CIERRA))
+    expect(pildora.split('<textarea').length).toBe(2)
+    expect(pildora.indexOf('/>')).toBeLessThan(pildora.indexOf(ABRE))
+  })
+
+  it('mientras se escucha el círculo es SIEMPRE Enviar, apagado hasta que haya texto', () => {
+    expect(app).not.toContain('{input.trim() ? (')
+    const [enviar, voz] = principal.split('\n          ) : (')
+    expect(voz).toBeDefined()
+    expect(enviar).toContain('onClick={() => sendMessage()}')
+    expect(enviar).toContain('disabled={loading || !input.trim()}')
+    // Voz ya no detiene nada: mientras se escucha ni siquiera se pinta.
+    expect(voz).toContain('onClick={startVoice}')
+    expect(voz).not.toContain('listening')
+  })
+
+  it('✕ y ■ ocupan los huecos de la ubicación y el «+», con su mismo ancho', () => {
+    // Si midieran otra cosa, ANCHO_BOTONES_PILDORA mentiría mientras se dicta —justo cuando el
+    // texto crece solo— y la forma de la píldora oscilaría.
+    expect(dictando.split('width:36, height:44,').length).toBe(3)
+    expect(reposo.split('width:36, height:44,').length).toBe(3)
+    expect(app).toContain('const ANCHO_BOTONES_PILDORA = 36 + 36 + 44 + 4 + 3 * 2')
+    const x = dictando.indexOf('onClick={discardVoice}')
+    const cuadro = dictando.indexOf('onClick={stopVoice}')
+    expect(x).toBeGreaterThan(-1)
+    expect(cuadro).toBeGreaterThan(x)          // ✕ a la izquierda, ■ junto a Enviar
+    expect(dictando).toContain('aria-label="Descartar el dictado"')
+    expect(dictando).toContain('aria-label="Detener el dictado"')
+    // Cada rama con lo suyo: ni se cuela la ubicación al dictar, ni el ✕ en reposo.
+    expect(dictando).not.toContain('toggleGeo')
+    expect(dictando).not.toContain('setAttachOpen')
+    expect(reposo).toContain('onClick={toggleGeo}')
+    expect(reposo).toContain('setAttachOpen(true)')
+    expect(reposo).not.toContain('Voice')
+  })
+
+  it('■ Detener conserva lo dictado; ✕ Descartar lo tira', () => {
+    const detener = funcion('stopVoice')
+    const descartar = funcion('discardVoice')
+    expect(detener).not.toBe('')
+    expect(descartar).not.toBe('')
+    // Detener: stop() entrega todavía el final de la última frase. Ni borra ni ensordece.
+    expect(detener).toContain('voiceStopRef.current = true')
+    expect(detener).toContain('recognitionRef.current?.stop()')
+    expect(detener).not.toContain('abort(')
+    expect(detener).not.toContain('setInput(')
+    expect(detener).not.toContain('voiceIgnorarRef')
+    // Descartar: abort(), y la marca ANTES, por si el motor aún manda un resultado.
+    expect(descartar).toContain('voiceStopRef.current = true')
+    expect(descartar).toContain("setInput('')")
+    const marca = descartar.indexOf('voiceIgnorarRef.current = true')
+    expect(marca).toBeGreaterThan(-1)
+    expect(marca).toBeLessThan(descartar.indexOf('recognitionRef.current?.abort()'))
+    // `listening` lo apaga onend: apagarlo aquí dejaría arrancar otro motor con este cerrando.
+    expect(detener).not.toContain('setListening(')
+    expect(descartar).not.toContain('setListening(')
+  })
+
+  it('un resultado tardío del motor no vuelve a llenar el campo: ni tras descartar ni tras enviar', () => {
+    const dictado = funcion('startVoice')
+    const entra = dictado.indexOf('rec.onresult = (e) => {')
+    const guarda = dictado.indexOf('if (voiceIgnorarRef.current) return')
+    expect(entra).toBeGreaterThan(-1)
+    expect(guarda).toBeGreaterThan(entra)
+    expect(guarda).toBeLessThan(dictado.indexOf('const fins = []'))   // lo PRIMERO del handler
+    // Cada dictado nuevo vuelve a escuchar.
+    const rearme = dictado.indexOf('voiceIgnorarRef.current = false')
+    expect(rearme).toBeGreaterThan(-1)
+    expect(rearme).toBeLessThan(entra)
+    // Enviar: la misma línea que corta el micrófono ensordece al motor.
+    const corte = app.split('\n').filter((l) => l.includes('recognitionRef.current.stop()'))
+    expect(corte).toHaveLength(1)
+    expect(corte[0]).toContain('voiceStopRef.current = true')
+    expect(corte[0]).toContain('voiceIgnorarRef.current = true')
+  })
+
+  it('el foco vuelve al campo solo si quedó texto por corregir', () => {
+    // Tras descartar o enviar no hay nada que editar, y en el teléfono enfocar reabre el teclado.
+    expect(funcion('startVoice')).toContain(
+      'if (!voiceIgnorarRef.current) setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 50)')
+  })
+
+  it('en la forma amplia ✕ queda a la izquierda y ■ pegado a Enviar', () => {
+    expect(dictando).toContain('className="dock-descartar"')
+    expect(dictando).toContain('className="dock-detener"')
+    expect(css).toContain('.dock-pill[data-amplio] > .dock-descartar { margin-left: -9px; }')
+    expect(css).toContain('.dock-pill[data-amplio] > .dock-detener { margin-left: auto; }')
+    // Sin esta, los dos márgenes automáticos se reparten el hueco y ■ queda flotando en medio.
+    expect(css).toContain('.dock-pill[data-amplio] > .dock-detener + .dock-enviar { margin-left: 4px; }')
+  })
+
+  it('el pulso de «grabando» vive en el CSS, donde el movimiento reducido puede apagarlo', () => {
+    expect(dictando).toContain('className="dock-detener-punto"')
+    expect(dictando).not.toContain('animation')
+    expect(css).toMatch(/\.dock-detener-punto \{[^}]*animation: pulseGlow /)
+    expect(css).toContain('@media (prefers-reduced-motion: reduce) { .dock-detener-punto { animation: none; } }')
   })
 })
 

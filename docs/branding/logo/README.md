@@ -13,6 +13,55 @@ retocar contornos a mano. Parte del logo que dibujó Carlos (isotipo de cuatro f
 | `logo.json` | La geometría (contornos, blancos entre letras, retícula). |
 | `genera_logo.py` | Construye todo lo anterior. Solo necesita Pillow (para medir los blancos). |
 | `genera_componente.py` | Reescribe `frontend/src/LogoContexto.jsx` desde `logo.json`. |
+| `genera_iconos.py` | Escribe los PNG de `frontend/public/` desde `logo.json`. `--check` audita los que hay. |
+| `genera_og_cover.py` | Pone el lockup horizontal en `og-cover.png`. `--check` audita el que hay. |
+
+## Los iconos de mapa de bits
+
+`genera_iconos.py` escribe `icon-192`, `icon-512`, `icon-512-maskable`, `apple-touch-icon` (180)
+y `badge-96`. Hasta el 2026-09-20 estaban hechos a mano y habían derivado sin que nadie lo
+notara: su segundo color era `#2DBDB6`, un teal oscurecido, en lugar de la pizarra `#3A3D44`,
+y llevaban la retícula antigua de calle ancha.
+
+Cuánto ocupa el signo depende de quién recorta, y por eso no es un solo número:
+
+| | del lienzo | por qué |
+|---|---|---|
+| `any` | 0,66 | nadie lo enmascara |
+| `maskable` | 0,52 | Android recorta a un círculo del 80 %: el signo entero tiene que caber |
+| `apple-touch-icon` | 0,62 | iOS aplica su máscara de superelipse |
+| `badge-96` | 0,70 | se pinta a 24 px en la barra de estado; silueta blanca sobre transparente |
+
+Cada archivo se comprueba antes de escribirse —paleta de marca, esquinas, centrado, tamaño del
+signo y, en el maskable, que nada se salga del círculo seguro— y `tests/test_iconos_marca.py`
+repite esa comprobación en cada corrida de CI sobre los archivos que de verdad se sirven. No se
+comparan bytes: local corre Pillow 12 y CI Pillow 11.
+
+El favicon NO sale de aquí. A 16-32 px la calle de un módulo del maestro se cierra y el signo se
+empasta; por eso `sphere-favicon.svg` conserva la retícula de calle ancha, que es la regla de
+tamaño óptico de la tabla de arriba.
+
+## La tarjeta de compartir
+
+`og-cover.png` (1200×630) es lo que ve quien recibe un enlace de Contexto. Llevaba el signo con la
+retícula antigua y «Contexto» compuesto en la tipografía de la interfaz. Su segundo color era
+`#3A3A3A`, un gris neutro: cada asset hecho a mano se había inventado el suyo (los PNG usaban
+`#2DBDB6`), y ninguno era la pizarra `#3A3D44`.
+
+`genera_og_cover.py` sustituye **solo el lockup**, no la tarjeta. El titular está en Geist, que no
+está en disco: rehacerlo con otra tipografía sería cambiar el diseño en vez de aplicarlo. Dos
+decisiones que conviene no re-derivar:
+
+- **El fondo se interpola, no se rellena.** Bajo el lockup el resplandor teal ya entró (el canal
+  verde va de 28 a ~47 de izquierda a derecha), así que un relleno liso dejaría un rectángulo
+  visible. Se reconstruye cada columna entre la fila limpia de encima y la de debajo; medido contra
+  dos bandas sin tinta, el error máximo es de **1 nivel** por canal.
+- **Los contornos se rasterizan aquí mismo, sin dependencias.** `logo.json` solo usa `M`, `L`, `A`
+  y `Z`, y los arcos son circulares: se aplanan a segmentos y se rellena par-impar por XOR de
+  subcaminos (así salen los huecos de las O sin averiguar qué contorno es exterior). Cotejado
+  contra el motor SVG de Chromium a 1000 px de ancho: correlación 0,968 del perfil de tinta por
+  columna, 244 de 248 columnas vacías coincidentes y **5 columnas de 754** con más de 4 px de
+  diferencia — todas el mismo medio píxel de convención en los bordes verticales.
 
 ## Construcción
 

@@ -2,16 +2,11 @@ import { useState } from 'react'
 import { MapPin, Target, ShieldCheck, Compass, Footprints, BadgeCheck, Users, RefreshCw, Layers, Camera, Building2, Volume2, Clock, ArrowRight, Sun, Moon, Check } from 'lucide-react'
 import { getTheme, toggleTheme } from './theme'
 import './QueEs.css'
+import isotipo from './assets/isotipo.svg'
 
-// Marca de Contexto (mismo mark del header de la app).
-const Mark = ({ size = 21 }) => (
-  <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden>
-    <rect x="3" y="3" width="7" height="7" rx="1.6" fill="var(--teal-bright)" />
-    <rect x="14" y="3" width="7" height="7" rx="1.6" fill="#3A3D44" />
-    <rect x="3" y="14" width="7" height="7" rx="1.6" fill="#3A3D44" />
-    <circle cx="17.5" cy="17.5" r="4" fill="var(--teal-bright)" />
-  </svg>
-)
+// El signo de Contexto es el MISMO archivo que usa la app. Aquí había una copia dibujada a mano
+// («mismo mark del header de la app», decía): cuando el signo cambió el 2026-09-21, la copia se
+// quedó con el viejo. Una copia es una segunda verdad esperando separarse.
 
 const FOSO = [
   { Icon: Compass, t: 'Encaje relativo a intención', d: '“X% de encaje contigo”, no un puntaje absoluto igual para todos.' },
@@ -37,7 +32,7 @@ export default function QueEs({ onStart, onBroker, onLogin }) {
     <div className="qe">
       {/* NAV */}
       <nav><div className="wrap nav-in">
-        <a className="brand" href="/"><Mark /> Contexto</a>
+        <a className="brand" href="/"><img src={isotipo} alt="" /> Contexto</a>
         <div className="nav-links">
           <a href="#que-es">Qué es</a>
           <a href="#features">Características</a>
@@ -193,7 +188,7 @@ export default function QueEs({ onStart, onBroker, onLogin }) {
 
       {/* FOOTER */}
       <footer><div className="wrap foot">
-        <a className="brand" href="/" style={{ fontSize: '.98rem' }}><Mark size={18} /> Contexto</a>
+        <a className="brand" href="/" style={{ fontSize: '.98rem' }}><img src={isotipo} alt="" /> Contexto</a>
         <div className="cols">
           <a href="#que-es">Qué es</a>
           <a href="#features">Características</a>

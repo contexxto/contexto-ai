@@ -143,6 +143,58 @@ def test_ningun_componente_importa_el_signo_viejo():
     assert not (src / "assets" / "sphere.svg").exists(), "sphere.svg sigue en assets/"
 
 
+# ── Ninguna copia del signo viejo, con el nombre que sea ────────────────────────────────
+# El 2026-09-21 se retiró sphere.svg y la prueba de arriba vigilaba sus IMPORTACIONES. Se escapó
+# /que-es: dibujaba su propia copia en línea, con otro nombre (`Mark`) y el teal como variable CSS.
+# Esta guarda no mira nombres ni colores sino la ESTRUCTURA: todo SVG con forma de signo (tres
+# rectángulos y un círculo) en lo que se publica tiene que llevar la geometría del maestro.
+
+_RAIZ_SERVIDA = ("frontend/src", "frontend/public", "frontend/index.html", "scripts")
+
+
+def _signos_en_linea(texto):
+    import re
+
+    for m in re.finditer(r"<svg\b.*?</svg>", texto, re.S):
+        bloque = m.group(0)
+        if len(re.findall(r"<rect\b", bloque)) >= 3 and "<circle" in bloque:
+            yield bloque
+
+
+def _es_geometria_maestra(bloque):
+    import re
+
+    r = re.findall(r"<circle[^>]*\br=[\"']([\d.]+)", bloque)
+    rx = set(re.findall(r"<rect[^>]*\brx=[\"']([\d.]+)", bloque))
+    return r == [str(gi.GEO["circulo"] / 2)] and rx == {str(gi.GEO["radio"])}
+
+
+def test_todo_signo_dibujado_en_lo_que_se_publica_es_el_maestro():
+    viejos = []
+    for base in _RAIZ_SERVIDA:
+        ruta = _RAIZ / base
+        archivos = [ruta] if ruta.is_file() else [p for p in ruta.rglob("*")
+                                                  if p.suffix in (".jsx", ".js", ".css", ".html", ".svg", ".py")]
+        for p in archivos:
+            if p.name.endswith(".test.js"):
+                continue
+            for bloque in _signos_en_linea(p.read_text(encoding="utf-8", errors="replace")):
+                if not _es_geometria_maestra(bloque):
+                    viejos.append(str(p.relative_to(_RAIZ)))
+    assert not viejos, f"signo que no es el maestro en: {sorted(set(viejos))}"
+
+
+def test_la_guarda_reconoce_la_copia_que_tenia_que_es():
+    """Control: la copia de /que-es, tal cual estaba, tiene que salir marcada."""
+    copia = ('<svg viewBox="0 0 24 24" width={size} height={size} aria-hidden>'
+             '<rect x="3" y="3" width="7" height="7" rx="1.6" fill="var(--teal-bright)" />'
+             '<rect x="14" y="3" width="7" height="7" rx="1.6" fill="#3A3D44" />'
+             '<rect x="3" y="14" width="7" height="7" rx="1.6" fill="#3A3D44" />'
+             '<circle cx="17.5" cy="17.5" r="4" fill="var(--teal-bright)" /></svg>')
+    bloques = list(_signos_en_linea(copia))
+    assert len(bloques) == 1 and not _es_geometria_maestra(bloques[0])
+
+
 # ── Controles positivos ─────────────────────────────────────────────────────────────────
 # Sin esto, los tests de arriba pasarían igual con un verificador que devuelve [] siempre.
 

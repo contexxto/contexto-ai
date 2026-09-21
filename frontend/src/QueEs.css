@@ -16,12 +16,11 @@
 .qe nav { position: sticky; top: 0; z-index: 50; background: color-mix(in srgb, var(--bg) 90%, transparent);
           backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); }
 .qe .nav-in { display: flex; align-items: center; gap: 20px; height: 60px; }
-.qe .brand { display: flex; align-items: center; gap: 9px; font-weight: 800; font-size: 1.05rem; }
-.qe .brand img { width: 21px; height: 21px; display: block; }
+.qe .brand { display: flex; align-items: center; flex-shrink: 0; }
 .qe .nav-links { display: flex; gap: 24px; margin-left: 24px; flex: 1; }
 .qe .nav-links a { color: var(--text-mid); font-size: .9rem; font-weight: 500; transition: color .15s; }
 .qe .nav-links a:hover { color: var(--text); }
-.qe .nav-cta { display: flex; align-items: center; gap: 10px; }
+.qe .nav-cta { display: flex; align-items: center; gap: 10px; margin-left: auto; }
 .qe .btn { font-family: inherit; font-weight: 700; cursor: pointer; border-radius: var(--radius-md, 12px);
            font-size: .86rem; padding: 9px 16px; border: 1px solid var(--border); background: var(--surface-2);
            color: var(--text); display: inline-flex; align-items: center; gap: 7px; transition: filter .15s, background .15s; }
@@ -112,8 +111,26 @@
 .qe .foot a:hover { color: var(--text); }
 .qe .foot .cr { color: var(--text-dim); font-size: .8rem; }
 
-@media (max-width: 760px) {
+/* La barra en el teléfono. Con el logotipo (138 px, su mínimo legible) no cabían «Ingresar»,
+   «Empieza gratis» y el tema: a 375 px la barra se salía 43 px de la pantalla (ya se salía 14 con
+   el signo y la palabra escrita). Se compacta, y el tema sale de la barra: es la misma preferencia
+   que la app, que lo ofrece en su menú. Por debajo de 360 px sale también «Ingresar» (se entra
+   desde la app, adonde lleva «Empieza gratis»). Y el menú de enlaces se oculta hasta 920 px, el
+   ancho en que la barra completa cabe sin apretar ni partir botones (medido; antes, 760). */
+@media (max-width: 920px) {
   .qe .nav-links { display: none; }
+}
+@media (max-width: 500px) {
+  .qe nav .wrap { padding: 0 12px; }
+  .qe .nav-in { gap: 8px; }
+  .qe .nav-cta { gap: 5px; }
+  .qe .nav-cta .btn { padding: 8px 9px; font-size: .8rem; white-space: nowrap; }
+  .qe .nav-cta .toggle { display: none; }
+}
+@media (max-width: 359px) {
+  .qe .nav-cta .btn.ghost { display: none; }
+}
+@media (max-width: 760px) {
   .qe .pillars, .qe .grid, .qe .pains { grid-template-columns: 1fr; }
   .qe .feat { flex-direction: column !important; gap: 20px; }
   .qe .feat .art { width: 100%; }

@@ -31,6 +31,7 @@ import { ESTADO, leerStreamChat } from './leerStreamChat'
 import isotipo from './assets/isotipo.svg'
 import { LogoHorizontal, ALTO_MIN_HORIZONTAL } from './LogoContexto'
 import { BOTON_REDONDO } from './homeEstilos'
+import { maquetaMensaje } from './maquetaMensaje'
 
 // Carga diferida ROBUSTA ante deploys. Si el chunk falla al descargarse (típico cuando un
 // deploy purgó el hash viejo mientras el usuario tenía la app abierta → "Failed to fetch
@@ -168,7 +169,7 @@ function ActBtn({ title, onClick, active, children }) {
   )
 }
 
-function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onOpenMap, isLast, sessionId, mapBboxRef }) {
+function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onOpenMap, isLast, sessionId, mapBboxRef, isMobile }) {
   const isUser = msg.role === 'user'
   // Mensaje de un CORREDOR de carne y hueso, no del agente. Se pinta como respuesta
   // (a la izquierda) pero NO lleva nada de la interfaz del agente: pulgares, escuchar,
@@ -225,8 +226,8 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
     setSpeaking(true); synth.speak(u)
   }
 
-  // El icono de esfera ocupa 32px + 10px de gap = 42px de indent para alinear las tarjetas
-  const AVATAR_INDENT = 42
+  // En el teléfono, de lado a lado; en computadora, como estaba. La regla y su porqué: maquetaMensaje.js.
+  const { conSigno, sangria, contenedor, relleno } = maquetaMensaje({ isUser, enTelefono: isMobile })
 
   return (
     <div style={{
@@ -236,11 +237,11 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
     }}>
       {/* ── Fila: avatar + burbuja de texto ── */}
       <div style={{ display:'flex', gap:10, alignSelf:'stretch', justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
-        {!isUser && (
+        {!isUser && conSigno && (
           <img src={isotipo} alt="Contexto" width={32} height={32}
                style={{ flexShrink:0, display:'block' }} />
         )}
-        <div style={{ maxWidth:'78%' }}>
+        <div style={contenedor}>
           {msg.toolCalls?.length > 0 && (
             <div style={{ marginBottom:6, fontSize:'.72rem', color:'var(--text-muted)',
                           display:'flex', alignItems:'center', gap:5 }}>
@@ -249,7 +250,7 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
             </div>
           )}
           <div style={{
-            padding: isUser ? '10px 14px' : '2px 30px 2px 2px',
+            padding: relleno,
             borderRadius: isUser ? '18px 18px 4px 18px' : 0,
             background: isUser ? 'linear-gradient(135deg, var(--teal-deep), var(--teal))' : 'transparent',
             border: 'none',
@@ -268,7 +269,7 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
             )}
           </div>
         </div>
-        {isUser && (
+        {isUser && conSigno && (
           <div style={{
             width:32, height:32, borderRadius:'50%', flexShrink:0,
             background:'var(--surface-3)', color:'var(--text)', display:'flex', alignItems:'center',
@@ -277,10 +278,10 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
         )}
       </div>
 
-      {/* ── Tarjetas: FUERA del maxWidth 78%, ancho completo del chat ──
-           paddingLeft = AVATAR_INDENT para alinear con el inicio del texto */}
+      {/* ── Tarjetas: FUERA del tope de la burbuja, ancho completo del chat ──
+           paddingLeft = sangria para alinear con el inicio del texto */}
       {!isUser && msg.results?.length > 0 && (
-        <div style={{ paddingLeft: AVATAR_INDENT, width:'100%', boxSizing:'border-box' }}>
+        <div style={{ paddingLeft: sangria, width:'100%', boxSizing:'border-box' }}>
           {/* ★ Mapa Vivo (modo ZONA): la semilla de mapa NACE en el hilo — los
               resultados del turno leídos como espacio. Invitación viva que se abre
               al mapa completo, no un botón del rail. (docs/SPEC_Mapa_Vivo.md) */}
@@ -311,14 +312,14 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
           se leen completos aunque nadie deje nada — nunca es una condición para ver algo.
           Cuándo aparece lo decidió el motor (app/puerta.py); aquí solo se pinta. */}
       {!isUser && msg.puerta && (
-        <div style={{ paddingLeft: AVATAR_INDENT, width: '100%', boxSizing: 'border-box' }}>
+        <div style={{ paddingLeft: sangria, width: '100%', boxSizing: 'border-box' }}>
           <PuertaAlerta puerta={msg.puerta} sessionId={sessionId} />
         </div>
       )}
 
       {/* ── Botones de acción (solo del agente: ver esCorredor) ── */}
       {!isUser && !esCorredor && (
-        <div style={{ paddingLeft: AVATAR_INDENT, display:'flex', alignItems:'center', gap:8, marginTop:6, flexWrap:'wrap' }}>
+        <div style={{ paddingLeft: sangria, display:'flex', alignItems:'center', gap:8, marginTop:6, flexWrap:'wrap' }}>
           {/* Compartir destacado */}
           <button onClick={onShare} title="Compartir esta conversación"
             style={{
@@ -353,7 +354,7 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
       {/* ── Nudge contextual: tras análisis sustanciosos, solo en la última respuesta ── */}
       {sustancioso && isLast && (
         <div style={{
-          paddingLeft: AVATAR_INDENT, width:'100%', boxSizing:'border-box', marginTop:12,
+          paddingLeft: sangria, width:'100%', boxSizing:'border-box', marginTop:12,
         }}>
           <div style={{
             padding:'11px 13px', borderRadius:14,
@@ -376,7 +377,7 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
       )}
 
       {/* ── Timestamp ── */}
-      <div style={{ paddingLeft: isUser ? 0 : AVATAR_INDENT, fontSize:'.72rem', color:'var(--text-muted)', marginTop:4,
+      <div style={{ paddingLeft: isUser ? 0 : sangria, fontSize:'.72rem', color:'var(--text-muted)', marginTop:4,
                     textAlign: isUser ? 'right' : 'left' }}>
         {msg.time}
       </div>
@@ -2161,7 +2162,7 @@ export default function App() {
               setMapEncaje(encajeById && Object.keys(encajeById).length ? encajeById : null)
               setView('map')
             }}
-            onShare={() => setShareOpen(true)} />
+            onShare={() => setShareOpen(true)} isMobile={isMobile} />
         ))}
 
         {loading && <Thinking />}

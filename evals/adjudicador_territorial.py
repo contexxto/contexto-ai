@@ -654,13 +654,17 @@ def leer_turno(thread_id: str) -> tuple[TurnoObservado, Procedencia]:
     from psycopg.rows import dict_row
     from langgraph.checkpoint.postgres import PostgresSaver
 
+    from app import db_tls
     from app.config import settings
     conn_str = (settings.database_url_override or "").replace(
         "postgresql+asyncpg://", "postgresql://")
     if not conn_str:
         raise SystemExit("DATABASE_URL_OVERRIDE vacío: sin origen que leer")
 
-    with psycopg.connect(conn_str, row_factory=dict_row, autocommit=True) as conn:
+    # TLS del núcleo (#137): verify-full con el ancla de app/db_tls, como kwargs — en psycopg
+    # ganan sobre la conninfo, así que la URL no puede contradecirlos.
+    with psycopg.connect(conn_str, row_factory=dict_row, autocommit=True,
+                         **db_tls.kwargs_psycopg(conn_str)) as conn:
         conn.read_only = True
         tupla = PostgresSaver(conn).get_tuple({"configurable": {"thread_id": thread_id}})
         if tupla is None:

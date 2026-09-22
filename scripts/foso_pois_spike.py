@@ -45,11 +45,11 @@ DB_URL = os.getenv("DATABASE_URL_OVERRIDE", "").strip()
 
 
 def _a_sincrona(url: str) -> str:
-    """psycopg en vez de asyncpg (este script es sincrono) y TLS obligatorio."""
-    sync = url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
-    if "sslmode" not in sync:
-        sync += ("&" if "?" in sync else "?") + "sslmode=require"
-    return sync
+    """psycopg en vez de asyncpg (este script es sincrono). La TLS NO va en la URL: la pone
+    app/db_tls (verify-full contra el ancla de confianza) al abrir el engine. Antes se añadía
+    aquí `sslmode=require`, que cifra pero no verifica a quién (#137, cliente MUST HARDEN); y
+    hoy la política rechaza a propósito una URL remota que intente fijar TLS por su cuenta."""
+    return url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
 
 
 SYNC_URL = _a_sincrona(DB_URL) if DB_URL else ""
@@ -77,6 +77,8 @@ import duckdb
 import requests
 import urllib3
 from sqlalchemy import create_engine, text
+
+from app import db_tls
 from sqlalchemy.pool import NullPool
 
 urllib3.disable_warnings()  # verify=False para Overpass (SSL corporativo local)
@@ -523,7 +525,11 @@ def main():
 
     # NullPool: una conexión secuencial. Ver la nota en scripts/asignar_corredor.py —
     # con el pool por defecto este script solo podría agotar el techo de Supabase.
-    eng = create_engine(SYNC_URL, echo=False, poolclass=NullPool)
+    # TLS del núcleo (#137): verify-full con el ancla de app/db_tls, por connect_args — en
+    # psycopg los kwargs ganan sobre la conninfo. En el runner, el ancla la instala
+    # refresco-pois.yml en su ruta canónica antes de este paso.
+    eng = create_engine(SYNC_URL, echo=False, poolclass=NullPool,
+                        connect_args=db_tls.kwargs_psycopg(SYNC_URL))
     with eng.begin() as db:
         print("── 3) Cargando a pois_propios ──", flush=True)
         for stmt in DDL.strip().split(";"):

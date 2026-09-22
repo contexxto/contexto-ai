@@ -57,6 +57,8 @@ from sqlalchemy import text  # noqa: E402
 from sqlalchemy.ext.asyncio import create_async_engine  # noqa: E402
 from sqlalchemy.pool import NullPool  # noqa: E402
 
+from app import db_tls  # noqa: E402
+
 ENDPOINT = "https://routes.googleapis.com/directions/v2:computeRoutes"
 TZ_QUITO = timezone(timedelta(hours=-5))
 HORA_PICO = 7, 30           # martes 07:30 — el pico consolidado de Quito
@@ -87,7 +89,9 @@ async def _leer_inventario(limite: int) -> list[dict]:
         sys.exit("❌ Falta DATABASE_URL_OVERRIDE en el .env.")
     # NullPool: una conexión secuencial. Ver la nota en scripts/asignar_corredor.py —
     # con el pool por defecto este script solo podría agotar el techo de Supabase.
-    engine = create_async_engine(DB_URL, echo=False, poolclass=NullPool)
+    # TLS del núcleo (#137): verify-full con el ancla de app/db_tls, no el `prefer` de asyncpg.
+    engine = create_async_engine(DB_URL, echo=False, poolclass=NullPool,
+                                 connect_args=db_tls.connect_args_asyncpg(DB_URL))
     try:
         async with engine.connect() as db:
             filas = (await db.execute(text("""

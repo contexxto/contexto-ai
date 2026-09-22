@@ -35,12 +35,17 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import text
 from sqlalchemy.pool import NullPool
 
+from app import db_tls
+
 
 async def main():
     # NullPool: este script usa UNA conexión secuencial. Con el pool por defecto de
     # SQLAlchemy (5+10) podría reclamar 15 — el techo ENTERO del Session Pooler de
     # Supabase — y dejar sin conexiones al backend de producción, que comparte proyecto.
-    engine = create_async_engine(DB_URL, echo=False, poolclass=NullPool)
+    # TLS del núcleo (#137): verify-full con el ancla de app/db_tls. Sin esto el script
+    # conectaba con el `prefer` de asyncpg — cifrado si el servidor quiere, sin verificar a quién.
+    engine = create_async_engine(DB_URL, echo=False, poolclass=NullPool,
+                                 connect_args=db_tls.connect_args_asyncpg(DB_URL))
     Session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with Session() as db:

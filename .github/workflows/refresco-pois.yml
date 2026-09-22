@@ -79,6 +79,15 @@ jobs:
           fi
           echo "Credencial presente."
 
+      - name: Instalar el ancla de confianza de Supabase
+        # verify-full (#137): el refresco conecta con la política de app/db_tls, que exige el
+        # ancla en su ruta canónica — la misma de la imagen de producción (Dockerfile). Sale del
+        # bundle versionado del repo, cuya huella DER fija tests/test_ca_bundle_supabase.py; nunca
+        # se descarga aquí. Sin ella el script cortaría con TLSPolicyError: mejor saberlo ya.
+        run: |
+          sudo install -D -m 0644 certs/supabase/bundle-v1.pem /app/certs/supabase-ca-bundle.pem
+          python -c "from app import db_tls; print('ancla lista:', db_tls.validar_bundle())"
+
       - name: Refrescar POIs
         id: refresco
         # Reintentos por Overpass, que es inestable: el 2026-07-27 devolvió 504 en sus

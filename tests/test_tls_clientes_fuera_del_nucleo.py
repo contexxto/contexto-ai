@@ -17,6 +17,7 @@ la política rechaza eso a propósito. Que db_tls verifica de verdad lo prueban 
 (test_db_tls_verify_full.py, contra un Postgres con TLS real); aquí se prueba que los clientes lo usan.
 """
 import ast
+import os
 import subprocess
 from pathlib import Path
 
@@ -86,8 +87,18 @@ def tls_en_la_url(fuente: str, nombre: str = '<fuente>') -> list[str]:
 
 
 def _clientes() -> list[str]:
-    salida = subprocess.run(['git', 'ls-files', '*.py'], cwd=RAIZ, capture_output=True, text=True, check=True).stdout
-    return [f for f in salida.split() if not f.startswith(FUERA_DEL_ALCANCE)]
+    r = subprocess.run(['git', 'ls-files', '*.py'], cwd=RAIZ, capture_output=True, text=True)
+    if r.returncode == 0:
+        archivos = r.stdout.split()
+    else:
+        # Sin .git (una copia exportada, p. ej. `git archive`): el mismo universo leído del disco.
+        # Se PODA antes de bajar: node_modules puede ser un enlace con rutas que no resuelven.
+        fuera = {'.git', 'node_modules', '.venv', 'venv', '__pycache__'}
+        archivos = []
+        for base, dirs, nombres in os.walk(RAIZ):
+            dirs[:] = [d for d in dirs if d not in fuera]
+            archivos += [Path(base, n).relative_to(RAIZ).as_posix() for n in nombres if n.endswith('.py')]
+    return [f for f in archivos if not f.startswith(FUERA_DEL_ALCANCE)]
 
 
 def _leer(rel: str) -> str:

@@ -49,7 +49,8 @@ const PREFIJO = 'data: '
  *
  * @param {Response} resp
  * @param {{onToken?: (textoAcumulado: string, trozo: string) => void,
- *          onPanel?: (panel: object) => void}} callbacks
+ *          onPanel?: (panel: object) => void,
+ *          onClarification?: (clarification: object) => void}} callbacks
  *        Se invocan mientras llega el stream, para que la interfaz pinte en vivo. No
  *        deciden nada: el desenlace lo devuelve esta función.
  * @returns {Promise<{estado: string, texto: string, panel: object|null, parcial: boolean,
@@ -58,16 +59,19 @@ const PREFIJO = 'data: '
  * `parcial` es verdadero cuando llegó texto pero el turno no terminó bien: quien llama debe
  * conservar lo escrito y decir que se cortó, nunca presentarlo como respuesta completa.
  */
-export async function leerStreamChat(resp, { onToken, onPanel } = {}) {
-  const eventos = { meta: 0, token: 0, panel: 0, done: 0, error: 0, ignoradosTrasDone: 0 }
+export async function leerStreamChat(resp, { onToken, onPanel, onClarification } = {}) {
+  const eventos = { meta: 0, token: 0, panel: 0, clarification: 0, done: 0, error: 0,
+                    ignoradosTrasDone: 0 }
   let texto = ''
   let panel = null
+  let clarification = null
   let meta = null
 
   const desenlace = (estado, motivo) => ({
     estado,
     texto,
     panel,
+    clarification,
     // La identidad del turno (`contexto-sse/1`): execution_id, runtime_sha, service_id.
     // Se conserva tal cual llegó, sin interpretarla: quien adjudica es otro.
     meta,
@@ -150,6 +154,14 @@ export async function leerStreamChat(resp, { onToken, onPanel } = {}) {
           eventos.panel += 1
           panel = ev.panel
           onPanel?.(ev.panel)
+        }
+        // La aclaracion llega DESPUES del panel y ANTES del done, porque el backend no la
+        // emite hasta saber que la persistencia termino. Aqui solo se transporta: este
+        // modulo no decide si se pinta ni la reformula.
+        if (ev.clarification) {
+          eventos.clarification += 1
+          clarification = ev.clarification
+          onClarification?.(ev.clarification)
         }
       }
     }

@@ -306,6 +306,23 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
         </div>
       )}
 
+      {/* ★ ACLARACION — la repregunta que ESTE turno abrio. La decidio el backend
+          (app/buyer/clarificacion.py) y su texto es determinista: no lo escribe el modelo.
+          Va despues de la respuesta y del panel, como la puerta, porque nunca es condicion
+          para leer lo que ya salio. Se pinta `question` y nada mas: ni about_field, ni ids,
+          ni metadata. */}
+      {!isUser && msg.clarification?.question && (
+        <div style={{ width: '100%', boxSizing: 'border-box', marginTop: 10 }}>
+          <div style={{
+            padding: '10px 14px', borderRadius: 12,
+            border: '1px solid var(--border)', background: 'var(--surface-2)',
+            color: 'var(--text)', fontSize: 16, lineHeight: 1.45,
+          }}>
+            {msg.clarification.question}
+          </div>
+        </div>
+      )}
+
       {/* ── Botones de acción (solo del agente: ver esCorredor) ── */}
       {!isUser && !esCorredor && (
         <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:6, flexWrap:'wrap' }}>
@@ -1071,6 +1088,14 @@ export default function App() {
             mapSeed: panel.map_seed || null,
             puerta: panel.puerta || null,
           })
+        },
+        // Directiva de ACLARACION (BUYER-UNRESOLVED-CONSUMER-R1). Llega DESPUES del panel
+        // porque el backend no la emite hasta saber que la memoria del turno quedo guardada.
+        // Solo se pinta `question`: `about_field` viaja para quien quiera actuar sobre el, y
+        // no es texto para la persona.
+        onClarification: (clarification) => {
+          aseguraBurbuja('')
+          parchea({ clarification: clarification || null })
         },
       })
 

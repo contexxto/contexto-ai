@@ -190,6 +190,44 @@ describe('terminación', () => {
     expect(r.estado).toBe(ESTADO.INCOMPLETO)     // hubo pintura, no hubo done
   })
 
+  // ── BUYER-UNRESOLVED-CONSUMER-R1 · la aclaracion ──────────────────────────────────
+
+  it('transporta la aclaracion y la entrega al callback', async () => {
+    const CLAR = { question: '¿Cual es tu presupuesto maximo, y en que moneda?',
+                   about_field: 'financial.budget_max' }
+    const onClarification = vi.fn()
+    const r = await leerStreamChat(respuesta([
+      sse({ panel: PANEL }), sse({ clarification: CLAR }), sse({ done: true, session_id: 's' }),
+    ]), { onClarification })
+
+    expect(onClarification).toHaveBeenCalledWith(CLAR)
+    expect(r.clarification).toEqual(CLAR)
+    expect(r.eventos.clarification).toBe(1)
+  })
+
+  it('un turno SIN aclaracion la deja en null: es el caso normal', async () => {
+    const onClarification = vi.fn()
+    const r = await leerStreamChat(respuesta([
+      sse({ panel: PANEL }), sse({ done: true, session_id: 's' }),
+    ]), { onClarification })
+
+    expect(onClarification).not.toHaveBeenCalled()
+    expect(r.clarification).toBeNull()
+    expect(r.eventos.clarification).toBe(0)
+  })
+
+  it('una aclaracion DESPUES del done se ignora, como cualquier otro evento tardio', async () => {
+    const onClarification = vi.fn()
+    const r = await leerStreamChat(respuesta([
+      sse({ done: true, session_id: 's' }),
+      sse({ clarification: { question: 'tarde', about_field: 'x' } }),
+    ]), { onClarification })
+
+    expect(onClarification).not.toHaveBeenCalled()
+    expect(r.clarification).toBeNull()
+    expect(r.eventos.ignoradosTrasDone).toBe(1)
+  })
+
   it('el lector no puede pedir nada: no conoce fetch ni axios', () => {
     const fuente = codigoDesnudo(
       readFileSync(join(SRC, 'leerStreamChat.js'), 'utf8'), 'leerStreamChat.js')

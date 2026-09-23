@@ -240,20 +240,35 @@ def test_cada_desenlace_deja_rastro_con_su_nivel(estado, nivel, monkeypatch, cap
 
 
 def test_la_sombra_NO_toca_la_respuesta_ni_las_tarjetas():
-    """Estructural sobre el endpoint: la sombra es fire-and-forget y su salida no se usa.
+    """Estructural sobre el endpoint: la sombra no habla, y un turno la invoca UNA vez.
 
     Es la propiedad que separa "el pipeline ya corre" de "el pipeline ya decide", y la fase
     entera depende de no confundirlas.
 
-    E3.2b.4a reescribió este guard. La versión anterior exigía `len(llamadas) == 1` sobre todo
-    el fichero, y ese número era un PROXY de la propiedad: valía mientras hubiera un solo
-    camino. En cuanto el turno SSE recibió su propia llamada —porque `chat()` retorna antes de
-    la del camino no-stream— el conteo pasó a ser sencillamente falso, y un conteo falso
-    presiona para relajar el guard en vez de para afirmar lo que importa. Ahora se afirma
-    directamente: UNA llamada por RAMA, cada una envuelta en `create_task`, ninguna asignada
-    ni esperada. Es más estricto que contar, no menos — un `await` colado, una asignación o
-    una tercera llamada en cualquier otra función caen aquí. Misma lección que los guards de
-    E3.2b.4: enumerar la propiedad, no las instancias.
+    ## POR QUÉ ESTE GUARD SE HA REESCRITO DOS VECES
+
+    E3.2b.4a tiró el `len(llamadas) == 1` sobre todo el fichero: era un PROXY —valía mientras
+    hubiera un solo camino— y en cuanto el turno SSE recibió el suyo, el conteo pasó a ser
+    falso. Un conteo falso presiona para relajar el guard en vez de para afirmar lo que
+    importa.
+
+    F3-CANDIDATE-COMMIT-R0C tira el "SIEMPRE fire-and-forget" por el mismo motivo, y esto hay
+    que decirlo sin suavizarlo: **ya no es cierto que la sombra jamás se espere.** Ahora hay
+    DOS costuras por rama, y son EXCLUYENTES por construcción:
+
+    ```
+    computo is None      → create_task(...)            carril legacy, INTACTO
+    computo is not None  → await ... computo=...       persiste ESE cómputo, sin reinterpretar
+    ```
+
+    Lo que se conserva no es el `create_task`; es lo que el `create_task` protegía: **que la
+    sombra no pueda tumbar ni retrasar lo que la persona lee.** El `await` está DESPUÉS del
+    `yield` del panel —la respuesta ya salió— y envuelto en `try/except` que no repropaga. Por
+    eso el guard afirma las dos formas por separado en vez de prohibir una: prohibirla sería
+    congelar el mecanismo viejo y perder la garantía nueva.
+
+    Sigue siendo más estricto que contar: una tercera llamada, una asignación del resultado,
+    un `await` sin `try`, o dos ramas con la MISMA condición caen aquí.
     """
     import ast
     import pathlib
@@ -270,26 +285,135 @@ def test_la_sombra_NO_toca_la_respuesta_ni_las_tarjetas():
                         and n.func.id == "actualizar_en_sombra"]
         return None
 
-    # Exactamente una por rama, y las dos ramas son excluyentes: `chat()` retorna en el
-    # `if stream:`, así que un turno real invoca la sombra UNA vez, nunca dos.
+    def _es_diferida(llamada):
+        """`create_task(llamada)` — el turno no la espera."""
+        return any(isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                   and n.func.attr == "create_task"
+                   and any(a is llamada for a in n.args)
+                   for n in ast.walk(arbol))
+
+    def _es_esperada(llamada):
+        return any(isinstance(n, ast.Await) and n.value is llamada for n in ast.walk(arbol))
+
+    def _condicion_de(llamada):
+        """La condición del `if` MÁS INTERNO que contiene la llamada."""
+        envolventes = [n for n in ast.walk(arbol) if isinstance(n, ast.If)
+                       and any(c is llamada for c in ast.walk(n))]
+        assert envolventes, "la llamada no está bajo ninguna condición: podría correr siempre"
+        return ast.dump(min(envolventes, key=lambda n: len(list(ast.walk(n)))).test)
+
+    def _bajo_try(llamada):
+        return any(isinstance(n, ast.Try) and any(c is llamada for c in ast.walk(n))
+                   for n in ast.walk(arbol))
+
     for funcion in ("chat", "_stream_agent"):
         encontradas = _llamadas_en(funcion)
         assert encontradas is not None, f"no existe {funcion}() en chat.py"
-        assert len(encontradas) == 1, \
-            f"{funcion}() invoca la sombra {len(encontradas)} veces, se esperaba 1"
+        assert len(encontradas) == 2, \
+            f"{funcion}() invoca la sombra {len(encontradas)} veces, se esperaban 2"
+
+        diferidas = [l for l in encontradas if _es_diferida(l)]
+        esperadas = [l for l in encontradas if _es_esperada(l)]
+        assert len(diferidas) == 1, f"{funcion}(): se esperaba UNA llamada fire-and-forget"
+        assert len(esperadas) == 1, f"{funcion}(): se esperaba UNA llamada esperada"
+        assert not (set(map(id, diferidas)) & set(map(id, esperadas))), \
+            f"{funcion}(): una llamada no puede ser diferida y esperada a la vez"
+
+        # El carril legacy NO recibe cómputo; el commit del candidato SÍ. Si se invirtiera,
+        # la sombra volvería a reinterpretar el turno — la deuda exacta que R0C cierra.
+        (diferida,), (esperada,) = diferidas, esperadas
+        assert not [k for k in diferida.keywords if k.arg == "computo"], \
+            f"{funcion}(): la llamada legacy no puede llevar cómputo"
+        assert [k for k in esperada.keywords if k.arg == "computo"], \
+            f"{funcion}(): la llamada esperada tiene que llevar el cómputo ya hecho"
+
+        # EXCLUYENTES: condiciones distintas sobre el mismo `computo`. Si coincidieran, un
+        # turno persistiría dos veces.
+        cond_diferida, cond_esperada = _condicion_de(diferida), _condicion_de(esperada)
+        assert cond_diferida != cond_esperada, \
+            f"{funcion}(): las dos llamadas comparten condición; el turno escribiría dos veces"
+        for cond in (cond_diferida, cond_esperada):
+            assert "computo" in cond, f"{funcion}(): la rama no discrimina por el cómputo"
+        assert ("Is()" in cond_diferida) != ("Is()" in cond_esperada), \
+            f"{funcion}(): las condiciones no son complementarias"
+
+        # La esperada, aislada: el turno ya respondió y un fallo suyo no puede propagarse.
+        assert _bajo_try(esperada), \
+            f"{funcion}(): una sombra esperada SIN try/except puede tumbar el turno"
 
     # Y en NINGUNA otra función del fichero.
     todas = [n for n in ast.walk(arbol) if isinstance(n, ast.Call)
              and isinstance(n.func, ast.Name) and n.func.id == "actualizar_en_sombra"]
-    assert len(todas) == 2, f"la sombra se invoca desde un tercer sitio: {len(todas)} llamadas"
+    assert len(todas) == 4, f"la sombra se invoca desde un tercer sitio: {len(todas)} llamadas"
 
-    # Cada llamada, envuelta en `create_task` y sin que su valor vaya a ninguna parte.
-    for linea in [l for l in fuente.splitlines() if "actualizar_en_sombra(" in l]:
-        assert "create_task" in linea, f"la sombra tiene que ser fire-and-forget: {linea!r}"
-        assert "await actualizar_en_sombra" not in linea, \
-            f"la sombra no puede esperarse desde el camino crítico: {linea!r}"
-        assert "=" not in linea.split("create_task")[0], \
-            f"el resultado de la sombra no puede asignarse: {linea!r}"
+    # El resultado de la sombra no se usa NUNCA, en ninguna de las dos formas.
+    #
+    # Por AST y no por texto, y el motivo es un error ya cometido en este mismo repositorio:
+    # la versión textual buscaba un `=` en la línea y la llamada nueva lleva `computo=...`,
+    # así que se detectaba a sí misma. Un guard que lee caracteres acaba mirando su propia
+    # sintaxis; uno que lee el árbol mira la propiedad.
+    for n in ast.walk(arbol):
+        if isinstance(n, (ast.Assign, ast.AnnAssign, ast.AugAssign)) \
+                and "'actualizar_en_sombra'" in ast.dump(n):
+            raise AssertionError(
+                f"el resultado de la sombra no puede asignarse: {ast.dump(n)[:160]}")
+
+
+def test_la_sombra_esperada_se_MIDE_no_se_supone():
+    """LA MITAD NEGATIVA del guard de arriba: que sepa ver cada forma rota.
+
+    Sin esto, los `assert` nuevos podrían estar mirando un árbol que nunca falla — el modo
+    exacto en que un guard se vuelve inerte sin que nadie lo note.
+    """
+    import ast
+
+    def _analizar(cuerpo):
+        arbol = ast.parse(cuerpo)
+        llamadas = [n for n in ast.walk(arbol) if isinstance(n, ast.Call)
+                    and isinstance(n.func, ast.Name) and n.func.id == "actualizar_en_sombra"]
+        esperadas = [l for l in llamadas
+                     if any(isinstance(n, ast.Await) and n.value is l for n in ast.walk(arbol))]
+        bajo_try = [l for l in llamadas
+                    if any(isinstance(n, ast.Try) and any(c is l for c in ast.walk(n))
+                           for n in ast.walk(arbol))]
+        conds = []
+        for l in llamadas:
+            env = [n for n in ast.walk(arbol) if isinstance(n, ast.If)
+                   and any(c is l for c in ast.walk(n))]
+            conds.append(ast.dump(min(env, key=lambda n: len(list(ast.walk(n)))).test)
+                         if env else None)
+        return llamadas, esperadas, bajo_try, conds
+
+    # 1 · un `await` sin try: el detector de aislamiento tiene que verlo.
+    _, esperadas, bajo_try, _ = _analizar(
+        "async def f(o, u, m):\n"
+        "    if o.computo is not None:\n"
+        "        await actualizar_en_sombra(u, m, computo=o.computo)\n")
+    assert len(esperadas) == 1 and not bajo_try
+
+    # 2 · dos ramas con la MISMA condición: el turno escribiría dos veces.
+    _, _, _, conds = _analizar(
+        "async def f(o, u, m):\n"
+        "    if o.computo is not None:\n"
+        "        await actualizar_en_sombra(u, m, computo=o.computo)\n"
+        "    if o.computo is not None:\n"
+        "        _aio.create_task(actualizar_en_sombra(u, m))\n")
+    assert conds[0] == conds[1], "el comparador de condiciones no distingue nada"
+
+    # 3 · complementariedad: `is` vs `is not` tienen que dar volcados distinguibles.
+    _, _, _, conds = _analizar(
+        "async def f(o, u, m):\n"
+        "    if o.computo is None:\n"
+        "        _aio.create_task(actualizar_en_sombra(u, m))\n"
+        "    if o.computo is not None:\n"
+        "        await actualizar_en_sombra(u, m, computo=o.computo)\n")
+    assert ("Is()" in conds[0]) != ("Is()" in conds[1])
+
+    # 4 · una llamada suelta, fuera de todo `if`: no tiene condición que la gobierne.
+    _, _, _, conds = _analizar(
+        "async def f(u, m):\n"
+        "    await actualizar_en_sombra(u, m)\n")
+    assert conds == [None], "una llamada incondicional tiene que detectarse como tal"
 
 
 def test_la_sombra_no_importa_nada_del_carril_de_respuesta():

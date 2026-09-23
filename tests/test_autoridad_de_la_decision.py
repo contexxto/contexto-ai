@@ -168,28 +168,102 @@ def test_el_corte_ya_no_ve_el_tope_ni_el_precio():
     assert "_MARGEN_PRESUPUESTO" not in fuente
 
 
-def test_el_assembler_ya_no_ordena_por_su_cuenta():
-    """`ordenar_candidatos` sigue siendo el criterio, pero se invoca desde el core.
+def _llamadas_de(objetivo):
+    """Cuenta las llamadas por nombre dentro de UNA función. Devuelve un `Counter`.
 
-    Se comprueba sobre el AST y no sobre el texto: el nombre aparece legítimamente en el
-    comentario que explica por qué ya no se llama, y un `not in fuente` daría un falso
-    positivo. Es el mismo error que ya se cometió dos veces en F1 y una en E2.1 — buscar
-    la AUSENCIA de un nombre en prosa no responde una pregunta estructural.
+    Sobre el AST y no sobre el texto: los nombres aparecen legítimamente en los comentarios
+    que explican quién llama a quién, y un `not in fuente` daría falsos positivos. Es el
+    mismo error que ya se cometió dos veces en F1 y una en E2.1 — buscar la AUSENCIA de un
+    nombre en prosa no responde una pregunta estructural.
+
+    Acepta una función o el texto de una (lo segundo lo usan las mitades negativas).
     """
     import ast
+    import collections
     import inspect
     import textwrap
 
-    arbol = ast.parse(textwrap.dedent(inspect.getsource(assembler.construir_panel)))
-    llamadas = {
+    fuente = objetivo if isinstance(objetivo, str) else inspect.getsource(objetivo)
+    arbol = ast.parse(textwrap.dedent(fuente))
+    return collections.Counter(
         n.func.id for n in ast.walk(arbol)
         if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
-    }
-    assert "ordenar_candidatos" not in llamadas, (
-        "construir_panel volvió a ordenar por su cuenta en vez de proyectar el ranking"
     )
-    assert "decidir_ranking" in llamadas
-    assert "decidir_sobre_presupuesto" in llamadas
+
+
+def test_el_ENTRY_POINT_adquiere_filas_y_delega_sin_decidir_nada():
+    """CAPA 1 de 2. `construir_panel` no toma ninguna decisión: la delega entera.
+
+    F3-DECISION-CORE-EXTRACTION-R0D movió el tramo puro a `_decidir_desde_filas`, así que
+    la propiedad que este guard protegía desde F2/E2.2 —que la presentación no se ordene a
+    sí misma— cambió de ancla, no desapareció.
+
+    Y se afirma por CAPAS, no sobre la unión de las dos funciones. Con la unión bastaría
+    que `decidir_ranking` volviera al entry point para que el test siguiera verde: la
+    autoridad habría reaparecido donde no toca y nadie se enteraría. Separarlas es lo que
+    congela la propiedad de verdad:
+
+        PRODUCT ENTRYPOINT  ≠  DECISION AUTHORITY
+    """
+    llamadas = _llamadas_de(assembler.construir_panel)
+
+    assert llamadas["_decidir_desde_filas"] == 1, (
+        "el entry point tiene que delegar en el núcleo EXACTAMENTE una vez "
+        f"(son {llamadas['_decidir_desde_filas']})")
+
+    for autoridad in ("ordenar_candidatos", "decidir_ranking", "decidir_sobre_presupuesto"):
+        assert llamadas[autoridad] == 0, (
+            f"construir_panel volvió a decidir por su cuenta: llama a {autoridad}")
+
+
+def test_el_NUCLEO_usa_las_autoridades_canonicas_de_F2():
+    """CAPA 2 de 2. El core decide, y decide con las autoridades que ya existían.
+
+    `ordenar_candidatos` sigue siendo el criterio, pero se invoca DESDE `decidir_ranking`
+    (en `app/decision/context.py`), no desde aquí: el orden lo produce el objeto y las
+    tarjetas lo siguen. Que el núcleo no lo llame directamente es lo que impide que vuelvan
+    a existir dos cores, uno tipado que describe la decisión y otro funcional que la toma.
+
+    Se afirma exactamente 1, no «al menos 1»: la implementación lo permite, y un número
+    exacto cierra la puerta a que alguien decida dos veces y se quede con la segunda.
+    """
+    llamadas = _llamadas_de(assembler._decidir_desde_filas)
+
+    assert llamadas["ordenar_candidatos"] == 0, (
+        "el núcleo ordena por su cuenta en vez de proyectar el ranking")
+    assert llamadas["decidir_ranking"] == 1, (
+        f"el núcleo llama a decidir_ranking {llamadas['decidir_ranking']} veces")
+    assert llamadas["decidir_sobre_presupuesto"] == 1, (
+        f"el núcleo llama a decidir_sobre_presupuesto "
+        f"{llamadas['decidir_sobre_presupuesto']} veces")
+
+
+def test_el_detector_de_autoridad_VE_las_dos_formas_de_romperla():
+    """LA MITAD NEGATIVA. Sin esto, los dos guards de arriba podrían estar contando ceros.
+
+    Las dos formas que importan son justamente las que la separación por capas atrapa y la
+    unión no: la autoridad volviendo al entry point, y el núcleo ordenando por su cuenta.
+    """
+    entry_roto = _llamadas_de(
+        "def construir_panel(messages):\n"
+        "    rows = fetch()\n"
+        "    ranking = decidir_ranking(rows)\n"
+        "    return _decidir_desde_filas(rows, ranking)\n")
+    assert entry_roto["decidir_ranking"] == 1, \
+        "el detector no ve la autoridad de vuelta en el entry point"
+    assert entry_roto["_decidir_desde_filas"] == 1
+
+    core_roto = _llamadas_de(
+        "def _decidir_desde_filas(rows, cur, *, ids, preferencias, messages, session_id):\n"
+        "    cards = ordenar_candidatos(rows)\n"
+        "    return cards\n")
+    assert core_roto["ordenar_candidatos"] == 1, \
+        "el detector no ve al núcleo ordenando por su cuenta"
+
+    # Y el control positivo: sobre una función que no llama a nada, el contador da cero —
+    # si diera otra cosa, los `== 0` de arriba serían ciertos por accidente.
+    limpio = _llamadas_de("def f():\n    return 1\n")
+    assert limpio["decidir_ranking"] == 0 and limpio["ordenar_candidatos"] == 0
 
 
 # ── La decisión y lo que se ve no pueden divergir ───────────────────────────────

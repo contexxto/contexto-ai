@@ -199,6 +199,18 @@ async def test_dos_escritores_de_RUTAS_DISJUNTAS_sobreviven_los_dos(
     Es la contraparte entre mensajes de lo que C5 garantiza dentro de uno: un hecho no puede
     costar otro sólo por llegar a la vez. Y es el test que E3.2b.3 tenía SALTADO mientras el
     código lo contradecía — `rutas_divergentes(None, …)` devolvía las cinco rutas.
+
+    ## R0C · EL REBASE YA NO SE LLAMA `CREADA`
+
+    El comportamiento no cambia: la perdedora siempre se rebasó, y este test ya lo decía en
+    su propio docstring. Lo que cambia es que el DESENLACE dejó de callarlo. Antes las dos
+    escrituras salían `CREADA` y la afirmación `[CREADA] * 2` hacía **invisible** justo lo
+    que el test existe para observar — que una de las dos atravesó un conflicto de revisión
+    y tuvo que volver a reducir sobre una base distinta de la que leyó.
+
+    No se afirma la bolsa `{CREADA, REBASEADA}`: cuál de las dos corrutinas gana la carrera
+    lo decide el planificador, pero la CAUSALIDAD es determinable y se afirma entera —
+    exactamente una exacta y exactamente una rebasada, cada una con su base y su revisión.
     """
     try:
         resultados = await asyncio.gather(
@@ -213,7 +225,23 @@ async def test_dos_escritores_de_RUTAS_DISJUNTAS_sobreviven_los_dos(
         )
 
         assert all(not isinstance(r, Exception) for r in resultados), resultados
-        assert [r.estado for r in resultados] == [EstadoActualizacion.CREADA] * 2,             [r.estado for r in resultados]
+        assert sorted(r.estado.value for r in resultados) == ["creada", "rebaseada"], \
+            [r.estado.value for r in resultados]
+
+        # Cuál de las dos gana la carrera lo decide el planificador; qué le pasó a cada una,
+        # no. La exacta escribió sobre la base que leyó (un comprador nuevo: sin revisión
+        # previa). La rebasada encontró la 0 ya asentada, volvió a reducir SOBRE ELLA con el
+        # mismo lote, y por eso su base es 0 aunque hubiera leído `None`.
+        exacta = next(r for r in resultados if r.estado is EstadoActualizacion.CREADA)
+        rebasada = next(r for r in resultados if r.estado is EstadoActualizacion.REBASEADA)
+
+        assert exacta.rebasado is False and exacta.revision == 0
+        assert exacta.base_revision is None, "un comprador nuevo no tiene revisión de partida"
+
+        assert rebasada.rebasado is True and rebasada.revision == 1
+        assert rebasada.base_revision == 0, \
+            "el rebase tiene que haber ocurrido sobre la revisión que la otra acababa de " \
+            "asentar, no sobre la que ésta leyó"
 
         from app.buyer.store import cargar_ultima
         async with sesiones() as s:
@@ -250,6 +278,16 @@ async def test_dos_escritores_de_LA_MISMA_ruta_no_se_pisan(
         assert sorted(r.estado.value for r in resultados) == ["conflicto", "creada"],             [r.estado.value for r in resultados]
 
         ganador = next(r for r in resultados if r.estado is EstadoActualizacion.CREADA)
+        perdedor = next(r for r in resultados if r.estado is EstadoActualizacion.CONFLICTO)
+
+        # R0C · el que materializa aquí NO rebasa, y ésa es exactamente la propiedad: el
+        # rebase está PROHIBIDO cuando las rutas solapan. Si algún día este desenlace saliera
+        # `REBASEADA`, significaría que alguien empezó a resolver un solape adivinando.
+        assert ganador.rebasado is False and ganador.revision == 0
+        assert ganador.base_revision is None
+        assert perdedor.revision is None, "el que detecta solape no escribe nada"
+        assert perdedor.rebasado is False, "detectar solape no es haber rebasado"
+
         from app.buyer.store import cargar_ultima
         async with sesiones() as s:
             final = await cargar_ultima(comprador, db=s)
@@ -260,13 +298,25 @@ async def test_dos_escritores_de_LA_MISMA_ruta_no_se_pisan(
         await _limpiar(sesiones, comprador)
 
 
-async def test_el_replay_concurrente_del_MISMO_mensaje_da_CREADA_mas_REPLAY(
+async def test_el_replay_concurrente_del_MISMO_mensaje_materializa_UNA_vez_y_reproduce(
         sesiones, comprador, ambos_leen_la_misma_base):
-    """`CREADA + REPLAY`, y **no** `CREADA + CONFLICTO`.
+    """UNA materialización y UN replay — y **no** `CONFLICTO`.
 
     El store consulta el `source_message_id` ANTES de diagnosticar conflicto de revisión, y
     esa precedencia existe justo para distinguir un reintento de una carrera. Aceptar
     `CONFLICTO` aquí habría dado por bueno que el sistema confunda las dos cosas.
+
+    ## R0C · POR QUÉ EL NOMBRE YA NO DICE `CREADA`
+
+    La propiedad que este test congela es *«el mismo mensaje se materializa exactamente una
+    vez y las demás ejecuciones lo reproducen»*, no *«al primer desenlace se le llama
+    CREADA»*. El nombre viejo codificaba la etiqueta, no la propiedad, así que un cambio de
+    vocabulario lo dejaba describiendo algo distinto de lo que comprueba.
+
+    Aquí la materialización resulta ser `CREADA`, y eso es consecuencia del orden real del
+    store, no una coincidencia: **el replay nunca llega al rebase.** La comprobación de
+    idempotencia precede a la de revisión, así que el segundo escritor sale por `REPLAY`
+    antes de que exista un `BuyerRevisionConflict` que rebasar. Se afirma explícitamente.
     """
     try:
         propuesta = PropuestaV0(disposicion="durable", motivo="tope",
@@ -279,6 +329,12 @@ async def test_el_replay_concurrente_del_MISMO_mensaje_da_CREADA_mas_REPLAY(
 
         assert all(not isinstance(r, Exception) for r in resultados), resultados
         assert sorted(r.estado.value for r in resultados) == ["creada", "replay"],             [r.estado.value for r in resultados]
+
+        # Ninguno de los dos rebasa: el replay corta antes del conflicto de revisión. Si esto
+        # saliera `REBASEADA + REPLAY`, el orden del store habría cambiado, y eso hay que
+        # entenderlo antes de tocar la expectativa.
+        assert not any(r.rebasado for r in resultados), \
+            "el replay no puede haber atravesado un rebase"
 
         async with sesiones() as s:
             filas = (await s.execute(text(
@@ -319,6 +375,13 @@ async def test_dos_escritores_SECUENCIALES_de_la_misma_ruta_ambos_CREAN(sesiones
             PropuestaV0(disposicion="durable", motivo="tope B",
                         mutacion=SetBudgetMax(amount=Decimal(90000), currency=USD)))
 
+        # R0C · ESTO NO SE TOCA, y es evidencia de primer orden: `REBASEADA` NO significa
+        # «segunda escritura». Sin `BuyerRevisionConflict` no hay rebase, así que dos
+        # escritores SECUENCIALES sobre la misma ruta dan `CREADA` y `CREADA`. Si esta línea
+        # pasara a `REBASEADA`, el desenlace habría empezado a contar escrituras en vez de
+        # concurrencia — justo la confusión que la distinción existe para evitar.
+        assert not primero.rebasado and not segundo.rebasado, \
+            "sin conflicto de revisión no puede haber rebase"
         assert [primero.estado, segundo.estado] == [EstadoActualizacion.CREADA] * 2, \
             [primero.estado.value, segundo.estado.value]
 

@@ -102,9 +102,16 @@ def test_T1_el_fichero_es_el_031_y_no_pisa_ningun_numero():
              if p.name != MIGRACION.name]
     assert not otros, f"hay otra migración con el número 031: {otros}"
 
-    # Y es EL SIGUIENTE número, no uno saltado: 030 tiene que existir y 032 no.
+    # Y es EL SIGUIENTE número, no uno saltado: la 030 tiene que existir.
     assert (RAIZ / "migrations" / "030_inventory_truth_schema.sql").exists()
-    assert not list((RAIZ / "migrations").glob("032*.sql"))
+
+    # Aquí había además `assert not list(glob("032*.sql"))`. Lo retiró
+    # BUYER-STORE-PROD-PERIMETER-R1 (2026-09-23), y conviene decir por qué: esa línea no
+    # afirmaba nada sobre la 031, afirmaba que la 031 era la ÚLTIMA migración del repo. Eso
+    # era cierto el día que se escribió y dejaba de serlo en cuanto alguien añadiera la
+    # siguiente — o sea, convertía a la prueba de la 031 en un cerrojo contra toda migración
+    # futura. Lo que sí es una propiedad de la 031 —no pisar un número, venir después de la
+    # 030— lo cubren las dos comprobaciones de arriba.
 
 
 def test_T2_la_031_EXIGE_la_030_y_lo_dice_claro():

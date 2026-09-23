@@ -18,6 +18,8 @@ import logging
 import re
 from pathlib import Path
 
+import pytest
+
 from app.entorno_curacion import aplicar_curacion, info_verificacion
 from app.rutas import _avisar_capa_caida
 
@@ -28,29 +30,78 @@ _SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 _LEE_TABLA_CRUDA = re.compile(r"\b(?:FROM|JOIN)\s+pois_propios\b", re.I)
 
 
+# ══ De dónde sale el SQL de entorno ══════════════════════════════════════════════════
+#
+# Hoy vive entero en `app/rutas.py`. PLAN04-2.2 va a repartirlo entre `rutas.py` y
+# `app/place/providers/`, así que la guarda sigue a las FUENTES y no a un fichero: el día
+# que el SQL se mude, esto lo encuentra en su sitio nuevo sin que nadie lo recuerde.
+#
+# Y —esto es lo que R0B0 vino a arreglar— la guarda EXIGE haber encontrado material. La
+# versión anterior recorría `re.findall(...)` y, si el patrón no encontraba nada, el bucle
+# no ejecutaba ni una aserción: pasaba en verde sin haber mirado nada. Una guarda que no
+# puede fallar por ausencia de material no está midiendo, está decorando.
+
+
+def _fuentes_de_entorno() -> list[tuple[str, str]]:
+    """Los ficheros donde puede vivir el SQL de entorno, con su texto."""
+    rutas = [_APP / "rutas.py"]
+    rutas += sorted((_APP / "place" / "providers").glob("*.py"))
+    rutas += sorted((_APP / "place").glob("*.py"))
+    vistos, fuentes = set(), []
+    for r in rutas:
+        if r.exists() and r not in vistos:
+            vistos.add(r)
+            fuentes.append((str(r.relative_to(_APP.parent)), r.read_text(encoding="utf-8")))
+    return fuentes
+
+
+def _bloques_tras_la_vista(texto: str) -> list[str]:
+    """Lo que sigue a cada `FROM pois_vivos` hasta el fin del literal SQL.
+
+    No usa `findall` con un grupo opcional: cada ocurrencia produce SIEMPRE un bloque, de
+    modo que «cuántas veces se lee la vista» y «cuántos bloques se inspeccionan» son el
+    mismo número y no pueden divergir en silencio.
+    """
+    bloques = []
+    for m in re.finditer(r"\bFROM\s+pois_vivos\b", texto, re.I):
+        resto = texto[m.end():]
+        fin = resto.find('"""')
+        bloques.append(resto if fin == -1 else resto[:fin])
+    return bloques
+
+
+def _exigir_material(bloques: list[str]) -> None:
+    """La mitad que faltaba. Se extrae a función para poder probarla con cero bloques."""
+    assert len(bloques) >= 4, (
+        f"Se esperaban al menos 4 lecturas contra `pois_vivos` (entorno, transporte, "
+        f"nearest, dentro-de-isócrona) y se encontraron {len(bloques)}. Si el SQL se "
+        f"mudó, añade su fichero a `_fuentes_de_entorno`; si desapareció, el foso se "
+        f"apagó."
+    )
+
+
 # ══ Frente 1 — las lecturas de entorno van contra la vista ═══════════════════════════
-def test_rutas_no_lee_la_tabla_cruda_de_pois():
-    """rutas.py sirve el entorno al comprador: TODAS sus lecturas pasan por el overlay.
+def test_ninguna_fuente_de_entorno_lee_la_tabla_cruda_de_pois():
+    """El entorno del comprador: TODAS sus lecturas pasan por el overlay.
 
     Si este test falla, alguien devolvió una query a `pois_propios` y con eso los POIs
     que un corredor cerró en terreno volvieron a mostrarse. No hay error visible: solo
     vuelve la farmacia fantasma.
     """
-    sql = (_APP / "rutas.py").read_text(encoding="utf-8")
-    assert not _LEE_TABLA_CRUDA.search(sql), (
-        "app/rutas.py lee `pois_propios` directo. Las lecturas de entorno deben usar la "
-        "vista `pois_vivos` (migración 023) o se saltan la curación del corredor."
-    )
+    fuentes = _fuentes_de_entorno()
+    assert fuentes, "no se encontró ninguna fuente de SQL de entorno que inspeccionar"
+    for ruta, texto in fuentes:
+        assert not _LEE_TABLA_CRUDA.search(texto), (
+            f"{ruta} lee `pois_propios` directo. Las lecturas de entorno deben usar la "
+            "vista `pois_vivos` (migración 023) o se saltan la curación del corredor."
+        )
 
 
-def test_rutas_usa_la_vista():
+def test_las_lecturas_de_entorno_usan_la_vista():
     """Contrapeso del test anterior: que no lea la tabla no basta si tampoco lee la vista
     (un refactor que borre las queries pasaría el test de arriba sin hacer nada)."""
-    sql = (_APP / "rutas.py").read_text(encoding="utf-8")
-    assert sql.count("FROM pois_vivos") >= 4, (
-        "Se esperaban al menos 4 lecturas contra `pois_vivos` (entorno, transporte, "
-        "nearest, dentro-de-isócrona)."
-    )
+    bloques = [b for _, texto in _fuentes_de_entorno() for b in _bloques_tras_la_vista(texto)]
+    _exigir_material(bloques)
 
 
 def test_la_vista_no_filtra_operativo_por_su_cuenta():
@@ -60,12 +111,33 @@ def test_la_vista_no_filtra_operativo_por_su_cuenta():
     el origen dio de baja pero un corredor confirmó en terreno queda fuera — y el humano
     que estuvo ahí ayer pierde contra un dataset del mes pasado.
     """
-    sql = (_APP / "rutas.py").read_text(encoding="utf-8")
-    for bloque in re.findall(r"FROM pois_vivos(.*?)\"\"\"", sql, re.S):
+    bloques = [b for _, texto in _fuentes_de_entorno() for b in _bloques_tras_la_vista(texto)]
+    _exigir_material(bloques)          # <- sin esto, cero bloques pasaba en verde
+    for bloque in bloques:
         assert not re.search(r"\bWHERE\s+operativo\b", bloque, re.I), (
             "Una query sobre `pois_vivos` vuelve a filtrar por `operativo`: rompe el "
             "caso 'el origen lo cerró pero el corredor lo confirmó'."
         )
+
+
+def test_la_guarda_de_la_vista_NO_PUEDE_pasar_en_vacio():
+    """LA MITAD NEGATIVA, y la razón de ser de R0B0-A.
+
+    Con cero coincidencias la guarda tiene que ponerse ROJA. Antes no: el `findall`
+    devolvía `[]`, el bucle no iteraba, y el test pasaba sin haber inspeccionado nada —
+    exactamente lo que habría ocurrido el día que el SQL se mudara a `place/providers/`.
+    """
+    assert _bloques_tras_la_vista("aquí no hay SQL de ningún tipo") == []
+    with pytest.raises(AssertionError, match="al menos 4 lecturas"):
+        _exigir_material([])
+
+
+def test_cada_lectura_de_la_vista_produce_exactamente_un_bloque():
+    """Que el conteo y la inspección no puedan divergir: si un día hubiera 6 lecturas y
+    solo 4 bloques, dos queries quedarían sin mirar y nadie se enteraría."""
+    for ruta, texto in _fuentes_de_entorno():
+        ocurrencias = len(re.findall(r"\bFROM\s+pois_vivos\b", texto, re.I))
+        assert len(_bloques_tras_la_vista(texto)) == ocurrencias, ruta
 
 
 # ══ Frente 2 — el refresco semanal no pisa el trabajo humano ═════════════════════════

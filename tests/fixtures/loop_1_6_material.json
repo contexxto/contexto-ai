@@ -1,0 +1,304 @@
+{
+  "_por_que_existe": [
+    "MATERIAL CONGELADO de PLAN04-1.6. Es la ENTRADA del dataset del loop, no el dataset:",
+    "de aqui salen 1 BuyerContextV0 + 10 PropertyContextV0 + 10 PlaceContextV0 pasando por",
+    "los productores REALES, y el resultado se compara contra loop_1_6_dataset.json.",
+    "",
+    "TODO ES SINTETICO. Ni una fila procede del censo real de produccion (PLAN04-1.4-A1).",
+    "No hay PII, ni ids de sesion, ni direcciones de vivienda o trabajo de ninguna persona:",
+    "las coordenadas son de avenidas publicas de Quito y los nombres estan inventados.",
+    "PLAN04-1.6 NO acredita inventario de produccion; esa evidencia es y sigue siendo A1.",
+    "",
+    "Por que un material y un golden separados: si el golden se escribiera a mano no podria",
+    "derivar de los productores, y un cambio en ellos no lo romperia. El dataset del loop no",
+    "certificaria nada. El repositorio ya pago ese error una vez —ver la cabecera del canary",
+    "G20-B1, transcrito de un informe en prosa, que dejo CI en verde sobre un payload que",
+    "produccion nunca emite—."
+  ],
+  "_como_se_leen_los_tipos": [
+    "Los tipos que JSON no tiene van marcados y los materializa la prueba:",
+    "  {'__uuid__': ...}    -> uuid.UUID        (lo que devuelve el driver)",
+    "  {'__decimal__': ...} -> decimal.Decimal  (columna Numeric; la ESCALA es parte del dato)",
+    "  {'__naive__': ...}   -> datetime SIN zona (columna TIMESTAMP; el adaptador la omite)"
+  ],
+  "_instantes_congelados": {
+    "buyer_updated_at": "2026-09-09T12:00:00+00:00",
+    "property_snapshot_at": "2026-09-09T12:00:00+00:00",
+    "place_recuperado_en": "2026-09-09T12:00:00+00:00",
+    "moneda": "USD",
+    "_currency_provenance": "NOT MEASURED — parametro sintetico de este dataset. No demuestra que la base declare USD ni autoriza fijarlo en el productor."
+  },
+
+  "buyer": {
+    "_nota": "Sintetico y no trivial. SIN commute_anchors a proposito: `label` y `raw_location` son el sitio natural donde entraria la direccion real de una persona, y este dataset no los necesita.",
+    "buyer_id": "loop-1-6-comprador-sintetico",
+    "objective": "rent",
+    "budget_max": {"__decimal__": "800.00", "currency": "USD"},
+    "bedrooms_min": 2,
+    "pets_allowed_required": true,
+    "source_message_id_sintetico": "loop-1-6-mensaje-sintetico",
+    "hard_constraints": [
+      {"criterion_id": "dormitorios-minimos", "dimension": "bedrooms", "operator": "gte",
+       "value": 2, "unit": null, "origin": "stated", "ruta_evidencia": "property_requirements.bedrooms_min"},
+      {"criterion_id": "admite-mascotas", "dimension": "pets_allowed", "operator": "eq",
+       "value": true, "unit": null, "origin": "stated", "ruta_evidencia": "property_requirements.pets_allowed_required"}
+    ],
+    "soft_preferences": [
+      {"criterion_id": "area-deseada", "dimension": "area_m2", "operator": "gte",
+       "value": 60, "unit": "m2", "origin": "inferred", "ruta_evidencia": "property_requirements.area_m2_min"}
+    ],
+    "field_evidence_rutas": ["financial.budget_max", "property_requirements.bedrooms_min"]
+  },
+
+  "properties": [
+    {
+      "_caso": "ARRIENDO ACTIVO nominal, con precio en el JSONB que contradice la transaccion",
+      "id": {"__uuid__": "1a000000-0000-4000-8000-000000000007"},
+      "lat": -0.1807, "lon": -78.4867,
+      "direccion_estandarizada": "Av. Coruna y San Ignacio, La Floresta, Quito",
+      "tipo_activo": "Departamento", "piso_altura": 3,
+      "imagen_url": "https://cdn.example/loop/1.jpg",
+      "caracteristicas": {"dormitorios": 2, "area_m2": 90, "amoblado": true, "precio": 200,
+                          "fotos": ["https://cdn.example/loop/1b.jpg"]},
+      "tipo_operacion": "ARRIENDO", "precio": {"__decimal__": "780.00"},
+      "estado_anuncio": "ACTIVO",
+      "fecha_publicacion": {"__naive__": "2026-07-15T12:00:00"}, "fecha_cierre": null
+    },
+    {
+      "_caso": "VENTA ACTIVO, JSONB entregado como TEXTO",
+      "id": {"__uuid__": "1a000000-0000-4000-8000-000000000003"},
+      "lat": -0.1755, "lon": -78.4858,
+      "direccion_estandarizada": "Av. Amazonas y Naciones Unidas, La Carolina, Quito",
+      "tipo_activo": "Oficina", "piso_altura": 7,
+      "imagen_url": null,
+      "caracteristicas": "{\"dormitorios\": 0, \"area_m2\": 120, \"parqueaderos\": 2}",
+      "tipo_operacion": "VENTA", "precio": {"__decimal__": "185000.00"},
+      "estado_anuncio": "ACTIVO",
+      "fecha_publicacion": {"__naive__": "2026-05-02T08:15:00"}, "fecha_cierre": null
+    },
+    {
+      "_caso": "ARRIENDO + COMPLETADO: el par que R1 corrigio. NO es una venta",
+      "id": {"__uuid__": "1a000000-0000-4000-8000-000000000010"},
+      "lat": -0.2000, "lon": -78.4880,
+      "direccion_estandarizada": "Av. Patria y 12 de Octubre, Quito",
+      "tipo_activo": "Departamento", "piso_altura": 8,
+      "imagen_url": null,
+      "caracteristicas": {"dormitorios": 2, "area_m2": 75},
+      "tipo_operacion": "ARRIENDO", "precio": {"__decimal__": "720.00"},
+      "estado_anuncio": "COMPLETADO",
+      "fecha_publicacion": {"__naive__": "2026-04-10T09:00:00"},
+      "fecha_cierre": {"__naive__": "2026-06-01T18:00:00"}
+    },
+    {
+      "_caso": "VENTA + COMPLETADO: esta SI es una venta cerrada",
+      "id": {"__uuid__": "1a000000-0000-4000-8000-000000000001"},
+      "lat": -0.1900, "lon": -78.4800,
+      "direccion_estandarizada": "Av. 6 de Diciembre y Portugal, Quito",
+      "tipo_activo": "Casa", "piso_altura": 2,
+      "imagen_url": "https://cdn.example/loop/4.jpg",
+      "caracteristicas": {"dormitorios": 4, "area_m2": 210, "parqueaderos": 3},
+      "tipo_operacion": "VENTA", "precio": {"__decimal__": "260000.00"},
+      "estado_anuncio": "COMPLETADO",
+      "fecha_publicacion": {"__naive__": "2026-03-01T10:00:00"},
+      "fecha_cierre": {"__naive__": "2026-05-20T16:30:00"}
+    },
+    {
+      "_caso": "PAUSADO: el contrato no tiene ese estado; unknown con aviso",
+      "id": {"__uuid__": "1a000000-0000-4000-8000-000000000005"},
+      "lat": -0.1850, "lon": -78.4750,
+      "direccion_estandarizada": "Av. Republica y La Pradera, Quito",
+      "tipo_activo": "Oficina", "piso_altura": 4,
+      "imagen_url": null,
+      "caracteristicas": {"area_m2": 40},
+      "tipo_operacion": "ARRIENDO", "precio": {"__decimal__": "410.00"},
+      "estado_anuncio": "PAUSADO",
+      "fecha_publicacion": {"__naive__": "2026-06-05T11:00:00"}, "fecha_cierre": null
+    },
+    {
+      "_caso": "sin transaccion: el activo existe y no tiene listing",
+      "id": {"__uuid__": "1a000000-0000-4000-8000-000000000009"},
+      "lat": -0.2050, "lon": -78.4900,
+      "direccion_estandarizada": "Calle Guipuzcoa y Toledo, La Floresta, Quito",
+      "tipo_activo": "Casa", "piso_altura": 1,
+      "imagen_url": "https://cdn.example/loop/6.jpg",
+      "caracteristicas": {"dormitorios": 3, "area_m2": 160},
+      "tipo_operacion": null, "precio": null, "estado_anuncio": null,
+      "fecha_publicacion": null, "fecha_cierre": null
+    },
+    {
+      "_caso": "MONITOREO_PASIVO: existe en el CHECK y no tiene valor en Operation",
+      "id": {"__uuid__": "1a000000-0000-4000-8000-000000000002"},
+      "lat": -0.1700, "lon": -78.4950,
+      "direccion_estandarizada": "Av. Eloy Alfaro y Portugal, Quito",
+      "tipo_activo": "Local Comercial", "piso_altura": 1,
+      "imagen_url": null,
+      "caracteristicas": {"area_m2": 55},
+      "tipo_operacion": "MONITOREO_PASIVO", "precio": {"__decimal__": "900.00"},
+      "estado_anuncio": "ACTIVO",
+      "fecha_publicacion": {"__naive__": "2026-08-01T10:00:00"}, "fecha_cierre": null
+    },
+    {
+      "_caso": "JSONB escalar: degrada declarando, no revienta",
+      "id": {"__uuid__": "1a000000-0000-4000-8000-000000000008"},
+      "lat": -0.1600, "lon": -78.4700,
+      "direccion_estandarizada": "Av. Galo Plaza Lasso y Rio Coca, Quito",
+      "tipo_activo": "Departamento", "piso_altura": 2,
+      "imagen_url": null,
+      "caracteristicas": "5",
+      "tipo_operacion": "ARRIENDO", "precio": {"__decimal__": "395.00"},
+      "estado_anuncio": "ACTIVO",
+      "fecha_publicacion": {"__naive__": "2026-07-01T07:45:00"}, "fecha_cierre": null
+    },
+    {
+      "_caso": "precio 0: el contrato exige > 0; se omite el precio, no la transaccion",
+      "id": {"__uuid__": "1a000000-0000-4000-8000-000000000004"},
+      "lat": -0.1950, "lon": -78.4850,
+      "direccion_estandarizada": "Av. Colon y Reina Victoria, Quito",
+      "tipo_activo": "Departamento", "piso_altura": 6,
+      "imagen_url": null,
+      "caracteristicas": {"dormitorios": 1, "area_m2": 45},
+      "tipo_operacion": "ARRIENDO", "precio": {"__decimal__": "0.00"},
+      "estado_anuncio": "ACTIVO",
+      "fecha_publicacion": {"__naive__": "2026-08-12T14:20:00"}, "fecha_cierre": null
+    },
+    {
+      "_caso": "escala decimal distinta a proposito: 1250.5 no es 1250.50",
+      "id": {"__uuid__": "1a000000-0000-4000-8000-000000000006"},
+      "lat": -0.2100, "lon": -78.5000,
+      "direccion_estandarizada": "Av. Rodrigo de Chavez y Maldonado, Quito",
+      "tipo_activo": "Quinta", "piso_altura": 1,
+      "imagen_url": null,
+      "caracteristicas": {"dormitorios": 5, "area_m2": 300, "amoblado": false},
+      "tipo_operacion": "ARRIENDO", "precio": {"__decimal__": "1250.5"},
+      "estado_anuncio": "ACTIVO",
+      "fecha_publicacion": {"__naive__": "2026-08-20T09:00:00"}, "fecha_cierre": null
+    }
+  ],
+
+  "places": [
+    {
+      "_caso": "nominal: capa propia, metro con ruta medida",
+      "lat": -0.1807, "lon": -78.4867,
+      "lugar": {"barrio": "La Floresta", "ciudad": "Quito", "pais": "Ecuador"},
+      "walk": {"walk_score": 78, "fuente": "osm", "pois_analizados": 214},
+      "servicios": [
+        {"nombre": "Estacion sintetica La Floresta", "cat": "transporte", "distancia_m": 640,
+         "es_masivo": true, "lat": -0.1799, "lon": -78.4869, "fuente": "propio"},
+        {"nombre": "Supermercado sintetico Coruna", "cat": "supermercado", "distancia_m": 310,
+         "lat": -0.1812, "lon": -78.4841, "fuente": "propio"}
+      ],
+      "se_consultaron_servicios": true,
+      "transporte_distancia_m": 1520, "transporte_minutos": 19, "transporte_ruta_medida": true
+    },
+    {
+      "_caso": "mezcla de origenes: capa propia + relleno de Google",
+      "lat": -0.1755, "lon": -78.4858,
+      "lugar": {"barrio": "La Carolina", "ciudad": "Quito", "pais": "Ecuador"},
+      "walk": {"walk_score": 84, "fuente": "osm", "pois_analizados": 301},
+      "servicios": [
+        {"nombre": "Parada sintetica Naciones Unidas", "cat": "transporte", "distancia_m": 210,
+         "es_masivo": false, "lat": -0.1751, "lon": -78.4862, "fuente": "propio"},
+        {"nombre": "Farmacia sintetica Carolina", "cat": "farmacia", "distancia_m": 180,
+         "lat": -0.1758, "lon": -78.4851, "fuente": "google"}
+      ],
+      "se_consultaron_servicios": true,
+      "transporte_distancia_m": 210, "transporte_minutos": 3, "transporte_ruta_medida": false
+    },
+    {
+      "_caso": "cero medido: Overpass respondio y no habia ni un POI",
+      "lat": -0.2000, "lon": -78.4880,
+      "lugar": {"barrio": "La Pradera", "ciudad": "Quito", "pais": "Ecuador"},
+      "walk": {"walk_score": 0, "fuente": "osm", "pois_analizados": 0},
+      "servicios": [
+        {"nombre": "Parada sintetica Patria", "cat": "transporte", "distancia_m": 480,
+         "es_masivo": false, "lat": -0.2004, "lon": -78.4884, "fuente": "propio"}
+      ],
+      "se_consultaron_servicios": true,
+      "transporte_distancia_m": 480, "transporte_minutos": 6, "transporte_ruta_medida": false
+    },
+    {
+      "_caso": "proveedor caido: walk vacio -> insufficient_evidence",
+      "lat": -0.1900, "lon": -78.4800,
+      "lugar": {"barrio": "Gonzalez Suarez", "ciudad": "Quito", "pais": "Ecuador"},
+      "walk": {},
+      "servicios": [
+        {"nombre": "Supermercado sintetico 6 de Diciembre", "cat": "supermercado",
+         "distancia_m": 260, "lat": -0.1904, "lon": -78.4806, "fuente": "google"}
+      ],
+      "se_consultaron_servicios": true,
+      "transporte_distancia_m": null, "transporte_minutos": null, "transporte_ruta_medida": false
+    },
+    {
+      "_caso": "sin llave de Google: no se pregunto -> unknown, distinto de vacio",
+      "lat": -0.1850, "lon": -78.4750,
+      "lugar": {"barrio": "Bellavista", "ciudad": "Quito", "pais": "Ecuador"},
+      "walk": {"walk_score": 51, "fuente": "osm", "pois_analizados": 63},
+      "servicios": [],
+      "se_consultaron_servicios": false,
+      "transporte_distancia_m": null, "transporte_minutos": null, "transporte_ruta_medida": false
+    },
+    {
+      "_caso": "servicio sin `fuente`: entra en el valor, la medida lo declara",
+      "lat": -0.2050, "lon": -78.4900,
+      "lugar": {"barrio": "La Floresta sur", "ciudad": "Quito", "pais": "Ecuador"},
+      "walk": {"walk_score": 66, "fuente": "osm", "pois_analizados": 121},
+      "servicios": [
+        {"nombre": "Parque sintetico Guipuzcoa", "cat": "parque", "distancia_m": 140,
+         "lat": -0.2054, "lon": -78.4903},
+        {"nombre": "Panaderia sintetica Toledo", "cat": "panaderia", "distancia_m": 220,
+         "lat": -0.2047, "lon": -78.4896, "fuente": "propio"}
+      ],
+      "se_consultaron_servicios": true,
+      "transporte_distancia_m": null, "transporte_minutos": null, "transporte_ruta_medida": false
+    },
+    {
+      "_caso": "parada de Google con ruta medida: descubrimiento + Routes",
+      "lat": -0.1700, "lon": -78.4950,
+      "lugar": {"barrio": "Iniaquito", "ciudad": "Quito", "pais": "Ecuador"},
+      "walk": {"walk_score": 72, "fuente": "osm", "pois_analizados": 158},
+      "servicios": [
+        {"nombre": "Terminal sintetica Eloy Alfaro", "cat": "transporte", "distancia_m": 900,
+         "es_masivo": true, "lat": -0.1706, "lon": -78.4957, "fuente": "google"},
+        {"nombre": "Gimnasio sintetico Alfaro", "cat": "gimnasio", "distancia_m": 340,
+         "lat": -0.1695, "lon": -78.4944, "fuente": "google"}
+      ],
+      "se_consultaron_servicios": true,
+      "transporte_distancia_m": 1180, "transporte_minutos": 15, "transporte_ruta_medida": true
+    },
+    {
+      "_caso": "se pregunto y no aparecio nada: insufficient_evidence en servicios",
+      "lat": -0.1600, "lon": -78.4700,
+      "lugar": {"barrio": "Rio Coca", "ciudad": "Quito", "pais": "Ecuador"},
+      "walk": {"walk_score": 44, "fuente": "osm", "pois_analizados": 37},
+      "servicios": [],
+      "se_consultaron_servicios": true,
+      "transporte_distancia_m": null, "transporte_minutos": null, "transporte_ruta_medida": false
+    },
+    {
+      "_caso": "solo Google, parada de bus, sin ruta medida",
+      "lat": -0.1950, "lon": -78.4850,
+      "lugar": {"barrio": "Mariscal", "ciudad": "Quito", "pais": "Ecuador"},
+      "walk": {"walk_score": 91, "fuente": "osm", "pois_analizados": 402},
+      "servicios": [
+        {"nombre": "Parada sintetica Colon", "cat": "transporte", "distancia_m": 150,
+         "es_masivo": false, "lat": -0.1954, "lon": -78.4846, "fuente": "google"},
+        {"nombre": "Cafe sintetico Reina Victoria", "cat": "cafe", "distancia_m": 90,
+         "lat": -0.1948, "lon": -78.4853, "fuente": "google"}
+      ],
+      "se_consultaron_servicios": true,
+      "transporte_distancia_m": 150, "transporte_minutos": 2, "transporte_ruta_medida": false
+    },
+    {
+      "_caso": "periferia: pocos servicios, capa propia",
+      "lat": -0.2100, "lon": -78.5000,
+      "lugar": {"barrio": "Chimbacalle", "ciudad": "Quito", "pais": "Ecuador"},
+      "walk": {"walk_score": 33, "fuente": "osm", "pois_analizados": 19},
+      "servicios": [
+        {"nombre": "Tienda sintetica Rodrigo de Chavez", "cat": "tienda", "distancia_m": 520,
+         "lat": -0.2106, "lon": -78.5007, "fuente": "propio"}
+      ],
+      "se_consultaron_servicios": true,
+      "transporte_distancia_m": null, "transporte_minutos": null, "transporte_ruta_medida": false
+    }
+  ]
+}

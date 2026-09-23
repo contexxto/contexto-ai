@@ -15,59 +15,32 @@ mapa no pinta isócronas; la cuña puede caer a radio euclidiano).
 from __future__ import annotations
 
 import json
-import logging
 
-import httpx
 from sqlalchemy import text
 
-from app.config import settings
-
-logger = logging.getLogger(__name__)
-
-_TIMEOUT = 20.0
-_CONTORNOS_DEFECTO = (15, 30)  # minutos
-
-
-async def isocrona(lat: float, lon: float, minutos=_CONTORNOS_DEFECTO) -> list[dict] | None:
-    """Isócrona peatonal de un punto. Devuelve [{minutos:int, geometry:GeoJSON}] o None.
-
-    Un solo request cubre todos los contornos. polygons=true → polígonos cerrados
-    aptos para point-in-polygon; denoise limpia islas sueltas; generalize simplifica.
-    """
-    body = {
-        "locations": [{"lat": lat, "lon": lon}],
-        "costing": "pedestrian",
-        "contours": [{"time": int(m)} for m in minutos],
-        "polygons": True,
-        "denoise": 0.5,
-        "generalize": 50,
-    }
-    verify = settings.ssl_verify.lower() != "false"
-    try:
-        async with httpx.AsyncClient(verify=verify, timeout=_TIMEOUT) as c:
-            r = await c.post(f"{settings.valhalla_url}/isochrone", json=body)
-            r.raise_for_status()
-            fc = r.json()
-    except Exception as exc:  # noqa: BLE001 — Valhalla caído → el llamador degrada
-        # Degradamos, pero NO en silencio: el operador debe ver que Valhalla no responde
-        # (mismo criterio que routers/assets.py con Google). Distingue "caído" de "vacío".
-        logger.warning("Valhalla /isochrone no respondió (%s): %s", type(exc).__name__, exc)
-        return None
-    out: list[dict] = []
-    for feat in fc.get("features", []):
-        props = feat.get("properties", {}) or {}
-        geom = feat.get("geometry")
-        # Con metric='time', Valhalla marca el contorno en properties.contour (minutos).
-        m = props.get("contour")
-        if not geom or m is None:
-            continue
-        try:
-            minutos_val = int(round(float(m)))
-        except (TypeError, ValueError):
-            continue  # contorno malformado → descarta la feature, nunca revienta
-        out.append({"minutos": minutos_val, "geometry": geom})
-    return out or None
-
+# ── La llamada a Valhalla vive ahora en `app/place/providers/valhalla.py` (PLAN04-2.2) ──
+# Se MOVIO, no se copio: aqui no queda un segundo cuerpo de `isocrona`. Con ella viajaron su
+# plazo, su contorno por defecto y su logger, que eran suyos y de nadie mas.
+#
+# LO QUE SE QUEDA, Y POR QUE. La persistencia y la CUNA. `guardar_isocronas_inmueble` escribe
+# el upsert idempotente sobre `isocronas_inmueble`; `buscar_por_ancla_tiempo` cruza el
+# poligono con el inventario fijo por `ST_Contains`. Ninguna de las dos es una llamada a
+# Valhalla: una guarda lo que el proveedor trajo y la otra lo usa para filtrar. El proveedor
+# obtiene el poligono; lo que se hace con el es nuestro.
+#
+# Este modulo ya no importa `httpx` ni `settings`: eran exclusivos de la llamada y se fueron
+# con ella. Conserva `json` y `text`, que usan las dos funciones de arriba.
+#
+# POR QUE ESTE IMPORT ES EL SEAM. `buscar_por_ancla_tiempo` resuelve `isocrona` en ESTE
+# espacio de nombres, y `app/routers/assets.py` la importa de forma DIFERIDA desde aqui, asi
+# que parchear `app.isocronas.isocrona` sigue alcanzando a los dos. `app/rutas.py`, que la
+# importo a nivel de modulo, sigue ligandola en el suyo y no se toca.
+from app.place.providers.valhalla import (  # noqa: E402,F401 — fachada
+    _CONTORNOS_DEFECTO,
+    _TIMEOUT,
+    isocrona,
+    logger,
+)
 
 _UPSERT_ISOCRONA = text("""
     INSERT INTO isocronas_inmueble (activo_id, minutos, geom)

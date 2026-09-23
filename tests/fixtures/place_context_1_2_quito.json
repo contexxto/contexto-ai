@@ -1,0 +1,76 @@
+{
+  "_por_que_existe": [
+    "Fixture CONGELADA de la unidad PLAN04-1.2, y de nadie mas. NO es la fixture del",
+    "loop de la unidad 1.6: aquella tiene que ser 1 buyer + 10 properties + sus places",
+    "congelados byte a byte, y esto es un solo punto sin comprador ni inmueble.",
+    "Atribuirsela a 1.6 daria por avanzada una unidad que no lo esta."
+  ],
+  "_que_es": [
+    "El material que los proveedores devuelven para UN punto real de Quito: La Carolina,",
+    "junto a la estacion El Labrador. Los cuerpos reproducen la FORMA real de cada",
+    "proveedor —distancias enteras porque en SQL salen con ::int, minutos enteros porque",
+    "salen de round()—, y estan congelados para que la prueba sea determinista.",
+    "NO es una captura en vivo: esta unidad no toca la red ni usa credenciales."
+  ],
+  "punto": {
+    "nombre": "La Carolina, Quito",
+    "lat": -0.1755,
+    "lon": -78.4858
+  },
+  "lugar": {
+    "barrio": "La Carolina",
+    "ciudad": "Quito",
+    "pais": "Ecuador",
+    "direccion": "Av. Amazonas y Av. Naciones Unidas"
+  },
+  "walk": {
+    "walk_score": 78,
+    "fuente": "osm",
+    "pois_analizados": 214,
+    "desglose": {
+      "supermercado": 8.4,
+      "restaurante": 9.1,
+      "parque": 7.2
+    }
+  },
+  "servicios": [
+    {
+      "nombre": "Estación El Labrador",
+      "cat": "transporte",
+      "distancia_m": 640,
+      "es_masivo": true,
+      "lat": -0.1699,
+      "lon": -78.4869,
+      "fuente": "propio"
+    },
+    {
+      "nombre": "Supermaxi La Carolina",
+      "cat": "supermercado",
+      "distancia_m": 310,
+      "lat": -0.1762,
+      "lon": -78.4841,
+      "fuente": "propio"
+    },
+    {
+      "nombre": "Parque La Carolina",
+      "cat": "parque",
+      "distancia_m": 180,
+      "lat": -0.1789,
+      "lon": -78.4835,
+      "fuente": "propio"
+    },
+    {
+      "nombre": "Farmacia Fybeca Naciones Unidas",
+      "cat": "farmacia",
+      "distancia_m": 420,
+      "lat": -0.1748,
+      "lon": -78.4877,
+      "fuente": "propio"
+    }
+  ],
+  "ruta_a_pie_al_transporte": {
+    "_nota": "Google Routes por calles. La recta daria 8 min; la caminata real son 19.",
+    "duracion_min": 19,
+    "distancia_m": 1520
+  }
+}

@@ -257,9 +257,29 @@ sabe que existe una tabla, no importa nada de base de datos y no lee una columna
 todo `app/contracts/` habría sido más laxo de lo necesario; se exenta un fichero."""
 
 
+_USA_EL_VOCABULARIO_SIN_CONSULTARLO = RAIZ / "app" / "inventario" / "adaptador_local.py"
+"""El SEGUNDO fichero exento de la barrida textual, por la misma razon que el primero.
+
+Lo trae PLAN04 (PLAN04-INTEGRATION-R1). Nombra `inventory_class` tres veces: dos en prosa de
+la cabecera, que explica por que la respuesta honesta hoy es `unknown`, y una en
+`inventory_class=InventoryClass.UNKNOWN` al construir el `PropertyContextV0`. Las tres son el
+VOCABULARIO del contrato, no el ESQUEMA: su `_SELECT_ACTIVOS` no pide ni una columna nueva.
+
+La exencion NO afloja la propiedad de 030A, porque el invariante real de este fichero se
+comprueba en `test_T21c_el_adaptador_de_inventario_NOMBRA_pero_no_CONSULTA`, con un mecanismo
+MAS preciso que el de T21: mirar solo las cadenas que son SQL.
+
+Y no se metio en T22, que era lo primero que se intento: T22 recoge TODA constante de cadena,
+y una docstring es una constante. La prosa de la cabecera lo habria puesto rojo igual. El
+comentario de T22 dice *"un comentario ... no puede poner el guard rojo"* y es cierto para los
+`#`, que no son AST; no para las docstrings.
+"""
+
+
 def _modulos_de_app():
     return [p for p in sorted((RAIZ / "app").rglob("*.py"))
-            if "__pycache__" not in str(p) and p != _DEFINE_EL_VOCABULARIO]
+            if "__pycache__" not in str(p)
+            and p not in (_DEFINE_EL_VOCABULARIO, _USA_EL_VOCABULARIO_SIN_CONSULTARLO)]
 
 
 def test_T21_ningun_modulo_de_la_APLICACION_conoce_el_esquema_nuevo():
@@ -284,6 +304,53 @@ def test_T22_ninguna_consulta_de_BUSQUEDA_o_PANEL_menciona_las_columnas_nuevas()
         for cadena in literales:
             for nombre in _COLUMNAS_NUEVAS:
                 assert nombre not in cadena, f"{rel} consulta {nombre}"
+
+
+def _cadenas_sql_de(ruta):
+    """Solo las constantes de cadena que son SQL. Una docstring que EXPLIQUE el vocabulario no
+    es una consulta, y confundirlas es justo lo que hace que T21 de un falso positivo aqui."""
+    arbol = ast.parse(ruta.read_text(encoding="utf-8"))
+    return [n.value for n in ast.walk(arbol)
+            if isinstance(n, ast.Constant) and isinstance(n.value, str)
+            and any(k in n.value.upper() for k in ("SELECT ", "FROM ", "INSERT ", "UPDATE ",
+                                                   "DELETE ", "ALTER ", "CREATE "))]
+
+
+def test_T21c_el_adaptador_de_inventario_NOMBRA_pero_no_CONSULTA():
+    """LO QUE SUSTITUYE A T21 PARA EL FICHERO EXENTO, y es mas estricto, no menos.
+
+    T21 no puede distinguir nombrar de consultar. Esto si: recorre las cadenas SQL del fichero
+    real y exige que ninguna pida una columna del esquema nuevo. Si algun dia el adaptador
+    SELECCIONA `inventory_class`, esta prueba se pone roja aunque T21 ya no lo mire.
+    """
+    culpables = [(n, c[:60]) for c in _cadenas_sql_de(_USA_EL_VOCABULARIO_SIN_CONSULTARLO)
+                 for n in _COLUMNAS_NUEVAS if n in c]
+    assert not culpables, f"el adaptador consulta el esquema nuevo: {culpables}"
+
+
+def test_T21d_la_exencion_del_adaptador_NO_es_un_agujero():
+    """LA MITAD NEGATIVA. Sin esto, sacar el adaptador de T21 seria aflojar y punto.
+
+    Se toma el fichero REAL, se le inyecta una consulta que pide una columna nueva y se
+    comprueba que el detector la ve. Si esta prueba dejara de morder, la exencion habria
+    quedado sin red y habria que retirarla.
+    """
+    real = _USA_EL_VOCABULARIO_SIN_CONSULTARLO.read_text(encoding="utf-8")
+    mutado = real + '\n_FUGA = "SELECT a.inventory_class FROM activos_inmutables a"\n'
+    arbol = ast.parse(mutado)
+    sql = [n.value for n in ast.walk(arbol)
+           if isinstance(n, ast.Constant) and isinstance(n.value, str)
+           and any(k in n.value.upper() for k in ("SELECT ", "FROM "))]
+    assert any(n in c for c in sql for n in _COLUMNAS_NUEVAS), \
+        "el detector no veria la consulta inyectada: la exencion seria un agujero"
+
+    # Y la otra mitad: la PROSA de la cabecera, que si nombra el vocabulario, NO debe contar.
+    prosa = [n.value for n in ast.walk(ast.parse(real))
+             if isinstance(n, ast.Constant) and isinstance(n.value, str)
+             and "inventory_class" in n.value
+             and not any(k in n.value.upper() for k in ("SELECT ", "FROM "))]
+    assert prosa, ("la cabecera ya no nombra el vocabulario: si el fichero dejo de mencionarlo, "
+                   "la exencion sobra y hay que retirarla")
 
 
 def test_T23_el_carril_del_comprador_no_conoce_el_esquema_nuevo():

@@ -153,10 +153,18 @@ async def actualizar_en_sombra(user, messages, *, computo=None) -> ResultadoUpda
     ## DEVUELVE EL `ResultadoUpdater`, Y ESO NO CAMBIA SU COMPORTAMIENTO
 
     Hasta R1 devolvía `None` siempre, y la firma era la garantía estructural: aunque alguien
-    quisiera usar su salida para cambiar la respuesta, no había salida que usar. Esa garantía
-    **se sustituye por otra más precisa**, no se afloja: lo que sale es el resultado de la
-    PERSISTENCIA, no el contexto del comprador ni la interpretación del turno. Quien lo reciba
-    puede saber si se guardó y qué quedó abierto; no puede reconstruir a la persona.
+    quisiera usar su salida para cambiar la respuesta, no había salida que usar.
+
+    **Esa garantía desaparece, y conviene decirlo sin adornos: el `ResultadoUpdater` LLEVA el
+    `BuyerContextV0` dentro** (`.contexto`). Quien reciba esto tiene delante la memoria del
+    comprador entera. Lo que sustituye a la garantía no es una propiedad del tipo —no la hay—
+    sino una guarda: el único consumidor permitido es `clarificacion_del_turno`, que extrae dos
+    campos y nada más, y hay un test por AST que se pone rojo si aparece un segundo consumidor o
+    si esa salida toca la respuesta o las tarjetas.
+
+    Es una frontera más débil que la anterior y se elige a sabiendas: sin devolver nada, el
+    producto no podía preguntar. La compensación es que la frontera nueva es **falsable** —un
+    guard la vigila— en vez de estructural.
 
     `None` en cualquier camino que no persistió: flag apagado, fuera de cohorte, anónimo, sin
     mensaje, sin esquema, o excepción. **Un llamador que reciba `None` no muestra nada**, y ésa

@@ -22,7 +22,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
 from app.buyer import sombra
-from app.buyer.actualizador import EstadoActualizacion, ResultadoUpdater
+from app.buyer.actualizador import EstadoActualizacion, ResultadoUpdater, ResultadoUpdater
 from app.buyer.sombra import actualizar_en_sombra
 
 B1 = "11111111-1111-4111-8111-111111111111"
@@ -191,9 +191,34 @@ def test_NINGUN_fallo_del_updater_se_propaga_al_turno(explota, monkeypatch, capl
         "el fallo se tragó sin dejar rastro: aislado NO es invisible"
 
 
-def test_la_sombra_no_devuelve_nada_al_turno(encendida):
-    """Su firma es la garantía estructural: aunque alguien quisiera usar su salida para
-    cambiar la respuesta, no hay salida que usar."""
+def test_la_sombra_devuelve_el_RESULTADO_DE_PERSISTIR_y_nada_mas(encendida):
+    """BUYER-UNRESOLVED-CONSUMER-R1 sustituyó aquí una garantía estructural por una falsable.
+
+    ANTES: devolvía `None` siempre, así que no había salida que usar aunque alguien quisiera.
+    AHORA: devuelve el `ResultadoUpdater`, y **eso incluye el `BuyerContextV0`** — sin devolverlo
+    el producto no podía preguntar por la ambigüedad del turno.
+
+    Lo que queda en su lugar no es una propiedad del tipo, es un guard:
+    `test_la_sombra_NO_toca_la_respuesta_ni_las_tarjetas` fija que el único consumidor sea la
+    decisión de aclaración. Aquí sólo se congela la FORMA de lo que sale."""
+    salida = asyncio.run(actualizar_en_sombra(_Usuario(), _mensajes()))
+    assert isinstance(salida, ResultadoUpdater), \
+        "la sombra dejó de devolver el resultado: el producto no puede preguntar"
+    assert not isinstance(salida, dict), "no se devuelve un volcado, se devuelve el tipo"
+
+
+@pytest.mark.parametrize("flag", [False])
+def test_con_el_flag_APAGADO_la_sombra_devuelve_None(monkeypatch, flag):
+    """MITAD NEGATIVA: los caminos que NO persisten tienen que devolver `None`, porque un
+    llamador que recibe `None` no muestra nada. Es lo que ordena el tiempo de la aclaración."""
+    monkeypatch.setattr(sombra.settings, "buyer_updater_shadow", flag)
+    assert asyncio.run(actualizar_en_sombra(_Usuario(), _mensajes())) is None
+
+
+def test_fuera_de_cohorte_la_sombra_devuelve_None(monkeypatch):
+    """Segunda mitad negativa, por la otra puerta."""
+    monkeypatch.setattr(sombra.settings, "buyer_updater_shadow", True)
+    monkeypatch.setattr(sombra.settings, "buyer_shadow_allowlist", "")
     assert asyncio.run(actualizar_en_sombra(_Usuario(), _mensajes())) is None
 
 
@@ -346,17 +371,44 @@ def test_la_sombra_NO_toca_la_respuesta_ni_las_tarjetas():
              and isinstance(n.func, ast.Name) and n.func.id == "actualizar_en_sombra"]
     assert len(todas) == 4, f"la sombra se invoca desde un tercer sitio: {len(todas)} llamadas"
 
-    # El resultado de la sombra no se usa NUNCA, en ninguna de las dos formas.
+    # EL RESULTADO DE LA SOMBRA TIENE UN SOLO CONSUMIDOR, Y ESTÁ NOMBRADO.
     #
-    # Por AST y no por texto, y el motivo es un error ya cometido en este mismo repositorio:
-    # la versión textual buscaba un `=` en la línea y la llamada nueva lleva `computo=...`,
-    # así que se detectaba a sí misma. Un guard que lee caracteres acaba mirando su propia
-    # sintaxis; uno que lee el árbol mira la propiedad.
+    # Hasta R1 esto decía «no se asigna nunca», y era la garantía estructural. R1 la cambia a
+    # sabiendas: sin devolver nada, el producto no podía preguntar por la ambigüedad del turno.
+    # Lo que la sustituye es más estrecho que un permiso y más débil que la prohibición anterior,
+    # y conviene tenerlo escrito: **el `ResultadoUpdater` lleva el `BuyerContextV0` dentro**, así
+    # que lo que se vigila es a DÓNDE va, no qué contiene.
+    #
+    # Sigue siendo por AST y no por texto, por el error ya cometido en este repositorio: la
+    # versión textual buscaba un `=` en la línea y la llamada lleva `computo=...`, así que se
+    # detectaba a sí misma.
+    CONSUMIDOR_UNICO = "clarificacion_del_turno"
+    destinos = set()
     for n in ast.walk(arbol):
-        if isinstance(n, (ast.Assign, ast.AnnAssign, ast.AugAssign)) \
+        if isinstance(n, (ast.AnnAssign, ast.AugAssign)) \
                 and "'actualizar_en_sombra'" in ast.dump(n):
-            raise AssertionError(
-                f"el resultado de la sombra no puede asignarse: {ast.dump(n)[:160]}")
+            raise AssertionError(f"forma de asignación no prevista: {ast.dump(n)[:160]}")
+        if isinstance(n, ast.Assign) and "'actualizar_en_sombra'" in ast.dump(n):
+            for t in n.targets:
+                assert isinstance(t, ast.Name), \
+                    f"el resultado de la sombra se desvía a algo que no es una variable: {ast.dump(t)[:120]}"
+                destinos.add(t.id)
+
+    assert destinos <= {"resultado_updater"}, \
+        f"el resultado de la sombra se guarda en variables no previstas: {sorted(destinos)}"
+
+    # Y cada uso de esa variable tiene que ser argumento del consumidor único. Si apareciera en
+    # el `reply`, en las tarjetas o en un `json.dumps` del panel, esto se pone rojo.
+    for destino in destinos:
+        usos = [n for n in ast.walk(arbol)
+                if isinstance(n, ast.Name) and n.id == destino and isinstance(n.ctx, ast.Load)]
+        assert usos, f"`{destino}` se asigna y no se usa: la sombra devuelve para nada"
+        for uso in usos:
+            padre = next((c for c in ast.walk(arbol)
+                          if isinstance(c, ast.Call) and uso in list(ast.walk(c))), None)
+            assert padre is not None and getattr(padre.func, "id", "") == CONSUMIDOR_UNICO, \
+                (f"`{destino}` se usa fuera de {CONSUMIDOR_UNICO}(): "
+                 f"la salida de la sombra llegó a otro sitio")
 
 
 def test_la_sombra_esperada_se_MIDE_no_se_supone():

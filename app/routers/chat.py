@@ -1144,8 +1144,13 @@ async def _stream_agent(message: str, session_id: str, user=None) -> AsyncIterat
         if observacion_candidato.computo is not None:
             try:
                 await actualizar_en_sombra(user, _msgs, computo=observacion_candidato.computo)
-            except Exception:  # noqa: BLE001 — la sombra jamás tumba un turno que iba bien
-                log.exception("buyer candidate commit falló y quedó aislado")
+            except Exception as exc:  # noqa: BLE001 — la sombra jamás tumba un turno que iba bien
+                # SIN traza: registrar con exc_info adjunta el traceback, y el texto de un
+                # driver de Postgres arrastra la conninfo entera (#137). Se registra la CLASE,
+                # que es lo que permite diagnosticar, y nada mas: el mismo contrato que ya
+                # cumplen `lectura_runtime._registrar` y `candidato._registrar`.
+                log.error("buyer candidate commit falló y quedó aislado · sonda=%s error_class=%s",
+                          "candidate_commit", type(exc).__name__)
 
         # R0G · el contrafactual de mascotas, en sombra y apagado por defecto.
         #
@@ -1158,8 +1163,13 @@ async def _stream_agent(message: str, session_id: str, user=None) -> AsyncIterat
                 user, desenlace_candidato=observacion_candidato.desenlace,
         computo=observacion_candidato.computo, cards=resultados, descartadas=_valores.get("descartadas"),
                 preferencias=_valores.get("preferencias"), messages=_msgs, session_id=session_id))
-        except Exception:  # noqa: BLE001 — el experimento jamás tumba un turno que iba bien
-            log.exception("buyer decision shadow falló y quedó aislado")
+        except Exception as exc:  # noqa: BLE001 — el experimento jamás tumba un turno que iba bien
+            # SIN traza: registrar con exc_info adjunta el traceback, y el texto de un driver de
+            # Postgres arrastra la conninfo entera (#137). Se registra la CLASE, que es lo que
+            # permite diagnosticar, y nada mas: el mismo contrato que ya cumplen
+            # `lectura_runtime._registrar` y `candidato._registrar`.
+            log.error("buyer decision shadow falló y quedó aislado · sonda=%s error_class=%s",
+                      "decision_shadow", type(exc).__name__)
 
         yield "data: " + json.dumps({
             "done": True, "session_id": session_id, "execution_id": execution_id,
@@ -1310,8 +1320,13 @@ async def chat(
             try:
                 await actualizar_en_sombra(user, messages,
                                            computo=observacion_candidato.computo)
-            except Exception:  # noqa: BLE001 — la sombra jamás tumba un turno que iba bien
-                log.exception("buyer candidate commit falló y quedó aislado")
+            except Exception as exc:  # noqa: BLE001 — la sombra jamás tumba un turno que iba bien
+                # SIN traza: registrar con exc_info adjunta el traceback, y el texto de un
+                # driver de Postgres arrastra la conninfo entera (#137). Se registra la CLASE,
+                # que es lo que permite diagnosticar, y nada mas: el mismo contrato que ya
+                # cumplen `lectura_runtime._registrar` y `candidato._registrar`.
+                log.error("buyer candidate commit falló y quedó aislado · sonda=%s error_class=%s",
+                          "candidate_commit", type(exc).__name__)
 
         # R0G · el contrafactual de mascotas, en sombra y apagado por defecto.
         #
@@ -1324,8 +1339,13 @@ async def chat(
                 user, desenlace_candidato=observacion_candidato.desenlace,
         computo=observacion_candidato.computo, cards=results, descartadas=final_state.get("descartadas"),
                 preferencias=final_state.get("preferencias"), messages=messages, session_id=payload.session_id))
-        except Exception:  # noqa: BLE001 — el experimento jamás tumba un turno que iba bien
-            log.exception("buyer decision shadow falló y quedó aislado")
+        except Exception as exc:  # noqa: BLE001 — el experimento jamás tumba un turno que iba bien
+            # SIN traza: registrar con exc_info adjunta el traceback, y el texto de un driver de
+            # Postgres arrastra la conninfo entera (#137). Se registra la CLASE, que es lo que
+            # permite diagnosticar, y nada mas: el mismo contrato que ya cumplen
+            # `lectura_runtime._registrar` y `candidato._registrar`.
+            log.error("buyer decision shadow falló y quedó aislado · sonda=%s error_class=%s",
+                      "decision_shadow", type(exc).__name__)
 
         return ChatResponse(
             reply=reply,

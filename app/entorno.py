@@ -15,10 +15,8 @@ Estrategia de fuentes (decisión del producto):
 """
 from __future__ import annotations
 
-import asyncio
 import re
 
-import httpx
 
 from app.config import settings
 from app.walk_score import _haversine_m
@@ -46,8 +44,6 @@ _CATEGORIAS: list[dict] = [
     {"key": "farmacia", "emoji": "💊", "label": "Farmacia",
      "osm": lambda t: t.get("amenity") == "pharmacy" or t.get("shop") == "chemist", "google": "pharmacy"},
 ]
-_RADIO_M = 1200
-_TIMEOUT = 6.0
 
 
 # Nombres-placeholder de OSM/Google que no aportan (ej. "ID 1906", solo números).
@@ -117,59 +113,20 @@ def extraer_entorno_osm(pois: list[dict], lat: float, lon: float, max_items: int
     items = items[:max_items]
     return {"fuente": "osm", "items": items, "texto": _formatear(items)}
 
-
-async def _google_nearest(client, cat: dict, lat: float, lon: float, key: str) -> dict | None:
-    """El lugar más cercano de UNA categoría vía Places API (New)."""
-    body = {
-        "includedTypes": [cat["google"]],
-        "maxResultCount": 5,
-        "rankPreference": "DISTANCE",
-        "languageCode": "es",
-        "locationRestriction": {
-            "circle": {"center": {"latitude": lat, "longitude": lon}, "radius": float(_RADIO_M)}
-        },
-    }
-    headers = {
-        "Content-Type": "application/json",
-        "X-Goog-Api-Key": key,
-        "X-Goog-FieldMask": "places.displayName,places.location",
-    }
-    resp = await client.post("https://places.googleapis.com/v1/places:searchNearby",
-                             json=body, headers=headers)
-    resp.raise_for_status()
-    mejor = None
-    for pl in resp.json().get("places", []):
-        loc = pl.get("location", {})
-        nombre = (pl.get("displayName") or {}).get("text")
-        if "latitude" not in loc or not _nombre_valido(nombre):
-            continue
-        d = _haversine_m(lat, lon, loc["latitude"], loc["longitude"])
-        if mejor is None or d < mejor[0]:
-            mejor = (d, nombre)
-    if mejor is None:
-        return None
-    return {"key": cat["key"], "emoji": cat["emoji"], "label": cat["label"],
-            "nombre": mejor[1], "distancia_m": int(mejor[0])}
-
-
-async def _entorno_google(lat: float, lon: float, key: str, max_items: int = 8) -> dict | None:
-    """
-    Enriquecimiento EN VIVO con la Places API (New) — compatible con la Clave de
-    Demo de Maps. Una llamada POR categoría (el más cercano), así garantizamos
-    colegio, UPC, etc. aunque haya muchas tiendas más cerca.
-    """
-    verify = settings.ssl_verify.lower() != "false"
-    async with httpx.AsyncClient(verify=verify, timeout=_TIMEOUT) as c:
-        resultados = await asyncio.gather(
-            *[_google_nearest(c, cat, lat, lon, key) for cat in _CATEGORIAS],
-            return_exceptions=True,
-        )
-    items = [r for r in resultados if isinstance(r, dict)]
-    if not items:
-        return None  # todas fallaron o sin resultados → el llamador cae a OSM
-    items.sort(key=lambda i: i["distancia_m"])
-    items = items[:max_items]
-    return {"fuente": "google", "items": items, "texto": _formatear(items)}
+# ── La llamada a Google Places vive ahora en `app/place/providers/google.py` (PLAN04-2.2)
+# Se MOVIO, no se copio: aqui no queda un segundo cuerpo. Con ella viajaron su radio y su
+# plazo, que eran suyos y de nadie mas, y alli llevan prefijo propio para que no puedan
+# confundirse con los de la operacion del Place path.
+#
+# LO QUE SE QUEDA ES LA ELECCION. `entorno_destacado` decide entre Google y OSM, y eso es
+# politica de seleccion entre dos proveedores: nunca vive dentro de un proveedor. Y
+# `extraer_entorno_osm` y `_formatear` se quedan porque son calculo y presentacion sobre
+# POIs ya descargados, no I/O.
+#
+# EL IMPORT ES DIFERIDO A PROPOSITO, y no por estilo: `app/place/providers/google.py`
+# importa de ESTE modulo su taxonomia (`_CATEGORIAS`, `_nombre_valido`, `_formatear`). Un
+# import de nivel de modulo en esta direccion cerraria el ciclo. Se resuelve en el punto de
+# uso, en cada llamada, y hay prueba de que el ciclo no existe.
 
 
 async def entorno_destacado(lat: float, lon: float, pois: list[dict] | None) -> dict | None:
@@ -179,6 +136,7 @@ async def entorno_destacado(lat: float, lon: float, pois: list[dict] | None) -> 
     no hay nada que destacar.
     """
     if settings.google_maps_api_key:
+        from app.place.providers.google import _entorno_google  # diferido: evita ciclo
         g = await _entorno_google(lat, lon, settings.google_maps_api_key)
         if g is not None:
             return g

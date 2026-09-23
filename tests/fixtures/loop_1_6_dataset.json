@@ -1,0 +1,1847 @@
+{
+  "buyer": {
+    "version": "buyer-context-v0",
+    "context_revision": null,
+    "buyer_id": "loop-1-6-comprador-sintetico",
+    "objective": "rent",
+    "financial": {
+      "budget_max": {
+        "amount": "800.00",
+        "currency": "USD"
+      }
+    },
+    "property_requirements": {
+      "bedrooms_min": 2,
+      "area_m2_min": null,
+      "pets_allowed_required": true,
+      "accessibility_requirements": []
+    },
+    "mobility": {
+      "commute_anchors": []
+    },
+    "place_preferences": [],
+    "hard_constraints": [
+      {
+        "criterion_id": "dormitorios-minimos",
+        "dimension": "bedrooms",
+        "operator": "gte",
+        "value": 2,
+        "unit": null,
+        "origin": "stated",
+        "status": "active",
+        "evidence": [
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "a11bf25b-2972-586c-8179-ff14b5755747",
+            "source_type": "user_declared",
+            "provider": null,
+            "source_id": "loop-1-6-mensaje-sintetico",
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "declaracion del comprador en el material sintetico de PLAN04-1.6",
+            "persistence_policy": "persistable",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          }
+        ]
+      },
+      {
+        "criterion_id": "admite-mascotas",
+        "dimension": "pets_allowed",
+        "operator": "eq",
+        "value": true,
+        "unit": null,
+        "origin": "stated",
+        "status": "active",
+        "evidence": [
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "35a708f0-4580-5cb5-ba67-09f5ee91a6e0",
+            "source_type": "user_declared",
+            "provider": null,
+            "source_id": "loop-1-6-mensaje-sintetico",
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "declaracion del comprador en el material sintetico de PLAN04-1.6",
+            "persistence_policy": "persistable",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          }
+        ]
+      }
+    ],
+    "soft_preferences": [
+      {
+        "criterion_id": "area-deseada",
+        "dimension": "area_m2",
+        "operator": "gte",
+        "value": 60,
+        "unit": "m2",
+        "origin": "inferred",
+        "status": "active",
+        "evidence": [
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "9be35e0b-7cf3-5635-9664-a5f44a968e75",
+            "source_type": "user_declared",
+            "provider": null,
+            "source_id": "loop-1-6-mensaje-sintetico",
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "declaracion del comprador en el material sintetico de PLAN04-1.6",
+            "persistence_policy": "persistable",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          }
+        ]
+      }
+    ],
+    "tradeoffs": [],
+    "stage": null,
+    "field_evidence": [
+      {
+        "field": "financial.budget_max",
+        "evidence": {
+          "contract_version": "evidence-ref/v0",
+          "evidence_id": "38aa9d43-f445-5f54-8623-aed4e677f2e0",
+          "source_type": "user_declared",
+          "provider": null,
+          "source_id": "loop-1-6-mensaje-sintetico",
+          "observed_at": null,
+          "retrieved_at": "2026-09-09T12:00:00Z",
+          "confidence": null,
+          "methodology": "declaracion del comprador en el material sintetico de PLAN04-1.6",
+          "persistence_policy": "persistable",
+          "cache_ttl_seconds": null,
+          "limitations": []
+        }
+      },
+      {
+        "field": "property_requirements.bedrooms_min",
+        "evidence": {
+          "contract_version": "evidence-ref/v0",
+          "evidence_id": "a11bf25b-2972-586c-8179-ff14b5755747",
+          "source_type": "user_declared",
+          "provider": null,
+          "source_id": "loop-1-6-mensaje-sintetico",
+          "observed_at": null,
+          "retrieved_at": "2026-09-09T12:00:00Z",
+          "confidence": null,
+          "methodology": "declaracion del comprador en el material sintetico de PLAN04-1.6",
+          "persistence_policy": "persistable",
+          "cache_ttl_seconds": null,
+          "limitations": []
+        }
+      }
+    ],
+    "unresolved_questions": [],
+    "updated_at": "2026-09-09T12:00:00Z"
+  },
+  "properties": [
+    {
+      "contract_version": "property-context-v0",
+      "property_id": "1a000000-0000-4000-8000-000000000001",
+      "provider_id": "contexto",
+      "provider_type": "contexto",
+      "provider_listing_url": null,
+      "location": {
+        "lat": -0.19,
+        "lon": -78.48,
+        "address": "Av. 6 de Diciembre y Portugal, Quito"
+      },
+      "attributes": [
+        {
+          "key": "area_m2",
+          "value": 210,
+          "unit": null
+        },
+        {
+          "key": "dormitorios",
+          "value": 4,
+          "unit": null
+        },
+        {
+          "key": "parqueaderos",
+          "value": 3,
+          "unit": null
+        },
+        {
+          "key": "piso_altura",
+          "value": 2,
+          "unit": null
+        },
+        {
+          "key": "tipo_activo",
+          "value": "Casa",
+          "unit": null
+        }
+      ],
+      "transaction": {
+        "operation": "sale",
+        "price": {
+          "amount": "260000.00",
+          "currency": "USD"
+        },
+        "availability": "sold",
+        "listed_at": null,
+        "closed_at": null
+      },
+      "media": {
+        "images": [
+          "https://cdn.example/loop/4.jpg"
+        ]
+      },
+      "provenance": {
+        "inventory_class": "unknown",
+        "received_at": "2026-09-09T12:00:00Z",
+        "last_updated_at": null,
+        "evidence": []
+      },
+      "quality": {
+        "completeness": null,
+        "warnings": [
+          "`fecha_publicacion` llegó sin zona horaria y se omite: la columna es TIMESTAMP sin zona, y suponerle UTC sería afirmar un dato que nadie declaró",
+          "`fecha_cierre` llegó sin zona horaria y se omite: la columna es TIMESTAMP sin zona, y suponerle UTC sería afirmar un dato que nadie declaró"
+        ]
+      }
+    },
+    {
+      "contract_version": "property-context-v0",
+      "property_id": "1a000000-0000-4000-8000-000000000002",
+      "provider_id": "contexto",
+      "provider_type": "contexto",
+      "provider_listing_url": null,
+      "location": {
+        "lat": -0.17,
+        "lon": -78.495,
+        "address": "Av. Eloy Alfaro y Portugal, Quito"
+      },
+      "attributes": [
+        {
+          "key": "area_m2",
+          "value": 55,
+          "unit": null
+        },
+        {
+          "key": "piso_altura",
+          "value": 1,
+          "unit": null
+        },
+        {
+          "key": "tipo_activo",
+          "value": "Local Comercial",
+          "unit": null
+        }
+      ],
+      "transaction": null,
+      "media": {
+        "images": []
+      },
+      "provenance": {
+        "inventory_class": "unknown",
+        "received_at": "2026-09-09T12:00:00Z",
+        "last_updated_at": null,
+        "evidence": []
+      },
+      "quality": {
+        "completeness": null,
+        "warnings": [
+          "`tipo_operacion` = 'MONITOREO_PASIVO' existe en el inventario pero no tiene valor en el contrato (Operation solo admite venta y arriendo): la transacción se omite entera en vez de aproximarla"
+        ]
+      }
+    },
+    {
+      "contract_version": "property-context-v0",
+      "property_id": "1a000000-0000-4000-8000-000000000003",
+      "provider_id": "contexto",
+      "provider_type": "contexto",
+      "provider_listing_url": null,
+      "location": {
+        "lat": -0.1755,
+        "lon": -78.4858,
+        "address": "Av. Amazonas y Naciones Unidas, La Carolina, Quito"
+      },
+      "attributes": [
+        {
+          "key": "area_m2",
+          "value": 120,
+          "unit": null
+        },
+        {
+          "key": "dormitorios",
+          "value": 0,
+          "unit": null
+        },
+        {
+          "key": "parqueaderos",
+          "value": 2,
+          "unit": null
+        },
+        {
+          "key": "piso_altura",
+          "value": 7,
+          "unit": null
+        },
+        {
+          "key": "tipo_activo",
+          "value": "Oficina",
+          "unit": null
+        }
+      ],
+      "transaction": {
+        "operation": "sale",
+        "price": {
+          "amount": "185000.00",
+          "currency": "USD"
+        },
+        "availability": "available",
+        "listed_at": null,
+        "closed_at": null
+      },
+      "media": {
+        "images": []
+      },
+      "provenance": {
+        "inventory_class": "unknown",
+        "received_at": "2026-09-09T12:00:00Z",
+        "last_updated_at": null,
+        "evidence": []
+      },
+      "quality": {
+        "completeness": null,
+        "warnings": [
+          "`fecha_publicacion` llegó sin zona horaria y se omite: la columna es TIMESTAMP sin zona, y suponerle UTC sería afirmar un dato que nadie declaró"
+        ]
+      }
+    },
+    {
+      "contract_version": "property-context-v0",
+      "property_id": "1a000000-0000-4000-8000-000000000004",
+      "provider_id": "contexto",
+      "provider_type": "contexto",
+      "provider_listing_url": null,
+      "location": {
+        "lat": -0.195,
+        "lon": -78.485,
+        "address": "Av. Colon y Reina Victoria, Quito"
+      },
+      "attributes": [
+        {
+          "key": "area_m2",
+          "value": 45,
+          "unit": null
+        },
+        {
+          "key": "dormitorios",
+          "value": 1,
+          "unit": null
+        },
+        {
+          "key": "piso_altura",
+          "value": 6,
+          "unit": null
+        },
+        {
+          "key": "tipo_activo",
+          "value": "Departamento",
+          "unit": null
+        }
+      ],
+      "transaction": {
+        "operation": "rent",
+        "price": null,
+        "availability": "available",
+        "listed_at": null,
+        "closed_at": null
+      },
+      "media": {
+        "images": []
+      },
+      "provenance": {
+        "inventory_class": "unknown",
+        "received_at": "2026-09-09T12:00:00Z",
+        "last_updated_at": null,
+        "evidence": []
+      },
+      "quality": {
+        "completeness": null,
+        "warnings": [
+          "el precio Decimal('0.00') no es un importe representable (el contrato exige un decimal positivo): se omite el precio, no la transacción",
+          "`fecha_publicacion` llegó sin zona horaria y se omite: la columna es TIMESTAMP sin zona, y suponerle UTC sería afirmar un dato que nadie declaró"
+        ]
+      }
+    },
+    {
+      "contract_version": "property-context-v0",
+      "property_id": "1a000000-0000-4000-8000-000000000005",
+      "provider_id": "contexto",
+      "provider_type": "contexto",
+      "provider_listing_url": null,
+      "location": {
+        "lat": -0.185,
+        "lon": -78.475,
+        "address": "Av. Republica y La Pradera, Quito"
+      },
+      "attributes": [
+        {
+          "key": "area_m2",
+          "value": 40,
+          "unit": null
+        },
+        {
+          "key": "piso_altura",
+          "value": 4,
+          "unit": null
+        },
+        {
+          "key": "tipo_activo",
+          "value": "Oficina",
+          "unit": null
+        }
+      ],
+      "transaction": {
+        "operation": "rent",
+        "price": {
+          "amount": "410.00",
+          "currency": "USD"
+        },
+        "availability": "unknown",
+        "listed_at": null,
+        "closed_at": null
+      },
+      "media": {
+        "images": []
+      },
+      "provenance": {
+        "inventory_class": "unknown",
+        "received_at": "2026-09-09T12:00:00Z",
+        "last_updated_at": null,
+        "evidence": []
+      },
+      "quality": {
+        "completeness": null,
+        "warnings": [
+          "`estado_anuncio` = 'PAUSADO' existe en el inventario pero el contrato no tiene ese valor: unknown es lo más cerca sin mentir",
+          "`fecha_publicacion` llegó sin zona horaria y se omite: la columna es TIMESTAMP sin zona, y suponerle UTC sería afirmar un dato que nadie declaró"
+        ]
+      }
+    },
+    {
+      "contract_version": "property-context-v0",
+      "property_id": "1a000000-0000-4000-8000-000000000006",
+      "provider_id": "contexto",
+      "provider_type": "contexto",
+      "provider_listing_url": null,
+      "location": {
+        "lat": -0.21,
+        "lon": -78.5,
+        "address": "Av. Rodrigo de Chavez y Maldonado, Quito"
+      },
+      "attributes": [
+        {
+          "key": "amoblado",
+          "value": false,
+          "unit": null
+        },
+        {
+          "key": "area_m2",
+          "value": 300,
+          "unit": null
+        },
+        {
+          "key": "dormitorios",
+          "value": 5,
+          "unit": null
+        },
+        {
+          "key": "piso_altura",
+          "value": 1,
+          "unit": null
+        },
+        {
+          "key": "tipo_activo",
+          "value": "Quinta",
+          "unit": null
+        }
+      ],
+      "transaction": {
+        "operation": "rent",
+        "price": {
+          "amount": "1250.5",
+          "currency": "USD"
+        },
+        "availability": "available",
+        "listed_at": null,
+        "closed_at": null
+      },
+      "media": {
+        "images": []
+      },
+      "provenance": {
+        "inventory_class": "unknown",
+        "received_at": "2026-09-09T12:00:00Z",
+        "last_updated_at": null,
+        "evidence": []
+      },
+      "quality": {
+        "completeness": null,
+        "warnings": [
+          "`fecha_publicacion` llegó sin zona horaria y se omite: la columna es TIMESTAMP sin zona, y suponerle UTC sería afirmar un dato que nadie declaró"
+        ]
+      }
+    },
+    {
+      "contract_version": "property-context-v0",
+      "property_id": "1a000000-0000-4000-8000-000000000007",
+      "provider_id": "contexto",
+      "provider_type": "contexto",
+      "provider_listing_url": null,
+      "location": {
+        "lat": -0.1807,
+        "lon": -78.4867,
+        "address": "Av. Coruna y San Ignacio, La Floresta, Quito"
+      },
+      "attributes": [
+        {
+          "key": "amoblado",
+          "value": true,
+          "unit": null
+        },
+        {
+          "key": "area_m2",
+          "value": 90,
+          "unit": null
+        },
+        {
+          "key": "dormitorios",
+          "value": 2,
+          "unit": null
+        },
+        {
+          "key": "piso_altura",
+          "value": 3,
+          "unit": null
+        },
+        {
+          "key": "tipo_activo",
+          "value": "Departamento",
+          "unit": null
+        }
+      ],
+      "transaction": {
+        "operation": "rent",
+        "price": {
+          "amount": "780.00",
+          "currency": "USD"
+        },
+        "availability": "available",
+        "listed_at": null,
+        "closed_at": null
+      },
+      "media": {
+        "images": [
+          "https://cdn.example/loop/1.jpg",
+          "https://cdn.example/loop/1b.jpg"
+        ]
+      },
+      "provenance": {
+        "inventory_class": "unknown",
+        "received_at": "2026-09-09T12:00:00Z",
+        "last_updated_at": null,
+        "evidence": []
+      },
+      "quality": {
+        "completeness": null,
+        "warnings": [
+          "la llave 'precio' es un campo de precio y no puede ser atributo: el precio vive solo en transaction.price",
+          "`fecha_publicacion` llegó sin zona horaria y se omite: la columna es TIMESTAMP sin zona, y suponerle UTC sería afirmar un dato que nadie declaró"
+        ]
+      }
+    },
+    {
+      "contract_version": "property-context-v0",
+      "property_id": "1a000000-0000-4000-8000-000000000008",
+      "provider_id": "contexto",
+      "provider_type": "contexto",
+      "provider_listing_url": null,
+      "location": {
+        "lat": -0.16,
+        "lon": -78.47,
+        "address": "Av. Galo Plaza Lasso y Rio Coca, Quito"
+      },
+      "attributes": [
+        {
+          "key": "piso_altura",
+          "value": 2,
+          "unit": null
+        },
+        {
+          "key": "tipo_activo",
+          "value": "Departamento",
+          "unit": null
+        }
+      ],
+      "transaction": {
+        "operation": "rent",
+        "price": {
+          "amount": "395.00",
+          "currency": "USD"
+        },
+        "availability": "available",
+        "listed_at": null,
+        "closed_at": null
+      },
+      "media": {
+        "images": []
+      },
+      "provenance": {
+        "inventory_class": "unknown",
+        "received_at": "2026-09-09T12:00:00Z",
+        "last_updated_at": null,
+        "evidence": []
+      },
+      "quality": {
+        "completeness": null,
+        "warnings": [
+          "`caracteristicas` no es un objeto JSON (llegó int): se descartó entero y este inmueble va sin los atributos del JSONB",
+          "`fecha_publicacion` llegó sin zona horaria y se omite: la columna es TIMESTAMP sin zona, y suponerle UTC sería afirmar un dato que nadie declaró"
+        ]
+      }
+    },
+    {
+      "contract_version": "property-context-v0",
+      "property_id": "1a000000-0000-4000-8000-000000000009",
+      "provider_id": "contexto",
+      "provider_type": "contexto",
+      "provider_listing_url": null,
+      "location": {
+        "lat": -0.205,
+        "lon": -78.49,
+        "address": "Calle Guipuzcoa y Toledo, La Floresta, Quito"
+      },
+      "attributes": [
+        {
+          "key": "area_m2",
+          "value": 160,
+          "unit": null
+        },
+        {
+          "key": "dormitorios",
+          "value": 3,
+          "unit": null
+        },
+        {
+          "key": "piso_altura",
+          "value": 1,
+          "unit": null
+        },
+        {
+          "key": "tipo_activo",
+          "value": "Casa",
+          "unit": null
+        }
+      ],
+      "transaction": null,
+      "media": {
+        "images": [
+          "https://cdn.example/loop/6.jpg"
+        ]
+      },
+      "provenance": {
+        "inventory_class": "unknown",
+        "received_at": "2026-09-09T12:00:00Z",
+        "last_updated_at": null,
+        "evidence": []
+      },
+      "quality": {
+        "completeness": null,
+        "warnings": []
+      }
+    },
+    {
+      "contract_version": "property-context-v0",
+      "property_id": "1a000000-0000-4000-8000-000000000010",
+      "provider_id": "contexto",
+      "provider_type": "contexto",
+      "provider_listing_url": null,
+      "location": {
+        "lat": -0.2,
+        "lon": -78.488,
+        "address": "Av. Patria y 12 de Octubre, Quito"
+      },
+      "attributes": [
+        {
+          "key": "area_m2",
+          "value": 75,
+          "unit": null
+        },
+        {
+          "key": "dormitorios",
+          "value": 2,
+          "unit": null
+        },
+        {
+          "key": "piso_altura",
+          "value": 8,
+          "unit": null
+        },
+        {
+          "key": "tipo_activo",
+          "value": "Departamento",
+          "unit": null
+        }
+      ],
+      "transaction": {
+        "operation": "rent",
+        "price": {
+          "amount": "720.00",
+          "currency": "USD"
+        },
+        "availability": "unknown",
+        "listed_at": null,
+        "closed_at": null
+      },
+      "media": {
+        "images": []
+      },
+      "provenance": {
+        "inventory_class": "unknown",
+        "received_at": "2026-09-09T12:00:00Z",
+        "last_updated_at": null,
+        "evidence": []
+      },
+      "quality": {
+        "completeness": null,
+        "warnings": [
+          "`estado_anuncio` = 'COMPLETADO' sobre una operación de rent: el inventario solo declara «completado» y el contrato no tiene un estado equivalente a «arrendado». Se registra unknown, porque `sold` afirmaría una venta que no ocurrió y `reserved` inventaría un estado que nadie declaró",
+          "`fecha_publicacion` llegó sin zona horaria y se omite: la columna es TIMESTAMP sin zona, y suponerle UTC sería afirmar un dato que nadie declaró",
+          "`fecha_cierre` llegó sin zona horaria y se omite: la columna es TIMESTAMP sin zona, y suponerle UTC sería afirmar un dato que nadie declaró"
+        ]
+      }
+    }
+  ],
+  "places": [
+    {
+      "contract_version": "place-context-v0",
+      "place_id": null,
+      "location": {
+        "lat": -0.2,
+        "lon": -78.488
+      },
+      "assembled_at": "2026-09-09T12:00:00Z",
+      "walkability": {
+        "status": "available",
+        "value": 0.0,
+        "evidence": [
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "ce00656a-b885-5551-93c8-8911ca51d868",
+            "source_type": "own_measurement",
+            "provider": "contexto",
+            "source_id": null,
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "walk score calculado por Contexto sobre 0 POIs, con decaimiento por distancia y pesos por categoría",
+            "persistence_policy": "runtime_only",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          },
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "0048dae2-8b85-5a1f-bfde-b78fbf1cfdcf",
+            "source_type": "public_dataset",
+            "provider": "overpass",
+            "source_id": null,
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "0 POIs de OpenStreetMap consultados en vivo por Overpass alrededor del punto: son los INSUMOS del cálculo, no el puntaje",
+            "persistence_policy": "runtime_only",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          }
+        ],
+        "observed_at": null,
+        "limitations": [
+          "cobertura nula: la consulta no devolvió ni un POI, así que este 0 no distingue una zona sin comercios de una zona que OSM no tiene mapeada"
+        ]
+      },
+      "nearest_transit": {
+        "status": "available",
+        "value": {
+          "distance_m": 480.0,
+          "mode": "parada",
+          "name": "Parada sintetica Patria",
+          "stop_id": null
+        },
+        "evidence": [
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "93ac6c90-8960-53ca-80b3-4f21680c70e7",
+            "source_type": "own_measurement",
+            "provider": "contexto-capa-propia",
+            "source_id": null,
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "parada más cercana en la capa propia de POIs, priorizando el hub masivo aunque otra parada esté más cerca",
+            "persistence_policy": "runtime_only",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          }
+        ],
+        "observed_at": null,
+        "limitations": []
+      },
+      "nearby_places": {
+        "status": "insufficient_evidence",
+        "value": null,
+        "evidence": [],
+        "observed_at": null,
+        "limitations": [
+          "se consultó y no apareció ningún servicio cercano"
+        ]
+      },
+      "travel_to_anchors": [],
+      "isochrones": [],
+      "environment": [
+        {
+          "dimension": "transporte_minutos_a_pie",
+          "measure": {
+            "status": "available",
+            "value": 6.0,
+            "evidence": [
+              {
+                "contract_version": "evidence-ref/v0",
+                "evidence_id": "990ca2f4-7dba-5b75-82a3-c66b556b1891",
+                "source_type": "heuristic_estimate",
+                "provider": null,
+                "source_id": null,
+                "observed_at": null,
+                "retrieved_at": "2026-09-09T12:00:00Z",
+                "confidence": null,
+                "methodology": "distancia en línea recta dividida entre 80 m/min",
+                "persistence_policy": "runtime_only",
+                "cache_ttl_seconds": null,
+                "limitations": [
+                  "estimación en línea recta: ignora manzanas, desniveles y cruces, y en Quito subestima de forma sistemática"
+                ]
+              }
+            ],
+            "observed_at": null,
+            "limitations": []
+          }
+        }
+      ],
+      "limitations": [
+        "contexto de un punto, no de un inmueble: no incluye nada del activo"
+      ]
+    },
+    {
+      "contract_version": "place-context-v0",
+      "place_id": null,
+      "location": {
+        "lat": -0.17,
+        "lon": -78.495
+      },
+      "assembled_at": "2026-09-09T12:00:00Z",
+      "walkability": {
+        "status": "available",
+        "value": 72.0,
+        "evidence": [
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "24d745af-ee1a-507a-9884-558b9918c782",
+            "source_type": "own_measurement",
+            "provider": "contexto",
+            "source_id": null,
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "walk score calculado por Contexto sobre 158 POIs, con decaimiento por distancia y pesos por categoría",
+            "persistence_policy": "runtime_only",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          },
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "0cd911c5-348f-5d78-8b7d-2f2b34db8f4c",
+            "source_type": "public_dataset",
+            "provider": "overpass",
+            "source_id": null,
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "158 POIs de OpenStreetMap consultados en vivo por Overpass alrededor del punto: son los INSUMOS del cálculo, no el puntaje",
+            "persistence_policy": "runtime_only",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          }
+        ],
+        "observed_at": null,
+        "limitations": []
+      },
+      "nearest_transit": {
+        "status": "available",
+        "value": {
+          "distance_m": 1180.0,
+          "mode": "masivo",
+          "name": "Terminal sintetica Eloy Alfaro",
+          "stop_id": null
+        },
+        "evidence": [
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "949091da-a0bc-59be-bcfc-bf32b5d8c66d",
+            "source_type": "provider_api",
+            "provider": "google-places",
+            "source_id": null,
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "parada de transporte más cercana según Google Places",
+            "persistence_policy": "runtime_only",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          },
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "11ec8ef1-aae7-5046-a8c6-00cabbd5b393",
+            "source_type": "provider_api",
+            "provider": "google-routes",
+            "source_id": null,
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "caminata real por calles hasta la parada, medida con Google Routes; de aquí salen la distancia y la duración cuando la medición existe",
+            "persistence_policy": "runtime_only",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          }
+        ],
+        "observed_at": null,
+        "limitations": []
+      },
+      "nearby_places": {
+        "status": "available",
+        "value": [
+          {
+            "category": "gimnasio",
+            "distance_m": 340.0,
+            "name": "Gimnasio sintetico Alfaro",
+            "poi_id": null
+          }
+        ],
+        "evidence": [
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "78883b43-5312-54c8-b3e9-d0c645e0f410",
+            "source_type": "provider_api",
+            "provider": "google-places",
+            "source_id": null,
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "servicio más cercano por categoría según Google Places, usado solo para las categorías que la capa propia no cubre en este punto",
+            "persistence_policy": "runtime_only",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          }
+        ],
+        "observed_at": null,
+        "limitations": []
+      },
+      "travel_to_anchors": [],
+      "isochrones": [],
+      "environment": [
+        {
+          "dimension": "transporte_minutos_a_pie",
+          "measure": {
+            "status": "available",
+            "value": 15.0,
+            "evidence": [
+              {
+                "contract_version": "evidence-ref/v0",
+                "evidence_id": "668ee649-2af2-5e47-8e07-1175143753c7",
+                "source_type": "provider_api",
+                "provider": "google-routes",
+                "source_id": null,
+                "observed_at": null,
+                "retrieved_at": "2026-09-09T12:00:00Z",
+                "confidence": null,
+                "methodology": "duración peatonal por calles según Google Routes",
+                "persistence_policy": "runtime_only",
+                "cache_ttl_seconds": null,
+                "limitations": []
+              }
+            ],
+            "observed_at": null,
+            "limitations": []
+          }
+        }
+      ],
+      "limitations": [
+        "contexto de un punto, no de un inmueble: no incluye nada del activo"
+      ]
+    },
+    {
+      "contract_version": "place-context-v0",
+      "place_id": null,
+      "location": {
+        "lat": -0.21,
+        "lon": -78.5
+      },
+      "assembled_at": "2026-09-09T12:00:00Z",
+      "walkability": {
+        "status": "available",
+        "value": 33.0,
+        "evidence": [
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "98f88f8e-e58f-5934-a464-025d607e014e",
+            "source_type": "own_measurement",
+            "provider": "contexto",
+            "source_id": null,
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "walk score calculado por Contexto sobre 19 POIs, con decaimiento por distancia y pesos por categoría",
+            "persistence_policy": "runtime_only",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          },
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "46056344-7bfd-57bd-abf8-05163113ecc0",
+            "source_type": "public_dataset",
+            "provider": "overpass",
+            "source_id": null,
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "19 POIs de OpenStreetMap consultados en vivo por Overpass alrededor del punto: son los INSUMOS del cálculo, no el puntaje",
+            "persistence_policy": "runtime_only",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          }
+        ],
+        "observed_at": null,
+        "limitations": []
+      },
+      "nearest_transit": {
+        "status": "insufficient_evidence",
+        "value": null,
+        "evidence": [],
+        "observed_at": null,
+        "limitations": [
+          "se consultó y no apareció ninguna parada de transporte"
+        ]
+      },
+      "nearby_places": {
+        "status": "available",
+        "value": [
+          {
+            "category": "tienda",
+            "distance_m": 520.0,
+            "name": "Tienda sintetica Rodrigo de Chavez",
+            "poi_id": null
+          }
+        ],
+        "evidence": [
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "c0454647-658e-55b0-af09-25d3fa10304e",
+            "source_type": "own_measurement",
+            "provider": "contexto-capa-propia",
+            "source_id": null,
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "servicio más cercano por categoría en la capa propia de POIs, con la distancia calculada en PostGIS desde el punto consultado",
+            "persistence_policy": "runtime_only",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          }
+        ],
+        "observed_at": null,
+        "limitations": []
+      },
+      "travel_to_anchors": [],
+      "isochrones": [],
+      "environment": [],
+      "limitations": [
+        "contexto de un punto, no de un inmueble: no incluye nada del activo"
+      ]
+    },
+    {
+      "contract_version": "place-context-v0",
+      "place_id": null,
+      "location": {
+        "lat": -0.195,
+        "lon": -78.485
+      },
+      "assembled_at": "2026-09-09T12:00:00Z",
+      "walkability": {
+        "status": "available",
+        "value": 91.0,
+        "evidence": [
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "90503fa6-a979-524f-acf6-17e02901dd5d",
+            "source_type": "own_measurement",
+            "provider": "contexto",
+            "source_id": null,
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "walk score calculado por Contexto sobre 402 POIs, con decaimiento por distancia y pesos por categoría",
+            "persistence_policy": "runtime_only",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          },
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "34a04f04-bcd9-5365-a18b-9695e7ae72a8",
+            "source_type": "public_dataset",
+            "provider": "overpass",
+            "source_id": null,
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "402 POIs de OpenStreetMap consultados en vivo por Overpass alrededor del punto: son los INSUMOS del cálculo, no el puntaje",
+            "persistence_policy": "runtime_only",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          }
+        ],
+        "observed_at": null,
+        "limitations": []
+      },
+      "nearest_transit": {
+        "status": "available",
+        "value": {
+          "distance_m": 150.0,
+          "mode": "parada",
+          "name": "Parada sintetica Colon",
+          "stop_id": null
+        },
+        "evidence": [
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "24d52503-2cea-5496-a0c5-631e91ac935a",
+            "source_type": "provider_api",
+            "provider": "google-places",
+            "source_id": null,
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "parada de transporte más cercana según Google Places",
+            "persistence_policy": "runtime_only",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          }
+        ],
+        "observed_at": null,
+        "limitations": []
+      },
+      "nearby_places": {
+        "status": "available",
+        "value": [
+          {
+            "category": "cafe",
+            "distance_m": 90.0,
+            "name": "Cafe sintetico Reina Victoria",
+            "poi_id": null
+          }
+        ],
+        "evidence": [
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "462b2854-7cfa-5aa0-85d3-baf2abebf15a",
+            "source_type": "provider_api",
+            "provider": "google-places",
+            "source_id": null,
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "servicio más cercano por categoría según Google Places, usado solo para las categorías que la capa propia no cubre en este punto",
+            "persistence_policy": "runtime_only",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          }
+        ],
+        "observed_at": null,
+        "limitations": []
+      },
+      "travel_to_anchors": [],
+      "isochrones": [],
+      "environment": [
+        {
+          "dimension": "transporte_minutos_a_pie",
+          "measure": {
+            "status": "available",
+            "value": 2.0,
+            "evidence": [
+              {
+                "contract_version": "evidence-ref/v0",
+                "evidence_id": "babbb9bd-f98c-53bb-bc9e-4cfa1b8ca50d",
+                "source_type": "heuristic_estimate",
+                "provider": null,
+                "source_id": null,
+                "observed_at": null,
+                "retrieved_at": "2026-09-09T12:00:00Z",
+                "confidence": null,
+                "methodology": "distancia en línea recta dividida entre 80 m/min",
+                "persistence_policy": "runtime_only",
+                "cache_ttl_seconds": null,
+                "limitations": [
+                  "estimación en línea recta: ignora manzanas, desniveles y cruces, y en Quito subestima de forma sistemática"
+                ]
+              }
+            ],
+            "observed_at": null,
+            "limitations": []
+          }
+        }
+      ],
+      "limitations": [
+        "contexto de un punto, no de un inmueble: no incluye nada del activo"
+      ]
+    },
+    {
+      "contract_version": "place-context-v0",
+      "place_id": null,
+      "location": {
+        "lat": -0.205,
+        "lon": -78.49
+      },
+      "assembled_at": "2026-09-09T12:00:00Z",
+      "walkability": {
+        "status": "available",
+        "value": 66.0,
+        "evidence": [
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "0e879c5a-1ac8-56f1-b431-b818989eda78",
+            "source_type": "own_measurement",
+            "provider": "contexto",
+            "source_id": null,
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "walk score calculado por Contexto sobre 121 POIs, con decaimiento por distancia y pesos por categoría",
+            "persistence_policy": "runtime_only",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          },
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "ca87498e-8831-535c-9c9d-1ba62f54b2ef",
+            "source_type": "public_dataset",
+            "provider": "overpass",
+            "source_id": null,
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "121 POIs de OpenStreetMap consultados en vivo por Overpass alrededor del punto: son los INSUMOS del cálculo, no el puntaje",
+            "persistence_policy": "runtime_only",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          }
+        ],
+        "observed_at": null,
+        "limitations": []
+      },
+      "nearest_transit": {
+        "status": "insufficient_evidence",
+        "value": null,
+        "evidence": [],
+        "observed_at": null,
+        "limitations": [
+          "se consultó y no apareció ninguna parada de transporte"
+        ]
+      },
+      "nearby_places": {
+        "status": "available",
+        "value": [
+          {
+            "category": "parque",
+            "distance_m": 140.0,
+            "name": "Parque sintetico Guipuzcoa",
+            "poi_id": null
+          },
+          {
+            "category": "panaderia",
+            "distance_m": 220.0,
+            "name": "Panaderia sintetica Toledo",
+            "poi_id": null
+          }
+        ],
+        "evidence": [
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "f7147271-0bfc-50df-a2ee-c2bd72e46b7d",
+            "source_type": "own_measurement",
+            "provider": "contexto-capa-propia",
+            "source_id": null,
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "servicio más cercano por categoría en la capa propia de POIs, con la distancia calculada en PostGIS desde el punto consultado",
+            "persistence_policy": "runtime_only",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          }
+        ],
+        "observed_at": null,
+        "limitations": [
+          "1 de los 2 servicios llegaron sin origen declarado: van en el valor porque su distancia sí se midió, pero su procedencia no está acreditada"
+        ]
+      },
+      "travel_to_anchors": [],
+      "isochrones": [],
+      "environment": [],
+      "limitations": [
+        "contexto de un punto, no de un inmueble: no incluye nada del activo"
+      ]
+    },
+    {
+      "contract_version": "place-context-v0",
+      "place_id": null,
+      "location": {
+        "lat": -0.1807,
+        "lon": -78.4867
+      },
+      "assembled_at": "2026-09-09T12:00:00Z",
+      "walkability": {
+        "status": "available",
+        "value": 78.0,
+        "evidence": [
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "240aef0e-7083-5adf-84bf-421dd80ab197",
+            "source_type": "own_measurement",
+            "provider": "contexto",
+            "source_id": null,
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "walk score calculado por Contexto sobre 214 POIs, con decaimiento por distancia y pesos por categoría",
+            "persistence_policy": "runtime_only",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          },
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "9259a358-e193-54a6-9b59-9b55b9125cc4",
+            "source_type": "public_dataset",
+            "provider": "overpass",
+            "source_id": null,
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "214 POIs de OpenStreetMap consultados en vivo por Overpass alrededor del punto: son los INSUMOS del cálculo, no el puntaje",
+            "persistence_policy": "runtime_only",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          }
+        ],
+        "observed_at": null,
+        "limitations": []
+      },
+      "nearest_transit": {
+        "status": "available",
+        "value": {
+          "distance_m": 1520.0,
+          "mode": "masivo",
+          "name": "Estacion sintetica La Floresta",
+          "stop_id": null
+        },
+        "evidence": [
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "8c7ccee2-65af-540a-a423-7d06d2e88b16",
+            "source_type": "own_measurement",
+            "provider": "contexto-capa-propia",
+            "source_id": null,
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "parada más cercana en la capa propia de POIs, priorizando el hub masivo aunque otra parada esté más cerca",
+            "persistence_policy": "runtime_only",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          },
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "c4fce3d4-627b-5344-b768-05e63d345be1",
+            "source_type": "provider_api",
+            "provider": "google-routes",
+            "source_id": null,
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "caminata real por calles hasta la parada, medida con Google Routes; de aquí salen la distancia y la duración cuando la medición existe",
+            "persistence_policy": "runtime_only",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          }
+        ],
+        "observed_at": null,
+        "limitations": []
+      },
+      "nearby_places": {
+        "status": "available",
+        "value": [
+          {
+            "category": "supermercado",
+            "distance_m": 310.0,
+            "name": "Supermercado sintetico Coruna",
+            "poi_id": null
+          }
+        ],
+        "evidence": [
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "c5034b98-2a79-532a-b5fa-d6894b605f69",
+            "source_type": "own_measurement",
+            "provider": "contexto-capa-propia",
+            "source_id": null,
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "servicio más cercano por categoría en la capa propia de POIs, con la distancia calculada en PostGIS desde el punto consultado",
+            "persistence_policy": "runtime_only",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          }
+        ],
+        "observed_at": null,
+        "limitations": []
+      },
+      "travel_to_anchors": [],
+      "isochrones": [],
+      "environment": [
+        {
+          "dimension": "transporte_minutos_a_pie",
+          "measure": {
+            "status": "available",
+            "value": 19.0,
+            "evidence": [
+              {
+                "contract_version": "evidence-ref/v0",
+                "evidence_id": "0c6c5a09-bced-5a55-a193-d8f69b42be05",
+                "source_type": "provider_api",
+                "provider": "google-routes",
+                "source_id": null,
+                "observed_at": null,
+                "retrieved_at": "2026-09-09T12:00:00Z",
+                "confidence": null,
+                "methodology": "duración peatonal por calles según Google Routes",
+                "persistence_policy": "runtime_only",
+                "cache_ttl_seconds": null,
+                "limitations": []
+              }
+            ],
+            "observed_at": null,
+            "limitations": []
+          }
+        }
+      ],
+      "limitations": [
+        "contexto de un punto, no de un inmueble: no incluye nada del activo"
+      ]
+    },
+    {
+      "contract_version": "place-context-v0",
+      "place_id": null,
+      "location": {
+        "lat": -0.16,
+        "lon": -78.47
+      },
+      "assembled_at": "2026-09-09T12:00:00Z",
+      "walkability": {
+        "status": "available",
+        "value": 44.0,
+        "evidence": [
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "95660318-6655-5a9d-a872-b6562be0f3a5",
+            "source_type": "own_measurement",
+            "provider": "contexto",
+            "source_id": null,
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "walk score calculado por Contexto sobre 37 POIs, con decaimiento por distancia y pesos por categoría",
+            "persistence_policy": "runtime_only",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          },
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "9c6c3b7a-ceb7-502d-a344-4649af99b2fb",
+            "source_type": "public_dataset",
+            "provider": "overpass",
+            "source_id": null,
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "37 POIs de OpenStreetMap consultados en vivo por Overpass alrededor del punto: son los INSUMOS del cálculo, no el puntaje",
+            "persistence_policy": "runtime_only",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          }
+        ],
+        "observed_at": null,
+        "limitations": []
+      },
+      "nearest_transit": {
+        "status": "insufficient_evidence",
+        "value": null,
+        "evidence": [],
+        "observed_at": null,
+        "limitations": [
+          "se consultó y no apareció ninguna parada de transporte"
+        ]
+      },
+      "nearby_places": {
+        "status": "insufficient_evidence",
+        "value": null,
+        "evidence": [],
+        "observed_at": null,
+        "limitations": [
+          "se consultó y no apareció ningún servicio cercano"
+        ]
+      },
+      "travel_to_anchors": [],
+      "isochrones": [],
+      "environment": [],
+      "limitations": [
+        "contexto de un punto, no de un inmueble: no incluye nada del activo"
+      ]
+    },
+    {
+      "contract_version": "place-context-v0",
+      "place_id": null,
+      "location": {
+        "lat": -0.19,
+        "lon": -78.48
+      },
+      "assembled_at": "2026-09-09T12:00:00Z",
+      "walkability": {
+        "status": "insufficient_evidence",
+        "value": null,
+        "evidence": [],
+        "observed_at": null,
+        "limitations": [
+          "la capa de POIs no respondió: se consultó y no hubo lectura sobre la que calcular nada"
+        ]
+      },
+      "nearest_transit": {
+        "status": "insufficient_evidence",
+        "value": null,
+        "evidence": [],
+        "observed_at": null,
+        "limitations": [
+          "se consultó y no apareció ninguna parada de transporte"
+        ]
+      },
+      "nearby_places": {
+        "status": "available",
+        "value": [
+          {
+            "category": "supermercado",
+            "distance_m": 260.0,
+            "name": "Supermercado sintetico 6 de Diciembre",
+            "poi_id": null
+          }
+        ],
+        "evidence": [
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "a339c2a6-3d4c-51c2-aeea-e6da68facf53",
+            "source_type": "provider_api",
+            "provider": "google-places",
+            "source_id": null,
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "servicio más cercano por categoría según Google Places, usado solo para las categorías que la capa propia no cubre en este punto",
+            "persistence_policy": "runtime_only",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          }
+        ],
+        "observed_at": null,
+        "limitations": []
+      },
+      "travel_to_anchors": [],
+      "isochrones": [],
+      "environment": [],
+      "limitations": [
+        "contexto de un punto, no de un inmueble: no incluye nada del activo"
+      ]
+    },
+    {
+      "contract_version": "place-context-v0",
+      "place_id": null,
+      "location": {
+        "lat": -0.185,
+        "lon": -78.475
+      },
+      "assembled_at": "2026-09-09T12:00:00Z",
+      "walkability": {
+        "status": "available",
+        "value": 51.0,
+        "evidence": [
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "daf18117-adab-55b5-9027-b13548f4e1fb",
+            "source_type": "own_measurement",
+            "provider": "contexto",
+            "source_id": null,
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "walk score calculado por Contexto sobre 63 POIs, con decaimiento por distancia y pesos por categoría",
+            "persistence_policy": "runtime_only",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          },
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "6f7cb773-b192-590b-95ca-d90c81c4444e",
+            "source_type": "public_dataset",
+            "provider": "overpass",
+            "source_id": null,
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "63 POIs de OpenStreetMap consultados en vivo por Overpass alrededor del punto: son los INSUMOS del cálculo, no el puntaje",
+            "persistence_policy": "runtime_only",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          }
+        ],
+        "observed_at": null,
+        "limitations": []
+      },
+      "nearest_transit": {
+        "status": "unknown",
+        "value": null,
+        "evidence": [],
+        "observed_at": null,
+        "limitations": [
+          "no se consultó el proveedor de servicios"
+        ]
+      },
+      "nearby_places": {
+        "status": "unknown",
+        "value": null,
+        "evidence": [],
+        "observed_at": null,
+        "limitations": [
+          "no se consultó el proveedor de servicios"
+        ]
+      },
+      "travel_to_anchors": [],
+      "isochrones": [],
+      "environment": [],
+      "limitations": [
+        "contexto de un punto, no de un inmueble: no incluye nada del activo"
+      ]
+    },
+    {
+      "contract_version": "place-context-v0",
+      "place_id": null,
+      "location": {
+        "lat": -0.1755,
+        "lon": -78.4858
+      },
+      "assembled_at": "2026-09-09T12:00:00Z",
+      "walkability": {
+        "status": "available",
+        "value": 84.0,
+        "evidence": [
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "a53533ea-a300-5662-a52b-ddf3671f0c11",
+            "source_type": "own_measurement",
+            "provider": "contexto",
+            "source_id": null,
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "walk score calculado por Contexto sobre 301 POIs, con decaimiento por distancia y pesos por categoría",
+            "persistence_policy": "runtime_only",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          },
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "03d4d33f-94c2-55cf-9ecf-b1b47f973aaf",
+            "source_type": "public_dataset",
+            "provider": "overpass",
+            "source_id": null,
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "301 POIs de OpenStreetMap consultados en vivo por Overpass alrededor del punto: son los INSUMOS del cálculo, no el puntaje",
+            "persistence_policy": "runtime_only",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          }
+        ],
+        "observed_at": null,
+        "limitations": []
+      },
+      "nearest_transit": {
+        "status": "available",
+        "value": {
+          "distance_m": 210.0,
+          "mode": "parada",
+          "name": "Parada sintetica Naciones Unidas",
+          "stop_id": null
+        },
+        "evidence": [
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "69c33e79-01e2-52b8-8806-5c71ddaa50d7",
+            "source_type": "own_measurement",
+            "provider": "contexto-capa-propia",
+            "source_id": null,
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "parada más cercana en la capa propia de POIs, priorizando el hub masivo aunque otra parada esté más cerca",
+            "persistence_policy": "runtime_only",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          }
+        ],
+        "observed_at": null,
+        "limitations": []
+      },
+      "nearby_places": {
+        "status": "available",
+        "value": [
+          {
+            "category": "farmacia",
+            "distance_m": 180.0,
+            "name": "Farmacia sintetica Carolina",
+            "poi_id": null
+          }
+        ],
+        "evidence": [
+          {
+            "contract_version": "evidence-ref/v0",
+            "evidence_id": "c9b6d364-a337-5946-abf0-f2f12b153488",
+            "source_type": "provider_api",
+            "provider": "google-places",
+            "source_id": null,
+            "observed_at": null,
+            "retrieved_at": "2026-09-09T12:00:00Z",
+            "confidence": null,
+            "methodology": "servicio más cercano por categoría según Google Places, usado solo para las categorías que la capa propia no cubre en este punto",
+            "persistence_policy": "runtime_only",
+            "cache_ttl_seconds": null,
+            "limitations": []
+          }
+        ],
+        "observed_at": null,
+        "limitations": []
+      },
+      "travel_to_anchors": [],
+      "isochrones": [],
+      "environment": [
+        {
+          "dimension": "transporte_minutos_a_pie",
+          "measure": {
+            "status": "available",
+            "value": 3.0,
+            "evidence": [
+              {
+                "contract_version": "evidence-ref/v0",
+                "evidence_id": "0a671adc-731f-5247-b2d7-0d29c9a50507",
+                "source_type": "heuristic_estimate",
+                "provider": null,
+                "source_id": null,
+                "observed_at": null,
+                "retrieved_at": "2026-09-09T12:00:00Z",
+                "confidence": null,
+                "methodology": "distancia en línea recta dividida entre 80 m/min",
+                "persistence_policy": "runtime_only",
+                "cache_ttl_seconds": null,
+                "limitations": [
+                  "estimación en línea recta: ignora manzanas, desniveles y cruces, y en Quito subestima de forma sistemática"
+                ]
+              }
+            ],
+            "observed_at": null,
+            "limitations": []
+          }
+        }
+      ],
+      "limitations": [
+        "contexto de un punto, no de un inmueble: no incluye nada del activo"
+      ]
+    }
+  ],
+  "links": [
+    {
+      "property_id": "1a000000-0000-4000-8000-000000000001",
+      "place_id": "point-v0:70326a6429f05d12",
+      "place_index": 7
+    },
+    {
+      "property_id": "1a000000-0000-4000-8000-000000000002",
+      "place_id": "point-v0:0742c24c7387a90c",
+      "place_index": 1
+    },
+    {
+      "property_id": "1a000000-0000-4000-8000-000000000003",
+      "place_id": "point-v0:fb46d7887da4621f",
+      "place_index": 9
+    },
+    {
+      "property_id": "1a000000-0000-4000-8000-000000000004",
+      "place_id": "point-v0:44d07efe5ae4286b",
+      "place_index": 3
+    },
+    {
+      "property_id": "1a000000-0000-4000-8000-000000000005",
+      "place_id": "point-v0:f4c63bbdc4b9adc7",
+      "place_index": 8
+    },
+    {
+      "property_id": "1a000000-0000-4000-8000-000000000006",
+      "place_id": "point-v0:1ea6b6814d8c027c",
+      "place_index": 2
+    },
+    {
+      "property_id": "1a000000-0000-4000-8000-000000000007",
+      "place_id": "point-v0:67c1b8267c425491",
+      "place_index": 5
+    },
+    {
+      "property_id": "1a000000-0000-4000-8000-000000000008",
+      "place_id": "point-v0:6ae00032e0eb19ad",
+      "place_index": 6
+    },
+    {
+      "property_id": "1a000000-0000-4000-8000-000000000009",
+      "place_id": "point-v0:5bab2215db576fbc",
+      "place_index": 4
+    },
+    {
+      "property_id": "1a000000-0000-4000-8000-000000000010",
+      "place_id": "point-v0:031357b6ff28013c",
+      "place_index": 0
+    }
+  ]
+}

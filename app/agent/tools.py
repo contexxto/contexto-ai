@@ -25,6 +25,20 @@ from app.entorno import limpiar_texto_servicios
 from app.entorno_curacion import aplicar_curacion
 from app.estilo_vida import evaluar_concepto_estilo_vida
 
+# ── El geocodificado INVERSO vive ahora en `app/place/providers/nominatim.py` (PLAN04-2.2)
+# Se MOVIO, no se copio: aqui no queda un segundo cuerpo. Este import liga el MISMO objeto,
+# de modo que `tools._reverse_geocode is nominatim._reverse_geocode`.
+#
+# LA FACHADA NO ES DECORATIVA, ES EL SEAM. Los tres llamadores viven en `app/rutas.py` y los
+# tres hacen `from app.agent.tools import _reverse_geocode` DENTRO de la funcion. Un import
+# diferido resuelve el atributo sobre ESTE modulo en cada ejecucion, asi que el punto de
+# parcheo efectivo sigue siendo `app.agent.tools._reverse_geocode` y no se ha movido ni un
+# milimetro. Por eso `rutas.py` no se toca y el baseline de R0B0 no cambia una linea.
+#
+# `Nominatim` y las excepciones de geopy SIGUEN importandose arriba a proposito: las usa
+# `tool_geocode_address`, que hace el geocodificado DIRECTO y no se mueve en esta unidad.
+from app.place.providers.nominatim import _reverse_geocode  # noqa: E402,F401 — fachada
+
 
 # Ecuador no tiene horario de verano: offset fijo, sin depender de tzdata.
 _TZ_ECUADOR = timezone(timedelta(hours=-5))
@@ -583,26 +597,6 @@ async def tool_geocode_address(address: str) -> str:
         })
 
 
-async def _reverse_geocode(lat: float, lon: float) -> dict | None:
-    """Coordenadas → lugar legible (barrio, ciudad, país). Funciona en todo el mundo."""
-    def _sync():
-        geo = Nominatim(user_agent="contexto_ai_v2", timeout=8)
-        return geo.reverse((lat, lon), language="es", zoom=16, addressdetails=True)
-    try:
-        loc = await asyncio.get_event_loop().run_in_executor(None, _sync)
-    except (GeocoderTimedOut, GeocoderUnavailable, Exception):  # noqa: BLE001
-        return None
-    if not loc:
-        return None
-    a = getattr(loc, "raw", {}).get("address", {}) or {}
-    return {
-        "texto": loc.address,
-        "barrio": a.get("suburb") or a.get("neighbourhood") or a.get("quarter") or a.get("city_district"),
-        "ciudad": a.get("city") or a.get("town") or a.get("municipality") or a.get("county"),
-        "pais": a.get("country"),
-    }
-
-
 @tool
 async def tool_analyze_location(latitude: float, longitude: float) -> str:
     """
@@ -630,10 +624,12 @@ async def tool_analyze_location(latitude: float, longitude: float) -> str:
     return json.dumps({
         "lugar": a["lugar"],
         "caminabilidad": a["walk_score"],
-        # Este motor cuenta POIs REALES en vivo (el mismo del mapa): la caminabilidad de aquí SÍ es
-        # de comercios reales ('osm') cuando hubo POIs; sin POIs no afirmamos procedencia (None).
-        # Deja que el agente aplique la MISMA regla de proveniencia que a las tools de catastro.
-        "caminabilidad_fuente": "osm" if pois else None,
+        # La procedencia VIENE DERIVADA de la evidencia del PlaceContextV0 (PLAN04-1.2);
+        # ya no se infiere aquí. La regla anterior era `"osm" if pois else None`, y en un
+        # caso mentía: con el proveedor respondiendo y CERO POIs, el cálculo sí se hizo
+        # sobre OSM y esto afirmaba `null`. La cobertura nula ya la dice `cobertura`, que
+        # es su sitio; la procedencia dice de dónde salió el número, no cuánto había.
+        "caminabilidad_fuente": a["caminabilidad_fuente"],
         "conectividad": a["conectividad"],
         "servicios_cercanos": a["servicios_texto"],
         "pois_analizados": pois,

@@ -44,6 +44,41 @@ class Settings(BaseSettings):
     # Ids de `auth.users` separados por comas. Los pone el entorno, nunca el repositorio.
     buyer_shadow_allowlist: str = ""
 
+    # F3-TOOLS-MIN-1B · canary de LECTURA del BuyerContext. Apagado por defecto.
+    #
+    # ES UN FLAG PROPIO Y NO EL DEL UPDATER, y la separación es la decisión: leer y escribir
+    # son capacidades distintas. `buyer_updater_shadow` enciende algo que hace `commit()`
+    # sobre la memoria durable de una persona real; esto enciende un `SELECT`. Un solo
+    # booleano para los dos obligaría a encender la ESCRITURA para poder observar la
+    # LECTURA, que es justo el trueque que no queremos ofrecer.
+    #
+    # La COHORTE sí se comparte: `buyer_shadow_allowlist` gobierna las dos, con el mismo
+    # parser normalizado y fail-closed. Compartir la lista no acopla los flags —cada
+    # capacidad sigue necesitando el suyo—, y dos listas separadas para el mismo conjunto
+    # de canarios divergirían.
+    buyer_context_read_shadow: bool = False
+
+    # F3-CURRENT-TURN-CANDIDATE-R0B · canary del CANDIDATO del turno actual. Apagado.
+    #
+    # TERCER FLAG, y los tres son distintos porque los tres cuestan cosas distintas:
+    #   buyer_updater_shadow             → una ESCRITURA en memoria durable
+    #   buyer_context_read_shadow        → un SELECT
+    #   buyer_current_turn_candidate_shadow → un SELECT **más una llamada al LLM**
+    # Reutilizar uno obligaría a pagar el caro para poder observar el barato.
+    #
+    # La COHORTE se sigue compartiendo (`buyer_shadow_allowlist`): son los mismos canarios,
+    # y dos listas para el mismo conjunto divergirían.
+    buyer_current_turn_candidate_shadow: bool = False
+
+    # R0G · COMPARAR no es COMPUTAR ni ESCRIBIR. Los otros tres flags encienden un coste
+    # (una escritura, un SELECT, una llamada al LLM); éste enciende una SEGUNDA pasada del
+    # núcleo de decisión, en sombra, sobre las mismas filas. Es el más barato de todos y aun
+    # así lleva interruptor propio: que la persistencia esté encendida no puede implicar que
+    # se empiece a comparar. La cohorte SÍ se comparte (`buyer_shadow_allowlist`).
+    #
+    # `buyer_updater_shadow` NO es requisito: comparar no exige permiso de escritura.
+    buyer_shadow_decision_compare: bool = False
+
     # G16 · el mercado monetario que ESTE DESPLIEGUE del Buyer Harness puede usar como
     # contexto determinista para acreditar expresiones monetarias que por sí solas serían
     # ambiguas ("900 dólares"). NO es la moneda del comprador ni parte de `BuyerContextV0`:

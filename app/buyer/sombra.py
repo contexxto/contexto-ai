@@ -62,7 +62,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from app.buyer.actualizador import EstadoActualizacion, actualizar
+from app.buyer.actualizador import EstadoActualizacion, actualizar, persistir_computo
 from app.buyer.mensaje import ultimo_mensaje_usuario_identificado
 from app.config import settings
 
@@ -137,15 +137,44 @@ async def _hay_esquema(db) -> bool:
     return True
 
 
-async def actualizar_en_sombra(user, messages) -> None:
-    """Procesa el último mensaje del usuario contra su memoria durable. **No devuelve nada.**
+class ComputoDeOtroComprador(RuntimeError):
+    """El artefacto no pertenece al sujeto que autoriza esta escritura.
 
-    Se llama con `asyncio.create_task` DESPUÉS de que el turno respondió. No tiene forma de
-    influir en la respuesta ni de retrasarla: si tardara, tarda sola; si falla, falla sola.
+    No debería poder ocurrir —el cómputo se calcula con el mismo `CurrentUser` que llega
+    aquí— y por eso se levanta en vez de degradarse: si ocurre, dos nociones de «quién es el
+    comprador» han divergido, y eso hay que verlo, no absorberlo.
+    """
+
+
+async def actualizar_en_sombra(user, messages, *, computo=None) -> None:
+    """Procesa el último mensaje del usuario contra su memoria durable. **No devuelve nada.**
 
     El `retrieved_at` sale de aquí y no del reducer — R-IDEMP-1: es el instante REAL en que
     procesamos, y el reducer no tiene reloj a propósito. Que un reintento traiga otro
     instante es correcto y la igualdad canónica ya lo ignora para esta evidencia.
+
+    ## `computo` — DOS MODOS, UNA POLÍTICA (F3-CANDIDATE-COMMIT-R0C)
+
+    ```
+    computo is None   carril legacy INTACTO: interpretar → computar → persistir
+    computo dado      persiste ESE cómputo. CERO interpretaciones nuevas
+    ```
+
+    El segundo modo existe para cerrar la deuda que R0B midió: con el candidato y el updater
+    encendidos a la vez, el mismo turno se interpretaba **dos veces**, y dos llamadas al LLM
+    pueden no coincidir — se decidía con un candidato y se guardaba otro. Recibiendo el
+    cómputo ya hecho, la interpretación del turno es **una**.
+
+    El parámetro es opcional a propósito: ningún llamador existente tiene que producir un
+    candidato para seguir funcionando igual.
+
+    ## BINDING COMPRADOR ↔ PRINCIPAL
+
+    Antes de escribir se comprueba que el comprador del artefacto es el mismo sujeto
+    autenticado que autoriza la escritura. La procedencia del principal está congelada en el
+    llamador (1B/E1), pero esta costura es nueva: sin la comprobación existiría un camino por
+    el que un cómputo de A podría entregarse al escritor de B. Se compara sólo la raíz
+    autorizada —`user_id`—, nunca objetos reconstruidos.
     """
     try:
         if not settings.buyer_updater_shadow:
@@ -163,14 +192,24 @@ async def actualizar_en_sombra(user, messages) -> None:
         if mensaje is None:
             return
 
+        if computo is not None and computo.candidato is not None:
+            propietario = (computo.candidato.buyer_id or "").strip().lower()
+            if propietario != user.user_id.strip().lower():
+                raise ComputoDeOtroComprador(
+                    "el cómputo pertenece a otro comprador: no se persiste bajo esta raíz")
+
         from app.database import AsyncSessionLocal
 
         async with AsyncSessionLocal() as db:
             if not await _hay_esquema(db):
                 return
-            resultado = await actualizar(
-                user.user_id, mensaje,
-                retrieved_at=datetime.now(timezone.utc), db=db)
+            if computo is not None:
+                # PERSIST sin COMPUTE. No se toca `interpretar_mensaje`.
+                resultado = await persistir_computo(computo, db=db)
+            else:
+                resultado = await actualizar(
+                    user.user_id, mensaje,
+                    retrieved_at=datetime.now(timezone.utc), db=db)
             if resultado.persistido:
                 await db.commit()
             else:

@@ -14,7 +14,12 @@ from fastapi.responses import StreamingResponse
 from fastapi.security.api_key import APIKeyHeader
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
+from app.buyer.candidato import observar_candidato_del_turno
+from app.buyer.lectura_runtime import observar_lectura_runtime
 from app.buyer.sombra import actualizar_en_sombra
+from app.buyer.decision_shadow import (
+    observar_sombra_de_decision, registrar as registrar_sombra_de_decision)
+from app.decision.runtime_capture import capturar_entradas_de_decision
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
@@ -874,6 +879,40 @@ class _CompuertaSSE:
         self.pendientes.clear()
 
 
+#: Prefijo del identificador canónico del mensaje. Existe para que, mirando una fila de
+#: `checkpoints` o una `EvidenceRef`, se sepa sin ambigüedad que ese id lo acuñó ESTE
+#: servidor en el ingreso y no `add_messages` durante el procesamiento.
+_PREFIJO_ID_MENSAJE = "msg-"
+
+
+def _acunar_id_de_mensaje() -> str:
+    """La identidad canónica del mensaje de este turno. **El servidor la acuña; nadie más.**
+
+    F3-TURN-IDENTITY-R0A. Hasta ahora el `id` lo ponía `add_messages` al ingerir el mensaje,
+    o sea DESPUÉS de que el turno ya estaba en marcha. Medido contra `langgraph 0.2.60` y
+    `langchain-core 0.3.63`: un `id` puesto por nosotros **se conserva** a través del grafo y
+    del checkpoint, y `add_messages` sólo genera uno cuando falta.
+
+    QUÉ CAMBIA Y QUÉ NO. Cambia **quién** acuña la identidad, no qué es. El mensaje sigue
+    siendo el mismo y su id sigue siendo opaco; lo que gana es que existe **antes** del
+    grafo, así que el Buyer updater y LangGraph pueden referirse a la misma evidencia sin
+    que nadie la reconstruya. `buyer/mensaje.py` prohíbe FABRICAR un id para un mensaje que
+    ya existe sin él —sería procedencia inventada—; esto es lo contrario: constituir la
+    identidad en el punto de ingreso, donde el mensaje nace.
+
+    NO SE DERIVA DE NADA. Ni del texto, ni de `session_id`, ni de `buyer_id`, ni de la
+    petición. Derivarlo del texto haría que dos personas distintas diciendo lo mismo
+    compartieran evidencia; derivarlo de `session_id` confundiría la autoridad del HILO con
+    la identidad del MENSAJE, que es justo la confusión que AUTH-READ-GATE.1 cerró.
+
+    LO QUE ESTO **NO** RESUELVE, y conviene no creérselo: un reintento HTTP del mismo turno
+    entra por aquí otra vez y recibe un id NUEVO. `add_messages` deduplica cuando se reutiliza
+    EL MISMO id —medido—, pero eso es dedup intra-turno, no idempotencia entre peticiones.
+    `CROSS_REQUEST_IDEMPOTENCY` sigue sin resolver y no lo resuelve esta unidad.
+    """
+    return f"{_PREFIJO_ID_MENSAJE}{uuid.uuid4()}"
+
+
 def _estado_inicial_del_turno(mensaje: str) -> AgentState:
     """El estado con el que ENTRA un turno. UNO SOLO para los dos caminos del endpoint.
 
@@ -900,7 +939,7 @@ def _estado_inicial_del_turno(mensaje: str) -> AgentState:
     en el repositorio: ver `DEAD-STATE-sql_results`, deuda registrada aparte.
     """
     return {
-        "messages": [HumanMessage(content=mensaje)],
+        "messages": [HumanMessage(content=mensaje, id=_acunar_id_de_mensaje())],
         "spatial_context": {},
         "sql_results": [],
         # Panel del turno ANTERIOR: se limpia al entrar. Si no, un turno que no busca nada
@@ -929,149 +968,213 @@ async def _stream_agent(message: str, session_id: str, user=None) -> AsyncIterat
     distintos de la misma conversación producían transcripts BYTE A BYTE IDÉNTICOS —208 bytes—,
     así que ningún adjudicador podía decir cuál estaba mirando ni bajo qué código corrió.
     """
-    execution_id = str(uuid.uuid4())
-    runtime_sha, service_id = _identidad_runtime()
-    trace_run_id = None
+    # R0F · el buzón de ESTE turno. Se abre ANTES del grafo y se cierra en cualquier
+    # salida: retorno normal, excepción, cancelación, y también cuando el cliente se
+    # desconecta —`aclose()` lanza `GeneratorExit` aquí dentro y el `finally` corre—.
+    # Ninguna de las tres se convierte en un éxito por instrumentar el puente.
+    #
+    # Dentro viven las entradas exactas que decidieron el panel; fuera no existe nada.
+    # R0F NO las lee: entrega el cable, no la comparación.
+    with capturar_entradas_de_decision():
+        execution_id = str(uuid.uuid4())
+        runtime_sha, service_id = _identidad_runtime()
+        trace_run_id = None
 
-    # `meta` PRIMERO. Antes del grafo y antes de cualquier otro `yield`: es lo que hace que un
-    # fallo temprano siga siendo atribuible.
-    yield "data: " + json.dumps({"meta": {
-        "protocolo": PROTOCOLO_SSE,
-        "session_id": session_id,
-        "execution_id": execution_id,
-        "runtime_sha": runtime_sha,
-        "service_id": service_id,
-        "emitido_en": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-    }}) + "\n\n"
+        # `meta` PRIMERO. Antes del grafo y antes de cualquier otro `yield`: es lo que hace que un
+        # fallo temprano siga siendo atribuible.
+        yield "data: " + json.dumps({"meta": {
+            "protocolo": PROTOCOLO_SSE,
+            "session_id": session_id,
+            "execution_id": execution_id,
+            "runtime_sha": runtime_sha,
+            "service_id": service_id,
+            "emitido_en": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        }}) + "\n\n"
 
-    def _terminal_error(code: str, phase: str) -> str:
-        return "data: " + json.dumps({
-            "error": {"code": code, "phase": phase},
-            "session_id": session_id, "execution_id": execution_id,
-            "trace_run_id": trace_run_id, "checkpoint_id": None,
-            "runtime_sha": runtime_sha}) + "\n\n"
+        def _terminal_error(code: str, phase: str) -> str:
+            return "data: " + json.dumps({
+                "error": {"code": code, "phase": phase},
+                "session_id": session_id, "execution_id": execution_id,
+                "trace_run_id": trace_run_id, "checkpoint_id": None,
+                "runtime_sha": runtime_sha}) + "\n\n"
 
-    config = _langgraph_config(session_id, execution_id=execution_id)
-    # Modo del lente del turno ANTERIOR: se lee ANTES de arrancar, porque el input
-    # reinicia spatial_context (mismo motivo que en el camino no-stream).
-    try:
-        _prev = await agent_graph.compiled_graph.aget_state(_langgraph_config(session_id))
-        prev_mode = ((_prev.values or {}).get("spatial_context") or {}).get("focus_mode")
-    except Exception:  # noqa: BLE001 — sin estado previo → sin continuidad, no error
-        prev_mode = None
-    input_state = _estado_inicial_del_turno(message)
+        config = _langgraph_config(session_id, execution_id=execution_id)
+        # Modo del lente del turno ANTERIOR: se lee ANTES de arrancar, porque el input
+        # reinicia spatial_context (mismo motivo que en el camino no-stream).
+        try:
+            _prev = await agent_graph.compiled_graph.aget_state(_langgraph_config(session_id))
+            prev_mode = ((_prev.values or {}).get("spatial_context") or {}).get("focus_mode")
+        except Exception:  # noqa: BLE001 — sin estado previo → sin continuidad, no error
+            prev_mode = None
+        input_state = _estado_inicial_del_turno(message)
 
-    # La compuerta decide qué prosa sale; ver `_CompuertaSSE`. El `finally` corre también
-    # cuando el cliente corta la conexión: un buffer a medias jamás sobrevive al turno.
-    compuerta = _CompuertaSSE()
-    try:
-        async for event in agent_graph.compiled_graph.astream_events(input_state, config=config, version="v2"):
-            if trace_run_id is None:
-                # Raíz de LangGraph: el puente hacia SUS trazas. Correlación, no identidad —
-                # la identidad es `execution_id`, que existe antes que esto.
-                trace_run_id = event.get("run_id")
+        # F3-CURRENT-TURN-CANDIDATE-R0B · el candidato del turno, en sombra.
+        #
+        # AQUÍ y no antes del branch porque el HumanMessage CANÓNICO nace en
+        # `_estado_inicial_del_turno`, y el candidato tiene que usar ESE mensaje —con el id que
+        # acuñó R0A— y no una copia. Son DOS puntos de llamada (stream y no-stream) de UNA sola
+        # función: la lógica no se duplica, y `computar_candidato` es la misma que usa el updater
+        # productivo. Adelantar la construcción del mensaje para tener un solo punto tocaría el
+        # constructor que R0A acaba de congelar.
+        #
+        # SE DESCARTA EL RESULTADO. En R0B el candidato se calcula y no lo consume nadie: no
+        # entra al estado, ni al config, ni al prompt, ni a `construir_panel`.
+        observacion_candidato = await observar_candidato_del_turno(
+            user, input_state["messages"], retrieved_at=datetime.now(timezone.utc))
 
-            if event.get("event") == "on_tool_start":
-                tool_name = event.get("name", "")
-                yield ("data: " + json.dumps({"tool_call": tool_name,
-                                              "execution_id": execution_id}) + "\n\n")
-                continue
+        # La compuerta decide qué prosa sale; ver `_CompuertaSSE`. El `finally` corre también
+        # cuando el cliente corta la conexión: un buffer a medias jamás sobrevive al turno.
+        compuerta = _CompuertaSSE()
+        try:
+            async for event in agent_graph.compiled_graph.astream_events(input_state, config=config, version="v2"):
+                if trace_run_id is None:
+                    # Raíz de LangGraph: el puente hacia SUS trazas. Correlación, no identidad —
+                    # la identidad es `execution_id`, que existe antes que esto.
+                    trace_run_id = event.get("run_id")
 
-            for texto in compuerta.procesar(event):
-                yield ("data: " + json.dumps({"token": texto, "session_id": session_id,
-                                              "execution_id": execution_id}) + "\n\n")
-    except Exception:  # noqa: BLE001 — el fallo del grafo YA NO deja el cable mudo
-        # El cable calla la excepción A PROPÓSITO; el SERVIDOR no puede callarla también.
-        # Antes de esta unidad la excepción se propagaba y quedaba en los logs de Render;
-        # convertirla en un `error` limpio sin registrarla habría hecho los fallos más
-        # silenciosos que antes — cambiar un turno roto y ruidoso por uno roto y mudo.
-        _log_terminal("execution_failed", "graph", execution_id)
-        compuerta.cerrar()
-        yield _terminal_error("execution_failed", "graph")
-        return
-    finally:
-        compuerta.cerrar()
+                if event.get("event") == "on_tool_start":
+                    tool_name = event.get("name", "")
+                    yield ("data: " + json.dumps({"tool_call": tool_name,
+                                                  "execution_id": execution_id}) + "\n\n")
+                    continue
 
-    # El checkpoint de ESTA ejecución, no el último del hilo. Si no se puede señalar uno,
-    # el turno termina en `error` — jamás con un `checkpoint_id` inventado.
-    try:
-        _snap = await _snapshot_de_la_ejecucion(config, execution_id)
-    except _CheckpointNoAtribuible as e:
-        _log_terminal(e.code, "checkpoint", execution_id, candidatos=e.candidatos)
-        yield _terminal_error(e.code, "checkpoint")
-        return
-    except Exception:  # noqa: BLE001 — no se pudo LEER el historial: eso no es «no existe»
-        # Ni «no existe» ni «la ejecución falló». Las dos serían conclusiones que esta
-        # excepción no autoriza: lo único demostrado es que la CONSULTA no se pudo hacer.
-        _log_terminal("checkpoint_read_failed", "checkpoint", execution_id)
-        yield _terminal_error("checkpoint_read_failed", "checkpoint")
-        return
+                for texto in compuerta.procesar(event):
+                    yield ("data: " + json.dumps({"token": texto, "session_id": session_id,
+                                                  "execution_id": execution_id}) + "\n\n")
+        except Exception:  # noqa: BLE001 — el fallo del grafo YA NO deja el cable mudo
+            # El cable calla la excepción A PROPÓSITO; el SERVIDOR no puede callarla también.
+            # Antes de esta unidad la excepción se propagaba y quedaba en los logs de Render;
+            # convertirla en un `error` limpio sin registrarla habría hecho los fallos más
+            # silenciosos que antes — cambiar un turno roto y ruidoso por uno roto y mudo.
+            _log_terminal("execution_failed", "graph", execution_id)
+            compuerta.cerrar()
+            yield _terminal_error("execution_failed", "graph")
+            return
+        finally:
+            compuerta.cerrar()
 
-    # Instrumentar la intención (Fase 0): tras el stream, lee el estado final del hilo y
-    # persiste. Best-effort — jamás rompe el stream (cubre el flujo del QR-lead si usa SSE).
-    resultados: list = []
-    map_seed = None
-    puerta = None
-    try:
-        _valores = _snap.values or {}
-        _msgs = _valores.get("messages", [])
-        asyncio.create_task(registrar_intencion(session_id, _msgs))
-        # E3.2b.4a · SOMBRA en el camino stream. Va aquí y no en el endpoint porque `chat()`
-        # ya retornó: éste es el único punto del turno SSE donde existe el estado final. Los
-        # mensajes son los del hilo —con el `id` que asignó LangGraph—, no una reconstrucción
-        # a partir de `message`. Fire-and-forget, igual que la línea de arriba: el turno ya
-        # emitió sus tokens y la sombra no participa en el `panel` que falta por salir.
-        asyncio.create_task(actualizar_en_sombra(user, _msgs))
+        # El checkpoint de ESTA ejecución, no el último del hilo. Si no se puede señalar uno,
+        # el turno termina en `error` — jamás con un `checkpoint_id` inventado.
+        try:
+            _snap = await _snapshot_de_la_ejecucion(config, execution_id)
+        except _CheckpointNoAtribuible as e:
+            _log_terminal(e.code, "checkpoint", execution_id, candidatos=e.candidatos)
+            yield _terminal_error(e.code, "checkpoint")
+            return
+        except Exception:  # noqa: BLE001 — no se pudo LEER el historial: eso no es «no existe»
+            # Ni «no existe» ni «la ejecución falló». Las dos serían conclusiones que esta
+            # excepción no autoriza: lo único demostrado es que la CONSULTA no se pudo hacer.
+            _log_terminal("checkpoint_read_failed", "checkpoint", execution_id)
+            yield _terminal_error("checkpoint_read_failed", "checkpoint")
+            return
 
-        # Mismas tarjetas que el nodo `encaje` ya armó (las que describe la prosa que
-        # acabamos de emitir); solo se reconstruyen si el nodo no corrió o degradó.
-        resultados = _valores.get("cards")
-        if not isinstance(resultados, list) or not resultados:
-            resultados = await build_result_cards(_msgs, session_id=session_id)
-        map_seed = _map_seed_from_cards(resultados, prev_mode)
-        # El stream es el camino que usa la gente de verdad — si la puerta solo saliera por
-        # el no-stream, no se ofrecería nunca donde importa.
-        puerta = _puerta_del_turno(_valores, resultados, _msgs)
-        if puerta:
-            await _marcar_puerta_ofrecida(_config_escritura_lateral(session_id))
+        # Instrumentar la intención (Fase 0): tras el stream, lee el estado final del hilo y
+        # persiste. Best-effort — jamás rompe el stream (cubre el flujo del QR-lead si usa SSE).
+        resultados: list = []
+        map_seed = None
+        puerta = None
+        try:
+            _valores = _snap.values or {}
+            _msgs = _valores.get("messages", [])
+            asyncio.create_task(registrar_intencion(session_id, _msgs))
+            # E3.2b.4a · SOMBRA en el camino stream. Va aquí y no en el endpoint porque `chat()`
+            # ya retornó: éste es el único punto del turno SSE donde existe el estado final. Los
+            # mensajes son los del hilo —con el `id` que asignó LangGraph—, no una reconstrucción
+            # a partir de `message`. Fire-and-forget, igual que la línea de arriba: el turno ya
+            # emitió sus tokens y la sombra no participa en el `panel` que falta por salir.
+            # R0C · si el turno calculó un cómputo, NO se lanza tarea suelta: se persiste ESE
+            # cómputo más abajo, esperado, entre el `panel` y el `done`. Sin cómputo, el carril
+            # legacy conserva intacto su `create_task` — R0C sólo cambia el timing donde hay algo
+            # determinista que persistir.
+            if observacion_candidato.computo is None:
+                asyncio.create_task(actualizar_en_sombra(user, _msgs))
 
-        # El stream es el camino que usa la gente de verdad: si la auditoría de prosa solo
-        # cubriera el no-stream, mediríamos el turno que casi nadie ejecuta.
-        _auditar_prosa(session_id, _ultima_respuesta(_msgs),
-                       {**_valores, "cards": resultados})
+            # Mismas tarjetas que el nodo `encaje` ya armó (las que describe la prosa que
+            # acabamos de emitir); solo se reconstruyen si el nodo no corrió o degradó.
+            resultados = _valores.get("cards")
+            if not isinstance(resultados, list) or not resultados:
+                resultados = await build_result_cards(_msgs, session_id=session_id)
+            map_seed = _map_seed_from_cards(resultados, prev_mode)
+            # El stream es el camino que usa la gente de verdad — si la puerta solo saliera por
+            # el no-stream, no se ofrecería nunca donde importa.
+            puerta = _puerta_del_turno(_valores, resultados, _msgs)
+            if puerta:
+                await _marcar_puerta_ofrecida(_config_escritura_lateral(session_id))
 
-        if map_seed:
+            # El stream es el camino que usa la gente de verdad: si la auditoría de prosa solo
+            # cubriera el no-stream, mediríamos el turno que casi nadie ejecuta.
+            _auditar_prosa(session_id, _ultima_respuesta(_msgs),
+                           {**_valores, "cards": resultados})
+
+            if map_seed:
+                try:
+                    # Escritura POSTERIOR al grafo: `_config_escritura_lateral` la desmarca con
+                    # `execution_id: None`. Omitir la clave NO basta — `aupdate_state` hereda la
+                    # metadata del checkpoint anterior. Ver esa función.
+                    await agent_graph.compiled_graph.aupdate_state(
+                        _config_escritura_lateral(session_id),
+                        {"spatial_context": {"focus_mode": map_seed["modo"],
+                                             "bbox": map_seed["foco"]["bbox"],
+                                             "capas": map_seed["capas"]}},
+                    )
+                except Exception:  # noqa: BLE001 — persistir el foco es un extra
+                    pass
+        except Exception:  # noqa: BLE001 — instrumentar jamás rompe el stream
+            pass
+
+        # El panel va ANTES del done: el front lo aplica al mensaje que ya terminó de escribirse.
+        # Sale del snapshot de ESTA ejecución, no de `aget_state`.
+        try:
+            cuerpo_panel = json.dumps({"panel": {"results": resultados or [], "map_seed": map_seed,
+                                                 "puerta": puerta},
+                                       "execution_id": execution_id}, default=str)
+        except Exception:  # noqa: BLE001 — el panel no serializa: se dice, no se calla
+            _log_terminal("serialization_failed", "output", execution_id)
+            yield _terminal_error("serialization_failed", "output")
+            return
+        yield "data: " + cuerpo_panel + "\n\n"
+
+        # R0C · PERSISTENCIA ESPERADA, ENTRE EL PANEL Y EL `done`.
+        #
+        # El panel NO paga la escritura: ya salió. Y `done` pasa a significar algo más fuerte que
+        # antes —que la TENTATIVA de persistir terminó—, que es la frontera útil para el turno
+        # siguiente. Sigue siendo fail-open: si la persistencia falla, se registra y `done` sale
+        # igual. Por eso la propiedad es «N+1 fresco TRAS UNA PERSISTENCIA EXITOSA», nunca
+        # «N+1 siempre fresco».
+        if observacion_candidato.computo is not None:
             try:
-                # Escritura POSTERIOR al grafo: `_config_escritura_lateral` la desmarca con
-                # `execution_id: None`. Omitir la clave NO basta — `aupdate_state` hereda la
-                # metadata del checkpoint anterior. Ver esa función.
-                await agent_graph.compiled_graph.aupdate_state(
-                    _config_escritura_lateral(session_id),
-                    {"spatial_context": {"focus_mode": map_seed["modo"],
-                                         "bbox": map_seed["foco"]["bbox"],
-                                         "capas": map_seed["capas"]}},
-                )
-            except Exception:  # noqa: BLE001 — persistir el foco es un extra
-                pass
-    except Exception:  # noqa: BLE001 — instrumentar jamás rompe el stream
-        pass
+                await actualizar_en_sombra(user, _msgs, computo=observacion_candidato.computo)
+            except Exception as exc:  # noqa: BLE001 — la sombra jamás tumba un turno que iba bien
+                # SIN traza: registrar con exc_info adjunta el traceback, y el texto de un
+                # driver de Postgres arrastra la conninfo entera (#137). Se registra la CLASE,
+                # que es lo que permite diagnosticar, y nada mas: el mismo contrato que ya
+                # cumplen `lectura_runtime._registrar` y `candidato._registrar`.
+                log.error("buyer candidate commit falló y quedó aislado · sonda=%s error_class=%s",
+                          "candidate_commit", type(exc).__name__)
 
-    # El panel va ANTES del done: el front lo aplica al mensaje que ya terminó de escribirse.
-    # Sale del snapshot de ESTA ejecución, no de `aget_state`.
-    try:
-        cuerpo_panel = json.dumps({"panel": {"results": resultados or [], "map_seed": map_seed,
-                                             "puerta": puerta},
-                                   "execution_id": execution_id}, default=str)
-    except Exception:  # noqa: BLE001 — el panel no serializa: se dice, no se calla
-        _log_terminal("serialization_failed", "output", execution_id)
-        yield _terminal_error("serialization_failed", "output")
-        return
-    yield "data: " + cuerpo_panel + "\n\n"
+        # R0G · el contrafactual de mascotas, en sombra y apagado por defecto.
+        #
+        # Va DESPUÉS del panel y de la persistencia: el panel ya salió, así que esto no
+        # retrasa lo que la persona lee. Fail-open — si el experimento falla, el turno sigue.
+        #
+        # El resultado NO se asigna a nada visible. Su único consumidor es el registro.
+        try:
+            registrar_sombra_de_decision(await observar_sombra_de_decision(
+                user, desenlace_candidato=observacion_candidato.desenlace,
+        computo=observacion_candidato.computo, cards=resultados, descartadas=_valores.get("descartadas"),
+                preferencias=_valores.get("preferencias"), messages=_msgs, session_id=session_id))
+        except Exception as exc:  # noqa: BLE001 — el experimento jamás tumba un turno que iba bien
+            # SIN traza: registrar con exc_info adjunta el traceback, y el texto de un driver de
+            # Postgres arrastra la conninfo entera (#137). Se registra la CLASE, que es lo que
+            # permite diagnosticar, y nada mas: el mismo contrato que ya cumplen
+            # `lectura_runtime._registrar` y `candidato._registrar`.
+            log.error("buyer decision shadow falló y quedó aislado · sonda=%s error_class=%s",
+                      "decision_shadow", type(exc).__name__)
 
-    yield "data: " + json.dumps({
-        "done": True, "session_id": session_id, "execution_id": execution_id,
-        "checkpoint_id": (_snap.config or {}).get("configurable", {}).get("checkpoint_id"),
-        "trace_run_id": trace_run_id, "runtime_sha": runtime_sha}) + "\n\n"
+        yield "data: " + json.dumps({
+            "done": True, "session_id": session_id, "execution_id": execution_id,
+            "checkpoint_id": (_snap.config or {}).get("configurable", {}).get("checkpoint_id"),
+            "trace_run_id": trace_run_id, "runtime_sha": runtime_sha}) + "\n\n"
 
 
 @router.post(
@@ -1114,6 +1217,27 @@ async def chat(
     # no bloquea la respuesta y nunca rompe el chat. Cubre stream y no-stream (corre antes del branch).
     import asyncio as _aio
     _aio.create_task(marcar_actividad_lead(payload.session_id))
+
+    # F3-TOOLS-MIN-1B · canary de LECTURA del BuyerContext. UN SOLO LLAMADOR.
+    #
+    # AQUÍ Y NO EN OTRO SITIO. Es el punto más temprano que cumple las cinco condiciones a la
+    # vez: el JWT ya se verificó, `user` ya es `CurrentUser` o `None`, `_exigir_autoridad` ya
+    # pasó, la reclamación de un hilo anónimo ya ocurrió, y el branch stream/no-stream
+    # todavía no se ha tomado. Cablearlo después del branch costaría DOS llamadores —el
+    # defecto exacto de E3.2b.4, que dejó el camino SSE sin sombra y se descubrió en
+    # producción con `200 OK` y cero filas.
+    #
+    # SE ESPERA (`await`), al contrario que las tres líneas fire-and-forget de arriba. La
+    # propiedad que esta unidad demuestra es «la lectura se completó con el principal
+    # correcto», y una tarea suelta cuyo desenlace nadie espera no demuestra ni que terminó
+    # ni con quién. Se paga con latencia; por eso vive tras `flag ∧ allowlist`.
+    #
+    # SE DESCARTA EL RESULTADO. `observar_lectura_runtime` devuelve un desenlace, nunca el
+    # `BuyerContextV0`: en LEVEL 1 el contexto está DISPONIBLE en runtime y no lo consume
+    # nadie. Que el tipo no pueda transportarlo es lo que impide que el siguiente que pase
+    # por aquí lo enchufe al prompt o al panel sin que el diff lo delate.
+    await observar_lectura_runtime(user)
+
     if stream:
         # `user` cruza el branch: este `return` es lo que dejaba la sombra sin invocar en el
         # camino SSE (E3.2b.4a). La llamada vive DENTRO de `_stream_agent`, no aquí, porque
@@ -1134,57 +1258,103 @@ async def chat(
         prev_mode = None
     input_state = _estado_inicial_del_turno(payload.message)
 
-    final_state = await agent_graph.compiled_graph.ainvoke(input_state, config=config)
-    messages = final_state["messages"]
+    # R0B · el mismo candidato en sombra, en el camino no-stream. Ver la nota gemela en
+    # `_stream_agent`: dos llamadores, una sola función, y el resultado se descarta.
+    # R0F · el mismo buzón, el mismo context manager, el otro camino. La semántica no
+    # se duplica: se reutiliza.
+    with capturar_entradas_de_decision():
+        observacion_candidato = await observar_candidato_del_turno(
+            user, input_state["messages"], retrieved_at=datetime.now(timezone.utc))
 
-    reply = _ultima_respuesta(messages)
+        final_state = await agent_graph.compiled_graph.ainvoke(input_state, config=config)
+        messages = final_state["messages"]
 
-    tool_calls = sum(1 for m in messages if hasattr(m, "type") and m.type == "tool")
-    # Instrumentar la intención del turno (Fase 0 del Motor de Intención). Fire-and-forget:
-    # jamás bloquea ni rompe la respuesta; alimenta el panel CRM y el reporte de lift.
-    _aio.create_task(registrar_intencion(payload.session_id, messages))
-    # E3.2b.4 · SOMBRA. La memoria durable del comprador se actualiza en paralelo y **no
-    # participa en la respuesta**: `reply` y `results` ya están decididos más abajo por el
-    # carril legacy, que sigue siendo el único que habla con el usuario. Mismo contrato que
-    # las dos tareas de arriba — si falla, falla sola. Apagada por defecto tras un flag.
-    _aio.create_task(actualizar_en_sombra(user, messages))
-    # Las tarjetas ya las armó el nodo `encaje` del grafo, ANTES de que el modelo escribiera:
-    # devolver ESAS es lo que garantiza que el panel sea el mismo del que habla la respuesta
-    # (y de paso evita repetir la extracción de preferencias y la consulta a la BD). Solo se
-    # reconstruyen si el nodo no corrió o degradó — el turno nunca se queda sin panel.
-    results = final_state.get("cards")
-    if not isinstance(results, list) or not results:
-        results = await build_result_cards(messages, session_id=payload.session_id)
-    # Se audita contra `results` —lo que de verdad se devuelve— y no contra el estado, para que
-    # el veredicto sea sobre lo que la persona verá aunque el panel se haya reconstruido arriba.
-    _auditar_prosa(payload.session_id, reply,
-                   {**final_state, "cards": results})
-    map_seed = _map_seed_from_cards(results, prev_mode)
-    # spatial_context VIVO (deja de ser placeholder muerto): persiste el foco del turno en el
-    # estado del agente para que la transición no pierda el encuadre. Best-effort: si el
-    # checkpointer falla, el turno igual responde (el mapa no depende de esta escritura).
-    if map_seed:
+        reply = _ultima_respuesta(messages)
+
+        tool_calls = sum(1 for m in messages if hasattr(m, "type") and m.type == "tool")
+        # Instrumentar la intención del turno (Fase 0 del Motor de Intención). Fire-and-forget:
+        # jamás bloquea ni rompe la respuesta; alimenta el panel CRM y el reporte de lift.
+        _aio.create_task(registrar_intencion(payload.session_id, messages))
+        # E3.2b.4 · SOMBRA. La memoria durable del comprador se actualiza en paralelo y **no
+        # participa en la respuesta**: `reply` y `results` ya están decididos más abajo por el
+        # carril legacy, que sigue siendo el único que habla con el usuario. Mismo contrato que
+        # las dos tareas de arriba — si falla, falla sola. Apagada por defecto tras un flag.
+        # R0C · mismo criterio que en el camino SSE: con cómputo se espera (abajo, antes del
+        # `return`); sin él, el carril legacy conserva su tarea suelta.
+        if observacion_candidato.computo is None:
+            _aio.create_task(actualizar_en_sombra(user, messages))
+        # Las tarjetas ya las armó el nodo `encaje` del grafo, ANTES de que el modelo escribiera:
+        # devolver ESAS es lo que garantiza que el panel sea el mismo del que habla la respuesta
+        # (y de paso evita repetir la extracción de preferencias y la consulta a la BD). Solo se
+        # reconstruyen si el nodo no corrió o degradó — el turno nunca se queda sin panel.
+        results = final_state.get("cards")
+        if not isinstance(results, list) or not results:
+            results = await build_result_cards(messages, session_id=payload.session_id)
+        # Se audita contra `results` —lo que de verdad se devuelve— y no contra el estado, para que
+        # el veredicto sea sobre lo que la persona verá aunque el panel se haya reconstruido arriba.
+        _auditar_prosa(payload.session_id, reply,
+                       {**final_state, "cards": results})
+        map_seed = _map_seed_from_cards(results, prev_mode)
+        # spatial_context VIVO (deja de ser placeholder muerto): persiste el foco del turno en el
+        # estado del agente para que la transición no pierda el encuadre. Best-effort: si el
+        # checkpointer falla, el turno igual responde (el mapa no depende de esta escritura).
+        if map_seed:
+            try:
+                await agent_graph.compiled_graph.aupdate_state(
+                    config,
+                    {"spatial_context": {"focus_mode": map_seed["modo"],
+                                         "bbox": map_seed["foco"]["bbox"], "capas": map_seed["capas"]}},
+                )
+            except Exception:  # noqa: BLE001 — persistir el foco es un extra; jamás rompe el chat
+                pass
+
+        puerta = _puerta_del_turno(final_state, results, messages)
+        if puerta:
+            await _marcar_puerta_ofrecida(config)
+
+        # R0C · PERSISTENCIA ESPERADA ANTES DEL `return`, gemela de la del camino SSE. Aquí no
+        # hay un `panel` que proteger —la respuesta sale entera de una vez—, así que la escritura
+        # se espera justo antes de devolver. Fail-open igual: un fallo se registra y la respuesta
+        # que la persona ya tenía calculada sale de todos modos.
+        if observacion_candidato.computo is not None:
+            try:
+                await actualizar_en_sombra(user, messages,
+                                           computo=observacion_candidato.computo)
+            except Exception as exc:  # noqa: BLE001 — la sombra jamás tumba un turno que iba bien
+                # SIN traza: registrar con exc_info adjunta el traceback, y el texto de un
+                # driver de Postgres arrastra la conninfo entera (#137). Se registra la CLASE,
+                # que es lo que permite diagnosticar, y nada mas: el mismo contrato que ya
+                # cumplen `lectura_runtime._registrar` y `candidato._registrar`.
+                log.error("buyer candidate commit falló y quedó aislado · sonda=%s error_class=%s",
+                          "candidate_commit", type(exc).__name__)
+
+        # R0G · el contrafactual de mascotas, en sombra y apagado por defecto.
+        #
+        # Va DESPUÉS del panel y de la persistencia: el panel ya salió, así que esto no
+        # retrasa lo que la persona lee. Fail-open — si el experimento falla, el turno sigue.
+        #
+        # El resultado NO se asigna a nada visible. Su único consumidor es el registro.
         try:
-            await agent_graph.compiled_graph.aupdate_state(
-                config,
-                {"spatial_context": {"focus_mode": map_seed["modo"],
-                                     "bbox": map_seed["foco"]["bbox"], "capas": map_seed["capas"]}},
-            )
-        except Exception:  # noqa: BLE001 — persistir el foco es un extra; jamás rompe el chat
-            pass
+            registrar_sombra_de_decision(await observar_sombra_de_decision(
+                user, desenlace_candidato=observacion_candidato.desenlace,
+        computo=observacion_candidato.computo, cards=results, descartadas=final_state.get("descartadas"),
+                preferencias=final_state.get("preferencias"), messages=messages, session_id=payload.session_id))
+        except Exception as exc:  # noqa: BLE001 — el experimento jamás tumba un turno que iba bien
+            # SIN traza: registrar con exc_info adjunta el traceback, y el texto de un driver de
+            # Postgres arrastra la conninfo entera (#137). Se registra la CLASE, que es lo que
+            # permite diagnosticar, y nada mas: el mismo contrato que ya cumplen
+            # `lectura_runtime._registrar` y `candidato._registrar`.
+            log.error("buyer decision shadow falló y quedó aislado · sonda=%s error_class=%s",
+                      "decision_shadow", type(exc).__name__)
 
-    puerta = _puerta_del_turno(final_state, results, messages)
-    if puerta:
-        await _marcar_puerta_ofrecida(config)
-
-    return ChatResponse(
-        reply=reply,
-        session_id=payload.session_id,
-        tool_calls_made=tool_calls,
-        results=results,
-        map_seed=map_seed,
-        puerta=puerta,
-    )
+        return ChatResponse(
+            reply=reply,
+            session_id=payload.session_id,
+            tool_calls_made=tool_calls,
+            results=results,
+            map_seed=map_seed,
+            puerta=puerta,
+        )
 
 
 class SessionPatch(BaseModel):

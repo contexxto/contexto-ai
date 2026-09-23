@@ -295,7 +295,9 @@ def test_G6_cambios_DISJUNTOS_se_rebasan_y_la_actualizacion_sobrevive(store):
                 _proponente(_p("durable", mutacion=_BED)))
     _a.cargar_ultima = original
 
-    assert r.estado is EstadoActualizacion.CREADA
+    assert r.estado is EstadoActualizacion.REBASEADA, (
+        "hubo BuyerRevisionConflict y rebase: `CREADA` ocultaria que la base cambio")
+    assert r.rebasado is True
     assert r.contexto.property_requirements.bedrooms_min == 2
     assert r.contexto.property_requirements.area_m2_min == 70.0, \
         "el rebase perdió el cambio concurrente"
@@ -376,15 +378,22 @@ def test_G7_el_updater_no_inventa_una_cuarta_fuente_de_tiempo():
 # ══ GATE 8 · resultado tipado ═══════════════════════════════════════════════════════
 
 
-def test_G8_los_seis_desenlaces_son_distinguibles_sin_leer_excepciones():
+def test_G8_los_siete_desenlaces_son_distinguibles_sin_leer_excepciones():
     """El shadow wiring no debe inferir el desenlace de un tipo de excepción o de un `None`.
-    Eso sería pedirle que reconstruya una decisión que aquí ya se tomó."""
+    Eso sería pedirle que reconstruya una decisión que aquí ya se tomó.
+
+    R0C añadió `rebaseada`: persistir sobre la base leída y persistir tras un rebase son dos
+    realidades distintas que hasta ahora compartían el nombre `creada`. La igualdad sigue
+    siendo LITERAL y completa — no un subconjunto —, para que un desenlace nuevo no pueda
+    aparecer sin que esta prueba lo obligue a declararse.
+    """
     assert {e.value for e in EstadoActualizacion} == {
-        "creada", "no_op", "replay", "vacio", "conflicto", "fallido"}
+        "creada", "rebaseada", "no_op", "replay", "vacio", "conflicto", "fallido"}
 
 
 @pytest.mark.parametrize("estado,persistido", [
-    (EstadoActualizacion.CREADA, True), (EstadoActualizacion.NO_OP, True),
+    (EstadoActualizacion.CREADA, True), (EstadoActualizacion.REBASEADA, True),
+    (EstadoActualizacion.NO_OP, True),
     (EstadoActualizacion.REPLAY, True), (EstadoActualizacion.VACIO, False),
     (EstadoActualizacion.CONFLICTO, False), (EstadoActualizacion.FALLIDO, False),
 ])
@@ -457,7 +466,9 @@ def test_G6b_dos_primeras_escrituras_DISJUNTAS_se_rebasan(store):
                 _proponente(_p("durable", mutacion=_BED)))
     _a.cargar_ultima = original
 
-    assert r.estado is EstadoActualizacion.CREADA
+    assert r.estado is EstadoActualizacion.REBASEADA, (
+        "hubo BuyerRevisionConflict y rebase: `CREADA` ocultaria que la base cambio")
+    assert r.rebasado is True
     assert r.contexto.property_requirements.bedrooms_min == 2
     assert r.contexto.financial.budget_max.amount == Decimal(120000), \
         "el rebase perdió la primera escritura"

@@ -217,15 +217,38 @@ def test_la_costura_solo_la_consume_la_SOMBRA():
     docstring original: *que el ranking visible siga saliendo del carril legacy*. Eso sigue
     siendo cierto, y ahora se afirma directamente en vez de por el proxy del import.
 
-    Lista blanca de uno: `routers/chat.py`, y sólo para `app.buyer.sombra`. Los módulos que
-    producen lo que la persona ve —el assembler, el encaje, el match— siguen sin poder
-    tocarla, que es donde un atajo haría daño de verdad.
+    Lista blanca de TRES, y siempre el mismo fichero — `routers/chat.py`:
+
+    ```
+    app.buyer.sombra            escritura en sombra      E3.2b.4
+    app.buyer.lectura_runtime   lectura en runtime       F3-TOOLS-MIN-1B
+    app.buyer.candidato         candidato del turno      F3-CURRENT-TURN-CANDIDATE-R0B
+    ```
+
+    Los módulos que producen lo que la persona ve —el assembler, el encaje, el match— siguen
+    sin poder tocarla, que es donde un atajo haría daño de verdad. **No hay comodín, ni
+    `app.buyer.*`, ni un segundo fichero permitido**: cada par se autoriza uno a uno.
+
+    LAS DOS AMPLIACIONES FUERON DELIBERADAS Y LA GUARDA LAS EXIGIÓ. 1B añadió la segunda;
+    R0B la tercera, y esta vez **con la enmienda de alcance aprobada antes del cambio**. En
+    los dos casos: el mismo fichero ya permitido, un módulo hermano del mismo paquete, y ni
+    el assembler ni el encaje ni el match rozados. La propiedad que este test protege —que el
+    ranking visible sale del carril legacy— sigue intacta, y la afirma **directamente** el
+    test hermano `test_el_carril_que_produce_lo_VISIBLE_no_conoce_la_memoria_del_comprador`,
+    que nunca ha hecho falta tocar.
     """
     import ast
     import pathlib
 
     raiz = pathlib.Path(__file__).resolve().parent.parent
-    permitidos = {("app/routers/chat.py", "app.buyer.sombra")}
+    permitidos = {("app/routers/chat.py", "app.buyer.sombra"),
+                  ("app/routers/chat.py", "app.buyer.lectura_runtime"),
+                  ("app/routers/chat.py", "app.buyer.candidato"),
+                  # R0G · el comparador en sombra. CUARTA ampliación, y la cuarta vez que
+                  # esta guarda la exigió antes de que ocurriera. Mismo fichero ya permitido,
+                  # otro módulo hermano del mismo paquete, y ni el assembler ni el encaje ni
+                  # el match rozados. Sigue sin haber comodín: el par se escribe entero.
+                  ("app/routers/chat.py", "app.buyer.decision_shadow")}
 
     consumidores = []
     for py in (raiz / "app").rglob("*.py"):

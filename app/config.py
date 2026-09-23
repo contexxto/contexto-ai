@@ -79,6 +79,21 @@ class Settings(BaseSettings):
     # `buyer_updater_shadow` NO es requisito: comparar no exige permiso de escritura.
     buyer_shadow_decision_compare: bool = False
 
+    # BUYER-UNRESOLVED-CONSUMER-R1 · la PRIMERA capacidad de este carril que puede llegar a la
+    # persona. Los otros cuatro flags encienden observación —una escritura, un SELECT, una
+    # llamada al LLM, una segunda pasada del núcleo— y ninguno cambia lo que el usuario lee.
+    # Éste sí: enciende una repregunta visible en el turno.
+    #
+    # Por eso lleva interruptor propio aunque comparta cohorte: que la memoria se esté
+    # escribiendo en sombra NO puede implicar que el producto empiece a hablar. Son dos
+    # decisiones distintas y se toman por separado.
+    #
+    # APAGADO DE FÁBRICA, y el merge que lo introduce es operacionalmente inerte: la capacidad
+    # existe en el código y no existe en producción hasta que alguien encienda la variable Y
+    # añada un id a la allowlist. La cohorte se sigue compartiendo (`buyer_shadow_allowlist`),
+    # fail-closed y sin comodín.
+    buyer_unresolved_product: bool = False
+
     # G16 · el mercado monetario que ESTE DESPLIEGUE del Buyer Harness puede usar como
     # contexto determinista para acreditar expresiones monetarias que por sí solas serían
     # ambiguas ("900 dólares"). NO es la moneda del comprador ni parte de `BuyerContextV0`:

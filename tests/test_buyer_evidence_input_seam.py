@@ -248,7 +248,12 @@ def test_la_costura_solo_la_consume_la_SOMBRA():
                   # esta guarda la exigió antes de que ocurriera. Mismo fichero ya permitido,
                   # otro módulo hermano del mismo paquete, y ni el assembler ni el encaje ni
                   # el match rozados. Sigue sin haber comodín: el par se escribe entero.
-                  ("app/routers/chat.py", "app.buyer.decision_shadow")}
+                  ("app/routers/chat.py", "app.buyer.decision_shadow"),
+                  # BUYER-UNRESOLVED-CONSUMER-R1 · la decisión de aclaración. Entra por el
+                  # mismo criterio que sus dos hermanas y con el par escrito entero: sigue sin
+                  # haber comodín, y `app.buyer.clarificacion` no da acceso a la costura — sólo
+                  # compara dos tuplas de preguntas y devuelve dos campos.
+                  ("app/routers/chat.py", "app.buyer.clarificacion")}
 
     consumidores = []
     for py in (raiz / "app").rglob("*.py"):

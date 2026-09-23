@@ -15,6 +15,7 @@ from fastapi.security.api_key import APIKeyHeader
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.buyer.candidato import observar_candidato_del_turno
+from app.buyer.clarificacion import clarificacion_del_turno
 from app.buyer.lectura_runtime import observar_lectura_runtime
 from app.buyer.sombra import actualizar_en_sombra
 from app.buyer.decision_shadow import (
@@ -310,6 +311,18 @@ class ChatResponse(BaseModel):
     # por su cuenta: la puerta no es texto que él escriba. None = no corresponde ofrecer
     # nada, que es el caso por defecto y el más frecuente.
     puerta: dict | None = None
+    # ★ Directiva de ACLARACIÓN (BUYER-UNRESOLVED-CONSUMER-R1). Tercera de la misma familia, y
+    # por la misma razón: el backend DECIDE y el frontend RENDERIZA. La pregunta NO la escribe el
+    # modelo —es el texto determinista que `reductor._pregunta_de` fija por dimensión— y no entra
+    # al prompt, así que el LLM no puede repreguntar por su cuenta ni reformularla.
+    #
+    # Lleva SOLO {question, about_field}. Nada del comprador: ni id, ni evidencia, ni revisión, ni
+    # el valor anterior. `about_field` viaja para el cliente que quiera actuar sobre él; el
+    # frontend lo recibe y no lo pinta.
+    #
+    # None es el caso por defecto y el más frecuente: sólo hay directiva si ESTE turno abrió una
+    # pregunta nueva Y quedó persistida.
+    clarification: dict | None = None
 
 
 def _puerta_del_turno(estado: dict, cards: list, mensajes) -> dict | None:
@@ -1141,9 +1154,11 @@ async def _stream_agent(message: str, session_id: str, user=None) -> AsyncIterat
         # siguiente. Sigue siendo fail-open: si la persistencia falla, se registra y `done` sale
         # igual. Por eso la propiedad es «N+1 fresco TRAS UNA PERSISTENCIA EXITOSA», nunca
         # «N+1 siempre fresco».
+        resultado_updater = None
         if observacion_candidato.computo is not None:
             try:
-                await actualizar_en_sombra(user, _msgs, computo=observacion_candidato.computo)
+                resultado_updater = await actualizar_en_sombra(
+                    user, _msgs, computo=observacion_candidato.computo)
             except Exception as exc:  # noqa: BLE001 — la sombra jamás tumba un turno que iba bien
                 # SIN traza: registrar con exc_info adjunta el traceback, y el texto de un
                 # driver de Postgres arrastra la conninfo entera (#137). Se registra la CLASE,
@@ -1170,6 +1185,22 @@ async def _stream_agent(message: str, session_id: str, user=None) -> AsyncIterat
             # `lectura_runtime._registrar` y `candidato._registrar`.
             log.error("buyer decision shadow falló y quedó aislado · sonda=%s error_class=%s",
                       "decision_shadow", type(exc).__name__)
+
+        # BUYER-UNRESOLVED-CONSUMER-R1 · la aclaración, DESPUÉS de persistir y ANTES del `done`.
+        #
+        # El sitio es la unidad entera. Antes de la persistencia no se puede saber si la pregunta
+        # quedó guardada, y ofrecerla sin eso produciría un turno siguiente que vuelve a
+        # preguntar lo mismo: la persona vería a Contexto olvidando en vivo. Después del `done`
+        # llegaría a un stream que el cliente ya dio por cerrado.
+        #
+        # Fail-open como sus hermanas: si esto falla, el turno ya respondió y `done` sale igual.
+        try:
+            _clar = clarificacion_del_turno(user, observacion_candidato.computo, resultado_updater)
+            if _clar:
+                yield "data: " + json.dumps({"clarification": _clar}) + "\n\n"
+        except Exception as exc:  # noqa: BLE001 — una repregunta jamás vale un turno roto
+            log.error("buyer clarification falló y quedó aislada · sonda=%s error_class=%s",
+                      "unresolved_consumer", type(exc).__name__)
 
         yield "data: " + json.dumps({
             "done": True, "session_id": session_id, "execution_id": execution_id,
@@ -1316,10 +1347,11 @@ async def chat(
         # hay un `panel` que proteger —la respuesta sale entera de una vez—, así que la escritura
         # se espera justo antes de devolver. Fail-open igual: un fallo se registra y la respuesta
         # que la persona ya tenía calculada sale de todos modos.
+        resultado_updater = None
         if observacion_candidato.computo is not None:
             try:
-                await actualizar_en_sombra(user, messages,
-                                           computo=observacion_candidato.computo)
+                resultado_updater = await actualizar_en_sombra(
+                    user, messages, computo=observacion_candidato.computo)
             except Exception as exc:  # noqa: BLE001 — la sombra jamás tumba un turno que iba bien
                 # SIN traza: registrar con exc_info adjunta el traceback, y el texto de un
                 # driver de Postgres arrastra la conninfo entera (#137). Se registra la CLASE,
@@ -1347,6 +1379,17 @@ async def chat(
             log.error("buyer decision shadow falló y quedó aislado · sonda=%s error_class=%s",
                       "decision_shadow", type(exc).__name__)
 
+        # BUYER-UNRESOLVED-CONSUMER-R1 · gemela de la del carril SSE, y con la misma regla de
+        # orden: se calcula DESPUÉS de la persistencia. Aquí la respuesta sale entera de una vez,
+        # así que basta con que esto ocurra antes del `return`.
+        try:
+            clarification = clarificacion_del_turno(
+                user, observacion_candidato.computo, resultado_updater)
+        except Exception as exc:  # noqa: BLE001 — una repregunta jamás vale un turno roto
+            log.error("buyer clarification falló y quedó aislada · sonda=%s error_class=%s",
+                      "unresolved_consumer", type(exc).__name__)
+            clarification = None
+
         return ChatResponse(
             reply=reply,
             session_id=payload.session_id,
@@ -1354,6 +1397,7 @@ async def chat(
             results=results,
             map_seed=map_seed,
             puerta=puerta,
+            clarification=clarification,
         )
 
 

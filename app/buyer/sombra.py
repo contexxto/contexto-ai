@@ -62,7 +62,8 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from app.buyer.actualizador import EstadoActualizacion, actualizar, persistir_computo
+from app.buyer.actualizador import (EstadoActualizacion, ResultadoUpdater, actualizar,
+                                    persistir_computo)
 from app.buyer.mensaje import ultimo_mensaje_usuario_identificado
 from app.config import settings
 
@@ -146,8 +147,31 @@ class ComputoDeOtroComprador(RuntimeError):
     """
 
 
-async def actualizar_en_sombra(user, messages, *, computo=None) -> None:
-    """Procesa el último mensaje del usuario contra su memoria durable. **No devuelve nada.**
+async def actualizar_en_sombra(user, messages, *, computo=None) -> ResultadoUpdater | None:
+    """Procesa el último mensaje del usuario contra su memoria durable.
+
+    ## DEVUELVE EL `ResultadoUpdater`, Y ESO NO CAMBIA SU COMPORTAMIENTO
+
+    Hasta R1 devolvía `None` siempre, y la firma era la garantía estructural: aunque alguien
+    quisiera usar su salida para cambiar la respuesta, no había salida que usar.
+
+    **Esa garantía desaparece, y conviene decirlo sin adornos: el `ResultadoUpdater` LLEVA el
+    `BuyerContextV0` dentro** (`.contexto`). Quien reciba esto tiene delante la memoria del
+    comprador entera. Lo que sustituye a la garantía no es una propiedad del tipo —no la hay—
+    sino una guarda: el único consumidor permitido es `clarificacion_del_turno`, que extrae dos
+    campos y nada más, y hay un test por AST que se pone rojo si aparece un segundo consumidor o
+    si esa salida toca la respuesta o las tarjetas.
+
+    Es una frontera más débil que la anterior y se elige a sabiendas: sin devolver nada, el
+    producto no podía preguntar. La compensación es que la frontera nueva es **falsable** —un
+    guard la vigila— en vez de estructural.
+
+    `None` en cualquier camino que no persistió: flag apagado, fuera de cohorte, anónimo, sin
+    mensaje, sin esquema, o excepción. **Un llamador que reciba `None` no muestra nada**, y ésa
+    es justamente la propiedad que ordena el tiempo de la aclaración.
+
+    Los llamadores que ignoran el retorno siguen funcionando exactamente igual: `create_task`
+    descarta el valor, y el carril legacy nunca lo mira.
 
     El `retrieved_at` sale de aquí y no del reducer — R-IDEMP-1: es el instante REAL en que
     procesamos, y el reducer no tiene reloj a propósito. Que un reintento traiga otro
@@ -178,19 +202,19 @@ async def actualizar_en_sombra(user, messages, *, computo=None) -> None:
     """
     try:
         if not settings.buyer_updater_shadow:
-            return
+            return None
         if user is None or not (getattr(user, "user_id", "") or "").strip():
             # Un anónimo no tiene raíz. No es un error del turno: es que no hay comprador.
-            return
+            return None
         if not _autorizado(user.user_id):
             # Canary: estar autenticado no basta. Se sale ANTES de la costura y ANTES de
             # abrir sesión de base, para que un usuario no habilitado no consuma ni una
             # conexión del pool ni deje media transacción por ahí.
-            return
+            return None
 
         mensaje = ultimo_mensaje_usuario_identificado(messages)
         if mensaje is None:
-            return
+            return None
 
         if computo is not None and computo.candidato is not None:
             propietario = (computo.candidato.buyer_id or "").strip().lower()
@@ -202,7 +226,7 @@ async def actualizar_en_sombra(user, messages, *, computo=None) -> None:
 
         async with AsyncSessionLocal() as db:
             if not await _hay_esquema(db):
-                return
+                return None
             if computo is not None:
                 # PERSIST sin COMPUTE. No se toca `interpretar_mensaje`.
                 resultado = await persistir_computo(computo, db=db)
@@ -216,12 +240,14 @@ async def actualizar_en_sombra(user, messages, *, computo=None) -> None:
                 await db.rollback()
 
         _registrar(resultado, mensaje)
+        return resultado
 
     except Exception as e:  # noqa: BLE001 — LA GARANTÍA DE ESTA UNIDAD
         # El turno ya respondió. Una excepción aquí no puede alcanzarlo, y tragarla en
         # silencio dejaría la sombra invisible: se registra con traza para que el fallo sea
         # observable sin ser propagable.
         logger.exception("buyer shadow falló y quedó aislado (%s)", type(e).__name__)
+        return None
 
 
 def _registrar(resultado, mensaje) -> None:

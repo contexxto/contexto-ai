@@ -309,66 +309,272 @@ def _evidencia_objective(mutacion, plano: str) -> bool:
 # a «hijos», «personas» o «perros» nunca liga, porque ninguna forma tiene esos sustantivos: la
 # guarda no resuelve números con contexto protegido — ni para aceptarlos ni para descartarlos.
 #
-# **Fail closed ante la ambigüedad.** Si una misma cláusula liga DOS números distintos a la
-# misma dimensión, no se elige: la cláusula no acredita, y el intérprete lo convierte en
-# AMBIGUOUS con su dimensión.
+# **Y lo que rodea a la ligadura no puede contradecirla** (R1b, de la revisión adversarial).
+# Una forma de tope puede estar dentro de un PISO —«presupuesto de 900 USD o más»—, el ancla
+# de dormitorios puede nombrar otra pieza —«2 cuartos de baño»— y una unidad puede medir otra
+# cosa —«hasta 1200 USD el m2», «un jardín de al menos 50 m2», «300 USD por persona»—. Cada
+# ligadura se descarta si su contexto inmediato:
+#
+#     invierte la dirección    un piso pegado a un tope, un techo pegado a un mínimo
+#     es una alternativa       «2 o 3 dormitorios o más», «de 500 USD a 900»
+#     mide otra cosa           «el m2», «por persona», «cada uno», «de alícuota», otro dólar
+#     tiene otro sujeto        «<jardín> de al menos 50 m2», «el parqueadero cuesta hasta…»
+#
+# **Fail closed ante la ambigüedad, contando CANDIDATOS.** Si una misma cláusula tiene dos
+# números distintos pegados al ancla de la dimensión —«máximo 900 USD o 1000 USD»—, no se
+# elige ninguno aunque sólo uno lleve el operador: la cláusula no acredita, y el intérprete lo
+# convierte en AMBIGUOUS con su dimensión. Una coma no parte una disyunción: «…, o…» se lee
+# como una sola cláusula.
+#
+# Todo es vocabulario CERRADO y la dirección de cada lista es la barata: lo que no reconoce, no
+# liga. Ninguna lista nombra un atributo protegido: una tasa se reconoce por su forma
+# distributiva —«por X», «cada uno»—, sea X lo que sea. El residuo conocido está en
+# `_OBJETOS_AJENOS_DEL_TOPE` y `_COSTOS_AJENOS`: el costo de otra cosa que esas listas no
+# nombren, pegado a un operador de tope y a la moneda, todavía liga; y una frase descriptiva
+# —«vi casas de hasta 1500 USD»— liga si el proponente la propone como tope.
 
 _NUM_LIGABLE = r"(?<![\w.,])(?P<n>\d{1,3}(?:[.,]\d{3})+|\d+)(?!\d|[.,]\d)"
 """Un número que se declara entero: dígitos o miles agrupados de tres. `120.5` no liga —el
 punto puede ser decimal o de miles según la plaza— y el `2` de `m2` tampoco, porque va pegado
-a una letra. Sí puede ir pegado a su unidad: «80m2», «900usd»."""
+a una letra. Puede ir pegado a la unidad de área («80m2») pero NO al código de moneda: «900usd»
+no liga porque `usd` exige frontera de palabra, y se prefiere preguntar a ensanchar la moneda."""
 
-_OP_MINIMO = r"(?:al menos|como minimo|minimo|minimum|at least|desde|a partir de)"
-_OP_MINIMO_POST = r"(?:o mas|como minimo|minimo|en adelante|or more)"
-_OP_TOPE = (r"(?:como maximo|no mas de|maximo|max|hasta|tope(?: de presupuesto)?|"
-            r"presupuesto(?: maximo)?|budget)")
-_OP_TOPE_POST = r"(?:como maximo|maximo|max|de presupuesto)"
-_CONECTOR = r"(?:\s+(?:es|seria|sera))?(?:\s+(?:de|los))?"
+_OP_MINIMO = (r"(?:al menos|por lo menos|como minim[oa]|minim[oa]|minimum|at least|desde|"
+              r"a partir de)")
+_OP_MINIMO_POST = (r"(?:o mas|como minim[oa]|minim[oa]|al menos|por lo menos|en adelante|"
+                   r"para arriba|hacia arriba|or more)")
+_VERBO_MINIMO = r"(?:necesito|necesitamos|quiero|queremos|busco|buscamos|requiero|requerimos)"
+_OP_TOPE = (r"(?:como maxim[oa]|no mas de|maxim[oa]|max|hasta|tope(?: de presupuesto)?|"
+            r"limite(?: de presupuesto)?|presupuesto(?: maxim[oa])?|budget)")
+_OP_TOPE_POST = (r"(?:como maxim[oa]|maxim[oa]|max|como tope|tope|como limite|"
+                 r"de presupuesto)")
+_VERBO_TOPE = (r"(?:(?:que\s+)?(?:puedo|podemos|quiero|queremos)\s+(?:pagar|gastar|invertir)|"
+               r"pagaria|pagariamos|tengo|tenemos)")
+_CONECTOR = r"(?:\s+(?:es|son|seria|sera|esta en|llega a))?(?:\s+(?:de|los))?"
+_APROX = r"(?:unos\s+)?"
+_PERIODO = r"(?:\s+(?:mensuales|mensual|al mes|por mes))?"
+_NO_ABRE_OTRO_VALOR = r"(?!\s*(?:de\s+)?(?:unos\s+)?\$?\d)"
+"""«máximo 900 USD al menos 2 dormitorios»: ese «al menos» abre OTRO requisito, no califica al
+900. Un marcador pospuesto sólo cuenta si no va seguido de su propio número."""
+_FIN_DE_VALOR = r"(?![\w.,]|\s*[a-z$])"
+"""Detrás de «dormitorios mínimo 3» no puede venir otro sustantivo: «… mínimo 3 baños»."""
 
-_ANCLA_DORMITORIOS = r"(?:dormitorios?|habitacion(?:es)?|cuartos?|recamaras?|bedrooms?)"
-_ANCLA_AREA = r"(?:m2|m²|mts2|metros cuadrados?|square meters?)"
+_ANCLA_DORMITORIOS = (r"(?:dormitorios?|habitacion(?:es)?|cuartos?|recamaras?|bedrooms?)(?!\w)"
+                      r"(?!\s+de\s+(?!(?:al menos|por lo menos|como minimo|minimo|unos)?\s*\d))")
+"""«de» detrás del sustantivo sólo si lo que sigue es su TAMAÑO —«3 dormitorios de al menos 12
+m2»—. «2 cuartos de baño», «1 cuarto de servicio», «3 cuartos de hora» o «habitaciones de
+hotel» nombran otra cosa, y no anclan dormitorios."""
+_ANCLA_AREA = r"(?:m2|m²|mts2|metros cuadrados?|square meters?)(?!\w)"
 
 
 def _formas_minimo(ancla: str) -> tuple[re.Pattern, ...]:
     return (
-        re.compile(rf"\b{_OP_MINIMO}\s+(?:de\s+)?{_NUM_LIGABLE}\s*{ancla}\b"),
-        re.compile(rf"{_NUM_LIGABLE}\s*{ancla}\s+{_OP_MINIMO_POST}\b"),
+        re.compile(rf"\b{_OP_MINIMO}(?:\s+{_VERBO_MINIMO})?\s+(?:de\s+)?{_APROX}{_NUM_LIGABLE}"
+                   rf"\s*{ancla}"),
+        re.compile(rf"{_NUM_LIGABLE}\s*{ancla}\s+{_OP_MINIMO_POST}\b{_NO_ABRE_OTRO_VALOR}"),
+        re.compile(rf"{_NUM_LIGABLE}\s+o\s+mas\s+{ancla}"),
+        re.compile(rf"\b{ancla}\s+{_OP_MINIMO}\s+{_NUM_LIGABLE}{_FIN_DE_VALOR}"),
+    )
+
+
+def _candidatos_minimo(ancla: str) -> tuple[re.Pattern, ...]:
+    return (
+        re.compile(rf"{_NUM_LIGABLE}\s*(?:o\s+mas\s+)?{ancla}"),
+        re.compile(rf"\b{ancla}\s+{_OP_MINIMO}\s+{_NUM_LIGABLE}{_FIN_DE_VALOR}"),
     )
 
 
 _LIGA_DORMITORIOS = _formas_minimo(_ANCLA_DORMITORIOS)
 _LIGA_AREA = _formas_minimo(_ANCLA_AREA)
+_CANDIDATOS_DORMITORIOS = _candidatos_minimo(_ANCLA_DORMITORIOS)
+_CANDIDATOS_AREA = _candidatos_minimo(_ANCLA_AREA)
 
 
 def _liga_presupuesto(moneda: re.Pattern) -> tuple[re.Pattern, ...]:
     cur = moneda.pattern
     return (
-        re.compile(rf"\b{_OP_TOPE}{_CONECTOR}\s+{_NUM_LIGABLE}\s*{cur}"),
-        re.compile(rf"\b{_OP_TOPE}{_CONECTOR}\s+{cur}\s*{_NUM_LIGABLE}"),
-        re.compile(rf"{_NUM_LIGABLE}\s*{cur}\s+{_OP_TOPE_POST}\b"),
+        re.compile(rf"\b{_OP_TOPE}(?:\s+{_VERBO_TOPE})?{_CONECTOR}\s+{_APROX}\$?\s*{_NUM_LIGABLE}"
+                   rf"\s*{cur}"),
+        re.compile(rf"\b{_OP_TOPE}(?:\s+{_VERBO_TOPE})?{_CONECTOR}\s+{cur}\s*{_NUM_LIGABLE}"),
+        re.compile(rf"{_NUM_LIGABLE}\s*{cur}{_PERIODO}\s+{_OP_TOPE_POST}\b{_NO_ABRE_OTRO_VALOR}"),
+        re.compile(rf"{cur}\s*{_NUM_LIGABLE}{_PERIODO}\s+{_OP_TOPE_POST}\b{_NO_ABRE_OTRO_VALOR}"),
+        re.compile(rf"{_NUM_LIGABLE}\s*{cur}\s+(?:es|sera|seria)\s+(?:mi|el|lo)\s+"
+                   rf"(?:tope|maximo|limite)\b"),
     )
 
 
+def _candidatos_presupuesto(moneda: re.Pattern) -> tuple[re.Pattern, ...]:
+    cur = moneda.pattern
+    return (re.compile(rf"{_NUM_LIGABLE}\s*{cur}"), re.compile(rf"{cur}\s*{_NUM_LIGABLE}"))
+
+
 _TOPE_NEGADO = re.compile(r"\bno mas de\b")
-"""«No más de 900 USD» es un tope; su «no» no niega la cláusula."""
+"""«No más de 900 USD» es un tope; su «no» no niega la cláusula. En un mínimo —«no más de 3
+dormitorios o más»— lo descarta `_TECHO_ANTES`."""
+
+_DISYUNCION_PARTIDA = re.compile(r"[,;.]\s*(?=(?:o|u)\s)")
+"""«al menos 2 dormitorios, o al menos 3»: la coma no separa dos hechos, separa dos
+alternativas. Se quita antes de partir en cláusulas, para que el fail closed las vea juntas."""
+
+# ── el contexto inmediato de una ligadura ─────────────────────────────────────────────
+
+_MARCA_PISO = (r"(?:o mas|o superior|o arriba|para arriba|hacia arriba|en adelante|como minim[oa]|"
+         r"minim[oa]|como piso|de piso|al menos|por lo menos|mas de|desde|a partir de|"
+         r"or more|and up|and above|at least|minimum|more than)")
+_MARCA_TECHO = (r"(?:o menos|como maxim[oa]|maxim[oa]|max|a lo sumo|como mucho|hasta|no mas de|"
+          r"menos de|or less|or fewer|at most|up to)")
+
+_PISO_ANTES = re.compile(rf"\b{_MARCA_PISO}\s*(?:de\s+|un\s+)*$")
+_PISO_DESPUES = re.compile(rf"{_PERIODO}\s*{_MARCA_PISO}\b{_NO_ABRE_OTRO_VALOR}")
+_TECHO_ANTES = re.compile(rf"\b{_MARCA_TECHO}\s*$")
+_TECHO_DESPUES = re.compile(rf"\s*{_MARCA_TECHO}\b{_NO_ABRE_OTRO_VALOR}")
+_ALTERNATIVA_ANTES = re.compile(r"\d\s*(?:o|u|a|-|–|y|hasta)\s*$")
+
+
+def _alternativa_despues(unidad: str) -> re.Pattern:
+    """Un número que es un extremo de un rango o una opción de una disyunción no es el valor:
+    «de 500 USD a 900», «2 o 3 dormitorios o más», «70 u 80 m2». El otro extremo tiene que ser
+    un valor DE LA MISMA dimensión —fin de cláusula o su unidad—: ni «hasta 900 USD a 10 minutos
+    del centro» ni «al menos 2 dormitorios hasta 900 USD» son rangos."""
+    return re.compile(rf"\s*(?:a|al|hasta|-|–|o|u)\s*(?:unos\s+)?\$?\d[\d.,]*\s*(?:$|{unidad})")
+
+
+_DISTRIBUTIVO = re.compile(
+    r"\s*(?:(?:por|para)\s+cada\b|cada\s+(?:uno|una)\b|c/u\b|"
+    r"por\s+(?!(?:(?:un|una|el|la)\s+)?(?:favor|lo|ahora|ejemplo|supuesto|mes|casa|"
+    r"departamento|depa|inmueble|vivienda|propiedad|arriendo|alquiler|renta|compra|zona|"
+    r"sector|barrio|norte|sur|centro|aqui|ahi|alla|aca)\b)\w)")
+"""Una TASA no es el requisito: «300 USD por persona», «1 dormitorio por X», «12 m2 cada uno».
+Se reconoce por la forma distributiva, no por el sustantivo: la guarda no mira QUÉ se reparte
+—podría ser un atributo protegido— y falla cerrado igual."""
+_OTRA_MEDIDA_DEL_TOPE = re.compile(
+    r"\s*(?:el|la|/|x)\s*(?:m2|m²|mts2|mt2|metros?|noche|dia|semana|hora|persona)\b")
+"""«hasta 1200 USD el m2» es un precio por metro, no el del inmueble. «al mes» NO está: en un
+alquiler, el tope mensual ES el presupuesto."""
+_OTRO_DOLAR = re.compile(
+    r"\s*(?:canadienses?|australianos?|neozelandeses?|hongkoneses?|de hong kong|singapurenses?|"
+    r"de singapur|taiwaneses?|de taiwan|jamaiquinos?|de jamaica|bahamenos?|de las bahamas|"
+    r"belicenos?|de belice|barbadenses?|de barbados|fiyianos?|de fiyi|namibios?|de namibia|"
+    r"liberianos?|de liberia|zimbabuenses?|de zimbabue|del caribe oriental|guyaneses?|"
+    r"de guyana|surinameses?|de surinam|trinitenses?|de trinidad|brunenses?|de brunei)\b")
+"""Con el mercado en USD, «dólares» acredita USD (G16); «dólares canadienses» no."""
+
+_DE_DESPUES = re.compile(r"\s+de\s+(?:la\s+|el\s+|los\s+|las\s+|mi\s+)?(\w+)")
+_DE_DEL_TOPE = frozenset({"presupuesto", "arriendo", "alquiler", "renta", "precio", "compra",
+                          "tope", "limite", "maximo", "total", "contado"})
+_DE_DEL_AREA = frozenset({"construccion", "area", "superficie", "vivienda"})
+
+_SUJETO_ANTES = re.compile(
+    r"(?:\b(con|y|mas|incluye|incluido|incluida)\s+)?\b(\w+)\s+"
+    r"(?:(de|cuesta|cuestan|cueste|cuesten|sale|salen|salga|salgan|vale|valen|valga|valgan|"
+    r"cobra|cobran)\s+)?$")
+_SUJETOS_DEL_INMUEBLE = frozenset({
+    "algo", "uno", "una", "alguno", "alguna", "que", "me", "nos",
+    "casa", "casas", "casita", "departamento", "departamentos", "depa", "depas", "depto",
+    "deptos", "dpto", "apartamento", "apartamentos", "apto", "piso", "pisos", "loft", "suite",
+    "duplex", "penthouse", "townhouse", "inmueble", "inmuebles", "vivienda", "viviendas",
+    "propiedad", "propiedades", "hogar", "lugar", "sitio", "espacio", "unidad", "opcion",
+    "opciones", "area", "superficie", "metraje", "construccion", "tamano", "presupuesto",
+    "precio", "valor", "costo", "tope", "limite", "arriendo", "alquiler", "renta", "canon",
+    "compra", "maximo", "minimo", "cantidad", "monto", "total", "suma"})
+"""Con «de» o con un verbo de precio en medio —«<X> de al menos 50 m2», «<X> cuesta hasta…»—
+la ligadura habla de X. Sólo liga si X es el inmueble o su presupuesto."""
+_OBJETOS_AJENOS_DEL_TOPE = frozenset({
+    "alicuota", "alicuotas", "expensas", "mantenimiento", "parqueadero", "parqueaderos",
+    "parqueo", "estacionamiento", "garaje", "cochera", "bodega", "cuota", "cuotas",
+    "mensualidad", "mensualidades", "entrada", "enganche", "reserva", "deposito", "garantia",
+    "comision", "servicios", "gasto", "gastos", "impuesto", "impuestos", "predial", "mudanza",
+    "luz", "agua", "internet", "gas", "cable", "honorarios", "avaluo", "notaria", "escrituras",
+    "condominio", "administracion"})
+"""Pegado sin conector al operador —«parqueadero máximo 50 USD»— el tope es de ese objeto.
+Como amenidad del inmueble —«depa CON parqueadero hasta 900 USD»— no: el tope es del depa, y
+un parqueadero no tiene precio propio en esa frase. Un área sí puede ser del jardín —«casa con
+jardín mínimo 80 m2»—, así que en los mínimos la amenidad no exime."""
+_COSTOS_AJENOS = re.compile(
+    r"\b(?:alicuotas?|expensas|mantenimiento|cuotas?|mensualidad(?:es)?|enganche|deposito|"
+    r"garantia|comision|predial|mudanza|honorarios|avaluo|notaria|escrituras|remodelar|"
+    r"remodelacion|arreglos|gano|ganamos|ingresos?|sueldo|salario)\b")
+"""Montos que nunca son el precio del inmueble —costos, ingresos—. En la misma cláusula que un
+tope no se sabe de cuál de los dos habla el número: no se elige.
+
+Sólo los que no tienen otra lectura en una búsqueda. «Seguro», «servicios», «gastos» o
+«entrada» también describen el inmueble —«barrio seguro», «entrada independiente»— y aquí
+dejarían sin tope a quien los nombra; pegados al operador ya los caza `_OBJETOS_AJENOS_DEL_TOPE`,
+y detrás del número, `_DE_DESPUES`."""
+_OBJETOS_AJENOS_DEL_MINIMO = frozenset({
+    "jardin", "jardines", "terraza", "terrazas", "patio", "patios", "balcon", "balcones",
+    "cocina", "cocinas", "sala", "comedor", "bano", "banos", "lote", "lotes", "terreno",
+    "terrenos", "parqueadero", "parqueaderos", "garaje", "garajes", "cochera", "bodega",
+    "bodegas", "piscina", "habitacion", "habitaciones", "dormitorio", "dormitorios", "cuarto",
+    "cuartos", "recamara", "recamaras", "estudio", "oficina", "closet", "closets", "verde",
+    "verdes", "social", "comunal", "comunales", "bbq"})
+
+
+def _del_sujeto_ajeno(antes: str, ajenos: frozenset, amenidad_exime: bool) -> bool:
+    sujeto = _SUJETO_ANTES.search(antes)
+    if sujeto is None:
+        return False
+    amenidad, palabra, conector = sujeto.group(1), sujeto.group(2), sujeto.group(3)
+    if conector:
+        return palabra not in _SUJETOS_DEL_INMUEBLE
+    return palabra in ajenos and not (amenidad and amenidad_exime)
+
+
+def _tope_contaminado(moneda: re.Pattern):
+    alternativa = _alternativa_despues(rf"mil\b|{moneda.pattern}")
+
+    def contaminado(clausula: str, m: re.Match) -> bool:
+        antes, despues = clausula[:m.start()], clausula[m.end():]
+        de = _DE_DESPUES.match(despues)
+        return bool(
+            _PISO_ANTES.search(antes) or _PISO_DESPUES.match(despues)
+            or _ALTERNATIVA_ANTES.search(antes) or alternativa.match(despues)
+            or _DISTRIBUTIVO.match(despues) or _OTRA_MEDIDA_DEL_TOPE.match(despues)
+            or _OTRO_DOLAR.match(despues)
+            or (de is not None and de.group(1) not in _DE_DEL_TOPE)
+            or _del_sujeto_ajeno(antes, _OBJETOS_AJENOS_DEL_TOPE, amenidad_exime=True)
+            or _COSTOS_AJENOS.search(clausula))
+    return contaminado
+
+
+def _minimo_contaminado(ancla: str, de_permitido: frozenset | None):
+    alternativa = _alternativa_despues(ancla)
+
+    def contaminado(clausula: str, m: re.Match) -> bool:
+        antes, despues = clausula[:m.start()], clausula[m.end():]
+        de = _DE_DESPUES.match(despues) if de_permitido is not None else None
+        return bool(
+            _TECHO_ANTES.search(antes) or _TECHO_DESPUES.match(despues)
+            or _ALTERNATIVA_ANTES.search(antes) or alternativa.match(despues)
+            or _DISTRIBUTIVO.match(despues)
+            or (de is not None and de.group(1) not in de_permitido)
+            or _del_sujeto_ajeno(antes, _OBJETOS_AJENOS_DEL_MINIMO, amenidad_exime=False))
+    return contaminado
+
+
+_DORMITORIOS_CONTAMINADO = _minimo_contaminado(_ANCLA_DORMITORIOS, None)  # su «de» lo filtra el ancla
+_AREA_CONTAMINADA = _minimo_contaminado(_ANCLA_AREA, _DE_DEL_AREA)
 
 
 def _a_decimal(token: str) -> Decimal:
     return Decimal(token.replace(".", "").replace(",", ""))
 
 
-def _valor_ligado(plano: str, valor, formas) -> bool:
+def _valor_ligado(plano: str, valor, formas, candidatos, contaminada) -> bool:
     """¿Alguna cláusula AFIRMATIVA liga EXACTAMENTE este valor, y sólo este, a su dimensión?
 
     Por cláusula y afirmativa, como antes —es una frontera de Fair Housing: el conteo de
-    personas de otra cláusula nunca entra—. Y además LIGADO: el número está en la forma de su
-    operador y su ancla. Dos números ligados distintos en la misma cláusula no se desempatan.
+    personas de otra cláusula nunca entra—. LIGADO: el número está en la forma de su operador y
+    su ancla, y nada a su alrededor lo contradice. ÚNICO: la cláusula no tiene otro número
+    pegado a la misma ancla, lleve operador o no.
     """
-    for clausula in _CLAUSULA.split(plano):
+    for clausula in _CLAUSULA.split(_DISYUNCION_PARTIDA.sub(" ", plano)):
         if _NEGACION.search(_TOPE_NEGADO.sub(" ", clausula)):
             continue                     # negada: no evidencia lo que nombra
-        ligados = {_a_decimal(m.group("n")) for f in formas for m in f.finditer(clausula)}
-        if len(ligados) == 1 and next(iter(ligados)) == valor:
+        anclados = {_a_decimal(m.group("n")) for f in candidatos for m in f.finditer(clausula)}
+        ligados = {_a_decimal(m.group("n")) for f in formas for m in f.finditer(clausula)
+                   if not contaminada(clausula, m)}
+        if anclados == {valor} and ligados == {valor}:
             return True
     return False
 
@@ -377,15 +583,18 @@ def _evidencia_budget(mutacion, plano: str) -> bool:
     moneda = _patron_de_moneda(mutacion.currency)
     if moneda is None:
         return False
-    return _valor_ligado(plano, mutacion.amount, _liga_presupuesto(moneda))
+    return _valor_ligado(plano, mutacion.amount, _liga_presupuesto(moneda),
+                         _candidatos_presupuesto(moneda), _tope_contaminado(moneda))
 
 
 def _evidencia_bedrooms(mutacion, plano: str) -> bool:
-    return _valor_ligado(plano, mutacion.bedrooms_min, _LIGA_DORMITORIOS)
+    return _valor_ligado(plano, mutacion.bedrooms_min, _LIGA_DORMITORIOS,
+                         _CANDIDATOS_DORMITORIOS, _DORMITORIOS_CONTAMINADO)
 
 
 def _evidencia_area(mutacion, plano: str) -> bool:
-    return _valor_ligado(plano, mutacion.area_m2_min, _LIGA_AREA)
+    return _valor_ligado(plano, mutacion.area_m2_min, _LIGA_AREA, _CANDIDATOS_AREA,
+                         _AREA_CONTAMINADA)
 
 
 def _evidencia_pets(_mutacion, plano: str) -> bool:

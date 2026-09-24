@@ -71,9 +71,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
+from app.buyer.boundary import CAMPOS_CON_CRITERIO
 from app.buyer.extractor import AfirmacionAmbiguous, AfirmacionDurable
 from app.buyer.interprete import interpretar_mensaje
-from app.buyer.reductor import reducir, ruta_de_campo
+from app.buyer.reductor import es_evidencia_de_rigidez, reducir, ruta_de_campo
 from app.buyer.store import (
     BuyerIdempotencyConflict,
     BuyerRevisionConflict,
@@ -173,6 +174,10 @@ def rutas_tocadas(lote) -> frozenset[str]:
             rutas.add(ruta_de_campo(afirmacion.campo))
         elif isinstance(afirmacion, AfirmacionAmbiguous):
             rutas.add(ruta_de_campo(afirmacion.campo))
+    # E3.3 · cambiar la rigidez del presupuesto es tocar el presupuesto: si otra conversación
+    # cambió a la vez su valor, su rigidez o su pregunta, las dos no son independientes.
+    for declaracion in lote.rigideces:
+        rutas.add(ruta_de_campo(declaracion.campo))
     return frozenset(rutas)
 
 
@@ -206,6 +211,11 @@ def _estado_semantico(contexto: BuyerContextV0 | None, ruta: str):
     Se compara `source_id` y no la evidencia entera: `evidence_id` y `retrieved_at` de una
     `USER_DECLARED` no son estado —lo decidió R-IDEMP-1— y contarlos aquí haría que un replay
     pareciera divergencia, reabriendo por otra puerta lo que aquella regla cerró.
+
+    **E3.3 añade una cuarta: la RIGIDEZ.** El criterio de una ruta se deriva de su valor
+    —ya comparado— y de en qué lista vive y qué declaración lo puso ahí. Sin mirarla, otra
+    conversación que volviera estricto el presupuesto no «tocaba» el presupuesto, y un rebase
+    encima lo devolvía a flexible en silencio.
     """
     if contexto is None:
         return None
@@ -214,7 +224,25 @@ def _estado_semantico(contexto: BuyerContextV0 | None, ruta: str):
         any(q.about_field == ruta for q in contexto.unresolved_questions),
         next((fe.evidence.source_id for fe in contexto.field_evidence if fe.field == ruta),
              None),
+        _rigidez_de_ruta(contexto, ruta),
     )
+
+
+_CRITERIO_DE_RUTA = {ruta_de_campo(c): c.value for c in CAMPOS_CON_CRITERIO}
+
+
+def _rigidez_de_ruta(contexto: BuyerContextV0, ruta: str):
+    """En qué lista vive el criterio de la ruta y QUÉ mensajes sostienen su rigidez.
+
+    `objective` no tiene criterio y devuelve siempre lo mismo, así que no añade divergencias.
+    """
+    criterio_id = _CRITERIO_DE_RUTA.get(ruta)
+    for lista in ("hard_constraints", "soft_preferences"):
+        for criterio in getattr(contexto, lista):
+            if criterio.criterion_id == criterio_id:
+                return (lista, tuple(e.source_id for e in criterio.evidence
+                                     if es_evidencia_de_rigidez(e)))
+    return None
 
 
 def rutas_divergentes(base: BuyerContextV0 | None, otro: BuyerContextV0) -> frozenset[str]:
@@ -316,9 +344,10 @@ async def computar_candidato(
 
     lote = await interpretar_mensaje(mensaje, proponente)
 
-    if not lote.afirmaciones:
+    if not lote.afirmaciones and not lote.rigideces:
         # Cero propuestas puede ser un fallo del modelo. Sellar el mensaje aquí lo daría por
-        # procesado para siempre; dejarlo sin sellar permite reintentarlo.
+        # procesado para siempre; dejarlo sin sellar permite reintentarlo. Un lote con SÓLO
+        # una rigidez acreditada —"lo del presupuesto es flexible"— no es vacío (E3.3).
         return ComputoCandidato(
             EstadoActualizacion.VACIO,
             motivo="el intérprete no produjo afirmaciones: no se sella el mensaje")

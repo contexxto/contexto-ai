@@ -27,6 +27,7 @@ proponer un path que no existe   el esquema de la tool ES la unión cerrada
 crear estado sin evidencia       autorizar_traduccion se aplica a TODA durable propuesta
 hacer desaparecer una intención  lo no acreditado cae a AMBIGUOUS, nunca al vacío
 fabricar durable al fallar       cualquier excepción degrada a cero propuestas
+volver dura una restricción      autorizar_rigidez exige la palabra explícita (E3.3)
 ```
 
 La tercera es la menos obvia y la más importante. La guarda de E3.2b.1a es deliberadamente
@@ -51,12 +52,15 @@ from typing import Any
 
 import anthropic
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.buyer.boundary import (
     BuyerFieldV0,
     BuyerMutationV0,
+    CampoConCriterioV0,
+    DeclaracionRigidezV0,
     Disposicion,
+    RigidezV0,
     campo_de_mutacion,
 )
 from app.buyer.extractor import (
@@ -66,6 +70,7 @@ from app.buyer.extractor import (
     AfirmacionTurnOnly,
     LoteExtraccion,
     TraduccionNoAutorizada,
+    autorizar_rigidez,
     autorizar_traduccion,
     construir_lote,
 )
@@ -101,7 +106,26 @@ class PropuestaV0(BaseModel):
     motivo: str = Field(min_length=1)
 
 
-Proponente = Callable[[str], Awaitable[Sequence[PropuestaV0]]]
+class PropuestaRigidezV0(BaseModel):
+    """E3.3 · lo que el proponente cree que la persona dijo sobre CUÁNTO manda un requisito.
+
+    Separada de `PropuestaV0` porque no es una disposición sobre un valor: *"lo del
+    presupuesto es flexible"* no declara, corrige ni retracta ningún presupuesto. Como toda
+    propuesta, **no crea nada por sí misma**: pasa por `autorizar_rigidez`, y la que no se
+    acredita queda como `REJECTED` con su campo.
+
+    `campo` es la whitelist como `Literal`: el modelo no puede proponer la rigidez de algo que
+    no sea requisito del inmueble, porque el esquema de la tool no tiene dónde ponerlo.
+    """
+
+    model_config = _CERRADO
+
+    campo: CampoConCriterioV0
+    rigidez: RigidezV0
+    motivo: str = Field(min_length=1)
+
+
+Proponente = Callable[[str], Awaitable[Sequence[PropuestaV0 | PropuestaRigidezV0]]]
 """La costura. Recibe el texto y devuelve lecturas; nada más.
 
 Deliberadamente un `Callable` y no una clase: el intérprete no necesita ciclo de vida, ni
@@ -166,17 +190,44 @@ def _acreditar(propuesta: PropuestaV0, texto: str):
     return AfirmacionDurable(mutacion=propuesta.mutacion, motivo=propuesta.motivo)
 
 
-def interpretar(mensaje, propuestas: Sequence[PropuestaV0]) -> LoteExtraccion:
+def _acreditar_rigidez(propuesta: PropuestaRigidezV0, texto: str):
+    """UNA propuesta de rigidez → `DeclaracionRigidezV0`, o `REJECTED` si no se acredita.
+
+    **No cae a `AMBIGUOUS`, y es deliberado.** Una ambigüedad sobre el presupuesto compite
+    con el presupuesto en C1-C5: *"máximo 900 USD, idealmente"* con la rigidez sin acreditar
+    acabaría anulando un valor que sí se acreditó. Y lo que se pierde no es estado: sin
+    rigidez acreditada el criterio conserva la que tenía.
+    """
+    declaracion = DeclaracionRigidezV0(campo=propuesta.campo, rigidez=propuesta.rigidez)
+    try:
+        autorizar_rigidez(declaracion, texto)
+    except TraduccionNoAutorizada as e:
+        return AfirmacionRejected(
+            campo=propuesta.campo,
+            motivo=f"rigidez sin evidencia acreditable ({e}): {propuesta.motivo}")
+    return declaracion
+
+
+def interpretar(mensaje, propuestas: Sequence[PropuestaV0 | PropuestaRigidezV0]
+                ) -> LoteExtraccion:
     """Propuestas → lote. **Puro, determinista y sin red.**
 
     Es donde viven todos los invariantes estructurales, y por eso es donde se prueban. Nada
     de lo que haga el proponente puede saltarse esta función: aunque proponga diez durables
-    perfectas, cada una pasa por la guarda antes de existir como tal.
+    perfectas, cada una pasa por la guarda antes de existir como tal. Las rigideces igual,
+    con su propia guarda.
 
     El orden de entrada se conserva; `construir_lote` aplica C1-C5 encima.
     """
-    afirmaciones = [_acreditar(p, mensaje.text) for p in propuestas]
-    return construir_lote(mensaje, afirmaciones)
+    afirmaciones, rigideces = [], []
+    for propuesta in propuestas:
+        if isinstance(propuesta, PropuestaRigidezV0):
+            acreditada = _acreditar_rigidez(propuesta, mensaje.text)
+            (rigideces if isinstance(acreditada, DeclaracionRigidezV0)
+             else afirmaciones).append(acreditada)
+        else:
+            afirmaciones.append(_acreditar(propuesta, mensaje.text))
+    return construir_lote(mensaje, afirmaciones, rigideces)
 
 
 async def interpretar_mensaje(mensaje, proponente: Proponente | None = None
@@ -206,8 +257,6 @@ async def interpretar_mensaje(mensaje, proponente: Proponente | None = None
 # DEUDA OBSERVABLE: con éste son SEIS construcciones de cliente Anthropic en `app/`. Si
 # aparece un segundo consumidor de esta costura, o si la duplicación bloquea otra fase, toca
 # unidad propia para consolidarlos.
-
-_PROPUESTAS = TypeAdapter(list[PropuestaV0])
 
 _TOOL_NAME = "registrar_afirmaciones"
 
@@ -290,6 +339,18 @@ _SYSTEM = (
     "—hogar, familia, tranquilidad, accesibilidad— se registra como rejected. Deja constancia "
     "de que lo leíste y decidiste no persistirlo: es lo que permite responderle al usuario y "
     "auditar la decisión después.\n"
+    "9. RIGIDEZ, en la lista aparte `rigideces`. Regístrala SOLO si el usuario dice con "
+    "palabras explícitas que un requisito suyo es indispensable, imprescindible, "
+    "innegociable, obligatorio o 'sí o sí' (estricta), o que es flexible, negociable, ideal "
+    "o 'de preferencia' (flexible). Campos posibles: budget_max, bedrooms_min, area_m2_min, "
+    "pets_required.\n"
+    "   'máximo' y 'al menos' NO son rigidez: son el valor. 'máximo 900 USD' no lleva "
+    "rigidez; 'máximo 900 USD y es innegociable' sí.\n"
+    "   Puede venir sin valor, y entonces corrige la rigidez de algo ya dicho: 'lo del "
+    "presupuesto es flexible' → rigidez flexible en budget_max, sin afirmación durable.\n"
+    "   NUNCA la deduzcas: ni de lo importante que parezca, ni de QUIÉN es la persona ni de "
+    "por qué lo necesita (regla 3). Sin palabra explícita, no hay rigidez. Una pregunta "
+    "('¿es negociable?') tampoco la declara.\n"
     "\n"
     f"Llama SIEMPRE a la herramienta {_TOOL_NAME}. La lista solo va vacía si el mensaje no "
     "dice NADA sobre vivienda (un saludo, un agradecimiento)."
@@ -317,6 +378,24 @@ def _sin_prosa_interna(nodo):
     return nodo
 
 
+class _EntradaToolV0(BaseModel):
+    """El input COMPLETO de la tool, como UN solo modelo. Existe para generar su esquema.
+
+    **Medido con el modelo real, no elegido por estética (E3.3).** Antes cada propiedad
+    llevaba su propio esquema con un `$defs` anidado, y sus `$ref` —relativas a la RAÍZ del
+    documento— no resolvían a nada. Con una sola propiedad el modelo lo toleraba. Al añadir
+    `rigideces` dejó de hacerlo: metía el input entero como TEXTO dentro de `afirmaciones`
+    —3 de 10 llamadas con dos `$defs` anidados, 16 de 16 con `rigideces` en línea—, y
+    `_parsear` lo perdía todo, así que el mensaje quedaba `VACIO`. Con un único esquema y
+    `$defs` en la raíz: 18 de 18 listas, y la rigidez propuesta donde se declaró.
+    """
+
+    afirmaciones: list[PropuestaV0]
+    rigideces: list[PropuestaRigidezV0] = Field(default_factory=list)
+    """Opcional: casi ningún mensaje declara rigidez, y exigirla empujaría al modelo a
+    inventarla para rellenar el campo."""
+
+
 def _tool_schema() -> dict[str, Any]:
     """El esquema de la tool **ES la unión cerrada**, generado del propio tipo.
 
@@ -324,16 +403,16 @@ def _tool_schema() -> dict[str, Any]:
     divergencia no daría error: daría un modelo proponiendo algo que ya no existe. Derivarlo
     de `PropuestaV0` mantiene una sola fuente para la ESTRUCTURA; la semántica la pone
     `_SYSTEM`.
+
+    Todas las `$ref` resuelven desde la raíz: ver `_EntradaToolV0` y el test que lo vigila.
     """
+    esquema = _sin_prosa_interna(_EntradaToolV0.model_json_schema())
+    esquema.pop("title", None)
     return {
         "name": _TOOL_NAME,
         "description": ("Registra las afirmaciones del mensaje. Lista vacía si no hay "
                         "ninguna."),
-        "input_schema": {
-            "type": "object",
-            "properties": {"afirmaciones": _sin_prosa_interna(_PROPUESTAS.json_schema())},
-            "required": ["afirmaciones"],
-        },
+        "input_schema": esquema,
     }
 
 
@@ -353,7 +432,7 @@ def _client() -> anthropic.AsyncAnthropic:
     return _client_singleton
 
 
-async def proponer_con_modelo(texto: str) -> Sequence[PropuestaV0]:
+async def proponer_con_modelo(texto: str) -> Sequence[PropuestaV0 | PropuestaRigidezV0]:
     """El proponente por defecto. **Solo propone.**
 
     Lo que devuelva pasa entero por `interpretar`, así que una alucinación no crea estado:
@@ -402,7 +481,7 @@ def _tipar_monto(cruda):
     return {**cruda, "mutacion": {**mutacion, "amount": Decimal(str(monto))}}
 
 
-def _parsear(bruto) -> Sequence[PropuestaV0]:
+def _parsear(bruto) -> Sequence[PropuestaV0 | PropuestaRigidezV0]:
     """Salida del modelo → propuestas. **Descarta la que no valide, conserva las demás.**
 
     Una propuesta mal formada no puede tumbar las otras del mismo mensaje: sería C5 perdido
@@ -411,10 +490,15 @@ def _parsear(bruto) -> Sequence[PropuestaV0]:
     """
     if not isinstance(bruto, dict):
         return ()
-    salida: list[PropuestaV0] = []
+    salida: list[PropuestaV0 | PropuestaRigidezV0] = []
     for cruda in bruto.get("afirmaciones") or ():
         try:
             salida.append(PropuestaV0.model_validate(_tipar_monto(cruda)))
         except ValidationError as e:
             logger.warning("propuesta descartada por no validar: %s", e)
+    for cruda in bruto.get("rigideces") or ():
+        try:
+            salida.append(PropuestaRigidezV0.model_validate(cruda))
+        except ValidationError as e:
+            logger.warning("rigidez descartada por no validar: %s", e)
     return tuple(salida)

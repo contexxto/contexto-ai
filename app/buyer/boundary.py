@@ -48,6 +48,7 @@ son trabajo del extractor. Esta frontera recibe estructura y valida forma y domi
 
 from __future__ import annotations
 
+import typing
 from decimal import Decimal
 from enum import StrEnum
 from typing import Annotated, Literal, Union
@@ -269,6 +270,65 @@ def campo_de_mutacion(mutacion) -> BuyerFieldV0:
         return _CAMPO_DE[type(mutacion)]
     except KeyError:                                     # pragma: no cover — unión cerrada
         raise TypeError(f"mutación fuera de la unión V0: {type(mutacion).__name__}") from None
+
+
+# ── E3.3 · la rigidez: si un requisito DESCALIFICA o sólo ORDENA ───────────────────
+#
+# No es una mutación y no entra en la unión, a propósito. Una mutación escribe un VALOR en
+# una ruta; la rigidez dice cómo se USA un valor que ya está —si deja fuera la opción que no
+# lo cumple o si sólo la ordena más abajo—. Mezclarlas obligaría a redeclarar el valor para
+# corregir la rigidez, y *"lo del presupuesto es flexible"* no trae número.
+#
+# Tampoco nombra `hard_constraints` ni `soft_preferences`: no elige DÓNDE se escribe. Nombra
+# una dimensión cerrada y una rigidez cerrada, y el reducer —el único que escribe— deriva de
+# ahí el campo del contrato. Es el mismo principio que `ruta_contractual`.
+
+
+class RigidezV0(StrEnum):
+    """Lo que la persona DECLARÓ sobre cuánto manda un requisito suyo.
+
+    **No hay tercer valor para "no lo dijo", y la ausencia es la parte importante.** Sin
+    declaración explícita un criterio vive en `soft_preferences`: el Execution Plan 1.0
+    (E3.2, regla 2) prohíbe que una inferencia se vuelva restricción dura en silencio, y
+    deducir que un tope "descalifica" porque la persona dijo "máximo" sería exactamente eso.
+    """
+
+    ESTRICTA = "estricta"
+    """Descalifica: la opción que no lo cumple no entra. Sólo por declaración explícita."""
+
+    FLEXIBLE = "flexible"
+    """Ordena entre las que entran. Declararlo explícitamente importa para CORREGIR una
+    rigidez previa: es lo que saca un criterio de `hard_constraints`."""
+
+
+CampoConCriterioV0 = Literal[
+    BuyerFieldV0.BUDGET_MAX,
+    BuyerFieldV0.BEDROOMS_MIN,
+    BuyerFieldV0.AREA_M2_MIN,
+    BuyerFieldV0.PETS_REQUIRED,
+]
+"""LA WHITELIST SEGURA de E3.3: las dimensiones que pueden volverse criterio.
+
+Son requisitos del INMUEBLE, comprobables contra el inmueble. `OBJECTIVE` queda fuera porque
+no es un atributo del inmueble sino de la operación, y ya tiene su campo en el contrato.
+Ninguna categoría protegida puede estar aquí: `BuyerFieldV0` ya no las representa, y esto es
+un subconjunto suyo."""
+
+CAMPOS_CON_CRITERIO: tuple[BuyerFieldV0, ...] = typing.get_args(CampoConCriterioV0)
+"""En el orden en que se serializan los criterios. Derivado del `Literal`, no copiado."""
+
+
+class DeclaracionRigidezV0(BaseModel):
+    """Una rigidez ya acreditada por la guarda. Lo que el reducer consume.
+
+    `campo` es el `Literal` de la whitelist: una rigidez sobre `objective`, o sobre cualquier
+    cosa que no sea requisito del inmueble, no es que se rechace — no se puede construir.
+    """
+
+    model_config = _CERRADO
+
+    campo: CampoConCriterioV0
+    rigidez: RigidezV0
 
 
 # ── El resultado ───────────────────────────────────────────────────────────────────

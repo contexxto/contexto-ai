@@ -418,14 +418,15 @@ def test_D_corregir_de_SOFT_a_HARD():
     assert c.soft_preferences == ()
 
 
-def test_D_R10_cambiar_el_VALOR_no_suelta_la_rigidez():
-    """La persona corrigió el número, no la rigidez. Soltarla la cambiaría sin declaración."""
+def test_D_R10_cambiar_el_VALOR_suelta_la_rigidez():
+    """E3.3-R2d · decisión REVERTIDA: un valor nuevo nace sin rigidez hasta que la persona la
+    vuelva a declarar. Heredarla dejaba pasar la rigidez de un valor que ella abandonaba."""
     c = _paso(_vacio(), "máximo 900 USD, el presupuesto es innegociable",
               _dur(_BUD), _rig(F.BUDGET_MAX, E), mid="m-1")
     c = _paso(c, "mejor máximo 950 USD",
               _dur(SetBudgetMax(amount=Decimal(950), currency=USD)), mid="m-2")
     lista, criterio = _criterio(c, F.BUDGET_MAX)
-    assert lista == "hard_constraints" and criterio.value == 950
+    assert lista == "soft_preferences" and criterio.value == 950
 
 
 def test_D_una_correccion_NO_acreditada_no_mueve_nada():

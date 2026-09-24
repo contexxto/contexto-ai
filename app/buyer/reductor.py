@@ -294,7 +294,7 @@ def reducir(contexto: BuyerContextV0, lote, retrieved_at: datetime) -> BuyerCont
 
     field_evidence = _fusionar_evidencia(contexto.field_evidence, evidencias)
     duras, blandas = _proyectar_criterios(
-        contexto, datos, field_evidence, rigidez_aplicable, tocados,
+        contexto, datos, field_evidence, rigidez_aplicable, tocados, resueltas,
         lote.source_message_id, retrieved_at)
 
     return contexto.model_copy(update={
@@ -369,8 +369,8 @@ def ruta_de_campo(campo: BuyerFieldV0) -> str:
 # ```
 # R8   hard SÓLO con rigidez ESTRICTA declarada y acreditada — regla 2 del Execution Plan
 # R9   sin declaración, `soft_preferences`: ordena, no excluye
-# R10  la rigidez es de la DIMENSIÓN y se conserva al cambiar el valor, hasta que otra la corrija
-#      — mientras el criterio sigue VIGENTE. Tras un retiro, un valor nuevo nace sin rigidez.
+# R10  la rigidez se conserva mientras el VALOR no cambie (E3.3-R2d). Un valor nuevo —o
+#      tras un retiro— nace sin rigidez hasta que la persona la vuelva a declarar.
 # R11  un Clear* no borra el criterio: lo deja RETRACTED, con su evidencia y la del retiro
 # R12  todo criterio es `origin=STATED`: valor y rigidez vienen de la persona, nunca inferidos
 # R13  sólo se re-proyectan las dimensiones que el lote TOCA; las demás se arrastran tal cual
@@ -382,10 +382,12 @@ def ruta_de_campo(campo: BuyerFieldV0) -> str:
 # perdía lo que la persona declaró. Los criterios de un comprador antiguo aparecen ahora a
 # medida que cada dimensión se vuelve a tocar.
 #
-# R10 es la que se puede discutir. *"Máximo 900 USD, innegociable"* y después *"mejor 950"*:
-# la persona corrigió el número, no la rigidez, y soltarla en silencio la cambiaría sin que
-# nadie la declarase — lo contrario de lo que R8 existe para impedir. La evidencia de la
-# rigidez sigue en el criterio, así que se ve de qué mensaje sale.
+# R10 se estrechó en E3.3-R2d, y la dirección del cambio es la de toda la guarda. En E3.3 la
+# rigidez sobrevivía a un valor nuevo («máximo 900, innegociable» → «mejor 950» seguía duro).
+# La cuarta revisión mostró por qué no: la herencia es justo lo que deja pasar un valor nuevo
+# con la rigidez de uno que la persona abandonaba —un retiro colapsado por C1-C5, un marcador
+# pegado a un valor que el mismo mensaje corrige con «mejor»—. Equivocarse hacia flexible sólo
+# deja de excluir; si la persona quiere el 950 innegociable, lo vuelve a decir.
 
 _CODIGO_RIGIDEZ: dict[RigidezV0, str] = {
     RigidezV0.ESTRICTA: "[rigidez:estricta]",
@@ -500,7 +502,7 @@ def es_evidencia_de_rigidez(evidencia: EvidenceRefV0) -> bool:
 
 
 def _proyectar_criterios(contexto, datos, field_evidence, rigidez_aplicable, tocados,
-                         source_message_id, retrieved_at) -> tuple[tuple, tuple]:
+                         con_valor_nuevo, source_message_id, retrieved_at) -> tuple[tuple, tuple]:
     """El estado vigente de cada dimensión de la whitelist → `(duras, blandas)`.
 
     Se recorre en el orden de `CAMPOS_CON_CRITERIO`, así que las tuplas salen siempre en el
@@ -533,7 +535,9 @@ def _proyectar_criterios(contexto, datos, field_evidence, rigidez_aplicable, toc
                 buyer_id, source_message_id, f"{ruta}#rigidez", retrieved_at,
                 methodology=_METODOLOGIA_RIGIDEZ[rigidez]),)
             duro = rigidez is RigidezV0.ESTRICTA
-        elif vigente:
+        elif vigente and campo not in con_valor_nuevo:
+            # R10 · sólo mientras el VALOR no cambia (R2d). Un valor nuevo —aunque llegue tras
+            # un «mejor», o con un retiro que C1-C5 colapsó— nace sin la rigidez del viejo.
             sustento_rigidez = tuple(e for e in previo.evidence if es_evidencia_de_rigidez(e))
             duro = duro_previo
         else:

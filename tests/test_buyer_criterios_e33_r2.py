@@ -34,7 +34,8 @@ import pytest
 from app.buyer import actualizador as act
 from app.buyer.actualizador import EstadoActualizacion, actualizar, rutas_divergentes
 from app.buyer.boundary import (
-    CAMPOS_CON_CRITERIO, BuyerCurrencyV0, BuyerFieldV0, ClearBudgetMax, DeclaracionRigidezV0,
+    CAMPOS_CON_CRITERIO, BuyerCurrencyV0, BuyerFieldV0, ClearBedroomsMin, ClearBudgetMax,
+    DeclaracionRigidezV0,
     Disposicion, RigidezV0, SetAreaM2Min, SetBedroomsMin, SetBudgetMax, SetObjective,
     SetPetsRequired,
 )
@@ -173,14 +174,19 @@ def test_R2_2_si_lo_vuelve_a_declarar_estricto_si_nace_HARD():
     assert _lista(c, F.BUDGET_MAX)[0] == "hard_constraints"
 
 
-def test_R2_2_R10_sigue_valiendo_para_un_criterio_VIGENTE():
-    """El límite del arreglo: cambiar el número sin retirar conserva la rigidez."""
+def test_R2_2_R10_la_rigidez_se_conserva_MIENTRAS_el_valor_no_cambie():
+    """R2d: la rigidez sobrevive a mensajes que no cambian el valor —otra dimensión, una duda
+    sobre el mismo presupuesto—, no a un valor nuevo."""
     c = _paso(_vacio(), "máximo 900 USD, el presupuesto es innegociable",
               _dur(SetBudgetMax(amount=Decimal(900), currency=USD)), _rig(F.BUDGET_MAX, E),
               mid="m-1")
-    c = _paso(c, "mejor máximo 950 USD",
-              _dur(SetBudgetMax(amount=Decimal(950), currency=USD)), mid="m-2")
+    c = _paso(c, "al menos 2 dormitorios", _dur(SetBedroomsMin(bedrooms_min=2)), mid="m-2")
     assert _lista(c, F.BUDGET_MAX)[0] == "hard_constraints"
+    c = _paso(c, "unos mil más o menos", _amb(F.BUDGET_MAX), mid="m-3")
+    assert _lista(c, F.BUDGET_MAX)[0] == "hard_constraints"
+    c = _paso(c, "mejor máximo 950 USD",
+              _dur(SetBudgetMax(amount=Decimal(950), currency=USD)), mid="m-4")
+    assert _lista(c, F.BUDGET_MAX)[0] == "soft_preferences"
 
 
 # ══ R2-3 · el vocabulario de dimensión ══════════════════════════════════════════════
@@ -223,7 +229,7 @@ def test_R2_3_un_proponente_HOSTIL_sobre_una_base_POBLADA_no_endurece_nada(texto
     ("las habitaciones son indispensables", F.BEDROOMS_MIN),
     ("los cuartos son indispensables", F.BEDROOMS_MIN),
     ("los metros cuadrados son innegociables", F.AREA_M2_MIN),
-    ("la superficie es obligatoria", F.AREA_M2_MIN),
+    ("la superficie es imprescindible", F.AREA_M2_MIN),
     ("las mascotas son indispensables", F.PETS_REQUIRED),
 ])
 def test_R2_3_nombrar_el_requisito_SIGUE_acreditando(texto, campo):
@@ -933,3 +939,136 @@ def test_R2c_sin_el_ANCLA_al_final_el_marcador_no_habla_del_valor(texto, mutacio
     with pytest.raises(TraduccionNoAutorizada):
         autorizar_rigidez_por_adyacencia(DeclaracionRigidezV0(campo=campo, rigidez=E),
                                          mutacion, texto)
+
+
+# ══ R2d · cuarta revisión adversarial ══════════════════════════════════════════════
+
+
+def _todas(*durables):
+    """Proponente hostil: las durables que se le pidan y ESTRICTA en las cuatro dimensiones."""
+    return [*[_dur(m) for m in durables], *[_rig(k, E) for k in CAMPOS_CON_CRITERIO]]
+
+
+@pytest.mark.parametrize("texto, durables", [
+    ("Hola\nMaximo 900 usd\nAl menos 2 dormitorios\nIndispensable: que acepten mascotas",
+     [SetBudgetMax(amount=Decimal(900), currency=USD), SetBedroomsMin(bedrooms_min=2),
+      SetPetsRequired()]),
+    ("Maximo 900 usd. Excluyente: que acepten perros",
+     [SetBudgetMax(amount=Decimal(900), currency=USD), SetPetsRequired()]),
+    ("Al menos 80 m2, indispensable, que acepten perros",
+     [SetAreaM2Min(area_m2_min=80.0), SetPetsRequired()]),
+    ("Al menos 2 dormitorios\nInnegociable: maximo 900 usd",
+     [SetBedroomsMin(bedrooms_min=2), SetBudgetMax(amount=Decimal(900), currency=USD)]),
+])
+def test_R2d_un_marcador_que_ENCABEZA_no_endurece_lo_anterior(texto, durables):
+    c = _paso(_poblada(), texto, *_todas(*durables), mid="m-1")
+    assert c.hard_constraints == (), [k.criterion_id for k in c.hard_constraints]
+
+
+@pytest.mark.parametrize("texto", [
+    "El presupuesto es innegociable. El presupuesto es flexible.",
+    "Máximo 900 USD, es innegociable. Lo del presupuesto es negociable",
+])
+def test_R2d_si_el_MISMO_mensaje_la_declara_flexible_no_endurece(texto):
+    """Aunque el proponente sólo reporte la lectura estricta."""
+    c = _paso(_poblada(), texto, _dur(SetBudgetMax(amount=Decimal(900), currency=USD)),
+              _rig(F.BUDGET_MAX, E), mid="m-1")
+    assert c.hard_constraints == ()
+
+
+def test_R2d_una_DISYUNCION_entre_dimensiones_no_endurece_ninguna():
+    c = _paso(_vacio(), "Busco casa de minimo 3 recamaras o 150 m2, es indispensable",
+              _dur(SetBedroomsMin(bedrooms_min=3)), _dur(SetAreaM2Min(area_m2_min=150.0)),
+              _rig(F.BEDROOMS_MIN, E), _rig(F.AREA_M2_MIN, E), mid="m-1")
+    assert c.hard_constraints == ()
+
+
+def test_R2d_un_RETIRO_no_es_un_valor_al_que_pegar_el_marcador():
+    c = _paso(_poblada(), "ya no quiero al menos 2 dormitorios sí o sí, mejor al menos 3 dormitorios",
+              _dur(ClearBedroomsMin()),
+              _dur(SetBedroomsMin(bedrooms_min=3)), _rig(F.BEDROOMS_MIN, E), mid="m-1")
+    assert c.hard_constraints == ()
+
+
+@pytest.mark.parametrize("texto, durables", [
+    ("No, ya no tengo tope de presupuesto, ahora máximo 1200 USD",
+     [ClearBudgetMax(), SetBudgetMax(amount=Decimal(1200), currency=USD)]),
+    ("mejor máximo 1200 USD", [SetBudgetMax(amount=Decimal(1200), currency=USD)]),
+])
+def test_R2d_un_valor_NUEVO_no_hereda_la_rigidez_del_viejo(texto, durables):
+    base = _paso(_vacio(), "máximo 900 USD, es innegociable",
+                 _dur(SetBudgetMax(amount=Decimal(900), currency=USD)), _rig(F.BUDGET_MAX, E),
+                 mid="m-0")
+    assert _lista(base, F.BUDGET_MAX)[0] == "hard_constraints"
+    c = _paso(base, texto, *[_dur(m) for m in durables], mid="m-1")
+    assert c.hard_constraints == ()
+
+
+def test_R2d_el_marcador_pegado_a_un_valor_corregido_no_pasa_al_nuevo():
+    c = _paso(_vacio(), "Maximo 900 usd, innegociable. Mejor maximo 1000 usd",
+              _dur(SetBudgetMax(amount=Decimal(900), currency=USD)),
+              _dur(SetBudgetMax(amount=Decimal(1000), currency=USD)), _rig(F.BUDGET_MAX, E),
+              mid="m-1")
+    assert c.hard_constraints == ()
+
+
+def test_R2d_un_PISO_no_es_un_tope():
+    c = _paso(_vacio(), "Presupuesto desde 900 usd, innegociable",
+              _dur(SetBudgetMax(amount=Decimal(900), currency=USD)), _rig(F.BUDGET_MAX, E),
+              mid="m-1")
+    assert c.hard_constraints == ()
+
+
+@pytest.mark.parametrize("texto, durables", [
+    ("En el depa aceptan perros si o si", [SetPetsRequired()]),
+    ("Si, el depa es de minimo 90 m2 si o si", [SetAreaM2Min(area_m2_min=90.0)]),
+])
+def test_R2d_una_DESCRIPCION_del_inmueble_no_es_un_requisito(texto, durables):
+    c = _paso(_poblada(), texto, *_todas(*durables), mid="m-1")
+    assert c.hard_constraints == ()
+
+
+def test_R2d_obligatorio_ya_no_endurece():
+    """Sin signos es tan a menudo pregunta como declaración."""
+    assert not _ok("Oye, lo de las mascotas es obligatorio", F.PETS_REQUIRED, E)
+    assert _ok("lo de las mascotas no es obligatorio", F.PETS_REQUIRED, FL)
+
+
+def test_R2d_un_poco_flexible_ES_flexible():
+    assert _ok("el presupuesto es un poco flexible", F.BUDGET_MAX, FL)
+    assert not _ok("el presupuesto es poco flexible", F.BUDGET_MAX, FL)
+
+
+# ══ R2d · pruebas que AÍSLAN cada regla (las capas se solapan y taparían una mutación) ══
+
+
+def test_R2d_aislada_la_flexible_del_mismo_mensaje_impide_endurecer():
+    """Sin durable, sin puente, sin duda: sólo la regla «el mismo mensaje la declara
+    flexible» separa este mensaje de una restricción dura."""
+    c = _paso(_poblada(), "El presupuesto es innegociable. El presupuesto es flexible.",
+              _rig(F.BUDGET_MAX, E), mid="m-1")
+    assert c.hard_constraints == ()
+
+
+def test_R2d_aislada_la_disyuncion_no_es_valor():
+    """Todo es vocabulario de valor y termina en el ancla del área: sólo la «o» lo frena."""
+    c = _paso(_vacio(), "minimo 3 recamaras o 150 m2, es indispensable",
+              _dur(SetBedroomsMin(bedrooms_min=3)), _dur(SetAreaM2Min(area_m2_min=150.0)),
+              _rig(F.BEDROOMS_MIN, E), _rig(F.AREA_M2_MIN, E), mid="m-1")
+    assert c.hard_constraints == ()
+
+
+def test_R2d_aislada_una_descripcion_en_indicativo_no_es_valor():
+    """«aceptan» describe; «que acepten» pide. Sin «depa» ni «casa», sólo el modo lo frena."""
+    c = _paso(_poblada(), "aceptan perros si o si", *_todas(SetPetsRequired()), mid="m-1")
+    assert c.hard_constraints == ()
+
+
+def test_R2d_aislada_el_marcador_pegado_exige_el_ANCLA():
+    """Todo es vocabulario de valor, pero el valor termina en «comprar», no en su unidad: el
+    marcador puede hablar de la compra."""
+    with pytest.raises(TraduccionNoAutorizada):
+        autorizar_rigidez_por_adyacencia(
+            DeclaracionRigidezV0(campo=F.BUDGET_MAX, rigidez=E),
+            SetBudgetMax(amount=Decimal(900), currency=USD),
+            "máximo 900 USD para comprar, es innegociable")

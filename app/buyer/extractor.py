@@ -503,7 +503,9 @@ def autorizar_traduccion(mutacion, texto: str) -> None:
 # sólo el marcador («…no, perdón, es flexible.»).
 
 _MARCADOR_ESTRICTO = (r"(?:indispensables?|imprescindibles?|innegociables?|no (?:es |son )?negociables?|"
-                      r"obligatori[oa]s?|excluyentes?|si o si|sin excepcion(?:es)?)")
+                      r"excluyentes?|si o si|sin excepcion(?:es)?)")
+"""R2d · sin `obligatorio`: en WhatsApp «lo de las mascotas es obligatorio» es tan a menudo
+una PREGUNTA sin signos («¿tengo que contestarlo?») como una declaración."""
 _MARCA_ESTRICTA = re.compile(rf"\b{_MARCADOR_ESTRICTO}\b")
 
 _MARCADOR_FLEXIBLE_R = (
@@ -524,7 +526,7 @@ negociable»). El «sí» enfático va pegado a la cópula y no bloquea; el subj
 «prefiero que el presupuesto sea flexible» es una corrección, y «no creo que sea…» ya cae por
 el «no»."""
 
-_LOCUCION_NEUTRA = re.compile(r"\bsin (?:duda|problema|problemas)\b")
+_LOCUCION_NEUTRA = re.compile(r"\bsin (?:duda|problema|problemas)\b|\bun poco\b")
 _SUBJUNTIVO = re.compile(r"\b(?:sea|sean|fuera|fueran|fuese|fuesen)\b")
 _VOLITIVO = re.compile(r"\b(?:prefiero|preferimos|quiero|queremos|mejor|ojala)\b")
 """El subjuntivo es la huella de una subordinada. Sin un verbo de preferencia en la cláusula
@@ -606,13 +608,12 @@ _VOCABULARIO_DE_VALOR = frozenset("""
     ahora mejor entonces pues tambien ademas solo como minimo min maximo max hasta tope limite
     menos mas adelante desde presupuesto budget
     comprar compra compro adquirir adquiero alquilar alquilo arrendar arriendo rentar rento
-    invertir invierto inversion buy purchase rent invest casa departamento depa inmueble
-    propiedad vivienda
+    invertir invierto inversion buy purchase rent invest
     usd dolar dolares mxn pesos
     dormitorio dormitorios habitacion habitaciones cuarto cuartos recamara recamaras
     m2 m² metros metro cuadrados cuadrado superficie area
     mascota mascotas perro perros gato gatos pet pets acepte acepten admita admitan permita
-    permitan aceptan admiten permiten allow allows allowed
+    permitan
     ya no quita quitar quitame elimina eliminar borra borrar olvida olvidar descarta descartar
 """.split())
 """Qué palabras puede traer una cláusula de VALOR para contar como parte reconocida del
@@ -626,22 +627,41 @@ def _solo_vocabulario_de_valor(clausula: str) -> bool:
                for t in clausula.split())
 
 
+_DISYUNCION = re.compile(r"\bo\b(?!\s+mas\b)")
+_PISO = re.compile(r"\b(?:desde|minimo|al menos|mas de)\b")
+
+
 def _es_valor(clausula: str, valores) -> list:
-    """Las durables del mensaje que ESTA cláusula acredita por sí sola, y sin nada más."""
-    if not _solo_vocabulario_de_valor(clausula):
+    """Las durables del mensaje que ESTA cláusula acredita por sí sola, y sin nada más.
+
+    R2d · una disyunción («3 recámaras o 150 m2») no es un valor: es una alternativa, y
+    reconocerla como parte de una declaración estricta endurecería sólo una de las dos."""
+    if not _solo_vocabulario_de_valor(clausula) or _DISYUNCION.search(clausula):
         return []
     return [m for m in valores if _VERIFICADOR[type(m)](m, clausula)]
 
 
 def _valor_de(clausula: str, campo: BuyerFieldV0, valores) -> bool:
-    """¿La cláusula es un valor de ESE campo que termina en su ancla?"""
-    return any(campo_de_mutacion(m) is campo for m in _es_valor(clausula, valores)) and bool(
-        re.search(rf"\b{_ANCLA_DEL_VALOR[campo]}\s*$", clausula))
+    """¿La cláusula es un valor DECLARADO de ESE campo que termina en su ancla?
+
+    R2d · sólo un `Set*`: «ya no quiero al menos 2 dormitorios sí o sí» acredita el RETIRO,
+    y un marcador pegado a un retiro no endurece nada. Y un tope no puede ser un piso:
+    «presupuesto desde 900 USD, innegociable» no declara un máximo."""
+    declarados = [m for m in _es_valor(clausula, valores)
+                  if campo_de_mutacion(m) is campo
+                  and isinstance(m, (SetBudgetMax, SetBedroomsMin, SetAreaM2Min, SetPetsRequired))]
+    if not declarados:
+        return False
+    if campo is BuyerFieldV0.BUDGET_MAX and _PISO.search(clausula):
+        return False
+    return bool(re.search(rf"\b{_ANCLA_DEL_VALOR[campo]}\s*$", clausula))
 
 
 def _acredita_estricta(campo: BuyerFieldV0, plano: str, valores) -> bool:
     if "?" in plano or "¿" in plano:
         return False
+    if _acredita_flexible(campo, plano):
+        return False          # R2d · el mismo mensaje también la declara flexible
     clausulas = _clausulas_estrictas(plano)
     declara = False
     for i, c in enumerate(clausulas):
@@ -652,7 +672,10 @@ def _acredita_estricta(campo: BuyerFieldV0, plano: str, valores) -> bool:
         if final and _valor_de(c[:final.start()].strip(), campo, valores):
             declara = True                                   # «al menos 2 dormitorios sí o sí»
             continue
-        if _solo_marcador(c) and i > 0 and _valor_de(clausulas[i - 1], campo, valores):
+        ultima = i == len(clausulas) - 1 or all(_CORTESIA.match(x) for x in clausulas[i + 1:])
+        if _solo_marcador(c) and i > 0 and ultima and _valor_de(clausulas[i - 1], campo, valores):
+            # R2d · sólo como CIERRE: «Indispensable: que acepten mascotas» encabeza lo que
+            # viene después, y atarlo a lo anterior endurecía la dimensión equivocada.
             declara = True                                   # «máximo 900 USD, es innegociable»
             continue
         if (_es_valor(c, valores) or _CORTESIA.match(c)

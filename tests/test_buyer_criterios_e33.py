@@ -119,7 +119,8 @@ def _rigidez_ok(texto, campo, rigidez):
     ("el presupuesto, sin excepción", F.BUDGET_MAX, None),     # la coma corta la cláusula
     ("tope de presupuesto sin excepción", F.BUDGET_MAX, E),
     ("que acepten mascotas es indispensable", F.PETS_REQUIRED, E),
-    ("el área es imprescindible", F.AREA_M2_MIN, E),
+    ("el área es imprescindible", F.AREA_M2_MIN, None),     # R2: 'área' suelta no basta
+    ("la superficie es imprescindible", F.AREA_M2_MIN, E),
     ("el presupuesto es flexible", F.BUDGET_MAX, FL),
     ("los dormitorios son flexibles", F.BEDROOMS_MIN, FL),
     ("idealmente unos 80 m2", F.AREA_M2_MIN, FL),
@@ -765,7 +766,7 @@ def test_H_R8_un_hard_SIN_rigidez_declarada_en_la_base_se_levanta():
         _paso(colado, "al menos 2 dormitorios", _dur(_BED), mid="m-2")
 
 
-def _todos_los_criterios_de_esta_suite():
+def _escenarios_de_esta_suite():
     escenarios = [
         _paso(_vacio(), "máximo 900 USD, el presupuesto es innegociable, al menos 2 dormitorios, "
               "mínimo 80 m2, necesito que acepten mascotas",
@@ -780,7 +781,12 @@ def _todos_los_criterios_de_esta_suite():
     ):
         c = _paso(c, texto, *props, mid=mid)
         escenarios.append(c)
-    return [k for ctx in escenarios for k in (*ctx.hard_constraints, *ctx.soft_preferences)]
+    return escenarios
+
+
+def _todos_los_criterios_de_esta_suite():
+    return [k for ctx in _escenarios_de_esta_suite()
+            for k in (*ctx.hard_constraints, *ctx.soft_preferences)]
 
 
 def test_H_todo_criterio_producido_es_STATED_y_de_una_dimension_permitida():
@@ -793,10 +799,15 @@ def test_H_todo_criterio_producido_es_STATED_y_de_una_dimension_permitida():
 
 
 def test_H_todo_criterio_DURO_tiene_su_rigidez_ESTRICTA_declarada():
-    duros = [k for k in _todos_los_criterios_de_esta_suite()
-             if any(es_evidencia_de_rigidez(e) and "indispensable" in e.methodology
-                    for e in k.evidence)]
+    """E3.3-R2: la versión anterior filtraba por la evidencia y nunca miraba
+    `hard_constraints`, así que era tautológica. Ahora recorre la LISTA DURA."""
+    from app.buyer.reductor import rigidez_de_evidencia
+
+    duros = [k for ctx in _escenarios_de_esta_suite() for k in ctx.hard_constraints]
     assert duros, "el control necesita criterios duros"
+    for k in duros:
+        assert any(rigidez_de_evidencia(e) is RigidezV0.ESTRICTA for e in k.evidence), \
+            f"{k.criterion_id} está en hard_constraints sin rigidez ESTRICTA"
 
 
 # ══ I · sin ranking todavía ════════════════════════════════════════════════════════

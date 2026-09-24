@@ -289,40 +289,103 @@ def _evidencia_objective(mutacion, plano: str) -> bool:
     return patron is not None and any(patron.search(c) for c in _afirmativas(plano))
 
 
-def _numero_junto_a_su_dimension(plano: str, valor, *dimension: re.Pattern) -> bool:
-    """¿Alguna cláusula AFIRMA esta dimensión **y** este número a la vez?
+# ── F3-E3.2-VALUE-GUARD-R1 · el número LIGADO a su dimensión y a su operador ──────────
+#
+# Hasta aquí la guarda pedía que la cláusula nombrara la dimensión y que el número estuviera
+# EN la cláusula. Eso dejaba elegir cualquier número presente:
+#
+#     "al menos 2 dormitorios para mis 3 hijos"      acreditaba bedrooms_min = 3  ← los hijos
+#     "mínimo 80 m2 para 4 personas"                  acreditaba area_m2_min = 4   ← las personas
+#     "presupuesto desde 900 USD"                     acreditaba budget_max = 900  ← un PISO
+#
+# Ahora el número tiene que estar LIGADO: en una posición sintáctica fija respecto de SU
+# operador y SU ancla —la unidad o el sustantivo de la dimensión—, sin nada en medio:
+#
+#     bedrooms_min   «al menos | mínimo | desde» N «dormitorios»   ·   N «dormitorios o más»
+#     area_m2_min    «al menos | mínimo | desde» N «m2»            ·   N «m2 o más»
+#     budget_max     «máximo | hasta | tope | presupuesto (de)» N «USD»  ·  N «USD máximo»
+#
+# Lo que no encaja en ninguna forma no liga, y lo que no liga no se acredita. Un número pegado
+# a «hijos», «personas» o «perros» nunca liga, porque ninguna forma tiene esos sustantivos: la
+# guarda no resuelve números con contexto protegido — ni para aceptarlos ni para descartarlos.
+#
+# **Fail closed ante la ambigüedad.** Si una misma cláusula liga DOS números distintos a la
+# misma dimensión, no se elige: la cláusula no acredita, y el intérprete lo convierte en
+# AMBIGUOUS con su dimensión.
 
-    **Por cláusula, y es una frontera de Fair Housing, no una preferencia de estilo.** Buscar
-    el número en todo el mensaje convierte el conteo de personas en evidencia de un requisito
-    de propiedad: `"tenemos 2 niños y al menos 3 dormitorios"` trae dimensión, mínimo y un
-    `2`, y autorizaría `SetBedroomsMin(2)` — el peor caso del §7, y plausible.
+_NUM_LIGABLE = r"(?<![\w.,])(?P<n>\d{1,3}(?:[.,]\d{3})+|\d+)(?!\d|[.,]\d)"
+"""Un número que se declara entero: dígitos o miles agrupados de tres. `120.5` no liga —el
+punto puede ser decimal o de miles según la plaza— y el `2` de `m2` tampoco, porque va pegado
+a una letra. Sí puede ir pegado a su unidad: «80m2», «900usd»."""
 
-    La guarda de dimensión no lo veía: el texto SÍ habla de dormitorios. Lo que hay que
-    exigir es que el número salga de la misma cláusula que la dimensión que va a escribir, y
-    que esa cláusula lo afirme en vez de negarlo.
-    """
-    return any(
-        all(p.search(clausula) for p in dimension)
-        and any(n == valor for n in _numeros_del_texto(clausula))
-        for clausula in _afirmativas(plano)
+_OP_MINIMO = r"(?:al menos|como minimo|minimo|minimum|at least|desde|a partir de)"
+_OP_MINIMO_POST = r"(?:o mas|como minimo|minimo|en adelante|or more)"
+_OP_TOPE = (r"(?:como maximo|no mas de|maximo|max|hasta|tope(?: de presupuesto)?|"
+            r"presupuesto(?: maximo)?|budget)")
+_OP_TOPE_POST = r"(?:como maximo|maximo|max|de presupuesto)"
+_CONECTOR = r"(?:\s+(?:es|seria|sera))?(?:\s+(?:de|los))?"
+
+_ANCLA_DORMITORIOS = r"(?:dormitorios?|habitacion(?:es)?|cuartos?|recamaras?|bedrooms?)"
+_ANCLA_AREA = r"(?:m2|m²|mts2|metros cuadrados?|square meters?)"
+
+
+def _formas_minimo(ancla: str) -> tuple[re.Pattern, ...]:
+    return (
+        re.compile(rf"\b{_OP_MINIMO}\s+(?:de\s+)?{_NUM_LIGABLE}\s*{ancla}\b"),
+        re.compile(rf"{_NUM_LIGABLE}\s*{ancla}\s+{_OP_MINIMO_POST}\b"),
     )
+
+
+_LIGA_DORMITORIOS = _formas_minimo(_ANCLA_DORMITORIOS)
+_LIGA_AREA = _formas_minimo(_ANCLA_AREA)
+
+
+def _liga_presupuesto(moneda: re.Pattern) -> tuple[re.Pattern, ...]:
+    cur = moneda.pattern
+    return (
+        re.compile(rf"\b{_OP_TOPE}{_CONECTOR}\s+{_NUM_LIGABLE}\s*{cur}"),
+        re.compile(rf"\b{_OP_TOPE}{_CONECTOR}\s+{cur}\s*{_NUM_LIGABLE}"),
+        re.compile(rf"{_NUM_LIGABLE}\s*{cur}\s+{_OP_TOPE_POST}\b"),
+    )
+
+
+_TOPE_NEGADO = re.compile(r"\bno mas de\b")
+"""«No más de 900 USD» es un tope; su «no» no niega la cláusula."""
+
+
+def _a_decimal(token: str) -> Decimal:
+    return Decimal(token.replace(".", "").replace(",", ""))
+
+
+def _valor_ligado(plano: str, valor, formas) -> bool:
+    """¿Alguna cláusula AFIRMATIVA liga EXACTAMENTE este valor, y sólo este, a su dimensión?
+
+    Por cláusula y afirmativa, como antes —es una frontera de Fair Housing: el conteo de
+    personas de otra cláusula nunca entra—. Y además LIGADO: el número está en la forma de su
+    operador y su ancla. Dos números ligados distintos en la misma cláusula no se desempatan.
+    """
+    for clausula in _CLAUSULA.split(plano):
+        if _NEGACION.search(_TOPE_NEGADO.sub(" ", clausula)):
+            continue                     # negada: no evidencia lo que nombra
+        ligados = {_a_decimal(m.group("n")) for f in formas for m in f.finditer(clausula)}
+        if len(ligados) == 1 and next(iter(ligados)) == valor:
+            return True
+    return False
 
 
 def _evidencia_budget(mutacion, plano: str) -> bool:
     moneda = _patron_de_moneda(mutacion.currency)
     if moneda is None:
         return False
-    return _numero_junto_a_su_dimension(plano, mutacion.amount, _DIM_BUDGET, moneda)
+    return _valor_ligado(plano, mutacion.amount, _liga_presupuesto(moneda))
 
 
 def _evidencia_bedrooms(mutacion, plano: str) -> bool:
-    return _numero_junto_a_su_dimension(
-        plano, mutacion.bedrooms_min, _DIM_BEDROOMS, _MINIMO)
+    return _valor_ligado(plano, mutacion.bedrooms_min, _LIGA_DORMITORIOS)
 
 
 def _evidencia_area(mutacion, plano: str) -> bool:
-    return _numero_junto_a_su_dimension(
-        plano, mutacion.area_m2_min, _DIM_AREA, _MINIMO)
+    return _valor_ligado(plano, mutacion.area_m2_min, _LIGA_AREA)
 
 
 def _evidencia_pets(_mutacion, plano: str) -> bool:

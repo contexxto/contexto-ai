@@ -69,6 +69,7 @@ from app.buyer.extractor import (
     AfirmacionRejected,
     AfirmacionTurnOnly,
     LoteExtraccion,
+    RigidezNoAcreditada,
     TraduccionNoAutorizada,
     autorizar_rigidez,
     autorizar_traduccion,
@@ -190,22 +191,27 @@ def _acreditar(propuesta: PropuestaV0, texto: str):
     return AfirmacionDurable(mutacion=propuesta.mutacion, motivo=propuesta.motivo)
 
 
-def _acreditar_rigidez(propuesta: PropuestaRigidezV0, texto: str):
-    """UNA propuesta de rigidez → `DeclaracionRigidezV0`, o `REJECTED` si no se acredita.
+def _acreditar_rigidez(propuesta: PropuestaRigidezV0, texto: str, valores: dict):
+    """UNA propuesta de rigidez → `DeclaracionRigidezV0`, o `RigidezNoAcreditada`.
+
+    `valores` son las durables ACREDITADAS de este mensaje, por dimensión. La guarda las
+    necesita para ESTRICTA: «máximo 900 USD» cuenta como parte reconocida del mensaje sólo si
+    una durable lo acreditó, y el marcador pegado a un valor sólo habla de ese valor.
 
     **No cae a `AMBIGUOUS`, y es deliberado.** Una ambigüedad sobre el presupuesto compite
     con el presupuesto en C1-C5: *"máximo 900 USD, idealmente"* con la rigidez sin acreditar
-    acabaría anulando un valor que sí se acreditó. Y lo que se pierde no es estado: sin
-    rigidez acreditada el criterio conserva la que tenía.
+    acabaría anulando un valor que sí se acreditó. La no acreditada compite, en cambio, con
+    las OTRAS rigideces de su dimensión (`resolver_rigideces`).
     """
     declaracion = DeclaracionRigidezV0(campo=propuesta.campo, rigidez=propuesta.rigidez)
     try:
-        autorizar_rigidez(declaracion, texto)
+        autorizar_rigidez(declaracion, texto,
+                          valores=tuple(m for ms in valores.values() for m in ms))
+        return declaracion
     except TraduccionNoAutorizada as e:
-        return AfirmacionRejected(
-            campo=propuesta.campo,
+        return RigidezNoAcreditada(
+            campo=propuesta.campo, rigidez=propuesta.rigidez,
             motivo=f"rigidez sin evidencia acreditable ({e}): {propuesta.motivo}")
-    return declaracion
 
 
 def interpretar(mensaje, propuestas: Sequence[PropuestaV0 | PropuestaRigidezV0]
@@ -217,17 +223,19 @@ def interpretar(mensaje, propuestas: Sequence[PropuestaV0 | PropuestaRigidezV0]
     perfectas, cada una pasa por la guarda antes de existir como tal. Las rigideces igual,
     con su propia guarda.
 
-    El orden de entrada se conserva; `construir_lote` aplica C1-C5 encima.
+    Dos pasadas: primero los valores, porque el puente de adyacencia de una rigidez sólo
+    puede apoyarse en un valor YA acreditado. El orden de entrada se conserva en cada lista;
+    `construir_lote` aplica C1-C5 encima.
     """
-    afirmaciones, rigideces = [], []
-    for propuesta in propuestas:
-        if isinstance(propuesta, PropuestaRigidezV0):
-            acreditada = _acreditar_rigidez(propuesta, mensaje.text)
-            (rigideces if isinstance(acreditada, DeclaracionRigidezV0)
-             else afirmaciones).append(acreditada)
-        else:
-            afirmaciones.append(_acreditar(propuesta, mensaje.text))
-    return construir_lote(mensaje, afirmaciones, rigideces)
+    afirmaciones = [_acreditar(p, mensaje.text) for p in propuestas
+                    if not isinstance(p, PropuestaRigidezV0)]
+    valores: dict = {}
+    for afirmacion in afirmaciones:
+        if isinstance(afirmacion, AfirmacionDurable):
+            valores.setdefault(afirmacion.campo, []).append(afirmacion.mutacion)
+    intentos = [_acreditar_rigidez(p, mensaje.text, valores) for p in propuestas
+                if isinstance(p, PropuestaRigidezV0)]
+    return construir_lote(mensaje, afirmaciones, intentos)
 
 
 async def interpretar_mensaje(mensaje, proponente: Proponente | None = None
@@ -341,13 +349,15 @@ _SYSTEM = (
     "auditar la decisión después.\n"
     "9. RIGIDEZ, en la lista aparte `rigideces`. Regístrala SOLO si el usuario dice con "
     "palabras explícitas que un requisito suyo es indispensable, imprescindible, "
-    "innegociable, obligatorio o 'sí o sí' (estricta), o que es flexible, negociable, ideal "
-    "o 'de preferencia' (flexible). Campos posibles: budget_max, bedrooms_min, area_m2_min, "
-    "pets_required.\n"
+    "innegociable, obligatorio o 'sí o sí' (estricta), o que es flexible, negociable, 'lo "
+    "ideal' o 'de preferencia' (flexible). Campos posibles: budget_max, bedrooms_min, "
+    "area_m2_min, pets_required.\n"
     "   'máximo' y 'al menos' NO son rigidez: son el valor. 'máximo 900 USD' no lleva "
     "rigidez; 'máximo 900 USD y es innegociable' sí.\n"
     "   Puede venir sin valor, y entonces corrige la rigidez de algo ya dicho: 'lo del "
     "presupuesto es flexible' → rigidez flexible en budget_max, sin afirmación durable.\n"
+    "   Si corrige la rigidez en el mismo mensaje, registra LAS DOS, en orden, igual que la "
+    "regla 7a: 'el presupuesto es innegociable... no, perdón, es flexible'.\n"
     "   NUNCA la deduzcas: ni de lo importante que parezca, ni de QUIÉN es la persona ni de "
     "por qué lo necesita (regla 3). Sin palabra explícita, no hay rigidez. Una pregunta "
     "('¿es negociable?') tampoco la declara.\n"
@@ -481,6 +491,24 @@ def _tipar_monto(cruda):
     return {**cruda, "mutacion": {**mutacion, "amount": Decimal(str(monto))}}
 
 
+def _ubicacion(err) -> str:
+    """La ruta del error, sin nombres que haya elegido el modelo: en `extra_forbidden` el último
+    tramo ES la clave que el modelo inventó, y esa clave puede ser texto del mensaje."""
+    loc = [str(x) for x in err["loc"]]
+    if err["type"] == "extra_forbidden" and loc:
+        loc[-1] = "<clave extra>"
+    return ".".join(loc)
+
+
+def _registrar_descarte(que: str, error: ValidationError) -> None:
+    """Qué falló, **nunca con qué**. El `ValidationError` de Pydantic repite el input, y aquí el
+    input es lo que el modelo leyó del mensaje de la persona —su `motivo` puede parafrasearla—.
+    Se registran el número de errores y su ubicación y tipo, que es lo que sirve para depurar."""
+    tipos = sorted({f"{_ubicacion(err)}:{err['type']}" for err in error.errors()})
+    logger.warning("%s descartada por no validar: %d error(es) · %s",
+                   que, error.error_count(), tipos)
+
+
 def _parsear(bruto) -> Sequence[PropuestaV0 | PropuestaRigidezV0]:
     """Salida del modelo → propuestas. **Descarta la que no valide, conserva las demás.**
 
@@ -495,10 +523,10 @@ def _parsear(bruto) -> Sequence[PropuestaV0 | PropuestaRigidezV0]:
         try:
             salida.append(PropuestaV0.model_validate(_tipar_monto(cruda)))
         except ValidationError as e:
-            logger.warning("propuesta descartada por no validar: %s", e)
+            _registrar_descarte("propuesta", e)
     for cruda in bruto.get("rigideces") or ():
         try:
             salida.append(PropuestaRigidezV0.model_validate(cruda))
         except ValidationError as e:
-            logger.warning("rigidez descartada por no validar: %s", e)
+            _registrar_descarte("rigidez", e)
     return tuple(salida)

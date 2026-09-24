@@ -113,13 +113,18 @@ def _rigidez_ok(texto, campo, rigidez):
 
 
 @pytest.mark.parametrize("texto, campo, rigidez", [
-    ("necesito al menos 2 dormitorios sí o sí", F.BEDROOMS_MIN, E),
+    # R2b: ESTRICTA pegada a un VALOR no es forma canónica; la acredita el puente, que
+    # necesita la durable del mensaje (test_R2_10). Sin ella, la guarda local no la acepta.
+    ("necesito al menos 2 dormitorios sí o sí", F.BEDROOMS_MIN, None),
     ("el presupuesto es innegociable", F.BUDGET_MAX, E),
     ("mi presupuesto no es negociable", F.BUDGET_MAX, E),
     ("el presupuesto, sin excepción", F.BUDGET_MAX, None),     # la coma corta la cláusula
     ("tope de presupuesto sin excepción", F.BUDGET_MAX, E),
     ("que acepten mascotas es indispensable", F.PETS_REQUIRED, E),
-    ("el área es imprescindible", F.AREA_M2_MIN, E),
+    ("el área es imprescindible", F.AREA_M2_MIN, None),     # R2c: «el área» es también la zona
+    ("el área mínima es imprescindible", F.AREA_M2_MIN, E),
+    ("el área verde es imprescindible", F.AREA_M2_MIN, None),  # sobra «verde»
+    ("la superficie es imprescindible", F.AREA_M2_MIN, E),
     ("el presupuesto es flexible", F.BUDGET_MAX, FL),
     ("los dormitorios son flexibles", F.BEDROOMS_MIN, FL),
     ("idealmente unos 80 m2", F.AREA_M2_MIN, FL),
@@ -218,7 +223,7 @@ def test_B_dos_rigideces_distintas_CON_correccion_gana_la_ultima():
 
 
 def test_B_la_misma_rigidez_repetida_es_una():
-    lote = interpretar(_msg("presupuesto innegociable, repito: presupuesto innegociable"),
+    lote = interpretar(_msg("el presupuesto es innegociable. El presupuesto es innegociable"),
                        [_rig(F.BUDGET_MAX, E), _rig(F.BUDGET_MAX, E)])
     assert len(lote.rigideces) == 1
 
@@ -413,14 +418,15 @@ def test_D_corregir_de_SOFT_a_HARD():
     assert c.soft_preferences == ()
 
 
-def test_D_R10_cambiar_el_VALOR_no_suelta_la_rigidez():
-    """La persona corrigió el número, no la rigidez. Soltarla la cambiaría sin declaración."""
+def test_D_R10_cambiar_el_VALOR_suelta_la_rigidez():
+    """E3.3-R2d · decisión REVERTIDA: un valor nuevo nace sin rigidez hasta que la persona la
+    vuelva a declarar. Heredarla dejaba pasar la rigidez de un valor que ella abandonaba."""
     c = _paso(_vacio(), "máximo 900 USD, el presupuesto es innegociable",
               _dur(_BUD), _rig(F.BUDGET_MAX, E), mid="m-1")
     c = _paso(c, "mejor máximo 950 USD",
               _dur(SetBudgetMax(amount=Decimal(950), currency=USD)), mid="m-2")
     lista, criterio = _criterio(c, F.BUDGET_MAX)
-    assert lista == "hard_constraints" and criterio.value == 950
+    assert lista == "soft_preferences" and criterio.value == 950
 
 
 def test_D_una_correccion_NO_acreditada_no_mueve_nada():
@@ -765,7 +771,7 @@ def test_H_R8_un_hard_SIN_rigidez_declarada_en_la_base_se_levanta():
         _paso(colado, "al menos 2 dormitorios", _dur(_BED), mid="m-2")
 
 
-def _todos_los_criterios_de_esta_suite():
+def _escenarios_de_esta_suite():
     escenarios = [
         _paso(_vacio(), "máximo 900 USD, el presupuesto es innegociable, al menos 2 dormitorios, "
               "mínimo 80 m2, necesito que acepten mascotas",
@@ -780,7 +786,12 @@ def _todos_los_criterios_de_esta_suite():
     ):
         c = _paso(c, texto, *props, mid=mid)
         escenarios.append(c)
-    return [k for ctx in escenarios for k in (*ctx.hard_constraints, *ctx.soft_preferences)]
+    return escenarios
+
+
+def _todos_los_criterios_de_esta_suite():
+    return [k for ctx in _escenarios_de_esta_suite()
+            for k in (*ctx.hard_constraints, *ctx.soft_preferences)]
 
 
 def test_H_todo_criterio_producido_es_STATED_y_de_una_dimension_permitida():
@@ -793,10 +804,15 @@ def test_H_todo_criterio_producido_es_STATED_y_de_una_dimension_permitida():
 
 
 def test_H_todo_criterio_DURO_tiene_su_rigidez_ESTRICTA_declarada():
-    duros = [k for k in _todos_los_criterios_de_esta_suite()
-             if any(es_evidencia_de_rigidez(e) and "indispensable" in e.methodology
-                    for e in k.evidence)]
+    """E3.3-R2: la versión anterior filtraba por la evidencia y nunca miraba
+    `hard_constraints`, así que era tautológica. Ahora recorre la LISTA DURA."""
+    from app.buyer.reductor import rigidez_de_evidencia
+
+    duros = [k for ctx in _escenarios_de_esta_suite() for k in ctx.hard_constraints]
     assert duros, "el control necesita criterios duros"
+    for k in duros:
+        assert any(rigidez_de_evidencia(e) is RigidezV0.ESTRICTA for e in k.evidence), \
+            f"{k.criterion_id} está en hard_constraints sin rigidez ESTRICTA"
 
 
 # ══ I · sin ranking todavía ════════════════════════════════════════════════════════

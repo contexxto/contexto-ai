@@ -55,8 +55,9 @@ async def _con_los_cuatro_estados(migrada, b):
     pasos = [
         ("m-1", [SetBudgetMax(amount=Decimal(900), currency=BuyerCurrencyV0.USD),
                  SetAreaM2Min(area_m2_min=80.0), SetPetsRequired()],
-         [_rig(F.BUDGET_MAX, RigidezV0.ESTRICTA)]),
-        ("m-2", [ClearPetsRequired()], [_rig(F.PETS_REQUIRED, RigidezV0.ESTRICTA)]),
+         [_rig(F.BUDGET_MAX, RigidezV0.ESTRICTA), _rig(F.PETS_REQUIRED, RigidezV0.ESTRICTA)]),
+        # E3.3-R2: la rigidez va con el valor vigente; un retiro después conserva la lista.
+        ("m-2", [ClearPetsRequired()], []),
     ]
     revision = None
     for mid, mutaciones, rigideces in pasos:

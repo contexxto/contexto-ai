@@ -470,7 +470,7 @@ def autorizar_traduccion(mutacion, texto: str) -> None:
         )
 
 
-# ── E3.3 · la guarda de RIGIDEZ — ASIMÉTRICA desde E3.3-R2 ──────────────────────────
+# ── E3.3 · la guarda de RIGIDEZ — ASIMÉTRICA, y para ESTRICTA sobre el MENSAJE entero ──
 #
 # La misma exigencia que las mutaciones, aplicada a otra afirmación: que la persona dijo que
 # ESE requisito es indispensable —o flexible— y no que el modelo lo dedujo.
@@ -481,49 +481,56 @@ def autorizar_traduccion(mutacion, texto: str) -> None:
 #     FLEXIBLE  un falso positivo sólo deja de excluir: ordena en vez de filtrar  → barato
 #               un falso NEGATIVO deja dura una restricción que ella relajó        → caro
 #
-# Por eso ESTRICTA se acredita contra una LISTA BLANCA de formas y FLEXIBLE contra una
-# exigencia local y permisiva. Dos revisiones adversariales seguidas demostraron que una lista
-# NEGRA de palabras para ESTRICTA no converge: cada ronda de parches abría huecos nuevos
-# («y» y los dos puntos reiniciaban la negación, la negación pospuesta no contaba, «cree» o
-# «según» no estaban en la lista…). Una forma positiva sí converge: lo que no encaja, no pasa.
+# ESTRICTA — COBERTURA TOTAL. Tres revisiones adversariales seguidas mostraron que ninguna
+# frontera local —cláusula, oración— aguanta: el desmentido llega en la cláusula de al lado,
+# tras una «y», tras unos puntos suspensivos o en la línea siguiente («…o no?», «Es broma
+# jaja», «Para mí no.»). Así que ESTRICTA se acredita sólo si **TODAS** las cláusulas del
+# mensaje son algo que la guarda reconoce:
 #
-# ESTRICTA — dos vías, las dos dentro de UNA oración limpia:
+#     la declaración canónica      «el presupuesto es innegociable» (requisito como SUJETO)
+#     un valor acreditado          «máximo 900 USD», «busco alquilar» — una durable del mensaje
+#     el marcador pegado al valor  «al menos 2 dormitorios sí o sí», «máximo 900 USD, es
+#                                  innegociable» — justo tras la unidad o el sustantivo
+#     otra declaración canónica    «los dormitorios son flexibles»
+#     cortesía                     «hola», «gracias»; y una partícula SÓLO al principio
 #
-#     canónica   la cláusula ES la declaración: «el presupuesto es innegociable»,
-#                «los dormitorios son indispensables», «lo del presupuesto es innegociable»
-#     valor      el marcador pegado al valor que ESTE mensaje acreditó para esa dimensión:
-#                «al menos 2 dormitorios sí o sí» · «máximo 900 USD, es innegociable»
+# y no hay «?» ni «¿» en ninguna parte. Lo que no encaja en nada —«jaja», «para mí no», un
+# emoji, «olvida eso»— deja el mensaje sin ESTRICTA. Es una lista BLANCA sobre el mensaje
+# entero: no depende de haber previsto la palabra con la que alguien se desdice.
 #
-#     oración limpia   sin «?» ni «¿», y sin negación, modalidad, voz ajena, pasado ni
-#                      retractación en NINGUNA parte de la oración —antes o después del
-#                      marcador, crucen o no una coma, una «y» o unos dos puntos—
-#
-# FLEXIBLE — la cláusula nombra la dimensión y trae un marcador de flexibilidad sin negación
-# que lo invierta; o, si el mensaje sólo nombra ESA dimensión, una cláusula que es sólo el
-# marcador («…no, perdón, es flexible»). No hay alcance a través de la coma: «ya no, el
-# presupuesto es flexible» es exactamente la corrección que sale cara perder.
+# FLEXIBLE — local y permisiva: la cláusula nombra la dimensión y trae el marcador sin una
+# negación que lo invierta; o, si el mensaje sólo nombra ESA dimensión, una cláusula que es
+# sólo el marcador («…no, perdón, es flexible.»).
 
 _MARCADOR_ESTRICTO = (r"(?:indispensables?|imprescindibles?|innegociables?|no (?:es |son )?negociables?|"
                       r"obligatori[oa]s?|excluyentes?|si o si|sin excepcion(?:es)?)")
+_MARCA_ESTRICTA = re.compile(rf"\b{_MARCADOR_ESTRICTO}\b")
 
-_MARCADOR_FLEXIBLE = re.compile(
-    r"\b(?:flexibles?|negociables?|idealmente|lo ideal|de preferencia|preferiblemente|"
-    r"preferentemente|si se puede|si es posible|"
+_MARCADOR_FLEXIBLE_R = (
+    r"(?:flexibles?|negociables?|idealmente|lo ideal|de preferencia|preferiblemente|"
+    r"preferentemente|si se puede|si es posible|hay margen|con margen|me puedo estirar|"
+    r"puedo estirarme|podemos estirarnos|"
     r"(?:ya )?no (?:es|son) (?:indispensables?|imprescindibles?|innegociables?|"
-    r"obligatori[oa]s?|excluyentes?))\b")
-"""`ideal` suelto no está: *"mi casa ideal"* describe el inmueble, no la rigidez de un
-requisito. *"Ya no es innegociable"* SÍ es flexibilidad declarada."""
+    r"obligatori[oa]s?|excluyentes?))")
+_MARCADOR_FLEXIBLE = re.compile(rf"\b{_MARCADOR_FLEXIBLE_R}\b")
+"""`ideal` suelto no está: *"mi casa ideal"* describe el inmueble. *"Ya no es innegociable"*
+SÍ es flexibilidad declarada."""
 
 _NIEGA_FLEXIBLE = re.compile(
-    r"\b(?:no|ni|nunca|jamas|tampoco|nada|poco|cero|apenas|sin|sea|sean|fuera|fueran|fuese)\b"
-    r"|\bsi\b(?!\s+(?:es|son)\b)")
-"""Lo que, en SU cláusula, invierte o suspende un marcador de flexibilidad: la negación («no es
-flexible», «cero negociable», «poco flexible»), el subjuntivo de una subordinada («no creo que
-sea flexible», «si fuera flexible») y el «si» condicional («quería saber si es negociable»). El
-«sí» enfático —«el presupuesto sí es negociable»— va pegado a la cópula y no bloquea.
+    r"\b(?:no|ni|nunca|jamas|tampoco|nada|poco|cero|apenas|sin)\b|\bsi\b(?!\s+(?:es|son)\b)")
+"""Lo que, en SU cláusula, invierte o suspende un marcador de flexibilidad: la negación («no
+es flexible», «cero negociable», «poco flexible») y el «si» condicional («quería saber si es
+negociable»). El «sí» enfático va pegado a la cópula y no bloquea; el subjuntivo sólo, tampoco:
+«prefiero que el presupuesto sea flexible» es una corrección, y «no creo que sea…» ya cae por
+el «no»."""
 
-Nada más bloquea a FLEXIBLE —ni un tercero ni el pasado en otra cláusula—: equivocarse hacia
-flexible sólo deja de excluir."""
+_LOCUCION_NEUTRA = re.compile(r"\bsin (?:duda|problema|problemas)\b")
+_SUBJUNTIVO = re.compile(r"\b(?:sea|sean|fuera|fueran|fuese|fuesen)\b")
+_VOLITIVO = re.compile(r"\b(?:prefiero|preferimos|quiero|queremos|mejor|ojala)\b")
+"""El subjuntivo es la huella de una subordinada. Sin un verbo de preferencia en la cláusula
+—«prefiero que sea flexible»—, lo más probable es que cuelgue de un «no creo» que quedó al otro
+lado de la coma, y hacia flexible eso sería relajar lo que la persona dijo que no era
+flexible."""
 
 _DIM_RIGIDEZ: dict[BuyerFieldV0, re.Pattern] = {
     BuyerFieldV0.BUDGET_MAX: re.compile(r"\b(presupuesto|budget)\b"),
@@ -533,100 +540,156 @@ _DIM_RIGIDEZ: dict[BuyerFieldV0, re.Pattern] = {
         r"(\bm2\b|\bm²|metros? cuadrados?|\bsuperficie\b|square meters?)"),
     BuyerFieldV0.PETS_REQUIRED: _PETS_SUSTANTIVO,
 }
-"""Qué nombra una dimensión, para FLEXIBLE y para saber cuántas dimensiones nombra un mensaje.
-Sólo el NOMBRE: `máximo`, `tope`, `límite`, `cuarto` y `área` sueltos cuantifican cualquier
-cosa («máximo 20 minutos», «cuarto de oración», «área verde»). `precio` tampoco: *"el precio es
-negociable"* habla del inmueble."""
+"""Qué NOMBRA una dimensión para FLEXIBLE. `máximo`, `tope`, `cuarto` y `área` sueltos
+cuantifican cualquier cosa. `precio` tampoco: *"el precio es negociable"* habla del inmueble."""
 
 _SUJETO_CANONICO: dict[BuyerFieldV0, str] = {
     BuyerFieldV0.BUDGET_MAX: r"(?:el |mi |nuestro |lo del )?(?:tope de presupuesto|presupuesto maximo|presupuesto)",
     BuyerFieldV0.BEDROOMS_MIN: r"(?:los |las |mis |el numero de |la cantidad de |lo de los |lo de las )?(?:dormitorios|habitaciones|recamaras|cuartos)",
-    BuyerFieldV0.AREA_M2_MIN: r"(?:el |la |los |lo del |lo de la |lo de los )?(?:area|superficie|metraje|metros cuadrados)(?: minim[oa]| total)?",
+    BuyerFieldV0.AREA_M2_MIN: r"(?:el |la |los |lo del |lo de la |lo de los )?(?:area minima|area total|superficie|metraje|metros cuadrados)",
     BuyerFieldV0.PETS_REQUIRED: r"(?:que (?:acepten|admitan|permitan) (?:mascotas|perros|gatos)|(?:lo de )?(?:las |los |mis )?(?:mascotas|perros|gatos))",
 }
-"""El SUJETO de la forma canónica. Aquí `área` sí vale: «el área es indispensable» nombra el
-área como sujeto; «el área verde es indispensable» no encaja porque sobra «verde»."""
+"""El SUJETO de la forma canónica. «El área» sola NO: en español es también la zona, el
+sector. «El área mínima», «la superficie» o «los metros cuadrados» sí son el requisito."""
+
+_ANCLA_DEL_VALOR: dict[BuyerFieldV0, str] = {
+    BuyerFieldV0.BUDGET_MAX: r"(?:usd|dolares|mxn|pesos|presupuesto)",
+    BuyerFieldV0.BEDROOMS_MIN: r"(?:dormitorios?|habitacion(?:es)?|cuartos?|recamaras?)",
+    BuyerFieldV0.AREA_M2_MIN: r"(?:m2|m²|metros cuadrados?)",
+    BuyerFieldV0.PETS_REQUIRED: r"(?:mascotas?|perros?|gatos?)",
+}
+"""Con qué tiene que terminar el valor para que un marcador pegado a él hable DE ÉL:
+«al menos 2 dormitorios sí o sí» sí; «al menos 2 dormitorios con baño privado indispensable»
+no —el marcador modifica al baño—."""
 
 _COPULA = r"(?:es|son|tiene que ser|tienen que ser|debe ser|deben ser|va a ser|van a ser)"
-"""Sólo indicativo. El subjuntivo —«sea», «sean», «fuera»— es la huella de una frase
-subordinada («no creo que sea…», «dice que sean…»), y ahí nadie está declarando."""
-
 _RELLENO_ESTRICTO = (r"(?:muy|totalmente|completamente|absolutamente|realmente|"
                      r"definitivamente|para mi|para nosotros|un requisito|requisito|algo|eso|esto)")
-_PARTICULA_INICIAL = r"(?:(?:si|no|bueno|ok|claro|vale|mira|oye|ojo)\s*,\s*)?"
 
 
-def _forma_canonica(campo: BuyerFieldV0) -> re.Pattern:
+def _canonica(campo: BuyerFieldV0, marcador: str) -> re.Pattern:
     r = _RELLENO_ESTRICTO
     return re.compile(
-        rf"^\s*{_PARTICULA_INICIAL}(?:{r}\s+)*{_SUJETO_CANONICO[campo]}(?:\s+{_COPULA})?"
-        rf"(?:\s+{r})*\s+{_MARCADOR_ESTRICTO}(?:\s+{r})*\s*$")
+        rf"^(?:{r}\s+)*{_SUJETO_CANONICO[campo]}(?:\s+{_COPULA})?"
+        rf"(?:\s+{r})*\s+{marcador}(?:\s+{r})*$")
 
 
-_CANONICA: dict[BuyerFieldV0, re.Pattern] = {c: _forma_canonica(c) for c in _SUJETO_CANONICO}
+_CANONICA: dict[BuyerFieldV0, re.Pattern] = {
+    c: _canonica(c, _MARCADOR_ESTRICTO) for c in _SUJETO_CANONICO}
+_CANONICA_FLEXIBLE: dict[BuyerFieldV0, re.Pattern] = {
+    c: _canonica(c, _MARCADOR_FLEXIBLE_R) for c in _SUJETO_CANONICO}
 
-_SUCIA = re.compile(
-    r"\b(?:"
-    r"no|ni|nunca|jamas|tampoco|nadie|nada|ningun|ninguna|ninguno|sin|poco|cero|apenas|casi|"
-    r"si|quizas|quiza|talvez|tal vez|a lo mejor|puede que|capaz|supongo|creo|crees|cree|creen|"
-    r"pienso|piensa|piensan|opino|opina|parece|imagino|ojala|deberia|podria|seria|fuera|"
-    r"fueran|sea|sean|en caso|a menos|"
-    r"dije|dijo|dice|dicen|decia|decian|diria|segun|insiste|insisten|quiere|quieren|pide|"
-    r"piden|esposo|esposa|marido|mujer|pareja|novio|novia|mama|papa|madre|padre|hermano|"
-    r"hermana|hijo|hija|hijos|hijas|suegro|suegra|amigo|amiga|jefe|jefa|corredor|corredora|"
-    r"agente|vendedor|dueno|duena|familia|"
-    r"era|eran|fue|fueron|antes|solia|solian|habia|estaba|estaban|dejo|deje|dejado|dejamos|"
-    r"quita|quitar|quitame|olvida|olvidar|borra|borrar|descarta|descartar|corrijo|broma|"
-    r"pregunto|pregunta|saber"
-    r")\b")
-"""Lo que ensucia una ORACIÓN para ESTRICTA, en cualquier posición. Es una red de seguridad,
-no la definición: la definición es la forma canónica. Aquí basta con que falle hacia el lado
-barato —no endurecer—, así que es amplia a propósito."""
+_CORTESIA = re.compile(r"^(?:hola|buenas|buenos dias|buenas tardes|buenas noches|gracias|"
+                       r"muchas gracias|mil gracias|saludos)$")
+_PARTICULA_INICIAL = re.compile(r"^(?:si|no|bueno|ok|claro|vale|mira|oye|ojo)$")
 
-_ORACION = re.compile(r"[.!;\n]+")
-_CLAUSULA_R = re.compile(r"(?<!\d),|,(?!\d)|:|\by\b|\bpero\b|\baunque\b")
+_CORTE_ESTRICTO = re.compile(
+    r"(?<!\d)[.;:]|[.;:](?!\d)|[!\n…]|(?<!\d),|,(?!\d)|\by\b|\bpero\b|\baunque\b")
+_RELLENO = frozenset({
+    "es", "son", "sera", "eso", "esto", "muy", "totalmente", "completamente", "absolutamente",
+    "para", "mi", "requisito", "un", "algo",
+})
 
 
-def _oraciones(plano: str) -> list[str]:
-    """Las oraciones; una que lleva «?» o «¿» sigue siendo una oración, y como pregunta queda
-    sucia para ESTRICTA."""
-    return [o for o in _ORACION.split(plano) if o.strip()]
+def _clausulas_estrictas(plano: str) -> list[str]:
+    return [c.strip() for c in _CORTE_ESTRICTO.split(plano) if c.strip()]
 
 
-def _limpia_para_estricta(oracion: str) -> bool:
-    if "?" in oracion or "¿" in oracion:
+def _solo_marcador(clausula: str) -> bool:
+    return bool(_MARCA_ESTRICTA.search(clausula)) and set(
+        _MARCA_ESTRICTA.sub(" ", clausula).split()) <= _RELLENO
+
+
+_VOCABULARIO_DE_VALOR = frozenset("""
+    mi mis el la los las un una unos unas de del al a en con para por que o es son
+    busco buscamos quiero queremos necesito necesitamos tengo tenemos prefiero preferimos me nos
+    ahora mejor entonces pues tambien ademas solo como minimo min maximo max hasta tope limite
+    menos mas adelante desde presupuesto budget
+    comprar compra compro adquirir adquiero alquilar alquilo arrendar arriendo rentar rento
+    invertir invierto inversion buy purchase rent invest casa departamento depa inmueble
+    propiedad vivienda
+    usd dolar dolares mxn pesos
+    dormitorio dormitorios habitacion habitaciones cuarto cuartos recamara recamaras
+    m2 m² metros metro cuadrados cuadrado superficie area
+    mascota mascotas perro perros gato gatos pet pets acepte acepten admita admitan permita
+    permitan aceptan admiten permiten allow allows allowed
+    ya no quita quitar quitame elimina eliminar borra borrar olvida olvidar descarta descartar
+""".split())
+"""Qué palabras puede traer una cláusula de VALOR para contar como parte reconocida del
+mensaje. El verificador de cada mutación es permisivo con lo que rodea al valor —su trabajo es
+otro—, así que «mi esposo dice que máximo 900 USD» lo acredita igual. Para la cobertura de
+ESTRICTA no basta: la cláusula tiene que ser SÓLO valor. Otra lista blanca, no una negra."""
+
+
+def _solo_vocabulario_de_valor(clausula: str) -> bool:
+    return all(t in _VOCABULARIO_DE_VALOR or t.replace(".", "").replace(",", "").isdigit()
+               for t in clausula.split())
+
+
+def _es_valor(clausula: str, valores) -> list:
+    """Las durables del mensaje que ESTA cláusula acredita por sí sola, y sin nada más."""
+    if not _solo_vocabulario_de_valor(clausula):
+        return []
+    return [m for m in valores if _VERIFICADOR[type(m)](m, clausula)]
+
+
+def _valor_de(clausula: str, campo: BuyerFieldV0, valores) -> bool:
+    """¿La cláusula es un valor de ESE campo que termina en su ancla?"""
+    return any(campo_de_mutacion(m) is campo for m in _es_valor(clausula, valores)) and bool(
+        re.search(rf"\b{_ANCLA_DEL_VALOR[campo]}\s*$", clausula))
+
+
+def _acredita_estricta(campo: BuyerFieldV0, plano: str, valores) -> bool:
+    if "?" in plano or "¿" in plano:
         return False
-    sin_marcas = re.sub(rf"\b{_MARCADOR_ESTRICTO}\b", " ", oracion)
-    sin_marcas = re.sub(rf"^\s*{_PARTICULA_INICIAL}", " ", sin_marcas)
-    return not _SUCIA.search(sin_marcas)
+    clausulas = _clausulas_estrictas(plano)
+    declara = False
+    for i, c in enumerate(clausulas):
+        if _CANONICA[campo].match(c):
+            declara = True
+            continue
+        final = re.search(rf"\s+{_MARCADOR_ESTRICTO}$", c)
+        if final and _valor_de(c[:final.start()].strip(), campo, valores):
+            declara = True                                   # «al menos 2 dormitorios sí o sí»
+            continue
+        if _solo_marcador(c) and i > 0 and _valor_de(clausulas[i - 1], campo, valores):
+            declara = True                                   # «máximo 900 USD, es innegociable»
+            continue
+        if (_es_valor(c, valores) or _CORTESIA.match(c)
+                or any(p.match(c) for p in _CANONICA.values())
+                or any(p.match(c) for p in _CANONICA_FLEXIBLE.values())
+                or (i == 0 and _PARTICULA_INICIAL.match(c))):
+            continue
+        return False                                         # algo que no se reconoce
+    return declara
 
 
 # ── FLEXIBLE ──
 
-_COLETILLA = re.compile(r",\s*¿?\s*(?:no|verdad|cierto|ok|ya|sabes|me entiendes)\s*\?\s*$")
-"""*"El presupuesto es flexible, ¿no?"* afirma y pide confirmación. Sólo con coma y al FINAL:
-«…o no?» y «sí o no?» son preguntas enteras, no coletillas."""
+_CORTE_FLEXIBLE = re.compile(r"(?<!\d)[.;:]|[.;:](?!\d)|[!\n…]|(?<!\d),|,(?!\d)|\bpero\b|\baunque\b")
+"""Sin «y»: «el presupuesto y los metros cuadrados son flexibles» relaja las dos."""
 
 _RELLENO_FLEXIBLE = frozenset({
     "es", "son", "sera", "mas", "bien", "bastante", "muy", "algo", "totalmente", "realmente",
-    "mejor", "entonces", "pues", "eso", "lo", "igual", "tambien",
+    "mejor", "entonces", "pues", "eso", "lo", "igual", "tambien", "que",
 })
 
 
-def _oraciones_declarativas(plano: str) -> list[str]:
-    salida = []
-    for oracion in re.split(r"(?<=[.!?;\n])", plano):
-        oracion = _COLETILLA.sub(" ", oracion.strip())
-        if oracion and "?" not in oracion and "¿" not in oracion:
-            salida.append(oracion)
-    return salida
+def _clausulas_declarativas(plano: str) -> list[str]:
+    """Las cláusulas que no preguntan. Se descarta la CLÁUSULA con «?» o «¿», no la oración:
+    «el presupuesto es flexible, ¿tienen algo en Cumbayá?» sigue relajando el presupuesto."""
+    return [c.strip() for c in _CORTE_FLEXIBLE.split(plano)
+            if c.strip() and "?" not in c and "¿" not in c]
 
 
 def _flexible_en(clausula: str) -> bool:
-    if not _MARCADOR_FLEXIBLE.search(clausula):
+    limpia = _LOCUCION_NEUTRA.sub(" ", clausula)
+    if not _MARCADOR_FLEXIBLE.search(limpia):
         return False
-    resto = _MARCADOR_FLEXIBLE.sub(" ", clausula)
-    return not re.search(rf"\b{_MARCADOR_ESTRICTO}\b", resto) and not _NIEGA_FLEXIBLE.search(resto)
+    resto = _MARCADOR_FLEXIBLE.sub(" ", limpia)
+    if _SUBJUNTIVO.search(resto) and not _VOLITIVO.search(resto):
+        return False          # «que el presupuesto sea flexible» colgando de un «no creo»
+    return not _MARCA_ESTRICTA.search(resto) and not _NIEGA_FLEXIBLE.search(resto)
 
 
 _MENCIONA: dict[BuyerFieldV0, tuple[re.Pattern, ...]] = {
@@ -646,27 +709,23 @@ def _dimensiones_nombradas(plano: str) -> set[BuyerFieldV0]:
 
 
 def _acredita_flexible(campo: BuyerFieldV0, plano: str) -> bool:
-    clausulas = [c for o in _oraciones_declarativas(plano) for c in _CLAUSULA_R.split(o)]
+    clausulas = _clausulas_declarativas(plano)
     if any(_DIM_RIGIDEZ[campo].search(c) and _flexible_en(c) for c in clausulas):
         return True
     # Anáfora, sólo hacia flexible: el mensaje nombra ESTA dimensión y ninguna otra, y una
     # cláusula es sólo el marcador. Equivocarse aquí deja de excluir; no excluye.
     if _dimensiones_nombradas(plano) != {campo}:
         return False
-    for c in clausulas:
-        if _MARCADOR_FLEXIBLE.search(c) and not _NIEGA_FLEXIBLE.search(
-                _MARCADOR_FLEXIBLE.sub(" ", c)):
-            if set(_MARCADOR_FLEXIBLE.sub(" ", c).split()) <= _RELLENO_FLEXIBLE:
-                return True
-    return False
+    return any(_flexible_en(c) and set(_MARCADOR_FLEXIBLE.sub(" ", c).split()) <= _RELLENO_FLEXIBLE
+               for c in clausulas)
 
 
-def autorizar_rigidez(declaracion: DeclaracionRigidezV0, texto: str) -> None:
+def autorizar_rigidez(declaracion: DeclaracionRigidezV0, texto: str, valores=()) -> None:
     """Levanta si el texto no declara **exactamente** esa rigidez para esa dimensión.
 
-    ESTRICTA exige la FORMA CANÓNICA en una oración limpia (ver arriba). Su otra vía —el
-    marcador pegado al valor— necesita la durable del mensaje y vive en
-    `autorizar_rigidez_por_adyacencia`. FLEXIBLE es local y permisiva.
+    `valores` son las durables ACREDITADAS del mensaje (de cualquier dimensión): son lo que
+    permite a ESTRICTA reconocer «máximo 900 USD» como parte de una declaración y no como
+    algo desconocido. Sin ellas, sólo la forma canónica y la cortesía cubren el mensaje.
 
     **Fail closed.** Una dimensión fuera de la whitelist no se autoriza.
     """
@@ -674,72 +733,26 @@ def autorizar_rigidez(declaracion: DeclaracionRigidezV0, texto: str) -> None:
     if campo not in _CANONICA:
         raise TraduccionNoAutorizada(f"rigidez sobre {campo}: no es una dimensión con criterio")
     plano = _norm(texto)
-    if declaracion.rigidez is RigidezV0.FLEXIBLE:
-        if _acredita_flexible(campo, plano):
-            return
-    else:
-        for oracion in _oraciones(plano):
-            if _limpia_para_estricta(oracion) and any(
-                    _CANONICA[campo].match(c) for c in _CLAUSULA_R.split(oracion)):
-                return
-    raise TraduccionNoAutorizada(
-        f"rigidez {declaracion.rigidez.value} de {campo.value} sin evidencia textual explícita")
-
-
-# ── ESTRICTA pegada al valor ──
-#
-# *"Al menos 2 dormitorios sí o sí"* y *"máximo 900 USD, es innegociable"*. La forma canónica
-# no las cubre porque el sujeto no es «el presupuesto»: es el propio valor. Se acreditan si,
-# DENTRO DE UNA ORACIÓN LIMPIA:
-#
-#     la cláusula i acredita, ella sola, la durable de ESE campo en este mensaje, y
-#       (a) la propia cláusula i termina en el marcador, o
-#       (b) la cláusula i+1 es SÓLO el marcador (más relleno cerrado)
-#
-# No cruza oraciones: *"Máximo 900 USD. ¿Tienen de 3 dormitorios? Es indispensable"* respondía
-# a la pregunta, no al presupuesto. Y el relleno ya no incluye «lo» ni «que»: *"lo que es
-# indispensable: …"* apunta a lo que viene DESPUÉS.
-
-_RELLENO = frozenset({
-    "es", "son", "sera", "eso", "esto", "muy", "totalmente", "completamente", "absolutamente",
-    "para", "mi", "requisito", "un", "algo",
-})
-_MARCA_ESTRICTA = re.compile(rf"\b{_MARCADOR_ESTRICTO}\b")
-
-
-def _solo_marcador(clausula: str, rigidez: RigidezV0) -> bool:
-    if rigidez is not RigidezV0.ESTRICTA or not _MARCA_ESTRICTA.search(clausula):
-        return False
-    return set(_MARCA_ESTRICTA.sub(" ", clausula).split()) <= _RELLENO
+    acreditada = (_acredita_flexible(campo, plano)
+                  if declaracion.rigidez is RigidezV0.FLEXIBLE
+                  else _acredita_estricta(campo, plano, tuple(valores)))
+    if not acreditada:
+        raise TraduccionNoAutorizada(
+            f"rigidez {declaracion.rigidez.value} de {campo.value} sin evidencia textual "
+            f"explícita que cubra el mensaje")
 
 
 def autorizar_rigidez_por_adyacencia(declaracion: DeclaracionRigidezV0, mutacion,
                                      texto: str) -> None:
-    """Levanta salvo que el marcador ESTRICTO vaya pegado al valor acreditado, en una oración
-    limpia. `mutacion` es una durable de ESTE mensaje para la misma dimensión; su cláusula se
-    encuentra con el propio verificador de la mutación.
-    """
+    """ESTRICTA pegada a UN valor. Se conserva como atajo: es `autorizar_rigidez` con esa sola
+    durable, así que cualquier otra cláusula del mensaje tiene que ser reconocible igual."""
     if declaracion.rigidez is not RigidezV0.ESTRICTA:
         raise TraduccionNoAutorizada("el puente sólo existe para ESTRICTA")
     if campo_de_mutacion(mutacion) is not declaracion.campo:
         raise TraduccionNoAutorizada("el valor y la rigidez son de dimensiones distintas")
     if not isinstance(mutacion, (SetBudgetMax, SetBedroomsMin, SetAreaM2Min, SetPetsRequired)):
         raise TraduccionNoAutorizada("el puente sólo se apoya en un valor declarado")
-    verificar = _VERIFICADOR[type(mutacion)]
-    for oracion in _oraciones(_norm(texto)):
-        if not _limpia_para_estricta(oracion):
-            continue
-        clausulas = [c for c in _CLAUSULA_R.split(oracion) if c.strip()]
-        for i, clausula in enumerate(clausulas):
-            final = re.search(rf"\s+{_MARCADOR_ESTRICTO}\s*$", clausula)
-            if final and verificar(mutacion, clausula[:final.start()]):
-                return
-            if (verificar(mutacion, clausula) and i + 1 < len(clausulas)
-                    and _solo_marcador(clausulas[i + 1], declaracion.rigidez)):
-                return
-    raise TraduccionNoAutorizada(
-        f"rigidez {declaracion.rigidez.value} de {declaracion.campo.value}: el marcador no "
-        f"va pegado al valor en una oración limpia")
+    autorizar_rigidez(declaracion, texto, valores=(mutacion,))
 
 
 # ── La unión cerrada de afirmaciones ───────────────────────────────────────────────
@@ -1032,19 +1045,18 @@ def resolver_rigideces(intentos, texto: str) -> tuple[tuple, tuple]:
     con las que no se pudieron acreditar (`RigidezNoAcreditada`). Por dimensión:
 
     ```
-    todas de la misma rigidez              → la acreditada, si hay alguna
-    distintas + autocorrección explícita   → la ÚLTIMA, sólo si está acreditada
-    distintas sin autocorrección           → NINGUNA, y un REJECTED con su campo
+    todas de la misma rigidez          → la acreditada, si hay alguna
+    polaridades distintas              → NUNCA estricta: la flexible acreditada si la hay;
+                                         si no, nada — y un REJECTED con su campo
     ```
 
-    La segunda regla es la que cierra el defecto: si la corrección apunta a una lectura que
-    no se pudo acreditar, no gana la que se retiró — **no cambia nada**. Sin rigidez nueva el
-    criterio conserva la que tenía, así que no se pierde estado; sólo no se cambia. Cada
-    intento no acreditado deja además su propio REJECTED.
+    **Asimétrico, como la guarda.** Un mensaje que dice las dos cosas de una dimensión —se
+    corrija o no, se acredite o no cada lectura— no la endurece: la marca de autocorrección
+    es global y puede referirse a otra cosa, y equivocarse hacia estricta excluye. Si la
+    persona quería corregir hacia estricta, lo dice en el mensaje siguiente. Hacia flexible,
+    en cambio, basta: *"el presupuesto es innegociable… no, perdón, es flexible"* relaja.
 
-    Y al revés: si la ÚLTIMA está acreditada y las que discrepan de ella son todas lecturas NO
-    acreditadas —la opinión de un tercero, un "antes era…"—, gana la última. Una lectura que
-    la guarda descartó no puede vetar lo que la persona sí declaró.
+    Cada intento no acreditado deja además su propio REJECTED: constancia sin estado.
     """
     por_campo: dict[BuyerFieldV0, list] = {}
     for intento in intentos:
@@ -1060,15 +1072,12 @@ def resolver_rigideces(intentos, texto: str) -> tuple[tuple, tuple]:
         if len({i.rigidez for i in grupo}) == 1:
             vigentes.append(acreditadas[0])
             continue
-        ultima = grupo[-1]
-        if not isinstance(ultima, DeclaracionRigidezV0):
-            continue      # la corrección apunta a una lectura no acreditada: nada cambia
-        if len({a.rigidez for a in acreditadas}) == 1 or hay_autocorreccion(texto):
-            vigentes.append(ultima)
-        else:
-            rechazos.append(AfirmacionRejected(
-                campo=campo,
-                motivo=f"rigideces incompatibles para {campo} sin corrección explícita"))
+        flexibles = [a for a in acreditadas if a.rigidez is RigidezV0.FLEXIBLE]
+        if flexibles:
+            vigentes.append(flexibles[-1])
+        rechazos.append(AfirmacionRejected(
+            campo=campo,
+            motivo=f"rigideces en conflicto para {campo}: un mismo mensaje no endurece"))
     return tuple(vigentes), tuple(rechazos)
 
 

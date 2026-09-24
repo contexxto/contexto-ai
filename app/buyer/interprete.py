@@ -72,7 +72,6 @@ from app.buyer.extractor import (
     RigidezNoAcreditada,
     TraduccionNoAutorizada,
     autorizar_rigidez,
-    autorizar_rigidez_por_adyacencia,
     autorizar_traduccion,
     construir_lote,
 )
@@ -195,17 +194,9 @@ def _acreditar(propuesta: PropuestaV0, texto: str):
 def _acreditar_rigidez(propuesta: PropuestaRigidezV0, texto: str, valores: dict):
     """UNA propuesta de rigidez → `DeclaracionRigidezV0`, o `RigidezNoAcreditada`.
 
-    Dos vías, y la segunda sólo si falla la primera:
-
-    ```
-    local       la cláusula nombra la dimensión y trae el marcador         autorizar_rigidez
-    adyacencia  el marcador SOLO, justo después del valor que este mismo   E3.3-R2
-                mensaje acreditó para esa dimensión
-    ```
-
-    `valores` son las durables ACREDITADAS de este mensaje por dimensión. La adyacencia no
-    puede apoyarse en nada más: sin un valor acreditado detrás, "es indispensable" suelto no
-    dice de qué.
+    `valores` son las durables ACREDITADAS de este mensaje, por dimensión. La guarda las
+    necesita para ESTRICTA: «máximo 900 USD» cuenta como parte reconocida del mensaje sólo si
+    una durable lo acreditó, y el marcador pegado a un valor sólo habla de ese valor.
 
     **No cae a `AMBIGUOUS`, y es deliberado.** Una ambigüedad sobre el presupuesto compite
     con el presupuesto en C1-C5: *"máximo 900 USD, idealmente"* con la rigidez sin acreditar
@@ -214,19 +205,13 @@ def _acreditar_rigidez(propuesta: PropuestaRigidezV0, texto: str, valores: dict)
     """
     declaracion = DeclaracionRigidezV0(campo=propuesta.campo, rigidez=propuesta.rigidez)
     try:
-        autorizar_rigidez(declaracion, texto)
+        autorizar_rigidez(declaracion, texto,
+                          valores=tuple(m for ms in valores.values() for m in ms))
         return declaracion
-    except TraduccionNoAutorizada as local:
-        motivo = str(local)
-    for mutacion in valores.get(propuesta.campo, ()):
-        try:
-            autorizar_rigidez_por_adyacencia(declaracion, mutacion, texto)
-            return declaracion
-        except TraduccionNoAutorizada:
-            pass
-    return RigidezNoAcreditada(
-        campo=propuesta.campo, rigidez=propuesta.rigidez,
-        motivo=f"rigidez sin evidencia acreditable ({motivo}): {propuesta.motivo}")
+    except TraduccionNoAutorizada as e:
+        return RigidezNoAcreditada(
+            campo=propuesta.campo, rigidez=propuesta.rigidez,
+            motivo=f"rigidez sin evidencia acreditable ({e}): {propuesta.motivo}")
 
 
 def interpretar(mensaje, propuestas: Sequence[PropuestaV0 | PropuestaRigidezV0]

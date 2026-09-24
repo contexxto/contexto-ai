@@ -35,7 +35,7 @@ from app.buyer import actualizador as act
 from app.buyer.actualizador import EstadoActualizacion, actualizar, rutas_divergentes
 from app.buyer.boundary import (
     CAMPOS_CON_CRITERIO, BuyerCurrencyV0, BuyerFieldV0, ClearBudgetMax, DeclaracionRigidezV0,
-    Disposicion, RigidezV0, SetAreaM2Min, SetBedroomsMin, SetBudgetMax,
+    Disposicion, RigidezV0, SetAreaM2Min, SetBedroomsMin, SetBudgetMax, SetObjective,
     SetPetsRequired,
 )
 from app.buyer.extractor import (
@@ -48,7 +48,7 @@ from app.buyer.reductor import (
     _CODIGO_RIGIDEZ, _METODOLOGIA_RIGIDEZ, ReduccionImposible, reducir, rigidez_de_evidencia,
 )
 from app.buyer.store import _canonico
-from app.contracts.buyer_v0 import BuyerContextV0, CriterionStatus
+from app.contracts.buyer_v0 import BuyerContextV0, CriterionStatus, Objective
 
 T0 = dt.datetime(2026, 9, 23, 12, 0, tzinfo=dt.timezone.utc)
 USD = BuyerCurrencyV0.USD
@@ -263,12 +263,12 @@ def test_R2_4_una_particula_sola_no_niega_lo_que_sigue(texto, rigidez):
     assert _ok(texto, F.BUDGET_MAX, rigidez)
 
 
-def test_R2_4_ESTRICTA_exige_la_ORACION_entera_limpia_y_la_otra_oracion_no_cuenta():
-    """R2b. Para endurecer, ninguna parte de la oración puede negar, condicionar o citar —ni
-    antes ni después del marcador, ni tras una «y» o unos dos puntos—. Es un falso negativo
-    aceptado en «no tengo mascotas, pero…»: la persona puede decirlo en otra oración."""
+def test_R2_4_ESTRICTA_exige_que_TODO_el_mensaje_sea_reconocible():
+    """R2c. Para endurecer, cada cláusula del mensaje tiene que ser una declaración que la
+    guarda reconoce. «No tengo mascotas» no lo es, así que el mensaje no endurece: falso
+    negativo aceptado, en la dirección barata. FLEXIBLE no tiene esa exigencia."""
     assert not _ok("no tengo mascotas, pero el presupuesto es innegociable", F.BUDGET_MAX, E)
-    assert _ok("No tengo mascotas. El presupuesto es innegociable", F.BUDGET_MAX, E)
+    assert not _ok("No tengo mascotas. El presupuesto es innegociable", F.BUDGET_MAX, E)
     assert _ok("no tengo carro. El presupuesto es flexible", F.BUDGET_MAX, FL)
 
 
@@ -294,9 +294,13 @@ def test_R2_5_la_no_acreditada_deja_su_REJECTED_y_no_crea_estado():
 
 
 def test_R2_5_la_misma_polaridad_una_acreditada_y_otra_no_es_repeticion():
-    lote = interpretar(_msg("el presupuesto es innegociable, innegociable de verdad", "m-1"),
-                       [_rig(F.BUDGET_MAX, E), _rig(F.BUDGET_MAX, E)])
-    assert lote.rigideces == (DeclaracionRigidezV0(campo=F.BUDGET_MAX, rigidez=E),)
+    from app.buyer.extractor import resolver_rigideces
+
+    vigentes, rechazos = resolver_rigideces(
+        [DeclaracionRigidezV0(campo=F.BUDGET_MAX, rigidez=E),
+         RigidezNoAcreditada(campo=F.BUDGET_MAX, rigidez=E, motivo="sin evidencia")], "x")
+    assert vigentes == (DeclaracionRigidezV0(campo=F.BUDGET_MAX, rigidez=E),)
+    assert len(rechazos) == 1
 
 
 def test_R2_5_la_corregida_ACREDITADA_sigue_ganando():
@@ -442,6 +446,8 @@ def test_R2_9_el_control_del_centinela_NO_es_vacuo():
     ("al menos 2 dormitorios, sí o sí", SetBedroomsMin(bedrooms_min=2), F.BEDROOMS_MIN, E),
     ("necesito al menos 2 dormitorios sí o sí", SetBedroomsMin(bedrooms_min=2),
      F.BEDROOMS_MIN, E),
+    ("Máximo 900 USD. Es innegociable.",           # R2c: sin «?» en el mensaje, cruzar el
+     SetBudgetMax(amount=Decimal(900), currency=USD), F.BUDGET_MAX, E),   # punto es seguro
 ])
 def test_R2_10_el_marcador_SOLO_tras_el_valor_se_acredita(texto, mutacion, campo, rigidez):
     autorizar_rigidez_por_adyacencia(DeclaracionRigidezV0(campo=campo, rigidez=rigidez),
@@ -461,9 +467,7 @@ def test_R2_10_el_marcador_SOLO_tras_el_valor_se_acredita(texto, mutacion, campo
      SetBudgetMax(amount=Decimal(900), currency=USD), F.BUDGET_MAX),
     ("es innegociable, máximo 900 USD",
      SetBudgetMax(amount=Decimal(900), currency=USD), F.BUDGET_MAX),
-    # R2b · no cruza oraciones: la del medio podía ser una pregunta que se llevaba el marcador
-    ("Máximo 900 USD. Es innegociable.",
-     SetBudgetMax(amount=Decimal(900), currency=USD), F.BUDGET_MAX),
+    # una pregunta en cualquier parte del mensaje le quita ESTRICTA
     ("Máximo 900 USD. ¿Tienen algo de 3 dormitorios? Es indispensable.",
      SetBudgetMax(amount=Decimal(900), currency=USD), F.BUDGET_MAX),
     # R2b · la oración del valor tiene que estar limpia también para el puente
@@ -687,7 +691,7 @@ def test_R2b_el_requisito_tiene_que_ser_el_SUJETO(texto, campo):
     "mi presupuesto no es negociable",
     "para mí el presupuesto es totalmente innegociable",
     "el presupuesto tiene que ser innegociable",
-    "Busco alquilar, máximo 900 USD, y el presupuesto es innegociable",
+    "Hola, el presupuesto es innegociable. Gracias",
 ])
 def test_R2b_la_forma_canonica_SI_se_acredita(texto):
     assert _ok(texto, F.BUDGET_MAX, E)
@@ -834,3 +838,98 @@ def test_R2b_si_la_ULTIMA_lectura_no_se_acredita_no_gana_la_anterior():
     c = _paso(base, "el presupuesto es innegociable. Bueno, tal vez flexible",
               _rig(F.BUDGET_MAX, E), _rig(F.BUDGET_MAX, FL), mid="m-2")
     assert c.hard_constraints == ()
+
+
+# ══ R2c · ESTRICTA sobre el mensaje entero (tercera revisión adversarial) ═════════════
+
+
+@pytest.mark.parametrize("texto", [
+    "El presupuesto es innegociable... o no?",
+    "EL PRESUPUESTO ES INNEGOCIABLE... O NO?",
+    "El presupuesto es innegociable... bueno, no tanto",
+    "El presupuesto es innegociable. Es broma jaja",
+    "el presupuesto es innegociable\n\njaja no mentira",
+    "Para él, el presupuesto es innegociable. Para mí no.",
+    "Mi esposo dice esto. El presupuesto es innegociable",
+    "Esto dijo el corredor. El presupuesto es innegociable",
+    "No sé. El presupuesto es innegociable",
+    "El presupuesto es innegociable 🙄",
+    "ahora puedo hasta mil, el presupuesto es innegociable",
+])
+def test_R2c_un_desmentido_en_CUALQUIER_parte_del_mensaje_impide_endurecer(texto):
+    assert not _ok(texto, F.BUDGET_MAX, E)
+
+
+def test_R2c_LOS_DORMITORIOS_SON_INDISPENSABLES_o_eso_dice_mi_mujer():
+    assert not _ok("LOS DORMITORIOS SON INDISPENSABLES!!! o eso dice mi mujer",
+                   F.BEDROOMS_MIN, E)
+
+
+def test_R2c_la_clausula_de_VALOR_tiene_que_ser_solo_valor():
+    """«mi esposo dice que máximo 900 USD» acredita el valor en la guarda de valor —que es
+    permisiva con lo que lo rodea—, pero no cuenta como cláusula reconocida para endurecer."""
+    with pytest.raises(TraduccionNoAutorizada):
+        autorizar_rigidez_por_adyacencia(
+            DeclaracionRigidezV0(campo=F.BUDGET_MAX, rigidez=E),
+            SetBudgetMax(amount=Decimal(900), currency=USD),
+            "mi esposo dice que máximo 900 USD, es innegociable")
+
+
+def test_R2c_el_marcador_pegado_tiene_que_seguir_al_ANCLA_del_valor():
+    """«al menos 2 dormitorios con baño privado indispensable»: el marcador modifica al baño."""
+    with pytest.raises(TraduccionNoAutorizada):
+        autorizar_rigidez_por_adyacencia(
+            DeclaracionRigidezV0(campo=F.BEDROOMS_MIN, rigidez=E),
+            SetBedroomsMin(bedrooms_min=2),
+            "necesito al menos 2 dormitorios con baño privado indispensable")
+
+
+def test_R2c_con_los_valores_del_mensaje_la_declaracion_completa_SI_endurece():
+    c = _paso(_vacio(), "Busco alquilar, máximo 900 USD, y el presupuesto es innegociable",
+              _dur(SetObjective(objective=Objective.RENT)),
+              _dur(SetBudgetMax(amount=Decimal(900), currency=USD)), _rig(F.BUDGET_MAX, E),
+              mid="m-1")
+    assert [k.criterion_id for k in c.hard_constraints] == ["budget_max"]
+
+
+@pytest.mark.parametrize("texto, campo", [
+    ("el presupuesto es innegociable... no, perdón, es flexible.", F.BUDGET_MAX),
+    ("el presupuesto es innegociable... no, perdón, es flexible!", F.BUDGET_MAX),
+    ("prefiero que el presupuesto sea flexible", F.BUDGET_MAX),
+    ("mejor que el presupuesto sea flexible", F.BUDGET_MAX),
+    ("el presupuesto y los metros cuadrados son flexibles", F.BUDGET_MAX),
+    ("el presupuesto y los metros cuadrados son flexibles", F.AREA_M2_MIN),
+    ("el presupuesto es flexible, ¿tienen algo en Cumbayá?", F.BUDGET_MAX),
+    ("el presupuesto es flexible sin duda", F.BUDGET_MAX),
+    ("con el presupuesto hay margen", F.BUDGET_MAX),
+])
+def test_R2c_FLEXIBLE_acepta_mas_correcciones_naturales(texto, campo):
+    assert _ok(texto, campo, FL)
+
+
+def test_R2c_un_conflicto_de_polaridad_en_un_mensaje_NUNCA_endurece():
+    """Asimétrico: con las dos lecturas acreditadas, gana la flexible, haya o no marca de
+    corrección —la marca es global y puede referirse a otra cosa—."""
+    from app.buyer.extractor import resolver_rigideces
+
+    d_e = DeclaracionRigidezV0(campo=F.BUDGET_MAX, rigidez=E)
+    d_f = DeclaracionRigidezV0(campo=F.BUDGET_MAX, rigidez=FL)
+    for orden in ([d_e, d_f], [d_f, d_e]):
+        for texto in ("sin marca", "perdón, en realidad"):
+            vigentes, _ = resolver_rigideces(orden, texto)
+            assert vigentes == (d_f,), (orden, texto)
+
+
+
+@pytest.mark.parametrize("texto, mutacion, campo", [
+    ("necesito al menos 2 dormitorios en una casa indispensable",
+     SetBedroomsMin(bedrooms_min=2), F.BEDROOMS_MIN),
+    ("máximo 900 USD para una casa, es innegociable",
+     SetBudgetMax(amount=Decimal(900), currency=USD), F.BUDGET_MAX),
+])
+def test_R2c_sin_el_ANCLA_al_final_el_marcador_no_habla_del_valor(texto, mutacion, campo):
+    """Todo el vocabulario es de valor, pero el valor no termina en su unidad o su sustantivo:
+    el marcador puede estar hablando de la casa."""
+    with pytest.raises(TraduccionNoAutorizada):
+        autorizar_rigidez_por_adyacencia(DeclaracionRigidezV0(campo=campo, rigidez=E),
+                                         mutacion, texto)

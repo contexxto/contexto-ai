@@ -121,7 +121,8 @@ def _rigidez_ok(texto, campo, rigidez):
     ("el presupuesto, sin excepción", F.BUDGET_MAX, None),     # la coma corta la cláusula
     ("tope de presupuesto sin excepción", F.BUDGET_MAX, E),
     ("que acepten mascotas es indispensable", F.PETS_REQUIRED, E),
-    ("el área es imprescindible", F.AREA_M2_MIN, E),        # R2b: «el área» como SUJETO
+    ("el área es imprescindible", F.AREA_M2_MIN, None),     # R2c: «el área» es también la zona
+    ("el área mínima es imprescindible", F.AREA_M2_MIN, E),
     ("el área verde es imprescindible", F.AREA_M2_MIN, None),  # sobra «verde»
     ("la superficie es imprescindible", F.AREA_M2_MIN, E),
     ("el presupuesto es flexible", F.BUDGET_MAX, FL),
@@ -222,7 +223,7 @@ def test_B_dos_rigideces_distintas_CON_correccion_gana_la_ultima():
 
 
 def test_B_la_misma_rigidez_repetida_es_una():
-    lote = interpretar(_msg("presupuesto innegociable, repito: presupuesto innegociable"),
+    lote = interpretar(_msg("el presupuesto es innegociable. El presupuesto es innegociable"),
                        [_rig(F.BUDGET_MAX, E), _rig(F.BUDGET_MAX, E)])
     assert len(lote.rigideces) == 1
 

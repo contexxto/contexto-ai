@@ -280,8 +280,15 @@ def reducir(contexto: BuyerContextV0, lote, retrieved_at: datetime) -> BuyerCont
     sin_valor = {d.campo for d in lote.rigideces
                  if _valor_y_unidad(d.campo, datos) is None} - resueltas
     abiertas |= sin_valor
+    # ASIMÉTRICO, como la guarda. Una duda —de este mensaje o una pregunta que sigue abierta
+    # de antes— bloquea ENDURECER, porque la persona podría estar abandonando ese valor. No
+    # bloquea RELAJAR: "hasta mil dólares, el presupuesto es flexible" deja de excluir aunque
+    # "mil" no se haya acreditado, y equivocarse hacia flexible sólo deja de excluir.
+    en_duda = abiertas | ({c for c in CAMPOS_CON_CRITERIO if any(
+        q.about_field == _RUTA_DE_CAMPO[c] for q in contexto.unresolved_questions)} - resueltas)
     rigidez_aplicable = {d.campo: d.rigidez for d in lote.rigideces
-                         if d.campo not in abiertas}
+                         if d.campo not in sin_valor
+                         and (d.rigidez is RigidezV0.FLEXIBLE or d.campo not in en_duda)}
     tocados = ({campo_de_mutacion(a.mutacion) for a in durables}
                | {a.campo for a in ambiguas} | {d.campo for d in lote.rigideces})
 
@@ -466,10 +473,24 @@ def _criterios_previos(contexto: BuyerContextV0) -> dict[BuyerFieldV0, tuple[boo
     return previos
 
 
+_METODOLOGIA_E33: dict[RigidezV0, str] = {
+    RigidezV0.ESTRICTA: ("declaración explícita del comprador de que el requisito es "
+                         "indispensable, acreditada por la guarda de rigidez de E3.3"),
+    RigidezV0.FLEXIBLE: ("declaración explícita del comprador de que el requisito es "
+                         "flexible, acreditada por la guarda de rigidez de E3.3"),
+}
+"""Lo que E3.3 (main `da82d42`) persistía, sin código. Se sigue LEYENDO: una revisión escrita
+por E3.3 con un criterio duro, sin esto, quedaba «dura sin ESTRICTA» y R8 levantaba en cada
+turno de ese comprador. Nunca se ESCRIBE."""
+
+
 def rigidez_de_evidencia(evidencia: EvidenceRefV0) -> RigidezV0 | None:
     """La rigidez que sostiene esta evidencia de un criterio, o `None` si sostiene el valor."""
-    return next((r for r, codigo in _CODIGO_RIGIDEZ.items()
-                 if evidencia.methodology.startswith(codigo)), None)
+    for rigidez, codigo in _CODIGO_RIGIDEZ.items():
+        if evidencia.methodology.startswith(codigo) \
+                or evidencia.methodology == _METODOLOGIA_E33[rigidez]:
+            return rigidez
+    return None
 
 
 def es_evidencia_de_rigidez(evidencia: EvidenceRefV0) -> bool:

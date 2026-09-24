@@ -113,13 +113,16 @@ def _rigidez_ok(texto, campo, rigidez):
 
 
 @pytest.mark.parametrize("texto, campo, rigidez", [
-    ("necesito al menos 2 dormitorios sí o sí", F.BEDROOMS_MIN, E),
+    # R2b: ESTRICTA pegada a un VALOR no es forma canónica; la acredita el puente, que
+    # necesita la durable del mensaje (test_R2_10). Sin ella, la guarda local no la acepta.
+    ("necesito al menos 2 dormitorios sí o sí", F.BEDROOMS_MIN, None),
     ("el presupuesto es innegociable", F.BUDGET_MAX, E),
     ("mi presupuesto no es negociable", F.BUDGET_MAX, E),
     ("el presupuesto, sin excepción", F.BUDGET_MAX, None),     # la coma corta la cláusula
     ("tope de presupuesto sin excepción", F.BUDGET_MAX, E),
     ("que acepten mascotas es indispensable", F.PETS_REQUIRED, E),
-    ("el área es imprescindible", F.AREA_M2_MIN, None),     # R2: 'área' suelta no basta
+    ("el área es imprescindible", F.AREA_M2_MIN, E),        # R2b: «el área» como SUJETO
+    ("el área verde es imprescindible", F.AREA_M2_MIN, None),  # sobra «verde»
     ("la superficie es imprescindible", F.AREA_M2_MIN, E),
     ("el presupuesto es flexible", F.BUDGET_MAX, FL),
     ("los dormitorios son flexibles", F.BEDROOMS_MIN, FL),

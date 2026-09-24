@@ -263,9 +263,12 @@ def test_R2_4_una_particula_sola_no_niega_lo_que_sigue(texto, rigidez):
     assert _ok(texto, F.BUDGET_MAX, rigidez)
 
 
-def test_R2_4_la_negacion_de_OTRA_clausula_tras_pero_no_bloquea():
-    """El límite: `pero`, `y` y la puntuación fuerte cortan el alcance."""
-    assert _ok("no tengo mascotas, pero el presupuesto es innegociable", F.BUDGET_MAX, E)
+def test_R2_4_ESTRICTA_exige_la_ORACION_entera_limpia_y_la_otra_oracion_no_cuenta():
+    """R2b. Para endurecer, ninguna parte de la oración puede negar, condicionar o citar —ni
+    antes ni después del marcador, ni tras una «y» o unos dos puntos—. Es un falso negativo
+    aceptado en «no tengo mascotas, pero…»: la persona puede decirlo en otra oración."""
+    assert not _ok("no tengo mascotas, pero el presupuesto es innegociable", F.BUDGET_MAX, E)
+    assert _ok("No tengo mascotas. El presupuesto es innegociable", F.BUDGET_MAX, E)
     assert _ok("no tengo carro. El presupuesto es flexible", F.BUDGET_MAX, FL)
 
 
@@ -436,12 +439,9 @@ def test_R2_9_el_control_del_centinela_NO_es_vacuo():
      SetBudgetMax(amount=Decimal(900), currency=USD), F.BUDGET_MAX, E),
     ("máximo 900 USD y es innegociable",
      SetBudgetMax(amount=Decimal(900), currency=USD), F.BUDGET_MAX, E),
-    ("Máximo 900 USD. Es innegociable.",
-     SetBudgetMax(amount=Decimal(900), currency=USD), F.BUDGET_MAX, E),
     ("al menos 2 dormitorios, sí o sí", SetBedroomsMin(bedrooms_min=2), F.BEDROOMS_MIN, E),
-    ("mínimo 80 m2, idealmente", SetAreaM2Min(area_m2_min=80.0), F.AREA_M2_MIN, FL),
-    ("máximo 900 USD, pero no es indispensable",
-     SetBudgetMax(amount=Decimal(900), currency=USD), F.BUDGET_MAX, FL),
+    ("necesito al menos 2 dormitorios sí o sí", SetBedroomsMin(bedrooms_min=2),
+     F.BEDROOMS_MIN, E),
 ])
 def test_R2_10_el_marcador_SOLO_tras_el_valor_se_acredita(texto, mutacion, campo, rigidez):
     autorizar_rigidez_por_adyacencia(DeclaracionRigidezV0(campo=campo, rigidez=rigidez),
@@ -449,6 +449,8 @@ def test_R2_10_el_marcador_SOLO_tras_el_valor_se_acredita(texto, mutacion, campo
 
 
 @pytest.mark.parametrize("texto, mutacion, campo", [
+    ("máximo 900 USD, la ubicación es indispensable",       # sin palabra sucia: sólo el
+     SetBudgetMax(amount=Decimal(900), currency=USD), F.BUDGET_MAX),  # relleno lo frena
     ("máximo 900 USD, mi hijo es indispensable",
      SetBudgetMax(amount=Decimal(900), currency=USD), F.BUDGET_MAX),
     ("máximo 900 USD, al menos 2 dormitorios, es indispensable",
@@ -458,6 +460,19 @@ def test_R2_10_el_marcador_SOLO_tras_el_valor_se_acredita(texto, mutacion, campo
     ("máximo 900 USD, nunca innegociable",
      SetBudgetMax(amount=Decimal(900), currency=USD), F.BUDGET_MAX),
     ("es innegociable, máximo 900 USD",
+     SetBudgetMax(amount=Decimal(900), currency=USD), F.BUDGET_MAX),
+    # R2b · no cruza oraciones: la del medio podía ser una pregunta que se llevaba el marcador
+    ("Máximo 900 USD. Es innegociable.",
+     SetBudgetMax(amount=Decimal(900), currency=USD), F.BUDGET_MAX),
+    ("Máximo 900 USD. ¿Tienen algo de 3 dormitorios? Es indispensable.",
+     SetBudgetMax(amount=Decimal(900), currency=USD), F.BUDGET_MAX),
+    # R2b · la oración del valor tiene que estar limpia también para el puente
+    ("mi esposo dice que máximo 900 USD, es innegociable",
+     SetBudgetMax(amount=Decimal(900), currency=USD), F.BUDGET_MAX),
+    ("si me aprueban el crédito, máximo 1200 USD, es innegociable",
+     SetBudgetMax(amount=Decimal(1200), currency=USD), F.BUDGET_MAX),
+    # R2b · «lo que es indispensable:» apunta a lo que viene DESPUÉS
+    ("Máximo 900 USD, lo que es indispensable: al menos 2 dormitorios",
      SetBudgetMax(amount=Decimal(900), currency=USD), F.BUDGET_MAX),
 ])
 def test_R2_10_el_puente_NO_cruza_lo_que_no_es_solo_marcador(texto, mutacion, campo):
@@ -624,3 +639,198 @@ def _leer_rancio(store, revision):
         act.cargar_ultima = original
         return store.revisiones[revision]
     act.cargar_ultima = leer
+
+
+# ══ R2b · la guarda asimétrica (segunda revisión adversarial) ═══════════════════════
+
+
+@pytest.mark.parametrize("texto", [
+    "no creo que el área y el presupuesto sean innegociables",     # la «y» no corta
+    "Mi esposo dice: el presupuesto es innegociable",               # ni los dos puntos
+    "el presupuesto es innegociable, dice mi esposo",               # voz ajena pospuesta
+    "el presupuesto es innegociable, bueno, no tanto",              # negación pospuesta
+    "el presupuesto es innegociable, no lo creo",
+    "el presupuesto debería ser innegociable o no?",                # pregunta sin ¿
+    "el presupuesto es innegociable, sí o no?",
+    "mi esposo cree que el presupuesto es innegociable",            # «cree», no «dice»
+    "según mi esposo el presupuesto es innegociable",
+    "quizás el presupuesto es innegociable",
+    "el presupuesto dejó de ser innegociable",                      # cambio de estado
+    "quita lo de innegociable del presupuesto",                     # retractación
+    "aunque me pase del presupuesto la seguridad es indispensable", # el sujeto es otro
+    "el presupuesto antes era innegociable",
+    "el presupuesto es innegociable, ¿verdad?",                    # pedir confirmación
+    "el presupuesto es innegociable, ¿cierto?",
+])
+def test_R2b_ESTRICTA_no_se_acredita_fuera_de_una_oracion_limpia(texto):
+    assert not _ok(texto, F.BUDGET_MAX, E)
+
+
+@pytest.mark.parametrize("texto, campo", [
+    ("tengo 70 años, un dormitorio en planta baja es indispensable", F.BEDROOMS_MIN),
+    ("dos cuartos de baño son indispensables", F.BEDROOMS_MIN),
+    ("máximo tres cuartos de hora al trabajo es innegociable", F.BEDROOMS_MIN),
+    ("un balcón de 10 m2 es indispensable", F.AREA_M2_MIN),
+    ("un veterinario cerca para mi perro es indispensable", F.PETS_REQUIRED),
+])
+def test_R2b_el_requisito_tiene_que_ser_el_SUJETO(texto, campo):
+    """Nombrar la dimensión en cualquier función ya no basta: la forma canónica exige que sea
+    el sujeto de la declaración."""
+    assert not _ok(texto, campo, E)
+
+
+@pytest.mark.parametrize("texto", [
+    "el presupuesto es innegociable",
+    "Sí, el presupuesto es innegociable",
+    "No, el presupuesto es innegociable",
+    "lo del presupuesto es innegociable",
+    "mi presupuesto no es negociable",
+    "para mí el presupuesto es totalmente innegociable",
+    "el presupuesto tiene que ser innegociable",
+    "Busco alquilar, máximo 900 USD, y el presupuesto es innegociable",
+])
+def test_R2b_la_forma_canonica_SI_se_acredita(texto):
+    assert _ok(texto, F.BUDGET_MAX, E)
+
+
+@pytest.mark.parametrize("texto", [
+    "ya no, el presupuesto es flexible",
+    "ya no es innegociable, el presupuesto es flexible",
+    "nada de eso, el presupuesto es flexible",
+    "el presupuesto sí es negociable",
+    "eso sí, el presupuesto es flexible",
+    "corrijo lo que dije, el presupuesto es flexible",
+    "era broma, el presupuesto es flexible",
+    "no no, el presupuesto es flexible",
+    "ni modo, el presupuesto es flexible",
+    "el presupuesto es flexible, ok?",
+    "el presupuesto es innegociable... no, perdón, es flexible",
+    "máximo 900 USD, pero no es indispensable",
+])
+def test_R2b_FLEXIBLE_acepta_las_correcciones_naturales(texto):
+    """La dirección cara de FLEXIBLE es el falso NEGATIVO: el criterio se queda duro."""
+    assert _ok(texto, F.BUDGET_MAX, FL)
+
+
+@pytest.mark.parametrize("texto", [
+    "el presupuesto no es flexible",
+    "el presupuesto es cero negociable",
+    "el presupuesto es apenas flexible",
+    "no creo que el presupuesto sea flexible",
+    "si el presupuesto fuera flexible buscaría en Cumbayá",
+    "quería saber si el presupuesto es negociable",
+    "el presupuesto es flexible o no?",
+    "el precio es negociable",
+])
+def test_R2b_FLEXIBLE_no_se_acredita_si_se_niega_o_se_suspende(texto):
+    assert not _ok(texto, F.BUDGET_MAX, FL)
+
+
+def test_R2b_la_anafora_FLEXIBLE_exige_que_el_mensaje_hable_de_UNA_sola_dimension():
+    assert _ok("mínimo 80 m2, idealmente", F.AREA_M2_MIN, FL)
+    assert not _ok("máximo 900 USD, al menos 2 dormitorios, es flexible", F.BUDGET_MAX, FL)
+
+
+def test_R2b_una_lectura_NO_acreditada_no_veta_la_declaracion_de_la_persona():
+    """#12: «antes era innegociable, pero ahora…» — la lectura del pasado no se acredita y ya
+    no anula la flexible que sí se acreditó."""
+    base = _paso(_vacio(), "máximo 800 USD, el presupuesto es innegociable",
+                 _dur(SetBudgetMax(amount=Decimal(800), currency=USD)), _rig(F.BUDGET_MAX, E),
+                 mid="m-1")
+    c = _paso(base, "Antes el presupuesto era innegociable, pero ahora el presupuesto es "
+                    "flexible", _rig(F.BUDGET_MAX, E), _rig(F.BUDGET_MAX, FL), mid="m-2")
+    assert _lista(c, F.BUDGET_MAX)[0] == "soft_preferences"
+
+
+def test_R2b_una_correccion_natural_sobre_una_base_DURA_relaja():
+    """#12 con el texto de R2-5, ahora que FLEXIBLE acepta la anáfora de una sola dimensión."""
+    base = _paso(_vacio(), "máximo 800 USD, el presupuesto es innegociable",
+                 _dur(SetBudgetMax(amount=Decimal(800), currency=USD)), _rig(F.BUDGET_MAX, E),
+                 mid="m-1")
+    c = _paso(base, "el presupuesto es innegociable... no, perdón, es flexible",
+              _rig(F.BUDGET_MAX, E), _rig(F.BUDGET_MAX, FL), mid="m-2")
+    assert _lista(c, F.BUDGET_MAX)[0] == "soft_preferences"
+
+
+def test_R2b_FLEXIBLE_SI_se_aplica_aunque_el_valor_nuevo_quede_en_duda():
+    """#1: relajar en la duda es seguro; endurecer no."""
+    base = _paso(_vacio(), "máximo 800 USD, el presupuesto es innegociable",
+                 _dur(SetBudgetMax(amount=Decimal(800), currency=USD)), _rig(F.BUDGET_MAX, E),
+                 mid="m-1")
+    c = _paso(base, "ahora puedo hasta mil dólares, el presupuesto es flexible",
+              _dur(SetBudgetMax(amount=Decimal(1000), currency=USD)), _rig(F.BUDGET_MAX, FL),
+              mid="m-2")
+    lista, criterio = _lista(c, F.BUDGET_MAX)
+    assert lista == "soft_preferences" and criterio.value == 800
+    c = _paso(c, "mi presupuesto máximo es 1000 USD",
+              _dur(SetBudgetMax(amount=Decimal(1000), currency=USD)), mid="m-3")
+    assert _lista(c, F.BUDGET_MAX)[0] == "soft_preferences", "revivió la ESTRICTA vieja"
+
+
+def test_R2b_una_pregunta_ABIERTA_de_antes_bloquea_endurecer():
+    """#2: la duda en un mensaje anterior también cuenta."""
+    c = _paso(_vacio(), "mi presupuesto máximo es 800 USD",
+              _dur(SetBudgetMax(amount=Decimal(800), currency=USD)), mid="m-1")
+    c = _paso(c, "creo que ahora puedo hasta mil dólares",
+              PropuestaV0(disposicion=Disposicion.AMBIGUOUS, campo=F.BUDGET_MAX,
+                          motivo="monto en letras"), mid="m-2")
+    assert "financial.budget_max" in _preguntas(c)
+    c = _paso(c, "el presupuesto es innegociable", _rig(F.BUDGET_MAX, E), mid="m-3")
+    assert c.hard_constraints == ()
+
+
+def test_R2b_las_revisiones_de_E33_se_siguen_leyendo():
+    """#3: E3.3 persistía la metodología sin código. Un duro de entonces sigue siendo duro."""
+    from app.buyer.reductor import _METODOLOGIA_E33
+
+    c = _paso(_vacio(), "máximo 900 USD, el presupuesto es innegociable",
+              _dur(SetBudgetMax(amount=Decimal(900), currency=USD)), _rig(F.BUDGET_MAX, E),
+              mid="m-1")
+    duro = c.hard_constraints[0]
+    como_e33 = tuple(e.model_copy(update={"methodology": _METODOLOGIA_E33[E]})
+                     if rigidez_de_evidencia(e) else e for e in duro.evidence)
+    legado = c.model_copy(update={"hard_constraints": (duro.model_copy(
+        update={"evidence": como_e33}),)})
+    c = _paso(legado, "gracias", PropuestaV0(disposicion=Disposicion.TURN_ONLY,
+                                              motivo="cortesía"), mid="m-2")
+    assert _lista(c, F.BUDGET_MAX)[0] == "hard_constraints"
+
+
+def test_R2b_el_log_no_repite_una_CLAVE_inventada(caplog):
+    """#16: en `extra_forbidden` el `loc` es la clave que eligió el modelo."""
+    centinela = "Calle-Centinela-Secreta-4471"
+    with caplog.at_level(logging.WARNING, logger="app.buyer.interprete"):
+        _parsear({"afirmaciones": [], "rigideces": [
+            {"campo": "budget_max", "rigidez": "estricta", "motivo": "x", centinela: "y"}]})
+    assert len(caplog.records) == 1
+    assert centinela not in caplog.text and "<clave extra>" in caplog.text
+
+
+def test_R2b_R12_tambien_sobre_lo_ARRASTRADO():
+    """#21: la mitad de R2-14 que faltaba."""
+    from app.contracts.buyer_v0 import CriterionOrigin
+
+    base = _poblada()
+    inferido = base.soft_preferences[0].model_copy(update={"origin": CriterionOrigin.INFERRED})
+    colado = base.model_copy(update={"soft_preferences": (inferido, *base.soft_preferences[1:])})
+    with pytest.raises(ReduccionImposible):
+        _paso(colado, "al menos 3 dormitorios", _dur(SetBedroomsMin(bedrooms_min=3)),
+              mid="m-1")
+
+
+def test_R2b_un_retiro_con_rigidez_en_el_mismo_mensaje_la_descarta():
+    """#22: sin valor que endurecer, la rigidez no se aplica; el retiro manda."""
+    c = _paso(_poblada(), "ya no tengo tope de presupuesto, el presupuesto es innegociable",
+              _dur(ClearBudgetMax()), _rig(F.BUDGET_MAX, E), mid="m-1")
+    lista, criterio = _lista(c, F.BUDGET_MAX)
+    assert lista == "soft_preferences" and criterio.status is CriterionStatus.RETRACTED
+
+
+def test_R2b_si_la_ULTIMA_lectura_no_se_acredita_no_gana_la_anterior():
+    """R2-5 sin la anáfora: «tal vez flexible» no se acredita, y aun así retira la estricta
+    que la precedía. Nada cambia: el criterio se queda donde estaba."""
+    base = _paso(_vacio(), "máximo 900 USD",
+                 _dur(SetBudgetMax(amount=Decimal(900), currency=USD)), mid="m-1")
+    c = _paso(base, "el presupuesto es innegociable. Bueno, tal vez flexible",
+              _rig(F.BUDGET_MAX, E), _rig(F.BUDGET_MAX, FL), mid="m-2")
+    assert c.hard_constraints == ()

@@ -506,11 +506,20 @@ def _tipar_monto(cruda):
     return {**cruda, "mutacion": {**mutacion, "amount": Decimal(str(monto))}}
 
 
+def _ubicacion(err) -> str:
+    """La ruta del error, sin nombres que haya elegido el modelo: en `extra_forbidden` el último
+    tramo ES la clave que el modelo inventó, y esa clave puede ser texto del mensaje."""
+    loc = [str(x) for x in err["loc"]]
+    if err["type"] == "extra_forbidden" and loc:
+        loc[-1] = "<clave extra>"
+    return ".".join(loc)
+
+
 def _registrar_descarte(que: str, error: ValidationError) -> None:
     """Qué falló, **nunca con qué**. El `ValidationError` de Pydantic repite el input, y aquí el
     input es lo que el modelo leyó del mensaje de la persona —su `motivo` puede parafrasearla—.
     Se registran el número de errores y su ubicación y tipo, que es lo que sirve para depurar."""
-    tipos = sorted({f"{'.'.join(map(str, err['loc']))}:{err['type']}" for err in error.errors()})
+    tipos = sorted({f"{_ubicacion(err)}:{err['type']}" for err in error.errors()})
     logger.warning("%s descartada por no validar: %d error(es) · %s",
                    que, error.error_count(), tipos)
 

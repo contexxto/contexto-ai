@@ -253,6 +253,16 @@ def test_R2_4_ni_estricta_ni_flexible_se_acreditan(texto, campo):
         assert not _ok(texto, campo, r), (texto, r)
 
 
+@pytest.mark.parametrize("texto, rigidez", [
+    ("Sí, el presupuesto es innegociable", E),
+    ("No, el presupuesto es flexible", FL),
+    ("Bueno, el presupuesto es flexible", FL),
+])
+def test_R2_4_una_particula_sola_no_niega_lo_que_sigue(texto, rigidez):
+    """Responder "sí" o "no" antes de la coma no condiciona ni niega la cláusula siguiente."""
+    assert _ok(texto, F.BUDGET_MAX, rigidez)
+
+
 def test_R2_4_la_negacion_de_OTRA_clausula_tras_pero_no_bloquea():
     """El límite: `pero`, `y` y la puntuación fuerte cortan el alcance."""
     assert _ok("no tengo mascotas, pero el presupuesto es innegociable", F.BUDGET_MAX, E)

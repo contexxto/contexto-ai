@@ -561,6 +561,8 @@ afirmación queda. Sin esto, la pregunta se tragaba la frase entera y una correc
 _PREGUNTA = re.compile(r"¿[^?]*(?:\?|$)|[^.!?¿]*\?")
 """Una pregunta con o sin signo de cierre: *"¿los dormitorios son indispensables"* también."""
 
+_PARTICULA = re.compile(r"(si|no|bueno|ok|claro|vale|perdon|mira|oye)")
+
 _SEGMENTO = re.compile(r"(?<!\d)[;.:]|[;.:](?!\d)|[!?¡¿]|\by\b|\bpero\b|\baunque\b")
 _COMA = re.compile(r"(?<!\d),|,(?!\d)")
 
@@ -604,12 +606,16 @@ def _clausulas_con_alcance(plano: str):
     indispensables"* el "no" está dos comas antes del marcador. `y`, `pero`, `aunque` y la
     puntuación fuerte sí lo cortan: *"no tengo mascotas, pero el presupuesto es innegociable"*
     declara el presupuesto.
+
+    Una PARTÍCULA sola —*"Sí, el presupuesto es innegociable"*, *"No, el presupuesto es
+    flexible"*— responde a lo anterior; no niega ni condiciona lo que viene después.
     """
     for segmento in _SEGMENTO.split(plano):
         bloqueada = False
         for clausula in _COMA.split(segmento):
             yield clausula, bloqueada
-            if _BLOQUEO_RIGIDEZ.search(_sin_marcadores(clausula)[1]):
+            if (_BLOQUEO_RIGIDEZ.search(_sin_marcadores(clausula)[1])
+                    and not _PARTICULA.fullmatch(clausula.strip())):
                 bloqueada = True
 
 

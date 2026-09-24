@@ -59,14 +59,17 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
 from app.buyer.boundary import (
+    CAMPOS_CON_CRITERIO,
     BuyerFieldV0,
     ClearAreaM2Min,
     ClearBedroomsMin,
     ClearBudgetMax,
     ClearObjective,
     ClearPetsRequired,
+    RigidezV0,
     SetAreaM2Min,
     SetBedroomsMin,
     SetBudgetMax,
@@ -78,8 +81,12 @@ from app.buyer.boundary import (
 from app.buyer.extractor import AfirmacionAmbiguous, AfirmacionDurable
 from app.contracts.buyer_v0 import (
     BuyerContextV0,
+    CriterionOrigin,
+    CriterionStatus,
+    DecisionCriterionV0,
     FieldEvidence,
     Objective,
+    Operator,
     UnresolvedQuestion,
 )
 from app.contracts.common_v0 import Money
@@ -119,8 +126,13 @@ def evidence_id_determinista(buyer_id: str, source_message_id: str, ruta: str) -
     return str(uuid.uuid5(_NAMESPACE_EVIDENCIA, f"{buyer_id}\x1f{source_message_id}\x1f{ruta}"))
 
 
+_METODOLOGIA_VALOR = ("declaración explícita del comprador en la conversación, acreditada por "
+                      "la guarda de evidencia exacta de E3.2b.1a")
+
+
 def _evidencia(buyer_id: str, source_message_id: str, ruta: str,
-               retrieved_at: datetime) -> EvidenceRefV0:
+               retrieved_at: datetime, methodology: str = _METODOLOGIA_VALOR
+               ) -> EvidenceRefV0:
     """La procedencia de un campo que el usuario declaró.
 
     `observed_at=None` es una afirmación, no un hueco por descuido: significa *"el origen no
@@ -132,8 +144,7 @@ def _evidencia(buyer_id: str, source_message_id: str, ruta: str,
         evidence_id=evidence_id_determinista(buyer_id, source_message_id, ruta),
         source_type=SourceType.USER_DECLARED,
         source_id=source_message_id,
-        methodology="declaración explícita del comprador en la conversación, acreditada por "
-                    "la guarda de evidencia exacta de E3.2b.1a",
+        methodology=methodology,
         persistence_policy=PersistencePolicy.PERSISTABLE,
         observed_at=None,
         retrieved_at=retrieved_at,
@@ -226,6 +237,10 @@ def reducir(contexto: BuyerContextV0, lote, retrieved_at: datetime) -> BuyerCont
     NO lo borra: sólo una retractación explícita autorizó los `Clear*`, y convertir "no estoy
     seguro de lo que dijo" en "bórralo" sería perder estado declarado por una duda del
     intérprete. El valor se queda y la pregunta se abre junto a él.
+
+    E3.3 · `hard_constraints` y `soft_preferences` se derivan AL FINAL, del estado ya
+    reducido y de las rigideces del lote (R8-R12, junto a `_proyectar_criterios`). Van en la
+    misma revisión que el valor que describen: un criterio no puede ir por detrás de su campo.
     """
     datos = {
         "objective": contexto.objective,
@@ -257,11 +272,18 @@ def reducir(contexto: BuyerContextV0, lote, retrieved_at: datetime) -> BuyerCont
     resueltas = {campo_de_mutacion(a.mutacion) for a in durables}
     abiertas = {a.campo for a in ambiguas} - resueltas
 
+    field_evidence = _fusionar_evidencia(contexto.field_evidence, evidencias)
+    duras, blandas = _proyectar_criterios(
+        contexto, datos, field_evidence, lote.rigideces,
+        lote.source_message_id, retrieved_at)
+
     return contexto.model_copy(update={
         **datos,
-        "field_evidence": _fusionar_evidencia(contexto.field_evidence, evidencias),
+        "field_evidence": field_evidence,
         "unresolved_questions": _fusionar_preguntas(
             contexto.unresolved_questions, abiertas, resueltas),
+        "hard_constraints": duras,
+        "soft_preferences": blandas,
     })
 
 
@@ -313,3 +335,181 @@ def ruta_de_campo(campo: BuyerFieldV0) -> str:
     Lo necesita el orquestador: una `AMBIGUOUS` lleva `BuyerFieldV0` y ninguna mutación, y
     aun así reclama su ruta a efectos de concurrencia."""
     return _RUTA_DE_CAMPO[campo]
+
+
+# ── E3.3 · los criterios: `hard_constraints` y `soft_preferences` ───────────────────
+#
+# **Se DERIVAN; ninguna mutación los escribe.** Un criterio es la forma EVALUABLE de un valor
+# que la persona declaró —el mismo presupuesto, como `price <= 900 USD`— más una decisión
+# sobre cómo usarlo: si descalifica o si sólo ordena. El valor lo sostiene su mutación y su
+# `FieldEvidence`; la rigidez, una declaración propia. Derivar de ahí, en vez de dejar que
+# algo escriba criterios, es lo que mantiene los dos sitios coherentes: no hay forma de que el
+# presupuesto diga 900 y su criterio 1000.
+#
+# ```
+# R8   hard SÓLO con rigidez ESTRICTA declarada y acreditada — regla 2 del Execution Plan
+# R9   sin declaración, `soft_preferences`: ordena, no excluye
+# R10  la rigidez es de la DIMENSIÓN y se conserva al cambiar el valor, hasta que otra la corrija
+# R11  un Clear* no borra el criterio: lo deja RETRACTED, con su evidencia y la del retiro
+# R12  todo criterio es `origin=STATED`: valor y rigidez vienen de la persona, nunca inferidos
+# ```
+#
+# R10 es la que se puede discutir. *"Máximo 900 USD, innegociable"* y después *"mejor 950"*:
+# la persona corrigió el número, no la rigidez, y soltarla en silencio la cambiaría sin que
+# nadie la declarase — lo contrario de lo que R8 existe para impedir. La evidencia de la
+# rigidez sigue en el criterio, así que se ve de qué mensaje sale.
+
+_METODOLOGIA_RIGIDEZ: dict[RigidezV0, str] = {
+    RigidezV0.ESTRICTA: ("declaración explícita del comprador de que el requisito es "
+                         "indispensable, acreditada por la guarda de rigidez de E3.3"),
+    RigidezV0.FLEXIBLE: ("declaración explícita del comprador de que el requisito es "
+                         "flexible, acreditada por la guarda de rigidez de E3.3"),
+}
+"""La metodología distingue, DENTRO de la tupla de evidencia de un criterio, cuál sostiene
+la rigidez y cuál el valor. El contrato no tiene un campo de rol, y no hace falta inventarlo:
+qué afirma una evidencia es exactamente lo que `methodology` describe."""
+
+_RIGIDEZ_DE_METODOLOGIA = {v: k for k, v in _METODOLOGIA_RIGIDEZ.items()}
+
+_FORMA: dict[BuyerFieldV0, tuple[str, Operator]] = {
+    BuyerFieldV0.BUDGET_MAX: ("price", Operator.LTE),
+    BuyerFieldV0.BEDROOMS_MIN: ("bedrooms", Operator.GTE),
+    BuyerFieldV0.AREA_M2_MIN: ("area_m2", Operator.GTE),
+    BuyerFieldV0.PETS_REQUIRED: ("pets_allowed", Operator.EQ),
+}
+"""Qué se compara contra el INMUEBLE, con el vocabulario del material de PLAN04-1.6
+(`bedrooms`, `area_m2`, `pets_allowed`). Total sobre la whitelist, comprobado por test.
+
+El presupuesto se compara contra `price`, no contra `budget`: el criterio describe lo que el
+inmueble tiene que cumplir, y el inmueble no tiene presupuesto."""
+
+
+def _monto(amount: Decimal) -> int | float:
+    """`Money.amount` es `Decimal` y `CriterionValue` no lo admite. **Sin pérdida o nada.**
+
+    Entero si es entero —lo único que la guarda de E3.2b.1a sabe acreditar—. Si trae
+    decimales, `float` sólo cuando vuelve al mismo `Decimal`; si no, se levanta: un tope que
+    cambia de valor al volverse criterio es un criterio que ya no es lo que la persona dijo.
+    """
+    if amount == amount.to_integral_value():
+        return int(amount)
+    como_float = float(amount)
+    if Decimal(str(como_float)) != amount:
+        raise ReduccionImposible(
+            f"el presupuesto {amount} no se representa como criterio sin perder exactitud")
+    return como_float
+
+
+def _valor_y_unidad(campo: BuyerFieldV0, datos) -> tuple | None:
+    """El valor vigente de la dimensión, ya con la forma del criterio. `None` = ausente."""
+    if campo is BuyerFieldV0.BUDGET_MAX:
+        tope = datos["financial"].budget_max
+        return None if tope is None else (_monto(tope.amount), tope.currency)
+    requisitos = datos["property_requirements"]
+    if campo is BuyerFieldV0.BEDROOMS_MIN:
+        v = requisitos.bedrooms_min
+        return None if v is None else (v, None)
+    if campo is BuyerFieldV0.AREA_M2_MIN:
+        v = requisitos.area_m2_min
+        return None if v is None else (v, "m2")
+    if campo is BuyerFieldV0.PETS_REQUIRED:
+        return (True, None) if requisitos.pets_allowed_required is True else None
+    raise ReduccionImposible(f"{campo} no tiene forma de criterio")  # pragma: no cover
+
+
+def _criterios_previos(contexto: BuyerContextV0) -> dict[BuyerFieldV0, tuple[bool, object]]:
+    """Los criterios de la base, por dimensión, con la lista en la que vivían.
+
+    **Fail closed ante lo que este reducer no sabe mantener.** Un criterio fuera de la
+    whitelist —por dimensión o por identidad— no se arrastra ni se borra: se levanta. Es la
+    garantía de que ningún contexto que salga de aquí lleva un criterio sobre algo que no sea
+    un requisito del inmueble, venga de donde venga la base.
+    """
+    previos: dict[BuyerFieldV0, tuple[bool, object]] = {}
+    for duro, lista in ((True, contexto.hard_constraints), (False, contexto.soft_preferences)):
+        for criterio in lista:
+            campo = next((c for c in CAMPOS_CON_CRITERIO if c.value == criterio.criterion_id),
+                         None)
+            if campo is None or criterio.dimension != _FORMA[campo][0]:
+                raise ReduccionImposible(
+                    f"criterio {criterio.criterion_id!r} sobre {criterio.dimension!r} fuera "
+                    f"de la whitelist de E3.3: este reducer no escribe lo que no sabe mantener")
+            previos[campo] = (duro, criterio)
+    return previos
+
+
+def es_evidencia_de_rigidez(evidencia: EvidenceRefV0) -> bool:
+    """¿Esta evidencia de un criterio sostiene su RIGIDEZ, y no su valor? Lo necesita también
+    el orquestador, para ver si otra conversación cambió la rigidez de una ruta."""
+    return evidencia.methodology in _RIGIDEZ_DE_METODOLOGIA
+
+
+def _proyectar_criterios(contexto, datos, field_evidence, rigideces, source_message_id,
+                         retrieved_at) -> tuple[tuple, tuple]:
+    """El estado vigente de cada dimensión de la whitelist → `(duras, blandas)`.
+
+    Se recorre en el orden de `CAMPOS_CON_CRITERIO`, así que las tuplas salen siempre en el
+    mismo orden: dos reducciones del mismo lote no pueden diferir sólo en cómo se ordenaron.
+    """
+    buyer_id = contexto.buyer_id
+    previos = _criterios_previos(contexto)
+    rigidez_nueva = {d.campo: d.rigidez for d in rigideces}
+    evidencia_de_ruta = {fe.field: fe.evidence for fe in field_evidence}
+
+    duras, blandas = [], []
+    for campo in CAMPOS_CON_CRITERIO:
+        ruta = _RUTA_DE_CAMPO[campo]
+        dimension, operador = _FORMA[campo]
+        duro_previo, previo = previos.get(campo, (False, None))
+
+        # ── la rigidez: declarada ahora, heredada (R10), o ninguna (R9) ──
+        if campo in rigidez_nueva:
+            rigidez = rigidez_nueva[campo]
+            sustento_rigidez = (_evidencia(
+                buyer_id, source_message_id, f"{ruta}#rigidez", retrieved_at,
+                methodology=_METODOLOGIA_RIGIDEZ[rigidez]),)
+            duro = rigidez is RigidezV0.ESTRICTA
+        elif previo is not None:
+            sustento_rigidez = tuple(e for e in previo.evidence if es_evidencia_de_rigidez(e))
+            duro = duro_previo
+        else:
+            sustento_rigidez, duro = (), False
+
+        # ── el valor: vigente → ACTIVE; retirado → RETRACTED (R11); nunca hubo → nada ──
+        actual = _valor_y_unidad(campo, datos)
+        evidencia_valor = evidencia_de_ruta.get(ruta)
+        if actual is not None:
+            if evidencia_valor is None or evidencia_valor.source_type is not SourceType.USER_DECLARED:
+                # Un valor sin declaración que lo sostenga no puede volverse `STATED` (R12).
+                # Sólo pasa con una base escrita a mano; el reducer siempre deja evidencia.
+                if previo is not None:
+                    (duras if duro_previo else blandas).append(previo)
+                continue
+            valor, unidad = actual
+            criterio = DecisionCriterionV0(
+                criterion_id=campo.value, dimension=dimension, operator=operador,
+                value=valor, unit=unidad, origin=CriterionOrigin.STATED,
+                status=CriterionStatus.ACTIVE,
+                evidence=(evidencia_valor,) + sustento_rigidez)
+        elif previo is not None:
+            sustento = tuple(e for e in previo.evidence if not es_evidencia_de_rigidez(e))
+            if (previo.status is CriterionStatus.ACTIVE and evidencia_valor is not None
+                    and all(e.evidence_id != evidencia_valor.evidence_id for e in sustento)):
+                sustento += (evidencia_valor,)          # la del retiro, junto a la del valor
+            criterio = previo.model_copy(update={
+                "status": CriterionStatus.RETRACTED,
+                "evidence": sustento + sustento_rigidez})
+        else:
+            # Una rigidez sobre una dimensión sin valor no tiene criterio que mover: no-op
+            # declarado, no pérdida silenciosa — la guarda la acreditó y el lote la conserva.
+            continue
+
+        # R8, comprobado sobre el resultado y no sólo por construcción.
+        if duro and not any(e.methodology == _METODOLOGIA_RIGIDEZ[RigidezV0.ESTRICTA]
+                            for e in criterio.evidence):
+            raise ReduccionImposible(
+                f"{campo.value} acabaría en hard_constraints sin una rigidez ESTRICTA "
+                f"declarada: la inferencia no se vuelve restricción dura en silencio")
+        (duras if duro else blandas).append(criterio)
+
+    return tuple(duras), tuple(blandas)

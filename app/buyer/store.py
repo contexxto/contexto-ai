@@ -138,6 +138,14 @@ def _canonico(contexto: BuyerContextV0) -> str:
         datos.pop(metadato, None)
     for fe in datos.get("field_evidence") or ():
         _limpiar_procedencia_operacional(fe.get("evidence"))
+    # E3.3 · la evidencia de los criterios viaja DENTRO de cada criterio, no en
+    # `field_evidence`. Es la misma procedencia `USER_DECLARED` y la misma regla; sin esto un
+    # replay honesto del mensaje que declaró una rigidez —otro `retrieved_at`— daría
+    # `BuyerIdempotencyConflict`.
+    for lista in ("hard_constraints", "soft_preferences"):
+        for criterio in datos.get(lista) or ():
+            for evidencia in criterio.get("evidence") or ():
+                _limpiar_procedencia_operacional(evidencia)
     return json.dumps(datos, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
 
 

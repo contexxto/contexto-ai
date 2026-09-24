@@ -102,7 +102,9 @@ from app.buyer.boundary import (
     ClearBudgetMax,
     ClearObjective,
     ClearPetsRequired,
+    DeclaracionRigidezV0,
     Disposicion,
+    RigidezV0,
     SetAreaM2Min,
     SetBedroomsMin,
     SetBudgetMax,
@@ -467,6 +469,104 @@ def autorizar_traduccion(mutacion, texto: str) -> None:
         )
 
 
+# ── E3.3 · la guarda de RIGIDEZ ────────────────────────────────────────────────────
+#
+# La misma exigencia que las mutaciones, aplicada a otra afirmación: que la persona dijo que
+# ESE requisito es indispensable —o flexible— y no que el modelo lo dedujo. Sin esta guarda,
+# un proponente podría convertir en restricción dura cualquier valor declarado, que es la
+# inferencia silenciosa que la regla 2 del Execution Plan prohíbe.
+#
+#     "necesito al menos 2 dormitorios sí o sí"        dimensión + marcador        →  SÍ
+#     "el presupuesto es flexible"                     corrige sin traer número    →  SÍ
+#     "máximo 900 USD"                                 "máximo" es el VALOR         →  NO
+#     "tenemos dos niños, es indispensable"            no nombra un requisito      →  NO
+#     "¿el presupuesto es flexible?"                   una pregunta no declara     →  NO
+#     "no creo que el presupuesto sea flexible"        negación sin marcador propio→  NO
+#
+# El vocabulario es cerrado y deliberadamente corto. Un falso negativo deja el criterio
+# donde estaba —en `soft_preferences` si nunca se declaró rígido—; un falso positivo
+# excluiría inmuebles que la persona sí aceptaba. Se prefiere el primero.
+
+_RIGIDEZ_NEGADA: dict[RigidezV0, re.Pattern] = {
+    RigidezV0.ESTRICTA: re.compile(r"\b(no (es |son )?negociables?|sin excepcion(es)?)\b"),
+    RigidezV0.FLEXIBLE: re.compile(
+        r"\bno (es|son) (indispensables?|imprescindibles?|obligatori[oa]s?|excluyentes?)\b"),
+}
+"""Marcadores que CONTIENEN una negación y la usan para afirmar. Se reconocen primero y se
+retiran de la cláusula: "no negociable" contiene "negociable", y "no es indispensable"
+contiene "indispensable", y leídos por partes dirían lo contrario de lo que dicen. "Sin
+excepción" está aquí por la misma razón: `sin` es una de las negaciones de `_NEGACION`."""
+
+_RIGIDEZ_AFIRMADA: dict[RigidezV0, re.Pattern] = {
+    RigidezV0.ESTRICTA: re.compile(
+        r"\b(indispensables?|imprescindibles?|innegociables?|obligatori[oa]s?|excluyentes?|"
+        r"si o si)\b"),
+    RigidezV0.FLEXIBLE: re.compile(
+        r"\b(flexibles?|negociables?|idealmente|ideal|de preferencia|preferiblemente|"
+        r"preferentemente|si se puede|si es posible)\b"),
+}
+
+_DIM_RIGIDEZ: dict[BuyerFieldV0, tuple[re.Pattern, ...]] = {
+    BuyerFieldV0.BUDGET_MAX: (_DIM_BUDGET_CLEAR,),
+    BuyerFieldV0.BEDROOMS_MIN: (_DIM_BEDROOMS,),
+    BuyerFieldV0.AREA_M2_MIN: (_DIM_AREA_CLEAR,),
+    BuyerFieldV0.PETS_REQUIRED: (_PETS_SUSTANTIVO,),
+}
+"""Qué tiene que nombrar la cláusula para que la rigidez sea DE ESA dimensión.
+
+`precio` no está en el presupuesto, y no es un olvido: *"el precio es negociable"* habla del
+precio del inmueble, no de cuánto está dispuesta a pagar la persona. Se reutiliza el
+vocabulario de los `Clear*`, que ya nombra la dimensión sin exigir número ni mínimo."""
+
+_PREGUNTA = re.compile(r"¿[^?]*\?|[^.!?¿]*\?")
+
+
+def _rigidez_de_la_clausula(clausula: str) -> RigidezV0 | None:
+    """La rigidez que afirma UNA cláusula, o `None` si no afirma una sola sin ambigüedad.
+
+    Primero los marcadores que llevan su negación dentro; después los afirmativos sobre lo
+    que queda. **Si queda una negación suelta, no se decide**: *"no creo que sea flexible"*
+    no es flexible ni estricto — es una duda sobre la flexibilidad, y la guarda no la
+    resuelve. Tampoco se decide si aparecen las dos rigideces en la misma cláusula.
+    """
+    encontradas: set[RigidezV0] = set()
+    resto = clausula
+    for rigidez, patron in _RIGIDEZ_NEGADA.items():
+        if patron.search(resto):
+            encontradas.add(rigidez)
+            resto = patron.sub(" ", resto)
+    if _NEGACION.search(resto):
+        return None
+    for rigidez, patron in _RIGIDEZ_AFIRMADA.items():
+        if patron.search(resto):
+            encontradas.add(rigidez)
+    return next(iter(encontradas)) if len(encontradas) == 1 else None
+
+
+def autorizar_rigidez(declaracion: DeclaracionRigidezV0, texto: str) -> None:
+    """Levanta si el texto no declara **exactamente** esa rigidez para esa dimensión.
+
+    La evidencia es LOCAL, POSITIVA y DEL VALOR, como en `autorizar_traduccion`: la cláusula
+    nombra la dimensión, afirma una sola rigidez, y es la propuesta —ESTRICTA no se acredita
+    con un marcador de flexibilidad—. Las preguntas se retiran antes de mirar: preguntar si
+    algo es negociable no declara que lo sea.
+
+    **Fail closed.** Una dimensión sin vocabulario no se autoriza.
+    """
+    dimension = _DIM_RIGIDEZ.get(declaracion.campo)
+    if dimension is None:
+        raise TraduccionNoAutorizada(
+            f"rigidez sobre {declaracion.campo}: no es una dimensión con criterio")
+    plano = _PREGUNTA.sub(" ", _norm(texto))
+    for clausula in _CLAUSULA.split(plano):
+        if all(p.search(clausula) for p in dimension) \
+                and _rigidez_de_la_clausula(clausula) is declaracion.rigidez:
+            return
+    raise TraduccionNoAutorizada(
+        f"rigidez {declaracion.rigidez.value} de {declaracion.campo.value} sin evidencia "
+        f"textual explícita en la misma cláusula")
+
+
 # ── La unión cerrada de afirmaciones ───────────────────────────────────────────────
 #
 # Discriminada por `disposicion`, igual que `BuyerMutationV0` lo está por `tipo`. Cada
@@ -566,6 +666,15 @@ class LoteExtraccion(BaseModel):
     source_message_id: str = Field(min_length=1)
     afirmaciones: tuple[AfirmacionV0, ...] = ()
 
+    rigideces: tuple[DeclaracionRigidezV0, ...] = ()
+    """E3.3 · las rigideces ACREDITADAS del mensaje, como mucho una por dimensión.
+
+    Van aparte de `afirmaciones` porque no compiten con ellas: *"máximo 900 USD, y es
+    innegociable"* declara un valor Y su rigidez, y meter las dos en C1-C5 las haría pelear
+    por la misma dimensión hasta anularse. La rigidez que no se pudo acreditar no llega aquí:
+    queda en `afirmaciones` como `REJECTED` con su campo, que deja constancia sin crear estado
+    y sin competir con el valor."""
+
     @model_validator(mode="after")
     def _una_durable_por_campo(self) -> LoteExtraccion:
         campos = [a.campo for a in self.afirmaciones if isinstance(a, AfirmacionDurable)]
@@ -575,6 +684,19 @@ class LoteExtraccion(BaseModel):
                 f"dos mutaciones durables para {sorted(repetidos)}: el conflicto se resuelve "
                 f"en el extractor (C4), no dejando que el orden decida"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _una_rigidez_por_campo(self) -> LoteExtraccion:
+        """La misma regla que las durables, por el mismo motivo: dos rigideces de una
+        dimensión sin resolver dejarían que el orden eligiera — *last-write-wins* dentro del
+        mensaje."""
+        campos = [r.campo for r in self.rigideces]
+        repetidos = {c for c in campos if campos.count(c) > 1}
+        if repetidos:
+            raise ValueError(
+                f"dos rigideces para {sorted(repetidos)}: se resuelven en el extractor, "
+                f"no dejando que el orden decida")
         return self
 
     @property
@@ -712,14 +834,50 @@ def resolver_intramensaje(afirmaciones, texto: str) -> tuple:
     return tuple(a for _, a in sorted(resueltas, key=lambda par: par[0]))
 
 
-def construir_lote(mensaje, afirmaciones) -> LoteExtraccion:
+def resolver_rigideces(rigideces, texto: str) -> tuple[tuple, tuple]:
+    """C1-C5 para las rigideces ya acreditadas. Devuelve `(vigentes, rechazos)`.
+
+    ```
+    misma dimensión, misma rigidez        → una
+    distintas + autocorrección explícita  → la última
+    distintas sin autocorrección          → NINGUNA, y un REJECTED con su campo
+    ```
+
+    La tercera no abre pregunta, a diferencia de un valor en conflicto: sin rigidez nueva el
+    criterio conserva la que tenía, así que no se pierde estado — sólo no se cambia. El
+    `REJECTED` deja constancia de que hubo dos y no se eligió.
+    """
+    por_campo: dict[BuyerFieldV0, list] = {}
+    for declaracion in rigideces:
+        por_campo.setdefault(declaracion.campo, []).append(declaracion)
+
+    vigentes, rechazos = [], []
+    for campo, grupo in por_campo.items():
+        if len({d.rigidez for d in grupo}) == 1:
+            vigentes.append(grupo[0])
+        elif hay_autocorreccion(texto):
+            vigentes.append(grupo[-1])
+        else:
+            rechazos.append(AfirmacionRejected(
+                campo=campo,
+                motivo=f"dos rigideces incompatibles para {campo} sin corrección explícita"))
+    return tuple(vigentes), tuple(rechazos)
+
+
+def construir_lote(mensaje, afirmaciones, rigideces=()) -> LoteExtraccion:
     """El lote final: se resuelve el conflicto intramensaje ANTES de construirlo.
 
     El `source_message_id` sale del mensaje tal cual. **No se fabrica ni se deriva**: es lo
     que la procedencia de E3.2b.2 podrá citar, y un id sintético dejaría de apuntar a un
     `HumanMessage` que existe.
+
+    `rigideces` son las YA acreditadas por `autorizar_rigidez`; aquí sólo se resuelven entre
+    sí. Los rechazos de ese conflicto se añaden al final de las afirmaciones: no compiten con
+    nada —un `REJECTED` nunca lo hace—, así que su posición no cambia ninguna resolución.
     """
+    vigentes, rechazos = resolver_rigideces(rigideces, mensaje.text)
     return LoteExtraccion(
         source_message_id=mensaje.message_id,
-        afirmaciones=resolver_intramensaje(afirmaciones, mensaje.text),
+        afirmaciones=resolver_intramensaje(afirmaciones, mensaje.text) + rechazos,
+        rigideces=vigentes,
     )

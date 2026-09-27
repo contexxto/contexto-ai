@@ -14,6 +14,7 @@ F  de punta a punta: interpretar + reducir, con un proponente hostil
 G  lo que SÍ tiene que seguir acreditando
 H  una cláusula negada no liga
 I  R1b · lo que encontró la revisión adversarial: el contexto de la ligadura
+J  R1c · lo que encontró la segunda ronda: tasas, sujetos, líneas, tiempo, colas
 ```
 
 La sección I tiene UNA prueba aislante por defensa: cada una la caza sólo esa defensa, y el
@@ -503,3 +504,179 @@ def test_I15_de_punta_a_punta_ni_el_valor_ni_su_rigidez_llegan(texto, dimension,
         c = reducir(BuyerContextV0(buyer_id="b", updated_at=T0), lote, T0)
         assert lectura(c) != prohibido, (texto, orden)
         assert all(k.value != prohibido for k in c.hard_constraints), (texto, orden)
+
+
+# ══ J · R1c · la segunda ronda adversarial ══════════════════════════════════════════
+#
+# Sobre R1b: la tasa escrita ANTES del valor, el objeto ajeno separado del operador por un
+# adjetivo o un relativo, las fichas de WhatsApp (líneas, números seguidos sin puntuación), los
+# marcadores que hablan del valor anterior o del tiempo, y colas frecuentes que R1b rechazaba.
+
+
+@pytest.mark.parametrize("texto", ["por persona máximo 300 USD", "por cabeza hasta 300 USD",
+                                   "Somos 3 amigos. Por persona máximo 300 USD"])
+def test_J1_una_tasa_ANTEPUESTA_no_es_el_tope(texto):
+    assert not _ok(_bud(300), texto)
+
+
+@pytest.mark.parametrize("texto", [
+    "Somos 3 amigos, cada uno puede pagar hasta 300 USD", "cada quien paga hasta 300 USD",
+    "hasta 300 USD a cada uno", "hasta 300 USD entre cada uno", "hasta 300 USD per cápita",
+])
+def test_J1b_un_reparto_en_la_clausula_no_deja_ligar(texto):
+    assert not _ok(_bud(300), texto)
+
+
+def test_J1c_una_tasa_al_FINAL_de_la_clausula_tampoco():
+    assert not _ok(_bud(300), "300 USD es lo máximo que puedo pagar por persona")
+
+
+@pytest.mark.parametrize("mutacion, texto", [
+    (_bud(300), "Por persona, máximo 300 USD"), (_bed(1), "Por hijo, al menos 1 dormitorio"),
+])
+def test_J1d_un_ENCABEZADO_distributivo_anula_el_mensaje(mutacion, texto):
+    assert not _ok(mutacion, texto)
+
+
+def test_J1e_el_encabezado_se_reconoce_por_la_FORMA_no_por_el_sustantivo():
+    for x in ("hijo", "niño", "persona", "pareja", "bicicleta", "caja"):
+        assert not _ok(_bed(1), f"Por {x}, al menos 1 dormitorio"), x
+    assert _ok(_bud(900), "Por favor, máximo 900 USD")
+
+
+@pytest.mark.parametrize("mutacion, texto", [
+    (_bud(50), "hasta 50 USD diarios"), (_bud(400), "hasta 400 USD semanales"),
+    (_bud(400), "hasta 400 USD a la semana"), (_bud(120), "máximo USD 120 mil"),
+    (_bud(120), "hasta USD 120k"),
+])
+def test_J1f_otra_periodicidad_u_otra_escala_no_es_el_tope(mutacion, texto):
+    assert not _ok(mutacion, texto)
+
+
+@pytest.mark.parametrize("texto", ["el m2 hasta 1200 USD", "el metro cuadrado máximo 1200 USD",
+                                   "precio por m2 hasta 1200 USD"])
+def test_J1g_un_precio_por_metro_ANTEPUESTO_tampoco(texto):
+    assert not _ok(_bud(1200), texto)
+
+
+@pytest.mark.parametrize("mutacion, texto", [
+    (_bud(50), "parqueadero adicional hasta 50 USD"), (_bud(80), "gastos comunes hasta 80 USD"),
+    (_bud(80), "que la administración cobre máximo 80 USD"),
+    (_area(12), "la recámara principal mínimo 12 m2"),
+    (_area(12), "3 dormitorios mínimo, que cada habitación tenga al menos 12 m2"),
+    (_area(50), "casa con jardín que mida mínimo 50 m2"),
+    (_area(200), "un terreno que tenga mínimo 200 m2"), (_area(12), "habitaciones con al menos 12 m2"),
+])
+def test_J2_un_objeto_ajeno_no_se_esconde_tras_un_adjetivo_o_un_relativo(mutacion, texto):
+    assert not _ok(mutacion, texto)
+
+
+def test_J2b_un_verbo_de_precio_le_asigna_el_precio_a_su_sujeto():
+    assert not _ok(_bud(300), "el colegio cuesta hasta 300 USD")
+    assert _ok(_bud(900), "busco algo que cueste máximo 900 USD")
+
+
+@pytest.mark.parametrize("mutacion, texto", [
+    (_bed(3), "que sea de mínimo 3 dormitorios"), (_bed(3), "tiene que ser de al menos 3 dormitorios"),
+    (_bed(3), "busco una casa grande de mínimo 3 dormitorios"),
+    (_bed(3), "depa con balcón de mínimo 3 dormitorios"), (_area(80), "que el depa sea de al menos 80 m2"),
+    (_area(80), "busco departamento en Quito de mínimo 80 m2"),
+    (_bud(900), "mi presupuesto es de máximo 900 USD"), (_bud(900), "que el arriendo sea de máximo 900 USD"),
+    (_bud(900), "busco un depto en Cumbayá de hasta 900 USD"), (_bud(900), "busco arriendos de hasta 900 USD"),
+    (_bud(900), "busco un depa amueblado de hasta 900 USD"),
+    (_bud(900), "depa con parqueadero techado hasta 900 USD"),
+])
+def test_J2c_una_copula_un_adjetivo_o_un_lugar_con_de_no_son_otro_sujeto(mutacion, texto):
+    assert _ok(mutacion, texto)
+
+
+def test_J3_el_numero_de_OTRA_dimension_tras_la_moneda_no_es_candidato():
+    texto = "busco depa en cumbaya hasta 900 USD 2 dormitorios minimo"
+    assert _ok(_bud(900), texto)
+    assert _ok(_bed(2), texto)
+    assert _ok(_bud(900), "hasta 900 USD 2 dormitorios")
+    assert not _ok(_bed(2), "hasta 900 USD 2 dormitorios"), "exacto, no un mínimo"
+    assert not _ok(_bud(900), "máximo 900 USD o USD 1000")
+
+
+@pytest.mark.parametrize("mutacion, texto", [
+    (_bud(900), "Máximo 900 USD\nAlícuota hasta 100 USD"),
+    (_bud(900), "Busco depa en Cumbayá\n3 dormitorios mínimo\nHasta 900 USD"),
+    (_bed(3), "Busco depa en Cumbayá\n3 dormitorios mínimo\nHasta 900 USD"),
+    (_bed(3), "Presupuesto 900 USD máximo\n3 dormitorios mínimo"),
+])
+def test_J4_un_salto_de_linea_separa_como_en_una_ficha(mutacion, texto):
+    assert _ok(mutacion, texto)
+    assert not _ok(_bud(100), "Máximo 900 USD\nAlícuota hasta 100 USD")
+
+
+@pytest.mark.parametrize("mutacion, texto", [
+    (_bud(900), "3 dormitorios mínimo hasta 900 USD"), (_bed(3), "3 dormitorios mínimo hasta 900 USD"),
+    (_bud(900), "2 dormitorios mínimo máximo 900 USD"),
+])
+def test_J4b_el_marcador_pospuesto_del_valor_ANTERIOR_no_invierte_el_siguiente(mutacion, texto):
+    assert _ok(mutacion, texto)
+    assert not _ok(_bud(900), "mínimo presupuesto de 900 USD")
+    assert not _ok(_bud(900), "presupuesto de 900 USD mínimo")
+
+
+@pytest.mark.parametrize("mutacion, texto", [
+    (_bud(900), "hasta 900 USD desde octubre"), (_bud(900), "hasta 900 USD a partir de noviembre"),
+    (_bud(900), "máximo 900 USD al menos por un año"), (_bud(900), "hasta 900 USD desde el lunes"),
+    (_bed(3), "mínimo 3 dormitorios hasta diciembre"),
+])
+def test_J4c_un_marcador_que_habla_de_TIEMPO_no_invierte_el_valor(mutacion, texto):
+    assert _ok(mutacion, texto)
+    assert not _ok(_bud(900), "hasta 900 USD como mínimo")
+
+
+def test_J4d_el_numero_pegado_a_su_unidad_no_abre_una_alternativa():
+    assert _ok(_bed(3), "Cumbayá - 80 m2 - 3 dormitorios mínimo")
+
+
+@pytest.mark.parametrize("mutacion, texto", [
+    (_bud(900), "hasta 900 USD de preferencia"), (_bud(900), "hasta 900 USD de ser posible"),
+    (_bud(900), "hasta 900 USD de arrendamiento"), (_bed(3), "al menos 3 dormitorios de preferencia"),
+    (_bed(3), "mínimo 3 dormitorios de buen tamaño"), (_area(80), "mínimo 80 m2 de espacio"),
+    (_bed(3), "mínimo 3 dormitorios por fa"), (_bud(900), "hasta 900 USD por el momento"),
+    (_bed(3), "mínimo 3 dormitorios cada uno con baño"),
+    (_bed(3), "3 recámaras o más cada una con clóset"),
+])
+def test_J5_las_colas_frecuentes_no_rompen_la_ligadura(mutacion, texto):
+    assert _ok(mutacion, texto)
+
+
+@pytest.mark.parametrize("texto", [
+    "hasta 900 USD alícuota incluida", "máximo 900 USD más alícuota",
+    "hasta 900 USD con mantenimiento",
+])
+def test_J5b_un_costo_AÑADIDO_al_tope_no_lo_anula(texto):
+    assert _ok(_bud(900), texto)
+
+
+def test_J5c_un_costo_como_DESTINO_del_numero_si():
+    assert not _ok(_bud(80), "hasta 80 USD para la alícuota")
+    assert not _ok(_bud(1500), "gano hasta 1500 USD mensuales")
+    assert _ok(_bud(120000), "hasta 120000 USD en cuotas")
+
+
+@pytest.mark.parametrize("texto, dimension, propuestas, prohibido", [
+    ("Somos 3 amigos, cada uno puede pagar hasta 300 USD", F.BUDGET_MAX,
+     [_bud(300), _bud(900)], 300),
+    ("Por persona, máximo 300 USD", F.BUDGET_MAX, [_bud(300), _bud(900)], 300),
+    ("3 dormitorios mínimo, que cada habitación tenga al menos 12 m2", F.AREA_M2_MIN,
+     [_area(12)], 12),
+    ("parqueadero adicional hasta 50 USD", F.BUDGET_MAX, [_bud(50)], 50),
+])
+def test_J6_de_punta_a_punta_ni_la_tasa_ni_el_objeto_ajeno_se_escriben(texto, dimension,
+                                                                       propuestas, prohibido):
+    lectura = {F.BUDGET_MAX: lambda c: c.financial.budget_max and c.financial.budget_max.amount,
+               F.AREA_M2_MIN: lambda c: c.property_requirements.area_m2_min}[dimension]
+    for orden in itertools.permutations(propuestas):
+        lote = interpretar(
+            IdentifiedUserMessage(message_id="m", text=texto),
+            [PropuestaV0(disposicion=Disposicion.DURABLE, mutacion=m, motivo="x") for m in orden]
+            + [_rigidez_estricta(dimension)])
+        c = reducir(BuyerContextV0(buyer_id="b", updated_at=T0), lote, T0)
+        assert lectura(c) != prohibido, (texto, orden)
+        assert lectura(c) is None or lectura(c) != 900, "la tasa multiplicada tampoco"

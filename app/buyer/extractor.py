@@ -309,29 +309,35 @@ def _evidencia_objective(mutacion, plano: str) -> bool:
 # a «hijos», «personas» o «perros» nunca liga, porque ninguna forma tiene esos sustantivos: la
 # guarda no resuelve números con contexto protegido — ni para aceptarlos ni para descartarlos.
 #
-# **Y lo que rodea a la ligadura no puede contradecirla** (R1b, de la revisión adversarial).
-# Una forma de tope puede estar dentro de un PISO —«presupuesto de 900 USD o más»—, el ancla
-# de dormitorios puede nombrar otra pieza —«2 cuartos de baño»— y una unidad puede medir otra
-# cosa —«hasta 1200 USD el m2», «un jardín de al menos 50 m2», «300 USD por persona»—. Cada
-# ligadura se descarta si su contexto inmediato:
+# **Y lo que rodea a la ligadura no puede contradecirla** (R1b y R1c, de dos rondas de revisión
+# adversarial). Una forma de tope puede estar dentro de un PISO —«presupuesto de 900 USD o
+# más»—, el ancla de dormitorios puede nombrar otra pieza —«2 cuartos de baño»— y una unidad
+# puede medir otra cosa —«hasta 1200 USD el m2», «un jardín de al menos 50 m2», «300 USD por
+# persona»—. Cada ligadura se descarta si su contexto:
 #
-#     invierte la dirección    un piso pegado a un tope, un techo pegado a un mínimo
+#     invierte la dirección    un piso pegado a un tope, un techo pegado a un mínimo — salvo que
+#                              ese marcador cierre el valor ANTERIOR («3 dormitorios mínimo hasta
+#                              900 USD») o hable de tiempo («hasta 900 USD desde octubre»)
 #     es una alternativa       «2 o 3 dormitorios o más», «de 500 USD a 900»
-#     mide otra cosa           «el m2», «por persona», «cada uno», «de alícuota», otro dólar
-#     tiene otro sujeto        «<jardín> de al menos 50 m2», «el parqueadero cuesta hasta…»
+#     mide otra cosa           «el m2», «diarios», «de alícuota», otro dólar, «120 mil»
+#     reparte                  una TASA, antes o después, en la cláusula o como encabezado:
+#                              «por persona máximo 300 USD», «cada uno puede pagar hasta…»
+#     tiene otro sujeto        un objeto ajeno en las palabras previas —«parqueadero adicional
+#                              hasta 50 USD», «que cada habitación tenga al menos 12 m2»— o un
+#                              verbo de precio con sujeto que no es el inmueble
 #
 # **Fail closed ante la ambigüedad, contando CANDIDATOS.** Si una misma cláusula tiene dos
 # números distintos pegados al ancla de la dimensión —«máximo 900 USD o 1000 USD»—, no se
 # elige ninguno aunque sólo uno lleve el operador: la cláusula no acredita, y el intérprete lo
-# convierte en AMBIGUOUS con su dimensión. Una coma no parte una disyunción: «…, o…» se lee
-# como una sola cláusula.
+# convierte en AMBIGUOUS con su dimensión. Una coma no parte una disyunción; un salto de línea
+# sí separa, como en una ficha de WhatsApp.
 #
 # Todo es vocabulario CERRADO y la dirección de cada lista es la barata: lo que no reconoce, no
 # liga. Ninguna lista nombra un atributo protegido: una tasa se reconoce por su forma
-# distributiva —«por X», «cada uno»—, sea X lo que sea. El residuo conocido está en
-# `_OBJETOS_AJENOS_DEL_TOPE` y `_COSTOS_AJENOS`: el costo de otra cosa que esas listas no
-# nombren, pegado a un operador de tope y a la moneda, todavía liga; y una frase descriptiva
-# —«vi casas de hasta 1500 USD»— liga si el proponente la propone como tope.
+# distributiva —«por X», «cada uno»—, sea X lo que sea. El residuo conocido está en las listas
+# de objetos y costos ajenos: el costo de otra cosa que no nombren, pegado a un operador de tope
+# y a la moneda, todavía liga; y una frase descriptiva —«vi casas de hasta 1500 USD»— liga si el
+# proponente la propone como tope.
 
 _NUM_LIGABLE = r"(?<![\w.,])(?P<n>\d{1,3}(?:[.,]\d{3})+|\d+)(?!\d|[.,]\d)"
 """Un número que se declara entero: dígitos o miles agrupados de tres. `120.5` no liga —el
@@ -359,11 +365,14 @@ _NO_ABRE_OTRO_VALOR = r"(?!\s*(?:de\s+)?(?:unos\s+)?\$?\d)"
 _FIN_DE_VALOR = r"(?![\w.,]|\s*[a-z$])"
 """Detrás de «dormitorios mínimo 3» no puede venir otro sustantivo: «… mínimo 3 baños»."""
 
-_ANCLA_DORMITORIOS = (r"(?:dormitorios?|habitacion(?:es)?|cuartos?|recamaras?|bedrooms?)(?!\w)"
-                      r"(?!\s+de\s+(?!(?:al menos|por lo menos|como minimo|minimo|unos)?\s*\d))")
+_ANCLA_DORMITORIOS = (
+    r"(?:dormitorios?|habitacion(?:es)?|cuartos?|recamaras?|bedrooms?)(?!\w)"
+    r"(?!\s+de\s+(?!(?:(?:al menos|por lo menos|como minimo|minimo|unos)?\s*\d|"
+    r"(?:preferencia|buen|tamano|ser)\b)))")
 """«de» detrás del sustantivo sólo si lo que sigue es su TAMAÑO —«3 dormitorios de al menos 12
-m2»—. «2 cuartos de baño», «1 cuarto de servicio», «3 cuartos de hora» o «habitaciones de
-hotel» nombran otra cosa, y no anclan dormitorios."""
+m2», «de buen tamaño»— o una cortesía —«de preferencia», «de ser posible»—. «2 cuartos de baño»,
+«1 cuarto de servicio», «3 cuartos de hora» o «habitaciones de hotel» nombran otra cosa, y no
+anclan dormitorios."""
 _ANCLA_AREA = r"(?:m2|m²|mts2|metros cuadrados?|square meters?)(?!\w)"
 
 
@@ -404,8 +413,11 @@ def _liga_presupuesto(moneda: re.Pattern) -> tuple[re.Pattern, ...]:
 
 
 def _candidatos_presupuesto(moneda: re.Pattern) -> tuple[re.Pattern, ...]:
+    """Los números pegados a la moneda. «USD 900» cuenta; el «2» de «hasta 900 USD 2
+    dormitorios» no: detrás lleva el sustantivo de OTRA dimensión."""
     cur = moneda.pattern
-    return (re.compile(rf"{_NUM_LIGABLE}\s*{cur}"), re.compile(rf"{cur}\s*{_NUM_LIGABLE}"))
+    return (re.compile(rf"{_NUM_LIGABLE}\s*{cur}"),
+            re.compile(rf"{cur}\s*{_NUM_LIGABLE}(?!\s*[a-z])"))
 
 
 _TOPE_NEGADO = re.compile(r"\bno mas de\b")
@@ -416,19 +428,38 @@ _DISYUNCION_PARTIDA = re.compile(r"[,;.]\s*(?=(?:o|u)\s)")
 """«al menos 2 dormitorios, o al menos 3»: la coma no separa dos hechos, separa dos
 alternativas. Se quita antes de partir en cláusulas, para que el fail closed las vea juntas."""
 
-# ── el contexto inmediato de una ligadura ─────────────────────────────────────────────
+# ── el contexto de una ligadura ───────────────────────────────────────────────────────
 
-_MARCA_PISO = (r"(?:o mas|o superior|o arriba|para arriba|hacia arriba|en adelante|como minim[oa]|"
-         r"minim[oa]|como piso|de piso|al menos|por lo menos|mas de|desde|a partir de|"
-         r"or more|and up|and above|at least|minimum|more than)")
-_MARCA_TECHO = (r"(?:o menos|como maxim[oa]|maxim[oa]|max|a lo sumo|como mucho|hasta|no mas de|"
-          r"menos de|or less|or fewer|at most|up to)")
+_MARCA_PISO = (r"(?:o mas|o superior|o arriba|para arriba|hacia arriba|en adelante|"
+               r"como minim[oa]|minim[oa]|como piso|de piso|al menos|por lo menos|mas de|desde|"
+               r"a partir de|or more|and up|and above|at least|minimum|more than)")
+_MARCA_TECHO = (r"(?:o menos|como maxim[oa]|maxim[oa]|max|a lo sumo|como mucho|hasta|"
+                r"no mas de|menos de|or less|or fewer|at most|up to)")
+_TIEMPO = (r"(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|"
+           r"octubre|noviembre|diciembre|ya|hoy|manana|ahora|pronto|el proximo|la proxima|"
+           r"el siguiente|la siguiente|este|esta|el mes|la semana|el ano|fin de|finales|"
+           r"principios|inicios|mediados|por (?:un|una|dos|tres|seis)|un ano|un mes|"
+           r"(?:el\s+)?(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo))\b")
+"""«hasta 900 USD desde octubre», «máximo 900 USD al menos por un año»: el marcador habla de
+TIEMPO, no del valor."""
 
 _PISO_ANTES = re.compile(rf"\b{_MARCA_PISO}\s*(?:de\s+|un\s+)*$")
-_PISO_DESPUES = re.compile(rf"{_PERIODO}\s*{_MARCA_PISO}\b{_NO_ABRE_OTRO_VALOR}")
+_PISO_DESPUES = re.compile(rf"{_PERIODO}\s*{_MARCA_PISO}\b{_NO_ABRE_OTRO_VALOR}(?!\s+{_TIEMPO})")
 _TECHO_ANTES = re.compile(rf"\b{_MARCA_TECHO}\s*$")
-_TECHO_DESPUES = re.compile(rf"\s*{_MARCA_TECHO}\b{_NO_ABRE_OTRO_VALOR}")
-_ALTERNATIVA_ANTES = re.compile(r"\d\s*(?:o|u|a|-|–|y|hasta)\s*$")
+_TECHO_DESPUES = re.compile(rf"\s*{_MARCA_TECHO}\b{_NO_ABRE_OTRO_VALOR}(?!\s+{_TIEMPO})")
+_CIERRA_VALOR = re.compile(
+    r"(?:(?<![\w.,])\d[\d.,]*|m2|m²|mts2|metros cuadrados?|usd|dolares|dolar|mxn|dormitorios?|"
+    r"habitacion(?:es)?|cuartos?|recamaras?|bedrooms?)\s*$")
+"""«3 dormitorios mínimo hasta 900 USD»: ese «mínimo» es el marcador POSPUESTO de los
+dormitorios, no un piso del presupuesto."""
+
+
+def _marca_antes(patron: re.Pattern, antes: str) -> bool:
+    m = patron.search(antes)
+    return m is not None and not _CIERRA_VALOR.search(antes[:m.start()])
+
+
+_ALTERNATIVA_ANTES = re.compile(r"(?<![\w.,])\d[\d.,]*\s*(?:o|u|a|-|–|hasta)\s*$")
 
 
 def _alternativa_despues(unidad: str) -> re.Pattern:
@@ -439,18 +470,39 @@ def _alternativa_despues(unidad: str) -> re.Pattern:
     return re.compile(rf"\s*(?:a|al|hasta|-|–|o|u)\s*(?:unos\s+)?\$?\d[\d.,]*\s*(?:$|{unidad})")
 
 
-_DISTRIBUTIVO = re.compile(
-    r"\s*(?:(?:por|para)\s+cada\b|cada\s+(?:uno|una)\b|c/u\b|"
-    r"por\s+(?!(?:(?:un|una|el|la)\s+)?(?:favor|lo|ahora|ejemplo|supuesto|mes|casa|"
-    r"departamento|depa|inmueble|vivienda|propiedad|arriendo|alquiler|renta|compra|zona|"
-    r"sector|barrio|norte|sur|centro|aqui|ahi|alla|aca)\b)\w)")
-"""Una TASA no es el requisito: «300 USD por persona», «1 dormitorio por X», «12 m2 cada uno».
-Se reconoce por la forma distributiva, no por el sustantivo: la guarda no mira QUÉ se reparte
-—podría ser un atributo protegido— y falla cerrado igual."""
+# Una TASA no es el requisito: «300 USD por persona», «1 dormitorio por X», «12 m2 cada uno».
+# Se reconoce por la FORMA distributiva, nunca por el sustantivo: la guarda no mira QUÉ se
+# reparte —podría ser un atributo protegido— y falla cerrado igual. La forma puede ir detrás,
+# delante, al final de la cláusula o sola como encabezado («Por persona, máximo 300 USD»).
+_POR_QUE_NO_REPARTE = (r"(?:favor|fa|lo|ahora|ejemplo|supuesto|mes|el momento|mi|dentro|fuera|"
+                       r"eso|cierto|casa|departamento|depa|inmueble|vivienda|propiedad|arriendo|"
+                       r"alquiler|renta|compra|zona|sector|barrio|norte|sur|centro|aqui|ahi|"
+                       r"alla|aca)")
+_POR_X = rf"\bpor\s+(?!(?:(?:un|una|el|la)\s+)?{_POR_QUE_NO_REPARTE}\b)(?:cada\s+)?\w+"
+_TASA_DESPUES = re.compile(rf"\s*{_POR_X}")
+_TASA_ANTES = re.compile(rf"{_POR_X}\s*$")
+_REPARTO = re.compile(r"\b(?:(?:por|para|a|entre)\s+cada\b|cada\s+(?:uno|una|quien)\b|"
+                      r"per capita\b|c/u\b)")
+_REPARTO_DORMITORIOS = re.compile(r"\b(?:(?:por|para|a|entre)\s+cada\b|cada\s+quien\b|"
+                                  r"per capita\b)")
+"""Sin «cada uno»: en «3 dormitorios cada uno con baño» el «cada uno» son los dormitorios."""
+_ENCABEZADO_DISTRIBUTIVO = re.compile(
+    rf"\s*(?:{_POR_X}|(?:para|a|entre)\s+cada\s+\w+|cada\s+(?:uno|una|quien))\s*")
+
+
+def _es_tasa(clausula: str, antes: str, despues: str, reparto: re.Pattern) -> bool:
+    return bool(_TASA_DESPUES.match(despues) or _TASA_ANTES.search(antes)
+                or _TASA_ANTES.search(clausula) or reparto.search(clausula))
+
+
 _OTRA_MEDIDA_DEL_TOPE = re.compile(
-    r"\s*(?:el|la|/|x)\s*(?:m2|m²|mts2|mt2|metros?|noche|dia|semana|hora|persona)\b")
-"""«hasta 1200 USD el m2» es un precio por metro, no el del inmueble. «al mes» NO está: en un
-alquiler, el tope mensual ES el presupuesto."""
+    r"\s*(?:(?:el|la|/|x)\s*(?:m2|m²|mts2|mt2|metros?|noche|dia|semana|hora|persona)\b|"
+    r"diari[oa]s?\b|semanal(?:es)?\b|quincenal(?:es)?\b|a la semana\b|al dia\b|"
+    r"(?:mil|k|millones?|mm)\b)")
+"""«hasta 1200 USD el m2» es un precio por metro; «hasta 50 USD diarios», uno por día; «USD 120
+mil», otro número. «al mes» NO está: en un alquiler, el tope mensual ES el presupuesto."""
+_OTRA_MEDIDA_ANTES = re.compile(r"(?:el|la|por|/|x)\s*(?:m2|m²|mts2|mt2|metros?(?:\s+cuadrados?)?)\s*$")
+"""«el m2 hasta 1200 USD», «precio por m2 hasta 1200 USD»."""
 _OTRO_DOLAR = re.compile(
     r"\s*(?:canadienses?|australianos?|neozelandeses?|hongkoneses?|de hong kong|singapurenses?|"
     r"de singapur|taiwaneses?|de taiwan|jamaiquinos?|de jamaica|bahamenos?|de las bahamas|"
@@ -460,14 +512,14 @@ _OTRO_DOLAR = re.compile(
 """Con el mercado en USD, «dólares» acredita USD (G16); «dólares canadienses» no."""
 
 _DE_DESPUES = re.compile(r"\s+de\s+(?:la\s+|el\s+|los\s+|las\s+|mi\s+)?(\w+)")
-_DE_DEL_TOPE = frozenset({"presupuesto", "arriendo", "alquiler", "renta", "precio", "compra",
-                          "tope", "limite", "maximo", "total", "contado"})
-_DE_DEL_AREA = frozenset({"construccion", "area", "superficie", "vivienda"})
+_DE_DEL_TOPE = frozenset({"presupuesto", "arriendo", "arrendamiento", "alquiler", "renta",
+                          "precio", "compra", "tope", "limite", "maximo", "total", "contado",
+                          "preferencia", "ser", "valor", "inversion", "pago"})
+_DE_DEL_AREA = frozenset({"construccion", "area", "superficie", "vivienda", "espacio", "depa",
+                          "departamento", "casa", "preferencia", "ser"})
+"""«hasta 900 USD de <X>» sólo habla del inmueble si X es su precio o una cortesía («de
+preferencia»); «de alícuota», «de parqueadero», «de entrada» son otra cosa."""
 
-_SUJETO_ANTES = re.compile(
-    r"(?:\b(con|y|mas|incluye|incluido|incluida)\s+)?\b(\w+)\s+"
-    r"(?:(de|cuesta|cuestan|cueste|cuesten|sale|salen|salga|salgan|vale|valen|valga|valgan|"
-    r"cobra|cobran)\s+)?$")
 _SUJETOS_DEL_INMUEBLE = frozenset({
     "algo", "uno", "una", "alguno", "alguna", "que", "me", "nos",
     "casa", "casas", "casita", "departamento", "departamentos", "depa", "depas", "depto",
@@ -477,8 +529,12 @@ _SUJETOS_DEL_INMUEBLE = frozenset({
     "opciones", "area", "superficie", "metraje", "construccion", "tamano", "presupuesto",
     "precio", "valor", "costo", "tope", "limite", "arriendo", "alquiler", "renta", "canon",
     "compra", "maximo", "minimo", "cantidad", "monto", "total", "suma"})
-"""Con «de» o con un verbo de precio en medio —«<X> de al menos 50 m2», «<X> cuesta hasta…»—
-la ligadura habla de X. Sólo liga si X es el inmueble o su presupuesto."""
+_VERBO_DE_PRECIO_ANTES = re.compile(
+    r"\b(\w+)\s+(?:cuesta|cuestan|cueste|cuesten|sale|salen|salga|salgan|vale|valen|valga|"
+    r"valgan|cobra|cobran|cobre|cobren)\s+$")
+"""«<X> cuesta hasta 50 USD»: un verbo de precio ASIGNA el precio a X. Sólo liga si X es el
+inmueble o su presupuesto; «el colegio cuesta hasta 300 USD» no."""
+
 _OBJETOS_AJENOS_DEL_TOPE = frozenset({
     "alicuota", "alicuotas", "expensas", "mantenimiento", "parqueadero", "parqueaderos",
     "parqueo", "estacionamiento", "garaje", "cochera", "bodega", "cuota", "cuotas",
@@ -486,38 +542,55 @@ _OBJETOS_AJENOS_DEL_TOPE = frozenset({
     "comision", "servicios", "gasto", "gastos", "impuesto", "impuestos", "predial", "mudanza",
     "luz", "agua", "internet", "gas", "cable", "honorarios", "avaluo", "notaria", "escrituras",
     "condominio", "administracion"})
-"""Pegado sin conector al operador —«parqueadero máximo 50 USD»— el tope es de ese objeto.
-Como amenidad del inmueble —«depa CON parqueadero hasta 900 USD»— no: el tope es del depa, y
-un parqueadero no tiene precio propio en esa frase. Un área sí puede ser del jardín —«casa con
-jardín mínimo 80 m2»—, así que en los mínimos la amenidad no exime."""
-_COSTOS_AJENOS = re.compile(
-    r"\b(?:alicuotas?|expensas|mantenimiento|cuotas?|mensualidad(?:es)?|enganche|deposito|"
-    r"garantia|comision|predial|mudanza|honorarios|avaluo|notaria|escrituras|remodelar|"
-    r"remodelacion|arreglos|gano|ganamos|ingresos?|sueldo|salario)\b")
-"""Montos que nunca son el precio del inmueble —costos, ingresos—. En la misma cláusula que un
-tope no se sabe de cuál de los dos habla el número: no se elige.
-
-Sólo los que no tienen otra lectura en una búsqueda. «Seguro», «servicios», «gastos» o
-«entrada» también describen el inmueble —«barrio seguro», «entrada independiente»— y aquí
-dejarían sin tope a quien los nombra; pegados al operador ya los caza `_OBJETOS_AJENOS_DEL_TOPE`,
-y detrás del número, `_DE_DESPUES`."""
-_OBJETOS_AJENOS_DEL_MINIMO = frozenset({
+"""En las palabras previas al operador —«parqueadero máximo 50 USD», «parqueadero adicional
+hasta 50 USD», «gastos comunes hasta 80 USD»— el tope es de ese objeto. Como amenidad del
+inmueble —«depa CON parqueadero hasta 900 USD»— no: el tope es del depa, y un parqueadero no
+tiene precio propio en esa frase."""
+_OBJETOS_AJENOS_DEL_AREA = frozenset({
     "jardin", "jardines", "terraza", "terrazas", "patio", "patios", "balcon", "balcones",
     "cocina", "cocinas", "sala", "comedor", "bano", "banos", "lote", "lotes", "terreno",
     "terrenos", "parqueadero", "parqueaderos", "garaje", "garajes", "cochera", "bodega",
     "bodegas", "piscina", "habitacion", "habitaciones", "dormitorio", "dormitorios", "cuarto",
     "cuartos", "recamara", "recamaras", "estudio", "oficina", "closet", "closets", "verde",
     "verdes", "social", "comunal", "comunales", "bbq"})
+"""Un área puede ser del jardín o de un cuarto —«casa con jardín mínimo 80 m2», «que cada
+habitación tenga al menos 12 m2»—, así que aquí la amenidad no exime."""
+_OBJETOS_AJENOS_DE_DORMITORIOS = frozenset({
+    "hotel", "hoteles", "hostal", "hostales", "edificio", "edificios", "torre", "torres",
+    "bloque", "bloques", "residencia", "residencias"})
+"""Sólo lo que CONTIENE habitaciones y no es el inmueble buscado. Un jardín o un balcón no
+tienen dormitorios: «depa con balcón de mínimo 3 dormitorios» liga."""
+_AMENIDAD = frozenset({"con", "y", "mas", "incluye", "incluido", "incluida"})
+_VENTANA_DEL_SUJETO = 4
 
 
 def _del_sujeto_ajeno(antes: str, ajenos: frozenset, amenidad_exime: bool) -> bool:
-    sujeto = _SUJETO_ANTES.search(antes)
-    if sujeto is None:
-        return False
-    amenidad, palabra, conector = sujeto.group(1), sujeto.group(2), sujeto.group(3)
-    if conector:
-        return palabra not in _SUJETOS_DEL_INMUEBLE
-    return palabra in ajenos and not (amenidad and amenidad_exime)
+    """¿Nombra alguna de las últimas palabras antes del operador un objeto que NO es el
+    inmueble? Un adjetivo, un «con» o un relativo en medio —«la recámara principal mínimo 12
+    m2», «jardín que mida mínimo 50 m2»— no lo esconden."""
+    precio = _VERBO_DE_PRECIO_ANTES.search(antes)
+    if precio is not None and precio.group(1) not in _SUJETOS_DEL_INMUEBLE:
+        return True
+    palabras = re.findall(r"\w+", antes)
+    ventana = palabras[-_VENTANA_DEL_SUJETO:]
+    previas = palabras[-_VENTANA_DEL_SUJETO - 1:-1] if len(palabras) > _VENTANA_DEL_SUJETO \
+        else [None] + palabras[:-1]
+    for palabra, previa in zip(ventana, previas):
+        if palabra in ajenos and not (amenidad_exime and previa in _AMENIDAD):
+            return True
+    return False
+
+
+_COSTOS = (r"(?:alicuotas?|expensas|mantenimiento|cuotas?|mensualidad(?:es)?|enganche|deposito|"
+           r"garantia|comision|predial|mudanza|honorarios|avaluo|notaria|escrituras|remodelar|"
+           r"remodelacion|arreglos|gano|ganamos|ingresos?|sueldo|salario)")
+_COSTO_ANTES = re.compile(rf"\b{_COSTOS}\b")
+_COSTO_DESPUES = re.compile(
+    rf"\b(?:de|para|en|por)\s+(?:la\s+|el\s+|los\s+|las\s+|mi\s+|su\s+)?(?!cuotas\b){_COSTOS}\b")
+"""Montos que nunca son el precio del inmueble —costos, ingresos—. Si el costo va ANTES del
+número, o detrás como su destino —«para la alícuota», «de mantenimiento»—, no se sabe de cuál
+de los dos habla el número: no se elige. Detrás como añadido —«más alícuota», «alícuota
+incluida»— el número sigue siendo el tope del inmueble."""
 
 
 def _tope_contaminado(moneda: re.Pattern):
@@ -527,37 +600,49 @@ def _tope_contaminado(moneda: re.Pattern):
         antes, despues = clausula[:m.start()], clausula[m.end():]
         de = _DE_DESPUES.match(despues)
         return bool(
-            _PISO_ANTES.search(antes) or _PISO_DESPUES.match(despues)
+            _marca_antes(_PISO_ANTES, antes) or _PISO_DESPUES.match(despues)
             or _ALTERNATIVA_ANTES.search(antes) or alternativa.match(despues)
-            or _DISTRIBUTIVO.match(despues) or _OTRA_MEDIDA_DEL_TOPE.match(despues)
+            or _es_tasa(clausula, antes, despues, _REPARTO)
+            or _OTRA_MEDIDA_DEL_TOPE.match(despues) or _OTRA_MEDIDA_ANTES.search(antes)
             or _OTRO_DOLAR.match(despues)
             or (de is not None and de.group(1) not in _DE_DEL_TOPE)
             or _del_sujeto_ajeno(antes, _OBJETOS_AJENOS_DEL_TOPE, amenidad_exime=True)
-            or _COSTOS_AJENOS.search(clausula))
+            or _COSTO_ANTES.search(antes) or _COSTO_DESPUES.search(despues))
     return contaminado
 
 
-def _minimo_contaminado(ancla: str, de_permitido: frozenset | None):
+def _minimo_contaminado(ancla: str, de_permitido: frozenset | None, ajenos: frozenset,
+                        reparto: re.Pattern):
     alternativa = _alternativa_despues(ancla)
 
     def contaminado(clausula: str, m: re.Match) -> bool:
         antes, despues = clausula[:m.start()], clausula[m.end():]
         de = _DE_DESPUES.match(despues) if de_permitido is not None else None
         return bool(
-            _TECHO_ANTES.search(antes) or _TECHO_DESPUES.match(despues)
+            _marca_antes(_TECHO_ANTES, antes) or _TECHO_DESPUES.match(despues)
             or _ALTERNATIVA_ANTES.search(antes) or alternativa.match(despues)
-            or _DISTRIBUTIVO.match(despues)
+            or _es_tasa(clausula, antes, despues, reparto)
             or (de is not None and de.group(1) not in de_permitido)
-            or _del_sujeto_ajeno(antes, _OBJETOS_AJENOS_DEL_MINIMO, amenidad_exime=False))
+            or _del_sujeto_ajeno(antes, ajenos, amenidad_exime=False))
     return contaminado
 
 
-_DORMITORIOS_CONTAMINADO = _minimo_contaminado(_ANCLA_DORMITORIOS, None)  # su «de» lo filtra el ancla
-_AREA_CONTAMINADA = _minimo_contaminado(_ANCLA_AREA, _DE_DEL_AREA)
+_DORMITORIOS_CONTAMINADO = _minimo_contaminado(          # su «de» ya lo filtra el ancla
+    _ANCLA_DORMITORIOS, None, _OBJETOS_AJENOS_DE_DORMITORIOS, _REPARTO_DORMITORIOS)
+_AREA_CONTAMINADA = _minimo_contaminado(
+    _ANCLA_AREA, _DE_DEL_AREA, _OBJETOS_AJENOS_DEL_AREA, _REPARTO)
 
 
 def _a_decimal(token: str) -> Decimal:
     return Decimal(token.replace(".", "").replace(",", ""))
+
+
+def _clausulas_de_valor(plano: str) -> list[str]:
+    """Las cláusulas en las que se busca un valor. Un salto de línea separa —una ficha de
+    WhatsApp pone un requisito por línea—; una coma delante de «o» no, porque separa
+    alternativas."""
+    return [c for linea in plano.split("\n")
+            for c in _CLAUSULA.split(_DISYUNCION_PARTIDA.sub(" ", linea))]
 
 
 def _valor_ligado(plano: str, valor, formas, candidatos, contaminada) -> bool:
@@ -566,14 +651,19 @@ def _valor_ligado(plano: str, valor, formas, candidatos, contaminada) -> bool:
     Por cláusula y afirmativa, como antes —es una frontera de Fair Housing: el conteo de
     personas de otra cláusula nunca entra—. LIGADO: el número está en la forma de su operador y
     su ancla, y nada a su alrededor lo contradice. ÚNICO: la cláusula no tiene otro número
-    pegado a la misma ancla, lleve operador o no.
+    pegado a la misma ancla, lleve operador o no. Y si alguna cláusula del mensaje es sólo un
+    encabezado distributivo —«Por persona, máximo 300 USD»—, ningún número se acredita.
     """
-    for clausula in _CLAUSULA.split(_DISYUNCION_PARTIDA.sub(" ", plano)):
+    clausulas = _clausulas_de_valor(plano)
+    if any(_ENCABEZADO_DISTRIBUTIVO.fullmatch(c) for c in clausulas):
+        return False
+    for clausula in clausulas:
         if _NEGACION.search(_TOPE_NEGADO.sub(" ", clausula)):
             continue                     # negada: no evidencia lo que nombra
-        anclados = {_a_decimal(m.group("n")) for f in candidatos for m in f.finditer(clausula)}
-        ligados = {_a_decimal(m.group("n")) for f in formas for m in f.finditer(clausula)
-                   if not contaminada(clausula, m)}
+        encajes = [m for f in formas for m in f.finditer(clausula)]
+        anclados = ({_a_decimal(m.group("n")) for f in candidatos for m in f.finditer(clausula)}
+                    | {_a_decimal(m.group("n")) for m in encajes})
+        ligados = {_a_decimal(m.group("n")) for m in encajes if not contaminada(clausula, m)}
         if anclados == {valor} and ligados == {valor}:
             return True
     return False

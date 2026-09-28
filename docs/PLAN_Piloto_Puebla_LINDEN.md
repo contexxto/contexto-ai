@@ -7,7 +7,7 @@
 <!-- estado-verificable
 codigo:
   existe: app/llegada.py::clasificar_canal
-  existe: app/puerta.py::evaluar_puerta
+  no-existe: app/puerta.py::evaluar_puerta
   existe: app/embudo.py::componer_reparto
   existe: app/pendiente.py::componer_pendiente
   existe: app/scores_heuristicos.py

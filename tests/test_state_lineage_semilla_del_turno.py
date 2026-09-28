@@ -132,7 +132,8 @@ def mundo(monkeypatch):
     monkeypatch.setattr(chat_mod, "_exigir_autoridad", _autoridad)
     monkeypatch.setattr(chat_mod, "registrar_intencion", _nada)
     monkeypatch.setattr(chat_mod, "actualizar_en_sombra", _nada)
-    monkeypatch.setattr(chat_mod, "_marcar_puerta_ofrecida", _nada)
+    # EXPECTED UPDATE · SURFACE RETIRED BY OFD-02 (TR-1): aquí se neutralizaba `_marcar_puerta_ofrecida`; la puerta
+    # suave se retiró y ya no hay nada que neutralizar.
 
     auditados = []
 

@@ -1,27 +1,25 @@
-"""B3 · la puerta suave se ofrece UNA VEZ por hilo, y la marca sobrevive al turno siguiente.
+"""TR-1 · la puerta suave YA NO se ofrece — probado con endpoint, grafo y checkpointer REALES.
 
-EL DEFECTO QUE CIERRA. `_marcar_puerta_ofrecida` escribía `puerta_ofrecida` con
-`aupdate_state` sobre una clave que NO estaba declarada en `AgentState`. LangGraph 0.2.60
-descarta EN SILENCIO las claves que no encuentra en el esquema: no levanta, así que el
-`try/except` del llamador nunca veía nada y su `log.warning` no se emitió jamás —buscarlo en
-los logs no detectaba el defecto—. Resultado: `ya_ofrecida` era siempre falso y la oferta de
-correo se repetía en CADA turno que cumpliera el callejón honesto, que es exactamente el acoso
-que la puerta existe para no tener (`app/puerta.py:33-38`, `app/routers/chat.py:356-359`).
+EXPECTED UPDATE · SURFACE RETIRED BY OFD-02 (Plan 1.1 · TR-1). Este fichero nació para B3: que
+la puerta se ofreciera UNA vez por hilo y que la marca `puerta_ofrecida` sobreviviera al turno
+siguiente. La puerta se retiró —prometía un aviso que ningún código envía—, así que lo que se
+prueba ahora es lo contrario, con el MISMO arnés y el MISMO escenario:
 
-POR QUÉ ESTE FICHERO TIENE SU PROPIO ARNÉS. El fixture de
-`tests/test_state_lineage_semilla_del_turno.py` anula `_marcar_puerta_ofrecida` con
-monkeypatch, y los dos tests de `tests/test_puerta.py` que tocan la regla «una vez» le pasan
-`ya_ofrecida` como argumento. Ninguno de los tres puede ver este defecto: un test que anula la
-escritura no prueba que la escritura persista. Aquí el endpoint es real, el grafo es real y el
-checkpointer es real (en memoria), y `_marcar_puerta_ofrecida` corre de verdad.
+  · el «callejón honesto» (criterio declarado + panel vacío), que antes abría la puerta, ya no
+    la abre — ni por el camino no-stream ni por SSE, ni cuando la persona dice «avísame»;
+  · la marca `puerta_ofrecida` ya no se escribe (la clave sigue declarada en `AgentState`, inerte,
+    por compatibilidad con checkpoints viejos);
+  · el campo `puerta` sigue en el contrato y vale `null`.
 
-LO QUE ESTE FICHERO NO PROMETE:
-  · no prueba la regla 4 («al que ya pidió corredor no se le ofrece»): esa depende de
-    `handoff_pedido`, que es otro defecto (se lee y nadie lo escribe) y va aparte;
-  · no prueba el camino de streaming SSE salvo en el último test, y sólo en lo que a esta
-    marca respecta;
-  · no dice nada sobre si la puerta DEBE abrirse en un caso concreto — eso es
-    `tests/test_puerta.py`, que prueba `evaluar_puerta` como función pura.
+Los tests que se invirtieron llevan la marca `EXPECTED UPDATE`. Los de B1 (`_pidio_corredor`, la
+regla 4 de la puerta) se RETIRARON con la función, que sólo servía a la puerta: su versión íntegra
+vive en `8d8dd683:tests/test_puerta_persistencia.py`. Los de B2 —el modelo pidiendo el correo en
+prosa— siguen aquí sin tocar una línea: ese control no depende de la puerta.
+
+POR QUÉ EL ARNÉS REAL. Un test que anulara la emisión de la puerta no probaría que ya no se
+emite. Aquí el endpoint, el grafo y el checkpointer son reales (en memoria), y los tests
+invertidos comprueban ANTES que el escenario sigue siendo el callejón honesto: sin eso pasarían
+por la razón equivocada.
 """
 import asyncio
 
@@ -124,7 +122,7 @@ def mundo(monkeypatch):
     monkeypatch.setattr(chat_mod, "_exigir_autoridad", _autoridad)
     monkeypatch.setattr(chat_mod, "registrar_intencion", _nada)
     monkeypatch.setattr(chat_mod, "actualizar_en_sombra", _nada)
-    # `_marcar_puerta_ofrecida` NO se anula: es justamente lo que se prueba.
+    # Nada de la puerta se anula: su retirada es justamente lo que se prueba.
     monkeypatch.setattr(chat_mod, "_auditar_prosa", lambda *_a, **_k: None)
 
     from app.auth import get_optional_user
@@ -158,149 +156,82 @@ def _estado(compilado, sesion=SESION):
         {"configurable": {"thread_id": sesion}})).values
 
 
-# ── 1 · el escenario abre la puerta ───────────────────────────────────────────
+# ── 1 · el escenario sigue siendo el callejón honesto, y la puerta ya no se abre ────
 
-def test_el_callejon_honesto_ofrece_la_puerta(mundo):
-    """Control del arnés: sin esto, los tests de abajo pasarían por no ofrecerse nunca."""
-    cliente, llm, _ = mundo
+def _es_callejon_honesto(compilado, cuerpo, sesion=SESION):
+    """Control del arnés: las dos condiciones que ANTES abrían la puerta siguen dándose.
+    Sin esto, los tests de abajo pasarían aunque el escenario dejara de ser el que era."""
+    valores = _estado(compilado, sesion)
+    assert (valores.get("preferencias") or {}).get("dormitorios") == 2, (
+        "no hay criterio declarado: el escenario ya no es el callejón honesto")
+    assert not cuerpo.get("results"), "el panel trae tarjetas: ya no es un callejón"
+
+
+def test_el_callejon_honesto_ya_no_ofrece_la_puerta(mundo):
+    """EXPECTED UPDATE · SURFACE RETIRED BY OFD-02. Antes: `test_el_callejon_honesto_ofrece_la_puerta`
+    (control del arnés que exigía `puerta`). Ahora el mismo escenario devuelve `puerta: null`."""
+    cliente, llm, compilado = mundo
 
     r = _post(cliente, llm, "Busco algo de 2 dormitorios")
 
     assert r.status_code == 200
     cuerpo = r.json()
-    assert cuerpo.get("puerta"), "el escenario no abrió la puerta: el arnés no prueba nada"
-    assert cuerpo["puerta"]["motivo"] == "callejon_honesto"
+    _es_callejon_honesto(compilado, cuerpo)
+    assert "puerta" in cuerpo, "la clave `puerta` salió del contrato: un frontend viejo la lee"
+    assert cuerpo["puerta"] is None, "la puerta retirada se volvió a ofrecer"
 
 
-# ── 2 · la marca PERSISTE · es el test que falla sin la declaración ───────────
-
-def test_la_marca_queda_escrita_en_el_estado_declarado(mundo):
-    """ROJO ANTES del arreglo: `puerta_ofrecida` no estaba en `AgentState`, así que
-    `aupdate_state` la descartaba en silencio y la clave no aparecía en el checkpoint."""
+@pytest.mark.parametrize("texto", [
+    "avísame cuando haya algo de 2 dormitorios",
+    "me avisas si sale algo de 2 dormitorios",
+    "¿me puedes avisar cuando aparezca un depa de 2 dormitorios?",
+])
+def test_pedir_aviso_ya_no_abre_la_puerta(mundo, texto):
+    """El segundo disparador de la puerta era que la persona lo pidiera. Ya no hay nada que
+    ofrecer: pedirlo no crea la oferta."""
     cliente, llm, compilado = mundo
 
-    _post(cliente, llm, "Busco algo de 2 dormitorios")
+    r = _post(cliente, llm, texto)
 
-    valores = _estado(compilado)
-    assert valores.get("puerta_ofrecida") is True, (
-        "la marca no sobrevivió al checkpoint: la clave sigue sin estar declarada en AgentState"
-    )
+    assert r.status_code == 200
+    assert r.json()["puerta"] is None
 
 
-def test_la_marca_sobrevive_al_turno_siguiente(mundo):
-    """Un canal `LastValue` declarado se arrastra al turno siguiente; uno no declarado no
-    existe. Esto separa «se escribió» de «sigue ahí cuando hace falta leerlo»."""
+# ── 2 · la marca ya no se escribe (EXPECTED UPDATE de B3) ─────────────────────
+
+def test_la_marca_ya_no_se_escribe(mundo):
+    """EXPECTED UPDATE · SURFACE RETIRED BY OFD-02. Antes: `test_la_marca_queda_escrita_en_el_estado_declarado`
+    y `test_la_marca_sobrevive_al_turno_siguiente` (B3). Sin puerta no hay nada que marcar: la
+    clave sigue declarada en `AgentState` pero nadie la escribe, ni en el primer turno ni después."""
     cliente, llm, compilado = mundo
 
     _post(cliente, llm, "Busco algo de 2 dormitorios")
     _post(cliente, llm, "¿Y si amplío la zona?")
 
-    assert _estado(compilado).get("puerta_ofrecida") is True
+    assert not _estado(compilado).get("puerta_ofrecida")
 
 
-# ── 3 · la consecuencia observable · la regla «una vez» ──────────────────────
+# ── 3 · ningún turno la ofrece (EXPECTED UPDATE de la regla «una vez») ────────
 
-def test_la_puerta_no_se_repite_en_el_turno_siguiente(mundo):
-    """ROJO ANTES: la oferta se repetía en cada turno elegible. Es la regla 3 del §6 y el
-    control anti-presión principal del producto."""
+def test_ningun_turno_ofrece_la_puerta(mundo):
+    """EXPECTED UPDATE · SURFACE RETIRED BY OFD-02. Antes: `test_la_puerta_no_se_repite_en_el_turno_siguiente`,
+    que exigía la puerta en el primer turno y no en el segundo. Ahora no sale en ninguno."""
     cliente, llm, _ = mundo
 
     primero = _post(cliente, llm, "Busco algo de 2 dormitorios")
     segundo = _post(cliente, llm, "¿Y si amplío la zona?")
 
-    assert primero.json().get("puerta"), "el primer turno debía ofrecerla"
-    assert segundo.json().get("puerta") is None, (
-        "la puerta se ofreció DOS veces en el mismo hilo: la regla «una vez» no se aplica"
-    )
+    assert primero.json()["puerta"] is None
+    assert segundo.json()["puerta"] is None
 
 
-def test_si_ya_pidio_corredor_no_se_ofrece_la_puerta(mundo, monkeypatch):
-    """B1 · la regla 4: «ya hay una puerta más fuerte abierta; insistir con otra es acoso».
-
-    ROJO ANTES: se leía `estado.get("handoff_pedido")`, una clave que NADIE escribía en todo el
-    repositorio, así que `pidio_corredor` era siempre False y la puerta se ofrecía igual."""
-    cliente, llm, _ = mundo
-
-    async def _si(_sid):
-        return True
-
-    monkeypatch.setattr(chat_mod, "_pidio_corredor", _si)
-
-    r = _post(cliente, llm, "Busco algo de 2 dormitorios")
-
-    assert r.status_code == 200
-    assert r.json().get("puerta") is None, (
-        "se ofreció el aviso a quien ya pidió un corredor: la regla 4 sigue inerte"
-    )
-
-
-# ── 4 · B1 · de dónde sale «ya pidió corredor» ───────────────────────────────
-
-class _DobleDB:
-    """Doble mínimo de `AsyncSessionLocal`: sólo tiene que responder un `scalar()`."""
-
-    def __init__(self, estado, revienta=False):
-        self._estado, self._revienta = estado, revienta
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *_a):
-        return False
-
-    async def execute(self, _sql, _params):
-        if self._revienta:
-            raise RuntimeError("relation \"handoff_sesion\" does not exist")
-
-        class _R:
-            def __init__(self, v):
-                self._v = v
-
-            def scalar(self):
-                return self._v
-
-        return _R(self._estado)
-
-
-@pytest.mark.parametrize("estado_en_tabla,esperado", [
-    ("solicitado", True),
-    ("activo", True),
-    (None, False),
-])
-def test_pidio_corredor_se_lee_de_handoff_sesion(monkeypatch, estado_en_tabla, esperado):
-    """La verdad está en la tabla, que es donde convergen los CUATRO caminos que registran el
-    hecho. Cualquier estado de la fila cuenta: lo que importa es que exista."""
-    monkeypatch.setattr(chat_mod, "AsyncSessionLocal",
-                        lambda: _DobleDB(estado_en_tabla))
-
-    assert asyncio.run(chat_mod._pidio_corredor("sesion-x")) is esperado
-
-
-def test_si_la_tabla_no_existe_la_puerta_decide_sin_ese_dato(monkeypatch):
-    """Best-effort declarado: un aviso no vale un turno roto. Sin las tablas de handoff se
-    devuelve False en vez de propagar."""
-    monkeypatch.setattr(chat_mod, "AsyncSessionLocal",
-                        lambda: _DobleDB(None, revienta=True))
-
-    assert asyncio.run(chat_mod._pidio_corredor("sesion-x")) is False
-
-
-def test_la_puerta_no_se_alimenta_del_motor_de_intencion():
-    """LÍNEA ROJA 1 del §6, por lectura de fuente: «el score de intención no dispara la
-    puerta». `_pidio_corredor` lee el HECHO (existe la fila del handoff), y no puede colarse
-    por aquí ninguna señal comercial."""
-    import inspect
-
-    # Sólo el CÓDIGO: el docstring explica precisamente por qué el score no entra aquí, así
-    # que buscar sobre él daría un falso positivo con su propia justificación.
-    fuente = inspect.getsource(chat_mod._pidio_corredor)
-    cuerpo = fuente.replace(chat_mod._pidio_corredor.__doc__ or "", "")
-    for prohibido in ("score", "nivel", "analizar_intencion", "intencion_sesion",
-                      "caliente", "tibio"):
-        assert prohibido not in cuerpo, (
-            f"`_pidio_corredor` menciona «{prohibido}»: el motor de intención no puede "
-            f"disparar la captura de correo"
-        )
+# ── 4 · B1 · RETIRADO con la puerta ───────────────────────────────────────────
+# `_pidio_corredor` (B1) leía `handoff_sesion` para la regla 4 de la puerta —«al que ya pidió
+# corredor no se le ofrece»— y no tenía otro llamador. Se retiró con la puerta, y con ella sus
+# cinco casos: `test_si_ya_pidio_corredor_no_se_ofrece_la_puerta`,
+# `test_pidio_corredor_se_lee_de_handoff_sesion` (×3), `test_si_la_tabla_no_existe_la_puerta_decide_sin_ese_dato`
+# y `test_la_puerta_no_se_alimenta_del_motor_de_intencion`.
+# EXPECTED UPDATE · SURFACE RETIRED BY OFD-02 — no fallaban: probaban código que ya no existe.
 
 
 # ── 5 · B2 · el control hermano: el modelo pidiendo el correo por su cuenta ──
@@ -371,17 +302,28 @@ def test_el_control_corre_en_un_turno_sin_panel():
                for h in verificar_prosa("¿Cuál es tu correo?", cards=[], puerta_abierta=False))
 
 
-def test_tampoco_se_repite_por_el_camino_de_streaming(mundo):
-    """El stream es el camino que usa la gente de verdad. La marca la escribe la rama SSE con
-    su propia config de escritura lateral, así que se prueba aparte."""
+def test_tampoco_se_ofrece_por_el_camino_de_streaming(mundo):
+    """EXPECTED UPDATE · SURFACE RETIRED BY OFD-02. Antes: `test_tampoco_se_repite_por_el_camino_de_streaming`,
+    que exigía la puerta en el primer turno SSE. El stream es el camino que usa la gente de
+    verdad: el panel sigue llevando la clave `puerta`, siempre `null`, y la marca no se escribe."""
+    import json
+
     cliente, llm, compilado = mundo
 
-    primero = _post(cliente, llm, "Busco algo de 2 dormitorios", stream=True)
-    assert primero.status_code == 200
-    assert '"puerta"' in primero.text and "callejon_honesto" in primero.text
-    assert _estado(compilado).get("puerta_ofrecida") is True
+    for texto in ("Busco algo de 2 dormitorios", "avísame cuando haya algo de 2 dormitorios"):
+        r = _post(cliente, llm, texto, stream=True)
+        assert r.status_code == 200
+        paneles = []
+        for linea in r.text.splitlines():
+            if linea.startswith("data:"):
+                try:
+                    evento = json.loads(linea[5:].strip())
+                except ValueError:
+                    continue
+                if isinstance(evento, dict) and "panel" in evento:
+                    paneles.append(evento["panel"])
+        assert paneles, "el stream no emitió el panel: el arnés no prueba nada"
+        assert all("puerta" in p and p["puerta"] is None for p in paneles)
+        assert "callejon_honesto" not in r.text
 
-    segundo = _post(cliente, llm, "¿Y si amplío la zona?", stream=True)
-    assert "callejon_honesto" not in segundo.text, (
-        "la puerta volvió a ofrecerse por el camino de streaming"
-    )
+    assert not _estado(compilado).get("puerta_ofrecida")

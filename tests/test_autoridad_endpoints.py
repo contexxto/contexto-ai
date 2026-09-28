@@ -44,7 +44,6 @@ import pytest
 from fastapi import HTTPException
 from starlette.requests import Request
 
-import app.routers.alertas as alertas
 import app.routers.chat as chat
 import app.routers.visitas as visitas
 from app.auth import CurrentUser
@@ -160,15 +159,7 @@ async def _centinela(*_a, **_k):
     raise _LlegoAlEfecto("efecto sustituido")
 
 
-class _SesionCentinela:
-    """Para el endpoint cuyo efecto es un INSERT directo y no una función sustituible: el
-    centinela salta al ABRIR la sesión de base, que es lo primero que ocurre tras la puerta."""
-
-    async def __aenter__(self):
-        raise _LlegoAlEfecto("abrió la base para escribir")
-
-    async def __aexit__(self, *_a):
-        return False
+# (`_SesionCentinela` servía sólo a `POST /api/v1/alertas`, retirado en TR-1.)
 
 
 @pytest.fixture(autouse=True)
@@ -210,11 +201,11 @@ def tabla(monkeypatch):
     monkeypatch.setattr(chat, "ensure_handoff_tables", _sin_bootstrap)
     monkeypatch.setattr(chat, "ensure_lead_actividad", _sin_bootstrap)
 
-    # 12 y 13 · los dos endpoints de dato personal que hasta el 27-sep-2026 sólo tenían
-    # `verify_api_key` —la llave que el frontend PUBLICA—, así que el `session_id` lo afirmaba
-    # el cliente. Sus efectos también se sustituyen para que el centinela sea el mismo oráculo.
+    # 12 · el endpoint de dato personal que hasta el 27-sep-2026 sólo tenía `verify_api_key`
+    # —la llave que el frontend PUBLICA—, así que el `session_id` lo afirmaba el cliente. Su
+    # efecto también se sustituye para que el centinela sea el mismo oráculo. (El 13, alertas,
+    # se retiró en TR-1: ver la tabla de abajo.)
     monkeypatch.setattr("app.routers.visitas.registrar_visita", _centinela)
-    monkeypatch.setattr("app.routers.alertas.AsyncSessionLocal", _SesionCentinela)
     return t
 
 
@@ -251,9 +242,10 @@ ENDPOINTS = {
     # cliente. Entran en esta tabla para que la exhaustividad los cubra como a los once.
     "12·POST /api/v1/visitas": lambda s, u, r: visitas.crear_visita(
         _peticion(r), visitas.LlegadaIn(session_id=s, superficie="home"), u),
-    "13·POST /api/v1/alertas": lambda s, u, r: alertas.crear_alerta(
-        _peticion(r), alertas.AlertaIn(session_id=s, email="a@b.co",
-                                       criterio={"dormitorios": 2}), u),
+    # 13 · `POST /api/v1/alertas` — RETIRADO en Plan 1.1 · TR-1 (OFD-02 = A): recogía un correo
+    # para un aviso que ningún código envía. EXPECTED UPDATE · SURFACE RETIRED BY OFD-02: salen
+    # sus 7 casos (3 DIRECTOS + 4 TODOS), no porque fallaran sino porque el endpoint ya no existe.
+    # Que no vuelva lo prueba `tests/test_tr1_retiro_alerta.py`.
 }
 
 TODOS = list(ENDPOINTS.items())
@@ -272,7 +264,7 @@ HIBRIDOS = [(n, f) for n, f in TODOS
             if any(k in n for k in ("notificaciones", "conversaciones"))]
 DIRECTOS = [(n, f) for n, f in TODOS if (n, f) not in HIBRIDOS]
 
-assert len(HIBRIDOS) == 3 and len(DIRECTOS) == 10
+assert len(HIBRIDOS) == 3 and len(DIRECTOS) == 9   # 10 → 9: alertas retirado en TR-1
 
 
 def _ejecutar(fn, sid, user, resume):

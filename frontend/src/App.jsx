@@ -10,7 +10,6 @@ import Auth from './Auth'
 import MisPublicaciones from './MisPublicaciones'
 import ConvierteteCorredor from './ConvierteteCorredor'
 import ShareConversation from './ShareConversation'
-import PuertaAlerta from './PuertaAlerta'
 import AnuncioView from './AnuncioView'
 import ResultCards from './ResultCards'
 import DeltaEncaje from './DeltaEncaje'
@@ -295,20 +294,9 @@ function Message({ msg, onCopy, copied, onScrollTop, onShare, onOpenAnuncio, onO
         </div>
       )}
 
-      {/* ★ PUERTA SUAVE — "¿te aviso cuando aparezca algo así?". Bloque PROPIO, no dentro
-          del panel de tarjetas: el caso que más la necesita es el callejón honesto, donde
-          no hay ninguna tarjeta que mostrar. Y va DESPUÉS de la respuesta y del panel, que
-          se leen completos aunque nadie deje nada — nunca es una condición para ver algo.
-          Cuándo aparece lo decidió el motor (app/puerta.py); aquí solo se pinta. */}
-      {!isUser && msg.puerta && (
-        <div style={{ width: '100%', boxSizing: 'border-box' }}>
-          <PuertaAlerta puerta={msg.puerta} sessionId={sessionId} />
-        </div>
-      )}
-
       {/* ★ ACLARACION — la repregunta que ESTE turno abrio. La decidio el backend
           (app/buyer/clarificacion.py) y su texto es determinista: no lo escribe el modelo.
-          Va despues de la respuesta y del panel, como la puerta, porque nunca es condicion
+          Va despues de la respuesta y del panel, porque nunca es condicion
           para leer lo que ya salio. Se pinta `question` y nada mas: ni about_field, ni ids,
           ni metadata. */}
       {!isUser && msg.clarification?.question && (
@@ -1086,7 +1074,8 @@ export default function App() {
             results: Array.isArray(panel.results) ? panel.results : [],
             // Directiva de mapa del turno (SPEC_Mapa_Vivo). Puede ser null.
             mapSeed: panel.map_seed || null,
-            puerta: panel.puerta || null,
+            // `panel.puerta` se IGNORA a propósito: la puerta suave se retiró (Plan 1.1 · TR-1,
+            // OFD-02 = A) y un backend viejo que todavía la mande no debe hacerla reaparecer.
           })
         },
         // Directiva de ACLARACION (BUYER-UNRESOLVED-CONSUMER-R1). Llega DESPUES del panel

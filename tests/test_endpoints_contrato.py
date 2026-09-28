@@ -13,6 +13,10 @@ rato — el registro de llegadas se traga sus errores a propósito (`.catch(() =
 que F0 habría estado muerta sin una sola alarma.
 
 Estos tests no necesitan base de datos: FastAPI construye el esquema al importar la app.
+
+EXPECTED UPDATE · SURFACE RETIRED BY OFD-02 (Plan 1.1 · TR-1): `/api/v1/alertas` se retiró —
+recogía un correo para un aviso que ningún código envía—, así que sale de los dos
+parametrizados de abajo (2 casos). `visitas` sigue cubierto igual.
 """
 import pytest
 
@@ -26,7 +30,7 @@ def esquema():
     return app.openapi()
 
 
-@pytest.mark.parametrize("ruta", ["/api/v1/visitas", "/api/v1/alertas"])
+@pytest.mark.parametrize("ruta", ["/api/v1/visitas"])   # alertas: retirado en TR-1
 def test_el_cuerpo_es_body_y_no_query(esquema, ruta):
     """El modelo va en el CUERPO. Si alguien reintroduce `from __future__ import
     annotations` en el router, esta afirmación se cae antes de llegar a producción."""
@@ -38,7 +42,7 @@ def test_el_cuerpo_es_body_y_no_query(esquema, ruta):
 
 @pytest.mark.parametrize("ruta,campos", [
     ("/api/v1/visitas", {"session_id", "superficie", "referrer", "utm_source", "activo_id"}),
-    ("/api/v1/alertas", {"session_id", "email", "criterio", "hubo_match", "motivo"}),
+    # ("/api/v1/alertas", …) — retirado en TR-1.
 ])
 def test_el_esquema_del_cuerpo_trae_los_campos_que_manda_el_frontend(esquema, ruta, campos):
     """El contrato con el frontend, afirmado. Si un campo se renombra en el backend sin

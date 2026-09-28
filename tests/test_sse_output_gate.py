@@ -142,7 +142,8 @@ def mundo(monkeypatch):
     monkeypatch.setattr(chat_mod, "_exigir_autoridad", _autoridad)
     monkeypatch.setattr(chat_mod, "registrar_intencion", _nada)
     monkeypatch.setattr(chat_mod, "actualizar_en_sombra", _nada)
-    monkeypatch.setattr(chat_mod, "_marcar_puerta_ofrecida", _nada)
+    # EXPECTED UPDATE · SURFACE RETIRED BY OFD-02 (TR-1): aquí se neutralizaba `_marcar_puerta_ofrecida`; la puerta
+    # suave se retiró y ya no hay nada que neutralizar.
     monkeypatch.setattr(chat_mod, "_auditar_prosa", lambda *a, **k: None)
     # El limiter es global y su contador sobrevive al módulo: sin esto, los ~12 POST de
     # aquí agotan los 15/min y el 429 cae sobre el SIGUIENTE fichero de la suite, no sobre

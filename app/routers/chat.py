@@ -305,11 +305,9 @@ class ChatResponse(BaseModel):
     # espacial; el frontend RENDERIZA. Separa la capa de razonamiento de la visual, igual que
     # results separa lo que ve el LLM de lo que renderiza la tarjeta. None si no hay pines geo.
     map_seed: dict | None = None
-    # ★ Directiva de PUERTA SUAVE (docs/PLAN_Onboarding_Ecosistema §6). Igual que map_seed:
-    # el backend DECIDE y el frontend RENDERIZA. Que viaje como directiva —y no como una
-    # instrucción en el prompt— es lo que hace imposible que el modelo se ponga insistente
-    # por su cuenta: la puerta no es texto que él escriba. None = no corresponde ofrecer
-    # nada, que es el caso por defecto y el más frecuente.
+    # PUERTA SUAVE — RETIRADA (Plan 1.1 · TR-1 · OFD-02 = A). El campo se CONSERVA en el
+    # contrato para no romper a un frontend que todavía lo lee, y vale SIEMPRE None: la
+    # directiva prometía un aviso que ningún código envía.
     puerta: dict | None = None
     # ★ Directiva de ACLARACIÓN (BUYER-UNRESOLVED-CONSUMER-R1). Tercera de la misma familia, y
     # por la misma razón: el backend DECIDE y el frontend RENDERIZA. La pregunta NO la escribe el
@@ -325,78 +323,9 @@ class ChatResponse(BaseModel):
     clarification: dict | None = None
 
 
-async def _pidio_corredor(session_id: str) -> bool:
-    """¿Esta conversación ya pidió un corredor? Se lee de `handoff_sesion`, NO del estado.
-
-    POR QUÉ DE LA TABLA Y NO DE UN CANAL DEL GRAFO. Antes esto era
-    `bool(estado.get("handoff_pedido"))`, y `handoff_pedido` era una clave FANTASMA: este
-    módulo la leía y NADIE la escribía en todo el repositorio —un solo resultado en el
-    barrido completo, el de la propia lectura—, así que la regla 4 de la puerta («al que ya
-    pidió corredor no se le ofrece nada más») estuvo inerte desde que la puerta nació
-    (949d2d0, 2026-08-17). No fue una regresión: nació sin escritor.
-
-    Y alimentar la clave habría sido frágil. Hay CUATRO caminos que registran el hecho —la
-    tool del agente, `POST /{session_id}/handoff`, `POST /{session_id}/handoff/mensaje` (que
-    hace su propio INSERT y NO pasa por `registrar_handoff`) y el alta del lado corredor—, así
-    que un escritor por camino reproduce la causa del defecto hermano de `puerta_ofrecida`:
-    varios sitios donde hay que acordarse, y basta olvidar uno. La tabla es el único punto
-    donde los cuatro convergen.
-
-    Misma consulta y mismo patrón que `intencion_de_sesion`, más abajo en este módulo, que ya
-    resolvía esta pregunta exacta. Y no toca la LÍNEA ROJA 1 del §6: lee el HECHO de que pidió
-    un humano, no el score ni el nivel de intención.
-
-    Best-effort: si las tablas de handoff no existen todavía o la base no responde, devuelve
-    False y la puerta decide sin este dato. Un aviso no vale un turno roto.
-    """
-    try:
-        async with AsyncSessionLocal() as db:
-            est = (await db.execute(text(
-                "SELECT estado FROM handoff_sesion WHERE session_id = :s LIMIT 1"),
-                {"s": session_id})).scalar()
-            return est is not None
-    except Exception:  # noqa: BLE001 — tablas de handoff aún no existen
-        return False
-
-
-async def _puerta_del_turno(estado: dict, cards: list, mensajes,
-                            session_id: str) -> dict | None:
-    """La directiva de puerta del turno, o None. Best-effort: jamás rompe la respuesta.
-
-    Lee del estado lo que el nodo `encaje` ya calculó (preferencias declaradas) y el
-    último texto del usuario. NO recibe score ni nivel de intención: la línea roja del §6
-    es que el motor de intención no puede disparar la captura de correo.
-    """
-    from app.puerta import evaluar_puerta
-    try:
-        ultimo = ""
-        for m in reversed(list(mensajes or [])):
-            if getattr(m, "type", "") == "human":
-                ultimo = m.content if isinstance(m.content, str) else ""
-                break
-        return evaluar_puerta(
-            preferencias=estado.get("preferencias") or {},
-            cards=cards or [],
-            ya_ofrecida=bool(estado.get("puerta_ofrecida")),
-            pidio_corredor=await _pidio_corredor(session_id),
-            texto_usuario=ultimo,
-        )
-    except Exception:  # noqa: BLE001 — ofrecer una puerta jamás vale un turno roto
-        return None
-
-
-async def _marcar_puerta_ofrecida(config: dict) -> None:
-    """Deja escrito que la puerta YA se ofreció en este hilo.
-
-    Se llama al EMITIRLA, no cuando la persona responde. Es la regla 3 del §6 ("una vez")
-    en su forma estricta: si la ignoró, tampoco vuelve. Dejar esta marca en manos del
-    frontend habría significado que quien no contesta recibe la oferta otra vez — que es
-    exactamente el comportamiento de acoso que esta puerta existe para no tener.
-    """
-    try:
-        await agent_graph.compiled_graph.aupdate_state(config, {"puerta_ofrecida": True})
-    except Exception:  # noqa: BLE001 — sin la marca se reofrece una vez; no vale romper el turno
-        log.warning("no se pudo marcar la puerta como ofrecida")
+# La puerta suave (`_puerta_del_turno`, `_pidio_corredor`, `_marcar_puerta_ofrecida`) se
+# RETIRÓ en Plan 1.1 · TR-1 (OFD-02 = A): prometía un aviso futuro que ningún código envía, y
+# nadie lee lo que recogía. Vuelve sólo cuando exista el consumidor, con su propio permiso.
 
 
 def _langgraph_config(session_id: str, execution_id: str | None = None) -> dict:
@@ -1145,17 +1074,14 @@ async def _stream_agent(message: str, session_id: str, user=None) -> AsyncIterat
             if not isinstance(resultados, list) or not resultados:
                 resultados = await build_result_cards(_msgs, session_id=session_id)
             map_seed = _map_seed_from_cards(resultados, prev_mode)
-            # El stream es el camino que usa la gente de verdad — si la puerta solo saliera por
-            # el no-stream, no se ofrecería nunca donde importa.
-            puerta = await _puerta_del_turno(_valores, resultados, _msgs, session_id)
-            if puerta:
-                await _marcar_puerta_ofrecida(_config_escritura_lateral(session_id))
+            # La puerta suave está RETIRADA (Plan 1.1 · TR-1 · OFD-02 = A): prometía un aviso
+            # que ningún código envía. `puerta` queda en None y la auditoría corre siempre con la
+            # puerta cerrada, así que pedir el correo en prosa se registra en todo turno (B2).
 
             # El stream es el camino que usa la gente de verdad: si la auditoría de prosa solo
             # cubriera el no-stream, mediríamos el turno que casi nadie ejecuta.
             _auditar_prosa(session_id, _ultima_respuesta(_msgs),
-                           {**_valores, "cards": resultados},
-                           puerta_abierta=bool(puerta))
+                           {**_valores, "cards": resultados})
 
             if map_seed:
                 try:
@@ -1359,20 +1285,13 @@ async def chat(
         results = final_state.get("cards")
         if not isinstance(results, list) or not results:
             results = await build_result_cards(messages, session_id=payload.session_id)
-        # La puerta se decide ANTES de auditar, igual que en el camino SSE, porque el auditor
-        # necesita saber si el motor la abrió: el control de «el modelo pidió el correo por su
-        # cuenta» no debe dispararse en un turno donde la directiva ya lleva su propio texto.
-        # Antes este camino auditaba primero y decidía la puerta después, así que el mismo turno
-        # producía veredictos distintos según la rama — y sólo una de las dos podía ser correcta.
-        puerta = await _puerta_del_turno(final_state, results, messages,
-                                         payload.session_id)
-        if puerta:
-            await _marcar_puerta_ofrecida(config)
+        # Puerta suave RETIRADA (Plan 1.1 · TR-1 · OFD-02 = A), igual que en el camino SSE: el
+        # campo sigue en la respuesta y siempre vale None.
+        puerta = None
 
         # Se audita contra `results` —lo que de verdad se devuelve— y no contra el estado, para que
         # el veredicto sea sobre lo que la persona verá aunque el panel se haya reconstruido arriba.
-        _auditar_prosa(payload.session_id, reply,
-                       {**final_state, "cards": results}, puerta_abierta=bool(puerta))
+        _auditar_prosa(payload.session_id, reply, {**final_state, "cards": results})
         map_seed = _map_seed_from_cards(results, prev_mode)
         # spatial_context VIVO (deja de ser placeholder muerto): persiste el foco del turno en el
         # estado del agente para que la transición no pierda el encuadre. Best-effort: si el

@@ -74,8 +74,12 @@ class AgentState(_AgentStateCore, total=False):
     # olvidar. Mismo idioma que `preferencias_turno`.
     contrato_faltante_turno: int
 
-    # La puerta suave YA se ofreció en este hilo — la regla 3 del §6, «una vez». La escribe
-    # `_marcar_puerta_ofrecida` con `aupdate_state` DESPUÉS del grafo, y la lee
+    # INERTE desde Plan 1.1 · TR-1 (OFD-02 = A): la puerta suave se retiró y ya nadie escribe ni
+    # lee esta clave. Se CONSERVA declarada a propósito: los checkpoints existentes la llevan, y
+    # quitarla del esquema cambiaría cómo se cargan. Lo de abajo es su historia.
+    #
+    # La puerta suave YA se ofreció en este hilo — la regla 3 del §6, «una vez». La escribía
+    # `_marcar_puerta_ofrecida` con `aupdate_state` DESPUÉS del grafo, y la leía
     # `_puerta_del_turno` como `ya_ofrecida`.
     #
     # ESTÁ DECLARADA AQUÍ PORQUE, SI NO, NO EXISTE. LangGraph 0.2.60 DESCARTA EN SILENCIO las

@@ -27,9 +27,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
+from app.auth import CurrentUser, get_optional_user
 from app.database import AsyncSessionLocal
 from app.limiter import limiter
-from app.routers.chat import verify_api_key
+from app.routers.chat import _exigir_autoridad, verify_api_key
 
 log = logging.getLogger("alertas")
 
@@ -108,7 +109,34 @@ class AlertaIn(BaseModel):
     dependencies=[Depends(verify_api_key)],
 )
 @limiter.limit("10/minute")
-async def crear_alerta(request: Request, cuerpo: AlertaIn) -> dict:
+async def crear_alerta(
+    request: Request,
+    cuerpo: AlertaIn,
+    user: CurrentUser | None = Depends(get_optional_user),
+) -> dict:
+    """Guarda el correo y la demanda — sólo para la conversación de quien llama.
+
+    EL AGUJERO QUE CIERRA. La única puerta era `verify_api_key`, llave que el frontend PUBLICA.
+    Con ella, un tercero podía: (1) inscribir el correo de OTRA persona, con el `session_id` que
+    quisiera —incluido el de un hilo ajeno, o uno inventado que la validación de longitud deja
+    pasar—; (2) falsificar la demanda a voluntad, con `hubo_match=false` para inflar justamente
+    el reporte que se le enseña a un promotor, y con un `criterio` arbitrario que el servidor
+    guarda sin volver a recortar a la whitelist —metiendo en la tabla exactamente lo que la
+    whitelist de `app/puerta.py` existe para mantener fuera—; (3) sobrescribir el `canal` de una
+    fila ajena por el `ON CONFLICT … DO UPDATE`, falseando la atribución. Nada de eso dejaba
+    rastro distinguible de un usuario real.
+
+    Leer no se podía y sigue sin poderse: la única respuesta de éxito es `{"ok": true}`, y un
+    correo ya existente y uno nuevo dan la MISMA respuesta, así que tampoco hay oráculo.
+
+    ESTO EXIGE QUE EL CLIENTE MANDE SU CAPACIDAD. `PuertaAlerta.jsx` mandaba `apiHeaders()`, que
+    NO incluye `X-Session-Resume`; se cambió a `apiHeadersSesion(sessionId)`. El orden de
+    despliegue importa y no es simétrico: **frontend primero** (la cabecera extra es inocua para
+    el backend anterior), backend después. Al revés queda una ventana en la que toda alerta de un
+    visitante sin cuenta recibe 404 y la puerta suave —la única puerta de identidad del
+    producto— queda muerta en producción.
+    """
+    await _exigir_autoridad(request, cuerpo.session_id, user)
     email = (cuerpo.email or "").strip().lower()
     if not _EMAIL.match(email):
         # Este SÍ falla hacia el cliente: le prometimos avisarle. Callarlo sería

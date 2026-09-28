@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import axios from 'axios'
 import { BellRing, Check, X } from 'lucide-react'
-import { API_BASE, apiHeaders } from './api'
+import { API_BASE, apiHeadersSesion } from './api'
 
 // La PUERTA SUAVE — "¿te aviso cuando aparezca algo así?".
 //
@@ -55,7 +55,11 @@ export default function PuertaAlerta({ puerta, sessionId, activoId }) {
         hubo_match: puerta.motivo !== 'callejon_honesto',
         motivo: puerta.motivo || null,
         activo_id: activoId || null,
-      }, { headers: apiHeaders() })
+        // `apiHeadersSesion` y no `apiHeaders`: añade `X-Session-Resume` para ESTE hilo, que
+        // es la capacidad con la que el backend autoriza la alerta. Sin ella, un visitante sin
+        // cuenta recibe 404 y la puerta suave queda muerta. Desplegar SIEMPRE antes que el
+        // backend: la cabecera extra es inocua para la versión anterior.
+      }, { headers: apiHeadersSesion(sessionId) })
       setEstado('lista')
     } catch (err) {
       setEstado('abierta')

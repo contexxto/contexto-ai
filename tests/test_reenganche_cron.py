@@ -1,8 +1,9 @@
 """Tests offline del cron de reenganche (app/reenganche_cron.py) — config y helpers puros.
 
-El barrido con DB (escanear_reenganches) se valida en el piloto vía el endpoint
-POST /assets/reenganche/scan; aquí cubrimos la configuración y el cálculo de tiempo,
-y —al importar el módulo— que no haya errores de import/sintaxis."""
+El barrido (escanear_reenganches) ya no tiene endpoint (Plan 1.1 · TR-4): su bandera, su única
+entrada y la ausencia de efectos con la bandera apagada se prueban en test_tr4_reenganche.py.
+Aquí cubrimos la configuración y el cálculo de tiempo, y —al importar el módulo— que no haya
+errores de import/sintaxis."""
 from datetime import datetime, timezone, timedelta
 
 import app.reenganche_cron as cron

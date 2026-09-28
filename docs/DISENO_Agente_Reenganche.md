@@ -150,7 +150,7 @@ está empujando, no aportando).
 - **2026-07-06 — v0.3 — Fase 2 (cron DENTRO de la app, sin WhatsApp)** — `app/reenganche_cron.py`:
   tarea de fondo en el `lifespan` (plan `starter` de Render no duerme) que barre leads dormidos, corre
   el motor Fase 1 y **avisa al CORREDOR** por los canales que la app ya tiene (Web Push + email/Resend).
-  Endpoint manual `POST /assets/reenganche/scan` para piloto/demo. Config por entorno
+  Endpoint manual `POST /assets/reenganche/scan` para piloto/demo (**retirado el 2026-09-28**, ver v0.5). Config por entorno
   (`REENGANCHE_CRON_ENABLED|INTERVAL|LIMITE`).
   - **Hallazgo honesto de canal (importante):** los leads dormidos-no-calientes **no dejaron contacto
     propio** (no pidieron corredor → sin email ni push del comprador). Por eso el cron avisa al
@@ -173,3 +173,8 @@ está empujando, no aportando).
   - **Sigue honesto:** el comprador recibe SOLO lo que pidió recibir (opt-in), y solo cuando hay dato
     verificado que le calza (motor Fase 1). WhatsApp/SMS queda como canal adicional futuro (el teléfono
     capturado lo habilita, y de momento lo puede usar el corredor a mano).
+- **2026-09-28 — v0.5 — Plan 1.1 · TR-4 (OFD-07 = A)** — se **retira** `POST /api/v1/assets/reenganche/scan`:
+  cualquier cuenta autenticada podía disparar un barrido GLOBAL (leads ajenos, correo y push a terceros) y se
+  saltaba `REENGANCHE_CRON_ENABLED`. La bandera pasa a consultarse también en `escanear_reenganches` (única
+  entrada), así que apagarla detiene todo efecto aunque el bucle ya esté corriendo. Sin sustituto en la API:
+  si algún día hace falta operación manual, será fuera de la API orientada al comprador.

@@ -1132,20 +1132,9 @@ async def crm_thread_reset(
     return {"session_id": sid, "ok": True}
 
 
-@router.post(
-    "/reenganche/scan",
-    summary="Dispara un barrido de reenganche bajo demanda (piloto/ops)",
-    description="Ejecuta el cron de reenganche una vez: detecta leads dormidos con disparo "
-                "por valor y avisa a sus corredores por push+email. Idempotente (anti-repetición).",
-)
-@limiter.limit("6/hour")
-async def reenganche_scan(
-    request: Request,
-    user: CurrentUser = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> dict:
-    from app.reenganche_cron import escanear_reenganches
-    return await escanear_reenganches(db)
+# El barrido de reenganche NO tiene ruta en la API, a propósito (Plan 1.1 · TR-4 · OFD-07 = A):
+# lee los leads dormidos de TODO el sistema y escribe y avisa a terceros, así que ninguna cuenta
+# puede dispararlo. Solo lo corre el bucle de fondo (app/reenganche_cron.py), tras la bandera.
 
 
 @router.get(

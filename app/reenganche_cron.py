@@ -10,7 +10,8 @@ canal propio (no pidieron corredor → sin email ni push del comprador). Alcanza
 al comprador directo exige capturar su contacto o WhatsApp — es un paso aparte.
 
 Config por entorno (todas opcionales, con defaults sensatos):
-  REENGANCHE_CRON_ENABLED   "1"/"0"     habilita el barrido de fondo (default "1")
+  REENGANCHE_CRON_ENABLED   "1"/"0"     habilita el barrido (default "1"). Se consulta al arrancar
+                                        el bucle Y en cada barrido: apagarla detiene todo efecto.
   REENGANCHE_CRON_INTERVAL  segundos entre barridos (default 21600 = 6 h, mínimo 300)
   REENGANCHE_CRON_LIMITE    máx leads por barrido (default 200)
 
@@ -75,18 +76,36 @@ def _horas_inactividad(ua: datetime | None) -> float | None:
 _scan_lock = asyncio.Lock()
 
 
+_APAGADO = {"escaneados": 0, "disparados": 0, "corredores": 0, "deshabilitado": True}
+
+
 async def escanear_reenganches(db) -> dict:
-    """Serializa el barrido en esta instancia: si el endpoint manual y el bucle de
-    fondo coinciden, el segundo espera y re-lee (ya marcado) → sin doble aviso.
-    Ver _escanear_reenganches para la lógica."""
+    """ÚNICA entrada al barrido. Con REENGANCHE_CRON_ENABLED apagada no hace NADA: ni lee
+    leads, ni escribe lead_actividad, ni calcula destinatarios, ni manda correo o push.
+
+    La bandera se comprueba aquí y no solo en iniciar_cron (Plan 1.1 · TR-4): el control del
+    arranque evita crear el bucle, pero no protege a un caller que ya existe ni a una bandera
+    que cambió después del arranque. Se vuelve a mirar tras el candado porque quien esperaba
+    turno pudo entrar con la bandera ya apagada.
+
+    El candado serializa el barrido en esta instancia: dos barridos simultáneos no avisan dos
+    veces (el segundo re-lee lo ya marcado). Ver _escanear_reenganches para la lógica."""
+    if not habilitado():
+        log.info("Reenganche: barrido omitido (REENGANCHE_CRON_ENABLED=0).")
+        return dict(_APAGADO)
     async with _scan_lock:
+        if not habilitado():
+            return dict(_APAGADO)
         return await _escanear_reenganches(db)
 
 
 async def _escanear_reenganches(db) -> dict:
     """Un barrido: detecta leads dormidos con disparo por valor y avisa al corredor.
     Idempotente vía reenganche_enviado_en (anti-repetición). Devuelve un resumen
-    {escaneados, disparados, corredores}."""
+    {escaneados, disparados, corredores}.
+
+    NO llamar directo: no mira la bandera. La única entrada es escanear_reenganches
+    (tests/test_tr4_reenganche.py lo impone sobre todo el código de producción)."""
     from app.reenganche import evaluar_reenganche, HORAS_DORMIDO
     from app.routers.chat import intencion_de_sesion, _corredor_de_activo, ensure_lead_actividad
     from app.notifications import send_notification

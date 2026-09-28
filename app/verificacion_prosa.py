@@ -583,6 +583,60 @@ def _contacto_en_prosa(reply: str, puerta_abierta: bool) -> list[dict]:
             for frase, motivo in detectar_solicitud_contacto(reply)]
 
 
+# ── El modelo prometiendo un aviso que nadie va a enviar (Plan 1.1 · TR-1) ─────────────────
+# Retirada la puerta suave, en ningún camino del chat existe algo que escriba o avise a la
+# persona más adelante; lo único que ocurre después es el contacto del CORREDOR tras un handoff.
+# Así que una promesa EN PRIMERA PERSONA (o con Contexto de sujeto) de avisar, escribir,
+# notificar o contactar después es una promesa que el producto no cumple.
+#
+# Se cazan tres formas, sobre texto normalizado (minúsculas, sin tildes):
+#   · futuro de primera persona con clítico de destinatario: «te avisaré», «le escribiremos»;
+#   · presente de primera persona usado como futuro, SÓLO si lo sigue una condición temporal:
+#     «te aviso cuando aparezca», «te escribo si sale algo». «te aviso QUE no acepta mascotas»
+#     informa ahora y no promete nada, y «te contacto CON el corredor» conecta, no escribe;
+#   · el sistema de sujeto: «Contexto te avisará», «nosotros te notificaremos».
+# Lo que NO se caza, a propósito: la tercera persona («el corredor te escribirá», «un corredor
+# lo contactará») — es el canal real del handoff — y el nombre del botón de reenganche
+# («Avísame de novedades verificadas»), que es un imperativo del usuario, no una promesa.
+_CLITICO = r"(?:te|le|les|lo|la|los|las)"
+_AVISO_FUTURO = re.compile(
+    rf"\b{_CLITICO}\s+(?:avisar|escribir|notificar|contactar|mandar|enviar)(?:e|emos)\b"
+    rf"|\b{_CLITICO}\s+(?:mantendre|mantendremos|mantengo|mantenemos)\s+(?:al tanto|informad[oa]s?)\b"
+    rf"|\b(?:contexto|la app|la plataforma|el sistema|nosotros)\s+{_CLITICO}\s+"
+    r"(?:avisara|escribira|notificara|contactara|mandara|enviara)\b")
+_AVISO_PRESENTE_CONDICIONADO = re.compile(
+    rf"\b{_CLITICO}\s+(?:aviso|avisamos|escribo|escribimos|notifico|notificamos|contacto|contactamos)\b"
+    r"(?!\s+(?:que|de que|con)\b)"
+    r"(?:\s+(?:por|a|al|en)\s+[^.!?,;]{0,20}?)?\s*,?\s*"
+    r"(?:cuando|si|en cuanto|apenas|tan pronto|mas adelante|luego|pronto|en el futuro)\b")
+_AVISO_ENVIO = re.compile(
+    rf"\b{_CLITICO}\s+(?:mando|mandamos|envio|enviamos)\s+(?:un|una)?\s*"
+    r"(?:correo|mail|email|mensaje|aviso|notificacion|alerta)\b")
+
+
+def _aviso_prometido_en_prosa(reply: str) -> list[dict]:
+    """El modelo prometiendo avisar, escribir, notificar o contactar MÁS ADELANTE.
+
+    Es la mitad que la puerta suave dejaba sin cubrir: `contacto_pedido_en_prosa` caza que el
+    modelo PIDA el correo; esto caza que PROMETA usarlo. Con la puerta retirada (TR-1) no hay
+    ningún canal que cumpla esa promesa, así que sólo puede ser falsa.
+
+    GRAVEDAD `MEDIA`, mismo criterio que `contacto_pedido_en_prosa`: incumple una regla del
+    producto, no afirma una cifra falsa. MIDE: no bloquea, no reescribe y no produce ningún
+    efecto — el turno queda en `WARNING`.
+    """
+    if not reply:
+        return []
+    n = _sin_tildes(reply)
+    hits = []
+    for rx in (_AVISO_FUTURO, _AVISO_PRESENTE_CONDICIONADO, _AVISO_ENVIO):
+        for m in rx.finditer(n):
+            hits.append(_violacion("aviso_prometido_en_prosa", MEDIA,
+                                   "el modelo promete un aviso futuro que ningún canal cumple",
+                                   m.group(0).strip()))
+    return hits
+
+
 # ── La boca pública ───────────────────────────────────────────────────────────────────────
 def verificar_prosa(reply: str, cards: list[dict] | None,
                     preferencias: dict | None = None,
@@ -602,11 +656,13 @@ def verificar_prosa(reply: str, cards: list[dict] | None,
     if not reply:
         return []
     if not cards:
-        return _gancho(reply, cards, descartadas) + _contacto_en_prosa(reply, puerta_abierta)
+        return (_gancho(reply, cards, descartadas) + _contacto_en_prosa(reply, puerta_abierta)
+                + _aviso_prometido_en_prosa(reply))
     tope = _tope_de(preferencias)
 
     hallazgos = (
         _contacto_en_prosa(reply, puerta_abierta)
+        + _aviso_prometido_en_prosa(reply)
         + _presupuesto_suavizado(reply, cards, tope)
         + _encabezado_falso(reply, cards, tope)
         + _cifra_sin_procedencia(reply, cards, descartadas, tope)

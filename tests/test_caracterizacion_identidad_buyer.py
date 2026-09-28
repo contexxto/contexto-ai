@@ -321,7 +321,8 @@ def test_el_device_key_SI_llega_al_backend_y_SI_se_persiste():
 
         App.jsx  →  device_key: getDeviceId()   (registro de llegada)
                  →  visita.device_key           (migración 024)
-                 →  contacto.device_key         (migración 025, vía alertas.py)
+                 →  contacto.device_key         (migración 025 — HISTÓRICO: `alertas.py`, su
+                                                 único escritor, se retiró en TR-1)
 
     Existe, por tanto, un identificador **durable de navegador, persistido en servidor**,
     anterior a esta fase. Eso NO lo convierte en candidato a `buyer_id` — ver el test
@@ -330,9 +331,14 @@ def test_el_device_key_SI_llega_al_backend_y_SI_se_persiste():
     js = APP_JSX.read_text(encoding="utf-8")
     assert "device_key: getDeviceId()" in js
 
-    alertas = (RAIZ / "app" / "routers" / "alertas.py").read_text(encoding="utf-8")
-    assert "device_key: str | None" in alertas
-    assert "INSERT INTO contacto" in alertas and "device_key" in alertas
+    # EXPECTED UPDATE · SURFACE RETIRED BY OFD-02 (Plan 1.1 · TR-1). Antes se afirmaba que
+    # `alertas.py` escribía `contacto.device_key`. El endpoint se retiró —recogía un correo para un
+    # aviso que ningún código envía—, así que ya no hay escritor NUEVO; pero las filas históricas
+    # pueden existir y la columna sigue declarada, que es lo que esta caracterización necesita
+    # conservar: el identificador fue y puede seguir estando persistido en servidor.
+    assert not (RAIZ / "app" / "routers" / "alertas.py").exists()
+    m025 = (RAIZ / "migrations" / "025_contacto_demanda.sql").read_text(encoding="utf-8")
+    assert "device_key  text" in m025
 
     m024 = (RAIZ / "migrations" / "024_visita.sql").read_text(encoding="utf-8")
     assert "device_key   text" in m024

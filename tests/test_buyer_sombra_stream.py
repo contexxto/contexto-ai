@@ -107,7 +107,8 @@ def grafo(monkeypatch):
     # El resto del carril legacy, neutralizado: aquí se mide la costura de la sombra.
     monkeypatch.setattr(chat_mod, "registrar_intencion", lambda *a, **k: asyncio.sleep(0))
     monkeypatch.setattr(chat_mod, "_auditar_prosa", lambda *a, **k: None)
-    monkeypatch.setattr(chat_mod, "_puerta_del_turno", lambda *a, **k: None)
+    # EXPECTED UPDATE · SURFACE RETIRED BY OFD-02 (TR-1): aquí se neutralizaba `_puerta_del_turno`; la puerta
+    # suave se retiró y ya no hay nada que neutralizar.
     monkeypatch.setattr(chat_mod, "_map_seed_from_cards", lambda *a, **k: None)
 
 

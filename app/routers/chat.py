@@ -325,7 +325,42 @@ class ChatResponse(BaseModel):
     clarification: dict | None = None
 
 
-def _puerta_del_turno(estado: dict, cards: list, mensajes) -> dict | None:
+async def _pidio_corredor(session_id: str) -> bool:
+    """¿Esta conversación ya pidió un corredor? Se lee de `handoff_sesion`, NO del estado.
+
+    POR QUÉ DE LA TABLA Y NO DE UN CANAL DEL GRAFO. Antes esto era
+    `bool(estado.get("handoff_pedido"))`, y `handoff_pedido` era una clave FANTASMA: este
+    módulo la leía y NADIE la escribía en todo el repositorio —un solo resultado en el
+    barrido completo, el de la propia lectura—, así que la regla 4 de la puerta («al que ya
+    pidió corredor no se le ofrece nada más») estuvo inerte desde que la puerta nació
+    (949d2d0, 2026-08-17). No fue una regresión: nació sin escritor.
+
+    Y alimentar la clave habría sido frágil. Hay CUATRO caminos que registran el hecho —la
+    tool del agente, `POST /{session_id}/handoff`, `POST /{session_id}/handoff/mensaje` (que
+    hace su propio INSERT y NO pasa por `registrar_handoff`) y el alta del lado corredor—, así
+    que un escritor por camino reproduce la causa del defecto hermano de `puerta_ofrecida`:
+    varios sitios donde hay que acordarse, y basta olvidar uno. La tabla es el único punto
+    donde los cuatro convergen.
+
+    Misma consulta y mismo patrón que `intencion_de_sesion`, más abajo en este módulo, que ya
+    resolvía esta pregunta exacta. Y no toca la LÍNEA ROJA 1 del §6: lee el HECHO de que pidió
+    un humano, no el score ni el nivel de intención.
+
+    Best-effort: si las tablas de handoff no existen todavía o la base no responde, devuelve
+    False y la puerta decide sin este dato. Un aviso no vale un turno roto.
+    """
+    try:
+        async with AsyncSessionLocal() as db:
+            est = (await db.execute(text(
+                "SELECT estado FROM handoff_sesion WHERE session_id = :s LIMIT 1"),
+                {"s": session_id})).scalar()
+            return est is not None
+    except Exception:  # noqa: BLE001 — tablas de handoff aún no existen
+        return False
+
+
+async def _puerta_del_turno(estado: dict, cards: list, mensajes,
+                            session_id: str) -> dict | None:
     """La directiva de puerta del turno, o None. Best-effort: jamás rompe la respuesta.
 
     Lee del estado lo que el nodo `encaje` ya calculó (preferencias declaradas) y el
@@ -343,7 +378,7 @@ def _puerta_del_turno(estado: dict, cards: list, mensajes) -> dict | None:
             preferencias=estado.get("preferencias") or {},
             cards=cards or [],
             ya_ofrecida=bool(estado.get("puerta_ofrecida")),
-            pidio_corredor=bool(estado.get("handoff_pedido")),
+            pidio_corredor=await _pidio_corredor(session_id),
             texto_usuario=ultimo,
         )
     except Exception:  # noqa: BLE001 — ofrecer una puerta jamás vale un turno roto
@@ -703,7 +738,8 @@ async def comparar_endpoint(
     return await comparar_inmuebles(payload.session_id, payload.id_a, payload.id_b)
 
 
-def _auditar_prosa(session_id: str, reply: str, valores: dict | None) -> None:
+def _auditar_prosa(session_id: str, reply: str, valores: dict | None,
+                   puerta_abierta: bool = False) -> None:
     """¿La respuesta escrita respeta lo que el motor calculó? Solo INFORMA.
 
     El bloque autoritativo (`encaje_contexto`) garantiza que el modelo RECIBA el ranking, los
@@ -726,7 +762,8 @@ def _auditar_prosa(session_id: str, reply: str, valores: dict | None) -> None:
         # Core, que es quien conoce el vocabulario de `ExplanationV0`; aquí solo queda el
         # efecto de lado. Los hallazgos siguen llegando ÍNTEGROS a `registrar`.
         explicacion, violaciones = auditar_explicacion(
-            reply, v.get("cards"), v.get("preferencias"), v.get("descartadas"))
+            reply, v.get("cards"), v.get("preferencias"), v.get("descartadas"),
+            puerta_abierta)
         registrar_prosa(violaciones, reply, session=session_id)
         if explicacion.verification_status is not VerificationStatus.PASSED:
             # Veredicto del TURNO. No duplica a `registrar`, que cuenta por código: esta
@@ -1110,14 +1147,15 @@ async def _stream_agent(message: str, session_id: str, user=None) -> AsyncIterat
             map_seed = _map_seed_from_cards(resultados, prev_mode)
             # El stream es el camino que usa la gente de verdad — si la puerta solo saliera por
             # el no-stream, no se ofrecería nunca donde importa.
-            puerta = _puerta_del_turno(_valores, resultados, _msgs)
+            puerta = await _puerta_del_turno(_valores, resultados, _msgs, session_id)
             if puerta:
                 await _marcar_puerta_ofrecida(_config_escritura_lateral(session_id))
 
             # El stream es el camino que usa la gente de verdad: si la auditoría de prosa solo
             # cubriera el no-stream, mediríamos el turno que casi nadie ejecuta.
             _auditar_prosa(session_id, _ultima_respuesta(_msgs),
-                           {**_valores, "cards": resultados})
+                           {**_valores, "cards": resultados},
+                           puerta_abierta=bool(puerta))
 
             if map_seed:
                 try:
@@ -1321,10 +1359,20 @@ async def chat(
         results = final_state.get("cards")
         if not isinstance(results, list) or not results:
             results = await build_result_cards(messages, session_id=payload.session_id)
+        # La puerta se decide ANTES de auditar, igual que en el camino SSE, porque el auditor
+        # necesita saber si el motor la abrió: el control de «el modelo pidió el correo por su
+        # cuenta» no debe dispararse en un turno donde la directiva ya lleva su propio texto.
+        # Antes este camino auditaba primero y decidía la puerta después, así que el mismo turno
+        # producía veredictos distintos según la rama — y sólo una de las dos podía ser correcta.
+        puerta = await _puerta_del_turno(final_state, results, messages,
+                                         payload.session_id)
+        if puerta:
+            await _marcar_puerta_ofrecida(config)
+
         # Se audita contra `results` —lo que de verdad se devuelve— y no contra el estado, para que
         # el veredicto sea sobre lo que la persona verá aunque el panel se haya reconstruido arriba.
         _auditar_prosa(payload.session_id, reply,
-                       {**final_state, "cards": results})
+                       {**final_state, "cards": results}, puerta_abierta=bool(puerta))
         map_seed = _map_seed_from_cards(results, prev_mode)
         # spatial_context VIVO (deja de ser placeholder muerto): persiste el foco del turno en el
         # estado del agente para que la transición no pierda el encuadre. Best-effort: si el
@@ -1338,10 +1386,6 @@ async def chat(
                 )
             except Exception:  # noqa: BLE001 — persistir el foco es un extra; jamás rompe el chat
                 pass
-
-        puerta = _puerta_del_turno(final_state, results, messages)
-        if puerta:
-            await _marcar_puerta_ofrecida(config)
 
         # R0C · PERSISTENCIA ESPERADA ANTES DEL `return`, gemela de la del camino SSE. Aquí no
         # hay un `panel` que proteger —la respuesta sale entera de una vez—, así que la escritura

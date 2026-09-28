@@ -553,10 +553,41 @@ def _gancho(reply: str, cards: list[dict], descartadas: list[dict]) -> list[dict
             + _gancho_descartada(gancho, cards, descartadas))
 
 
+def _contacto_en_prosa(reply: str, puerta_abierta: bool) -> list[dict]:
+    """El modelo pidiendo el correo POR SU CUENTA, cuando el motor no abrió la puerta.
+
+    ES EL CONTROL HERMANO DE LA PUERTA SUAVE, y estuvo escrito y sin cablear: la doctrina de
+    `app/puerta.py` es que «el modelo narra; el motor autoriza», y su propia cabecera declaraba
+    que esta detección «caza el único resquicio que quedaba — que la pida en prosa por su
+    cuenta». La función existía, tenía tests y NINGÚN llamador en runtime, así que el resquicio
+    seguía abierto: el modelo podía pedir el dato más caro del embudo y nada lo registraba.
+
+    SÓLO se evalúa cuando el motor NO autorizó la puerta en el turno, tal como pide la función:
+    con la puerta abierta la directiva ya lleva su propio texto y el modelo puede nombrarla sin
+    que eso sea una violación.
+
+    GRAVEDAD `MEDIA`, y la elección es deliberada (adjudicada el 27-sep-2026). `ALTA` está
+    reservada en este módulo a la afirmación FALSA o PROHIBIDA —una cifra sin procedencia, un
+    encabezado que no corresponde, un veredicto de barrio que roza Fair Housing—. Pedir el
+    correo no afirma nada falso: incumple una regla declarada del producto, que es exactamente
+    el criterio de `orden_alterado` y `gancho_hype`. Consecuencia buscada: el veredicto del
+    turno queda en `WARNING` y no en `FAILED`, así que esto MIDE sin precomprometer que el día
+    del interruptor de bloqueo se llegue a descartar un turno por este motivo.
+    """
+    if puerta_abierta or not reply:
+        return []
+    from app.puerta import detectar_solicitud_contacto
+
+    return [_violacion("contacto_pedido_en_prosa", MEDIA,
+                       f"el modelo {motivo} sin que el motor abriera la puerta", frase)
+            for frase, motivo in detectar_solicitud_contacto(reply)]
+
+
 # ── La boca pública ───────────────────────────────────────────────────────────────────────
 def verificar_prosa(reply: str, cards: list[dict] | None,
                     preferencias: dict | None = None,
-                    descartadas: list[dict] | None = None) -> list[dict]:
+                    descartadas: list[dict] | None = None,
+                    puerta_abierta: bool = False) -> list[dict]:
     """¿Qué afirma la prosa que el motor no respalda?
 
     `cards` son EXACTAMENTE las que verá la persona, en su orden. Sin tarjetas no hay verdad
@@ -571,11 +602,12 @@ def verificar_prosa(reply: str, cards: list[dict] | None,
     if not reply:
         return []
     if not cards:
-        return _gancho(reply, cards, descartadas)
+        return _gancho(reply, cards, descartadas) + _contacto_en_prosa(reply, puerta_abierta)
     tope = _tope_de(preferencias)
 
     hallazgos = (
-        _presupuesto_suavizado(reply, cards, tope)
+        _contacto_en_prosa(reply, puerta_abierta)
+        + _presupuesto_suavizado(reply, cards, tope)
         + _encabezado_falso(reply, cards, tope)
         + _cifra_sin_procedencia(reply, cards, descartadas, tope)
         + _descartada_ofrecida(reply, cards, descartadas)

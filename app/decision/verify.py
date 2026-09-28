@@ -69,8 +69,14 @@ def auditar_explicacion(
     cards: list[dict] | None,
     preferencias: dict | None = None,
     descartadas: list[dict] | None = None,
+    puerta_abierta: bool = False,
 ) -> tuple[ExplanationV0, list[dict]]:
     """Audita la prosa ya emitida y proyecta el veredicto al contrato.
+
+    `puerta_abierta` dice si el MOTOR autorizó la puerta suave en este turno. Sólo lo usa el
+    control de «el modelo pidió el correo por su cuenta»: con la puerta abierta, la directiva
+    ya lleva su texto y nombrarlo no es una violación. Por defecto `False`, que es la lectura
+    conservadora —si el llamador no lo sabe, el control corre—.
 
     Devuelve las DOS cosas a propósito:
 
@@ -83,5 +89,5 @@ def auditar_explicacion(
     obligarían a cada consumidor a reinterpretar la gravedad por su cuenta, que es el
     problema que esta costura elimina.
     """
-    hallazgos = verificar_prosa(reply, cards, preferencias, descartadas)
+    hallazgos = verificar_prosa(reply, cards, preferencias, descartadas, puerta_abierta)
     return ExplanationV0(verification_status=_estado(hallazgos)), hallazgos

@@ -25,10 +25,11 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
+from app.auth import CurrentUser, get_optional_user
 from app.database import AsyncSessionLocal
 from app.limiter import limiter
 from app.llegada import normalizar_llegada
-from app.routers.chat import verify_api_key
+from app.routers.chat import _exigir_autoridad, verify_api_key
 
 log = logging.getLogger("visitas")
 
@@ -111,13 +112,43 @@ async def registrar_visita(datos: dict, *, host_propio: str | None = None) -> bo
 
 @router.post(
     "",
-    summary="Registrar una llegada (anónima)",
+    summary="Registrar una llegada de una conversación propia",
     description="Una fila por llegada. Se llama al cargar la página, ANTES de que la "
                 "persona escriba nada — así el escaneo de un QR se cuenta aunque la "
-                "conversación nunca empiece. Best-effort: nunca falla hacia el cliente.",
+                "conversación nunca empiece. Exige autoridad sobre la conversación que "
+                "se dice estar visitando: 404 si no se puede demostrar.",
     dependencies=[Depends(verify_api_key)],
 )
 @limiter.limit("60/minute")
-async def crear_visita(request: Request, cuerpo: LlegadaIn) -> dict:
+async def crear_visita(
+    request: Request,
+    cuerpo: LlegadaIn,
+    user: CurrentUser | None = Depends(get_optional_user),
+) -> dict:
+    """Registra la llegada — sólo para quien pueda demostrar autoridad sobre el hilo.
+
+    EL AGUJERO QUE CIERRA. La única puerta era `verify_api_key`, y esa llave la PUBLICA el
+    frontend (`VITE_API_KEY`), así que el `session_id`, el `activo_id` y el `device_key` los
+    AFIRMABA el cliente sin nada que lo respaldara: cualquiera que abriese el bundle podía
+    anclar un `device_key` —dato personal, con obligación de supresión declarada en
+    `migrations/024_visita.sql:29-31`— al `session_id` de un tercero, y falsear la única
+    medición que existe de los dos motores de adquisición declarados.
+
+    POR QUÉ ESTO NO ROMPE AL VISITANTE ANÓNIMO, que es lo que parecía el problema: cuando el
+    cliente llama aquí ya tiene una sesión y su capacidad viaja en la cabecera —el efecto sale
+    con `if (!sessionId) return` y usa `apiHeadersSesion(sessionId)`—, y todo camino que produce
+    un `session_id` nuevo pasa antes por el bootstrap, que emite y guarda esa capacidad. La
+    llegada por QR ni siquiera llega aquí hasta que la persona pulsa el CTA, que hace bootstrap.
+
+    LO QUE SÍ SE PIERDE, dicho aquí para que nadie lo descubra leyendo una gráfica: la llegada
+    de la superficie `home` de un usuario CON CUENTA que vuelve. En ese instante el efecto corre
+    con el `session_id` heredado de `localStorage`, el Bearer todavía no está puesto y la
+    capacidad ya se borró al reclamar el hilo, así que no hay nada que demostrar y la llegada no
+    se cuenta. Desde este cambio (27-sep-2026) esta tabla mide **llegadas con autoridad
+    demostrable**, no «llegadas»: NO se pueden comparar series a través de esa fecha. Conservar
+    también esa llegada exige alinear el frontend y es una unidad aparte, deliberadamente no
+    mezclada con un arreglo de autoridad.
+    """
+    await _exigir_autoridad(request, cuerpo.session_id, user)
     ok = await registrar_visita(cuerpo.model_dump(), host_propio=request.url.hostname)
     return {"ok": ok}

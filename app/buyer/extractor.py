@@ -1028,6 +1028,23 @@ def _reconocida(clausula: _Clausula, dim: BuyerFieldV0, cur: str | None) -> bool
     return not (_DIGITO.search(resto) or _LETRA_NUMERO.search(resto) or _palabras_ajenas(resto))
 
 
+def _extremo_coherente(extremo, valor, dim: BuyerFieldV0) -> bool:
+    """R2c · el OTRO extremo sólo excusa a un número si forma un rango de verdad: un piso por
+    DEBAJO del tope, un techo por ENCIMA del mínimo. «presupuesto 1500 USD mínimo y 1200 USD
+    máximo» no es un rango: es una contradicción, y falla cerrado."""
+    return extremo < valor if dim is BuyerFieldV0.BUDGET_MAX else extremo > valor
+
+
+def _mismo_numero(clausula: str, a: int, b: int, n) -> bool:
+    """R2c · ¿el número `n` está escrito DENTRO del tramo [a, b) del otro extremo?
+
+    R2b perdonaba a un candidato sólo si el ENCAJE ENTERO cabía en la frase del piso. Pero
+    «presupuesto» es a la vez operador de tope, así que en «presupuesto 900 USD mínimo y 1200 USD
+    máximo» el encaje de tope «presupuesto 900 USD» empieza antes que el piso «900 USD mínimo» y el
+    900 —que ES el piso— quedaba como rival. Lo que decide es dónde está el NÚMERO."""
+    return any(_a_decimal(m.group("n")) == n for m in re.finditer(_NUM_LIGABLE, clausula[a:b]))
+
+
 def _otra_clausula_segura(clausula: str, valor, dim: BuyerFieldV0, cur: str | None) -> bool:
     """FAIL-CLOSED. Una cláusula con una SEÑAL de la dimensión —número en dígitos o en letras,
     unidad, operador, dirección, reparto— tiene que estar reconocida ENTERA; si no, no se sabe
@@ -1037,7 +1054,10 @@ def _otra_clausula_segura(clausula: str, valor, dim: BuyerFieldV0, cur: str | No
     ABIERTAS: bastaba un dígito o una palabra fuera de la lista para desactivarlas.
     """
     propias, opuestas, resto = _sobrante(clausula, dim, cur)
-    if any(n != valor and not any(a <= i and f <= b for a, b in opuestas)
+    extremos = [(a, b) for a, b, n, _t in _encajes(_opuestas(dim, cur), clausula)
+                if _extremo_coherente(n, valor, dim)]
+    if any(n != valor and not any(a < f and i < b and _mismo_numero(clausula, a, b, n)
+                                  for a, b in extremos)
            for i, f, n, _t in propias):
         return False                                  # otro valor de la misma dimensión: rival
     senal = bool(propias or opuestas or _SENAL_NUMERICA.search(resto)
@@ -1075,6 +1095,29 @@ def _acaba_en_amenidad(texto: str) -> bool:
     return any(m.end() == len(texto.rstrip()) for m in _AMENIDAD.finditer(texto))
 
 
+_AMENIDADES_CON_AREA = re.compile(
+    r"\b(?:parqueaderos?|parqueos?|estacionamientos?|garajes?|cocheras?|bodegas?|"
+    r"balcon(?:es)?|terrazas?|jardin(?:es)?|patios?|piscinas?|gimnasios?|gym)\b")
+"""Las amenidades que TIENEN superficie propia. Ni «ascensor» ni «rampa» (ni luz, agua, internet):
+no se miden en m2, y quedan fuera las dos a la vez —la accesibilidad no recibe un trato distinto
+del de cualquier otra amenidad sin área."""
+
+
+def _vecina_de_amenidad(texto: str) -> bool:
+    """R2c · T1b sin preposición: la cláusula vecina HABLA de una amenidad con superficie y no
+    nombra el inmueble —«jardín grande», «patio trasero grande», «Jardín muy grande», «terraza
+    amplia y bonita»—, así que un área desnuda que la sigue puede ser la de la amenidad.
+
+    R2b sólo veía la amenidad con «con/sin» delante (`_AMENIDAD`) y la etiqueta suelta
+    («jardín, …») la cubre T1; pero el adjetivo del inmueble es vocabulario NEUTRO, así que
+    «jardín grande» dejaba de ser etiqueta y el área del jardín se acreditaba como área de la
+    vivienda. Si la vecina nombra el inmueble —«casa con jardín en Cumbayá»— el tema es la casa
+    y no se aplica. No lee ninguna palabra que describa a la persona: sólo la lista de amenidades
+    y la de sujetos del inmueble."""
+    return (_AMENIDADES_CON_AREA.search(texto) is not None
+            and not any(p in _SUJETOS_DEL_INMUEBLE for p in re.findall(r"[^\W\d_]+", texto)))
+
+
 def _tema_ajeno(clausulas: list[_Clausula], i: int, resto_valor: str, dim: BuyerFieldV0,
                 cur: str | None) -> bool:
     """¿El valor, que no tiene sujeto propio, se lo lleva el TEMA de una cláusula vecina?
@@ -1101,7 +1144,8 @@ def _tema_ajeno(clausulas: list[_Clausula], i: int, resto_valor: str, dim: Buyer
         if _palabras_ajenas(_limpiar(vecina, dim)) and (_SINTAGMA_NOMINAL.match(vecina)
                                                         or _es_etiqueta(vecina, dim)):
             return True                                                              # T1
-        if dim is BuyerFieldV0.AREA_M2_MIN and _acaba_en_amenidad(vecina):
+        if dim is BuyerFieldV0.AREA_M2_MIN and (_acaba_en_amenidad(vecina)
+                                                or _vecina_de_amenidad(vecina)):
             return True                                                              # T1b
     if _RELATIVO.match(actual) and i > 0:
         antecedente = re.findall(r"[^\W\d_]+", _limpiar(clausulas[i - 1].texto, dim))
@@ -1122,6 +1166,37 @@ def _tema_ajeno(clausulas: list[_Clausula], i: int, resto_valor: str, dim: Buyer
     return False
 
 
+def _retiro_previo(clausula: _Clausula, dim: BuyerFieldV0) -> bool:
+    """R2c · ¿la cláusula RETIRA el valor anterior de esta misma dimensión, y nada más?
+
+    «No, ya no tengo tope de presupuesto, ahora máximo 1200 USD» es una CORRECCIÓN: el retiro
+    —el mismo que autoriza `ClearBudgetMax`, retractación y dimensión en la misma cláusula— no
+    trae ningún valor, así que no puede ser rival del nuevo. La regla fail-closed de R2b lo
+    anulaba por la palabra «no», y con eso rompía el contrato R2d de E3.3-R2 (el valor nuevo
+    no hereda la rigidez del viejo, porque ES un valor nuevo).
+
+    Estrecha a propósito:
+    - sólo ANTES del valor: «máximo 1200 USD, ya no tengo tope» retira lo que acaba de decir, y
+      eso sigue fallando cerrado;
+    - sin NINGÚN número, en dígitos o en letras: «ya no 900, ahora 1200» no pasa por aquí;
+    - todo lo demás de la cláusula tiene que ser vocabulario neutro: el marcador de retiro, la
+      propia dimensión y nada más;
+    - no pregunta: «¿ya no hay tope?» no retira nada.
+    """
+    texto = clausula.texto
+    if clausula.interrogativa or not _RETRACCION.search(texto):
+        return False
+    if not all(p.search(texto) for p in _VOCABULARIO_DE_RETIRO[dim]):
+        return False
+    if _SENAL_NUMERICA.search(texto):
+        return False
+    resto = _RETRACCION.sub(" ", texto)
+    for p in _VOCABULARIO_DE_RETIRO[dim]:
+        resto = p.sub(" ", resto)
+    resto = _limpiar(resto, dim)
+    return not (_DIGITO.search(resto) or _LETRA_NUMERO.search(resto) or _palabras_ajenas(resto))
+
+
 def _valor_ligado(plano: str, valor, dim: BuyerFieldV0, cur: str | None = None) -> bool:
     """¿Alguna cláusula AFIRMATIVA liga EXACTAMENTE este valor a su dimensión, dentro de la
     gramática cerrada, sin que ninguna otra cláusula del MENSAJE lo ponga en duda?"""
@@ -1136,6 +1211,7 @@ def _valor_ligado(plano: str, valor, dim: BuyerFieldV0, cur: str | None = None) 
         if _tema_ajeno(clausulas, i, resto, dim, cur):
             continue
         if all(_otra_clausula_segura(c.texto, valor, dim, cur)
+               or (j < i and _retiro_previo(c, dim))
                for j, c in enumerate(clausulas) if j != i):
             return True
         return False                                  # una señal que no se entiende: ambiguo
@@ -1213,6 +1289,15 @@ es AMBIGUOUS en esa matriz —¿alquila, o retira el objetivo?—, no un borrado
 _DIM_BUDGET_CLEAR = re.compile(r"\b(presupuesto|budget|limite|tope|maximo|max)\b")
 _DIM_AREA_CLEAR = re.compile(r"(\bm2\b|\bm²|metros? cuadrados?|square meters?|"
                              r"\barea\b|\bsuperficie\b)")
+
+_VOCABULARIO_DE_RETIRO = {
+    BuyerFieldV0.BUDGET_MAX: (_DIM_BUDGET_CLEAR,),
+    BuyerFieldV0.BEDROOMS_MIN: (_DIM_BEDROOMS, _MINIMO),
+    BuyerFieldV0.AREA_M2_MIN: (_DIM_AREA_CLEAR, _MINIMO),
+}
+"""R2c · la MISMA vinculación que exigen los `Clear*` de abajo (`_VERIFICADOR`), usada por
+`_retiro_previo` para reconocer una corrección. Un solo vocabulario para los dos usos: si un
+retiro autoriza el `Clear`, es el mismo retiro que deja pasar al valor nuevo."""
 
 
 def _retractacion_de(*dimension: re.Pattern):

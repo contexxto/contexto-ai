@@ -357,7 +357,9 @@ def test_I6c_la_tasa_se_reconoce_por_la_FORMA_no_por_el_sustantivo():
 
 @pytest.mark.parametrize("mutacion, texto", [
     (_bed(3), "al menos 3 dormitorios por favor"), (_bud(900), "hasta 900 USD por mes"),
-    (_bud(120000), "hasta 120000 USD por una casa"), (_bud(900), "máximo 900 USD por la zona norte"),
+    (_bud(120000), "hasta 120000 USD por una casa"),
+    # R2c: «máximo 900 USD por la zona norte» pasó a K10 — R2b deja «por» fuera de las
+    # preposiciones de lugar a propósito («por persona» reparte).
 ])
 def test_I6d_un_por_que_no_reparte_si_liga(mutacion, texto):
     assert _ok(mutacion, texto)
@@ -602,7 +604,8 @@ def test_J3_el_numero_de_OTRA_dimension_tras_la_moneda_no_es_candidato():
 
 
 @pytest.mark.parametrize("mutacion, texto", [
-    (_bud(900), "Máximo 900 USD\nAlícuota hasta 100 USD"),
+    # R2c: «Máximo 900 USD\nAlícuota hasta 100 USD» pasó a K10 — la línea de la alícuota trae
+    # su propio valor en USD y la regla de MENSAJE de R2b falla cerrada ante un valor rival.
     (_bud(900), "Busco depa en Cumbayá\n3 dormitorios mínimo\nHasta 900 USD"),
     (_bed(3), "Busco depa en Cumbayá\n3 dormitorios mínimo\nHasta 900 USD"),
     (_bed(3), "Presupuesto 900 USD máximo\n3 dormitorios mínimo"),
@@ -832,13 +835,26 @@ def test_K9_dos_separadores_distintos_no_son_un_numero(mutacion, texto):
     (_bud(900), "depa con parqueadero techado hasta 900 USD"),
     (_bud(900), "servicios incluidos hasta 900 USD"),
     (_bed(3), "mínimo 3 dormitorios cada uno con baño"),
-    (_bud(900), "hasta 900 USD en comida"), (_bed(3), "al menos 3 dormitorios en Pifo"),
+    (_bud(900), "hasta 900 USD en comida"),
+    # R2c · costos que R2b decidió aceptar (antes estaban en I6d, J4 y K11):
+    (_bud(900), "máximo 900 USD por la zona norte"),                        # «por» no es lugar
+    (_bud(900), "Máximo 900 USD\nAlícuota hasta 100 USD"),                  # valor rival
+    (_bud(900), "Arriendo: hasta 900 USD\nAlícuota: hasta 100 USD"),        # valor rival
+    (_bud(150000), "Busco casa de hasta 150000 USD, tengo hasta 20000 USD para la entrada"),
+    (_bud(120000), "máximo 120000 USD, el banco me presta 100000 USD"),      # valor rival
 ])
 def test_K10_el_costo_ACEPTADO_de_la_gramatica_cerrada(mutacion, texto):
     """Falsos negativos DELIBERADOS: caen a AMBIGUOUS y a una pregunta. Una amenidad pegada al
     operador puede ser el sujeto del tope («depa con parqueadero máximo 50 USD»); «cada uno»
-    puede ser una tasa; un lugar que no está en la lista podría ser «comida». Si alguno de estos
-    empieza a acreditar, se abrió una puerta y hay que saber cuál."""
+    puede ser una tasa; «comida» detrás de «en» no se distingue de un lugar sin leer el nombre.
+    Si alguno de estos empieza a acreditar, se abrió una puerta y hay que saber cuál.
+
+    R2b añadió dos familias, ambas por diseño (R2c las movió aquí desde I6d, J4 y K11):
+    - «por» NO es preposición de lugar (`_HUECO_DE_LUGAR`): «por persona» reparte, así que
+      «por la zona norte» cae a pregunta. «en la zona norte» sí acredita.
+    - La regla de MENSAJE falla CERRADA: otra cláusula con su propio valor de la dimensión
+      —la alícuota, la entrada, lo que presta el banco— es un RIVAL del que no se sabe qué le
+      hace al valor. R2 lo dejaba pasar, y ésa era justamente la puerta que R2b cerró."""
     assert not _ok(mutacion, texto)
     assert not _ok(_bud(50), "busco depa con parqueadero máximo 50 USD")
 
@@ -847,12 +863,122 @@ def test_K10_el_costo_ACEPTADO_de_la_gramatica_cerrada(mutacion, texto):
     (_bud(900), "mejor máximo 950 USD".replace("950", "900")), (_bud(1200), "en realidad mi máximo es 1200 USD"),
     (_bud(1200), "No, ya no tengo tope de presupuesto, ahora máximo 1200 USD"),
     (_bud(900), "Presupuesto: 900 USD"), (_bed(3), "Dormitorios: mínimo 3"),
-    (_area(80), "Área mínima: 80 m2"), (_bud(900), "Arriendo: hasta 900 USD\nAlícuota: hasta 100 USD"),
+    (_area(80), "Área mínima: 80 m2"),
     (_bud(900), "hasta 900 USD a 10 minutos del centro"), (_bud(900), "desde 700 hasta 900 USD"),
     (_bud(900), "depa con parqueadero, hasta 900 USD"), (_bed(3), "3 dormitorios mínimo y hasta 900 USD"),
-    (_bud(150000), "Busco casa de hasta 150000 USD, tengo hasta 20000 USD para la entrada"),
-    (_bud(120000), "máximo 120000 USD, el banco me presta 100000 USD"),
     (_bud(1200), "presupuesto 900 USD mínimo y 1200 USD máximo"),
+    # R2c: sale de K10 — R2b reconoce el lugar por POSICIÓN, no por lista: «en Pifo» pesa lo
+    # mismo que «en Cumbayá» (en R2, Pifo no estaba en la lista de barrios).
+    (_bed(3), "al menos 3 dormitorios en Pifo"),
 ])
 def test_K11_lo_natural_que_la_gramatica_SI_reconoce(mutacion, texto):
     assert _ok(mutacion, texto)
+
+
+# ── L · R2c: las tres conductas que R2b rompió, y lo que R2b tiene que seguir haciendo ─────────
+#
+# R2c repara SÓLO tres regresiones de R2b —área de amenidad, rango piso+tope y corrección— sin
+# volver a R2: sin lista de lugares, sin asimetrías, con la regla de mensaje fail-closed intacta.
+# Cada test de esta sección tiene su mutación en el reporte RESULTADO_PLAN1_1_VALUE_GUARD_R2c.
+
+
+@pytest.mark.parametrize("mutacion, texto", [
+    (_area(50), "jardín grande, al menos 50 m2"),
+    (_area(50), "Jardín muy grande, al menos 50 m2"),
+    (_area(30), "patio trasero grande, al menos 30 m2"),
+    (_area(20), "terraza amplia y bonita, mínimo 20 m2"),
+    (_area(40), "balcón grande, mínimo 40 m2"),
+    (_area(30), "Jardín para los niños, al menos 30 m2"),
+    (_area(30), "Jardín para las bicis, al menos 30 m2"),
+])
+def test_L1_el_area_de_una_amenidad_no_es_la_de_la_vivienda(mutacion, texto):
+    """Falso POSITIVO de R2b: el adjetivo del inmueble es vocabulario neutro, así que «jardín
+    grande» dejaba de leerse como tema y los 50 m2 del jardín se acreditaban a la vivienda."""
+    assert not _ok(mutacion, texto)
+
+
+@pytest.mark.parametrize("mutacion, texto", [
+    (_area(50), "casa grande, al menos 50 m2"), (_area(80), "depa amplio y luminoso, mínimo 80 m2"),
+    (_area(80), "Busco casa, mínimo 80 m2"), (_area(80), "casa con jardín en Cumbayá, mínimo 80 m2"),
+    (_area(50), "ascensor grande, mínimo 50 m2"), (_area(50), "rampa grande, mínimo 50 m2"),
+])
+def test_L1b_si_el_tema_es_el_inmueble_el_area_si_liga(mutacion, texto):
+    """El control de L1: el arreglo no puede comerse el área de la vivienda. Ascensor y rampa no
+    tienen superficie y quedan fuera LOS DOS: la accesibilidad no recibe un trato distinto."""
+    assert _ok(mutacion, texto)
+
+
+@pytest.mark.parametrize("mutacion, texto, esperado", [
+    (_bud(1200), "presupuesto 900 USD mínimo y 1200 USD máximo", True),
+    (_bud(1200), "mínimo 900 USD, máximo 1200 USD", True),
+    (_bud(1200), "900 USD o más y 1200 USD máximo", True),
+    (_bud(1200), "desde 900 hasta 1200 USD", True),
+    (_bud(1200), "presupuesto 1200 USD mínimo y 1200 USD máximo", True),   # exacto
+    (_bud(900), "presupuesto 900 USD mínimo y 1200 USD máximo", False),   # el piso no es el tope
+    (_bud(1200), "presupuesto 1500 USD mínimo y 1200 USD máximo", False),  # contradicción
+    (_bud(1200), "presupuesto 900 USD máximo y 1200 USD máximo", False),   # dos topes: rivales
+])
+def test_L2_un_piso_mas_un_tope_es_un_rango(mutacion, texto, esperado):
+    """R2b perdonaba al otro extremo sólo si el ENCAJE ENTERO cabía en su frase; como
+    «presupuesto» es también operador de tope, «presupuesto 900 USD» empezaba antes que el piso
+    y el 900 quedaba como rival. R2c mira dónde está el NÚMERO y exige un rango coherente."""
+    assert _ok(mutacion, texto) is esperado
+
+
+@pytest.mark.parametrize("mutacion, texto", [
+    (_bud(1200), "No, ya no tengo tope de presupuesto, ahora máximo 1200 USD"),
+    (_bud(1200), "ya no tengo tope, ahora máximo 1200 USD"),
+    (_bed(3), "ya no quiero mínimo de dormitorios, mejor al menos 3 dormitorios"),
+    (_area(80), "ya no necesito un mínimo de área, mejor al menos 80 m2"),
+])
+def test_L3_una_correccion_explicita_reemplaza_el_valor(mutacion, texto):
+    """El retiro de la MISMA dimensión, sin números y ANTES del valor, no es un rival: es la
+    corrección. Su contrato de rigidez vive en test_buyer_criterios_e33_r2.py (R2d: el valor nuevo
+    no hereda la rigidez del viejo)."""
+    assert _ok(mutacion, texto)
+
+
+@pytest.mark.parametrize("texto", [
+    "ahora máximo 1200 USD, ya no tengo tope de presupuesto",                 # retira lo dicho
+    "ya no 900 USD, ahora máximo 1200 USD",                                   # el retiro trae número
+    "ya no tengo tope de novecientos, ahora máximo 1200 USD",                 # número en letras
+    "ya no tengo tope de presupuesto para la entrada, ahora máximo 1200 USD",  # otra cosa
+    "ya no tengo tope de presupuesto por persona, ahora máximo 1200 USD",     # reparto
+    "¿ya no hay tope de presupuesto? máximo 1200 USD",                        # pregunta
+    "ya no tengo tope de presupuesto a 10 minutos del centro, ahora máximo 1200 USD",  # número
+])
+def test_L3b_un_retiro_que_no_es_limpio_sigue_fallando_cerrado(texto):
+    assert not _ok(_bud(1200), texto)
+
+
+@pytest.mark.parametrize("plantilla", [
+    "Soy {X}, al menos 50 m2", "{X}, jardín grande, al menos 50 m2",
+    "Soy {X}. Ya no tengo tope de presupuesto, ahora máximo 1200 USD",
+    "Somos {X}. Presupuesto 900 USD mínimo y 1200 USD máximo",
+])
+def test_L4_R2c_no_abre_ninguna_asimetria_fair_housing(plantilla):
+    """Los tres arreglos leen amenidades, sujetos del inmueble, números y marcadores de retiro:
+    nunca a la persona. Mismo veredicto para todo X."""
+    xs = ["soltera", "soltero", "casada", "casado", "jubilado", "jubilada", "migrante", "cristiano",
+          "musulmana", "madre", "padre", "estudiante", "en silla de ruedas", "una familia"]
+    import re as _re
+
+    def veredicto(x):
+        texto = plantilla.format(X=x)
+        numeros = [int(n) for n in _re.findall(r"\d+", texto)]
+        return tuple(_ok(crear(n), texto) for n in numeros for crear in (_bud, _bed, _area))
+
+    esperado = veredicto(xs[0])
+    for x in xs:
+        assert veredicto(x) == esperado, (plantilla, x)
+
+
+@pytest.mark.parametrize("lugar", ["Pifo", "Zámbiza", "Chillogallo", "Cumbayá", "la Coruña"])
+def test_L5_un_lugar_desconocido_funciona_por_posicion(lugar):
+    assert _ok(_bed(3), f"al menos 3 dormitorios en {lugar}")
+
+
+@pytest.mark.parametrize("mutacion", [_bud(900), _bud(100)])
+def test_L6_un_valor_rival_no_se_vuelve_evidencia(mutacion):
+    """R2c no afloja la regla de mensaje: ni el tope ni el valor de la alícuota se acreditan."""
+    assert not _ok(mutacion, "máximo 900 USD, alícuota hasta 100 USD")

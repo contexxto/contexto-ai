@@ -74,6 +74,32 @@ class AgentState(_AgentStateCore, total=False):
     # olvidar. Mismo idioma que `preferencias_turno`.
     contrato_faltante_turno: int
 
+    # INERTE desde Plan 1.1 · TR-1 (OFD-02 = A): la puerta suave se retiró y ya nadie escribe ni
+    # lee esta clave. Se CONSERVA declarada a propósito: los checkpoints existentes la llevan, y
+    # quitarla del esquema cambiaría cómo se cargan. Lo de abajo es su historia.
+    #
+    # La puerta suave YA se ofreció en este hilo — la regla 3 del §6, «una vez». La escribía
+    # `_marcar_puerta_ofrecida` con `aupdate_state` DESPUÉS del grafo, y la leía
+    # `_puerta_del_turno` como `ya_ofrecida`.
+    #
+    # ESTÁ DECLARADA AQUÍ PORQUE, SI NO, NO EXISTE. LangGraph 0.2.60 DESCARTA EN SILENCIO las
+    # claves que `aupdate_state` no encuentra en este esquema: no levanta, no avisa, y el
+    # `try/except` del llamador nunca ve nada —así que el warning que ese except registra no se
+    # emitió nunca y buscarlo en los logs no detecta el defecto—. Medido con grafo y
+    # checkpointer reales antes de este cambio: una clave declarada sobrevive al turno
+    # siguiente; una no declarada desaparece sin rastro.
+    #
+    # CONSECUENCIA DEL DEFECTO, mientras estuvo sin declarar: `ya_ofrecida` era SIEMPRE falso,
+    # así que la oferta de correo se repetía en CADA turno que cumpliera el callejón honesto —
+    # exactamente el comportamiento que la puerta existe para no tener (`app/puerta.py:33-38`,
+    # `app/routers/chat.py:356-359`). Corolario para quien lea métricas: las puertas ofrecidas
+    # y las filas de `demanda` anteriores a este arreglo cuentan repeticiones, no personas.
+    #
+    # BOOLEANO, y no índice de turno como `contrato_faltante_turno`: esto no se reinicia nunca.
+    # Ofrecida una vez, ofrecida para el resto del hilo. El riesgo que allí obligaba a usar un
+    # índice —olvidar el reinicio en una rama— aquí no existe, porque no hay reinicio.
+    puerta_ofrecida: bool
+
     # G20-B1-R3 · a qué turno pertenece el `encaje_contexto` de arriba.
     #
     # `encaje_contexto` también se hereda (STATE-LINEAGE-01): un turno territorial dejaba su

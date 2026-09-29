@@ -132,12 +132,17 @@ def mundo(monkeypatch):
     monkeypatch.setattr(chat_mod, "_exigir_autoridad", _autoridad)
     monkeypatch.setattr(chat_mod, "registrar_intencion", _nada)
     monkeypatch.setattr(chat_mod, "actualizar_en_sombra", _nada)
-    monkeypatch.setattr(chat_mod, "_marcar_puerta_ofrecida", _nada)
+    # EXPECTED UPDATE · SURFACE RETIRED BY OFD-02 (TR-1): aquí se neutralizaba `_marcar_puerta_ofrecida`; la puerta
+    # suave se retiró y ya no hay nada que neutralizar.
 
     auditados = []
 
-    def _spy(session_id, reply, valores):
-        auditados.append({"session": session_id, "reply": reply, "valores": valores})
+    def _spy(session_id, reply, valores, **extra):
+        # `**extra` recoge lo que el auditor reciba además del panel (hoy `puerta_abierta`, que
+        # el endpoint le pasa para no marcar como violación que el modelo nombre una directiva
+        # que el motor SÍ emitió). Se guarda en vez de descartarse: un espía que no registra un
+        # argumento nuevo lo vuelve invisible para siempre.
+        auditados.append({"session": session_id, "reply": reply, "valores": valores, **extra})
 
     monkeypatch.setattr(chat_mod, "_auditar_prosa", _spy)
 

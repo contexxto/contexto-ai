@@ -150,7 +150,7 @@ está empujando, no aportando).
 - **2026-07-06 — v0.3 — Fase 2 (cron DENTRO de la app, sin WhatsApp)** — `app/reenganche_cron.py`:
   tarea de fondo en el `lifespan` (plan `starter` de Render no duerme) que barre leads dormidos, corre
   el motor Fase 1 y **avisa al CORREDOR** por los canales que la app ya tiene (Web Push + email/Resend).
-  Endpoint manual `POST /assets/reenganche/scan` para piloto/demo. Config por entorno
+  Endpoint manual `POST /assets/reenganche/scan` para piloto/demo (**retirado el 2026-09-28**, ver v0.5). Config por entorno
   (`REENGANCHE_CRON_ENABLED|INTERVAL|LIMITE`).
   - **Hallazgo honesto de canal (importante):** los leads dormidos-no-calientes **no dejaron contacto
     propio** (no pidieron corredor → sin email ni push del comprador). Por eso el cron avisa al
@@ -173,3 +173,32 @@ está empujando, no aportando).
   - **Sigue honesto:** el comprador recibe SOLO lo que pidió recibir (opt-in), y solo cuando hay dato
     verificado que le calza (motor Fase 1). WhatsApp/SMS queda como canal adicional futuro (el teléfono
     capturado lo habilita, y de momento lo puede usar el corredor a mano).
+- **2026-09-28 — v0.5 — Plan 1.1 · TR-4 (OFD-07 = A)** — se **retira** `POST /api/v1/assets/reenganche/scan`:
+  cualquier cuenta autenticada podía disparar un barrido GLOBAL (leads ajenos, correo y push a terceros) y se
+  saltaba `REENGANCHE_CRON_ENABLED`. La bandera pasa a consultarse también en `escanear_reenganches` (única
+  entrada), así que apagarla detiene todo efecto aunque el bucle ya esté corriendo. Sin sustituto en la API:
+  si algún día hace falta operación manual, será fuera de la API orientada al comprador.
+- **2026-09-28 — v0.6 — Plan 1.1 · TR-2 (consentimiento revocable)** — `POST /api/v1/chat/lead-contacto`:
+  `consent` es **obligatorio** (sin default; omitirlo = 422) y estrictamente booleano; `false` **revoca**
+  (`consent_reenganche_at = NULL`, idempotente) sin guardar contacto nuevo ni borrar el histórico; `true`
+  exige un canal utilizable (email o push) en la misma petición, si no responde `sin_canal` y no escribe.
+  **Cierre explícito** («No quiero más seguimiento de este inmueble», `close=true`): columna
+  `reenganche_cerrado_en`, excluida del barrido **completo** (ni comprador ni corredor); un opt-in posterior
+  reabre. **Baja en cada aviso al comprador**: token firmado (`app/baja_aviso.py`, secreto dedicado
+  `REENGANCHE_BAJA_SECRET`) que solo revoca o cierra, vía `POST /api/v1/chat/baja-aviso`; el enlace abre una
+  confirmación (el GET no muta). Sin secreto, **no sale ningún aviso al comprador** (fail-closed) y no se
+  desvía al corredor. Texto P5 corregido: «como máximo, un aviso… sobre este inmueble… desactivarla cuando
+  quieras» — sin prometer entrega, porque el holdout sigue (D-5). Sin `ConsentGrantV0`: eso es TR-5.
+- **2026-09-28 — v0.7 — Plan 1.1 · TR-5 (`ConsentGrantV0` mínimo productivo)** — el permiso del aviso al
+  comprador deja de ser `consent_reenganche_at` y pasa a ser un **grant por canal** en `public.consent_grant`
+  (migración `038`, nacida cerrada: RLS sin FORCE + `REVOKE ALL` a anon/authenticated/service_role).
+  `purpose = REENGAGEMENT`, `audience = PRINCIPAL_SELF`, `action = NOTIFY_VERIFIED_UPDATE`, `mode = once`,
+  `expires_at = granted_at + 30 días`, `used_at` como metadato de ciclo de vida. Productor único: el opt-in
+  explícito de `/lead-contacto`, con la autoridad probada **en la misma transacción** (fila de `chat_sessions`
+  `FOR SHARE`): dueño → `AUTHENTICATED_PRINCIPAL`, capacidad anónima → `PSEUDONYMOUS_SESSION_PRINCIPAL` +
+  `RESUME_SECRET_POSSESSION`; la promesa mostrada se resuelve en servidor (`REENGAGEMENT_CONSENT_V1`).
+  **Una sola frontera** (`app/autoridad_reenganche.py`) responde AUTHORIZED(canales) | NO_GRANT | ERROR y
+  consume `used_at` en el mismo COMMIT que marca el lead `tocado`, antes de enviar. NO_GRANT → corredor como
+  antes (DR-15); ERROR → nadie. Revocar/cerrar/baja revocan **todos** los grants vivos; un nuevo «sí» crea
+  grants nuevos. El timestamp histórico ya no autoriza nada (sin backfill). La 038 se aplica a producción por
+  hash **antes** del backend y con GO explícito.

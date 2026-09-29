@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import secrets
 import unicodedata
 import uuid
-from typing import AsyncIterator
+from typing import AsyncIterator, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Security, status
 from fastapi.responses import StreamingResponse
@@ -21,7 +21,7 @@ from app.buyer.sombra import actualizar_en_sombra
 from app.buyer.decision_shadow import (
     observar_sombra_de_decision, registrar as registrar_sombra_de_decision)
 from app.decision.runtime_capture import capturar_entradas_de_decision
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
 from sqlalchemy import text
 
 from app.agent import graph as agent_graph
@@ -41,11 +41,15 @@ from app.decision.verify import auditar_explicacion
 from app.sesion_autoridad import (
     AccesoDenegado,
     Autoridad,
+    PruebaDeAutoridad,
     autorizar_acceso_a_sesion,
     crear_sesion,
+    probar_autoridad_en_transaccion,
     reclamar_sesion_anonima,
 )
 from app.verificacion_prosa import registrar as registrar_prosa
+from app.contracts.consent_grant_v0 import Channel
+from app.grant_reenganche import copy_de_consentimiento, crear_grants_reenganche, revocar_grants_reenganche
 
 router = APIRouter(prefix="/api/v1/chat", tags=["Chat — Agente Conversacional"])
 
@@ -207,6 +211,21 @@ async def _exigir_autoridad(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversación no encontrada.") from None
 
 
+async def _exigir_autoridad_en_transaccion(
+    request: Request, session_id: str, user: CurrentUser | None, *, db
+) -> PruebaDeAutoridad:
+    """La misma puerta que `_exigir_autoridad` (misma regla, mismo 404), pero DENTRO de la
+    transacción `db` del llamador y con la fila de la sesión bloqueada hasta su COMMIT.
+
+    Plan 1.1 · TR-5: registrar un permiso exige que autorizar y escribir sean atómicos. Con la
+    puerta normal la comprobación abre y cierra su propia sesión, y entre esa respuesta y el
+    INSERT del grant el hilo podría reclamarse o su capacidad revocarse."""
+    try:
+        return await probar_autoridad_en_transaccion(session_id, user, _resume_de(request), db=db)
+    except AccesoDenegado:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversación no encontrada.") from None
+
+
 async def _alcances_autorizados(
     request: Request, session_id: str | None, user: CurrentUser | None
 ) -> tuple[list[str], dict]:
@@ -305,11 +324,9 @@ class ChatResponse(BaseModel):
     # espacial; el frontend RENDERIZA. Separa la capa de razonamiento de la visual, igual que
     # results separa lo que ve el LLM de lo que renderiza la tarjeta. None si no hay pines geo.
     map_seed: dict | None = None
-    # ★ Directiva de PUERTA SUAVE (docs/PLAN_Onboarding_Ecosistema §6). Igual que map_seed:
-    # el backend DECIDE y el frontend RENDERIZA. Que viaje como directiva —y no como una
-    # instrucción en el prompt— es lo que hace imposible que el modelo se ponga insistente
-    # por su cuenta: la puerta no es texto que él escriba. None = no corresponde ofrecer
-    # nada, que es el caso por defecto y el más frecuente.
+    # PUERTA SUAVE — RETIRADA (Plan 1.1 · TR-1 · OFD-02 = A). El campo se CONSERVA en el
+    # contrato para no romper a un frontend que todavía lo lee, y vale SIEMPRE None: la
+    # directiva prometía un aviso que ningún código envía.
     puerta: dict | None = None
     # ★ Directiva de ACLARACIÓN (BUYER-UNRESOLVED-CONSUMER-R1). Tercera de la misma familia, y
     # por la misma razón: el backend DECIDE y el frontend RENDERIZA. La pregunta NO la escribe el
@@ -325,43 +342,9 @@ class ChatResponse(BaseModel):
     clarification: dict | None = None
 
 
-def _puerta_del_turno(estado: dict, cards: list, mensajes) -> dict | None:
-    """La directiva de puerta del turno, o None. Best-effort: jamás rompe la respuesta.
-
-    Lee del estado lo que el nodo `encaje` ya calculó (preferencias declaradas) y el
-    último texto del usuario. NO recibe score ni nivel de intención: la línea roja del §6
-    es que el motor de intención no puede disparar la captura de correo.
-    """
-    from app.puerta import evaluar_puerta
-    try:
-        ultimo = ""
-        for m in reversed(list(mensajes or [])):
-            if getattr(m, "type", "") == "human":
-                ultimo = m.content if isinstance(m.content, str) else ""
-                break
-        return evaluar_puerta(
-            preferencias=estado.get("preferencias") or {},
-            cards=cards or [],
-            ya_ofrecida=bool(estado.get("puerta_ofrecida")),
-            pidio_corredor=bool(estado.get("handoff_pedido")),
-            texto_usuario=ultimo,
-        )
-    except Exception:  # noqa: BLE001 — ofrecer una puerta jamás vale un turno roto
-        return None
-
-
-async def _marcar_puerta_ofrecida(config: dict) -> None:
-    """Deja escrito que la puerta YA se ofreció en este hilo.
-
-    Se llama al EMITIRLA, no cuando la persona responde. Es la regla 3 del §6 ("una vez")
-    en su forma estricta: si la ignoró, tampoco vuelve. Dejar esta marca en manos del
-    frontend habría significado que quien no contesta recibe la oferta otra vez — que es
-    exactamente el comportamiento de acoso que esta puerta existe para no tener.
-    """
-    try:
-        await agent_graph.compiled_graph.aupdate_state(config, {"puerta_ofrecida": True})
-    except Exception:  # noqa: BLE001 — sin la marca se reofrece una vez; no vale romper el turno
-        log.warning("no se pudo marcar la puerta como ofrecida")
+# La puerta suave (`_puerta_del_turno`, `_pidio_corredor`, `_marcar_puerta_ofrecida`) se
+# RETIRÓ en Plan 1.1 · TR-1 (OFD-02 = A): prometía un aviso futuro que ningún código envía, y
+# nadie lee lo que recogía. Vuelve sólo cuando exista el consumidor, con su propio permiso.
 
 
 def _langgraph_config(session_id: str, execution_id: str | None = None) -> dict:
@@ -703,7 +686,8 @@ async def comparar_endpoint(
     return await comparar_inmuebles(payload.session_id, payload.id_a, payload.id_b)
 
 
-def _auditar_prosa(session_id: str, reply: str, valores: dict | None) -> None:
+def _auditar_prosa(session_id: str, reply: str, valores: dict | None,
+                   puerta_abierta: bool = False) -> None:
     """¿La respuesta escrita respeta lo que el motor calculó? Solo INFORMA.
 
     El bloque autoritativo (`encaje_contexto`) garantiza que el modelo RECIBA el ranking, los
@@ -726,7 +710,8 @@ def _auditar_prosa(session_id: str, reply: str, valores: dict | None) -> None:
         # Core, que es quien conoce el vocabulario de `ExplanationV0`; aquí solo queda el
         # efecto de lado. Los hallazgos siguen llegando ÍNTEGROS a `registrar`.
         explicacion, violaciones = auditar_explicacion(
-            reply, v.get("cards"), v.get("preferencias"), v.get("descartadas"))
+            reply, v.get("cards"), v.get("preferencias"), v.get("descartadas"),
+            puerta_abierta)
         registrar_prosa(violaciones, reply, session=session_id)
         if explicacion.verification_status is not VerificationStatus.PASSED:
             # Veredicto del TURNO. No duplica a `registrar`, que cuenta por código: esta
@@ -1108,11 +1093,9 @@ async def _stream_agent(message: str, session_id: str, user=None) -> AsyncIterat
             if not isinstance(resultados, list) or not resultados:
                 resultados = await build_result_cards(_msgs, session_id=session_id)
             map_seed = _map_seed_from_cards(resultados, prev_mode)
-            # El stream es el camino que usa la gente de verdad — si la puerta solo saliera por
-            # el no-stream, no se ofrecería nunca donde importa.
-            puerta = _puerta_del_turno(_valores, resultados, _msgs)
-            if puerta:
-                await _marcar_puerta_ofrecida(_config_escritura_lateral(session_id))
+            # La puerta suave está RETIRADA (Plan 1.1 · TR-1 · OFD-02 = A): prometía un aviso
+            # que ningún código envía. `puerta` queda en None y la auditoría corre siempre con la
+            # puerta cerrada, así que pedir el correo en prosa se registra en todo turno (B2).
 
             # El stream es el camino que usa la gente de verdad: si la auditoría de prosa solo
             # cubriera el no-stream, mediríamos el turno que casi nadie ejecuta.
@@ -1321,10 +1304,13 @@ async def chat(
         results = final_state.get("cards")
         if not isinstance(results, list) or not results:
             results = await build_result_cards(messages, session_id=payload.session_id)
+        # Puerta suave RETIRADA (Plan 1.1 · TR-1 · OFD-02 = A), igual que en el camino SSE: el
+        # campo sigue en la respuesta y siempre vale None.
+        puerta = None
+
         # Se audita contra `results` —lo que de verdad se devuelve— y no contra el estado, para que
         # el veredicto sea sobre lo que la persona verá aunque el panel se haya reconstruido arriba.
-        _auditar_prosa(payload.session_id, reply,
-                       {**final_state, "cards": results})
+        _auditar_prosa(payload.session_id, reply, {**final_state, "cards": results})
         map_seed = _map_seed_from_cards(results, prev_mode)
         # spatial_context VIVO (deja de ser placeholder muerto): persiste el foco del turno en el
         # estado del agente para que la transición no pierda el encuadre. Best-effort: si el
@@ -1338,10 +1324,6 @@ async def chat(
                 )
             except Exception:  # noqa: BLE001 — persistir el foco es un extra; jamás rompe el chat
                 pass
-
-        puerta = _puerta_del_turno(final_state, results, messages)
-        if puerta:
-            await _marcar_puerta_ofrecida(config)
 
         # R0C · PERSISTENCIA ESPERADA ANTES DEL `return`, gemela de la del camino SSE. Aquí no
         # hay un `panel` que proteger —la respuesta sale entera de una vez—, así que la escritura
@@ -1836,6 +1818,12 @@ _LEAD_ACTIVIDAD_DDL = [
     # estable del session_id en el momento de volverse elegible. Ver docs/DISENO_Metrica_Lift_Intencion.md.
     "ALTER TABLE lead_actividad ADD COLUMN IF NOT EXISTS reenganche_grupo text",
     "ALTER TABLE lead_actividad ADD COLUMN IF NOT EXISTS reenganche_elegible_en timestamptz",
+    # Plan 1.1 · TR-2: CIERRE explícito («No quiero más seguimiento de este inmueble»). NULL = no
+    # cerrado. Excluye la fila del barrido COMPLETO (ni comprador ni corredor). No se reutiliza
+    # reenganche_grupo (es la variable del experimento de lift) ni un centinela en un timestamp.
+    # La 037 cierra la tabla entera (RLS y cero privilegios a los roles de PostgREST): la
+    # columna nueva nace igual de cerrada.
+    "ALTER TABLE lead_actividad ADD COLUMN IF NOT EXISTS reenganche_cerrado_en timestamptz",
 ]
 _lead_actividad_ready = False
 
@@ -1849,6 +1837,17 @@ async def ensure_lead_actividad(db) -> None:
         await db.execute(text(ddl))
     await db.commit()
     _lead_actividad_ready = True
+
+
+async def _preparar_lead_actividad_en_transaccion(db) -> None:
+    """El mismo DDL idempotente, SIN commit: para quien necesita que la tabla exista dentro
+    de una transacción que aún no puede cerrar (el productor de grants de TR-5 mantiene el
+    bloqueo de la autoridad hasta su propio COMMIT). No marca `_lead_actividad_ready`: si la
+    transacción se deshace, el DDL también."""
+    if _lead_actividad_ready:
+        return
+    for ddl in _LEAD_ACTIVIDAD_DDL:
+        await db.execute(text(ddl))
 
 
 async def marcar_actividad_lead(session_id: str) -> None:
@@ -1979,19 +1978,72 @@ async def registrar_intencion(session_id: str, messages: list) -> None:
 
 
 class LeadContacto(BaseModel):
+    # Plan 1.1 · TR-5: campos desconocidos → 422. El cliente no puede colar `principal_ref`,
+    # `proof_basis`, `audience` ni nada del grant: todo eso lo deriva el servidor.
+    model_config = ConfigDict(extra="forbid")
+
     session_id: str = Field(..., min_length=8, max_length=120)
     email: str | None = Field(default=None, max_length=254)
     telefono: str | None = Field(default=None, max_length=32)
     push_subscription: dict | None = None
-    consent: bool = True
+    # Plan 1.1 · TR-2: SIN valor por defecto y estrictamente booleano. Antes era `= True`: un
+    # POST sin el campo quedaba como opt-in. Omitirlo es 422; `"yes"` o `1` no cuentan como «sí».
+    consent: StrictBool
+    # Cierre explícito («No quiero más seguimiento de este inmueble»). Solo reduce autoridad:
+    # nunca concede, así que pedir `consent=true` y `close=true` a la vez es contradictorio → 422.
+    close: StrictBool = False
+    # Plan 1.1 · TR-5: QUÉ promesa vio la persona. Sólo el identificador: el texto exacto lo
+    # resuelve el servidor (`app/grant_reenganche.py`) y va a la provenance del grant.
+    consent_copy_version: str | None = Field(default=None, max_length=64)
+
+    @model_validator(mode="after")
+    def _cerrar_no_concede(self):
+        if self.close and self.consent:
+            raise ValueError("close=true no puede conceder permiso: envía consent=false")
+        return self
+
+
+async def _reducir_autoridad_reenganche(db, session_id: str, *, cerrar: bool) -> None:
+    """REVOCAR o CERRAR el aviso de reenganche de UNA sesión. Única escritura de reducción,
+    compartida por el control de la UI (`/lead-contacto`) y el enlace firmado (`/baja-aviso`).
+
+    · revocar → `consent_reenganche_at = NULL`. Idempotente. No toca email, teléfono ni push:
+      revocar el permiso no es borrar el contacto (la retención es de E3.1-R).
+    · cerrar  → además `reenganche_cerrado_en = now()` (se conserva el primer cierre). Se
+      inserta la fila si aún no existía: un cierre que se pierde porque la actividad llegó
+      después sería un «no» que el barrido no ve.
+
+    Plan 1.1 · TR-5: en los dos casos se revocan TODOS los grants de reenganche vivos de la
+    sesión, en la misma transacción. Nunca se reactiva uno: un nuevo «sí» crea grants nuevos.
+    """
+    await revocar_grants_reenganche(db, session_id)
+    if cerrar:
+        await db.execute(
+            text(
+                "INSERT INTO lead_actividad (session_id, activo_id, reenganche_cerrado_en) "
+                "VALUES (:s, :a, now()) "
+                "ON CONFLICT (session_id) DO UPDATE SET "
+                "  consent_reenganche_at = NULL, "
+                "  reenganche_cerrado_en = COALESCE(lead_actividad.reenganche_cerrado_en, now())"
+            ),
+            {"s": session_id, "a": activo_de_session(session_id)},
+        )
+    else:
+        await db.execute(
+            text("UPDATE lead_actividad SET consent_reenganche_at = NULL WHERE session_id = :s"),
+            {"s": session_id},
+        )
 
 
 @router.post(
     "/lead-contacto",
-    summary="El comprador opta por recibir novedades verificadas (reenganche por valor)",
-    description="Guarda el canal de contacto del comprador (push del navegador y/o email/teléfono) "
-                "con su consentimiento, ligado a su sesión de QR. Público — es el propio comprador. "
-                "Habilita que el reenganche le llegue a ÉL directo, no solo al corredor.",
+    summary="El comprador activa, desactiva o cierra el aviso de reenganche de este inmueble",
+    description="Con la capacidad de SU sesión de QR (dueño o `X-Session-Resume`). "
+                "`consent` es obligatorio: `true` activa el aviso —como máximo uno, sobre este "
+                "inmueble— y exige un canal utilizable (email o push) en la misma petición; "
+                "`false` lo desactiva sin guardar contacto nuevo; `close=true` además cierra el "
+                "seguimiento de este inmueble (ni aviso al comprador ni al corredor). "
+                "Un `consent=true` posterior reabre.",
 )
 @limiter.limit("10/minute")
 async def lead_contacto(
@@ -2007,37 +2059,104 @@ async def lead_contacto(
     #
     # Sigue siendo un carril anónimo —el comprador del QR no tiene cuenta— pero anónimo
     # ahora significa "con la capacidad de ESE hilo", no "sin nada".
-    await _exigir_autoridad(request, payload.session_id, user)
-
-    if not payload.session_id.startswith("qr-"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Sesión inválida.")
+    #
+    # Plan 1.1 · TR-5: la autoridad se prueba DENTRO de la transacción que escribe, con la fila
+    # de la sesión bloqueada hasta el COMMIT. Autorizar → derivar el principal → registrar los
+    # grants → COMMIT es una sola unidad: si la autoridad cambia antes, no hay grant.
     activo = activo_de_session(payload.session_id)
     push_json = json.dumps(payload.push_subscription) if payload.push_subscription else None
     try:
         async with AsyncSessionLocal() as db:
-            await ensure_lead_actividad(db)
-            await db.execute(
-                text(
-                    "INSERT INTO lead_actividad "
-                    "(session_id, activo_id, lead_email, lead_telefono, lead_push, consent_reenganche_at) "
-                    "VALUES (:s, :a, :e, :t, CAST(:p AS jsonb), "
-                    "        CASE WHEN :c THEN now() ELSE NULL END) "
-                    "ON CONFLICT (session_id) DO UPDATE SET "
-                    "  lead_email = COALESCE(EXCLUDED.lead_email, lead_actividad.lead_email), "
-                    "  lead_telefono = COALESCE(EXCLUDED.lead_telefono, lead_actividad.lead_telefono), "
-                    "  lead_push = COALESCE(EXCLUDED.lead_push, lead_actividad.lead_push), "
-                    "  consent_reenganche_at = CASE WHEN :c THEN now() "
-                    "                               ELSE lead_actividad.consent_reenganche_at END"
-                ),
-                {"s": payload.session_id, "a": activo, "e": payload.email,
-                 "t": payload.telefono, "p": push_json, "c": payload.consent},
-            )
+            prueba = await _exigir_autoridad_en_transaccion(request, payload.session_id, user, db=db)
+
+            if not payload.session_id.startswith("qr-"):
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Sesión inválida.")
+
+            # Plan 1.1 · TR-2. Un «sí» sin canal utilizable no es un permiso que se pueda
+            # cumplir: el cron solo escribe por email o push (el teléfono no lo usa nadie). No se
+            # escribe NADA y la UI recibe un resultado explícito. No se infiere canal de la fila
+            # previa: el permiso va ligado al canal que la persona presenta en el mismo acto.
+            if payload.consent and not (payload.email or payload.push_subscription):
+                return {"ok": False, "resultado": "sin_canal"}
+
+            # Plan 1.1 · TR-5: la promesa mostrada tiene que ser una versión que el servidor
+            # conoce; si no, no hay evidencia de qué se consintió y no hay grant.
+            if payload.consent and copy_de_consentimiento(payload.consent_copy_version) is None:
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                    detail="Versión de consentimiento desconocida.")
+
+            await _preparar_lead_actividad_en_transaccion(db)
+            if payload.consent:
+                # Opt-in explícito: guarda el contacto y REABRE un cierre previo (el acto
+                # explícito más reciente manda, D-3). Ya NO escribe `consent_reenganche_at`: el
+                # permiso es el grant (TR-5). El contacto nuevo sustituye al anterior si llega.
+                await db.execute(
+                    text(
+                        "INSERT INTO lead_actividad "
+                        "(session_id, activo_id, lead_email, lead_telefono, lead_push) "
+                        "VALUES (:s, :a, :e, :t, CAST(:p AS jsonb)) "
+                        "ON CONFLICT (session_id) DO UPDATE SET "
+                        "  lead_email = COALESCE(EXCLUDED.lead_email, lead_actividad.lead_email), "
+                        "  lead_telefono = COALESCE(EXCLUDED.lead_telefono, lead_actividad.lead_telefono), "
+                        "  lead_push = COALESCE(EXCLUDED.lead_push, lead_actividad.lead_push), "
+                        "  reenganche_cerrado_en = NULL"
+                    ),
+                    {"s": payload.session_id, "a": activo, "e": payload.email,
+                     "t": payload.telefono, "p": push_json},
+                )
+                canales = ([Channel.EMAIL] if payload.email else []) + \
+                          ([Channel.PUSH] if payload.push_subscription else [])
+                await crear_grants_reenganche(
+                    db, prueba=prueba, canales=canales,
+                    copy_version=payload.consent_copy_version, activo_ref=activo)
+            else:
+                # `consent=false`: el email, teléfono o push que vengan en la petición se
+                # IGNORAN — no entra contacto nuevo sin permiso. Lo histórico no se borra.
+                await _reducir_autoridad_reenganche(db, payload.session_id, cerrar=payload.close)
             await db.commit()
     except HTTPException:
         raise
     except Exception:  # noqa: BLE001
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            detail="No se pudo guardar el contacto.")
+                            detail="No se pudo guardar la preferencia.")
+    # El resultado describe lo que ESTA petición hizo, no el estado previo de la fila.
+    if payload.consent:
+        return {"ok": True, "resultado": "activado"}
+    return {"ok": True, "resultado": "cerrado" if payload.close else "desactivado"}
+
+
+class BajaAviso(BaseModel):
+    t: str = Field(..., min_length=1, max_length=400)
+    accion: Literal["revocar", "cerrar"]
+
+
+@router.post(
+    "/baja-aviso",
+    summary="Baja desde el enlace del aviso: desactivar o cerrar (nunca conceder)",
+    description="Recibe el token firmado del enlace que va en cada aviso al comprador "
+                "(app/baja_aviso.py). Solo reduce autoridad sobre la sesión del token: "
+                "`revocar` desactiva el aviso y `cerrar` además cierra el seguimiento de ese "
+                "inmueble. No lee la sesión ni el contacto y no revela si la sesión existe. "
+                "Solo POST: el enlace abre una confirmación en la app (un GET no muta nada, "
+                "por los escáneres y las vistas previas de enlaces).",
+)
+@limiter.limit("20/minute")
+async def baja_aviso(request: Request, payload: BajaAviso) -> dict:
+    from app.baja_aviso import verificar
+    session_id = verificar(payload.t)
+    if session_id is None:
+        # Alterado, vacío, de otro propósito o sin secreto: cero lectura y cero escritura. Se
+        # responde que el enlace no sirve —decir «hecho» sería falso— sin revelar nada más.
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Enlace no válido.")
+    try:
+        async with AsyncSessionLocal() as db:
+            await ensure_lead_actividad(db)
+            await _reducir_autoridad_reenganche(db, session_id, cerrar=payload.accion == "cerrar")
+            await db.commit()
+    except Exception:  # noqa: BLE001
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail="No se pudo guardar la preferencia.")
+    # Misma respuesta exista o no la sesión, y esté o no ya revocada o cerrada.
     return {"ok": True}
 
 

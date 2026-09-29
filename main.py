@@ -17,7 +17,7 @@ from app.agent.graph import (
 from app.config import settings
 from app.database import AsyncSessionLocal
 from app.limiter import limiter
-from app.routers import alertas, assets, auth, chat, ingest, match, review, vision, visitas
+from app.routers import assets, auth, chat, ingest, match, review, vision, visitas
 
 
 @asynccontextmanager
@@ -89,7 +89,8 @@ app.include_router(ingest.router)
 app.include_router(review.router)
 app.include_router(match.router)
 app.include_router(visitas.router)
-app.include_router(alertas.router)
+# /api/v1/alertas se RETIRÓ en Plan 1.1 · TR-1 (OFD-02 = A): recogía un correo para un aviso
+# que ningún código envía. Sin sustituto.
 
 
 @app.get("/robots.txt", include_in_schema=False)

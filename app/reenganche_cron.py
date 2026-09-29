@@ -10,9 +10,13 @@ canal propio (no pidieron corredor → sin email ni push del comprador). Alcanza
 al comprador directo exige capturar su contacto o WhatsApp — es un paso aparte.
 
 Config por entorno (todas opcionales, con defaults sensatos):
-  REENGANCHE_CRON_ENABLED   "1"/"0"     habilita el barrido de fondo (default "1")
+  REENGANCHE_CRON_ENABLED   "1"/"0"     habilita el barrido (default "1"). Se consulta al arrancar
+                                        el bucle Y en cada barrido: apagarla detiene todo efecto.
   REENGANCHE_CRON_INTERVAL  segundos entre barridos (default 21600 = 6 h, mínimo 300)
   REENGANCHE_CRON_LIMITE    máx leads por barrido (default 200)
+  REENGANCHE_BAJA_SECRET    secreto DEDICADO del enlace de baja (≥ 32 caracteres; ver
+                            app/baja_aviso.py). Sin él no sale NINGÚN aviso al comprador
+                            (Plan 1.1 · TR-2, fail-closed); el aviso al corredor no depende de él.
 
 Asume una sola instancia web (plan starter de Render, no duerme). El anti-repetición
 (reenganche_enviado_en) hace inocuo un doble-barrido si algún día se escala.
@@ -75,22 +79,42 @@ def _horas_inactividad(ua: datetime | None) -> float | None:
 _scan_lock = asyncio.Lock()
 
 
+_APAGADO = {"escaneados": 0, "disparados": 0, "corredores": 0, "deshabilitado": True}
+
+
 async def escanear_reenganches(db) -> dict:
-    """Serializa el barrido en esta instancia: si el endpoint manual y el bucle de
-    fondo coinciden, el segundo espera y re-lee (ya marcado) → sin doble aviso.
-    Ver _escanear_reenganches para la lógica."""
+    """ÚNICA entrada al barrido. Con REENGANCHE_CRON_ENABLED apagada no hace NADA: ni lee
+    leads, ni escribe lead_actividad, ni calcula destinatarios, ni manda correo o push.
+
+    La bandera se comprueba aquí y no solo en iniciar_cron (Plan 1.1 · TR-4): el control del
+    arranque evita crear el bucle, pero no protege a un caller que ya existe ni a una bandera
+    que cambió después del arranque. Se vuelve a mirar tras el candado porque quien esperaba
+    turno pudo entrar con la bandera ya apagada.
+
+    El candado serializa el barrido en esta instancia: dos barridos simultáneos no avisan dos
+    veces (el segundo re-lee lo ya marcado). Ver _escanear_reenganches para la lógica."""
+    if not habilitado():
+        log.info("Reenganche: barrido omitido (REENGANCHE_CRON_ENABLED=0).")
+        return dict(_APAGADO)
     async with _scan_lock:
+        if not habilitado():
+            return dict(_APAGADO)
         return await _escanear_reenganches(db)
 
 
 async def _escanear_reenganches(db) -> dict:
     """Un barrido: detecta leads dormidos con disparo por valor y avisa al corredor.
     Idempotente vía reenganche_enviado_en (anti-repetición). Devuelve un resumen
-    {escaneados, disparados, corredores}."""
+    {escaneados, disparados, corredores}.
+
+    NO llamar directo: no mira la bandera. La única entrada es escanear_reenganches
+    (tests/test_tr4_reenganche.py lo impone sobre todo el código de producción)."""
     from app.reenganche import evaluar_reenganche, HORAS_DORMIDO
     from app.routers.chat import intencion_de_sesion, _corredor_de_activo, ensure_lead_actividad
     from app.notifications import send_notification
     from app.lift import grupo_holdout
+    from app import baja_aviso
+    from app.autoridad_reenganche import EstadoAutorizacion, autorizar_efecto_reenganche
 
     pct = _holdout_pct()
     await ensure_lead_actividad(db)
@@ -102,11 +126,14 @@ async def _escanear_reenganches(db) -> dict:
         filas = (await db.execute(
             text(
                 "SELECT session_id, activo_id::text AS activo_id, ultima_actividad, "
-                "       lead_email, lead_push, consent_reenganche_at "
+                "       lead_email, lead_push "
                 "FROM lead_actividad "
                 "WHERE ultima_actividad < now() - make_interval(hours => :dorm) "
                 "  AND reenganche_enviado_en IS NULL "   # nunca tocado
                 "  AND reenganche_grupo IS NULL "        # ni asignado a un grupo (tocado/holdout)
+                # Plan 1.1 · TR-2: un CIERRE explícito saca la fila del barrido COMPLETO, antes del
+                # holdout, del scoring, de la marca de grupo y de cualquier aviso (comprador o corredor).
+                "  AND reenganche_cerrado_en IS NULL "
                 "ORDER BY ultima_actividad ASC LIMIT :lim"
             ),
             {"dorm": HORAS_DORMIDO, "lim": _limite()},
@@ -151,10 +178,8 @@ async def _escanear_reenganches(db) -> dict:
         cache[activo_id] = info
         return info
 
-    disparados: list[str] = []
+    candidatos: list[dict] = []
     holdouts: list[str] = []
-    por_corredor: dict[str, dict] = {}
-    a_comprador: list[dict] = []
     for f in filas:
         sid = f["session_id"]
         activo_id = f["activo_id"]
@@ -178,19 +203,8 @@ async def _escanear_reenganches(db) -> dict:
         if grupo_holdout(sid, pct) == "holdout":
             holdouts.append(sid)
             continue
-        disparados.append(sid)
-        # Fase 3: ¿le escribimos al COMPRADOR directo? (opt-in con canal capturado).
-        if auto_lead() and f["consent_reenganche_at"] is not None and (f["lead_email"] or f["lead_push"]):
-            a_comprador.append({
-                "email": f["lead_email"], "push": f["lead_push"],
-                "mensaje": decision["mensaje"], "activo_id": activo_id,
-            })
-        else:
-            # Sin canal del comprador → avisamos al corredor. Agrupa por corredor (id del
-            # dueño; email/activo solo como respaldo) para un único aviso.
-            clave = info["corredor_id"] or info["email"] or f"activo:{activo_id}"
-            grupo = por_corredor.setdefault(clave, {"email": info["email"], "sub": info["sub"], "n": 0})
-            grupo["n"] += 1
+        candidatos.append({"sid": sid, "activo_id": activo_id, "f": f, "info": info,
+                           "mensaje": decision["mensaje"]})
 
     # Marcar el HOLDOUT (contrafactual): grupo + momento de elegibilidad, SIN envío. elegible_en se fija
     # una sola vez (COALESCE) para anclar la primera elegibilidad. No re-entra al barrido (SELECT lo excluye).
@@ -206,12 +220,58 @@ async def _escanear_reenganches(db) -> dict:
         except Exception:  # noqa: BLE001
             await db.rollback()
 
+    # Plan 1.1 · TR-5 — AUTORIDAD. El cron ya no decide su propio permiso: lo pregunta a LA frontera
+    # (app/autoridad_reenganche.py) y consume su respuesta sin reinterpretar grants. Con reserva, la
+    # frontera marca `used_at` en la MISMA transacción que la marca 'tocado' de abajo: un solo COMMIT
+    # para permiso consumido + lead tocado, y sólo después el envío.
+    disparados: list[str] = []
+    por_corredor: dict[str, dict] = {}
+    a_comprador: list[dict] = []
+    for c in candidatos:
+        sid, f, info, activo_id = c["sid"], c["f"], c["info"], c["activo_id"]
+        canales = (["EMAIL"] if f["lead_email"] else []) + (["PUSH"] if f["lead_push"] else [])
+        if auto_lead() and canales:
+            # Plan 1.1 · TR-2: cada aviso al comprador lleva su enlace de baja. Sin
+            # REENGANCHE_BAJA_SECRET no se puede emitir: entonces se consulta la frontera SIN
+            # reservar (no se gasta el permiso) y, si lo había, el lead queda intacto — ni
+            # comprador, ni corredor, ni marca — hasta que el secreto exista.
+            try:
+                baja = baja_aviso.emitir(sid)
+            except baja_aviso.SinSecretoDeBaja:
+                baja = None
+            veredicto = await autorizar_efecto_reenganche(
+                db, session_id=sid, canales_candidatos=canales, reservar=baja is not None)
+            if veredicto.estado is EstadoAutorizacion.ERROR:
+                # Sin decisión no hay efecto: ni comprador, ni corredor, ni marca. Un fallo de
+                # autoridad no se esconde detrás del camino del corredor.
+                log.error("Reenganche cron: autoridad en ERROR — lead omitido.")
+                continue
+            if veredicto.estado is EstadoAutorizacion.AUTHORIZED:
+                if baja is None:
+                    log.error("Reenganche cron: sin secreto de baja — aviso al comprador omitido.")
+                    continue
+                disparados.append(sid)
+                a_comprador.append({
+                    "email": f["lead_email"] if "EMAIL" in veredicto.canales else None,
+                    "push": f["lead_push"] if "PUSH" in veredicto.canales else None,
+                    "mensaje": c["mensaje"], "activo_id": activo_id, "baja": baja,
+                })
+                continue
+            # NO_GRANT → el comprador no recibe nada; el corredor sigue su camino (DR-15).
+        disparados.append(sid)
+        # Sin permiso del comprador → avisamos al corredor. Agrupa por corredor (id del
+        # dueño; email/activo solo como respaldo) para un único aviso.
+        clave = info["corredor_id"] or info["email"] or f"activo:{activo_id}"
+        grupo = por_corredor.setdefault(clave, {"email": info["email"], "sub": info["sub"], "n": 0})
+        grupo["n"] += 1
+
     if not disparados:
         return {"escaneados": len(filas), "disparados": 0, "holdout": len(holdouts),
                 "comprador": 0, "corredores": 0}
 
     # Marcar anti-repetición + grupo 'tocado' + elegibilidad ANTES de notificar: si un envío falla, no se
-    # reintenta en bucle (mejor perder un aviso que spammear al corredor).
+    # reintenta en bucle (mejor perder un aviso que spammear al corredor). El COMMIT confirma a la vez los
+    # permisos consumidos (TR-5); si falla, se deshacen los dos y no sale nada.
     try:
         await db.execute(
             text("UPDATE lead_actividad SET reenganche_enviado_en = now(), reenganche_grupo = 'tocado', "
@@ -225,8 +285,8 @@ async def _escanear_reenganches(db) -> dict:
         return {"escaneados": len(filas), "disparados": len(disparados), "holdout": len(holdouts),
                 "comprador": 0, "corredores": 0}
 
-    # Fase 3: al COMPRADOR directo (dejó canal + consentimiento) → le llega el mensaje de
-    # valor con deep-link al inmueble. Es el reenganche que él mismo pidió recibir.
+    # Fase 3: al COMPRADOR directo, SÓLO por los canales que la frontera autorizó (un grant de
+    # EMAIL no abre el PUSH ni al revés) → el mensaje de valor con deep-link al inmueble.
     enviados_comprador = 0
     for c in a_comprador:
         if not c["email"] and not c["push"]:
@@ -236,7 +296,10 @@ async def _escanear_reenganches(db) -> dict:
                 email=c["email"], push_subscription=c["push"],
                 title="Novedad sobre el inmueble que viste",
                 body=c["mensaje"],
-                url=f"/a/{c['activo_id']}",
+                # El toque (push) y el botón (correo) abren el inmueble con la confirmación de
+                # baja a mano; el correo lleva además el enlace explícito al pie.
+                url=f"/a/{c['activo_id']}?baja={c['baja']}",
+                baja_url=f"/?baja={c['baja']}",
                 email_subject="Contexto · una novedad verificada para ti",
             )
             enviados_comprador += 1

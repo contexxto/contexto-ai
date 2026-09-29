@@ -127,6 +127,56 @@ async def autorizar_acceso_a_sesion(
         return _decidir(await _fila_de_sesion(propio, session_id), user, resume_secret)
 
 
+class PruebaDeAutoridad(BaseModel):
+    """Plan 1.1 · TR-5 — la autoridad YA decidida por `_decidir`, con la evidencia mínima que
+    necesita quien va a registrar un permiso (`PrincipalRefV0` + provenance).
+
+    NUNCA lleva el secreto ni su hash: para la capacidad anónima basta con saber QUÉ
+    generación de capacidad se usó (`resume_issued_at`), que no es secreta ni permite
+    recuperarlo."""
+
+    model_config = ConfigDict(frozen=True)
+
+    autoridad: Autoridad
+    session_id: str
+    owner_user_id: str | None = None
+    capability_issued_at: str | None = None
+
+
+async def probar_autoridad_en_transaccion(
+    session_id: str,
+    user: CurrentUser | None,
+    resume_secret: str | None,
+    *,
+    db,
+) -> PruebaDeAutoridad:
+    """La MISMA regla (`_decidir`), dentro de la transacción del llamador y con la fila de
+    `chat_sessions` bloqueada `FOR SHARE` hasta su COMMIT.
+
+    Existe para que autorizar y escribir el permiso sean atómicos (anti-TOCTOU, como
+    `_ejecutar_claim`): mientras la transacción viva, nadie puede reclamar el hilo ni revocar
+    la capacidad —su `UPDATE` espera al bloqueo—, así que el estado sobre el que se escribe es
+    exactamente el que se autorizó. Si cambió antes, `_decidir` ya lo ve y levanta
+    `AccesoDenegado`: no hay grant."""
+    if not isinstance(session_id, str) or not session_id.strip():
+        raise AccesoDenegado()
+    fila = (await db.execute(
+        text("SELECT session_id, user_id::text AS user_id, resume_token_hash, "
+             "       resume_revoked_at, resume_issued_at "
+             "FROM chat_sessions WHERE session_id = :sid FOR SHARE"),
+        {"sid": session_id},
+    )).mappings().first()
+    fila = dict(fila) if fila else None
+    autoridad = _decidir(fila, user, resume_secret)
+    if autoridad is Autoridad.OWNER:
+        return PruebaDeAutoridad(autoridad=autoridad, session_id=session_id,
+                                 owner_user_id=user.user_id)
+    emitida = fila.get("resume_issued_at")
+    return PruebaDeAutoridad(autoridad=autoridad, session_id=session_id,
+                             capability_issued_at=emitida.isoformat() if hasattr(emitida, "isoformat")
+                             else (str(emitida) if emitida else None))
+
+
 def _decidir(fila: dict | None, user: CurrentUser | None, resume_secret: str | None) -> Autoridad:
     """La regla, separada de cómo se obtuvo la fila: así se puede probar sin base."""
     if fila is None:

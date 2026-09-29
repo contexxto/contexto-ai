@@ -17,10 +17,10 @@ codigo:
   existe: app/routers/visitas.py::registrar_visita
   existe: frontend/src/App.jsx::registrarLlegada
   existe: migrations/025_contacto_demanda.sql
-  existe: app/puerta.py::evaluar_puerta
+  no-existe: app/puerta.py::evaluar_puerta
   existe: app/puerta.py::detectar_solicitud_contacto
-  existe: app/routers/alertas.py::crear_alerta
-  existe: frontend/src/PuertaAlerta.jsx
+  no-existe: app/routers/alertas.py
+  no-existe: frontend/src/PuertaAlerta.jsx
   existe: app/embudo.py::componer_reparto
   existe: app/routers/assets.py::_reparto_del_corredor
   existe: migrations/026_asignacion.sql
@@ -30,6 +30,12 @@ datos:
   2026-08-06: el correo de un interesado existe SOLO en handoff_sesion.lead_email — no hay otra puerta de identidad en todo el sistema
   2026-08-06: el chat del comprador usa get_optional_user — anónimo funciona; la unidad del lead es localStorage['contexto_ai_device_id']
 -->
+
+> **RETIRADA (2026-09-28, Plan 1.1 · TR-1 · OFD-02 = A).** La alerta de la §6 —la puerta suave—
+> se retiró: prometía avisar por correo y ningún código envía ese aviso; nadie lee `contacto` ni
+> `demanda`. Vuelve sólo cuando exista el consumidor, con su propia base de permiso. Las filas ya
+> recogidas se rigen por la retención de E3.1-R y no se reinterpretan para otro propósito. Sigue
+> vivo el control hermano `detectar_solicitud_contacto` (B2). Lo de abajo es el plan original.
 
 > **Idea en una línea.** No hay onboarding en la puerta: la puerta es la conversación. El rol
 > se infiere, nunca se pregunta. Hay **una sola** puerta suave de identidad, y **la abre el

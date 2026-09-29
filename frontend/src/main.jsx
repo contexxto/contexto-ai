@@ -4,6 +4,7 @@ import './index.css'
 import App from './App.jsx'
 import QueEs from './QueEs.jsx'
 import ErrorBoundary from './ErrorBoundary.jsx'
+import { CapaBajaAviso } from './BajaAviso.jsx'
 
 // Web de marketing (/que-es): página standalone. Se renderiza EN LUGAR de <App/>
 // (no dentro), así NO monta la maquinaria del app (sesión Supabase, carga de
@@ -19,6 +20,8 @@ createRoot(document.getElementById('root')).render(
             onLogin={() => window.location.assign('/?login=1')}
             onBroker={() => window.location.assign('/?corredor=1')} />
         : <App />}
+      {/* Plan 1.1 · TR-2: la baja del enlace de un aviso, sobre cualquier vista. */}
+      <CapaBajaAviso />
     </ErrorBoundary>
   </StrictMode>,
 )

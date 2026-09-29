@@ -15,6 +15,8 @@ import ResultCards from './ResultCards'
 import DeltaEncaje from './DeltaEncaje'
 import Launcher from './Launcher'
 import AttachSheet from './AttachSheet'
+import { COPY_AVISO, cuerpoActivar, cuerpoCerrar, cuerpoDesactivar, guardarPreferencia, leerPreferencia,
+} from './avisoReenganche'
 
 // Headers (backend key + Bearer del usuario) centralizados en api.js
 import { API_BASE, apiHeaders, apiHeadersSesion, bootstrapSession, setAccessToken } from './api'
@@ -1256,19 +1258,35 @@ export default function App() {
     } catch (e) { console.warn('Lead push:', e) }
   }, [ensurePushSubscription])
 
-  // Fase 3: el COMPRADOR opta por recibir novedades verificadas del inmueble (reenganche
-  // por valor). Captura su canal (push del navegador) con consentimiento explícito — así
-  // el reenganche le llega a ÉL directo, no solo al corredor.
-  const [reengancheOptIn, setReengancheOptIn] = useState(false)
-  const subscribeLeadContacto = useCallback(async (sid) => {
-    const sub = await ensurePushSubscription()   // null si deniega — igual guardamos el consentimiento
+  // Fase 3: el COMPRADOR opta por el aviso de reenganche de ESTE inmueble (como máximo uno).
+  // Plan 1.1 · TR-2: `consent` va SIEMPRE explícito; activar exige canal (si el navegador
+  // deniega el push no se envía nada y se dice por qué); y la preferencia se puede
+  // desactivar o cerrar desde aquí. Se recuerda por sesión en este aparato.
+  const [avisoEstado, setAvisoEstado] = useState(null)   // null | 'activado' | 'sin_canal' | 'desactivado' | 'cerrado' | 'error'
+  useEffect(() => {
+    setAvisoEstado(leerPreferencia(localStorage, sessionId) === 'activado' ? 'activado' : null)
+  }, [sessionId])
+  const postAviso = useCallback(async (sid, cuerpo) => {
     try {
-      await axios.post(`${API_BASE}/api/v1/chat/lead-contacto`,
-        { session_id: sid, push_subscription: sub || null, consent: true },
+      const { data } = await axios.post(`${API_BASE}/api/v1/chat/lead-contacto`, cuerpo,
         { headers: apiHeadersSesion(sid) })
-      return true
-    } catch (e) { console.warn('Lead contacto:', e); return false }
-  }, [ensurePushSubscription])
+      return data?.resultado || 'error'
+    } catch (e) { console.warn('Aviso de reenganche:', e); return 'error' }
+  }, [])
+  const activarAviso = useCallback(async (sid) => {
+    const cuerpo = cuerpoActivar(sid, await ensurePushSubscription())
+    const r = cuerpo ? await postAviso(sid, cuerpo) : 'sin_canal'
+    if (r === 'activado') guardarPreferencia(localStorage, sid, 'activado')
+    setAvisoEstado(r)
+  }, [ensurePushSubscription, postAviso])
+  const reducirAviso = useCallback(async (sid, cerrar) => {
+    const r = await postAviso(sid, cerrar ? cuerpoCerrar(sid) : cuerpoDesactivar(sid))
+    if (r !== 'error') guardarPreferencia(localStorage, sid, null)
+    setAvisoEstado(r)
+  }, [postAviso])
+  // El enlace de baja de cada aviso (/…?baja=<token>) NO se atiende aquí: lo monta
+  // `CapaBajaAviso` en main.jsx, por encima de cualquier vista (el push abre /a/{id}, que es
+  // la página de anuncio y no pasa por este render).
 
   // Registra push + email del CORREDOR para avisarle de leads nuevos.
   //  - withPush=false → solo email (silencioso, sin pedir permiso). Al iniciar sesión.
@@ -2304,15 +2322,38 @@ export default function App() {
                 <Handshake size={14} />
                 Hablar con el corredor
               </button>
-              <button onClick={async () => { if (await subscribeLeadContacto(sessionId)) setReengancheOptIn(true) }}
-                disabled={reengancheOptIn}
-                title="Te avisamos solo si aparece algo verificado que te calce — sin spam."
-                style={{ display:'flex', alignItems:'center', gap:7, padding:'7px 14px',
-                         borderRadius:999, cursor: reengancheOptIn ? 'default' : 'pointer', fontSize:'.78rem', fontWeight:600,
-                         background: reengancheOptIn ? 'rgba(232,184,75,.16)' : 'rgba(232,184,75,.10)',
-                         border:'1px solid rgba(232,184,75,.35)', color:'#E8B84B' }}>
-                {reengancheOptIn ? <><Check size={13} /> Te avisaremos</> : <><Bell size={13} /> Avísame de novedades verificadas</>}
-              </button>
+              {avisoEstado === 'activado' ? (
+                <span style={{ display:'flex', alignItems:'center', gap:7, flexWrap:'wrap', padding:'7px 14px',
+                               borderRadius:999, fontSize:'.78rem', fontWeight:600,
+                               background:'rgba(232,184,75,.16)', border:'1px solid rgba(232,184,75,.35)', color:'#E8B84B' }}>
+                  <Check size={13} /> {COPY_AVISO.activado} ·
+                  <button onClick={() => reducirAviso(sessionId, false)}
+                    style={{ background:'none', border:'none', padding:0, cursor:'pointer', color:'inherit',
+                             font:'inherit', textDecoration:'underline' }}>
+                    {COPY_AVISO.dejar}
+                  </button>
+                  ·
+                  <button onClick={() => reducirAviso(sessionId, true)}
+                    style={{ background:'none', border:'none', padding:0, cursor:'pointer', color:'inherit',
+                             font:'inherit', textDecoration:'underline' }}>
+                    {COPY_AVISO.cerrar}
+                  </button>
+                </span>
+              ) : (
+                <button onClick={() => activarAviso(sessionId)}
+                  title={COPY_AVISO.titulo}
+                  style={{ display:'flex', alignItems:'center', gap:7, padding:'7px 14px',
+                           borderRadius:999, cursor:'pointer', fontSize:'.78rem', fontWeight:600,
+                           background:'rgba(232,184,75,.10)',
+                           border:'1px solid rgba(232,184,75,.35)', color:'#E8B84B' }}>
+                  <Bell size={13} /> {COPY_AVISO.boton}
+                </button>
+              )}
+              <span style={{ flexBasis:'100%', textAlign:'center', fontSize:'.72rem', color:'var(--text-muted)' }}>
+                {{ sin_canal: COPY_AVISO.sinCanal, desactivado: COPY_AVISO.desactivado,
+                   cerrado: COPY_AVISO.cerrado, error: COPY_AVISO.error }[avisoEstado]
+                  || (avisoEstado === 'activado' ? null : COPY_AVISO.titulo)}
+              </span>
             </div>
           )
         )}

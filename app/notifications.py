@@ -130,6 +130,7 @@ async def send_notification(
     tag: str | None = None,
     email_clave: str | None = None,
     email_minutos: int = 30,
+    baja_url: str | None = None,
 ) -> None:
     """Notifica a un destinatario por email Y push de forma concurrente.
 
@@ -154,11 +155,15 @@ async def send_notification(
              El correo pasa a ser el aviso de "tienes algo pendiente", no una copia de
              cada mensaje. Sin clave, se envía siempre (avisos puntuales, no de hilo).
         email_minutos: ventana del freno anterior.
+        baja_url: ruta de BAJA del aviso (Plan 1.1 · TR-2). Si se pasa, el correo lleva al
+             pie el enlace «Dejar de recibir estos avisos». Solo el aviso de reenganche al
+             comprador la usa; en push, la vía de baja viaja en `url`.
     """
     tasks = []
     if email and (email_clave is None or await _email_permitido(email_clave, email_minutos)):
         tasks.append(_send_email(
             to=email, subject=email_subject or title, title=title, body=body, url=url,
+            **({"baja_url": baja_url} if baja_url else {}),
         ))
     subs = push_subscription if isinstance(push_subscription, list) else [push_subscription]
     for sub in subs:
@@ -198,11 +203,17 @@ async def _email_permitido(clave: str, minutos: int) -> bool:
 
 
 # ── Email vía Resend ─────────────────────────────────────────────────────────
-async def _send_email(*, to: str, subject: str, title: str, body: str, url: str) -> None:
+async def _send_email(*, to: str, subject: str, title: str, body: str, url: str,
+                      baja_url: str | None = None) -> None:
     if not RESEND_API_KEY:
         log.warning("RESEND_API_KEY no configurada — email omitido")
         return
     link = url if url.startswith("http") else f"{APP_URL}{url}"
+    pie_baja = ""
+    if baja_url:
+        baja = baja_url if baja_url.startswith("http") else f"{APP_URL}{baja_url}"
+        pie_baja = (f'<p style="margin-top:12px;font-size:.75rem;color:#9C99AC">'
+                    f'<a href="{baja}" style="color:#9C99AC">Dejar de recibir estos avisos</a></p>')
     html = f"""
     <div style="font-family:sans-serif;max-width:540px;margin:auto;padding:28px 24px;
                 background:#16151E;color:#EDEBF2;border-radius:16px">
@@ -224,7 +235,7 @@ async def _send_email(*, to: str, subject: str, title: str, body: str, url: str)
       </a>
       <p style="margin-top:28px;font-size:.75rem;color:#9C99AC">
         Contexto · Inteligencia del lugar en Quito
-      </p>
+      </p>{pie_baja}
     </div>
     """
     try:

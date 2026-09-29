@@ -126,6 +126,10 @@ def entorno(monkeypatch):
     # colocado DESPUÉS de ensure_lead_actividad pasaría inadvertido.
     monkeypatch.setattr(chat, "_lead_actividad_ready", False)
     monkeypatch.setenv("REENGANCHE_AUTO_LEAD", "1")
+    # Plan 1.1 · TR-2 (actualización esperada): el aviso al comprador exige un enlace de baja
+    # firmado y, sin secreto, no sale (fail-closed). «El job legítimo» de test_7 y test_9b es
+    # el de un despliegue CON secreto; la ausencia se prueba en tests/test_tr2_consentimiento.py.
+    monkeypatch.setenv("REENGANCHE_BAJA_SECRET", "s" * 48)
     return registro
 
 

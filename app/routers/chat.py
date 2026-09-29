@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import secrets
 import unicodedata
 import uuid
-from typing import AsyncIterator
+from typing import AsyncIterator, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Security, status
 from fastapi.responses import StreamingResponse
@@ -21,7 +21,7 @@ from app.buyer.sombra import actualizar_en_sombra
 from app.buyer.decision_shadow import (
     observar_sombra_de_decision, registrar as registrar_sombra_de_decision)
 from app.decision.runtime_capture import capturar_entradas_de_decision
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool, model_validator
 from sqlalchemy import text
 
 from app.agent import graph as agent_graph
@@ -1799,6 +1799,12 @@ _LEAD_ACTIVIDAD_DDL = [
     # estable del session_id en el momento de volverse elegible. Ver docs/DISENO_Metrica_Lift_Intencion.md.
     "ALTER TABLE lead_actividad ADD COLUMN IF NOT EXISTS reenganche_grupo text",
     "ALTER TABLE lead_actividad ADD COLUMN IF NOT EXISTS reenganche_elegible_en timestamptz",
+    # Plan 1.1 · TR-2: CIERRE explícito («No quiero más seguimiento de este inmueble»). NULL = no
+    # cerrado. Excluye la fila del barrido COMPLETO (ni comprador ni corredor). No se reutiliza
+    # reenganche_grupo (es la variable del experimento de lift) ni un centinela en un timestamp.
+    # La 037 cierra la tabla entera (RLS y cero privilegios a los roles de PostgREST): la
+    # columna nueva nace igual de cerrada.
+    "ALTER TABLE lead_actividad ADD COLUMN IF NOT EXISTS reenganche_cerrado_en timestamptz",
 ]
 _lead_actividad_ready = False
 
@@ -1946,15 +1952,57 @@ class LeadContacto(BaseModel):
     email: str | None = Field(default=None, max_length=254)
     telefono: str | None = Field(default=None, max_length=32)
     push_subscription: dict | None = None
-    consent: bool = True
+    # Plan 1.1 · TR-2: SIN valor por defecto y estrictamente booleano. Antes era `= True`: un
+    # POST sin el campo quedaba como opt-in. Omitirlo es 422; `"yes"` o `1` no cuentan como «sí».
+    consent: StrictBool
+    # Cierre explícito («No quiero más seguimiento de este inmueble»). Solo reduce autoridad:
+    # nunca concede, así que pedir `consent=true` y `close=true` a la vez es contradictorio → 422.
+    close: StrictBool = False
+
+    @model_validator(mode="after")
+    def _cerrar_no_concede(self):
+        if self.close and self.consent:
+            raise ValueError("close=true no puede conceder permiso: envía consent=false")
+        return self
+
+
+async def _reducir_autoridad_reenganche(db, session_id: str, *, cerrar: bool) -> None:
+    """REVOCAR o CERRAR el aviso de reenganche de UNA sesión. Única escritura de reducción,
+    compartida por el control de la UI (`/lead-contacto`) y el enlace firmado (`/baja-aviso`).
+
+    · revocar → `consent_reenganche_at = NULL`. Idempotente. No toca email, teléfono ni push:
+      revocar el permiso no es borrar el contacto (la retención es de E3.1-R).
+    · cerrar  → además `reenganche_cerrado_en = now()` (se conserva el primer cierre). Se
+      inserta la fila si aún no existía: un cierre que se pierde porque la actividad llegó
+      después sería un «no» que el barrido no ve.
+    """
+    if cerrar:
+        await db.execute(
+            text(
+                "INSERT INTO lead_actividad (session_id, activo_id, reenganche_cerrado_en) "
+                "VALUES (:s, :a, now()) "
+                "ON CONFLICT (session_id) DO UPDATE SET "
+                "  consent_reenganche_at = NULL, "
+                "  reenganche_cerrado_en = COALESCE(lead_actividad.reenganche_cerrado_en, now())"
+            ),
+            {"s": session_id, "a": activo_de_session(session_id)},
+        )
+    else:
+        await db.execute(
+            text("UPDATE lead_actividad SET consent_reenganche_at = NULL WHERE session_id = :s"),
+            {"s": session_id},
+        )
 
 
 @router.post(
     "/lead-contacto",
-    summary="El comprador opta por recibir novedades verificadas (reenganche por valor)",
-    description="Guarda el canal de contacto del comprador (push del navegador y/o email/teléfono) "
-                "con su consentimiento, ligado a su sesión de QR. Público — es el propio comprador. "
-                "Habilita que el reenganche le llegue a ÉL directo, no solo al corredor.",
+    summary="El comprador activa, desactiva o cierra el aviso de reenganche de este inmueble",
+    description="Con la capacidad de SU sesión de QR (dueño o `X-Session-Resume`). "
+                "`consent` es obligatorio: `true` activa el aviso —como máximo uno, sobre este "
+                "inmueble— y exige un canal utilizable (email o push) en la misma petición; "
+                "`false` lo desactiva sin guardar contacto nuevo; `close=true` además cierra el "
+                "seguimiento de este inmueble (ni aviso al comprador ni al corredor). "
+                "Un `consent=true` posterior reabre.",
 )
 @limiter.limit("10/minute")
 async def lead_contacto(
@@ -1974,33 +2022,86 @@ async def lead_contacto(
 
     if not payload.session_id.startswith("qr-"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Sesión inválida.")
+
+    # Plan 1.1 · TR-2. Un «sí» sin canal utilizable no es un permiso que se pueda cumplir: el
+    # cron solo escribe por email o push (el teléfono no lo usa nadie). Antes, con el push
+    # denegado, se guardaba `consent=true` igualmente. Ahora no se escribe NADA y la UI recibe
+    # un resultado explícito. No se infiere canal de la fila previa: el permiso va ligado al
+    # canal que la persona presenta en el mismo acto.
+    if payload.consent and not (payload.email or payload.push_subscription):
+        return {"ok": False, "resultado": "sin_canal"}
+
     activo = activo_de_session(payload.session_id)
     push_json = json.dumps(payload.push_subscription) if payload.push_subscription else None
     try:
         async with AsyncSessionLocal() as db:
             await ensure_lead_actividad(db)
-            await db.execute(
-                text(
-                    "INSERT INTO lead_actividad "
-                    "(session_id, activo_id, lead_email, lead_telefono, lead_push, consent_reenganche_at) "
-                    "VALUES (:s, :a, :e, :t, CAST(:p AS jsonb), "
-                    "        CASE WHEN :c THEN now() ELSE NULL END) "
-                    "ON CONFLICT (session_id) DO UPDATE SET "
-                    "  lead_email = COALESCE(EXCLUDED.lead_email, lead_actividad.lead_email), "
-                    "  lead_telefono = COALESCE(EXCLUDED.lead_telefono, lead_actividad.lead_telefono), "
-                    "  lead_push = COALESCE(EXCLUDED.lead_push, lead_actividad.lead_push), "
-                    "  consent_reenganche_at = CASE WHEN :c THEN now() "
-                    "                               ELSE lead_actividad.consent_reenganche_at END"
-                ),
-                {"s": payload.session_id, "a": activo, "e": payload.email,
-                 "t": payload.telefono, "p": push_json, "c": payload.consent},
-            )
+            if payload.consent:
+                # Opt-in explícito: concede y REABRE un cierre previo (el acto explícito más
+                # reciente manda, D-3). El contacto nuevo sustituye al anterior solo si llega.
+                await db.execute(
+                    text(
+                        "INSERT INTO lead_actividad "
+                        "(session_id, activo_id, lead_email, lead_telefono, lead_push, consent_reenganche_at) "
+                        "VALUES (:s, :a, :e, :t, CAST(:p AS jsonb), now()) "
+                        "ON CONFLICT (session_id) DO UPDATE SET "
+                        "  lead_email = COALESCE(EXCLUDED.lead_email, lead_actividad.lead_email), "
+                        "  lead_telefono = COALESCE(EXCLUDED.lead_telefono, lead_actividad.lead_telefono), "
+                        "  lead_push = COALESCE(EXCLUDED.lead_push, lead_actividad.lead_push), "
+                        "  consent_reenganche_at = now(), "
+                        "  reenganche_cerrado_en = NULL"
+                    ),
+                    {"s": payload.session_id, "a": activo, "e": payload.email,
+                     "t": payload.telefono, "p": push_json},
+                )
+            else:
+                # `consent=false`: el email, teléfono o push que vengan en la petición se
+                # IGNORAN — no entra contacto nuevo sin permiso. Lo histórico no se borra.
+                await _reducir_autoridad_reenganche(db, payload.session_id, cerrar=payload.close)
             await db.commit()
     except HTTPException:
         raise
     except Exception:  # noqa: BLE001
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            detail="No se pudo guardar el contacto.")
+                            detail="No se pudo guardar la preferencia.")
+    # El resultado describe lo que ESTA petición hizo, no el estado previo de la fila.
+    if payload.consent:
+        return {"ok": True, "resultado": "activado"}
+    return {"ok": True, "resultado": "cerrado" if payload.close else "desactivado"}
+
+
+class BajaAviso(BaseModel):
+    t: str = Field(..., min_length=1, max_length=400)
+    accion: Literal["revocar", "cerrar"]
+
+
+@router.post(
+    "/baja-aviso",
+    summary="Baja desde el enlace del aviso: desactivar o cerrar (nunca conceder)",
+    description="Recibe el token firmado del enlace que va en cada aviso al comprador "
+                "(app/baja_aviso.py). Solo reduce autoridad sobre la sesión del token: "
+                "`revocar` desactiva el aviso y `cerrar` además cierra el seguimiento de ese "
+                "inmueble. No lee la sesión ni el contacto y no revela si la sesión existe. "
+                "Solo POST: el enlace abre una confirmación en la app (un GET no muta nada, "
+                "por los escáneres y las vistas previas de enlaces).",
+)
+@limiter.limit("20/minute")
+async def baja_aviso(request: Request, payload: BajaAviso) -> dict:
+    from app.baja_aviso import verificar
+    session_id = verificar(payload.t)
+    if session_id is None:
+        # Alterado, vacío, de otro propósito o sin secreto: cero lectura y cero escritura. Se
+        # responde que el enlace no sirve —decir «hecho» sería falso— sin revelar nada más.
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Enlace no válido.")
+    try:
+        async with AsyncSessionLocal() as db:
+            await ensure_lead_actividad(db)
+            await _reducir_autoridad_reenganche(db, session_id, cerrar=payload.accion == "cerrar")
+            await db.commit()
+    except Exception:  # noqa: BLE001
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail="No se pudo guardar la preferencia.")
+    # Misma respuesta exista o no la sesión, y esté o no ya revocada o cerrada.
     return {"ok": True}
 
 

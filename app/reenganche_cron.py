@@ -14,6 +14,9 @@ Config por entorno (todas opcionales, con defaults sensatos):
                                         el bucle Y en cada barrido: apagarla detiene todo efecto.
   REENGANCHE_CRON_INTERVAL  segundos entre barridos (default 21600 = 6 h, mínimo 300)
   REENGANCHE_CRON_LIMITE    máx leads por barrido (default 200)
+  REENGANCHE_BAJA_SECRET    secreto DEDICADO del enlace de baja (≥ 32 caracteres; ver
+                            app/baja_aviso.py). Sin él no sale NINGÚN aviso al comprador
+                            (Plan 1.1 · TR-2, fail-closed); el aviso al corredor no depende de él.
 
 Asume una sola instancia web (plan starter de Render, no duerme). El anti-repetición
 (reenganche_enviado_en) hace inocuo un doble-barrido si algún día se escala.
@@ -110,6 +113,7 @@ async def _escanear_reenganches(db) -> dict:
     from app.routers.chat import intencion_de_sesion, _corredor_de_activo, ensure_lead_actividad
     from app.notifications import send_notification
     from app.lift import grupo_holdout
+    from app import baja_aviso
 
     pct = _holdout_pct()
     await ensure_lead_actividad(db)
@@ -126,6 +130,9 @@ async def _escanear_reenganches(db) -> dict:
                 "WHERE ultima_actividad < now() - make_interval(hours => :dorm) "
                 "  AND reenganche_enviado_en IS NULL "   # nunca tocado
                 "  AND reenganche_grupo IS NULL "        # ni asignado a un grupo (tocado/holdout)
+                # Plan 1.1 · TR-2: un CIERRE explícito saca la fila del barrido COMPLETO, antes del
+                # holdout, del scoring, de la marca de grupo y de cualquier aviso (comprador o corredor).
+                "  AND reenganche_cerrado_en IS NULL "
                 "ORDER BY ultima_actividad ASC LIMIT :lim"
             ),
             {"dorm": HORAS_DORMIDO, "lim": _limite()},
@@ -197,14 +204,24 @@ async def _escanear_reenganches(db) -> dict:
         if grupo_holdout(sid, pct) == "holdout":
             holdouts.append(sid)
             continue
-        disparados.append(sid)
         # Fase 3: ¿le escribimos al COMPRADOR directo? (opt-in con canal capturado).
         if auto_lead() and f["consent_reenganche_at"] is not None and (f["lead_email"] or f["lead_push"]):
+            # Plan 1.1 · TR-2: cada aviso al comprador lleva su enlace de baja. Si no se puede
+            # emitir (sin REENGANCHE_BAJA_SECRET), NO se le escribe: fail-closed. Tampoco se
+            # desvía al corredor —eso convertiría un fallo de consentimiento en otro efecto— ni
+            # se marca la fila: queda intacta para cuando el secreto exista.
+            try:
+                baja = baja_aviso.emitir(sid)
+            except baja_aviso.SinSecretoDeBaja:
+                log.error("Reenganche cron: sin secreto de baja — aviso al comprador omitido.")
+                continue
+            disparados.append(sid)
             a_comprador.append({
                 "email": f["lead_email"], "push": f["lead_push"],
-                "mensaje": decision["mensaje"], "activo_id": activo_id,
+                "mensaje": decision["mensaje"], "activo_id": activo_id, "baja": baja,
             })
         else:
+            disparados.append(sid)
             # Sin canal del comprador → avisamos al corredor. Agrupa por corredor (id del
             # dueño; email/activo solo como respaldo) para un único aviso.
             clave = info["corredor_id"] or info["email"] or f"activo:{activo_id}"
@@ -255,7 +272,10 @@ async def _escanear_reenganches(db) -> dict:
                 email=c["email"], push_subscription=c["push"],
                 title="Novedad sobre el inmueble que viste",
                 body=c["mensaje"],
-                url=f"/a/{c['activo_id']}",
+                # El toque (push) y el botón (correo) abren el inmueble con la confirmación de
+                # baja a mano; el correo lleva además el enlace explícito al pie.
+                url=f"/a/{c['activo_id']}?baja={c['baja']}",
+                baja_url=f"/?baja={c['baja']}",
                 email_subject="Contexto · una novedad verificada para ti",
             )
             enviados_comprador += 1

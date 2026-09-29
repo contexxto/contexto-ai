@@ -384,8 +384,13 @@ def test_A5_no_nace_ningun_contrato_de_tr5():
 def test_A5b_no_hay_migracion_ni_backfill_nuevos():
     # TR-5 (actualización esperada): la única migración nueva es la 038 del grant store, y no
     # toca `lead_actividad` (sin backfill ni grants sintéticos: tests/test_tr5_consent_grant.py).
+    # AURA-CACHE-PERIMETER (actualización esperada): la 039 cierra `aura_pois_cache` y tampoco
+    # toca `lead_actividad` ni el consentimiento (se comprueba aquí mismo).
     nuevas = sorted(p.name for p in (RAIZ / "migrations").glob("03[8-9]*.sql"))
-    assert nuevas == ["038_consent_grant_reenganche.sql"], nuevas
+    assert nuevas == ["038_consent_grant_reenganche.sql", "039_aura_pois_cache_perimeter.sql"], nuevas
+    m039 = (RAIZ / "migrations" / "039_aura_pois_cache_perimeter.sql").read_text(encoding="utf-8")
+    for ajeno in ("lead_actividad", "consent_reenganche_at", "consent_grant"):
+        assert ajeno not in m039, f"la 039 no debe tocar {ajeno}"
     import re
     for f in (RAIZ / "app").rglob("*.py"):
         t = f.read_text(encoding="utf-8")

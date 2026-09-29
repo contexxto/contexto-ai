@@ -8,6 +8,12 @@
  * máximo, un aviso» y nunca una promesa de envío en futuro.
  */
 
+// Plan 1.1 · TR-5: la versión de la promesa que ve la persona. Al activar se manda SOLO este
+// identificador; el servidor resuelve el texto exacto (app/grant_reenganche.py) y lo guarda en
+// la provenance del permiso. `COPY_AVISO.titulo` tiene que ser idéntico al texto de esa versión
+// (lo comprueba tests/test_tr5_consent_grant.py). Cambiar el texto = versión nueva.
+export const VERSION_COPY_AVISO = 'REENGAGEMENT_CONSENT_V1'
+
 export const COPY_AVISO = Object.freeze({
   titulo: 'Activa esta opción para poder recibir, como máximo, un aviso si aparece un dato ' +
     'verificado nuevo sobre este inmueble. Puedes desactivarla cuando quieras.',
@@ -29,7 +35,8 @@ export const COPY_AVISO = Object.freeze({
 /** Activar: solo con canal. Sin suscripción push devuelve null (no se envía nada). */
 export function cuerpoActivar(sessionId, pushSubscription) {
   if (!pushSubscription) return null
-  return { session_id: sessionId, push_subscription: pushSubscription, consent: true }
+  return { session_id: sessionId, push_subscription: pushSubscription, consent: true,
+    consent_copy_version: VERSION_COPY_AVISO }
 }
 
 /** Desactivar (REVOKED): no manda contacto alguno. */

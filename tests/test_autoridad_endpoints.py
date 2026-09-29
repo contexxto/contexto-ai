@@ -232,7 +232,9 @@ ENDPOINTS = {
     "7·POST /comparar": lambda s, u, r: chat.comparar_endpoint(
         _peticion(r), chat.CompararReq(session_id=s, id_a="a", id_b="b"), u),
     "8·POST /lead-contacto": lambda s, u, r: chat.lead_contacto(
-        _peticion(r), chat.LeadContacto(session_id=s, email="a@b.co", consent=True), u),
+        # TR-5 (actualización esperada): un «sí» lleva la versión de la promesa mostrada.
+        _peticion(r), chat.LeadContacto(session_id=s, email="a@b.co", consent=True,
+                                        consent_copy_version="REENGAGEMENT_CONSENT_V1"), u),
     "9·GET /notificaciones": lambda s, u, r: chat.listar_notificaciones(_peticion(r), s, u),
     "10·GET /conversaciones": lambda s, u, r: chat.listar_conversaciones(_peticion(r), s, u),
     "11·POST /notificaciones/leidas": lambda s, u, r: chat.marcar_notificaciones_leidas(

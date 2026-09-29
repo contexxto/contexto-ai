@@ -239,6 +239,7 @@ def _revocado(sid):
     """Dejó email y push pero su permiso está revocado (o nunca lo dio)."""
     f = _dormido(sid, consentido=True)
     f["consent_reenganche_at"] = None
+    f["_grants"] = []          # TR-5: revocado = sin grant vivo
     return f
 
 
@@ -368,8 +369,12 @@ def test_A5_no_nace_ningun_contrato_de_tr5():
         return ast.unparse(arbol)
 
     texto = "\n".join(codigo(f) for f in fuentes)
+    # TR-5 (actualización esperada): el contrato ya existe, pero SÓLO en sus módulos
+    # (app/contracts/consent_grant_v0.py, app/grant_reenganche.py, app/autoridad_reenganche.py).
+    # Estos cuatro ficheros lo usan por su API y no tocan el grant store ni su ciclo de vida.
     for prohibido in ("ConsentGrantV0", "PrincipalRefV0", "AuthorityEnvelope", "revoked_at",
-                      "expires_at", "case_ref", "consent_grant"):
+                      "expires_at", "used_at", "case_ref", "FROM consent_grant",
+                      "UPDATE consent_grant", "INTO consent_grant"):
         assert prohibido not in texto, prohibido
     ddl = " ".join(chat._LEAD_ACTIVIDAD_DDL)
     assert ddl.count("ADD COLUMN") == 7, "TR-2 añade UNA columna, no más"
@@ -377,8 +382,10 @@ def test_A5_no_nace_ningun_contrato_de_tr5():
 
 
 def test_A5b_no_hay_migracion_ni_backfill_nuevos():
+    # TR-5 (actualización esperada): la única migración nueva es la 038 del grant store, y no
+    # toca `lead_actividad` (sin backfill ni grants sintéticos: tests/test_tr5_consent_grant.py).
     nuevas = sorted(p.name for p in (RAIZ / "migrations").glob("03[8-9]*.sql"))
-    assert nuevas == [], nuevas
+    assert nuevas == ["038_consent_grant_reenganche.sql"], nuevas
     import re
     for f in (RAIZ / "app").rglob("*.py"):
         t = f.read_text(encoding="utf-8")
@@ -408,8 +415,16 @@ async def base(monkeypatch):
     admin = create_async_engine(URL, poolclass=NullPool)
     async with admin.begin() as cx:
         await cx.execute(text(f"CREATE SCHEMA {esquema}"))
+    # TR-5 (actualización esperada): el grant store es `public.consent_grant` (038), que la
+    # migración crea con esquema explícito. El esquema efímero va primero en el search_path;
+    # `public` detrás, sólo para esa tabla.
+    from app.esquema_requerido import aplicar_migracion
+    async with async_sessionmaker(admin)() as s0:
+        await aplicar_migracion(str(RAIZ / "migrations" / "038_consent_grant_reenganche.sql"), db=s0)
+    async with admin.begin() as cx:
+        await cx.execute(text("TRUNCATE public.consent_grant"))
     motor = create_async_engine(URL, poolclass=NullPool,
-                                connect_args={"server_settings": {"search_path": esquema}})
+                                connect_args={"server_settings": {"search_path": f"{esquema}, public"}})
     Sesion = async_sessionmaker(motor, expire_on_commit=False)
     async with motor.begin() as cx:
         await cx.execute(text(
@@ -428,6 +443,8 @@ async def base(monkeypatch):
     try:
         yield Sesion
     finally:
+        async with admin.begin() as cx:
+            await cx.execute(text("TRUNCATE public.consent_grant"))
         await motor.dispose()
         async with admin.begin() as cx:
             await cx.execute(text(f"DROP SCHEMA {esquema} CASCADE"))
@@ -453,7 +470,20 @@ async def _fila(Sesion, sid):
     return dict(r) if r else None
 
 
+async def _grants(Sesion, sid):
+    from sqlalchemy import text
+    async with Sesion() as db:
+        r = (await db.execute(text(
+            "SELECT channel, revoked_at, used_at, expires_at - granted_at AS vigencia "
+            "FROM consent_grant WHERE session_id = :s ORDER BY granted_at, channel"),
+            {"s": sid})).mappings().all()
+    return [dict(x) for x in r]
+
+
 async def _post(sid, cab, **cuerpo):
+    # TR-5 (actualización esperada): todo «sí» lleva la versión de la promesa mostrada.
+    if cuerpo.get("consent") is True:
+        cuerpo.setdefault("consent_copy_version", "REENGAGEMENT_CONSENT_V1")
     async with _cliente() as c:
         return await c.post("/api/v1/chat/lead-contacto", json={"session_id": sid, **cuerpo},
                             headers=cab)
@@ -476,7 +506,9 @@ async def test_B2_true_con_canal_concede_y_persiste(base):
     r = await _post(sid, cab, consent=True, push_subscription=PUSH)
     assert r.status_code == 200 and r.json() == {"ok": True, "resultado": "activado"}
     f = await _fila(base, sid)
-    assert f["consent_reenganche_at"] is not None
+    # TR-5 (actualización esperada): el permiso es el grant; el timestamp legacy ya no se escribe.
+    assert [g["channel"] for g in await _grants(base, sid) if g["revoked_at"] is None] == ["PUSH"]
+    assert f["consent_reenganche_at"] is None
     assert f["lead_push"] == PUSH or json.loads(f["lead_push"]) == PUSH
     assert f["reenganche_cerrado_en"] is None
 
@@ -498,7 +530,9 @@ async def test_B3b_control_true_sin_false_sigue_con_fecha(base):
     sid, cab = await _sesion(base)
     await _post(sid, cab, consent=True, email="c@ejemplo.invalid")
     await _post(sid, cab, consent=True, email="c@ejemplo.invalid")
-    assert (await _fila(base, sid))["consent_reenganche_at"] is not None
+    # TR-5 (actualización esperada): sigue habiendo UN grant vivo (el segundo sustituye al primero).
+    vivos = [g for g in await _grants(base, sid) if g["revoked_at"] is None and g["used_at"] is None]
+    assert [g["channel"] for g in vivos] == ["EMAIL"]
 
 
 @pg
@@ -593,7 +627,9 @@ async def test_B9_un_opt_in_posterior_reabre(base):
     r = await _post(sid, cab, consent=True, push_subscription=PUSH)
     assert r.json()["resultado"] == "activado"
     f = await _fila(base, sid)
-    assert f["reenganche_cerrado_en"] is None and f["consent_reenganche_at"] is not None
+    # TR-5 (actualización esperada): reabrir = cierre levantado + grant NUEVO.
+    assert f["reenganche_cerrado_en"] is None
+    assert [g["channel"] for g in await _grants(base, sid) if g["revoked_at"] is None] == ["PUSH"]
 
 
 @pg
@@ -621,7 +657,8 @@ async def test_B10b_token_de_una_sesion_no_toca_otra(base):
     await _post(sid_b, cab_b, consent=True, email="b@ejemplo.invalid")
     async with _cliente() as c:
         await c.post("/api/v1/chat/baja-aviso", json={"t": baja.emitir(sid_b), "accion": "cerrar"})
-    assert (await _fila(base, sid_a))["consent_reenganche_at"] is not None
+    # TR-5 (actualización esperada): lo que no debe tocarse de A es su GRANT (y su cierre).
+    assert [g["channel"] for g in await _grants(base, sid_a) if g["revoked_at"] is None] == ["EMAIL"]
     assert (await _fila(base, sid_a))["reenganche_cerrado_en"] is None
 
 

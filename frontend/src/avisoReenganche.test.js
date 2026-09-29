@@ -60,7 +60,9 @@ describe('consentimiento explícito', () => {
   it('activar exige canal: sin suscripción no hay petición', () => {
     expect(cuerpoActivar(SID, null)).toBeNull()
     expect(cuerpoActivar(SID, undefined)).toBeNull()
-    expect(cuerpoActivar(SID, SUB)).toEqual({ session_id: SID, push_subscription: SUB, consent: true })
+    // TR-5 (actualización esperada): el opt-in lleva la versión de la promesa, sólo el id.
+    expect(cuerpoActivar(SID, SUB)).toEqual({ session_id: SID, push_subscription: SUB, consent: true,
+      consent_copy_version: 'REENGAGEMENT_CONSENT_V1' })
   })
 
   it('desactivar y cerrar: consent=false explícito, sin contacto, cerrar nunca concede', () => {

@@ -51,7 +51,9 @@ class _Resultado:
         return self._filas[0] if self._filas else None
 
     def scalar(self):
-        return None
+        return self._escalar
+
+    _escalar = None
 
 
 class BaseEspia:
@@ -63,10 +65,27 @@ class BaseEspia:
         self.sentencias: list[tuple[str, dict]] = []
         self.commits = 0
         self.rollbacks = 0
+        self.consumidos: set[tuple[str, str]] = set()
 
     async def execute(self, stmt, params=None):
         sql = str(stmt)
-        self.sentencias.append((sql, dict(params or {})))
+        params = dict(params or {})
+        self.sentencias.append((sql, params))
+        # Plan 1.1 · TR-5 (actualización esperada): el permiso del comprador ya no es
+        # `consent_reenganche_at` sino un grant por canal, consultado en LA frontera
+        # (app/autoridad_reenganche.py). El doble lleva los grants vivos de cada dormido en
+        # `_grants`; la reserva los consume (un segundo intento ya no los ve).
+        if "to_regclass('public.consent_grant')" in sql:
+            r = _Resultado([])
+            r._escalar = True
+            return r
+        if "consent_grant" in sql and ("RETURNING" in sql or sql.lstrip().upper().startswith("SELECT")):
+            fila = next((d for d in self.dormidos if d["session_id"] == params.get("sid")), None)
+            vivos = [c for c in (fila or {}).get("_grants", [])
+                     if c in params.get("canales", []) and (params.get("sid"), c) not in self.consumidos]
+            if "RETURNING" in sql:
+                self.consumidos.update((params["sid"], c) for c in vivos)
+            return _Resultado([{"grant_id": f"g-{params.get('sid')}-{c}", "channel": c} for c in vivos])
         if "FROM lead_actividad" in sql and sql.lstrip().upper().startswith("SELECT"):
             return _Resultado(self.dormidos)
         if "FROM activos_inmutables" in sql:
@@ -91,6 +110,8 @@ def _dormido(sid, *, consentido=False):
         "lead_email": "comprador@prueba.test" if consentido else None,
         "lead_push": {"endpoint": "https://push.prueba.test/c"} if consentido else None,
         "consent_reenganche_at": datetime.now(timezone.utc) if consentido else None,
+        # TR-5: «consentido» = grants vivos por canal (el timestamp ya no autoriza nada).
+        "_grants": ["EMAIL", "PUSH"] if consentido else [],
     }
 
 

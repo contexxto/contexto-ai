@@ -189,3 +189,16 @@ está empujando, no aportando).
   confirmación (el GET no muta). Sin secreto, **no sale ningún aviso al comprador** (fail-closed) y no se
   desvía al corredor. Texto P5 corregido: «como máximo, un aviso… sobre este inmueble… desactivarla cuando
   quieras» — sin prometer entrega, porque el holdout sigue (D-5). Sin `ConsentGrantV0`: eso es TR-5.
+- **2026-09-28 — v0.7 — Plan 1.1 · TR-5 (`ConsentGrantV0` mínimo productivo)** — el permiso del aviso al
+  comprador deja de ser `consent_reenganche_at` y pasa a ser un **grant por canal** en `public.consent_grant`
+  (migración `038`, nacida cerrada: RLS sin FORCE + `REVOKE ALL` a anon/authenticated/service_role).
+  `purpose = REENGAGEMENT`, `audience = PRINCIPAL_SELF`, `action = NOTIFY_VERIFIED_UPDATE`, `mode = once`,
+  `expires_at = granted_at + 30 días`, `used_at` como metadato de ciclo de vida. Productor único: el opt-in
+  explícito de `/lead-contacto`, con la autoridad probada **en la misma transacción** (fila de `chat_sessions`
+  `FOR SHARE`): dueño → `AUTHENTICATED_PRINCIPAL`, capacidad anónima → `PSEUDONYMOUS_SESSION_PRINCIPAL` +
+  `RESUME_SECRET_POSSESSION`; la promesa mostrada se resuelve en servidor (`REENGAGEMENT_CONSENT_V1`).
+  **Una sola frontera** (`app/autoridad_reenganche.py`) responde AUTHORIZED(canales) | NO_GRANT | ERROR y
+  consume `used_at` en el mismo COMMIT que marca el lead `tocado`, antes de enviar. NO_GRANT → corredor como
+  antes (DR-15); ERROR → nadie. Revocar/cerrar/baja revocan **todos** los grants vivos; un nuevo «sí» crea
+  grants nuevos. El timestamp histórico ya no autoriza nada (sin backfill). La 038 se aplica a producción por
+  hash **antes** del backend y con GO explícito.

@@ -1488,9 +1488,11 @@ async def _pois_geo_cached(db, activo_id, lat: float, lon: float) -> list[dict]:
     pois = await _pois_geo(lat, lon)
     if pois:  # no congelar un [] transitorio
         try:
+            # CAST(... AS jsonb) y NO `:pois::jsonb`: el `::` del cast se come el bindparam en
+            # SQLAlchemy (registra `poi`) y el SQL viaja con `:pois::jsonb` literal → syntax error.
             await db.execute(
                 text("INSERT INTO aura_pois_cache (activo_id, pois, computed_at) "
-                     "VALUES (:id, :pois::jsonb, now()) "
+                     "VALUES (:id, CAST(:pois AS jsonb), now()) "
                      "ON CONFLICT (activo_id) DO UPDATE "
                      "SET pois = EXCLUDED.pois, computed_at = now()"),
                 {"id": str(activo_id), "pois": json.dumps(pois)},

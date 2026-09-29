@@ -66,9 +66,10 @@ describe('TR-1 · puerta suave retirada', () => {
     }
   })
 
-  it('el opt-in de reenganche (P5) sigue igual — no es TR-1', () => {
-    expect(APP).toContain('title="Te avisamos solo si aparece algo verificado que te calce — sin spam."')
-    expect(APP).toContain('Avísame de novedades verificadas')
+  it('el opt-in de reenganche (P5) sigue en pie — no es TR-1', () => {
+    // Plan 1.1 · TR-2 (actualización esperada): el texto se corrigió (D-4) y vive en
+    // avisoReenganche.js; lo fija avisoReenganche.test.js.
+    expect(APP).toContain('COPY_AVISO.boton')
     expect(APP).toContain('/api/v1/chat/lead-contacto')
   })
 })

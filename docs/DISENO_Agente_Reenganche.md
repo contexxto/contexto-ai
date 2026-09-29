@@ -178,3 +178,14 @@ está empujando, no aportando).
   saltaba `REENGANCHE_CRON_ENABLED`. La bandera pasa a consultarse también en `escanear_reenganches` (única
   entrada), así que apagarla detiene todo efecto aunque el bucle ya esté corriendo. Sin sustituto en la API:
   si algún día hace falta operación manual, será fuera de la API orientada al comprador.
+- **2026-09-28 — v0.6 — Plan 1.1 · TR-2 (consentimiento revocable)** — `POST /api/v1/chat/lead-contacto`:
+  `consent` es **obligatorio** (sin default; omitirlo = 422) y estrictamente booleano; `false` **revoca**
+  (`consent_reenganche_at = NULL`, idempotente) sin guardar contacto nuevo ni borrar el histórico; `true`
+  exige un canal utilizable (email o push) en la misma petición, si no responde `sin_canal` y no escribe.
+  **Cierre explícito** («No quiero más seguimiento de este inmueble», `close=true`): columna
+  `reenganche_cerrado_en`, excluida del barrido **completo** (ni comprador ni corredor); un opt-in posterior
+  reabre. **Baja en cada aviso al comprador**: token firmado (`app/baja_aviso.py`, secreto dedicado
+  `REENGANCHE_BAJA_SECRET`) que solo revoca o cierra, vía `POST /api/v1/chat/baja-aviso`; el enlace abre una
+  confirmación (el GET no muta). Sin secreto, **no sale ningún aviso al comprador** (fail-closed) y no se
+  desvía al corredor. Texto P5 corregido: «como máximo, un aviso… sobre este inmueble… desactivarla cuando
+  quieras» — sin prometer entrega, porque el holdout sigue (D-5). Sin `ConsentGrantV0`: eso es TR-5.

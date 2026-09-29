@@ -175,9 +175,10 @@ _PROMESA = [
     re.compile(r"\bavisame\b"),
 ]
 _LISTA_BLANCA = {
-    # P5 · opt-in de reenganche: TIENE consumidor (cron de reenganche). Es TR-2/TR-5.
-    ("frontend/src/App.jsx", "te avisamos solo si aparece algo verificado que te calce"),
-    ("frontend/src/App.jsx", "avisame de novedades verificadas"),
+    # P5 · opt-in de reenganche. Plan 1.1 · TR-2 (actualización esperada): sus dos entradas
+    # —«te avisamos solo si aparece algo verificado que te calce» y «avísame de novedades
+    # verificadas»— SALEN de la lista porque el texto se corrigió (D-4) y ya no promete: el
+    # copy nuevo vive en frontend/src/avisoReenganche.js y este barrido no encuentra promesa en él.
     # La PROHIBICIÓN en el prompt cita la frase para prohibirla.
     ("app/agent/graph.py", "\"te escribo si sale\"): no hay nada que lo vaya a hacer"),
     # El detector documenta lo que caza y lo que no.
@@ -285,10 +286,12 @@ def test_11d_el_detector_tambien_corre_con_panel():
 # ── 12 · P5 (reenganche) intacto: no es TR-1 ──────────────────────────────────────────
 
 def test_12_el_opt_in_de_reenganche_sigue_en_pie():
+    """P5 no se retiró en TR-1 y sigue en pie. Plan 1.1 · TR-2 (actualización esperada): su
+    texto cambió (D-4) —ya no promete— y ahora se puede desactivar y cerrar; el texto exacto
+    lo fija tests/test_tr2_consentimiento.py."""
     import main
     js = APP_JSX.read_text(encoding="utf-8")
-    assert 'title="Te avisamos solo si aparece algo verificado que te calce — sin spam."' in js
-    assert "Avísame de novedades verificadas" in js and "Te avisaremos" in js
+    assert "COPY_AVISO.boton" in js and "COPY_AVISO.dejar" in js
     assert "/api/v1/chat/lead-contacto" in js
     rutas = {getattr(r, "path", "") for r in main.app.routes}
     assert "/api/v1/chat/lead-contacto" in rutas

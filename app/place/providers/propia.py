@@ -12,6 +12,8 @@ perfectamente validas que ignoran a quien camino hasta el local y lo marco cerra
 guarda de `tests/test_curacion_propaga.py` sigue al SQL a donde se mude y lo encuentra aqui.
 
 El SQL se movio TAL CUAL: ni un filtro, ni un orden, ni una consulta de mas o de menos.
+PLACE-PROVENANCE-041 solo AÑADIO columnas proyectadas (la procedencia que la vista ya expone:
+dataset, id de origen, fecha de ingesta y verificacion); filtros, orden y radios, intactos.
 """
 
 from __future__ import annotations
@@ -81,6 +83,7 @@ _RADIO_TRANSP_M = 3000  # el hub masivo puede estar más lejos (mismo criterio q
 _PROPIOS_ENTORNO_SQL = text("""
     SELECT DISTINCT ON (categoria)
         id, categoria, nombre, marca, verificado_en,
+        fuente, overture_id, osm_id, actualizado_en, verificacion_accion,
         ST_Y(geom) AS lat, ST_X(geom) AS lon,
         ROUND(ST_Distance(geom::geography,
               ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography))::int AS distancia_m
@@ -93,7 +96,9 @@ _PROPIOS_ENTORNO_SQL = text("""
 
 
 _PROPIOS_TRANSPORTE_SQL = text("""
-    SELECT id, nombre, verificado_en, ST_Y(geom) AS lat, ST_X(geom) AS lon,
+    SELECT id, nombre, verificado_en,
+        fuente, overture_id, osm_id, actualizado_en, verificacion_accion, categoria_overture,
+        ST_Y(geom) AS lat, ST_X(geom) AS lon,
         ROUND(ST_Distance(geom::geography,
               ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography))::int AS distancia_m,
         (categoria_overture = ANY(:masivo)) AS es_masivo
@@ -116,6 +121,36 @@ def _fecha(v: object) -> str | None:
     if not v:
         return None
     return (v.isoformat() if hasattr(v, "isoformat") else str(v))[:10] or None
+
+
+def _iso(v: object) -> str | None:
+    """timestamptz → ISO 8601 completo, con zona. La procedencia no se recorta a la fecha."""
+    if not v:
+        return None
+    return v.isoformat() if hasattr(v, "isoformat") else str(v)
+
+
+def _procedencia_de_fila(f) -> dict:
+    """La procedencia del POI tal como la trae la capa (PLACE-PROVENANCE-041).
+
+    Son claves NUEVAS y aditivas: ningún consumidor existente las lee (todos toman claves
+    concretas). Las usa `app/place/persistible.py` para separar SOURCE (el registro del dataset
+    abierto), METHOD (la distancia que calcula Contexto) y VERIFICATION (un corredor en terreno).
+    Se leen con `.get()`: una fila sin estas columnas deja la procedencia en None, y quien
+    persiste NO la inventa.
+    """
+    dataset = f.get("fuente")
+    return {
+        "dataset": dataset,  # 'overture' | 'osm' (CHECK ck_pois_fuente en la tabla)
+        "dataset_id": (f.get("overture_id") if dataset == "overture"
+                       else f.get("osm_id") if dataset == "osm" else None),
+        # Cuándo NUESTRA capa ingirió el registro (refresco semanal). No es cuándo se observó
+        # el lugar: eso el dataset no lo dice, y no se sustituye por esta fecha.
+        "capa_actualizado_en": _iso(f.get("actualizado_en")),
+        # Cuándo un corredor pisó el lugar, con hora, y qué dijo.
+        "verificado_en_ts": _iso(f.get("verificado_en")),
+        "verificacion_accion": f.get("verificacion_accion"),
+    }
 
 
 async def _servicios_propios(lat: float, lon: float) -> dict[str, dict]:
@@ -148,6 +183,7 @@ async def _servicios_propios(lat: float, lon: float) -> dict[str, dict]:
                     "verificado_en": _fecha(f["verificado_en"]),
                     # Identidad del POI: lo que el corredor cierra/confirma en terreno.
                     "poi_id": f["id"],
+                    **_procedencia_de_fila(f),
                 }
             tr = (await conn.execute(_PROPIOS_TRANSPORTE_SQL, {
                 "lat": lat, "lon": lon, "max_m": _RADIO_TRANSP_M,
@@ -160,6 +196,8 @@ async def _servicios_propios(lat: float, lon: float) -> dict[str, dict]:
                     "es_masivo": bool(tr["es_masivo"]), "fuente": "propio",
                     "verificado_en": _fecha(tr["verificado_en"]),
                     "poi_id": tr["id"],
+                    **_procedencia_de_fila(tr),
+                    "subtipo": tr.get("categoria_overture"),
                 }
     except Exception as exc:  # noqa: BLE001 — si la capa/DB falla, el llamador cae a Google
         _avisar_capa_caida("_servicios_propios", exc)

@@ -17,7 +17,7 @@ import httpx
 from PIL import Image
 from pydantic import BaseModel, Field, ValidationError
 
-from app.config import settings
+from app.config import THINKING_APAGADO, settings
 
 # Claude recomienda lado máximo ~1568px; reescalamos para controlar tokens/costo.
 _MAX_DIM = 1568
@@ -183,6 +183,7 @@ async def extract_ficha_from_b64(jpeg_b64: str) -> FichaVision:
     resp = await _client().messages.create(
         model=settings.llm_model,
         max_tokens=1024,
+        thinking=THINKING_APAGADO,
         system=_SYSTEM_PROMPT,
         tools=[_VISION_TOOL],
         tool_choice={"type": "tool", "name": "registrar_ficha_visual"},

@@ -75,7 +75,7 @@ from app.buyer.extractor import (
     autorizar_traduccion,
     construir_lote,
 )
-from app.config import settings
+from app.config import THINKING_APAGADO, settings
 
 logger = logging.getLogger(__name__)
 
@@ -279,6 +279,9 @@ _TOOL_NAME = "registrar_afirmaciones"
 _MAX_TOKENS = 1500
 _TOOL_CHOICE = {"type": "tool", "name": _TOOL_NAME}
 _TEMPERATURE = None
+# Explícito por lo mismo que `temperature`: con Sonnet 5, omitirlo ENCIENDE el razonamiento
+# (ver app/config.py). Apagado, el modelo ve lo mismo que veía con Sonnet 4.5.
+_THINKING = THINKING_APAGADO
 
 _SYSTEM = (
     "Eres un intérprete de mensajes de un comprador/arrendatario inmobiliario. Lees UN "
@@ -453,6 +456,7 @@ async def proponer_con_modelo(texto: str) -> Sequence[PropuestaV0 | PropuestaRig
     respuesta = await _client().messages.create(
         model=settings.llm_model,
         max_tokens=_MAX_TOKENS,
+        thinking=_THINKING,
         system=_SYSTEM,
         tools=[_tool_schema()],
         tool_choice=_TOOL_CHOICE,

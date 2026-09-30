@@ -34,7 +34,7 @@ from app.agent.crm_tools import CRM_TOOLS, ESTRATEGA_TOOLS
 from app.agent.crm_guardrails import (
     evaluar_salida_crm, registrar_guardrail, texto_de_content, tool_jsons_de_conversacion,
 )
-from app.config import settings
+from app.config import THINKING_APAGADO, settings, temperatura_llm
 
 
 class CRMState(TypedDict):
@@ -198,7 +198,9 @@ def _build_crm_graph() -> StateGraph:
         api_key=settings.anthropic_api_key,
         http_client=httpx.AsyncClient(verify=_ssl_verify),
     )
-    base_llm = ChatAnthropic(model=settings.llm_model, temperature=0.2, max_tokens=1500)
+    # temperature y thinking, compatibles con Sonnet 4.5 y Sonnet 5: ver app/config.py.
+    base_llm = ChatAnthropic(model=settings.llm_model, temperature=temperatura_llm(0.2),
+                             thinking=THINKING_APAGADO, max_tokens=1500)
     base_llm.__dict__["_async_client"] = _client
     # Herramientas POR AGENTE: el Copiloto (táctico) ve la cartera + el timeline por-lead; el Estratega
     # SOLO ve la cartera agregada — sin tool_timeline_de_lead → no puede jalar el chat crudo de un interesado

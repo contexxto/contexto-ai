@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
+from app.config import THINKING_APAGADO, settings
 from app.database import get_db
 from app.embeddings import (
     EmbeddingError,
@@ -81,6 +81,7 @@ async def _refine_brief(texto: str) -> str:
         resp = await _client().messages.create(
             model=settings.llm_model,
             max_tokens=200,
+            thinking=THINKING_APAGADO,
             system=(
                 "Eres un asistente inmobiliario en Quito. Resume el brief del usuario en UNA "
                 "sola frase en español que capture los atributos DESEADOS del inmueble (tipo, "
@@ -145,6 +146,7 @@ async def _justificar(brief_desc: str, modo: str, resultados: list[dict]) -> dic
         resp = await _client().messages.create(
             model=settings.llm_model,
             max_tokens=900,
+            thinking=THINKING_APAGADO,
             system=(
                 "Eres un perito inmobiliario en Quito. Para CADA inmueble candidato, redacta UNA "
                 "frase concreta (máx ~160 caracteres) de por qué encaja con el brief, citando datos "

@@ -93,7 +93,9 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip()
 if API_KEY and not API_KEY.isascii():
     sys.exit("✗ CONTEXTO_API_KEY tiene caracteres no-ASCII (¿quedó el placeholder 'aquí…'?).\n"
              "  Pega SOLO la clave real de Render, sin texto extra ni acentos.")
-JUDGE_MODEL = os.environ.get("CONTEXTO_JUDGE_MODEL", "claude-3-5-haiku-latest")
+# `claude-3-5-haiku-latest` se retiró el 2026-02-19: desde entonces cada llamada fallaba y
+# el `except` de `judge` la contaba como APROBADA. Ver la nota en `judge`.
+JUDGE_MODEL = os.environ.get("CONTEXTO_JUDGE_MODEL", "claude-haiku-4-5")
 TIMEOUT = float(os.environ.get("CONTEXTO_EVAL_TIMEOUT", "120"))  # cold-start de Render
 VERIFY = os.environ.get("CONTEXTO_EVAL_VERIFY", "true").lower() != "false"
 
@@ -242,8 +244,10 @@ def judge(query: str, reply: str, rubric: str) -> tuple[bool, str]:
         m = re.search(r"\{.*\}", txt, re.S)
         obj = json.loads(m.group(0)) if m else {"pass": False, "reason": "juez sin JSON"}
         return bool(obj.get("pass")), str(obj.get("reason", ""))[:120]
-    except Exception as e:  # noqa: BLE001 — el juez no debe tumbar el eval
-        return True, f"(juez no disponible: {type(e).__name__})"
+    except Exception as e:  # noqa: BLE001 — el juez no debe tumbar el eval…
+        # …pero tampoco aprobar sin haber mirado. Antes esto devolvía True, y con el modelo
+        # del juez retirado la rúbrica de criterio pasaba en verde en TODOS los casos.
+        return False, f"(juez no disponible: {type(e).__name__})"
 
 
 def _guardar(caso_id: str, registro: dict) -> None:

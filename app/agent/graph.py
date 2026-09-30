@@ -21,7 +21,7 @@ from psycopg_pool import AsyncConnectionPool
 from app import db_tls
 from app.agent.state import AgentState
 from app.agent.tools import AGENT_TOOLS
-from app.config import settings
+from app.config import THINKING_APAGADO, settings, temperatura_llm
 from app.fair_housing import detectar_steering
 from app.preferencias import extraer_preferencias
 
@@ -702,7 +702,9 @@ def _build_graph() -> StateGraph:
     # 2. Instanciar ChatAnthropic base
     base_llm = ChatAnthropic(
         model=settings.llm_model,
-        temperature=0.2,
+        # Compatibles con Sonnet 4.5 y Sonnet 5: ver app/config.py.
+        temperature=temperatura_llm(0.2),
+        thinking=THINKING_APAGADO,
         max_tokens=2048,
         # Sin esto, `_agenerate` llama a messages.create() sin stream y astream_events
         # nunca emite `on_chat_model_stream`: el SSE del chat corría 12-23s y terminaba

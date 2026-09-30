@@ -28,7 +28,7 @@ import math
 import anthropic
 import httpx
 
-from app.config import settings
+from app.config import THINKING_APAGADO, settings
 from app.encaje import DIMENSIONES
 
 logger = logging.getLogger(__name__)
@@ -158,6 +158,8 @@ async def extraer_preferencias(mensajes_usuario: list[str]) -> dict:
         resp = await _client().messages.create(
             model=settings.llm_model,
             max_tokens=400,
+            # Sin razonamiento: el tope de 400 no da para pensar Y llamar a la tool.
+            thinking=THINKING_APAGADO,
             system=_SYSTEM,
             tools=[_TOOL],
             tool_choice={"type": "tool", "name": "registrar_preferencias"},

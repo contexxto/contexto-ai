@@ -53,7 +53,8 @@ from app.buyer.extractor import (  # noqa: E402
     AfirmacionAmbiguous, AfirmacionDurable, AfirmacionTurnOnly,
 )
 from app.buyer.interprete import (  # noqa: E402
-    _MAX_TOKENS, _SYSTEM, _TEMPERATURE, _TOOL_CHOICE, _tool_schema, interpretar_mensaje,
+    _MAX_TOKENS, _SYSTEM, _TEMPERATURE, _THINKING, _TOOL_CHOICE, _tool_schema,
+    interpretar_mensaje,
 )
 from app.buyer.mensaje import IdentifiedUserMessage  # noqa: E402
 from app.config import settings  # noqa: E402
@@ -387,6 +388,7 @@ def _identidad_config() -> dict:
         "max_tokens": _MAX_TOKENS,
         "tool_choice": _TOOL_CHOICE,
         "temperature": _TEMPERATURE if _TEMPERATURE is not None else "unset",
+        "thinking": _THINKING,
     }
     # PROCEDENCIA · de dónde salió, y deliberadamente FUERA del hash.
     #

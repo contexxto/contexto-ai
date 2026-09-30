@@ -331,3 +331,37 @@ div:focus, div:focus-visible { outline: none; }
 .enc-ok   { color: var(--accent); }
 .enc-warn { color: #E8B04B; }
 html[data-theme="light"] .enc-warn { color: #B47F1E; }
+
+/* ---- Popup de un activo en el Mapa Vivo (MapView: className 'ctx-popup') ----
+   MapLibre lo crea como DOM y trae su propio CSS: fondo blanco, radio de 3 px y el texto
+   heredado. El contenido (popupHTML) está escrito para el mapa oscuro, así que sin estas reglas
+   salía claro sobre blanco. Van las superficies del mapa, que son siempre oscuras (ver --map-*).
+   Aquí, en el DOM, los tokens SÍ valen; nunca pasarlos a un `paint` de MapLibre, que no los
+   entiende (coloresMapa.js). El pico es un triángulo de bordes: por eso toma el fondo en el
+   borde del lado que mira al punto, según el ancla que MapLibre elija. */
+.ctx-popup .maplibregl-popup-content {
+  background: var(--map-solid);
+  color: var(--map-text);
+  border: 1px solid var(--map-border);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.45);
+  padding: 12px 30px 12px 14px;
+}
+.ctx-popup.maplibregl-popup-anchor-top .maplibregl-popup-tip,
+.ctx-popup.maplibregl-popup-anchor-top-left .maplibregl-popup-tip,
+.ctx-popup.maplibregl-popup-anchor-top-right .maplibregl-popup-tip { border-bottom-color: var(--map-solid); }
+.ctx-popup.maplibregl-popup-anchor-bottom .maplibregl-popup-tip,
+.ctx-popup.maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip,
+.ctx-popup.maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip { border-top-color: var(--map-solid); }
+.ctx-popup.maplibregl-popup-anchor-left .maplibregl-popup-tip { border-right-color: var(--map-solid); }
+.ctx-popup.maplibregl-popup-anchor-right .maplibregl-popup-tip { border-left-color: var(--map-solid); }
+.ctx-popup .maplibregl-popup-close-button {
+  color: var(--map-dim);
+  font-size: 18px;
+  line-height: 1;
+  width: 28px;
+  height: 28px;
+  border-radius: 0 12px 0 8px;
+}
+.ctx-popup .maplibregl-popup-close-button:hover,
+.ctx-popup .maplibregl-popup-close-button:focus-visible { color: var(--map-text); background: rgba(255,255,255,.08); }

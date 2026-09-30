@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import { ATRIBUCION } from './atribucion'
-import { MAPA_CORAL, MAPA_TEAL, MAPA_TEAL_BRIGHT } from './coloresMapa'
+import { MAPA_CORAL, MAPA_TEAL, MAPA_TEAL_BRIGHT, colorMapa } from './coloresMapa'
 import { mensajeMapaHtml } from './fuentesMapa'
 import { SILENCIO_MAX_MS, textoDeSesion, textoVisible, unirSinRepetir } from './dictado'
 
@@ -363,7 +363,8 @@ export default function MapView({ seedIds, encajeById } = {}) {
       if (!mapRef.current) return
       if (esc.origen) marcadorPulso(esc.centro)
       if (esc.ruta?.coords?.length) {
-        const ids = agregarRutaAnimada(map, `tour-ruta-${i}`, esc.ruta.coords, esc.ruta.color || MAPA_TEAL_BRIGHT)
+        // El color viene del backend: a MapLibre solo llega si es un literal que entiende.
+        const ids = agregarRutaAnimada(map, `tour-ruta-${i}`, esc.ruta.coords, colorMapa(esc.ruta.color, MAPA_TEAL_BRIGHT))
         capasRef.current.ids.push(...ids)
         if (esc.ruta.destino) marcadorEtiqueta(esc.ruta.destino, esc.ruta.etiqueta, esc.ruta.color || 'var(--teal-bright)')
       }
@@ -384,7 +385,7 @@ export default function MapView({ seedIds, encajeById } = {}) {
     acciones.forEach((a, i) => {
       if (a.tipo === 'ruta' && a.coords?.length) {
         const id = `cmd-ruta-${i}`
-        const capas = agregarRutaAnimada(map, id, a.coords, a.color || MAPA_TEAL_BRIGHT)
+        const capas = agregarRutaAnimada(map, id, a.coords, colorMapa(a.color, MAPA_TEAL_BRIGHT))  // frontera, ver coloresMapa.js
         capasRef.current.ids.push(...capas)
         a.coords.forEach(c => { bounds.extend(c); hay = true })
         if (a.destino) marcadorEtiqueta(a.destino, a.etiqueta, a.color || 'var(--teal-bright)')

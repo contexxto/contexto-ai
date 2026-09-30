@@ -16,3 +16,16 @@
 export const MAPA_TEAL = '#2DBDB6'         // = --teal
 export const MAPA_TEAL_BRIGHT = '#5EEAD4'  // = --teal-bright
 export const MAPA_CORAL = '#E0685A'        // = --coral
+
+// Colores en literal que el parser de MapLibre entiende: hex, o rgb/rgba/hsl/hsla con números.
+const COLOR_LITERAL = /^(?:#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})|(?:rgba?|hsla?)\((?:[\d\s.,%/+-]|deg)*\))$/i
+
+// Frontera para los colores que vienen de DATOS (acciones del backend: rutas del comando y del
+// recorrido). Hoy el backend solo manda hex, pero lo que llega por la red no se audita en el
+// fuente: `valor` pasa solo si es un color literal de esa lista. Cualquier otra cosa —un
+// `var(--…)`, un nombre CSS, vacío, null, un no-texto— cae al `respaldo`, que es un literal.
+export function colorMapa(valor, respaldo) {
+  if (typeof valor !== 'string') return respaldo
+  const v = valor.trim()
+  return COLOR_LITERAL.test(v) ? v : respaldo
+}

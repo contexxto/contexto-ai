@@ -31,13 +31,14 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { validateStyleMin } from '@maplibre/maplibre-gl-style-spec'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import AuraSingleMap from './AuraSingleMap'
 import CompararMap from './CompararMap'
 import MapView from './MapView'
 import { codigoDesnudo } from './codigoDesnudo'
-import { MAPA_CORAL, MAPA_TEAL, MAPA_TEAL_BRIGHT } from './coloresMapa'
+import { MAPA_CORAL, MAPA_TEAL, MAPA_TEAL_BRIGHT, colorMapa } from './coloresMapa'
 
 // ── MapLibre simulado: registra todo lo que toca el estilo ─────────────────────────────────
 const sim = vi.hoisted(() => {
@@ -58,7 +59,7 @@ const sim = vi.hoisted(() => {
     getSource(id) { return this.fuentes.get(id) }
     removeSource(id) { this.fuentes.delete(id) }
     addLayer(capa) {
-      llamadas.push({ api: 'addLayer', id: capa.id, valor: { paint: capa.paint, layout: capa.layout, filter: capa.filter } })
+      llamadas.push({ api: 'addLayer', id: capa.id, tipo: capa.type, valor: { paint: capa.paint, layout: capa.layout, filter: capa.filter } })
       this.capas.add(capa.id)
     }
     getLayer(id) { return this.capas.has(id) ? { id } : undefined }
@@ -220,6 +221,26 @@ function cadenas(v, ruta = '') {
 /** Cada valor con CSS de navegador que llegó a MapLibre, con su capa y su ruta dentro del estilo. */
 const infracciones = () => sim.llamadas.flatMap(({ api, id, valor }) =>
   cadenas(valor).filter(([, s]) => SOLO_NAVEGADOR.test(s)).map(([ruta, s]) => `${api}(${id}).${ruta} = '${s}'`))
+/**
+ * Lo que diría el validador del PROPIO MapLibre (@maplibre/maplibre-gl-style-spec: el que en
+ * producción rechazó las capas con «Could not parse color from value 'var(--teal)'») sobre todo
+ * lo capturado: cada addLayer, y cada setPaintProperty/setLayoutProperty como capa de su tipo.
+ */
+function erroresMapLibre() {
+  const tipos = new Map(sim.llamadas.filter((l) => l.api === 'addLayer').map((l) => [l.id, l.tipo]))
+  const layers = sim.llamadas.flatMap((l, i) => {
+    const base = { id: `${i}:${l.id}`, source: 's' }
+    if (l.api === 'addLayer') {
+      const { paint, layout, filter } = l.valor
+      return [{ ...base, type: l.tipo, ...(paint && { paint }), ...(layout && { layout }), ...(filter && { filter }) }]
+    }
+    if (l.api === 'setPaintProperty' && tipos.has(l.id)) return [{ ...base, type: tipos.get(l.id), paint: l.valor }]
+    if (l.api === 'setLayoutProperty' && tipos.has(l.id)) return [{ ...base, type: tipos.get(l.id), layout: l.valor }]
+    return []
+  })
+  const s = { type: 'geojson', data: { type: 'FeatureCollection', features: [] } }
+  return validateStyleMin({ version: 8, sources: { s }, layers }).map((e) => e.message)
+}
 const capasAnadidas = () => sim.llamadas.filter((l) => l.api === 'addLayer').map((l) => l.id)
 
 const texto = (n) => (typeof n === 'string' ? n
@@ -249,6 +270,7 @@ describe('Mapa Vivo (MapView): lo que llega a MapLibre', () => {
     await abrirMapaVivo()
     expect(capasAnadidas()).toEqual(expect.arrayContaining(['activos-glow', 'activos-dot']))
     expect(infracciones()).toEqual([])
+    expect(erroresMapLibre()).toEqual([])
   })
 
   it('coloreado por encaje: ídem', async () => {
@@ -256,6 +278,7 @@ describe('Mapa Vivo (MapView): lo que llega a MapLibre', () => {
     const glow = sim.llamadas.find((l) => l.id === 'activos-glow')
     expect(glow?.valor.paint['circle-color'][0]).toBe('interpolate')   // de verdad es el modo encaje
     expect(infracciones()).toEqual([])
+    expect(erroresMapLibre()).toEqual([])
   })
 
   it('chip «15 min a pie»: las isócronas de 15 y 30 min', async () => {
@@ -266,6 +289,7 @@ describe('Mapa Vivo (MapView): lo que llega a MapLibre', () => {
     await drenar()
     expect(capasAnadidas()).toEqual(['cmd-iso-0-30-fill', 'cmd-iso-0-30-line', 'cmd-iso-0-15-fill', 'cmd-iso-0-15-line'])
     expect(infracciones()).toEqual([])
+    expect(erroresMapLibre()).toEqual([])
   })
 
   it('una ruta del comando SIN color del backend: el color por defecto, y la animación', async () => {
@@ -278,6 +302,7 @@ describe('Mapa Vivo (MapView): lo que llega a MapLibre', () => {
     rafs.shift()?.(performance.now() + 400)   // un fotograma: respira el glow, corre la estela
     expect(sim.llamadas.some((l) => l.api === 'setPaintProperty')).toBe(true)
     expect(infracciones()).toEqual([])
+    expect(erroresMapLibre()).toEqual([])
   })
 
   it('un recorrido con ruta SIN color: el color por defecto de la escena', async () => {
@@ -291,6 +316,7 @@ describe('Mapa Vivo (MapView): lo que llega a MapLibre', () => {
     await avanzar(700)   // la escena se ilumina a los 650 ms
     expect(capasAnadidas()).toEqual(['tour-ruta-0-glow', 'tour-ruta-0', 'tour-ruta-0-flow'])
     expect(infracciones()).toEqual([])
+    expect(erroresMapLibre()).toEqual([])
   })
 })
 
@@ -301,6 +327,7 @@ describe('isócronas de AURA-SINGLE y de COMPARAR', () => {
     await avanzar(80)
     expect(capasAnadidas()).toEqual(['aura-iso-30-fill', 'aura-iso-30-line', 'aura-iso-15-fill', 'aura-iso-15-line'])
     expect(infracciones()).toEqual([])
+    expect(erroresMapLibre()).toEqual([])
   })
 
   it('COMPARAR (A teal, B ámbar)', async () => {
@@ -311,6 +338,81 @@ describe('isócronas de AURA-SINGLE y de COMPARAR', () => {
       'cmp-b-iso-30-fill', 'cmp-b-iso-30-line', 'cmp-b-iso-15-fill', 'cmp-b-iso-15-line',
     ])
     expect(infracciones()).toEqual([])
+    expect(erroresMapLibre()).toEqual([])
+  })
+})
+
+// ── Colores que vienen del backend: la frontera colorMapa ─────────────────────────────────
+describe('colores del backend: solo pasan si MapLibre los entiende (colorMapa)', () => {
+  const RUTA = [[-78.48, -0.18], [-78.47, -0.17]]
+  const lineaDe = (id) => sim.llamadas.find((l) => l.api === 'addLayer' && l.id === id)?.valor.paint['line-color']
+
+  it.each([
+    ['#5E9BE0', '#5E9BE0'],            // un hex del backend pasa tal cual
+    ['var(--teal)', MAPA_TEAL_BRIGHT],  // un token → respaldo literal
+    ['', MAPA_TEAL_BRIGHT],
+    [null, MAPA_TEAL_BRIGHT],
+  ])('ruta del comando con color del backend %j → %s', async (delBackend, esperado) => {
+    const inst = await abrirMapaVivo()
+    sim.llamadas.length = 0
+    respuestaComando = { texto: 'Ruta', acciones: [{ tipo: 'ruta', coords: RUTA, color: delBackend }] }
+    await boton(inst, 'Transporte').props.onClick()
+    await drenar()
+    expect(lineaDe('cmd-ruta-0-glow')).toBe(esperado)
+    expect(lineaDe('cmd-ruta-0')).toBe(esperado)
+    expect(infracciones()).toEqual([])
+    expect(erroresMapLibre()).toEqual([])
+  })
+
+  it.each([['#5E9BE0', '#5E9BE0'], ['var(--teal)', MAPA_TEAL_BRIGHT]])(
+    'ruta de un recorrido con color del backend %j → %s', async (delBackend, esperado) => {
+      const inst = await abrirMapaVivo()
+      sim.llamadas.length = 0
+      respuestaComando = { texto: 'Tour', acciones: [{ tipo: 'tour', escenas: [{ centro: [-78.48, -0.18], ruta: { coords: RUTA, color: delBackend } }] }] }
+      await boton(inst, 'Recorre esta zona').props.onClick()
+      await avanzar(700)
+      expect(lineaDe('tour-ruta-0')).toBe(esperado)
+      expect(infracciones()).toEqual([])
+      expect(erroresMapLibre()).toEqual([])
+    })
+
+  it('colorMapa: qué deja pasar y qué cae al respaldo', () => {
+    for (const c of ['#5E9BE0', '#abc', '#AABBCCDD', 'rgba(94,234,212,.5)', 'hsl(120deg, 50%, 50%)']) {
+      expect(colorMapa(c, MAPA_TEAL)).toBe(c)
+    }
+    expect(colorMapa('  #2DBDB6 ', MAPA_CORAL)).toBe('#2DBDB6')
+    for (const v of ['var(--teal)', ' var(--teal-bright) ', 'rgb(var(--x))', 'teal', 'currentColor', '#12345', '', null, undefined, 42, {}]) {
+      expect(colorMapa(v, MAPA_TEAL)).toBe(MAPA_TEAL)
+    }
+  })
+})
+
+// ── El popup de un activo es DOM: sus colores viven en index.css, con tokens ──────────────
+describe('popup de un activo (ctx-popup): legible sobre el mapa oscuro', () => {
+  const SRC = dirname(fileURLToPath(import.meta.url))
+  const css = readFileSync(join(SRC, 'index.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+  // Cuerpos de las reglas cuyo selector (o uno de su grupo) es exactamente `sel`.
+  const reglas = (sel) => [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .filter(([, sels]) => sels.split(',').some((x) => x.trim().replace(/\s+/g, ' ') === sel))
+    .map(([, , cuerpo]) => cuerpo)
+  const declara = (sel, prop) => reglas(sel).some((c) => new RegExp(`(^|[;\\s])${prop}\\s*:`).test(c))
+
+  it('MapView sigue creando el popup con la clase ctx-popup', () => {
+    expect(codigoDesnudo(readFileSync(join(SRC, 'MapView.jsx'), 'utf8'), 'MapView.jsx')).toMatch(/className:\s*'ctx-popup'/)
+  })
+
+  it('fondo y texto propios: sin ellos MapLibre pone fondo blanco y el contenido, claro, no se lee', () => {
+    expect(declara('.ctx-popup .maplibregl-popup-content', 'background')).toBe(true)
+    expect(declara('.ctx-popup .maplibregl-popup-content', 'color')).toBe(true)
+  })
+
+  it.each(['top', 'bottom', 'left', 'right'])('el pico toma el fondo del popup con el ancla %s', (ancla) => {
+    const lado = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' }[ancla]
+    expect(declara(`.ctx-popup.maplibregl-popup-anchor-${ancla} .maplibregl-popup-tip`, `border-${lado}-color`)).toBe(true)
+  })
+
+  it('el botón cerrar tiene color propio', () => {
+    expect(declara('.ctx-popup .maplibregl-popup-close-button', 'color')).toBe(true)
   })
 })
 

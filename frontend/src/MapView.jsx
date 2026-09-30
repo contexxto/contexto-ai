@@ -9,34 +9,14 @@ import { API_BASE, apiHeaders } from './api'
 import { ATRIBUCION } from './atribucion'
 import { mensajeMapaHtml } from './fuentesMapa'
 import { SILENCIO_MAX_MS, textoDeSesion, textoVisible, unirSinRepetir } from './dictado'
+// Lo que va a un `paint` de MapLibre sale de aquí, en literal: su parser no entiende `var(--…)`
+// (MAPLIBRE-COLOR-BOUNDARY). Los marcadores y el JSX siguen con los tokens CSS.
+import { ENCAJE_COLOR, MAP_COLOR, RUIDO_COLOR, colorMapa } from './mapaColores'
 
 // Estilo de mapa oscuro premium (CARTO dark-matter, gratuito, sin token).
 const DARK_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
 // Centro: La Carolina, Quito
 const QUITO = [-78.4825, -0.1807]
-
-const RUIDO_COLOR = [
-  'match', ['get', 'ruido'],
-  'BAJO', 'var(--teal)',
-  'MEDIO', '#E5C06A',
-  'ALTO', 'var(--coral)',
-  '#969CA6',
-]
-
-// Coloreo por ENCAJE (SPEC_Mapa_Vivo: "colorea cada resultado por ENCAJE, no por precio").
-// Intensidad del MISMO teal (frío), NO un ramp rojo→verde: la magnitud la da el brillo, no un
-// juicio de valor cromático. 'sin dato' (encaje ausente → -1) = gris, no finge un encaje.
-// Piso de luminosidad: incluso un encaje bajo (ej. 4%) debe SEGUIR SIENDO UN PIN VISIBLE sobre
-// el basemap oscuro — que "bajo" case casi con el fondo (#0E0D13) se leía como "no hay nada
-// ahí", no como "esto encaja poco". La magnitud sigue siendo honesta (0% se ve más apagado que
-// 100%), pero nunca cae por debajo de un teal claramente perceptible.
-const ENCAJE_COLOR = [
-  'interpolate', ['linear'], ['coalesce', ['get', 'encaje'], -1],
-  -1, '#6B6878',   // sin dato → gris, visible
-  0, '#3A8F89',    // encaje bajo → teal atenuado pero NUNCA casi-invisible
-  50, 'var(--teal)',   // medio → teal de la marca
-  100, 'var(--teal-bright)',  // alto → teal brillante
-]
 
 // Chips de categoría (un toque = ilumina esa capa). Íconos lucide del design system.
 const CHIPS = [
@@ -360,7 +340,7 @@ export default function MapView({ seedIds, encajeById } = {}) {
       if (!mapRef.current) return
       if (esc.origen) marcadorPulso(esc.centro)
       if (esc.ruta?.coords?.length) {
-        const ids = agregarRutaAnimada(map, `tour-ruta-${i}`, esc.ruta.coords, esc.ruta.color || 'var(--teal-bright)')
+        const ids = agregarRutaAnimada(map, `tour-ruta-${i}`, esc.ruta.coords, colorMapa(esc.ruta.color, MAP_COLOR.tealBright))
         capasRef.current.ids.push(...ids)
         if (esc.ruta.destino) marcadorEtiqueta(esc.ruta.destino, esc.ruta.etiqueta, esc.ruta.color || 'var(--teal-bright)')
       }
@@ -381,7 +361,7 @@ export default function MapView({ seedIds, encajeById } = {}) {
     acciones.forEach((a, i) => {
       if (a.tipo === 'ruta' && a.coords?.length) {
         const id = `cmd-ruta-${i}`
-        const capas = agregarRutaAnimada(map, id, a.coords, a.color || 'var(--teal-bright)')
+        const capas = agregarRutaAnimada(map, id, a.coords, colorMapa(a.color, MAP_COLOR.tealBright))
         capasRef.current.ids.push(...capas)
         a.coords.forEach(c => { bounds.extend(c); hay = true })
         if (a.destino) marcadorEtiqueta(a.destino, a.etiqueta, a.color || 'var(--teal-bright)')
@@ -395,11 +375,13 @@ export default function MapView({ seedIds, encajeById } = {}) {
           const id = `cmd-iso-${i}-${c.minutos}`
           if (map.getSource(id)) return
           map.addSource(id, { type: 'geojson', data: { type: 'Feature', geometry: c.geometry } })
+          // El mismo tono dos veces: en literal para MapLibre, como token para la etiqueta DOM.
           const col = c.minutos <= 15 ? 'var(--teal-bright)' : 'var(--teal)'
+          const colMapa = c.minutos <= 15 ? MAP_COLOR.tealBright : MAP_COLOR.teal
           map.addLayer({ id: `${id}-fill`, type: 'fill', source: id,
-            paint: { 'fill-color': col, 'fill-opacity': 0.16 } })
+            paint: { 'fill-color': colMapa, 'fill-opacity': 0.16 } })
           map.addLayer({ id: `${id}-line`, type: 'line', source: id,
-            paint: { 'line-color': col, 'line-width': 2, 'line-opacity': 0.9, 'line-dasharray': [3, 2] } })
+            paint: { 'line-color': colMapa, 'line-width': 2, 'line-opacity': 0.9, 'line-dasharray': [3, 2] } })
           capasRef.current.ids.push(`${id}-fill`, `${id}-line`, id)
           eachCoord(c.geometry, xy => { bounds.extend(xy); hay = true })
           const norte = puntoNorte(c.geometry)

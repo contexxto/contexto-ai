@@ -5,6 +5,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import { X, ArrowLeftRight } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import { ATRIBUCION } from './atribucion'
+import { MAP_COLOR } from './mapaColores'
 
 // Modo COMPARAR espacial (docs/SPEC_Mapa_Vivo.md L30/L216): DOS AURAS superpuestas en el
 // MISMO encuadre donde se VE el trade-off — no un "82% vs 76%" frío ni solo una tabla. Cada
@@ -14,8 +15,10 @@ import { ATRIBUCION } from './atribucion'
 // acompaña ABAJO (DeltaEncaje). Degradable: si /aura falla, cae al aviso y queda la tabla.
 
 const DARK_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
-const HUE_A = { accent: 'var(--teal-bright)', glow: 'rgba(94,234,212,.5)' }   // A — teal frío
-const HUE_B = { accent: '#E8B84B', glow: 'rgba(232,184,75,.5)' }   // B — ámbar cálido
+// `accent` pinta el DOM (pin, leyenda, icono) y puede ser un token CSS; `mapa` es el MISMO tono
+// en literal para las isócronas, porque MapLibre no entiende `var(--…)` (MAPLIBRE-COLOR-BOUNDARY).
+const HUE_A = { accent: 'var(--teal-bright)', mapa: MAP_COLOR.tealBright, glow: 'rgba(94,234,212,.5)' }   // A — teal frío
+const HUE_B = { accent: '#E8B84B', mapa: '#E8B84B', glow: 'rgba(232,184,75,.5)' }   // B — ámbar cálido
 const C = { panel: '#1E1D28', muted: '#9C99AC', text: '#EDEBF2', line: 'rgba(45,189,182,.22)' }
 
 const aNum = (v) => (typeof v === 'number' ? v : typeof v === 'string' && v.trim() ? Number(v) : NaN)
@@ -87,11 +90,11 @@ export default function CompararMap({ ids, cards = [], onClose }) {
                 map.addSource(id, { type: 'geojson', data: { type: 'Feature', geometry: c.geometry } })
                 map.addLayer({
                   id: `${id}-fill`, type: 'fill', source: id,
-                  paint: { 'fill-color': hue.accent, 'fill-opacity': c.minutos <= 15 ? 0.14 : 0.06 },
+                  paint: { 'fill-color': hue.mapa, 'fill-opacity': c.minutos <= 15 ? 0.14 : 0.06 },
                 })
                 map.addLayer({
                   id: `${id}-line`, type: 'line', source: id,
-                  paint: { 'line-color': hue.accent, 'line-width': 1.5, 'line-opacity': 0.6, 'line-dasharray': [2, 2] },
+                  paint: { 'line-color': hue.mapa, 'line-width': 1.5, 'line-opacity': 0.6, 'line-dasharray': [2, 2] },
                 })
               })
             })

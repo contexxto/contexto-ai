@@ -408,6 +408,38 @@ def test_la_041_no_reabre_ningun_consumidor_aunque_la_fila_traiga_evidencia():
     assert vigente["servicios_cercanos"] is None and vigente["conectividad"] is None
 
 
+# ══ PROD-APPLY-PREFLIGHT §3 · W2 (`/publish`) solo escribe la fila que acaba de crear ══
+def test_W2_publish_solo_escribe_la_conectividad_de_la_fila_que_acaba_de_crear():
+    """Resultado A del preflight: `/publish` NO puede tocar una fila que ya tenga evidencia.
+    El UPDATE de `conectividad` apunta a `aid`, que se genera con `uuid4()` DENTRO de la función,
+    se inserta con el ORM (sin columnas de evidencia: nacen en NULL) y se escribe ANTES del
+    commit: ninguna otra transacción ve la fila, y nadie pudo escribirle evidencia. Además, el
+    trigger de la 041 cubre el caso por la base (`test_legacy_writer_cannot_leave_stale…`)."""
+    import ast
+    import inspect
+    fuente = inspect.getsource(assets.publish_asset)
+    arbol = ast.parse(fuente)
+    lineas = {}
+    for n in ast.walk(arbol):
+        seg = ast.get_source_segment(fuente, n) or ""
+        if isinstance(n, ast.Assign) and seg.replace(" ", "") == "aid=uuid.uuid4()":
+            lineas["aid"] = n.lineno
+        elif isinstance(n, ast.Call) and seg.startswith("ActivoInmutable(") and "id=aid" in seg.replace(" ", ""):
+            lineas["insert"] = n.lineno
+        elif isinstance(n, ast.Await) and seg.replace(" ", "") == "awaitdb.flush()":
+            lineas["flush"] = n.lineno
+        elif isinstance(n, ast.Await) and "conectividad = :c" in seg:
+            lineas["update"] = n.lineno
+            assert '"id": str(aid)' in seg, "el UPDATE de conectividad no apunta a la fila recién creada"
+        elif isinstance(n, ast.Await) and seg.replace(" ", "") == "awaitdb.commit()":
+            lineas.setdefault("commit", n.lineno)
+    assert set(lineas) == {"aid", "insert", "flush", "update", "commit"}, lineas
+    assert lineas["aid"] < lineas["insert"] < lineas["flush"] < lineas["update"] < lineas["commit"], lineas
+    # El modelo ORM no mapea la evidencia: el INSERT la deja en NULL.
+    from app.models import ActivoInmutable
+    assert not {"servicios_evidencia", "conectividad_evidencia"} & set(ActivoInmutable.__table__.columns.keys())
+
+
 # ══ §9 · EL ESCRITOR: con y sin la 041 en la base ═════════════════════════════════
 class _Res:
     def __init__(self, valor=None):

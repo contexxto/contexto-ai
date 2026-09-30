@@ -21,16 +21,24 @@
 --     · no toca `servicios_cercanos` ni `conectividad`, ni borra el texto legado;
 --     · no crea `contexto_procedencia` —la etiqueta única que esta unidad descartó— y ABORTA si
 --       alguien la creó: la frontera de lectura (`app/place/legado.py`) abriría por ella;
---     · no añade trigger: con evidencia presente, el texto deja de ser autoridad (la lectura
---       renderiza desde el documento y comprueba su origen), así que un escritor que solo toque
---       el texto no puede lavar procedencia. Ver RESULTADO_PLACE_PROVENANCE_041_CODE_0.1 §K;
 --     · ni GRANT, ni REVOKE, ni políticas, ni RLS. Las columnas heredan la autoridad de la tabla;
 --       lo que la tabla tenga de más es el residual R2 de `activos_inmutables`, fuera de aquí;
 --     · no toca el perímetro de la 040 (`pois_propios`, `entorno_curacion`, `pois_vivos`).
 --
---   IDEMPOTENCIA EXPLÍCITA: si las dos columnas ya existen EXACTAMENTE como las deja esta
---   migración (jsonb, nullable, sin default, con sus dos CHECK validados), no hace nada. Si
---   existe cualquier otra cosa —una sola de las dos, otro tipo, un DEFAULT, sin el CHECK—,
+--   UN TRIGGER MÍNIMO, Y POR QUÉ (PROD-APPLY-PREFLIGHT 0.1, compuerta
+--   `test_legacy_writer_cannot_leave_stale_structured_evidence`): hay escritores REALES que
+--   cambian el texto o la ubicación sin saber de la evidencia y que no se pueden adaptar —el
+--   backend VIEJO si se hace rollback por SHA después de activar la 041, el `PATCH` que reubica
+--   `geom`, la rama «sin la 041» del escritor nuevo si no puede leer el catálogo, y el SQL a mano—.
+--   Sin protección, todos dejan un texto nuevo junto a la evidencia VIEJA (medido en PG15 sobre
+--   8f3eeb8e: 5 de 6 casos en rojo). `trg_activos_invalida_evidencia_desfasada` (BEFORE UPDATE OF
+--   servicios_cercanos, conectividad, geom) hace una sola cosa: si el texto de una dimensión —o la
+--   ubicación— cambia y su evidencia NO se reescribió en la MISMA sentencia, la pone a NULL. Quien
+--   escribe evidencia nueva a la vez que el texto (el escritor nuevo) no se ve afectado.
+--
+--   IDEMPOTENCIA EXPLÍCITA: si las dos columnas, sus dos CHECK validados, la función y el
+--   trigger ya existen EXACTAMENTE como los deja esta migración, no hace nada. Si existe
+--   cualquier otra cosa —una sola columna, otro tipo, un DEFAULT, sin el CHECK, sin el trigger—,
 --   ABORTA sin tocar nada. Nada se "arregla" en caliente.
 --
 --   QUIÉN LA APLICA: el dueño de `activos_inmutables` (en producción, `postgres`).
@@ -56,6 +64,9 @@ DECLARE
     pol_antes     integer;
     trg_antes     integer;
     no_nulas      bigint;
+    fn            CONSTANT text := 'public.activos_invalida_evidencia_desfasada()';
+    trg           CONSTANT text := 'trg_activos_invalida_evidencia_desfasada';
+    trg_ok        integer;
 BEGIN
     -- ── 0 · COMPUERTAS, FAIL-CLOSED ──────────────────────────────────────────────
     IF tabla IS NULL THEN
@@ -82,18 +93,32 @@ BEGIN
        AND atttypid = 'jsonb'::regtype AND NOT attnotnull AND NOT atthasdef;
     SELECT count(*) INTO ck_validos
       FROM pg_constraint WHERE conrelid = tabla AND contype = 'c' AND convalidated AND conname = ANY (cks);
+    -- El trigger de la 041, exacto: BEFORE UPDATE (tgtype 19 = ROW + BEFORE + UPDATE), habilitado,
+    -- sobre EXACTAMENTE esas tres columnas y con la función de la 041.
+    SELECT count(*) INTO trg_ok
+      FROM pg_trigger t
+     WHERE t.tgrelid = tabla AND t.tgname = trg AND NOT t.tgisinternal AND t.tgenabled = 'O'
+       AND t.tgtype = 19 AND t.tgfoid = to_regprocedure(fn)
+       AND (SELECT array_agg(a.attname::text ORDER BY a.attname) FROM pg_attribute a
+             WHERE a.attrelid = tabla AND a.attnum = ANY (t.tgattr::int2[]))
+           = ARRAY['conectividad', 'geom', 'servicios_cercanos'];
 
-    IF presentes = 2 AND exactas = 2 AND ck_validos = 2 THEN
-        RAISE NOTICE '041: ya aplicada (dos columnas jsonb nullable, sin default, con sus CHECK). Nada que hacer.';
+    IF presentes = 2 AND exactas = 2 AND ck_validos = 2 AND trg_ok = 1 THEN
+        RAISE NOTICE '041: ya aplicada (dos columnas jsonb nullable, sin default, con sus CHECK y el '
+                     'trigger de evidencia desfasada). Nada que hacer.';
         RETURN;
     END IF;
     IF presentes <> 0 THEN
         RAISE EXCEPTION '041 ABORTA: estado intermedio o ajeno (% de 2 columnas presentes, % exactas, '
-                        '% de 2 CHECK). No se arregla en caliente: caracterízalo antes.',
-                        presentes, exactas, ck_validos;
+                        '% de 2 CHECK, % de 1 trigger). No se arregla en caliente: caracterízalo antes.',
+                        presentes, exactas, ck_validos, trg_ok;
     END IF;
     IF EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = tabla AND conname = ANY (cks)) THEN
         RAISE EXCEPTION '041 ABORTA: ya existe una restricción con el nombre de las de la 041.';
+    END IF;
+    IF to_regprocedure(fn) IS NOT NULL
+       OR EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = tabla AND tgname = trg) THEN
+        RAISE EXCEPTION '041 ABORTA: ya existe la función o el trigger de la 041 sin sus columnas.';
     END IF;
 
     -- Lo que la 041 NO debe mover, medido antes.
@@ -174,6 +199,42 @@ BEGIN
         'cercana (masiva primero) en la capa propia. Los minutos son estimated (recta / 80 m/min), '
         'nunca tiempo de ruta. NULL = UNKNOWN. conectividad se renderiza desde aquí.';
 
+    -- ── 2b · LA EVIDENCIA SIGUE AL TEXTO Y A LA UBICACIÓN ───────────────────────────
+    -- Si en un UPDATE cambia el texto de una dimensión (o `geom`) y su evidencia NO se reescribió
+    -- en la misma sentencia, la evidencia vieja ya no corresponde: se pone a NULL (UNKNOWN). No
+    -- infiere nada, no lee el texto y no toca ninguna otra columna. SECURITY INVOKER y
+    -- `search_path` fijo: corre con los derechos de quien actualiza, sin atajos.
+    CREATE FUNCTION public.activos_invalida_evidencia_desfasada()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        SECURITY INVOKER
+        SET search_path = pg_catalog, public
+    AS $f$
+    BEGIN
+        IF NEW.geom IS DISTINCT FROM OLD.geom THEN
+            IF NEW.servicios_evidencia IS NOT DISTINCT FROM OLD.servicios_evidencia THEN
+                NEW.servicios_evidencia := NULL;
+            END IF;
+            IF NEW.conectividad_evidencia IS NOT DISTINCT FROM OLD.conectividad_evidencia THEN
+                NEW.conectividad_evidencia := NULL;
+            END IF;
+        END IF;
+        IF NEW.servicios_cercanos IS DISTINCT FROM OLD.servicios_cercanos
+           AND NEW.servicios_evidencia IS NOT DISTINCT FROM OLD.servicios_evidencia THEN
+            NEW.servicios_evidencia := NULL;
+        END IF;
+        IF NEW.conectividad IS DISTINCT FROM OLD.conectividad
+           AND NEW.conectividad_evidencia IS NOT DISTINCT FROM OLD.conectividad_evidencia THEN
+            NEW.conectividad_evidencia := NULL;
+        END IF;
+        RETURN NEW;
+    END
+    $f$;
+
+    CREATE TRIGGER trg_activos_invalida_evidencia_desfasada
+        BEFORE UPDATE OF servicios_cercanos, conectividad, geom ON public.activos_inmutables
+        FOR EACH ROW EXECUTE FUNCTION public.activos_invalida_evidencia_desfasada();
+
     -- ── 3 · VERIFICACIÓN FAIL-CLOSED (mide el efecto; no lo declara) ────────────────
     IF (SELECT count(*) FROM pg_attribute WHERE attrelid = tabla AND NOT attisdropped
           AND attname = ANY (cols) AND atttypid = 'jsonb'::regtype AND NOT attnotnull
@@ -195,12 +256,29 @@ BEGIN
         RAISE EXCEPTION '041 FALLA: cambió el RLS, el FORCE o el ACL de activos_inmutables';
     END IF;
     IF (SELECT count(*) FROM pg_policy WHERE polrelid = tabla) <> pol_antes
-       OR (SELECT count(*) FROM pg_trigger WHERE tgrelid = tabla AND NOT tgisinternal) <> trg_antes THEN
-        RAISE EXCEPTION '041 FALLA: cambiaron las políticas o los triggers de activos_inmutables';
+       OR (SELECT count(*) FROM pg_trigger WHERE tgrelid = tabla AND NOT tgisinternal) <> trg_antes + 1 THEN
+        RAISE EXCEPTION '041 FALLA: cambiaron las políticas o los triggers de activos_inmutables '
+                        '(se esperaba exactamente un trigger más: el de la 041)';
+    END IF;
+    SELECT count(*) INTO trg_ok
+      FROM pg_trigger t
+     WHERE t.tgrelid = tabla AND t.tgname = trg AND NOT t.tgisinternal AND t.tgenabled = 'O'
+       AND t.tgtype = 19 AND t.tgfoid = to_regprocedure(fn)
+       AND (SELECT array_agg(a.attname::text ORDER BY a.attname) FROM pg_attribute a
+             WHERE a.attrelid = tabla AND a.attnum = ANY (t.tgattr::int2[]))
+           = ARRAY['conectividad', 'geom', 'servicios_cercanos'];
+    IF trg_ok <> 1 THEN
+        RAISE EXCEPTION '041 FALLA: el trigger no quedó BEFORE UPDATE OF servicios_cercanos, conectividad, '
+                        'geom, habilitado y con la función de la 041';
+    END IF;
+    IF (SELECT prosecdef FROM pg_proc WHERE oid = to_regprocedure(fn))
+       OR NOT (SELECT coalesce(proconfig, '{}') @> ARRAY['search_path=pg_catalog, public']
+                 FROM pg_proc WHERE oid = to_regprocedure(fn)) THEN
+        RAISE EXCEPTION '041 FALLA: la función del trigger no quedó SECURITY INVOKER con search_path fijo';
     END IF;
 
-    RAISE NOTICE '041 OK: 2 columnas jsonb nullable sin default, 2 CHECK validados, 0 filas con '
-                 'evidencia, RLS/ACL/políticas/triggers de activos_inmutables intactos';
+    RAISE NOTICE '041 OK: 2 columnas jsonb nullable sin default, 2 CHECK validados, 1 trigger de evidencia '
+                 'desfasada, 0 filas con evidencia, RLS/ACL/políticas de activos_inmutables intactos';
 END $$;
 
 -- Verificación legible.
@@ -221,6 +299,8 @@ COMMIT;
 -- así que el orden da igual.
 --
 --   BEGIN;
+--   DROP TRIGGER IF EXISTS trg_activos_invalida_evidencia_desfasada ON public.activos_inmutables;
+--   DROP FUNCTION IF EXISTS public.activos_invalida_evidencia_desfasada();
 --   ALTER TABLE public.activos_inmutables DROP CONSTRAINT IF EXISTS ck_activos_conectividad_evidencia;
 --   ALTER TABLE public.activos_inmutables DROP CONSTRAINT IF EXISTS ck_activos_servicios_evidencia;
 --   ALTER TABLE public.activos_inmutables DROP COLUMN IF EXISTS conectividad_evidencia;

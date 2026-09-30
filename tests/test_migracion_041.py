@@ -60,18 +60,28 @@ def test_la_041_hace_solo_lo_que_dice():
     assert "coalesce((" in cuerpo, "una clave ausente no puede colarse por un NULL en el CHECK"
     assert not re.search(r"(?i)^\s*(INSERT|UPDATE|DELETE|TRUNCATE)\b", cuerpo, re.M)
     assert not re.search(r"(?i)\b(GRANT|REVOKE)\b", cuerpo)
-    assert not re.search(r"(?i)\bCREATE\s+(POLICY|TRIGGER|FUNCTION|VIEW)\b", cuerpo)
+    assert not re.search(r"(?i)\bCREATE\s+(POLICY|VIEW)\b", cuerpo)
+    # UN trigger y UNA función, los de la evidencia desfasada, y nada más (PROD-APPLY-PREFLIGHT).
+    assert re.findall(r"(?i)\bCREATE\s+FUNCTION\s+([a-z_.]+)", cuerpo) == \
+        ["public.activos_invalida_evidencia_desfasada"]
+    assert re.findall(r"(?i)\bCREATE\s+TRIGGER\s+([a-z_]+)", cuerpo) == ["trg_activos_invalida_evidencia_desfasada"]
+    assert "BEFORE UPDATE OF servicios_cercanos, conectividad, geom ON public.activos_inmutables" in cuerpo
+    assert "SECURITY INVOKER" in cuerpo and "SET search_path = pg_catalog, public" in cuerpo
+    assert not re.search(r"(?i)SECURITY\s+DEFINER", cuerpo)
     assert not re.search(r"(?i)\b(ENABLE|DISABLE|FORCE)\s+ROW\s+LEVEL", cuerpo)
     assert not re.search(r"(?i)ADD COLUMN\s+contexto_procedencia", cuerpo)
     assert not re.search(r"(?i)\bSET\s+(servicios_cercanos|conectividad)\b", cuerpo)
-    # Solo `activos_inmutables`: ni el perímetro de la 040 ni el respaldo.
-    assert set(re.findall(r"public\.([a-z_0-9]+)", cuerpo)) == {"activos_inmutables"}
+    # Solo `activos_inmutables` (y la función de su trigger): ni la 040 ni el respaldo.
+    assert set(re.findall(r"public\.([a-z_0-9]+)", cuerpo)) == \
+        {"activos_inmutables", "activos_invalida_evidencia_desfasada"}
     for compuerta in ("no existe public.activos_inmutables", "el dueño de activos_inmutables no es",
                       "¿Es la tabla correcta?", "existe contexto_procedencia", "ya aplicada",
                       "estado intermedio o ajeno", "ya existe una restricción",
                       "no quedaron jsonb, nullable, sin default", "los dos CHECK no quedaron",
                       "nacieron con evidencia", "cambió el RLS, el FORCE o el ACL",
-                      "cambiaron las políticas o los triggers"):
+                      "cambiaron las políticas o los triggers",
+                      "ya existe la función o el trigger de la 041", "el trigger no quedó BEFORE UPDATE",
+                      "SECURITY INVOKER con search_path fijo"):
         assert compuerta in cuerpo, compuerta
 
 
@@ -83,6 +93,8 @@ def test_el_rollback_documentado_es_el_inverso_exacto_y_esta_comentado():
         assert f"DROP COLUMN IF EXISTS {c};" in rb
     for ck in ("ck_activos_servicios_evidencia", "ck_activos_conectividad_evidencia"):
         assert f"DROP CONSTRAINT IF EXISTS {ck};" in rb
+    assert "DROP TRIGGER IF EXISTS trg_activos_invalida_evidencia_desfasada ON public.activos_inmutables;" in rb
+    assert "DROP FUNCTION IF EXISTS public.activos_invalida_evidencia_desfasada();" in rb
     assert "servicios_cercanos" not in rb and "conectividad;" not in rb, "el texto legado no se toca"
     cola = sql.split("-- ── ROLLBACK", 1)[1]
     assert all(l.startswith("--") or not l.strip() for l in cola.splitlines()[1:])
@@ -201,6 +213,9 @@ async def _limpia(cx):
     await cx.execute(text("DROP VIEW IF EXISTS public.pois_vivos CASCADE"))
     await cx.execute(text("DROP TABLE IF EXISTS public.entorno_curacion, public.pois_propios, "
                           "public.pois_propios_backup_20260727, public.activos_inmutables CASCADE"))
+    # La función del trigger NO depende de la tabla: sobrevive a su DROP y la 041 abortaría la
+    # vez siguiente («la función sin sus columnas»). Es la compuerta haciendo su trabajo.
+    await cx.execute(text("DROP FUNCTION IF EXISTS public.activos_invalida_evidencia_desfasada() CASCADE"))
 
 
 async def _uno(motor, sql, **p):
@@ -281,8 +296,16 @@ async def test_041_aplica_sin_tocar_filas_ni_permisos(banco):
     assert ("ck_activos_conectividad_evidencia", "c", True) in despues["constraints"]
     # Lo que no debía moverse, no se movió.
     assert despues["columnas"][:len(antes["columnas"])] == antes["columnas"]
-    for k in ("relrowsecurity", "relforcerowsecurity", "acl", "politicas", "triggers"):
+    for k in ("relrowsecurity", "relforcerowsecurity", "acl", "politicas"):
         assert despues[k] == antes[k], k
+    assert despues["triggers"] == antes["triggers"] + 1, "exactamente un trigger más: el de la 041"
+    trg = await _uno(banco["dueno"], """
+        SELECT t.tgtype::text || ':' || t.tgenabled::text || ':' || t.tgfoid::regprocedure::text || ':' ||
+               (SELECT string_agg(a.attname::text, ',' ORDER BY a.attname) FROM pg_attribute a
+                 WHERE a.attrelid = t.tgrelid AND a.attnum = ANY (t.tgattr::int2[]))
+        FROM pg_trigger t WHERE t.tgrelid = 'public.activos_inmutables'::regclass
+          AND t.tgname = 'trg_activos_invalida_evidencia_desfasada'""")
+    assert trg == "19:O:activos_invalida_evidencia_desfasada():conectividad,geom,servicios_cercanos", trg
     assert await _huella_legado(banco["dueno"]) == huella, "filas legado intactas"
     assert await _uno(banco["dueno"], "SELECT count(*) FROM public.activos_inmutables "
                       "WHERE servicios_evidencia IS NOT NULL OR conectividad_evidencia IS NOT NULL") == 0
@@ -562,6 +585,167 @@ async def test_la_capa_real_proyecta_la_procedencia_y_su_documento_pasa_el_check
     assert r == "ok", r
 
 
+# ── B9 · COMPUERTA: ningún escritor deja evidencia vieja junto a un texto nuevo ─────
+# El UPDATE EXACTO de los escritores que NO saben de la 041. El primero es byte a byte el de
+# `_recompute_walk_score` en `main` = c4668d2 (el backend de producción, 1162936) y el de su rama
+# «sin la 041» hoy; el segundo, el de `/publish`; el tercero, el de `PATCH /{id}` al reubicar.
+UPDATE_W1_LEGADO = ("UPDATE activos_inmutables SET walk_score = :w, walk_score_fuente = :f, "
+                    "conectividad = :c, servicios_cercanos = :s WHERE id = :id")
+UPDATE_W2_PUBLISH = ("UPDATE activos_inmutables SET owner_user_id = :u, owner_agency_id = :a, "
+                     "conectividad = :c WHERE id = :id")
+
+
+async def _siembra_evidencia(banco, uid):
+    docs = _docs_reales()
+    r = await _intenta(banco["dueno"], "UPDATE public.activos_inmutables SET "
+                       "servicios_cercanos = :ts, conectividad = :tc, "
+                       "servicios_evidencia = CAST(:s AS jsonb), conectividad_evidencia = CAST(:c AS jsonb) "
+                       "WHERE id = :id", ts="🌳 Texto viejo a ~254 m", tc="🚇 Estación vieja a ~640 m",
+                       s=docs["servicios"].model_dump_json(), c=docs["conectividad"].model_dump_json(), id=uid)
+    assert r == "ok", r
+
+
+async def _fila_entorno(banco, uid):
+    async with banco["dueno"].connect() as cx:
+        return dict((await cx.execute(text(
+            "SELECT servicios_cercanos, conectividad, geom::text AS geom, "
+            "servicios_evidencia::text AS se, conectividad_evidencia::text AS ce "
+            "FROM public.activos_inmutables WHERE id = :id"), {"id": uid})).mappings().one())
+
+
+def _sin_evidencia_rancia(antes, despues):
+    """La invariante: si cambió el texto de una dimensión (o la ubicación), su evidencia no
+    puede ser la de antes. Puede ser NULL o un documento NUEVO, nunca el viejo."""
+    fallos = []
+    se_movio = despues["geom"] != antes["geom"]
+    for txt, ev in (("servicios_cercanos", "se"), ("conectividad", "ce")):
+        cambio = despues[txt] != antes[txt] or se_movio
+        if cambio and antes[ev] is not None and despues[ev] == antes[ev]:
+            fallos.append(f"{txt} cambió{' (y la ubicación)' if se_movio else ''} y {ev} conserva el documento anterior")
+    return fallos
+
+
+ESCRITORES_LEGADOS = ["W1 viejo / rama sin la 041", "W2 /publish", "SQL manual o service_role",
+                      "PATCH reubica geom"]
+
+
+@pg
+@pytest.mark.parametrize("escritor", ESCRITORES_LEGADOS)
+async def test_legacy_writer_cannot_leave_stale_structured_evidence(banco, escritor):
+    """COMPUERTA del PROD-APPLY-PREFLIGHT de la 041. Falla si un escritor cambia el texto (o la
+    ubicación) de una fila con evidencia y la evidencia anterior sobrevive."""
+    await _aplica(banco["dueno"])
+    uid = str(uuid.UUID(int=1))
+    await _siembra_evidencia(banco, uid)
+    antes = await _fila_entorno(banco, uid)
+    if escritor == "W1 viejo / rama sin la 041":
+        sql, p = UPDATE_W1_LEGADO, dict(w=77, f="osm", c="🚇 Estación nueva ~700 m (9 min a pie)",
+                                        s="🌳 Parque nuevo (~300 m)", id=uid)
+    elif escritor == "W2 /publish":
+        sql, p = UPDATE_W2_PUBLISH, dict(u=str(uuid.uuid4()), a=None, c="🚇 Metro OSM a ~800 m", id=uid)
+    elif escritor == "SQL manual o service_role":
+        sql, p = "UPDATE public.activos_inmutables SET servicios_cercanos = :s WHERE id = :id", \
+            dict(s="texto editado a mano", id=uid)
+    else:
+        # El UPDATE de `edit_asset` al reubicar (geom + capa base heurística); sin PostGIS, `geom`
+        # es texto en el doble y el punto va como un solo parámetro.
+        if banco["postgis"]:
+            punto, extra = "ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)", dict(lon=-78.50, lat=-0.20)
+        else:
+            punto, extra = ":g", dict(g="POINT(-78.5 -0.2)")
+        sql, p = (f"UPDATE activos_inmutables SET direccion_estandarizada = :dir, geom = {punto}, "
+                  "walk_score = :ws, walk_score_fuente = 'heuristico' WHERE id = :id",
+                  dict(dir="Otra dirección", ws=60, id=uid, **extra))
+    assert await _intenta(banco["dueno"], sql, **p) == "ok"
+    despues = await _fila_entorno(banco, uid)
+    assert not _sin_evidencia_rancia(antes, despues), _sin_evidencia_rancia(antes, despues)
+
+
+@pg
+@pytest.mark.parametrize("caso", ["capa caída → respaldo OSM", "catálogo ilegible → rama sin la 041"])
+async def test_legacy_writer_cannot_leave_stale_structured_evidence_W1_real(banco, monkeypatch, caso):
+    """La misma compuerta con el escritor REAL (`_recompute_walk_score` de esta rama)."""
+    import app.place.persistible as persistible
+    import app.routers.assets as assets
+    import app.rutas as rutas
+    from tests.test_place_provenance_041 import COMPLETA, LAT, LON, _materia
+    monkeypatch.setattr(persistible, "_esquema_041_visto", False)
+    await _aplica(banco["dueno"])
+    uid = str(uuid.UUID(int=1))
+    await _siembra_evidencia(banco, uid)
+    antes = await _fila_entorno(banco, uid)
+
+    async def _fetch(lat, lon, timeout=None):
+        return [{"lat": LAT, "lon": LON, "tags": {"amenity": "pharmacy", "name": "Farmacia OSM"}},
+                {"lat": LAT + 0.004, "lon": LON, "tags": {"railway": "station", "name": "Estación OSM"}}]
+
+    async def _recolecta(lat, lon):
+        if caso.startswith("capa caída"):
+            raise RuntimeError("capa caída")
+        return _materia(COMPLETA)
+
+    async def _nada(*a, **k):
+        return None
+
+    async def _sin_041(_s):
+        return False
+    monkeypatch.setattr(assets, "_fetch_pois", _fetch)
+    monkeypatch.setattr(rutas, "_recolectar_zona", _recolecta)
+    monkeypatch.setattr(assets, "AsyncSessionLocal", banco["Sesion"])
+    monkeypatch.setattr(assets, "ensure_walk_score_fuente_column", _nada)
+    if caso.startswith("catálogo"):
+        monkeypatch.setattr(assets, "esquema_041_presente", _sin_041)
+    await assets._recompute_walk_score(uid, LAT, LON)
+    despues = await _fila_entorno(banco, uid)
+    assert despues != antes, "el escritor no escribió: la prueba no mediría nada"
+    assert not _sin_evidencia_rancia(antes, despues), _sin_evidencia_rancia(antes, despues)
+
+
+@pg
+async def test_W1_escribe_texto_y_evidencia_de_forma_atomica_y_un_fallo_no_deja_mezcla(banco, monkeypatch):
+    """§4 del preflight. El escritor nuevo escribe texto y evidencia en UNA sentencia. Si esa
+    sentencia falla —aquí, el CHECK real rechaza la evidencia de una dimensión—, no queda ni el
+    texto nuevo ni la evidencia nueva de NINGUNA dimensión: la fila sigue exactamente como estaba."""
+    import app.place.persistible as persistible
+    import app.routers.assets as assets
+    import app.rutas as rutas
+    from tests.test_place_provenance_041 import COMPLETA, LAT, LON, _materia
+    monkeypatch.setattr(persistible, "_esquema_041_visto", False)
+    await _aplica(banco["dueno"])
+    uid = str(uuid.UUID(int=1))
+    await _siembra_evidencia(banco, uid)
+    antes = await _fila_entorno(banco, uid)
+
+    async def _fetch(lat, lon, timeout=None):
+        return [{"lat": LAT, "lon": LON, "tags": {"amenity": "pharmacy", "name": "Farmacia OSM"}}]
+
+    async def _recolecta(lat, lon):
+        return _materia(COMPLETA)
+
+    async def _nada(*a, **k):
+        return None
+    real = assets.a_json
+
+    def _a_json_roto(doc):   # la conectividad sale con un documento que el CHECK rechaza
+        if doc is not None and doc.dimension == "nearest_transit":
+            return json.dumps({"contract_version": "place-dimension-evidence/v0", "status": "unknown"})
+        return real(doc)
+    monkeypatch.setattr(assets, "_fetch_pois", _fetch)
+    monkeypatch.setattr(rutas, "_recolectar_zona", _recolecta)
+    monkeypatch.setattr(assets, "AsyncSessionLocal", banco["Sesion"])
+    monkeypatch.setattr(assets, "ensure_walk_score_fuente_column", _nada)
+    monkeypatch.setattr(assets, "a_json", _a_json_roto)
+    await assets._recompute_walk_score(uid, LAT, LON)     # best-effort: traga el error del CHECK
+    assert await _fila_entorno(banco, uid) == antes, "un fallo a mitad dejó texto y evidencia mezclados"
+    # Y con el documento bueno, la misma llamada deja texto nuevo con evidencia nueva, juntos.
+    monkeypatch.setattr(assets, "a_json", real)
+    await assets._recompute_walk_score(uid, LAT, LON)
+    despues = await _fila_entorno(banco, uid)
+    assert despues["servicios_cercanos"] != antes["servicios_cercanos"] and despues["se"] != antes["se"]
+    assert despues["conectividad"] != antes["conectividad"] and despues["ce"] != antes["ce"]
+    assert not _sin_evidencia_rancia(antes, despues)
+
+
 # ── B8 · CONTROLES NEGATIVOS: quitar una guarda material pone esto en rojo ─────────
 def _mutante(de: str, a: str) -> str:
     sql = M041.read_text(encoding="utf-8")
@@ -588,6 +772,16 @@ async def _acepta_sin_fecha(banco):
                           "CAST(:v AS jsonb) WHERE id = :id", v=d, id=str(uuid.UUID(int=1))) == "ok"
 
 
+async def _deja_rancia_al_reubicar(banco):
+    uid = str(uuid.UUID(int=1))
+    await _siembra_evidencia(banco, uid)
+    antes = await _fila_entorno(banco, uid)
+    lon = -78.5 - (uuid.uuid4().int % 100000) / 1e7   # un punto NUEVO en cada pasada
+    punto = (f"ST_SetSRID(ST_MakePoint({lon}, -0.2), 4326)" if banco["postgis"] else f"'POINT({lon} -0.2)'")
+    await _intenta(banco["dueno"], f"UPDATE activos_inmutables SET geom = {punto} WHERE id = :id", id=uid)
+    return bool(_sin_evidencia_rancia(antes, await _fila_entorno(banco, uid)))
+
+
 async def _acepta_recta_como_ruta(banco):
     d = _mutar(_docs_reales()["conectividad"].model_dump_json(),
                lambda x: x["walk_duration"].update(value_class="derived"))
@@ -609,6 +803,20 @@ MUTACIONES = {
         "", _acepta_recta_como_ruta, "aplica"),
     "sin el coalesce del CHECK (NULL pasa)": (
         "        ), false));", "        ), true));", _acepta_sin_fecha, "aplica"),
+    "el trigger sin la rama de la ubicación": (
+        "        IF NEW.geom IS DISTINCT FROM OLD.geom THEN\n"
+        "            IF NEW.servicios_evidencia IS NOT DISTINCT FROM OLD.servicios_evidencia THEN\n"
+        "                NEW.servicios_evidencia := NULL;\n"
+        "            END IF;\n"
+        "            IF NEW.conectividad_evidencia IS NOT DISTINCT FROM OLD.conectividad_evidencia THEN\n"
+        "                NEW.conectividad_evidencia := NULL;\n"
+        "            END IF;\n"
+        "        END IF;\n", "", _deja_rancia_al_reubicar, "aplica"),
+    "sin el CREATE TRIGGER": (
+        "    CREATE TRIGGER trg_activos_invalida_evidencia_desfasada\n"
+        "        BEFORE UPDATE OF servicios_cercanos, conectividad, geom ON public.activos_inmutables\n"
+        "        FOR EACH ROW EXECUTE FUNCTION public.activos_invalida_evidencia_desfasada();\n", "",
+        None, "default"),
     "sin la compuerta de contexto_procedencia": (
         "    IF EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = tabla AND NOT attisdropped\n"
         "                 AND attname = 'contexto_procedencia') THEN", "    IF false THEN",

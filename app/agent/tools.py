@@ -16,6 +16,7 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from sqlalchemy import text
 
+from app.place.legado import CAMPOS_LEGADOS, con_contexto_vigente
 from app.config import settings
 from app.database import AsyncSessionLocal
 # La traducción de `walk_score_fuente` vive en `encaje` y se IMPORTA, no se copia: tener dos
@@ -135,6 +136,24 @@ async def _fetch_rows(query: str, params: dict) -> list[dict[str, Any]]:
         result = await session.execute(text(query), params)
         rows = result.mappings().all()
         return [dict(row) for row in rows]
+
+
+# MAP-SOURCE-BOUNDARY · D1. Los textos persistidos de entorno solo llegan al agente con
+# procedencia propia demostrada (app/place/legado.py); hoy ninguno la tiene. Un `null` en
+# esos campos es UNKNOWN, y el modelo tiene que leerlo así: ni «hay», ni «no hay».
+_AVISO_ENTORNO_DESCONOCIDO = (
+    "servicios_cercanos / conectividad = null means UNKNOWN: the stored nearby-services and "
+    "transit text has no verified provenance and is NOT current data. Do not say that a "
+    "service or transit stop exists or does not exist near this property; say you don't have "
+    "verified nearby-services/transit data for it."
+)
+
+
+def _aviso_entorno(filas: list[dict]) -> dict:
+    """La nota para el modelo, solo si alguna fila quedó sin contexto vigente."""
+    if any(f.get(c) is None for f in filas for c in CAMPOS_LEGADOS if c in f):
+        return {"entorno_note": _AVISO_ENTORNO_DESCONOCIDO}
+    return {}
 
 
 def _limpiar_servicios_en(row: dict) -> dict:
@@ -310,10 +329,12 @@ async def tool_search_nearby_assets(
             "message": f"No registered assets within {used} m of this point.",
         })
 
-    rows = [_con_procedencia_caminable(_limpiar_servicios_en(r)) for r in rows]
+    # MAP-SOURCE-BOUNDARY: la frontera de los textos legados, antes que nada.
+    rows = [_con_procedencia_caminable(_limpiar_servicios_en(con_contexto_vigente(r))) for r in rows]
     return json.dumps({
         "assets": rows, "total": len(rows), **relacion,
         "note": "distancia_metros = how far each asset is from the search point; be honest about distance if it is large.",
+        **_aviso_entorno(rows),
     }, default=str)
 
 
@@ -325,7 +346,7 @@ _STOP_WORDS = {"de", "la", "el", "y", "del", "los", "las", "en", "con", "por",
 async def tool_find_assets_by_text(query: str) -> str:
     """
     Find registered assets in OUR OWN catastro by matching their stored address text
-    (and connectivity/services notes) — WITHOUT relying on external geocoding.
+    — WITHOUT relying on external geocoding.
 
     Use this FIRST whenever the user names a street, address, building, or local
     landmark/sector (e.g. "Jorge Salvador Lara", "Quitumbe", "Quicentro Sur").
@@ -348,7 +369,11 @@ async def tool_find_assets_by_text(query: str) -> str:
     if not tokens:
         tokens = [raw]
 
-    params: dict[str, Any] = {"phrase": f"%{raw}%"}
+    # MAP-SOURCE-BOUNDARY · D1: ya NO se busca dentro de `conectividad` / `servicios_cercanos`.
+    # Encontrar un inmueble porque su texto legado nombra un lugar sería usar ese texto como
+    # fuente vigente por la puerta de atrás. Cuando exista `contexto_procedencia`, la búsqueda
+    # puede volver, condicionada a `= 'propio'`.
+    params: dict[str, Any] = {}
     dir_conds = []
     for i, t in enumerate(tokens):
         params[f"t{i}"] = f"%{t}%"
@@ -380,8 +405,6 @@ async def tool_find_assets_by_text(query: str) -> str:
             ORDER BY tt.fecha_publicacion DESC LIMIT 1
         ) t ON true
         WHERE {direccion_match}
-           OR a.conectividad ILIKE :phrase
-           OR a.servicios_cercanos ILIKE :phrase
         ORDER BY _rank ASC, a.created_at DESC
         LIMIT 10
     """
@@ -398,8 +421,8 @@ async def tool_find_assets_by_text(query: str) -> str:
 
     for r in rows:
         r.pop("_rank", None)
-    rows = [_con_procedencia_caminable(_limpiar_servicios_en(r)) for r in rows]
-    return json.dumps({"assets": rows, "total": len(rows)}, default=str)
+    rows = [_con_procedencia_caminable(_limpiar_servicios_en(con_contexto_vigente(r))) for r in rows]
+    return json.dumps({"assets": rows, "total": len(rows), **_aviso_entorno(rows)}, default=str)
 
 
 @tool
@@ -469,7 +492,9 @@ async def tool_fetch_asset_lifecycle_specs(activo_id: str) -> str:
     # ese texto sin verificar (p. ej. "cerca del Trole", "a 20 m", "muy comercial")
     # NO debe presentarse como hecho. Se eliminó del formulario; esto blinda
     # cualquier dato heredado. Robusto a caracteristicas como dict o JSON string.
-    row = rows[0]
+    # MAP-SOURCE-BOUNDARY: y la frontera de los textos legados, ANTES de la curación: lo que
+    # el corredor confirmó es dato propio y sobrevive; el texto sin procedencia, no.
+    row = con_contexto_vigente(rows[0])
     car = row.get("caracteristicas")
     if isinstance(car, str):
         try:
@@ -494,7 +519,8 @@ async def tool_fetch_asset_lifecycle_specs(activo_id: str) -> str:
     if curaciones:
         row["servicios_cercanos"] = aplicar_curacion(row.get("servicios_cercanos"), curaciones)
 
-    return json.dumps({"specs": _con_antiguedades(_con_procedencia_caminable(_limpiar_servicios_en(row)))}, default=str)
+    return json.dumps({"specs": _con_antiguedades(_con_procedencia_caminable(_limpiar_servicios_en(row))),
+                       **_aviso_entorno([row])}, default=str)
 
 
 async def _geocode_google(address: str, key: str) -> dict | None:
@@ -806,7 +832,8 @@ async def tool_traducir_estilo_de_vida(concepto: str) -> str:
         JUICIO: the adjective is the user's, the data is yours, the conclusion is theirs).
       - "servicios": a real named service (mall/supermarket/health/pharmacy/school) that
         may or may not be near THIS property — check servicios_cercanos and cite it if
-        present; say honestly if it's not, never invent one.
+        present; never invent one. If servicios_cercanos is null, that is UNKNOWN (no
+        verified data), not absence: say you don't have that data, never that it isn't there.
       - "protegidos": the concept ties to a PROTECTED trait (family/kids, age, national
         origin, religion, gender, disability) or to "seguridad" (a subjective verdict,
         never a measurement — a decision already made in this product). NEVER translate

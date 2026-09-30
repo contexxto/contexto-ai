@@ -43,7 +43,7 @@ import app.place.providers.google as google
 import app.routers.assets as assets
 import app.rutas as rutas
 from app.config import settings
-from app.place.legado import texto_legado_para_mapa
+from app.place.legado import con_contexto_vigente, contexto_legado_vigente
 
 RAIZ = Path(__file__).resolve().parents[1]
 APP = RAIZ / "app"
@@ -555,11 +555,14 @@ def test_entorno_destacado_y_geocoder_con_llave_no_llaman_a_Google(g, monkeypatc
 # (6) Los textos persistidos sin procedencia NO vuelven a un mapa
 # ═════════════════════════════════════════════════════════════════════════════════════
 def test_la_compuerta_de_legado_solo_abre_con_procedencia_propia():
-    assert texto_legado_para_mapa(TEXTO_LEGADO_SERV) is None
-    assert texto_legado_para_mapa(TEXTO_LEGADO_SERV, "google") is None
-    assert texto_legado_para_mapa(TEXTO_LEGADO_SERV, "osm") is None
-    assert texto_legado_para_mapa(TEXTO_LEGADO_SERV, "propio") == TEXTO_LEGADO_SERV
-    assert texto_legado_para_mapa(None, "propio") is None
+    assert contexto_legado_vigente(TEXTO_LEGADO_SERV) is None
+    assert contexto_legado_vigente(TEXTO_LEGADO_SERV, "google") is None
+    assert contexto_legado_vigente(TEXTO_LEGADO_SERV, "osm") is None
+    assert contexto_legado_vigente(TEXTO_LEGADO_SERV, "propio") == TEXTO_LEGADO_SERV
+    assert contexto_legado_vigente(None, "propio") is None
+    fila = {"id": ACTIVO, "servicios_cercanos": TEXTO_LEGADO_SERV, "conectividad": TEXTO_LEGADO_CONECT}
+    assert con_contexto_vigente(fila) == {"id": ACTIVO, "servicios_cercanos": None, "conectividad": None}
+    assert fila["servicios_cercanos"] == TEXTO_LEGADO_SERV, "la frontera copia; no muta la fila"
 
 
 def _sin_textos_legados(props: dict) -> None:
@@ -608,19 +611,36 @@ def test_anuncio_junto_al_mini_mapa_no_lleva_textos_legados(cliente, monkeypatch
     _sin_textos_legados(r.json())
 
 
-def test_tarjeta_y_badge_de_MapSeed_sin_chips_legados():
-    from app.decision.assembler import _card_from_row, _pois_de_intencion
+def _panel_de(monkeypatch, fila):
+    """El panel REAL (`construir_panel` → `_decidir_desde_filas`) con la base doblada."""
+    from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+
+    from app.decision import assembler
+    from app.routers import chat
+
+    async def _fetch(_ids):
+        return ([fila], {})
+    monkeypatch.setattr(assembler, "_fetch_cards_rows", _fetch)
+    mensajes = [HumanMessage(content="depa"),
+                ToolMessage(content=json.dumps({"assets": [{"id": fila["id"]}]}),
+                            name="tool_find_assets_by_text", tool_call_id="t1"),
+                AIMessage(content="Encontré esto.")]
+    return asyncio.run(chat.construir_panel(mensajes, session_id="s-msb", preferencias={}))
+
+
+def test_tarjeta_y_badge_de_MapSeed_sin_chips_legados(monkeypatch):
+    from app.decision.assembler import _pois_de_intencion
     from app.routers.chat import _map_seed_from_cards
 
-    # Control: este texto, sin la compuerta, SÍ produce chips (y por tanto el badge).
+    # Control: este texto, sin la frontera, SÍ produce chips (y por tanto el badge).
     assert len(_pois_de_intencion(TEXTO_LEGADO_SERV)) == 2
 
-    card = _card_from_row({"id": ACTIVO, "lat": LAT, "lon": LON, "tipo_activo": "Departamento",
-                           "servicios_cercanos": TEXTO_LEGADO_SERV,
-                           "conectividad": TEXTO_LEGADO_CONECT})
+    fila = {"id": ACTIVO, "lat": LAT, "lon": LON, "tipo_activo": "Departamento",
+            "servicios_cercanos": TEXTO_LEGADO_SERV, "conectividad": TEXTO_LEGADO_CONECT,
+            "caracteristicas": {}, "precio": 500, "operacion": "arriendo"}
+    (card,) = _panel_de(monkeypatch, fila)["cards"]
     assert card["pois"] == []
-    seed = _map_seed_from_cards([card])
-    assert seed["pines"][0]["badge"] is None
+    assert _map_seed_from_cards([card])["pines"][0]["badge"] is None
 
 
 def test_la_compuerta_de_legado_SI_PUEDE_fallar(cliente, monkeypatch):
@@ -629,7 +649,7 @@ def test_la_compuerta_de_legado_SI_PUEDE_fallar(cliente, monkeypatch):
     import main
     from app.auth import get_optional_user
 
-    monkeypatch.setattr(assets, "texto_legado_para_mapa", lambda t, procedencia=None: t)
+    monkeypatch.setattr(assets, "con_contexto_vigente", lambda fila: dict(fila))
     main.app.dependency_overrides[get_optional_user] = lambda: object()
     try:
         r = cliente("GET", "/api/v1/assets/geojson", responde=lambda sql, p: [_fila_legada()])

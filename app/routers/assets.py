@@ -22,7 +22,7 @@ from app.config import settings
 from app.database import AsyncSessionLocal, get_db
 from app.limiter import limiter
 from app.models import ActivoInmutable
-from app.place.legado import texto_legado_para_mapa
+from app.place.legado import con_contexto_vigente
 from app.schemas import ActivoCreateRequest, ActivoResponse
 from app.entorno import entorno_destacado, limpiar_texto_servicios
 from app.entorno_curacion import (
@@ -88,6 +88,8 @@ async def assets_geojson(
     for r in rows:
         if r["lon"] is None or r["lat"] is None:
             continue
+        # MAP-SOURCE-BOUNDARY: frontera de los textos legados en la LECTURA (app/place/legado.py).
+        r = con_contexto_vigente(r)
         props: dict = {
             "id": r["id"],
             "direccion": r["direccion"],
@@ -101,10 +103,9 @@ async def assets_geojson(
                 "ruido": r["ruido"],
                 "vegetacion": float(r["vegetacion"]) if r["vegetacion"] is not None else None,
                 "trafico": r["trafico"],
-                # MAP-SOURCE-BOUNDARY: estos dos textos se pintan en el popup del Mapa Vivo,
-                # SOBRE MapLibre, y no tienen procedencia propia demostrada (app/place/legado.py).
-                "conectividad": texto_legado_para_mapa(r["conectividad"]),
-                "servicios_cercanos": texto_legado_para_mapa(r["servicios_cercanos"]),
+                # Se pintan en el popup del Mapa Vivo, SOBRE MapLibre: ya pasaron la frontera.
+                "conectividad": r["conectividad"],
+                "servicios_cercanos": r["servicios_cercanos"],
                 "estado_revision": r["estado_revision"],
                 "confianza": float(r["confianza_extraccion"]) if r["confianza_extraccion"] is not None else None,
             })
@@ -171,6 +172,8 @@ async def assets_near(
         )
     ).mappings().all()
 
+    # MAP-SOURCE-BOUNDARY: frontera de los textos legados en la LECTURA (app/place/legado.py).
+    rows = [con_contexto_vigente(r) for r in rows]
     features = [{
         "type": "Feature",
         "geometry": {"type": "Point", "coordinates": [float(r["lon"]), float(r["lat"])]},
@@ -178,10 +181,8 @@ async def assets_near(
             "id": r["id"], "direccion": r["direccion"], "tipo_activo": r["tipo_activo"],
             "piso_altura": r["piso_altura"], "walk_score": r["walk_score"], "ruido": r["ruido"],
             "vegetacion": float(r["vegetacion"]) if r["vegetacion"] is not None else None,
-            # MAP-SOURCE-BOUNDARY: lo consume el Mapa Vivo; mismo criterio que /geojson.
-            "trafico": r["trafico"], "conectividad": texto_legado_para_mapa(r["conectividad"]),
-            "servicios_cercanos": texto_legado_para_mapa(r["servicios_cercanos"]),
-            "imagen_url": r["imagen_url"],
+            "trafico": r["trafico"], "conectividad": r["conectividad"],
+            "servicios_cercanos": r["servicios_cercanos"], "imagen_url": r["imagen_url"],
             "estado_revision": r["estado_revision"],
             "distancia_m": int(r["distancia_m"]) if r["distancia_m"] is not None else None,
         },
@@ -646,6 +647,9 @@ async def asset_anuncio(
         "WHERE a.id = :id"), {"id": str(activo_id)})).mappings().first()
     if not row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inmueble no encontrado.")
+    # MAP-SOURCE-BOUNDARY: frontera de los textos legados en la LECTURA y ANTES de la curación:
+    # lo que el corredor confirmó es dato propio y sobrevive (app/place/legado.py).
+    row = con_contexto_vigente(row)
 
     car = row["caracteristicas"]
     if isinstance(car, str):
@@ -711,11 +715,9 @@ async def asset_anuncio(
             "trafico": row["trafico"],
         },
         "scores_fuente": _scores_fuente(row["walk_score_fuente"]),
-        # MAP-SOURCE-BOUNDARY: el anuncio pinta estos textos junto al mini-mapa AURA
-        # (MapLibre) y no tienen procedencia propia demostrada (app/place/legado.py). Los
-        # lugares con nombre y minutos los da ahora /aura, desde nuestra capa.
-        "conectividad": texto_legado_para_mapa(row["conectividad"]),
-        "servicios_cercanos": texto_legado_para_mapa(_servicios),
+        # Junto al mini-mapa AURA: ya pasaron la frontera (arriba, antes de la curación).
+        "conectividad": row["conectividad"],
+        "servicios_cercanos": _servicios,
         "caracteristicas": car,
         # Foto canónica del catastro → galería del anuncio (si no hay fotos en caracteristicas).
         "fotos": car.get("fotos") or ([row["imagen_url"]] if row["imagen_url"] else []),
@@ -1604,6 +1606,7 @@ async def my_assets(
     base = settings.public_app_url.rstrip("/")
     items = []
     for r in rows:
+        r = con_contexto_vigente(r)  # MAP-SOURCE-BOUNDARY: frontera de los textos legados
         car = r["caracteristicas"]
         if isinstance(car, str):
             car = json.loads(car or "{}")
@@ -1717,6 +1720,7 @@ async def get_entorno(
              "FROM activos_inmutables WHERE id = :id"),
         {"id": str(activo_id)},
     )).mappings().first()
+    row = con_contexto_vigente(row) if row else None  # MAP-SOURCE-BOUNDARY: frontera
     curaciones = await fetch_curaciones(db, str(activo_id))
 
     # POIs de la capa propia con su `poi_id` (migración 023). Es lo que de verdad ve el
@@ -2453,5 +2457,8 @@ async def recompute_asset(
         text("SELECT walk_score, conectividad, servicios_cercanos FROM activos_inmutables WHERE id = :id"),
         {"id": str(activo_id)},
     )).mappings().first()
+    # MAP-SOURCE-BOUNDARY: la columna no dice si esta fila la acaba de escribir el recálculo o si
+    # quedó la vieja (p. ej. Overpass caído): pasa por la frontera como cualquier lectura.
+    fresh = con_contexto_vigente(fresh)
     return {"ok": True, "walk_score": fresh["walk_score"],
             "conectividad": fresh["conectividad"], "servicios_cercanos": fresh["servicios_cercanos"]}

@@ -37,7 +37,7 @@ from app.encaje import calcular_encaje, normalizar_tipo
 from app.entorno import limpiar_texto_servicios
 from app.entorno_curacion import aplicar_curacion, info_verificacion, parse_servicios
 from app.orden import encaje_ajustado, ordenar_candidatos
-from app.place.legado import texto_legado_para_mapa
+from app.place.legado import con_contexto_vigente
 from app.preferencias import extraer_preferencias
 import uuid
 from datetime import datetime, timezone
@@ -438,11 +438,10 @@ def _card_from_row(row: dict, preferencias: dict | None = None) -> dict:
         "dormitorios": car.get("num_dormitorios"),
         "banos": car.get("num_banos"),
         "area_m2": car.get("area_total_m2"),
-        # ★ El diferenciador: POIs verificados más cercanos (la intención visible).
-        # MAP-SOURCE-BOUNDARY: el primero se pinta como badge del pin de MapSeed (MapLibre)
-        # y el texto persistido no tiene procedencia propia demostrada → sin chips hasta
-        # PLACE-LEGACY-CONTEXT-BACKFILL (app/place/legado.py). La tarjeta ya degradaba así.
-        "pois": _pois_de_intencion(texto_legado_para_mapa(row.get("servicios_cercanos"))),
+        # ★ El diferenciador: POIs verificados más cercanos (la intención visible). El primero
+        # se pinta como badge del pin de MapSeed: la fila ya pasó la frontera de los textos
+        # legados en `_decidir_desde_filas` (sin procedencia propia → sin chips).
+        "pois": _pois_de_intencion(row.get("servicios_cercanos")),
         # Verificación del entorno por el corredor (Catastro Vivo). El pin del Mapa Vivo
         # (modo ZONA) lo pinta como halo SÓLIDO (verificado) vs suave ("según el mapa").
         # Es el eje HALO del pin-anillo. Honesto: solo se enciende si hay verificación
@@ -677,7 +676,12 @@ def _decidir_desde_filas(rows, curaciones, *, ids, preferencias, messages,
 
     by_id: dict[str, dict] = {}
     for r in rows:
-        r = dict(r)
+        # MAP-SOURCE-BOUNDARY · LA FRONTERA, antes que nada (app/place/legado.py). Sin
+        # procedencia propia demostrada, `servicios_cercanos` y `conectividad` quedan en None
+        # (UNKNOWN): no dan chips ni badge, y no alimentan `parque_min` / `transporte_min`, así
+        # que tampoco el encaje ni el orden. Va ANTES de la curación: lo que el corredor
+        # confirmó es dato propio y sobrevive.
+        r = con_contexto_vigente(r)
         cur = curaciones.get(r["id"], [])
         # Catastro Vivo: aplica el overlay del corredor (quita los POIs que marcó
         # CERRADOS) ANTES de armar los chips, igual que la página de anuncio /a/{id}.

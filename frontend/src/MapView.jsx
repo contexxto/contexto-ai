@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import { ATRIBUCION } from './atribucion'
+import { MAPA_CORAL, MAPA_TEAL, MAPA_TEAL_BRIGHT, colorMapa } from './coloresMapa'
 import { mensajeMapaHtml } from './fuentesMapa'
 import { SILENCIO_MAX_MS, textoDeSesion, textoVisible, unirSinRepetir } from './dictado'
 
@@ -15,11 +16,13 @@ const DARK_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.
 // Centro: La Carolina, Quito
 const QUITO = [-78.4825, -0.1807]
 
+// RUIDO_COLOR y ENCAJE_COLOR van a `circle-color` de MapLibre: colores literales, NUNCA
+// var(--…). MapLibre no resuelve tokens CSS y rechaza la capa entera (ver coloresMapa.js).
 const RUIDO_COLOR = [
   'match', ['get', 'ruido'],
-  'BAJO', 'var(--teal)',
+  'BAJO', MAPA_TEAL,
   'MEDIO', '#E5C06A',
-  'ALTO', 'var(--coral)',
+  'ALTO', MAPA_CORAL,
   '#969CA6',
 ]
 
@@ -34,8 +37,8 @@ const ENCAJE_COLOR = [
   'interpolate', ['linear'], ['coalesce', ['get', 'encaje'], -1],
   -1, '#6B6878',   // sin dato → gris, visible
   0, '#3A8F89',    // encaje bajo → teal atenuado pero NUNCA casi-invisible
-  50, 'var(--teal)',   // medio → teal de la marca
-  100, 'var(--teal-bright)',  // alto → teal brillante
+  50, MAPA_TEAL,         // medio → teal de la marca
+  100, MAPA_TEAL_BRIGHT, // alto → teal brillante
 ]
 
 // Chips de categoría (un toque = ilumina esa capa). Íconos lucide del design system.
@@ -360,7 +363,8 @@ export default function MapView({ seedIds, encajeById } = {}) {
       if (!mapRef.current) return
       if (esc.origen) marcadorPulso(esc.centro)
       if (esc.ruta?.coords?.length) {
-        const ids = agregarRutaAnimada(map, `tour-ruta-${i}`, esc.ruta.coords, esc.ruta.color || 'var(--teal-bright)')
+        // El color viene del backend: a MapLibre solo llega si es un literal que entiende.
+        const ids = agregarRutaAnimada(map, `tour-ruta-${i}`, esc.ruta.coords, colorMapa(esc.ruta.color, MAPA_TEAL_BRIGHT))
         capasRef.current.ids.push(...ids)
         if (esc.ruta.destino) marcadorEtiqueta(esc.ruta.destino, esc.ruta.etiqueta, esc.ruta.color || 'var(--teal-bright)')
       }
@@ -381,7 +385,7 @@ export default function MapView({ seedIds, encajeById } = {}) {
     acciones.forEach((a, i) => {
       if (a.tipo === 'ruta' && a.coords?.length) {
         const id = `cmd-ruta-${i}`
-        const capas = agregarRutaAnimada(map, id, a.coords, a.color || 'var(--teal-bright)')
+        const capas = agregarRutaAnimada(map, id, a.coords, colorMapa(a.color, MAPA_TEAL_BRIGHT))  // frontera, ver coloresMapa.js
         capasRef.current.ids.push(...capas)
         a.coords.forEach(c => { bounds.extend(c); hay = true })
         if (a.destino) marcadorEtiqueta(a.destino, a.etiqueta, a.color || 'var(--teal-bright)')
@@ -395,11 +399,14 @@ export default function MapView({ seedIds, encajeById } = {}) {
           const id = `cmd-iso-${i}-${c.minutos}`
           if (map.getSource(id)) return
           map.addSource(id, { type: 'geojson', data: { type: 'Feature', geometry: c.geometry } })
+          // Mismo color en dos sitios: literal para MapLibre (no resuelve tokens), token para
+          // la etiqueta, que es un marcador DOM.
+          const colMapa = c.minutos <= 15 ? MAPA_TEAL_BRIGHT : MAPA_TEAL
           const col = c.minutos <= 15 ? 'var(--teal-bright)' : 'var(--teal)'
           map.addLayer({ id: `${id}-fill`, type: 'fill', source: id,
-            paint: { 'fill-color': col, 'fill-opacity': 0.16 } })
+            paint: { 'fill-color': colMapa, 'fill-opacity': 0.16 } })
           map.addLayer({ id: `${id}-line`, type: 'line', source: id,
-            paint: { 'line-color': col, 'line-width': 2, 'line-opacity': 0.9, 'line-dasharray': [3, 2] } })
+            paint: { 'line-color': colMapa, 'line-width': 2, 'line-opacity': 0.9, 'line-dasharray': [3, 2] } })
           capasRef.current.ids.push(`${id}-fill`, `${id}-line`, id)
           eachCoord(c.geometry, xy => { bounds.extend(xy); hay = true })
           const norte = puntoNorte(c.geometry)

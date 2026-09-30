@@ -5,6 +5,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import { X, ArrowLeftRight } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import { ATRIBUCION } from './atribucion'
+import { MAPA_TEAL_BRIGHT } from './coloresMapa'
 
 // Modo COMPARAR espacial (docs/SPEC_Mapa_Vivo.md L30/L216): DOS AURAS superpuestas en el
 // MISMO encuadre donde se VE el trade-off — no un "82% vs 76%" frío ni solo una tabla. Cada
@@ -14,7 +15,9 @@ import { ATRIBUCION } from './atribucion'
 // acompaña ABAJO (DeltaEncaje). Degradable: si /aura falla, cae al aviso y queda la tabla.
 
 const DARK_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
-const HUE_A = { accent: 'var(--teal-bright)', glow: 'rgba(94,234,212,.5)' }   // A — teal frío
+// `accent` pinta las isócronas (fill-color/line-color de MapLibre): literal, nunca var(--…),
+// igual que HUE_B y que los hues de intentHue.js (ver coloresMapa.js).
+const HUE_A = { accent: MAPA_TEAL_BRIGHT, glow: 'rgba(94,234,212,.5)' }   // A — teal frío
 const HUE_B = { accent: '#E8B84B', glow: 'rgba(232,184,75,.5)' }   // B — ámbar cálido
 const C = { panel: '#1E1D28', muted: '#9C99AC', text: '#EDEBF2', line: 'rgba(45,189,182,.22)' }
 

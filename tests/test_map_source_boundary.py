@@ -586,8 +586,23 @@ def test_geojson_del_Mapa_Vivo_no_lleva_textos_legados(cliente, monkeypatch):
 
 
 def test_near_del_Mapa_Vivo_no_lleva_textos_legados(cliente):
+    """ACTUALIZACIÓN ESPERADA (NEAR-PERIMETER 0.1, opción A): sin sesión `/near` ya no trae las
+    claves de entorno —ni con valor ni en null—, así que el legado no puede aparecer; con sesión
+    las trae, y sin procedencia propia siguen en null (la frontera de D1)."""
+    import main
+    from app.auth import CurrentUser, get_optional_user
+
     r = cliente("GET", f"/api/v1/assets/near?lat={LAT}&lon={LON}",
                 responde=lambda sql, p: [_fila_legada()])
+    assert r.status_code == 200
+    anon = r.json()["features"][0]["properties"]
+    assert "conectividad" not in anon and "servicios_cercanos" not in anon
+    main.app.dependency_overrides[get_optional_user] = lambda: CurrentUser(user_id="u-msb")
+    try:
+        r = cliente("GET", f"/api/v1/assets/near?lat={LAT}&lon={LON}",
+                    responde=lambda sql, p: [_fila_legada()])
+    finally:
+        main.app.dependency_overrides.pop(get_optional_user, None)
     assert r.status_code == 200
     _sin_textos_legados(r.json()["features"][0]["properties"])
 

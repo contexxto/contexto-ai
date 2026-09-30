@@ -125,7 +125,9 @@ async def assets_geojson(
         "Devuelve, como GeoJSON, los activos dentro de un radio (metros) de un punto "
         "(lat/lon) — pensado para la geolocalización del usuario. Ordenados por "
         "distancia. Filtro opcional por operación (arriendo/venta). Si no hay activos "
-        "en el radio, devuelve una FeatureCollection vacía (cobertura honesta)."
+        "en el radio, devuelve una FeatureCollection vacía (cobertura honesta). "
+        "Sin sesión, solo lo espacial (pin, dirección, tipo, distancia); los scores, "
+        "con sesión — mismo criterio que /geojson (`scores_incluidos`)."
     ),
 )
 @limiter.limit("60/minute")
@@ -136,6 +138,7 @@ async def assets_near(
     radius_m: int = 500,
     operacion: str | None = None,
     db: AsyncSession = Depends(get_db),
+    user: CurrentUser | None = Depends(get_optional_user),
 ) -> dict:
     radius_m = max(50, min(radius_m, 5000))
 
@@ -158,7 +161,7 @@ async def assets_near(
                 "       a.volumen_trafico_historico AS trafico, a.conectividad, "
                 "       a.servicios_cercanos, a.imagen_url, "
                 "       ST_X(a.geom) AS lon, ST_Y(a.geom) AS lat, "
-                "       f.estado_revision, "
+                "       f.estado_revision, f.confianza_extraccion, "
                 "       ROUND(ST_Distance(a.geom::geography, "
                 "         ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography)::numeric, 0) AS distancia_m "
                 "FROM activos_inmutables a "
@@ -172,27 +175,45 @@ async def assets_near(
         )
     ).mappings().all()
 
+    # Protección del foso, el MISMO criterio que /geojson (NEAR-PERIMETER 0.1): sin sesión,
+    # solo lo espacial —pin, dirección, tipo, distancia—; los scores, el estado de revisión y
+    # la confianza, solo con sesión. Antes /near los daba a cualquiera, y 4 consultas anónimas
+    # de 5 km bajaban el catastro enriquecido entero, justo lo que la regla de /geojson impide.
+    con_scores = user is not None
+
     # MAP-SOURCE-BOUNDARY: frontera de los textos legados en la LECTURA (app/place/legado.py).
     rows = [con_contexto_vigente(r) for r in rows]
-    features = [{
-        "type": "Feature",
-        "geometry": {"type": "Point", "coordinates": [float(r["lon"]), float(r["lat"])]},
-        "properties": {
+    features = []
+    for r in rows:
+        props: dict = {
             "id": r["id"], "direccion": r["direccion"], "tipo_activo": r["tipo_activo"],
-            "piso_altura": r["piso_altura"], "walk_score": r["walk_score"], "ruido": r["ruido"],
-            "vegetacion": float(r["vegetacion"]) if r["vegetacion"] is not None else None,
-            "trafico": r["trafico"], "conectividad": r["conectividad"],
-            "servicios_cercanos": r["servicios_cercanos"], "imagen_url": r["imagen_url"],
-            "estado_revision": r["estado_revision"],
+            "piso_altura": r["piso_altura"], "imagen_url": r["imagen_url"],
             "distancia_m": int(r["distancia_m"]) if r["distancia_m"] is not None else None,
-        },
-    } for r in rows]
+        }
+        if con_scores:
+            # El conjunto enriquecido de /geojson con sesión (más `distancia_m`, arriba).
+            props.update({
+                "walk_score": r["walk_score"],
+                "ruido": r["ruido"],
+                "vegetacion": float(r["vegetacion"]) if r["vegetacion"] is not None else None,
+                "trafico": r["trafico"],
+                "conectividad": r["conectividad"],
+                "servicios_cercanos": r["servicios_cercanos"],
+                "estado_revision": r["estado_revision"],
+                "confianza": float(r["confianza_extraccion"]) if r["confianza_extraccion"] is not None else None,
+            })
+        features.append({
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [float(r["lon"]), float(r["lat"])]},
+            "properties": props,
+        })
 
     return {
         "type": "FeatureCollection",
         "centro": {"lat": lat, "lon": lon, "radius_m": radius_m},
         "total": len(features),
         "features": features,
+        "scores_incluidos": con_scores,
     }
 
 

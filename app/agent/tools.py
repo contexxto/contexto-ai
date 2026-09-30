@@ -498,8 +498,14 @@ async def tool_fetch_asset_lifecycle_specs(activo_id: str) -> str:
 
 
 async def _geocode_google(address: str, key: str) -> dict | None:
-    """Geocodifica con Google Geocoding API (cobertura de calles de Quito MUY superior
-    a OSM, y no confunde estaciones del Metro). Devuelve lat/lon/formatted o None."""
+    """Geocodifica con Google Geocoding API. Devuelve lat/lon/formatted o None.
+
+    SIN LLAMADOR desde MAP-SOURCE-BOUNDARY (2026-09-30). Sus dos consumidores terminaban en
+    MapLibre: `tool_geocode_address` (el ancla del agente decide qué pines pinta MapSeed) y
+    la ingesta (`app/routers/ingest.py`, cuyo punto se persiste como `geom` del inmueble y
+    se pinta en todos los mapas). No se borra porque no hay uso que no termine en mapa del
+    que se haya demostrado el consumidor: si alguno aparece, ese es el sitio. Llamarlo
+    desde un productor de mapa lo rompe `tests/test_map_source_boundary.py`."""
     verify = settings.ssl_verify.lower() != "false"
     params = {
         "address": f"{address.strip()}, Quito, Ecuador",
@@ -524,8 +530,8 @@ async def _geocode_google(address: str, key: str) -> dict | None:
 async def tool_geocode_address(address: str) -> str:
     """
     Convert a human-readable address or neighborhood name into geographic coordinates
-    (latitude and longitude). Uses Google Geocoding (street-accurate in Quito) when an
-    API key is configured, and falls back to OpenStreetMap Nominatim otherwise.
+    (latitude and longitude) with OpenStreetMap Nominatim. Nominatim can be off by a few
+    hundred meters on Quito street addresses: prefer a generous search radius.
 
     NOTE: For finding REGISTERED inventory by a street/sector name, prefer
     tool_find_assets_by_text (it searches our own catastro). Use this geocoder for
@@ -534,22 +540,10 @@ async def tool_geocode_address(address: str) -> str:
     Args:
         address: Free-text address, intersection, or place name in Quito, Ecuador.
     """
-    # 1) Google Geocoding primero (si hay key) — cobertura de Quito muy superior a OSM.
-    if settings.google_maps_api_key:
-        try:
-            g = await _geocode_google(address, settings.google_maps_api_key)
-            if g:
-                return json.dumps({
-                    "found": True,
-                    "address_input": address,
-                    "address_resolved": g["formatted"],
-                    **_ancla_de(g["lat"], g["lon"], "google"),
-                    "tip": "Google geocoding is street-accurate; radius_meters=1500 is fine.",
-                })
-        except Exception:
-            pass  # cualquier fallo de red/cuota → caemos a Nominatim
-
-    # 2) Fallback: OpenStreetMap Nominatim (gratis, sin key, pero flojo en Quito).
+    # MAP-SOURCE-BOUNDARY: SOLO OpenStreetMap Nominatim. Hasta aquí Google Geocoding iba
+    # primero cuando había llave, y los dos consumidores de este resultado terminan en
+    # MapLibre (ver `_geocode_google`). La regresión de precisión frente a Google está
+    # medida en el informe de la unidad.
     # Append Quito context to improve geocoding accuracy
     query = f"{address.strip()}, Quito, Ecuador"
 

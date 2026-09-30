@@ -437,37 +437,41 @@ def test_C7_sin_credencial_no_se_construye_ni_el_cliente(monkeypatch):
 
 
 # ══ (D) La política de `entorno_destacado` ═══════════════════════════════════════════
+# ACTUALIZACIÓN ESPERADA (MAP-SOURCE-BOUNDARY, 2026-09-30). R0B2A congeló aquí «Google
+# primero, OSM de respaldo» y dejó escrito que era la política contraria a la del foso. Lo
+# que devolvía Google se PERSISTÍA en `servicios_cercanos` y se pintaba sobre MapLibre; la
+# unidad lo corta. Ahora la política es una: OSM, con los POIs ya descargados, y Google NI
+# UNA request aunque haya llave y aunque OSM no produzca nada.
 _POIS = [{"lat": -0.181, "lon": -78.481,
           "tags": {"amenity": "pharmacy", "name": "Fybeca OSM"}}]
 
 
-def test_D1_la_politica_es_GOOGLE_PRIMERO_y_es_la_contraria_a_la_del_foso(monkeypatch):
-    """Se congela, no se corrige. En el Place path manda la capa propia y Google rellena
-    huecos; aquí manda Google y OSM es el respaldo. Son dos políticas opuestas para la
-    misma pregunta, en dos módulos, y esa es justamente la deuda que R0B2B tendrá que
-    resolver a la vista."""
+def test_D1_la_politica_es_SOLO_OSM_aunque_haya_llave_y_Google_responda(monkeypatch):
     _EspiaHTTP.arma(monkeypatch, respuesta=_lugares("Farmacia G"))
     monkeypatch.setattr(settings, "google_maps_api_key", "K")
     out = asyncio.run(entorno.entorno_destacado(-0.18, -78.48, _POIS))
-    assert out["fuente"] == "google", "con Google respondiendo, OSM no se mira"
-    assert len(_EspiaHTTP.posts()) == 8
+    assert out["fuente"] == "osm"
+    assert _EspiaHTTP.posts() == [], "ni una request a Places"
 
 
-def test_D2_Google_es_suficiente_cuando_devuelve_AL_MENOS_UN_item(monkeypatch):
+def test_D2_si_OSM_no_produce_la_respuesta_es_None_y_no_Google(monkeypatch):
+    """Antes Google era «suficiente con un ítem»; ahora no se le pregunta, y un OSM sin
+    nada que destacar da None, no un relleno."""
     _EspiaHTTP.arma(monkeypatch, respuesta=_lugares("Uno"))
     monkeypatch.setattr(settings, "google_maps_api_key", "K")
-    out = asyncio.run(entorno.entorno_destacado(-0.18, -78.48, _POIS))
-    assert out["fuente"] == "google" and len(out["items"]) >= 1
+    sin_nombre = [{"lat": -0.181, "lon": -78.481, "tags": {"amenity": "pharmacy"}}]
+    assert asyncio.run(entorno.entorno_destacado(-0.18, -78.48, sin_nombre)) is None
+    assert _EspiaHTTP.posts() == []
 
 
-def test_D3_cae_a_OSM_solo_si_Google_no_produce_nada(monkeypatch):
-    """Y AMBOS se ejecutan en la misma llamada: ocho requests gastados y además el cálculo
-    sobre los POIs ya descargados."""
+def test_D3_ya_no_se_pagan_ocho_requests_antes_de_mirar_OSM(monkeypatch):
+    """Antes AMBOS se ejecutaban en la misma llamada: ocho requests gastados y además el
+    cálculo sobre los POIs ya descargados. Ahora solo lo segundo."""
     _EspiaHTTP.arma(monkeypatch, respuesta={"places": []})
     monkeypatch.setattr(settings, "google_maps_api_key", "K")
     out = asyncio.run(entorno.entorno_destacado(-0.18, -78.48, _POIS))
     assert out["fuente"] == "osm"
-    assert len(_EspiaHTTP.posts()) == 8, "los ocho requests se pagaron igual"
+    assert _EspiaHTTP.posts() == []
 
 
 def test_D4_sin_llave_va_directo_a_OSM_sin_gastar_nada(monkeypatch):
@@ -486,11 +490,12 @@ def test_D5_None_cuando_ninguno_de_los_dos_produce(monkeypatch):
 
 
 def test_D6_las_dos_ramas_producen_LA_MISMA_FORMA(monkeypatch):
-    """Lo único que ya está unificado entre los dos caminos, y conviene que siga así: es lo
-    que hará barata la consolidación."""
-    monkeypatch.setattr(settings, "google_maps_api_key", "K")
+    """Lo único que ya estaba unificado entre los dos caminos. `entorno_destacado` ya no
+    llega a la rama de Google (MAP-SOURCE-BOUNDARY), así que se compara con el provider
+    directamente: si algún día vuelve a tener un consumidor legítimo —uno que no termine en
+    un mapa—, su forma sigue siendo la misma."""
     _EspiaHTTP.arma(monkeypatch, respuesta=_lugares("G"))
-    g = asyncio.run(entorno.entorno_destacado(-0.18, -78.48, _POIS))
+    g = asyncio.run(_gprov._entorno_google(-0.18, -78.48, "K"))
     o = entorno.extraer_entorno_osm(_POIS, -0.18, -78.48)
     assert set(g) == set(o) == {"fuente", "items", "texto"}
     assert set(g["items"][0]) == set(o["items"][0])
@@ -805,18 +810,17 @@ def test_I4_las_DOS_politicas_conviven_y_siguen_divergiendo():
     assert _gprov._ENTORNO_RADIO_M != 3000
 
 
-def test_I5_la_SELECCION_no_se_movio_y_el_import_es_DIFERIDO():
-    """Dos cosas que van juntas. `entorno_destacado` elige entre Google y OSM: es política
-    entre proveedores y se queda fuera del provider. Y como el provider importa de
-    `app.entorno` su taxonomía, la delegación de vuelta TIENE que ser diferida o se cierra
-    el ciclo que el CLOSE-AUDIT ya había identificado."""
+def test_I5_la_SELECCION_no_se_movio_y_YA_NO_DELEGA_en_Google():
+    """`entorno_destacado` sigue definido fuera del provider. Lo que cambió es la
+    delegación: antes volvía a Google con un import DIFERIDO (diferido porque el provider
+    importa de `app.entorno` su taxonomía y uno de nivel de módulo cerraba el ciclo).
+
+    ACTUALIZACIÓN ESPERADA (MAP-SOURCE-BOUNDARY): ahora no hay import de Google en ningún
+    nivel. El ciclo, por tanto, no puede reaparecer por aquí."""
     fuente = _ENTORNO.read_text(encoding="utf-8")
     assert "entorno_destacado" in _definidos(_ENTORNO)
-    cabecera = fuente.split("def ")[0]
-    assert "from app.place.providers.google import" not in cabecera, (
-        "import de nivel de módulo: eso cierra el ciclo")
-    assert ("        from app.place.providers.google import _entorno_google"
-            in fuente), "la delegación diferida desapareció"
+    assert "from app.place.providers.google import" not in fuente
+    assert "_entorno_google" not in _identificadores(fuente)
 
 
 def test_I6_no_hay_ciclo__los_dos_modulos_se_importan_en_cualquier_orden():

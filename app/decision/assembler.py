@@ -37,6 +37,7 @@ from app.encaje import calcular_encaje, normalizar_tipo
 from app.entorno import limpiar_texto_servicios
 from app.entorno_curacion import aplicar_curacion, info_verificacion, parse_servicios
 from app.orden import encaje_ajustado, ordenar_candidatos
+from app.place.legado import texto_legado_para_mapa
 from app.preferencias import extraer_preferencias
 import uuid
 from datetime import datetime, timezone
@@ -303,7 +304,7 @@ def _emoji_de(raw: str) -> str:
 
 
 def _pois_de_intencion(texto: str | None, max_items: int = 3, max_m: int = 1500) -> list[dict]:
-    """`servicios_cercanos` (texto de OSM, ya curado por el corredor) → los POIs nombrados
+    """`servicios_cercanos` (texto persistido, ya curado por el corredor) → los POIs nombrados
     MÁS CERCANOS y caminables, con minutos a pie. El diferenciador de la tarjeta: la
     intención (qué hay cerca) visible CON proveniencia, lo que los portales no muestran.
     v1 = más cercanos; el encaje contra la intención DECLARADA del usuario es la Fase 3
@@ -438,7 +439,10 @@ def _card_from_row(row: dict, preferencias: dict | None = None) -> dict:
         "banos": car.get("num_banos"),
         "area_m2": car.get("area_total_m2"),
         # ★ El diferenciador: POIs verificados más cercanos (la intención visible).
-        "pois": _pois_de_intencion(row.get("servicios_cercanos")),
+        # MAP-SOURCE-BOUNDARY: el primero se pinta como badge del pin de MapSeed (MapLibre)
+        # y el texto persistido no tiene procedencia propia demostrada → sin chips hasta
+        # PLACE-LEGACY-CONTEXT-BACKFILL (app/place/legado.py). La tarjeta ya degradaba así.
+        "pois": _pois_de_intencion(texto_legado_para_mapa(row.get("servicios_cercanos"))),
         # Verificación del entorno por el corredor (Catastro Vivo). El pin del Mapa Vivo
         # (modo ZONA) lo pinta como halo SÓLIDO (verificado) vs suave ("según el mapa").
         # Es el eje HALO del pin-anillo. Honesto: solo se enciende si hay verificación

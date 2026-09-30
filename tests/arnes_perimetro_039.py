@@ -16,7 +16,9 @@ No es una prueba de pytest: necesita Docker y un PostgreSQL limpio, igual que lo
     authenticated, service_role`, así la tabla NACE con la exposición medida en producción.
   · La tabla la crea el `_AURA_CACHE_DDL` REAL de `app/routers/assets.py`, leído por AST.
   · El backend se imita con sus sentencias reales: la LECTURA de `_pois_geo_cached` (TTL de
-    30 días) y el UPSERT con `CAST(:pois AS jsonb)` (PR #171).
+    30 días) y el UPSERT con `CAST(:pois AS jsonb)` (PR #171). Desde MAP-SOURCE-BOUNDARY
+    (2026-09-30) ninguna de las dos existe en el producto —/aura sale de la capa propia—; se
+    conservan aquí como el patrón de acceso que la 039 tenía que seguir permitiendo al dueño.
 
 ## CONTROL POSITIVO
 

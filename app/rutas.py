@@ -1,12 +1,17 @@
 """
-Rutas a pie EN VIVO con Google Routes API (capa "desde la tierra").
+Productores del mapa conversacional y del contexto de zona (capa "desde la tierra").
 
-Dado un punto (un inmueble), encuentra sus servicios cercanos CON coordenadas
-(Places searchNearby) y traza la ruta peatonal real a cada uno (computeRoutes,
-modo WALK), devolviendo la línea (polyline decodificada) + el tiempo exacto.
+MAP-SOURCE-BOUNDARY (2026-09-30): todo lo que este módulo produce termina pintado sobre
+MapLibre/CARTO, y el contenido de Google Places, Routes o Geocoding no puede mostrarse
+sobre un mapa que no es de Google. Por eso aquí NO queda ninguna llamada a Google:
 
-Va por el BACKEND: la GOOGLE_MAPS_API_KEY nunca toca el frontend. Si no hay key,
-devuelve None y el mapa simplemente no muestra rutas.
+  · los lugares salen SOLO de nuestra capa (`pois_vivos`: Overture + OSM + curación);
+  · no se traza ninguna línea de ruta: la distancia es la recta medida en PostGIS y los
+    minutos, su estimación a ~80 m/min (declarada como tal), más la isócrona propia de
+    Valhalla;
+  · si nuestra capa no cubre un punto, se dice que no sabemos. Nunca se rellena con Google.
+
+La guarda estructural vive en `tests/test_map_source_boundary.py`.
 """
 from __future__ import annotations
 
@@ -16,10 +21,8 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-import httpx
 from sqlalchemy import text
 
-from app.config import settings
 from app.contracts.evidence_v0 import EvidenceRefV0, PersistencePolicy, SourceType
 from app.contracts.place_v0 import (
     GeoPoint,
@@ -63,11 +66,12 @@ from app.place.assembler import (  # noqa: E402,F401 — fachada de compatibilid
 
 
 # ── Los proveedores viven ahora en `app/place/providers/` (PLAN04-2.2) ─────────────
-# Se MOVIERON, no se copiaron: aqui no queda un segundo cuerpo de ninguno de los dos. Lo
-# que se queda es la POLITICA —primero la capa propia, Google solo para los huecos— porque
-# decidir a quien se le pregunta no es implementar a nadie. Tambien se quedan los sitios de
-# llamada heredados de la prosa (`comando_mapa`, `rutas_desde`), que siguen construyendo su
-# propio cliente HTTP: por eso `_TIMEOUT` se reimporta.
+# Se MOVIERON, no se copiaron: aqui no queda un segundo cuerpo de ninguno. Lo que se queda
+# es la POLITICA de a quien se le pregunta, que desde MAP-SOURCE-BOUNDARY es una sola:
+# nuestra capa y nadie mas. Por eso esta fachada ya no reexporta NADA de
+# `app.place.providers.google` —ni `_nearest_categoria`, ni `_mejor_transporte`, ni
+# `_ruta_a_pie`, ni `_TIMEOUT`—: un nombre de Google en este espacio seria una invitacion
+# a volver a llamarlo desde un productor de mapa.
 #
 # La direccion va de aqui hacia alla y NUNCA al reves: ningun provider importa `app.rutas`.
 #
@@ -76,7 +80,6 @@ from app.place.assembler import (  # noqa: E402,F401 — fachada de compatibilid
 # `monkeypatch.setattr(rutas, "_servicios_propios", ...)` sigue mordiendo exactamente igual
 # que antes de la extraccion, y el baseline de R0B0 no cambia ni una linea.
 from app.place.providers.propia import (  # noqa: E402,F401 — fachada
-    _CATS_ENTORNO,
     _filas_panorama_transporte,
     _pois_dentro_geometria,
     _TRANSPORTE_MASIVO,
@@ -84,12 +87,6 @@ from app.place.providers.propia import (  # noqa: E402,F401 — fachada
     _nearest_propio,
     _servicios_propios,
     verificacion_de_entorno,
-)
-from app.place.providers.google import (  # noqa: E402,F401 — fachada
-    _TIMEOUT,
-    _mejor_transporte,
-    _nearest_categoria,
-    _ruta_a_pie,
 )
 
 
@@ -159,33 +156,17 @@ _SUBTIPOS_PROPIOS = {
 
 
 
-async def _servicios_con_coords(lat: float, lon: float, key: str, n: int = 6) -> list[dict]:
+async def _servicios_con_coords(lat: float, lon: float, n: int = 6) -> list[dict]:
     """
-    El servicio más cercano POR CATEGORÍA. FUENTE PRIMARIA: nuestra capa propia
-    (pois_propios, el foso). Google queda como FALLBACK solo para las categorías que
-    nuestra capa no cubre en este punto (periferia / fuera de Quito). Así el entorno
-    deja de gastar cuota de Google en cada consulta, salvo en los huecos reales.
+    El servicio más cercano POR CATEGORÍA, SOLO desde nuestra capa (`pois_vivos`, el foso).
 
-    Antes: 7 llamadas a Google Places en cada consulta. Ahora: 2 queries a la DB
-    propia + Google solo si falta alguna categoría.
+    Lo consumen productores que terminan en MapLibre (AURA, «qué hay cerca») y el contexto
+    de zona. Hasta MAP-SOURCE-BOUNDARY, las categorías que la capa no cubría se rellenaban
+    con Google Places; ya no: una categoría ausente se queda ausente. En Quito la capa
+    cubre las 7 categorías en 40 de los 41 inmuebles medidos (preflight 2026-09-30); fuera
+    de su cobertura, el resultado es más corto o vacío, y eso es lo honesto.
     """
     propios = await _servicios_propios(lat, lon)
-
-    # Fallback a Google SOLO para lo que falta en nuestra capa (con key disponible).
-    faltantes = [c for c in _CATS_ENTORNO if c not in propios]
-    fb_tareas, fb_labels = [], []
-    if key:
-        if "transporte" not in propios:
-            fb_tareas.append(_mejor_transporte(lat, lon, key)); fb_labels.append("transporte")
-        for c in faltantes:
-            fb_tareas.append(_nearest_categoria(lat, lon, c, key)); fb_labels.append(c)
-    if fb_tareas:
-        res = await asyncio.gather(*fb_tareas, return_exceptions=True)
-        for lab, r in zip(fb_labels, res):
-            if isinstance(r, dict):
-                r["cat"] = lab
-                r.setdefault("fuente", "google")
-                propios[lab] = r
 
     transporte = propios.get("transporte")
     otros = sorted([v for k, v in propios.items() if k != "transporte"],
@@ -287,16 +268,21 @@ def _aura(ws: int | None, parque: dict | None, transporte: dict | None) -> str:
 
 
 async def recorrido_zona(lat: float, lon: float) -> dict:
-    """Genera un 'Recorrido con Aura': 4-6 escenas auto-narradas sobre la zona real."""
-    key = settings.google_maps_api_key
+    """Genera un 'Recorrido con Aura': 4-6 escenas auto-narradas sobre la zona real.
+
+    Todo sale de nuestra capa (`_nearest_propio`). Sin línea de ruta: la escena de
+    transporte enciende el punto y dice los minutos ESTIMADOS (recta a ~80 m/min). Si la
+    capa no cubre una categoría en este punto, esa escena simplemente no existe.
+    """
     from app.agent.tools import _reverse_geocode  # lazy: evita import circular
 
-    tareas: dict = {"geo": _reverse_geocode(lat, lon), "walk": walk_score_para(lat, lon)}
-    if key:
-        tareas["parque"] = _nearest_categoria(lat, lon, "parque", key)
-        tareas["transporte"] = _mejor_transporte(lat, lon, key)
-        tareas["super"] = _nearest_categoria(lat, lon, "supermercado", key)
-        tareas["salud"] = _nearest_categoria(lat, lon, "salud", key)
+    tareas: dict = {
+        "geo": _reverse_geocode(lat, lon), "walk": walk_score_para(lat, lon),
+        "parque": _nearest_propio(lat, lon, "parque"),
+        "transporte": _nearest_propio(lat, lon, "transporte"),
+        "super": _nearest_propio(lat, lon, "supermercado"),
+        "salud": _nearest_propio(lat, lon, "salud"),
+    }
     vals = await asyncio.gather(*tareas.values(), return_exceptions=True)
     data = {k: (v if not isinstance(v, Exception) else None) for k, v in zip(tareas.keys(), vals)}
 
@@ -327,31 +313,20 @@ async def recorrido_zona(lat: float, lon: float) -> dict:
             "puntos": [{"coords": [pq["lon"], pq["lat"]], "etiqueta": f"🌳 {nom_pq}", "color": "#2DBDB6"}],
         })
 
-    # 3) Cómo te mueves (ruta peatonal real al hub de transporte)
-    if tr and key:
-        try:
-            async with httpx.AsyncClient(verify=settings.ssl_verify.lower() != "false", timeout=_TIMEOUT) as c:
-                ruta = await _ruta_a_pie(c, lat, lon, tr["lat"], tr["lon"], key)
-        except Exception:  # noqa: BLE001
-            ruta = None
-        es_masivo = any(w in tr["nombre"].lower() for w in ("metro", "estación", "estacion", "terminal"))
+    # 3) Cómo te mueves: el punto de transporte, SIN línea de ruta (no tenemos ruteo punto
+    # a punto propio todavía) y con los minutos declarados como estimación.
+    if tr:
+        es_masivo = bool(tr.get("es_masivo")) or any(
+            w in tr["nombre"].lower() for w in ("metro", "estación", "estacion", "terminal"))
         plus = " Estar a pasos del transporte masivo es de las señales que más empujan la plusvalía." if es_masivo else ""
         nom_tr = _nombre_limpio(tr["nombre"])
-        if ruta and ruta.get("coords"):
-            escenas.append({
-                "titulo": "🚶 Tu conexión con la ciudad",
-                "narracion": f"**{nom_tr}** está a {ruta['duracion_min']} min caminando.{plus}",
-                "centro": [(lon + tr["lon"]) / 2, (lat + tr["lat"]) / 2], "zoom": 14.8,
-                "ruta": {"coords": ruta["coords"], "destino": [tr["lon"], tr["lat"]],
-                         "etiqueta": f"🚶 {ruta['duracion_min']} min · {nom_tr}", "color": "#5EEAD4"},
-            })
-        else:
-            escenas.append({
-                "titulo": "🚶 Tu conexión con la ciudad",
-                "narracion": f"**{nom_tr}** a {_min_pie(tr['distancia_m'])} min a pie.{plus}",
-                "centro": [tr["lon"], tr["lat"]], "zoom": 15.5,
-                "puntos": [{"coords": [tr["lon"], tr["lat"]], "etiqueta": nom_tr, "color": "#5EEAD4"}],
-            })
+        escenas.append({
+            "titulo": "🚶 Tu conexión con la ciudad",
+            "narracion": (f"**{nom_tr}** a ~{_min_pie(tr['distancia_m'])} min a pie "
+                          f"(estimado en línea recta, {tr['distancia_m']} m).{plus}"),
+            "centro": [tr["lon"], tr["lat"]], "zoom": 15.5,
+            "puntos": [{"coords": [tr["lon"], tr["lat"]], "etiqueta": nom_tr, "color": "#5EEAD4"}],
+        })
 
     # 4) Lo cotidiano, a la mano
     cotid = [s for s in (data.get("super"), data.get("salud")) if s]
@@ -416,15 +391,18 @@ def _num(v):
 
 
 async def _recolectar_zona(lat: float, lon: float) -> MateriaDeZona:
-    """EL ÚNICO FETCH. No interpreta nada: recupera y devuelve."""
-    from app.agent.tools import _reverse_geocode  # lazy: evita import circular
-    key = settings.google_maps_api_key
+    """EL ÚNICO FETCH. No interpreta nada: recupera y devuelve.
 
-    async def _serv():
-        return await _servicios_con_coords(lat, lon, key, 6) if key else []
+    Desde MAP-SOURCE-BOUNDARY todo sale de fuentes propias o abiertas: servicios y
+    transporte de nuestra capa, y los minutos al transporte como ESTIMACIÓN recta ÷ 80
+    (`transporte_ruta_medida=False`, que el ensamblador declara como heurística con su
+    limitación). Ya no hay caminata «medida» con Google Routes: su duración acababa en la
+    `conectividad` persistida y en el popup del Mapa Vivo, sobre MapLibre.
+    """
+    from app.agent.tools import _reverse_geocode  # lazy: evita import circular
 
     geo, walk, servicios = await asyncio.gather(
-        _reverse_geocode(lat, lon), walk_score_para(lat, lon), _serv(),
+        _reverse_geocode(lat, lon), walk_score_para(lat, lon), _servicios_con_coords(lat, lon, 6),
         return_exceptions=True,
     )
     geo = geo if isinstance(geo, dict) else {}
@@ -433,29 +411,18 @@ async def _recolectar_zona(lat: float, lon: float) -> MateriaDeZona:
 
     transporte = next((s for s in servicios if s.get("cat") == "transporte"), None)
     dist_m = minutos = None
-    medida = False
     if transporte:
-        # Caminata REAL por calles (Google Routes), NO en línea recta: la recta miente
-        # (ej. Metro a ~640 m en recta = "8 min", pero ~1.5 km caminando = 19 min).
-        # Fallback al estimado recta ÷ 80 si Routes falla o no hay coords.
         dist_m = transporte["distancia_m"]
         minutos = _min_pie(dist_m)
-        if key and transporte.get("lat") is not None and transporte.get("lon") is not None:
-            try:
-                async with httpx.AsyncClient(verify=settings.ssl_verify.lower() != "false", timeout=_TIMEOUT) as c:
-                    ruta = await _ruta_a_pie(c, lat, lon, transporte["lat"], transporte["lon"], key)
-                if ruta and ruta.get("duracion_min"):
-                    minutos = ruta["duracion_min"]
-                    dist_m = ruta.get("distancia_m") or dist_m
-                    medida = True
-            except Exception:  # noqa: BLE001
-                pass  # nos quedamos con el estimado en línea recta
 
     return MateriaDeZona(
         lat=lat, lon=lon, lugar=geo, walk=walk, servicios=servicios,
-        se_consultaron_servicios=bool(key), transporte=transporte,
+        # Sin nada de nuestra capa en este punto NO sabemos (UNKNOWN): puede ser un hueco de
+        # cobertura o la capa caída. Afirmar «se consultó y no hay» sería inventar ausencia.
+        # Con cobertura, una categoría que falta sí es «se buscó y no apareció».
+        se_consultaron_servicios=bool(servicios), transporte=transporte,
         transporte_distancia_m=dist_m, transporte_minutos=minutos,
-        transporte_ruta_medida=medida,
+        transporte_ruta_medida=False,
         recuperado_en=datetime.now(timezone.utc),
     )
 
@@ -570,8 +537,8 @@ async def analizar_zona(lat: float, lon: float) -> dict:
     FUENTE ÚNICA DE VERDAD de una zona: la consumen el agente (home) y el mapa,
     para que la salida sea idéntica venga de donde venga.
 
-    Combina: lugar (reverse-geocode), Walk Score (OSM) y servicios + transporte
-    (Google Places, el MISMO motor que ilumina el mapa).
+    Combina: lugar (reverse-geocode, Nominatim), Walk Score (OSM) y servicios +
+    transporte de nuestra capa (`pois_vivos`, el MISMO origen que ilumina el mapa).
 
     Desde PLAN04-1.2 esto es una DERIVACIÓN: se recupera una vez, se ensambla el
     `PlaceContextV0`, y la salida de siempre sale de ese objeto.
@@ -789,7 +756,9 @@ def _sello_fuente(items: list[dict]) -> str:
     es Overture+OSM conflados y curados — es DATO PROPIO, no "verificado en terreno" (eso
     solo lo es lo que un corredor pisó). Nunca se infla la etiqueta.
 
-    Solo marca lo propio, en positivo; lo que vino de Google no se desmerece ni se oculta."""
+    Solo marca lo propio, en positivo. Desde MAP-SOURCE-BOUNDARY los productores del mapa
+    ya no reciben nada de Google, así que en la práctica el sello dice siempre «todo»; la
+    cuenta parcial se conserva porque es la que delataría una regresión."""
     if not items:
         return ""
     propios = sum(1 for s in items if s.get("fuente") == "propio")
@@ -808,14 +777,10 @@ async def comando_mapa(pregunta: str, lat: float, lon: float) -> dict:
     if _intent_isocrona(p):
         return await _accion_isocrona(lat, lon, p)
 
-    key = settings.google_maps_api_key
-
-    # 0) ¿Pide un recorrido/tour por la zona? (depende de Google de punta a punta)
+    # 0) ¿Pide un recorrido/tour por la zona? Capa propia de punta a punta: no requiere Google.
     if any(k in p for k in ["tour", "recorre", "recorré", "recorrido", "recorrer", "pasea", "paseo",
                             "muestrame la zona", "muéstrame la zona", "muestrame el barrio",
                             "conoce la zona", "conocer la zona", "enséñame la zona", "ensename la zona"]):
-        if not key:
-            return {"texto": "El mapa interactivo necesita Google Maps activo.", "acciones": []}
         return await recorrido_zona(lat, lon)
 
     # 0b) ¿Transporte en GENERAL? ("transporte", "paradas", "buses", "líneas") → panorama:
@@ -826,54 +791,42 @@ async def comando_mapa(pregunta: str, lat: float, lon: float) -> dict:
             and re.search(r"\b(transporte|paradas?|bus|buses|l[ií]neas?)\b", p)):
         return await _panorama_transporte(lat, lon)
 
-    # 1) ¿Pide una ruta a una categoría?  NUESTRA CAPA PRIMERO, Google solo por hueco.
+    # 1) ¿Pide una ruta a una categoría?  SOLO nuestra capa, y SIN línea de ruta.
+    # No hay ruteo punto a punto propio todavía (Valhalla `/route` es una unidad aparte), así
+    # que se enciende el destino y se dicen la distancia medida en PostGIS y los minutos
+    # ESTIMADOS. Nada de Routes: su geometría se dibujaba sobre MapLibre.
     cat = next((c for c, kws in _PALABRAS_CAT.items() if any(k in p for k in kws)), None)
     if cat:
-        tipos = None            # tipos de Google (fallback)
         subtipos = None         # subtipos de nuestra capa
         if cat == "transporte":
             if "metro" in p:
-                tipos = ["subway_station", "train_station", "light_rail_station"]
                 subtipos = _SUBTIPOS_PROPIOS["metro"]
             elif "terminal" in p:
-                tipos = ["bus_station"]
                 subtipos = _SUBTIPOS_PROPIOS["terminal"]
 
-        # Propio-primero (mismo patrón que _servicios_con_coords). Desde la migración 021
-        # nuestra capa cubre las 9 categorías (iglesia y seguridad incluidas): Google solo
-        # entra si el punto cae fuera del bbox de la ciudad cargada.
         dest = await _nearest_propio(lat, lon, cat, subtipos)
-        if not dest and key:
-            dest = await _nearest_categoria(lat, lon, cat, key, tipos)
         if not dest:
-            return {"texto": f"No encontré {_CAT_LABEL.get(cat, cat)} cerca de ese punto.", "acciones": []}
+            # Un hueco de NUESTRA capa no es la ausencia del lugar: se dice lo que se sabe.
+            return {"texto": (f"No tengo {_CAT_LABEL.get(cat, cat)} mapeado cerca de este punto — "
+                              "es un hueco de nuestra capa aquí, no que no exista."),
+                    "acciones": []}
 
-        # La ruta a pie sigue siendo Google (Fase 2 del plan: pasarla a Valhalla /route).
-        # Sin key aún tenemos el destino: se ilumina el punto aunque no se trace la línea.
-        ruta = None
-        if key:
-            try:
-                async with httpx.AsyncClient(verify=settings.ssl_verify.lower() != "false", timeout=_TIMEOUT) as c:
-                    ruta = await _ruta_a_pie(c, lat, lon, dest["lat"], dest["lon"], key)
-            except Exception:  # noqa: BLE001
-                ruta = None
-        sello = _sello_fuente([dest])
-        if ruta and ruta.get("coords"):
-            etiqueta = f"🚶 {ruta['duracion_min']} min · {dest['nombre']}"
-            return {
-                "texto": (f"Ilumino la ruta a **{dest['nombre']}**: "
-                          f"{ruta['duracion_min']} min a pie ({ruta['distancia_m']} m)." + sello),
-                "acciones": [{"tipo": "ruta", "coords": ruta["coords"], "destino": [dest["lon"], dest["lat"]],
-                              "etiqueta": etiqueta, "color": "#5EEAD4"}],
-            }
-        return {"texto": f"Encontré **{dest['nombre']}** a {dest['distancia_m']} m, pero no pude trazar la ruta." + sello,
-                "acciones": [{"tipo": "puntos", "items": [{"coords": [dest["lon"], dest["lat"]], "etiqueta": dest["nombre"]}], "color": "#5EEAD4"}]}
+        nombre = _nombre_limpio(dest["nombre"])
+        minutos = _min_pie(dest["distancia_m"])
+        return {"texto": (f"**{nombre}** está a {dest['distancia_m']} m en línea recta "
+                          f"(~{minutos} min a pie, estimado). Aún no trazo el recorrido por "
+                          "calles: te marco el destino." + _sello_fuente([dest])),
+                "acciones": [{"tipo": "puntos",
+                              "items": [{"coords": [dest["lon"], dest["lat"]],
+                                         "etiqueta": f"{nombre} (~{minutos} min)"}],
+                              "color": "#5EEAD4"}]}
 
     # 2) ¿Pide ver lo que hay alrededor?
     if any(k in p for k in ["cerca", "servicios", "que hay", "qué hay", "alrededor", "entorno", "rodea"]):
-        servicios = await _servicios_con_coords(lat, lon, key, 6)
+        servicios = await _servicios_con_coords(lat, lon, 6)
         if not servicios:
-            return {"texto": "No encontré servicios mapeados en este punto.", "acciones": []}
+            return {"texto": ("No tengo servicios mapeados en este punto — es un hueco de nuestra "
+                              "capa aquí, no que no existan."), "acciones": []}
         items = []
         for s in servicios:
             emoji = _CAT_EMOJI.get(s.get("cat"), "📍")
@@ -900,27 +853,3 @@ async def comando_mapa(pregunta: str, lat: float, lon: float) -> dict:
     # 3) Fallback: guía
     return {"texto": "Pídeme algo como *“ruta al Metro”*, *“colegio más cercano”* o *“qué hay cerca”* y lo ilumino en el mapa.",
             "acciones": []}
-
-
-async def rutas_desde(lat: float, lon: float, n: int = 3) -> list[dict] | None:
-    """Rutas peatonales reales a los N servicios más cercanos. None si no hay key."""
-    key = settings.google_maps_api_key
-    if not key:
-        return None
-    try:
-        servicios = await _servicios_con_coords(lat, lon, key, n)
-        if not servicios:
-            return []
-        verify = settings.ssl_verify.lower() != "false"
-        async with httpx.AsyncClient(verify=verify, timeout=_TIMEOUT) as c:
-            rutas = await asyncio.gather(
-                *[_ruta_a_pie(c, lat, lon, s["lat"], s["lon"], key) for s in servicios],
-                return_exceptions=True,
-            )
-        out = []
-        for s, rt in zip(servicios, rutas):
-            if isinstance(rt, dict) and rt.get("coords"):
-                out.append({"nombre": s["nombre"], "destino": [s["lon"], s["lat"]], **rt})
-        return out
-    except Exception:  # noqa: BLE001
-        return None

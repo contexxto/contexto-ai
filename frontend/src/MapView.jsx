@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import { ATRIBUCION } from './atribucion'
+import { mensajeMapaHtml } from './fuentesMapa'
 import { SILENCIO_MAX_MS, textoDeSesion, textoVisible, unirSinRepetir } from './dictado'
 
 // Estilo de mapa oscuro premium (CARTO dark-matter, gratuito, sin token).
@@ -53,7 +54,7 @@ const CHIPS = [
 ]
 
 // Escapa HTML. El popup se pinta con setHTML() (= innerHTML), y estos campos son TEXTO LIBRE
-// del catastro (dirección subida por el corredor, servicios de OSM/Google) → sin escapar sería
+// del catastro (dirección subida por el corredor, textos de servicios persistidos) → sin escapar sería
 // un XSS ALMACENADO (una dirección con `<img onerror>` ejecuta JS al abrir el pin). Escapamos
 // en el sink, que es el fix correcto para XSS de salida.
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
@@ -78,9 +79,6 @@ function popupHTML(p) {
   const encajeChip = p.encaje != null
     ? `<div style="display:inline-block;font-size:10px;font-family:'IBM Plex Mono',monospace;padding:1px 7px;border-radius:999px;background:rgba(94,234,212,.14);color:var(--teal-bright);border:1px solid rgba(94,234,212,.4);margin:0 0 6px 5px">encaje ${esc(p.encaje)}%</div>`
     : ''
-  const verRutas = p.servicios_cercanos
-    ? `<button class="ctx-rutas-btn" data-id="${esc(p.id)}" style="margin-top:9px;width:100%;padding:7px;border:none;border-radius:9px;cursor:pointer;font-weight:700;font-size:11.5px;background:linear-gradient(90deg,var(--teal-deep),var(--teal));color:#0E0D13">🚶 Ver rutas a pie</button>`
-    : ''
   return `<div style="font-family:var(--font-body);min-width:230px;max-width:280px">
     <div style="font-weight:700;font-size:13px;color:#F0ECE6;margin-bottom:6px">${esc(p.direccion || 'Activo')}</div>
     <div style="display:inline-block;font-size:10px;font-family:'IBM Plex Mono',monospace;padding:1px 7px;border-radius:999px;background:rgba(45,189,182,.12);color:${ruidoColor};border:1px solid ${ruidoColor}55;margin-bottom:6px">ruido ${esc(p.ruido || '—')}</div>${encajeChip}
@@ -90,7 +88,6 @@ function popupHTML(p) {
     ${row('Cobertura vegetal', p.vegetacion != null ? p.vegetacion + '%' : null)}
     ${block('🚇 Conectividad', p.conectividad)}
     ${block('🏥 Servicios cercanos', p.servicios_cercanos)}
-    ${verRutas}
   </div>`
 }
 
@@ -457,7 +454,7 @@ export default function MapView({ seedIds, encajeById } = {}) {
     if (!centro) { const c = map.getCenter(); centro = { lat: c.lat, lon: c.lng } }
 
     try {
-      // El backend depende de Google (latencia intermitente); corta si cuelga más que su
+      // El backend depende de la base, Nominatim/Overpass y Valhalla (latencia intermitente); corta si cuelga más que su
       // propio wait_for (13s) para no dejar al usuario esperando indefinidamente.
       const ctrl = new AbortController()
       const to = setTimeout(() => ctrl.abort(), 16000)
@@ -686,45 +683,13 @@ export default function MapView({ seedIds, encajeById } = {}) {
 
         const popup = new maplibregl.Popup({ closeButton: true, offset: 12, className: 'ctx-popup', maxWidth: '300px' })
 
-        // --- Rutas a pie (Google Routes, vía backend) ---
-        const RUTA_COL = ['var(--teal-bright)', '#E5C06A', 'var(--coral)']
-        let rutaIds = []
-        let rutaMarkers = []
-        function clearRutas() {
-          rutaIds.forEach(id => { if (map.getLayer(id)) map.removeLayer(id); if (map.getSource(id)) map.removeSource(id) })
-          rutaIds = []
-          rutaMarkers.forEach(m => m.remove()); rutaMarkers = []
-        }
-        async function drawRutas(assetId, btn) {
-          if (btn) { btn.textContent = '⏳ Trazando rutas…'; btn.disabled = true }
-          clearRutas()
-          try {
-            const res = await fetch(`${API_BASE}/api/v1/assets/${assetId}/rutas`, { headers: apiHeaders() })
-            const data = await res.json()
-            const rutas = data.rutas || []
-            if (!rutas.length) { if (btn) btn.textContent = 'Sin rutas (¿Google Maps activo?)'; return }
-            const bounds = new maplibregl.LngLatBounds()
-            rutas.forEach((r, i) => {
-              const id = `ruta-${i}`
-              const capas = agregarRutaAnimada(map, id, r.coords, RUTA_COL[i % 3])
-              rutaIds.push(...capas)
-              r.coords.forEach(c => bounds.extend(c))
-              const el = document.createElement('div')
-              el.style.cssText = `background:${RUTA_COL[i % 3]};color:#0E0D13;font-weight:800;font-size:11px;padding:3px 9px;border-radius:999px;font-family:var(--font-body);white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.45)`
-              el.textContent = `🚶 ${r.duracion_min} min · ${r.nombre}`
-              rutaMarkers.push(new maplibregl.Marker({ element: el }).setLngLat(r.destino).addTo(map))
-            })
-            if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 90, duration: 700, maxZoom: 16 })
-            if (btn) btn.textContent = '🚶 Rutas trazadas ✓'
-          } catch { if (btn) btn.textContent = 'No se pudieron trazar' }
-          finally { if (btn) btn.disabled = false }
-        }
+        // Sin «Ver rutas a pie»: sus líneas eran de Google Routes y el contenido de Google no
+        // puede pintarse sobre este mapa (MAP-SOURCE-BOUNDARY, 2026-09-30). `/rutas` sigue
+        // respondiendo, vacío, para no romper un bundle viejo en caché.
 
         map.on('click', 'activos-dot', e => {
           const f = e.features[0]
           popup.setLngLat(f.geometry.coordinates).setHTML(popupHTML(f.properties)).addTo(map)
-          const btn = popup.getElement()?.querySelector('.ctx-rutas-btn')
-          if (btn) btn.addEventListener('click', () => drawRutas(btn.dataset.id, btn))
         })
         map.on('mouseenter', 'activos-dot', () => { map.getCanvas().style.cursor = 'pointer' })
         map.on('mouseleave', 'activos-dot', () => { map.getCanvas().style.cursor = '' })
@@ -736,21 +701,13 @@ export default function MapView({ seedIds, encajeById } = {}) {
           map.fitBounds(b, { padding: 80, maxZoom: 14, duration: 600 })
         }
 
-        // AUTO-CARGAR EL AURA del inmueble sembrado (bug real detectado en vivo, demo
-        // Mazatlán 2026-07-03): al "Ampliar" el mapa desde la página del inmueble (o desde
-        // una tarjeta del chat), MapView se siembra con UN solo id (seedIds=[id]) — pero
-        // antes aterrizaba en un pin mudo: el usuario tenía que volver a TOCARLO y luego
-        // tocar "Ver rutas a pie" para recuperar lo mismo que ya había visto en
-        // AuraSingleMap (POIs con nombre real + minutos reales, vía este mismo /rutas).
-        // Con un único sembrado, replicamos el flujo de un click real (abrir su popup +
-        // trazar sus rutas) para no perder el contexto que el usuario ya tenía en las
-        // manos — "Ampliar" debe CONTINUAR la conversación, no reiniciarla en blanco.
+        // Con un único sembrado («Ampliar» desde el anuncio o desde una tarjeta), se abre su
+        // popup como si el usuario lo hubiera tocado: «Ampliar» continúa la conversación, no
+        // la reinicia en blanco (bug real, demo Mazatlán 2026-07-03). Antes además trazaba
+        // sus rutas a pie con Google Routes; eso se retiró (MAP-SOURCE-BOUNDARY).
         if (Array.isArray(seedIds) && seedIds.length === 1 && geojson.features?.length === 1) {
           const f = geojson.features[0]
           popup.setLngLat(f.geometry.coordinates).setHTML(popupHTML(f.properties)).addTo(map)
-          const btnAuto = popup.getElement()?.querySelector('.ctx-rutas-btn')
-          if (btnAuto) btnAuto.addEventListener('click', () => drawRutas(btnAuto.dataset.id, btnAuto))
-          drawRutas(f.properties.id)
         }
       } catch (e) {
         setError('No se pudo cargar el catastro: ' + e.message)
@@ -859,9 +816,11 @@ export default function MapView({ seedIds, encajeById } = {}) {
             <span style={{ flexShrink: 0, display: 'flex', marginTop: 1, color: 'var(--teal-bright)' }}>{tour ? <Film size={16} /> : <MapPin size={16} />}</span>
             {/* El backend manda párrafos separados por \n\n (p.ej. la isócrona: la frase, qué
                 hay dentro, los inmuebles). En HTML los saltos colapsan a espacio y todo se leía
-                como un párrafo corrido — este dato se escanea, no se lee de corrido. */}
+                como un párrafo corrido — este dato se escanea, no se lee de corrido.
+                `mensajeMapaHtml` escapa ANTES de aplicar el marcado: el texto trae nombres de
+                lugares de terceros (Overture/OSM) y sin escapar era un XSS. */}
             <span style={{ whiteSpace: 'pre-line' }}
-                  dangerouslySetInnerHTML={{ __html: mapaMsg.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\*(.+?)\*/g, '<i>$1</i>') }} />
+                  dangerouslySetInnerHTML={{ __html: mensajeMapaHtml(mapaMsg) }} />
           </div>
         )}
 

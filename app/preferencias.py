@@ -28,7 +28,8 @@ import math
 import anthropic
 import httpx
 
-from app.config import THINKING_APAGADO, settings
+from app.config import settings
+from app.llm_runtime import CallPurpose, runtime
 from app.encaje import DIMENSIONES
 
 logger = logging.getLogger(__name__)
@@ -154,15 +155,16 @@ async def extraer_preferencias(mensajes_usuario: list[str]) -> dict:
     if not textos:
         return {}
     conversacion = "\n".join(f"- {t}" for t in textos[-12:])  # acota tokens a los últimos turnos
+    # La configuración del modelo se resuelve FUERA del try: una configuración no admitida es un
+    # error de despliegue, no un fallo del proveedor que se degrada a {} en silencio. La tool
+    # forzada exige el razonamiento apagado (y el tope de 400 no daría para pensar Y llamarla).
+    modelo = runtime().sdk_kwargs(CallPurpose.PREFERENCIAS, tool_forzada="registrar_preferencias")
     try:
         resp = await _client().messages.create(
-            model=settings.llm_model,
+            **modelo,
             max_tokens=400,
-            # Sin razonamiento: el tope de 400 no da para pensar Y llamar a la tool.
-            thinking=THINKING_APAGADO,
             system=_SYSTEM,
             tools=[_TOOL],
-            tool_choice={"type": "tool", "name": "registrar_preferencias"},
             messages=[{"role": "user", "content": f"Mensajes del usuario:\n{conversacion}"}],
         )
         for block in resp.content:

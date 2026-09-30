@@ -222,17 +222,6 @@ settings = Settings()
 
 
 # ── Parámetros del LLM que dependen del modelo ──────────────────────────────────────────
-# Anthropic retira `claude-sonnet-4-5` el 2026-11-24. Su sucesor, `claude-sonnet-5`, cambia
-# dos cosas que este repo daba por hechas:
-#   1. responde 400 a un `temperature` distinto del default (el chat y el CRM mandaban 0.2);
-#   2. si se omite `thinking`, RAZONA por defecto, y ese razonamiento cuenta contra
-#      `max_tokens`: `extraer_preferencias`, con tope 400, podía quedarse sin llamar a su tool.
-# Con estos dos valores el mismo código sirve para ambos modelos y, en 4.5, el comportamiento
-# queda idéntico al de antes: cambiar de modelo es sólo `LLM_MODEL`. Cuando producción esté
-# en Sonnet 5, `temperatura_llm` sobra y se retira.
-THINKING_APAGADO = {"type": "disabled"}
-
-
-def temperatura_llm(valor: float) -> float | None:
-    """`valor` sólo si el modelo configurado es Sonnet 4.5; si no, None (no se envía)."""
-    return valor if settings.llm_model.startswith("claude-sonnet-4-5") else None
+# No viven aquí. `llm_model` sólo NOMBRA el modelo; qué admite y cómo se le habla (thinking,
+# effort, temperatura, tool forzada) lo decide la frontera de runtime, `app/llm_runtime.py`,
+# que además falla cerrado si el modelo no tiene perfil registrado.

@@ -75,7 +75,8 @@ from app.buyer.extractor import (
     autorizar_traduccion,
     construir_lote,
 )
-from app.config import THINKING_APAGADO, settings
+from app.config import settings
+from app.llm_runtime import CallPurpose, runtime
 
 logger = logging.getLogger(__name__)
 
@@ -273,15 +274,10 @@ _TOOL_NAME = "registrar_afirmaciones"
 # corridas con el mismo prompt pero distinto `max_tokens` no son comparables, y sin esto el
 # artefacto las presentaría como si lo fueran.
 #
-# `temperature` NO se pasa: se usa el default del proveedor. Se deja explícito aquí —y se
-# registra como "unset" en el eval— porque "no lo fijamos" es una decisión que hay que poder
-# leer, no un hueco que alguien rellene sin darse cuenta.
+# Modelo, `thinking`, `temperature` y `tool_choice` NO viven aquí: los resuelve la frontera de
+# runtime para el propósito INTERPRETE con tool forzada (app/llm_runtime.py), y el eval los
+# registra desde ahí mismo, así que lo que se registra es lo que se envía.
 _MAX_TOKENS = 1500
-_TOOL_CHOICE = {"type": "tool", "name": _TOOL_NAME}
-_TEMPERATURE = None
-# Explícito por lo mismo que `temperature`: con Sonnet 5, omitirlo ENCIENDE el razonamiento
-# (ver app/config.py). Apagado, el modelo ve lo mismo que veía con Sonnet 4.5.
-_THINKING = THINKING_APAGADO
 
 _SYSTEM = (
     "Eres un intérprete de mensajes de un comprador/arrendatario inmobiliario. Lees UN "
@@ -454,12 +450,10 @@ async def proponer_con_modelo(texto: str) -> Sequence[PropuestaV0 | PropuestaRig
     if not settings.anthropic_api_key or not texto.strip():
         return ()
     respuesta = await _client().messages.create(
-        model=settings.llm_model,
+        **runtime().sdk_kwargs(CallPurpose.INTERPRETE, tool_forzada=_TOOL_NAME),
         max_tokens=_MAX_TOKENS,
-        thinking=_THINKING,
         system=_SYSTEM,
         tools=[_tool_schema()],
-        tool_choice=_TOOL_CHOICE,
         messages=[{"role": "user", "content": texto}],
     )
     for bloque in respuesta.content:

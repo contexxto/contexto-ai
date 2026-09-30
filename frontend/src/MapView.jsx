@@ -103,18 +103,6 @@ function puntoNorte(geom) {
   return best
 }
 
-// Genera un polígono GeoJSON que aproxima un círculo (radio en metros).
-function circlePolygon(lon, lat, radiusM, points = 64) {
-  const coords = []
-  const latR = radiusM / 111320
-  const lonR = radiusM / (111320 * Math.cos(lat * Math.PI / 180))
-  for (let i = 0; i <= points; i++) {
-    const a = (i / points) * 2 * Math.PI
-    coords.push([lon + lonR * Math.cos(a), lat + latR * Math.sin(a)])
-  }
-  return { type: 'Feature', geometry: { type: 'Polygon', coordinates: [coords] } }
-}
-
 // Devuelve los coords de la polilínea hasta la fracción t (0..1) — para "dibujar" la ruta.
 function polilineaParcial(coords, t) {
   if (!coords || coords.length < 2) return coords || []
@@ -218,9 +206,6 @@ export default function MapView({ seedIds, encajeById } = {}) {
   const mapRef = useRef(null)
   const [count, setCount] = useState(null)
   const [error, setError] = useState(null)
-  const [nearMsg, setNearMsg] = useState(null)
-  const [locating, setLocating] = useState(false)
-  const [radiusM, setRadiusM] = useState(500)
   // Onboarding de una vez: se muestra al primer uso y se recuerda (como los flags de geo).
   const [showHints, setShowHints] = useState(() => { try { return !localStorage.getItem('ctx_hints_seen') } catch { return true } })
   // Afford de scroll de los chips: pista visual (degradado + chevron) de que hay más a los lados.
@@ -559,61 +544,6 @@ export default function MapView({ seedIds, encajeById } = {}) {
     }
     if (watchIdRef.current != null && lastPos.current) { recentrar(lastPos.current); return }
     iniciarWatch(false, recentrar)
-  }
-
-  const RADII = [[250, '250 m'], [500, '500 m'], [1000, '1 km'], [2000, '2 km']]
-  const fmt = (m) => m >= 1000 ? (m / 1000) + ' km' : m + ' m'
-
-  // Dibuja el círculo + marcador, encuadra y consulta el catastro en ese radio.
-  async function runRadius(lat, lon, radius) {
-    const map = mapRef.current
-    if (!map) return
-    const circle = circlePolygon(lon, lat, radius)
-    if (map.getSource('radio')) map.getSource('radio').setData(circle)
-    else {
-      map.addSource('radio', { type: 'geojson', data: circle })
-      map.addLayer({ id: 'radio-fill', type: 'fill', source: 'radio',
-        paint: { 'fill-color': '#2DBDB6', 'fill-opacity': 0.08 } })
-      map.addLayer({ id: 'radio-line', type: 'line', source: 'radio',
-        paint: { 'line-color': '#2DBDB6', 'line-width': 1.5, 'line-dasharray': [2, 2] } })
-    }
-    const userPt = { type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] } }
-    if (map.getSource('yo')) map.getSource('yo').setData(userPt)
-    else {
-      map.addSource('yo', { type: 'geojson', data: userPt })
-      map.addLayer({ id: 'yo-dot', type: 'circle', source: 'yo',
-        paint: { 'circle-radius': 6, 'circle-color': '#F0ECE6', 'circle-stroke-width': 3, 'circle-stroke-color': '#2DBDB6' } })
-    }
-    // Encuadrar al círculo (para que el radio elegido se vea completo)
-    const c = circle.geometry.coordinates[0]
-    const b = c.reduce((acc, p) => acc.extend(p), new maplibregl.LngLatBounds(c[0], c[0]))
-    map.fitBounds(b, { padding: 60, duration: 700 })
-    try {
-      const res = await fetch(`${API_BASE}/api/v1/assets/near?lat=${lat}&lon=${lon}&radius_m=${radius}`, { headers: apiHeaders() })
-      const data = await res.json()
-      const n = data.total ?? 0
-      setNearMsg(n > 0
-        ? `📍 ${n} inmueble(s) en ${fmt(radius)} a la redonda de tu ubicación.`
-        : `📍 Aún no tengo datos del catastro en ${fmt(radius)} a la redonda. Estamos ampliando la cobertura.`)
-    } catch { setNearMsg('No se pudo consultar el sector.') }
-    finally { setLocating(false) }
-  }
-
-  function nearMe() {
-    if (!navigator.geolocation) { setNearMsg('Tu navegador no permite geolocalización.'); return }
-    setLocating(true); setNearMsg(null)
-    navigator.geolocation.getCurrentPosition((pos) => {
-      const { latitude: lat, longitude: lon } = pos.coords
-      lastPos.current = { lat, lon }
-      runRadius(lat, lon, radiusM)
-    }, () => {
-      setLocating(false); setNearMsg('No pudimos obtener tu ubicación (permiso denegado).')
-    }, { enableHighAccuracy: true, timeout: 10000 })
-  }
-
-  function changeRadius(r) {
-    setRadiusM(r)
-    if (lastPos.current) runRadius(lastPos.current.lat, lastPos.current.lon, r)
   }
 
   useEffect(() => {

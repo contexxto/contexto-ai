@@ -358,6 +358,12 @@ def _score_dormitorios(decl, inm) -> dict:
     return _razon("dormitorios", _nivel(s), s, txt, "ficha del inmueble")
 
 
+# Los literales de la razón de mascotas. El verificador de prosa cuenta ESTOS textos en las
+# tarjetas para auditar afirmaciones agregadas («N aceptan mascotas»): viven en la fuente.
+RAZON_ACEPTA_MASCOTAS = "Acepta mascotas"
+RAZON_NO_ACEPTA_MASCOTAS = "No acepta mascotas"
+
+
 def _score_acepta_mascotas(_decl, inm) -> dict:
     am = _bool(inm.get("acepta_mascotas"))
     if am is None:
@@ -365,7 +371,7 @@ def _score_acepta_mascotas(_decl, inm) -> dict:
                       "Necesitas que acepten mascotas · sin dato aquí", None, aporta=False)
     s = 1.0 if am else 0.0
     return _razon("acepta_mascotas", _nivel(s), s,
-                  "Acepta mascotas" if am else "No acepta mascotas", "ficha del inmueble")
+                  RAZON_ACEPTA_MASCOTAS if am else RAZON_NO_ACEPTA_MASCOTAS, "ficha del inmueble")
 
 
 _SCORERS = {

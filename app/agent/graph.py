@@ -23,6 +23,7 @@ from app.agent.state import AgentState
 from app.agent.tools import AGENT_TOOLS
 from app.config import THINKING_APAGADO, settings, temperatura_llm
 from app.fair_housing import detectar_steering
+from app.texto_salida import texto_de_salida
 from app.preferencias import extraer_preferencias
 
 # Garantiza que la key esté disponible para cualquier llamada directa al SDK
@@ -534,7 +535,7 @@ COMPORTAMIENTO OPERATIVO:
    DIRECCIÓN, EDIFICIO o SECTOR y quieras ubicar inmuebles registrados, usa SIEMPRE
    tool_find_assets_by_text PRIMERO (busca en NUESTRO catastro por el texto de la dirección).
    OpenStreetMap/Nominatim NO conoce la mayoría de las calles de Quito y confunde los nombres
-   de las estaciones del Metro — sirve solo como respaldo para ubicar una zona aproximada,
+   de las estaciones del Metro — sirve para ubicar una zona o un punto de referencia aproximados,
    JAMÁS como la fuente para encontrar inventario. Si tool_find_assets_by_text devuelve un
    inmueble, ya lo encontraste: descríbelo y usa su lat/lon para el contexto de zona.
    a) CERCANÍA SIN UBICACIÓN ("cerca de mí", "aquí", "donde estoy", "este sector"):
@@ -575,8 +576,15 @@ COMPORTAMIENTO OPERATIVO:
       ORDEN OBLIGATORIO (ver REGLA DE ORO arriba):
       1º) tool_find_assets_by_text(texto) → nuestro catastro. Si hay inmueble, descríbelo y usa
           su lat/lon con tool_search_nearby_assets / tool_analyze_location para sumar contexto.
-      2º) SOLO si no hay coincidencia por nombre → tool_geocode_address para lat/lon aproximadas
+      2º) Si no hay coincidencia por nombre → tool_geocode_address para lat/lon aproximadas
           y luego tool_search_nearby_assets.
+      3º) DISTANCIA, CERCANÍA O TRANSPORTE: encontrar un inmueble por texto NO demuestra que esté
+          cerca de nada. Si tu respuesta va a afirmar una distancia, una cercanía («cerca de la
+          estación», «a 300 m», «a 5 min») o el acceso a transporte, obtén evidencia espacial en
+          este turno —tool_analyze_location con la lat/lon del inmueble, o tool_search_nearby_assets
+          desde un punto de referencia (que puedes ubicar con tool_geocode_address)— o abstente y di
+          que no tienes esa medición. Si la pregunta no tiene dimensión espacial, no dispares
+          herramientas espaciales.
       Si ni el catastro ni el geocoding ubican el lugar, dilo con honestidad y pide una
       referencia conocida cercana — NO inventes ni asumas que "no hay nada".
    d) Si el usuario ya da coordenadas → usa tool_search_nearby_assets directamente.
@@ -763,11 +771,13 @@ def _build_graph() -> StateGraph:
         # veredicto de idoneidad de barrio por grupo/perfil (steering). No muta la
         # respuesta — el bloqueo/regeneración con contexto de atribución es el
         # siguiente paso (ver docs/COMPLIANCE_FairHousing_AgentSpec_2026-06-23.md).
-        texto = getattr(response, "content", "")
-        if isinstance(texto, str):
-            hits = detectar_steering(texto)
-            if hits:
-                print(f"  [FAIR-HOUSING] posible steering en la salida del agente: {hits}")
+        # H1 · MODEL-MIGRATION-PRODUCT-HARDENING 0.1: se audita la MISMA lectura que ve la
+        # persona (`texto_de_salida`). Antes sólo corría si `content` era str; con herramientas
+        # atadas o con thinking llega como lista de bloques, y el guardrail callaba sin rastro.
+        texto = texto_de_salida(getattr(response, "content", None))
+        hits = detectar_steering(texto) if texto else []
+        if hits:
+            print(f"  [FAIR-HOUSING] posible steering en la salida del agente: {hits}")
         return {"messages": [response]}
 
     tool_node = ToolNode(tools=AGENT_TOOLS)

@@ -47,7 +47,7 @@ import logging
 import re
 import unicodedata
 
-from app.encaje import estado_presupuesto
+from app.encaje import RAZON_ACEPTA_MASCOTAS, RAZON_NO_ACEPTA_MASCOTAS, estado_presupuesto
 from app.fair_housing import detectar_steering
 
 log = logging.getLogger("prosa")  # mismo logger que `routers/chat.py` ya usaba ad hoc
@@ -637,11 +637,135 @@ def _aviso_prometido_en_prosa(reply: str) -> list[dict]:
     return hits
 
 
+# ── Agregados sobre requisitos duros y excluidas presentadas como candidatas ─────────────
+# MODEL-MIGRATION-PRODUCT-HARDENING 0.1 · H3. Dos clases que el arnés de paridad del chat
+# (2026-09-30) DEMOSTRÓ con respuestas reales. No es un verificador general de lenguaje: cada
+# chequeo se ancla a un dato del panel y prefiere callar antes que adivinar.
+#
+# (a) «tengo 5 departamentos en arriendo que aceptan mascotas», con 5 tarjetas de las que sólo
+#     3 lo confirman. La verdad por tarjeta es la razón que escribió el MOTOR
+#     (`encaje.RAZON_ACEPTA_MASCOTAS`), la misma que ve la persona. Sólo se denuncia la
+#     SOBRE-afirmación: más de las que el panel confirma. Las particiones honestas («las dos
+#     primeras aceptan mascotas») pasan; la sub-afirmación («ninguna lo confirma») es otra clase
+#     y queda fuera.
+# (b) el precio de un inmueble que el panel EXCLUYÓ, atribuido en prosa con un encuadre de
+#     encaje. Caso real: «En Cumbayá también hay casas dentro de tu tope. Una está en Calle
+#     Pampite E5-40, a $139,000». Esas casas salieron de la búsqueda, pero el panel las filtró
+#     por tipo: no están ni en `cards` ni en `descartadas`, así que el verificador sólo puede
+#     verlas si recibe `vistas` —lo que el modelo leyó en las herramientas del turno—. Nombrar
+#     lo que quedó fuera sigue permitido; venderlo como opción que encaja, no.
+_NUMERO_PALABRA = {"un": 1, "uno": 1, "una": 1, "dos": 2, "tres": 3, "cuatro": 4, "cinco": 5,
+                   "seis": 6, "siete": 7, "ocho": 8, "nueve": 9, "diez": 10}
+_CONJUNTO = (r"(?:departamentos?|deptos?|opciones?|inmuebles?|propiedades?|arriendos?|casas?|"
+             r"unidades|fichas|primer[oa]s|ultim[oa]s)")
+_CANTIDAD = re.compile(
+    rf"\b(\d{{1,2}}|{'|'.join(_NUMERO_PALABRA)})\s+(?:[a-z]+\s+){{0,2}}?{_CONJUNTO}\b")
+_UNIVERSAL = re.compile(r"\b(?:todos|todas|cada uno|cada una)\b")
+_ACEPTAN_MASCOTAS = re.compile(
+    r"\b(?:aceptan?|admiten?|permiten?)\s+(?:a\s+)?(?:tus?\s+)?(?:mascotas?|perros?|gatos?)\b")
+_NIEGA = {"no", "ni", "ninguno", "ninguna", "sin"}
+_ENCUADRE_CANDIDATA = re.compile(
+    r"(dentro de (?:tu|el) (?:tope|presupuesto)|entran? en (?:tu|el) (?:tope|presupuesto)"
+    r"|\bencajan?\b|\bte convienen?\b|\bte sirven?\b|\bte (?:la|lo|las|los) recomiendo\b"
+    r"|\brecomendad[oa]s?\b|\bbuena opcion\b|✅)")
+
+
+def _oraciones(reply: str) -> list[str]:
+    return [o for o in re.split(r"(?<=[.!?;])\s+|\n+", reply) if o.strip()]
+
+
+def _unidades(reply: str) -> list[str]:
+    """Párrafos (separados por línea en blanco); dentro de una lista, cada ítem es su propia
+    afirmación. Un salto simple no separa: en pantalla es el mismo párrafo."""
+    out = []
+    for parrafo in re.split(r"\n\s*\n", reply):
+        lineas = [ln for ln in parrafo.splitlines() if ln.strip()]
+        if any(_VINETA.match(ln) for ln in lineas):
+            out.extend(lineas)
+        elif lineas:
+            out.append(" ".join(lineas))
+    return out
+
+
+def _con_razon(c: dict, texto: str) -> bool:
+    return any(isinstance(r, dict) and r.get("texto") == texto for r in (c.get("encaje_razones") or []))
+
+
+def _agregado_requisito_duro(reply: str, cards: list[dict]) -> list[dict]:
+    """(a) «N aceptan mascotas» con N mayor que las tarjetas que el motor confirma."""
+    si = sum(1 for c in cards if _con_razon(c, RAZON_ACEPTA_MASCOTAS))
+    no = sum(1 for c in cards if _con_razon(c, RAZON_NO_ACEPTA_MASCOTAS))
+    if si + no == 0:
+        return []  # el panel no evaluó mascotas: no hay verdad contra qué medir
+    out = []
+    for bruta in _oraciones(reply):
+        o = _sin_tildes(bruta)
+        m = _ACEPTAN_MASCOTAS.search(o)
+        if not m:
+            continue
+        antes = o[:m.start()]
+        if _NIEGA & set(antes.split()[-4:]) or re.search(r"\bningun[oa]\b", o):
+            continue
+        cantidades = list(_CANTIDAD.finditer(antes))
+        if cantidades:
+            tok = cantidades[-1].group(1)
+            n = int(tok) if tok.isdigit() else _NUMERO_PALABRA[tok]
+        elif _UNIVERSAL.search(antes):
+            n = len(cards)
+        else:
+            continue
+        if n > si:
+            out.append(_violacion(
+                "agregado_requisito_duro", ALTA,
+                f"afirma que {n} aceptan mascotas; el panel lo confirma en {si} de {len(cards)} "
+                f"(no acepta: {no}, sin dato: {len(cards) - si - no})", bruta.strip()))
+    return out
+
+
+def _excluida_presentada(reply: str, cards: list[dict], descartadas: list[dict],
+                         vistas: list[dict], tope: float | None) -> list[dict]:
+    """(b) el precio de un inmueble excluido del panel, con encuadre de encaje en su párrafo."""
+    mostradas = {c.get("id") for c in cards}
+    precios_mostrados = {int(round(c["precio"])) for c in cards if c.get("precio") is not None}
+    por_precio: dict[int, dict] = {}
+    for a in list(vistas) + list(descartadas):
+        if a.get("id") in mostradas or a.get("precio") is None:
+            continue
+        por_precio.setdefault(int(round(a["precio"])), {})[a.get("id")] = a
+    if not por_precio:
+        return []
+    tope_entero = int(round(tope)) if tope is not None else None
+    out, denunciadas = [], set()
+    for unidad in _unidades(reply):
+        plano = _sin_tildes(unidad)
+        encuadre = next((m for m in _ENCUADRE_CANDIDATA.finditer(plano)
+                         if not (_NIEGA & set(plano[:m.start()].split()[-3:]))), None)
+        if encuadre is None:
+            continue
+        for valor, _pos in _montos_en(unidad):
+            if valor in precios_mostrados or valor == tope_entero:
+                continue
+            candidatos = por_precio.get(valor) or {}
+            if len(candidatos) != 1:
+                continue  # ambiguo es lo mismo que ausente: no se fabrica la atribución
+            a = next(iter(candidatos.values()))
+            if a.get("id") in denunciadas:
+                continue
+            denunciadas.add(a.get("id"))
+            out.append(_violacion(
+                "excluida_presentada", ALTA,
+                f"«{_nombre(a) or 'un inmueble excluido'}» (${valor:,}) no está en el panel, y la "
+                f"prosa le atribuye su precio con un encuadre de encaje («{encuadre.group(0)}»)",
+                unidad.strip()))
+    return out
+
+
 # ── La boca pública ───────────────────────────────────────────────────────────────────────
 def verificar_prosa(reply: str, cards: list[dict] | None,
                     preferencias: dict | None = None,
                     descartadas: list[dict] | None = None,
-                    puerta_abierta: bool = False) -> list[dict]:
+                    puerta_abierta: bool = False,
+                    vistas: list[dict] | None = None) -> list[dict]:
     """¿Qué afirma la prosa que el motor no respalda?
 
     `cards` son EXACTAMENTE las que verá la persona, en su orden. Sin tarjetas no hay verdad
@@ -653,12 +777,17 @@ def verificar_prosa(reply: str, cards: list[dict] | None,
     """
     cards = [c for c in (cards or []) if isinstance(c, dict)]
     descartadas = [c for c in (descartadas or []) if isinstance(c, dict)]
+    # `vistas`: lo que el modelo leyó en las herramientas del turno (id, dirección, precio). Sólo
+    # lo usa `excluida_presentada`; sin él (el eval contra el endpoint no lo tiene), ese chequeo
+    # calla en vez de inventar una exclusión.
+    vistas = [a for a in (vistas or []) if isinstance(a, dict)]
     if not reply:
         return []
+    tope = _tope_de(preferencias)
     if not cards:
         return (_gancho(reply, cards, descartadas) + _contacto_en_prosa(reply, puerta_abierta)
-                + _aviso_prometido_en_prosa(reply))
-    tope = _tope_de(preferencias)
+                + _aviso_prometido_en_prosa(reply)
+                + _excluida_presentada(reply, cards, descartadas, vistas, tope))
 
     hallazgos = (
         _contacto_en_prosa(reply, puerta_abierta)
@@ -670,6 +799,8 @@ def verificar_prosa(reply: str, cards: list[dict] | None,
         + _orden_alterado(reply, cards)
         + _caminabilidad_procedencia(reply, cards)
         + _gancho(reply, cards, descartadas)
+        + _agregado_requisito_duro(reply, cards)
+        + _excluida_presentada(reply, cards, descartadas, vistas, tope)
     )
     return sorted(hallazgos, key=lambda v: 0 if v["gravedad"] == ALTA else 1)
 
@@ -693,6 +824,7 @@ CONTADORES: dict[str, int] = {
     "presupuesto_suavizado": 0, "encabezado_falso": 0, "cifra_sin_procedencia": 0,
     "descartada_ofrecida": 0, "orden_alterado": 0,
     "gancho_steering": 0, "gancho_hype": 0, "gancho_descartada": 0,
+    "agregado_requisito_duro": 0, "excluida_presentada": 0,
 }
 
 

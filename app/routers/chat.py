@@ -48,6 +48,7 @@ from app.sesion_autoridad import (
     probar_autoridad_en_transaccion,
     reclamar_sesion_anonima,
 )
+from app.texto_salida import texto_de_salida
 from app.verificacion_prosa import registrar as registrar_prosa
 from app.contracts.consent_grant_v0 import Channel
 from app.grant_reenganche import copy_de_consentimiento, crear_grants_reenganche, revocar_grants_reenganche
@@ -713,7 +714,10 @@ def _auditar_prosa(session_id: str, reply: str, valores: dict | None,
         # efecto de lado. Los hallazgos siguen llegando ÍNTEGROS a `registrar`.
         explicacion, violaciones = auditar_explicacion(
             reply, v.get("cards"), v.get("preferencias"), v.get("descartadas"),
-            puerta_abierta)
+            puerta_abierta,
+            # H3: lo que el modelo VIO en las herramientas del turno, para que el verificador
+            # reconozca un inmueble excluido del panel cuando la prosa lo vende como opción.
+            vistas=assembler.activos_vistos_del_turno(v.get("messages") or []))
         registrar_prosa(violaciones, reply, session=session_id)
         if explicacion.verification_status is not VerificationStatus.PASSED:
             # Veredicto del TURNO. No duplica a `registrar`, que cuenta por código: esta
@@ -765,16 +769,9 @@ def _texto_del_chunk(chunk) -> str:
     Solo se extraen los bloques de tipo `text`; los `input_json_delta` de una llamada
     a herramienta jamás deben acabar en la burbuja del usuario.
     """
-    contenido = getattr(chunk, "content", None)
-    if isinstance(contenido, str):
-        return contenido
-    if isinstance(contenido, list):
-        return "".join(
-            b.get("text", "")
-            for b in contenido
-            if isinstance(b, dict) and b.get("type") == "text"
-        )
-    return ""
+    # La lectura vive en `app/texto_salida.py` y es ÚNICA: la usa también el guardrail de
+    # steering de `llm_node` (MODEL-MIGRATION-PRODUCT-HARDENING 0.1 · H1).
+    return texto_de_salida(getattr(chunk, "content", None))
 
 
 class _CompuertaSSE:

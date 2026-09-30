@@ -28,7 +28,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 PROCEDENCIA_PROPIA = "propio"
-COLUMNA_PROCEDENCIA = "contexto_procedencia"  # la crea PLACE-LEGACY-CONTEXT-BACKFILL (040)
+# PLACE-PROVENANCE-041 descartó esta columna: una sola etiqueta mezclaba fuente, método y
+# verificación. La 041 NO la crea (y aborta si alguien la creó), así que esta puerta sigue
+# cerrada para todas las filas. La procedencia vive ahora en `servicios_evidencia` /
+# `conectividad_evidencia`, que se leen con `app/place/persistible.py::leer_contexto_persistido`;
+# reabrir los consumidores por ahí es una unidad posterior, detrás de CURATION-CONSISTENCY.
+COLUMNA_PROCEDENCIA = "contexto_procedencia"
 CAMPOS_LEGADOS = ("servicios_cercanos", "conectividad")
 
 

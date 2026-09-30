@@ -23,6 +23,12 @@ from app.database import AsyncSessionLocal, get_db
 from app.limiter import limiter
 from app.models import ActivoInmutable
 from app.place.legado import con_contexto_vigente
+from app.place.persistible import (
+    a_json,
+    esquema_041_presente,
+    formatear_conectividad,
+    formatear_servicios,
+)
 from app.schemas import ActivoCreateRequest, ActivoResponse
 from app.entorno import entorno_destacado, limpiar_texto_servicios
 from app.entorno_curacion import (
@@ -2187,26 +2193,47 @@ async def _recompute_walk_score(asset_id: str, lat: float, lon: float) -> None:
             return
         ws = compute_walk_score(pois, lat, lon)
         # Conectividad y entorno: PRIMERO nuestra capa (analizar_zona, sin Google desde
-        # MAP-SOURCE-BOUNDARY); OSM de respaldo. Lo que se escribe aquí sigue SIN marca de
-        # procedencia en la columna, así que tampoco se muestra en mapas (app/place/legado.py)
-        # hasta PLACE-LEGACY-CONTEXT-BACKFILL.
+        # MAP-SOURCE-BOUNDARY); OSM de respaldo. Sin la 041 en la base, el texto se escribe SIN
+        # marca de procedencia y no se muestra en mapas (app/place/legado.py). Con la 041, el
+        # mismo fetch da además la EVIDENCIA de cada dimensión (PLACE-PROVENANCE-041).
         from app.rutas import analizar_zona  # lazy: evita import circular
+        async with AsyncSessionLocal() as s0:
+            con_041 = await esquema_041_presente(s0)
+        docs = {"servicios": None, "conectividad": None}
         try:
-            az = await analizar_zona(lat, lon)
+            if con_041:
+                from app.rutas import analizar_zona_con_evidencia
+                az, docs = await analizar_zona_con_evidencia(lat, lon)
+            else:
+                az = await analizar_zona(lat, lon)
         except Exception:  # noqa: BLE001
             az = {}
         conect = az.get("conectividad") or (extraer_conectividad(pois, lat, lon) or {}).get("texto")
         ent = az.get("servicios_texto") or (await entorno_destacado(lat, lon, pois) or {}).get("texto")
+        valores = {"w": ws["walk_score"], "f": ws["fuente"], "c": conect, "s": ent, "id": asset_id}
         async with AsyncSessionLocal() as session:
             # Recalcular con éxito == POIs reales de OSM → la procedencia pasa a 'osm'
             # (ws["fuente"] es siempre "osm" aquí). Auto-sana la columna por si el proceso
             # arrancó por este job antes de cualquier publish/anuncio.
             await ensure_walk_score_fuente_column(session)
-            await session.execute(
-                text("UPDATE activos_inmutables SET walk_score = :w, walk_score_fuente = :f, "
-                     "conectividad = :c, servicios_cercanos = :s WHERE id = :id"),
-                {"w": ws["walk_score"], "f": ws["fuente"], "c": conect, "s": ent, "id": asset_id},
-            )
+            if con_041:
+                # Con la 041: cada dimensión guarda su evidencia, y el texto se RENDERIZA de ella.
+                # Una dimensión sin evidencia (capa caída, sin cobertura, respaldo OSM) queda en
+                # NULL y conserva el texto de respaldo, que la lectura trata como legado sin
+                # verificar. Así nunca queda una evidencia vieja junto a un texto nuevo.
+                valores.update(
+                    s=formatear_servicios(docs["servicios"]) or ent,
+                    c=formatear_conectividad(docs["conectividad"]) or conect,
+                    se=a_json(docs["servicios"]), ce=a_json(docs["conectividad"]))
+                sql = ("UPDATE activos_inmutables SET walk_score = :w, walk_score_fuente = :f, "
+                       "conectividad = :c, servicios_cercanos = :s, "
+                       "servicios_evidencia = CAST(:se AS jsonb), "
+                       "conectividad_evidencia = CAST(:ce AS jsonb) WHERE id = :id")
+            else:
+                # Sin la 041 (hoy en producción): el mismo UPDATE de siempre, byte a byte.
+                sql = ("UPDATE activos_inmutables SET walk_score = :w, walk_score_fuente = :f, "
+                       "conectividad = :c, servicios_cercanos = :s WHERE id = :id")
+            await session.execute(text(sql), valores)
             await session.commit()
     except Exception:  # noqa: BLE001 — best-effort; nunca debe tumbar nada
         pass

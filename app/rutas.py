@@ -532,6 +532,19 @@ async def place_context_de(lat: float, lon: float) -> PlaceContextV0:
     return ensamblar_place_context(await _recolectar_zona(lat, lon))
 
 
+async def analizar_zona_con_evidencia(lat: float, lon: float) -> tuple[dict, dict]:
+    """`analizar_zona` + la evidencia PERSISTIBLE de cada dimensión, del MISMO fetch
+    (PLACE-PROVENANCE-041). Lo usa el escritor de `activos_inmutables` cuando la 041 existe.
+
+    Existe aparte para no tocar `analizar_zona`: su salida (las claves históricas) y su punto de
+    parcheo están congelados por los baselines de PLAN04, y el agente la sigue consumiendo igual.
+    """
+    from app.place.persistible import documentos_persistibles  # lazy: sin ciclo en el import
+    materia = await _recolectar_zona(lat, lon)
+    contexto = ensamblar_place_context(materia)
+    return derivar_salida_legacy(contexto, materia), documentos_persistibles(materia, contexto)
+
+
 async def analizar_zona(lat: float, lon: float) -> dict:
     """
     FUENTE ÚNICA DE VERDAD de una zona: la consumen el agente (home) y el mapa,

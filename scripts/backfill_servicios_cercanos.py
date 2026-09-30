@@ -103,6 +103,19 @@ async def main() -> None:
         await engine.dispose()
         return
 
+    # PLACE-PROVENANCE-041: con la 041 en la base, `_recompute_walk_score` escribe EVIDENCIA
+    # persistida. Correr este script sobre todos los activos sería, de hecho, el backfill de
+    # procedencia — sin su dry-run con diff, sin detección de conflictos y sin su GO. Ese
+    # backfill es la unidad PLACE-LEGACY-CONTEXT-BACKFILL; este script (de la era Google) no.
+    from app.database import AsyncSessionLocal  # noqa: E402
+    from app.place.persistible import esquema_041_presente  # noqa: E402
+    async with AsyncSessionLocal() as s:
+        if await esquema_041_presente(s):
+            print("⛔ La migración 041 está aplicada: este script ya no es el camino del backfill. "
+                  "Usa la unidad PLACE-LEGACY-CONTEXT-BACKFILL (dry-run, diff y GO propio).")
+            await engine.dispose()
+            sys.exit(2)
+
     print(f"\n🟢 EJECUTANDO (pausa {args.pausa}s entre activos) — esto llama a Overpass/Google de verdad.\n")
     ok = fail = 0
     for i, a in enumerate(activos, start=1):

@@ -77,13 +77,18 @@ class MateriaDeZona:
     un dict con `pois_analizados=0`, que es Overpass respondiendo que no hay nada."""
     servicios: list[dict]
     se_consultaron_servicios: bool
-    """Hubo llave de Google y se preguntó. Sin esto, «cero servicios» y «no se preguntó»
-    serían indistinguibles, que es justo la confusión que el contrato prohíbe."""
+    """La consulta de servicios tuvo cobertura en este punto. Sin esto, «cero servicios» y
+    «no se preguntó» serían indistinguibles, que es justo la confusión que el contrato
+    prohíbe. Hasta MAP-SOURCE-BOUNDARY significaba «hubo llave de Google»; desde entonces
+    el único proveedor es nuestra capa, y el productor lo pone en True solo si la capa
+    devolvió algo: sin cobertura no se sabe, y eso es UNKNOWN, no ausencia."""
     transporte: dict | None
     transporte_distancia_m: int | float | None
     transporte_minutos: int | float | None
     transporte_ruta_medida: bool
-    """True = caminata real por calles (Google Routes). False = estimación recta ÷ 80."""
+    """True = caminata real por calles (Google Routes). False = estimación recta ÷ 80.
+    Desde MAP-SOURCE-BOUNDARY ningún productor lo pone en True: no hay ruteo punto a punto
+    propio todavía. La rama se conserva para cuando lo haya."""
     recuperado_en: datetime
 
 

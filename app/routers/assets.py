@@ -22,6 +22,7 @@ from app.config import settings
 from app.database import AsyncSessionLocal, get_db
 from app.limiter import limiter
 from app.models import ActivoInmutable
+from app.place.legado import con_contexto_vigente
 from app.schemas import ActivoCreateRequest, ActivoResponse
 from app.entorno import entorno_destacado, limpiar_texto_servicios
 from app.entorno_curacion import (
@@ -87,6 +88,8 @@ async def assets_geojson(
     for r in rows:
         if r["lon"] is None or r["lat"] is None:
             continue
+        # MAP-SOURCE-BOUNDARY: frontera de los textos legados en la LECTURA (app/place/legado.py).
+        r = con_contexto_vigente(r)
         props: dict = {
             "id": r["id"],
             "direccion": r["direccion"],
@@ -100,6 +103,7 @@ async def assets_geojson(
                 "ruido": r["ruido"],
                 "vegetacion": float(r["vegetacion"]) if r["vegetacion"] is not None else None,
                 "trafico": r["trafico"],
+                # Se pintan en el popup del Mapa Vivo, SOBRE MapLibre: ya pasaron la frontera.
                 "conectividad": r["conectividad"],
                 "servicios_cercanos": r["servicios_cercanos"],
                 "estado_revision": r["estado_revision"],
@@ -168,6 +172,8 @@ async def assets_near(
         )
     ).mappings().all()
 
+    # MAP-SOURCE-BOUNDARY: frontera de los textos legados en la LECTURA (app/place/legado.py).
+    rows = [con_contexto_vigente(r) for r in rows]
     features = [{
         "type": "Feature",
         "geometry": {"type": "Point", "coordinates": [float(r["lon"]), float(r["lat"])]},
@@ -492,8 +498,9 @@ class MapaComandoRequest(BaseModel):
 async def mapa_comando(request: Request, payload: MapaComandoRequest) -> dict:
     from app.rutas import comando_mapa
 
-    # Robustez: el path depende de Google (Places + Directions, secuenciales) y puede
-    # tardar/fallar de forma intermitente. Una excepción o timeout NO debe salir como un
+    # Robustez: el path depende de la base (capa propia), de Nominatim/Overpass (tour) y de
+    # Valhalla (isócrona), y puede tardar/fallar de forma intermitente. Una excepción o
+    # timeout NO debe salir como un
     # 500 texto-plano (el front lo interpreta como "No pude procesar"): respondemos SIEMPRE
     # con JSON graceful para que el mapa degrade con un mensaje accionable, nunca se rompa.
     try:
@@ -640,6 +647,9 @@ async def asset_anuncio(
         "WHERE a.id = :id"), {"id": str(activo_id)})).mappings().first()
     if not row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inmueble no encontrado.")
+    # MAP-SOURCE-BOUNDARY: frontera de los textos legados en la LECTURA y ANTES de la curación:
+    # lo que el corredor confirmó es dato propio y sobrevive (app/place/legado.py).
+    row = con_contexto_vigente(row)
 
     car = row["caracteristicas"]
     if isinstance(car, str):
@@ -705,6 +715,7 @@ async def asset_anuncio(
             "trafico": row["trafico"],
         },
         "scores_fuente": _scores_fuente(row["walk_score_fuente"]),
+        # Junto al mini-mapa AURA: ya pasaron la frontera (arriba, antes de la curación).
         "conectividad": row["conectividad"],
         "servicios_cercanos": _servicios,
         "caracteristicas": car,
@@ -1380,7 +1391,7 @@ async def responder_lead(
 
 @router.get(
     "/{activo_id}/rutas",
-    summary="Rutas a pie a los servicios cercanos (Google Routes, en vivo)",
+    summary="Rutas a pie a los servicios cercanos (sin ruteo propio todavía: siempre vacío)",
 )
 @limiter.limit("30/minute")
 async def asset_rutas(
@@ -1388,6 +1399,9 @@ async def asset_rutas(
     activo_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
+    """MAP-SOURCE-BOUNDARY: las líneas salían de Google Routes y se dibujaban sobre MapLibre.
+    Sin ruteo punto a punto propio (Valhalla `/route` es una unidad aparte), el endpoint
+    conserva su forma y su 404, y declara `disponible: False` sin llamar a nadie."""
     row = (
         await db.execute(
             text("SELECT ST_Y(geom) AS lat, ST_X(geom) AS lon FROM activos_inmutables WHERE id = :id"),
@@ -1396,31 +1410,33 @@ async def asset_rutas(
     ).mappings().first()
     if not row or row["lat"] is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inmueble no encontrado.")
-    from app.rutas import rutas_desde
-    rutas = await rutas_desde(float(row["lat"]), float(row["lon"]), n=3)
-    return {"rutas": rutas or [], "disponible": rutas is not None}
+    return {"rutas": [], "disponible": False}
 
 
 async def _pois_geo(lat: float, lon: float) -> list[dict]:
     """POIs cercanos CON coordenadas para el Mapa Vivo (AURA-SINGLE): el inmueble leído
-    como espacio. Google Places en vivo (searchNearby por categoría, SIN routing — el
-    ruteo peatonal real es 2C). Degradable: sin key o ante fallo de Google → [] y el mapa
-    muestra solo el inmueble, nunca rompe el anuncio."""
-    key = settings.google_maps_api_key
-    if not key:
-        return []
+    como espacio. SOLO nuestra capa (`pois_vivos`), sin llave de Google y sin fallback:
+    donde la capa no cubre, salen menos pines o ninguno. Degradable: si la capa falla → []
+    y el mapa muestra solo el inmueble, nunca rompe el anuncio.
+
+    MAP-SOURCE-BOUNDARY: hasta aquí, estos pines se pedían con la llave de Google, se
+    completaban con Google Places y TODOS salían etiquetados `fuente: "google"`, aunque la
+    medición de producción mostró que eran de nuestra capa. Ahora la etiqueta es la real, y
+    lo que no sea de la capa propia no se pinta."""
     try:
         from app.rutas import _CAT_COLOR, _CAT_EMOJI, _servicios_con_coords
-        servicios = await _servicios_con_coords(lat, lon, key, n=6)
-    except Exception as e:  # noqa: BLE001 — Google caído/quota/timeout/import → sin pines, no rompas el anuncio
+        servicios = await _servicios_con_coords(lat, lon, n=6)
+    except Exception as e:  # noqa: BLE001 — capa caída/timeout/import → sin pines, no rompas el anuncio
         # Degradamos a [] (el mapa muestra solo el inmueble), pero NO en silencio: logueamos
-        # el tipo de fallo para que quota agotada / import roto sean visibles en producción.
+        # el tipo de fallo para que una capa caída o un import roto sean visibles en producción.
         logging.getLogger(__name__).warning("aura _pois_geo degradado a []: %s: %s", type(e).__name__, e)
         return []
     pois: list[dict] = []
     for s in servicios:
         if s.get("lat") is None or s.get("lon") is None:
             continue
+        if s.get("fuente") != "propio":
+            continue  # un pin sin procedencia propia no se pinta sobre MapLibre
         cat = s.get("cat")
         dm = s.get("distancia_m")
         pois.append({
@@ -1433,28 +1449,32 @@ async def _pois_geo(lat: float, lon: float) -> list[dict]:
             "cat": cat,
             "emoji": _CAT_EMOJI.get(cat, "\U0001F4CD"),
             "color": _CAT_COLOR.get(cat, "#9C99AC"),
-            "fuente": "google",
+            "fuente": "propio",
         })
     return pois
 
 
-# ── Caché de POIs del Mapa Vivo (AURA-SINGLE) ────────────────────────────────
-# _pois_geo hace ~7 llamadas a Google Places por inmueble. Como vive en
-# `activos_INMUTABLES` (su geom no cambia) y los servicios alrededor cambian lento,
-# cacheamos el resultado por activo_id con TTL largo → de "~7 llamadas Google por
-# VISTA del anuncio" a "~7 por inmueble cada N días". Hace AURA-SINGLE casi gratis.
+# ── Caché de POIs del Mapa Vivo (AURA-SINGLE): SIN consumidor en runtime ──────────────
+# `aura_pois_cache` guardaba el resultado de `_pois_geo` cuando ese resultado venía de Google
+# Places. MAP-SOURCE-BOUNDARY la retiró del camino de /aura: los pines salen ahora de nuestra
+# base en dos consultas, así que no hay nada que ahorrar, y guardar nombres de Places es
+# justo lo que sus términos restringen. No se crea caché nueva.
+#
+# La tabla SIGUE existiendo en producción (con RLS y sin privilegios externos, migración 039),
+# y por eso su DDL se conserva aquí: `tests/arnes_perimetro_039.py` la construye con ESTE
+# texto, leído por AST. Nada del producto la lee ni la escribe.
 _AURA_CACHE_DDL = [
     "CREATE TABLE IF NOT EXISTS aura_pois_cache ("
     "  activo_id uuid PRIMARY KEY,"
     "  pois jsonb NOT NULL,"
     "  computed_at timestamptz NOT NULL DEFAULT now())",
 ]
-_AURA_CACHE_TTL_DIAS = 30
 _aura_cache_ready = False
 
 
 async def ensure_aura_cache_table(db) -> None:
-    """Crea la tabla de caché si no existe (idempotente, una vez por proceso)."""
+    """Crea la tabla de caché si no existe (idempotente, una vez por proceso). Sin llamador
+    en el producto desde MAP-SOURCE-BOUNDARY; la usan las pruebas del perímetro 039."""
     global _aura_cache_ready
     if _aura_cache_ready:
         return
@@ -1464,48 +1484,10 @@ async def ensure_aura_cache_table(db) -> None:
     _aura_cache_ready = True
 
 
-async def _pois_geo_cached(db, activo_id, lat: float, lon: float) -> list[dict]:
-    """POIs con coords, cacheados POR INMUEBLE. Lee la caché fresca (≤ TTL); si no hay
-    o expiró, computa vía Google y la rellena. Solo cachea resultados NO vacíos: un []
-    suele ser un fallo transitorio de Google, no 'sin servicios' → no lo congelamos N
-    días. Toda la caché es best-effort: si la BD falla, caemos a Google sin romper /aura."""
-    try:
-        await ensure_aura_cache_table(db)
-        hit = (await db.execute(
-            text("SELECT pois FROM aura_pois_cache "
-                 "WHERE activo_id = :id AND computed_at > now() - (:ttl * interval '1 day')"),
-            {"id": str(activo_id), "ttl": _AURA_CACHE_TTL_DIAS},
-        )).mappings().first()
-        if hit is not None:
-            pois = hit["pois"]
-            return json.loads(pois) if isinstance(pois, str) else pois
-    except Exception as e:  # noqa: BLE001 — caché caída / tabla no lista → recomputamos
-        # rollback OBLIGATORIO: un db.execute fallido deja la AsyncSession en transacción
-        # abortada; el commit del teardown de get_db reventaría con PendingRollbackError (→500).
-        await db.rollback()
-        logging.getLogger(__name__).warning("aura cache: lectura falló (%s: %s), recomputo", type(e).__name__, e)
-
-    pois = await _pois_geo(lat, lon)
-    if pois:  # no congelar un [] transitorio
-        try:
-            await db.execute(
-                text("INSERT INTO aura_pois_cache (activo_id, pois, computed_at) "
-                     "VALUES (:id, :pois::jsonb, now()) "
-                     "ON CONFLICT (activo_id) DO UPDATE "
-                     "SET pois = EXCLUDED.pois, computed_at = now()"),
-                {"id": str(activo_id), "pois": json.dumps(pois)},
-            )
-            await db.commit()
-        except Exception as e:  # noqa: BLE001 — fallo de escritura de caché no debe romper /aura
-            await db.rollback()  # limpia la transacción abortada (ver nota arriba)
-            logging.getLogger(__name__).warning("aura cache: escritura falló (%s: %s)", type(e).__name__, e)
-    return pois
-
-
 async def _isocronas_geo_cached(db, activo_id, lat: float | None, lon: float | None) -> list[dict]:
     """Isócronas peatonales (15/30 min) CACHEADAS por inmueble, para AURA-SINGLE.
 
-    Mismo patrón que _pois_geo_cached: el batch (scripts/valhalla_isocronas_batch.py)
+    Motor propio (Valhalla) sobre PostGIS: el batch (scripts/valhalla_isocronas_batch.py)
     ya precomputó isocronas_inmueble para el inventario existente — lectura es gratis
     (una query a PostGIS). Si el inmueble es nuevo (aún no pasó por el batch), hace UNA
     llamada en vivo a Valhalla y la persiste, para que la próxima vista sea instantánea.
@@ -1520,7 +1502,9 @@ async def _isocronas_geo_cached(db, activo_id, lat: float | None, lon: float | N
         if filas:
             return [{"minutos": f["minutos"], "geometry": f["geometry"]} for f in filas]
     except Exception as e:  # noqa: BLE001 — tabla no lista / error transitorio
-        await db.rollback()  # limpia la transacción abortada (mismo motivo que _pois_geo_cached)
+        # rollback OBLIGATORIO: un db.execute fallido deja la AsyncSession en transacción
+        # abortada; el commit del teardown de get_db reventaría con PendingRollbackError (→500).
+        await db.rollback()
         logging.getLogger(__name__).warning("aura isocronas: lectura falló (%s: %s)", type(e).__name__, e)
 
     if lat is None or lon is None:
@@ -1546,9 +1530,9 @@ async def _isocronas_geo_cached(db, activo_id, lat: float | None, lon: float | N
         "isócronas peatonales (motor propio, Valhalla) para plotearlos en el mini-mapa "
         "del anuncio (modo AURA-SINGLE, docs/SPEC_Mapa_Vivo.md). Va SEPARADO de "
         "/anuncio a propósito: el anuncio pinta al instante y este endpoint carga los "
-        "pines/isócronas aparte, para que la latencia de Google/Valhalla no bloquee el "
-        "primer paint. Público (mismo criterio que /anuncio: el dueño puso un QR para "
-        "que el público lo vea)."
+        "pines/isócronas aparte, para que la latencia de la capa/Valhalla no bloquee el "
+        "primer paint. Los pines salen SOLO de la capa propia (sin Google). Público "
+        "(mismo criterio que /anuncio: el dueño puso un QR para que el público lo vea)."
     ),
 )
 @limiter.limit("30/minute")
@@ -1570,7 +1554,7 @@ async def asset_aura(
     # solo expone ESTE activo. Si en el futuro hay estados de visibilidad/archivado, filtrar aquí.
     lat = float(row["lat"]) if row["lat"] is not None else None
     lon = float(row["lon"]) if row["lon"] is not None else None
-    pois = await _pois_geo_cached(db, activo_id, lat, lon) if (lat is not None and lon is not None) else []
+    pois = await _pois_geo(lat, lon) if (lat is not None and lon is not None) else []
     isocronas = await _isocronas_geo_cached(db, activo_id, lat, lon) if (lat is not None and lon is not None) else []
     return {"lat": lat, "lon": lon, "tipo_activo": row["tipo_activo"], "pois": pois, "isocronas": isocronas}
 
@@ -1622,6 +1606,7 @@ async def my_assets(
     base = settings.public_app_url.rstrip("/")
     items = []
     for r in rows:
+        r = con_contexto_vigente(r)  # MAP-SOURCE-BOUNDARY: frontera de los textos legados
         car = r["caracteristicas"]
         if isinstance(car, str):
             car = json.loads(car or "{}")
@@ -1735,6 +1720,7 @@ async def get_entorno(
              "FROM activos_inmutables WHERE id = :id"),
         {"id": str(activo_id)},
     )).mappings().first()
+    row = con_contexto_vigente(row) if row else None  # MAP-SOURCE-BOUNDARY: frontera
     curaciones = await fetch_curaciones(db, str(activo_id))
 
     # POIs de la capa propia con su `poi_id` (migración 023). Es lo que de verdad ve el
@@ -2179,8 +2165,10 @@ async def _recompute_walk_score(asset_id: str, lat: float, lon: float) -> None:
         if pois is None:
             return
         ws = compute_walk_score(pois, lat, lon)
-        # Conectividad y entorno: PRIMERO Google (analizar_zona usa Google Routes para la
-        # caminata REAL al Metro, no la línea recta de OSM). OSM queda solo de respaldo.
+        # Conectividad y entorno: PRIMERO nuestra capa (analizar_zona, sin Google desde
+        # MAP-SOURCE-BOUNDARY); OSM de respaldo. Lo que se escribe aquí sigue SIN marca de
+        # procedencia en la columna, así que tampoco se muestra en mapas (app/place/legado.py)
+        # hasta PLACE-LEGACY-CONTEXT-BACKFILL.
         from app.rutas import analizar_zona  # lazy: evita import circular
         try:
             az = await analizar_zona(lat, lon)
@@ -2447,7 +2435,7 @@ async def edit_asset(
     "/{activo_id}/recompute",
     summary="Recalcular la capa base del inmueble (caminabilidad, conectividad, entorno)",
     description=(
-        "Vuelve a calcular Walk Score, conectividad y servicios cercanos desde OSM/Google "
+        "Vuelve a calcular Walk Score, conectividad y servicios cercanos desde la capa propia y OSM "
         "con los filtros actuales (limpia POIs basura como nombres genéricos). Útil cuando "
         "el dato guardado quedó estancado. Solo el dueño."
     ),
@@ -2469,5 +2457,8 @@ async def recompute_asset(
         text("SELECT walk_score, conectividad, servicios_cercanos FROM activos_inmutables WHERE id = :id"),
         {"id": str(activo_id)},
     )).mappings().first()
+    # MAP-SOURCE-BOUNDARY: la columna no dice si esta fila la acaba de escribir el recálculo o si
+    # quedó la vieja (p. ej. Overpass caído): pasa por la frontera como cualquier lectura.
+    fresh = con_contexto_vigente(fresh)
     return {"ok": True, "walk_score": fresh["walk_score"],
             "conectividad": fresh["conectividad"], "servicios_cercanos": fresh["servicios_cercanos"]}

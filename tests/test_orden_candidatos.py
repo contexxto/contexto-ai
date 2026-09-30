@@ -237,8 +237,14 @@ def test_el_panel_real_no_corona_la_ficha_incompleta(monkeypatch):
         # Solo precio evaluable (dentro del tope) → encaje alto con evidencia mínima.
         _row("incompleta"),
         # Ficha completa: dentro del tope, pero ruido medio y caminabilidad mediana.
+        # EXPECTED PRODUCT CHANGE (MAP-SOURCE-BOUNDARY · D1, 2026-09-30): su entorno se declara
+        # con procedencia propia. Sin ella, `conectividad` ya no alimenta `transporte_min`, la
+        # ficha deja de ser «completa» (transporte = sin dato) y paga peaje: visible 79 frente a
+        # 87 en crudo, con el mismo orden. La prueba mide el orden con entorno VIGENTE, que es
+        # como volverá tras PLACE-LEGACY-CONTEXT-BACKFILL.
         _row("completa", ruido="MEDIO", caminabilidad=55,
-             servicios_cercanos="🌳 Parque a ~900 m", conectividad="🚇 Metro a ~1,2 km (18 min a pie)"),
+             servicios_cercanos="🌳 Parque a ~900 m", conectividad="🚇 Metro a ~1,2 km (18 min a pie)",
+             contexto_procedencia="propio"),
     ]
 
     async def fake_fetch(_ids):

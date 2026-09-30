@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import asyncio
 import socket
-import sys
 
 import pytest
 
@@ -117,8 +116,8 @@ async def _devuelve_uno():
 
 def test_C2_el_tripwire_no_estorba_a_lo_que_no_es_red():
     """Contrapeso: la barrera no puede volverse un impuesto sobre el resto. Crear un
-    socket, o construir un cliente httpx, no abre nada y debe seguir permitido — de hecho
-    `_recolectar_zona` construye un `httpx.AsyncClient` aunque la ruta este doblada."""
+    socket, o construir un cliente httpx, no abre nada y debe seguir permitido (hasta
+    MAP-SOURCE-BOUNDARY `_recolectar_zona` construia uno aunque la ruta estuviera doblada)."""
     s = socket.socket()
     s.close()
     import httpx
@@ -176,17 +175,35 @@ def test_D2_reverse_geocode_se_resuelve_en_su_modulo_y_NO_en_rutas():
     assert hasattr(tools, "_reverse_geocode")
 
 
-def test_D3_los_proveedores_de_servicios_se_resuelven_como_globales_de_rutas():
-    """`_servicios_con_coords` llama a estos tres por nombre global de su propio modulo,
-    asi que el punto de parcheo efectivo es `rutas.<nombre>`."""
-    for nombre in ("_servicios_propios", "_nearest_categoria", "_mejor_transporte",
-                   "_ruta_a_pie"):
-        assert hasattr(rutas, nombre), nombre
+def test_D3_la_capa_propia_se_resuelve_en_rutas_y_GOOGLE_YA_NO_ESTA_AHI():
+    """`_servicios_con_coords` llama a `_servicios_propios` por nombre global de su propio
+    modulo, asi que el punto de parcheo efectivo es `rutas._servicios_propios`.
+
+    ACTUALIZACION ESPERADA (MAP-SOURCE-BOUNDARY, 2026-09-30). Antes este test exigia que
+    `_nearest_categoria`, `_mejor_transporte` y `_ruta_a_pie` tambien se resolvieran en
+    `rutas`: eran el relleno de Google. La unidad los saco de la fachada a proposito —un
+    nombre de Google en el espacio de los productores del mapa es una invitacion a volver
+    a llamarlo—, asi que ahora se exige lo contrario."""
+    assert hasattr(rutas, "_servicios_propios")
+    for nombre in ("_nearest_categoria", "_mejor_transporte", "_ruta_a_pie"):
+        assert not hasattr(rutas, nombre), nombre
 
 
 # ═════════════════════════════════════════════════════════════════════════════
 # (B) BASELINE DE LLAMADAS - medido primero, congelado despues
 # ═════════════════════════════════════════════════════════════════════════════
+#
+# ACTUALIZACION ESPERADA (MAP-SOURCE-BOUNDARY, 2026-09-30). El presupuesto de R0B0 era
+# «la capa propia primero y Google solo para los huecos, mas la ruta a pie con Routes».
+# La unidad corta a Google de todo lo que acaba sobre MapLibre, y `_recolectar_zona` es
+# de eso: su prosa se persiste en `activos_inmutables.conectividad` y se pintaba en el
+# popup del Mapa Vivo. El presupuesto nuevo es mas simple y mas estricto: Nominatim,
+# Overpass y la capa propia, UNA vez cada uno, en todos los escenarios —con llave o sin
+# ella, con huecos o sin ellos—, y Google NI UNA.
+#
+# Los dobles de Google se instalan ahora en SU modulo (`app.place.providers.google`): es
+# el unico sitio desde el que alguien podria volver a llamarlos, porque `rutas` ya no los
+# liga. La mitad negativa (B8) demuestra que el espia sigue viendo una llamada si aparece.
 
 PROPIA = "propia:_servicios_propios"
 G_CATEGORIA = "google:_nearest_categoria"
@@ -194,6 +211,7 @@ G_TRANSPORTE = "google:_mejor_transporte"
 G_RUTA = "google:_ruta_a_pie"
 OVERPASS = "overpass:walk_score_para"
 NOMINATIM = "nominatim:_reverse_geocode"
+PRESUPUESTO = {NOMINATIM: 1, OVERPASS: 1, PROPIA: 1}
 
 
 def _poi(cat, d=100, **extra):
@@ -204,25 +222,15 @@ def _poi(cat, d=100, **extra):
 
 
 def _todas_las_categorias() -> dict:
-    propios = {c: _poi(c) for c in rutas._CATS_ENTORNO}
+    from app.place.providers.propia import _CATS_ENTORNO
+    propios = {c: _poi(c) for c in _CATS_ENTORNO}
     propios["transporte"] = _poi("transporte", 640, es_masivo=True)
     return propios
 
 
-def recolectar_espiando(monkeypatch, *, propios, key, walk_falla=False,
-                        routes_falla=False):
-    """Ejecuta `_recolectar_zona` con TODOS los proveedores doblados y registra las
-    llamadas en orden. Devuelve (registro, materia).
-
-    Cada doble se instala en su punto de resolucion EFECTIVO (ver seccion D). El tripwire
-    de red sigue activo: si alguno no mordiera, la prueba moriria con `RedProhibida` en
-    vez de salir a Internet.
-    """
-    registro: list[tuple[str, object]] = []
-
-    async def _propios(lat, lon):
-        registro.append((PROPIA, None))
-        return dict(propios)
+def _espias_de_google(monkeypatch, registro):
+    """Dobles de los tres de Google, en SU modulo. Si alguno se llama, queda escrito."""
+    import app.place.providers.google as google
 
     async def _nearest(lat, lon, cat, k, tipos=None):
         registro.append((G_CATEGORIA, cat))
@@ -234,9 +242,29 @@ def recolectar_espiando(monkeypatch, *, propios, key, walk_falla=False,
 
     async def _ruta(cliente, o_lat, o_lon, d_lat, d_lon, k):
         registro.append((G_RUTA, None))
-        if routes_falla:
-            raise RuntimeError("Routes caido")
         return {"duracion_min": 19, "distancia_m": 1520}
+
+    monkeypatch.setattr(google, "_nearest_categoria", _nearest)
+    monkeypatch.setattr(google, "_mejor_transporte", _mejor)
+    monkeypatch.setattr(google, "_ruta_a_pie", _ruta)
+    return google
+
+
+def recolectar_espiando(monkeypatch, *, propios, key, walk_falla=False):
+    """Ejecuta `_recolectar_zona` con TODOS los proveedores doblados y registra las
+    llamadas en orden. Devuelve (registro, materia).
+
+    Cada doble se instala en su punto de resolucion EFECTIVO (ver seccion D). El tripwire
+    de red sigue activo: si alguno no mordiera, la prueba moriria con `RedProhibida` en
+    vez de salir a Internet.
+    """
+    from app.config import settings
+
+    registro: list[tuple[str, object]] = []
+
+    async def _propios(lat, lon):
+        registro.append((PROPIA, None))
+        return dict(propios)
 
     async def _walk(lat, lon):
         registro.append((OVERPASS, None))
@@ -248,13 +276,11 @@ def recolectar_espiando(monkeypatch, *, propios, key, walk_falla=False,
         registro.append((NOMINATIM, None))
         return {"barrio": "Sintetico"}
 
+    _espias_de_google(monkeypatch, registro)
     monkeypatch.setattr(rutas, "_servicios_propios", _propios)
-    monkeypatch.setattr(rutas, "_nearest_categoria", _nearest)
-    monkeypatch.setattr(rutas, "_mejor_transporte", _mejor)
-    monkeypatch.setattr(rutas, "_ruta_a_pie", _ruta)
     monkeypatch.setattr(rutas, "walk_score_para", _walk)
     monkeypatch.setattr(tools, "_reverse_geocode", _geo)   # <- en SU modulo, no en rutas
-    monkeypatch.setattr(rutas.settings, "google_maps_api_key", key)
+    monkeypatch.setattr(settings, "google_maps_api_key", key)
 
     materia = asyncio.run(rutas._recolectar_zona(-0.18, -78.48))
     return registro, materia
@@ -267,49 +293,46 @@ def _conteo(registro) -> dict:
     return c
 
 
-def test_B1_si_la_capa_propia_cubre_la_categoria_GOOGLE_NO_LA_VUELVE_A_PEDIR(monkeypatch):
-    """EL INVARIANTE DEL FOSO, y la razon principal de este fichero.
-
-    Con la capa propia cubriendo las seis categorias y el transporte, Google Places no se
-    consulta NI UNA VEZ. Lo unico que se le pide es la ruta a pie, que la capa propia no
-    sabe calcular. Si tras extraer providers apareciera aqui un `_nearest_categoria`, el
-    foso habria dejado de ser el primero en responder y la factura subiria en silencio.
-    """
+def test_B1_con_cobertura_propia_completa_GOOGLE_NO_SE_TOCA_NI_PARA_LA_RUTA(monkeypatch):
+    """EL INVARIANTE DEL FOSO, ahora sin excepcion. Antes Google aun medía la ruta a pie
+    hasta la parada; ya no: los minutos son la estimacion recta / 80, declarada como tal."""
     registro, materia = recolectar_espiando(monkeypatch, propios=_todas_las_categorias(),
                                             key="LLAVE")
-    assert _conteo(registro) == {NOMINATIM: 1, OVERPASS: 1, PROPIA: 1, G_RUTA: 1}
-    assert G_CATEGORIA not in _conteo(registro)
-    assert G_TRANSPORTE not in _conteo(registro)
-    assert materia.transporte_ruta_medida is True
+    assert _conteo(registro) == PRESUPUESTO
+    assert materia.transporte_ruta_medida is False
+    assert materia.transporte_distancia_m == 640
+    assert materia.transporte_minutos == rutas._min_pie(640) == 8
+    assert {s.get("fuente") for s in materia.servicios} == {"propio"}
 
 
-def test_B2_si_falta_UNA_categoria_Google_rellena_SOLO_ese_hueco(monkeypatch):
-    """El fallback es quirurgico: una categoria ausente, una llamada. No siete."""
+def test_B2_si_falta_UNA_categoria_se_queda_ausente_y_NADIE_la_rellena(monkeypatch):
+    """Antes: una categoria ausente, una llamada a Google. Ahora: ninguna. La cobertura
+    parcial se ve como cobertura parcial."""
     propios = {k: v for k, v in _todas_las_categorias().items() if k != "farmacia"}
-    registro, _ = recolectar_espiando(monkeypatch, propios=propios, key="LLAVE")
-    assert _conteo(registro) == {NOMINATIM: 1, OVERPASS: 1, PROPIA: 1,
-                                 G_CATEGORIA: 1, G_RUTA: 1}
-    categorias_pedidas = [d for q, d in registro if q == G_CATEGORIA]
-    assert categorias_pedidas == ["farmacia"], categorias_pedidas
+    registro, materia = recolectar_espiando(monkeypatch, propios=propios, key="LLAVE")
+    assert _conteo(registro) == PRESUPUESTO
+    assert "farmacia" not in {s["cat"] for s in materia.servicios}
+    assert materia.se_consultaron_servicios is True
 
 
-def test_B3_sin_credencial_de_Google_no_hay_ni_un_intento(monkeypatch):
-    """Sin llave no se intenta nada de Google. Ni categorias, ni transporte, ni ruta.
-
-    OJO, y esto se congela como ESTA, no como deberia estar: sin llave tampoco se consulta
-    LA CAPA PROPIA. `_recolectar_zona` corta con `... if key else []` antes de llegar a
-    ella, asi que el foso se apaga cuando falta una credencial de un TERCERO. Es el
-    comportamiento actual y R0B0 lo congela; corregirlo no esta autorizado aqui y merece
-    su propia unidad.
-    """
+def test_B3_sin_credencial_de_Google_LA_CAPA_PROPIA_SI_SE_CONSULTA(monkeypatch):
+    """R0B0 congelo aqui un defecto y dejo escrito que merecia su propia unidad: sin la
+    llave de un TERCERO, `_recolectar_zona` cortaba antes de consultar nuestra capa y el
+    foso se apagaba. MAP-SOURCE-BOUNDARY es esa unidad: la llave ya no decide nada."""
     registro, materia = recolectar_espiando(monkeypatch, propios=_todas_las_categorias(),
                                             key="")
-    assert _conteo(registro) == {NOMINATIM: 1, OVERPASS: 1}
-    assert PROPIA not in _conteo(registro), (
-        "si esto cambia, alguien arreglo el corto-circuito: bienvenido, pero es un cambio "
-        "de comportamiento y no cabe en una extraccion"
-    )
+    assert _conteo(registro) == PRESUPUESTO
+    assert len(materia.servicios) == 6
+    assert materia.se_consultaron_servicios is True
+
+
+def test_B3b_sin_cobertura_propia_NO_SE_SABE_y_no_se_rellena(monkeypatch):
+    """Cobertura cero (un punto fuera de Quito, o la capa caida): la respuesta honesta es
+    «no se sabe» (UNKNOWN), no «se busco y no hay», y tampoco un relleno de Google."""
+    registro, materia = recolectar_espiando(monkeypatch, propios={}, key="LLAVE")
+    assert _conteo(registro) == PRESUPUESTO
     assert materia.servicios == []
+    assert materia.transporte is None
     assert materia.se_consultaron_servicios is False
 
 
@@ -318,63 +341,62 @@ def test_B4_si_Overpass_falla_el_resto_del_fetch_no_se_entera(monkeypatch):
     Ese `{}` es lo que 1.2 traduce a `insufficient_evidence`."""
     registro, materia = recolectar_espiando(monkeypatch, propios=_todas_las_categorias(),
                                             key="LLAVE", walk_falla=True)
-    assert _conteo(registro) == {NOMINATIM: 1, OVERPASS: 1, PROPIA: 1, G_RUTA: 1}
+    assert _conteo(registro) == PRESUPUESTO
     assert materia.walk == {}
     assert len(materia.servicios) == 6
 
 
-def test_B5_si_Google_Routes_falla_se_conserva_la_estimacion_en_recta(monkeypatch):
-    """Se intenta la ruta UNA vez y, al fallar, se conserva el estimado recta / 80 sobre
-    la distancia que trajo el descubrimiento. No se reintenta ni se pierde el transporte."""
-    registro, materia = recolectar_espiando(monkeypatch, propios=_todas_las_categorias(),
-                                            key="LLAVE", routes_falla=True)
-    assert _conteo(registro) == {NOMINATIM: 1, OVERPASS: 1, PROPIA: 1, G_RUTA: 1}
+def test_B5_los_minutos_al_transporte_son_SIEMPRE_la_estimacion_en_recta(monkeypatch):
+    """Antes, si Routes fallaba se conservaba el estimado; ahora el estimado es lo unico
+    que hay, y la materia lo declara (`transporte_ruta_medida=False`), que es lo que el
+    ensamblador convierte en HEURISTIC_ESTIMATE con su limitacion."""
+    _, materia = recolectar_espiando(monkeypatch, propios=_todas_las_categorias(),
+                                     key="LLAVE")
     assert materia.transporte_ruta_medida is False
-    assert materia.transporte_distancia_m == 640
-    assert materia.transporte_minutos == rutas._min_pie(640) == 8
+    assert materia.transporte_minutos == rutas._min_pie(materia.transporte_distancia_m)
 
 
-def test_B6_descubrir_la_parada_y_medir_la_ruta_son_DOS_llamadas_distintas(monkeypatch):
-    """Sin transporte propio, Google hace dos cosas conceptualmente separadas: encontrar
-    la parada y medir la caminata. 1.2 las acredita como dos evidencias distintas, y esa
-    separacion empieza aqui, en el numero de llamadas."""
+def test_B6_sin_transporte_propio_NO_se_descubre_ni_se_mide_con_Google(monkeypatch):
+    """Antes Google hacia dos cosas aqui: descubrir la parada y medir la caminata. Ahora
+    ninguna: sin parada en nuestra capa no hay transporte en la materia."""
     propios = {k: v for k, v in _todas_las_categorias().items() if k != "transporte"}
     registro, materia = recolectar_espiando(monkeypatch, propios=propios, key="LLAVE")
-    assert _conteo(registro) == {NOMINATIM: 1, OVERPASS: 1, PROPIA: 1,
-                                 G_TRANSPORTE: 1, G_RUTA: 1}
-    orden = [q for q, _ in registro]
-    assert orden.index(G_TRANSPORTE) < orden.index(G_RUTA), (
-        "no se puede medir la ruta a una parada que todavia no se ha descubierto"
-    )
-    assert materia.transporte_ruta_medida is True
+    assert _conteo(registro) == PRESUPUESTO
+    assert materia.transporte is None
+    assert materia.transporte_minutos is None
+    assert materia.transporte_ruta_medida is False
 
 
 # ── el orden logico, congelado aparte del conteo ─────────────────────────────
 
 
-def test_B7_el_orden_logico_del_fetch_es_estable(monkeypatch):
-    """La capa propia se consulta ANTES que el relleno de Google, y la ruta DESPUES del
-    descubrimiento. No se congelan tiempos: se congela la precedencia."""
+def test_B7_con_dos_huecos_el_registro_sigue_sin_nada_de_Google(monkeypatch):
+    """La precedencia ya no tiene a quien ordenar: con dos huecos (farmacia y transporte)
+    el registro contiene exactamente los tres proveedores abiertos o propios."""
     propios = {k: v for k, v in _todas_las_categorias().items()
                if k not in ("farmacia", "transporte")}
     registro, _ = recolectar_espiando(monkeypatch, propios=propios, key="LLAVE")
-    orden = [q for q, _ in registro]
-    assert orden.index(PROPIA) < orden.index(G_CATEGORIA)
-    assert orden.index(PROPIA) < orden.index(G_TRANSPORTE)
-    assert orden.index(G_TRANSPORTE) < orden.index(G_RUTA)
+    assert {q for q, _ in registro} == set(PRESUPUESTO)
+    assert not [q for q, _ in registro if q.startswith("google:")]
 
 
-def test_B8_el_espia_SI_puede_detectar_una_llamada_de_mas(monkeypatch):
-    """La mitad negativa del baseline. Si el registro no reaccionara a una llamada
-    adicional, los seis escenarios de arriba estarian midiendo nada."""
+def test_B8_el_espia_SI_puede_detectar_una_llamada_a_Google(monkeypatch):
+    """La mitad negativa del baseline. Se fabrica la regresion —un `_servicios_con_coords`
+    que vuelve a rellenar con Google— y el espia tiene que verla. Si no la viera, los
+    escenarios de arriba estarian midiendo nada."""
+    import app.place.providers.google as google
+
+    async def _con_relleno(lat, lon, n=6):
+        propios = await rutas._servicios_propios(lat, lon)
+        if "farmacia" not in propios:
+            propios["farmacia"] = await google._nearest_categoria(lat, lon, "farmacia", "k")
+        return list(propios.values())
+
+    monkeypatch.setattr(rutas, "_servicios_con_coords", _con_relleno)
     propios = {k: v for k, v in _todas_las_categorias().items() if k != "farmacia"}
-    registro_uno, _ = recolectar_espiando(monkeypatch, propios=propios, key="LLAVE")
-    faltan_dos = {k: v for k, v in propios.items() if k != "parque"}
-    registro_dos, _ = recolectar_espiando(monkeypatch, propios=faltan_dos, key="LLAVE")
-    assert _conteo(registro_uno)[G_CATEGORIA] == 1
-    assert _conteo(registro_dos)[G_CATEGORIA] == 2, (
-        "dos huecos tienen que producir dos llamadas; si no, el espia esta ciego"
-    )
+    registro, _ = recolectar_espiando(monkeypatch, propios=propios, key="LLAVE")
+    assert _conteo(registro).get(G_CATEGORIA) == 1, (
+        "una llamada a Google tiene que quedar registrada; si no, el espia esta ciego")
 
 
 def test_B9_el_arnes_corre_sin_tocar_la_red(monkeypatch):
@@ -384,4 +406,5 @@ def test_B9_el_arnes_corre_sin_tocar_la_red(monkeypatch):
     registro, materia = recolectar_espiando(monkeypatch, propios=_todas_las_categorias(),
                                             key="LLAVE")
     assert registro and materia.lugar == {"barrio": "Sintetico"}
-    assert "httpx" in sys.modules, "rutas usa httpx; el tripwire actua en socket, no ahi"
+    assert not hasattr(rutas, "httpx"), (
+        "rutas ya no construye clientes HTTP: todo lo que sale a la red es de un provider")

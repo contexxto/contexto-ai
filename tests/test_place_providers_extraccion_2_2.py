@@ -14,10 +14,10 @@ Qué vigila este fichero, y por qué cada guarda existe:
     proveedores y nunca al revés; si se invierte, el módulo del que se estaban separando
     vuelve a ser obligatorio para probarlos.
 
-(C) NINGUNA DECISIÓN MULTI-PROVEEDOR DENTRO DE UN PROVEEDOR. La política —primero la capa
-    propia, Google solo para los huecos— vive en `rutas.py`. Un provider que decida caer
-    al otro convierte dos capacidades en una y hace imposible medir el presupuesto de
-    llamadas, que es justo lo que R0B0 congeló.
+(C) NINGUNA DECISIÓN MULTI-PROVEEDOR DENTRO DE UN PROVEEDOR. La política vive en
+    `rutas.py`. Un provider que decida caer al otro convierte dos capacidades en una y hace
+    imposible medir el presupuesto de llamadas, que es justo lo que R0B0 congeló. Desde
+    MAP-SOURCE-BOUNDARY (2026-09-30) esa política es una sola: la capa propia y nadie más.
 
 (D) FACHADA. La superficie histórica desde `app.rutas` sigue resolviendo AL MISMO OBJETO.
 
@@ -151,19 +151,18 @@ _ORQUESTACION = ("_servicios_con_coords", "_recolectar_zona")
 # Cada entrada declara de QUÉ provider viene, no solo el nombre: `_TIMEOUT` lo reexportan
 # dos fachadas distintas desde dos providers distintos, y comprobar la identidad contra el
 # provider equivocado pasaría en verde sin medir nada.
+# ACTUALIZACIÓN ESPERADA (MAP-SOURCE-BOUNDARY, 2026-09-30): salen de esta fachada los cuatro
+# nombres de Google (`_TIMEOUT`, `_ruta_a_pie`, `_nearest_categoria`, `_mejor_transporte`) y
+# `_CATS_ENTORNO`, que solo servía para calcular los huecos que Google rellenaba. Por la
+# misma regla de arriba: nadie en `rutas.py` los usa ya, y un nombre de Google en el espacio
+# de los productores del mapa es una invitación a volver a llamarlo.
 _FACHADA_RUTAS = {
-    "_CATS_ENTORNO": (propia, "lo usa `_servicios_con_coords` para calcular los huecos"),
     "_TRANSPORTE_MASIVO": (propia, "lo usa `_panorama_transporte`"),
     "_servicios_propios": (propia, "lo llaman `_servicios_con_coords` y `entorno_curable`"),
-    "_nearest_propio": (propia, "lo llama `comando_mapa`"),
+    "_nearest_propio": (propia, "lo llaman `comando_mapa` y `recorrido_zona`"),
     "_avisar_capa_caida": (propia, "lo importa `tests/test_curacion_propaga.py`"),
     "verificacion_de_entorno": (propia, "lo importan `app/decision/assembler.py`, "
                                         "`app/routers/assets.py` y `app/routers/chat.py`"),
-    "_TIMEOUT": (google, "lo usan los sitios de llamada heredados de la prosa"),
-    "_ruta_a_pie": (google, "lo llaman `_recolectar_zona`, `comando_mapa` y `rutas_desde`"),
-    "_nearest_categoria": (google, "lo llaman `_servicios_con_coords`, `comando_mapa` y "
-                                   "`recorrido_zona`"),
-    "_mejor_transporte": (google, "lo llaman `_servicios_con_coords` y `recorrido_zona`"),
     # `rutas` no es fachada de esto: es CONSUMIDOR. Liga `isocrona` a nivel de módulo desde
     # `app/rutas.py:34` —desde mucho antes de esta unidad, y R0B1C1 no toca ese fichero— y
     # la usa en `_accion_isocrona`. Se declara aquí porque desde fuera se ve igual: el
@@ -479,10 +478,20 @@ def test_la_guarda_del_fallback_SI_PUEDE_fallar():
 
 
 def test_la_politica_sigue_estando_en_rutas():
-    """Contrapeso: que los providers no decidan no basta si nadie decide. El hueco se
-    calcula donde siempre — en el orquestador."""
+    """Contrapeso: que los providers no decidan no basta si nadie decide. La política vive
+    donde siempre — en el orquestador —, y desde MAP-SOURCE-BOUNDARY dice «solo la capa
+    propia»: `_servicios_con_coords` pregunta a `_servicios_propios` y a nadie más.
+
+    ACTUALIZACIÓN ESPERADA: antes se buscaba aquí el cálculo de los huecos que rellenaba
+    Google (`faltantes = [...]`); ese cálculo ya no existe porque ya no hay relleno."""
     fuente = (_APP / "rutas.py").read_text(encoding="utf-8")
-    assert "faltantes = [c for c in _CATS_ENTORNO if c not in propios]" in fuente
+    arbol = ast.parse(fuente)
+    funcion = next(n for n in ast.walk(arbol)
+                   if isinstance(n, ast.AsyncFunctionDef) and n.name == "_servicios_con_coords")
+    usados = {n.id for n in ast.walk(funcion) if isinstance(n, ast.Name)}
+    assert "_servicios_propios" in usados
+    assert not usados & set(_GOOGLE), sorted(usados & set(_GOOGLE))
+    assert "faltantes" not in usados
 
 
 # ══ (D) Fachada ══════════════════════════════════════════════════════════════════════
@@ -523,19 +532,14 @@ def test_rutas_NO_recibe_superficie_de_los_proveedores_nuevos():
     dejado de serlo y el punto de parcheo del baseline se habría mudado sin que nadie lo
     dijera.
 
-    `_TIMEOUT` se trata aparte y no por comodidad: `rutas._TIMEOUT` SÍ existe y es legítimo
-    —es el de Google, reexportado desde R0B1A—. Comprobarlo por el nombre habría dado un
-    falso positivo; lo que hay que comprobar es DE QUIÉN es el objeto.
+    ACTUALIZACIÓN ESPERADA (MAP-SOURCE-BOUNDARY): `_TIMEOUT` se trataba aparte porque
+    `rutas._TIMEOUT` existía legítimamente —era el de Google, para los sitios de llamada
+    heredados—. Esos sitios ya no existen, así que ahora `rutas` no tiene ningún `_TIMEOUT`:
+    ni el de Google, ni el de Overpass.
     """
     for nombre in (*_NOMINATIM, *_OVERPASS):
-        if nombre == "_TIMEOUT":
-            continue
         assert not hasattr(rutas, nombre), (
             f"`rutas.{nombre}` existe: alguien repuntó un import y movió el seam.")
-    assert rutas._TIMEOUT is google._TIMEOUT
-    assert rutas._TIMEOUT is not overpass._TIMEOUT, (
-        "`rutas._TIMEOUT` pasó a ser el de Overpass: eso cambia el plazo de las llamadas "
-        "heredadas a Google de 5 s a 6 s")
 
 
 def test_la_superficie_historica_sigue_importandose_desde_app_rutas():
@@ -572,7 +576,7 @@ def test_parchear_en_rutas_SIGUE_mordiendo(monkeypatch):
     """
     doble = _spy({})
     monkeypatch.setattr(rutas, "_servicios_propios", doble)
-    asyncio.run(rutas._servicios_con_coords(-0.18, -78.48, "", 6))
+    asyncio.run(rutas._servicios_con_coords(-0.18, -78.48, 6))
     assert doble.llamadas == 1
 
 
@@ -587,7 +591,7 @@ def test_parchear_en_el_PROVIDER_no_alcanza_al_orquestador(monkeypatch):
     doble = _spy({})
     monkeypatch.setattr(propia, "_servicios_propios", doble)
     monkeypatch.setattr(rutas, "_servicios_propios", _spy({}))   # el real no toca la base
-    asyncio.run(rutas._servicios_con_coords(-0.18, -78.48, "", 6))
+    asyncio.run(rutas._servicios_con_coords(-0.18, -78.48, 6))
     assert doble.llamadas == 0, (
         "parchear el provider afectó al orquestador: entonces `rutas.py` dejó de resolver "
         "el nombre en su propio espacio y el seam del baseline ya no es el que dice ser.")
@@ -603,46 +607,45 @@ def test_la_llamada_INTERNA_de_google_ya_no_se_parchea_desde_rutas(monkeypatch):
 
     El baseline de R0B0 no lo observa porque sustituye `_mejor_transporte` entero, y por
     eso pasó intacto. Se deja escrito para que nadie lo descubra a la mala.
-    """
-    doble = _spy(None)
-    monkeypatch.setattr(rutas, "_nearest_categoria", doble)
-    monkeypatch.setattr(google, "_nearest_categoria", _spy(None))   # el real no sale a la red
-    asyncio.run(google._mejor_transporte(-0.18, -78.48, "llave"))
-    assert doble.llamadas == 0
 
-    # Y el punto que SÍ la alcanza:
+    ACTUALIZACIÓN ESPERADA (MAP-SOURCE-BOUNDARY): la primera mitad parcheaba
+    `rutas._nearest_categoria`, que ya no existe —`rutas` dejó de ligar nombres de Google—.
+    Lo que se conserva es el punto que SÍ alcanza la llamada interna.
+    """
+    assert not hasattr(rutas, "_nearest_categoria")
+
+    # El punto que SÍ la alcanza:
     dentro = _spy(None)
     monkeypatch.setattr(google, "_nearest_categoria", dentro)
     asyncio.run(google._mejor_transporte(-0.18, -78.48, "llave"))
     assert dentro.llamadas == 2, "metro y bus: dos intentos, como antes del corte"
 
 
-def test_la_capa_propia_sigue_yendo_primero_y_google_solo_a_los_huecos(monkeypatch):
-    """El presupuesto congelado por R0B0, comprobado a través de la frontera nueva.
+def test_la_capa_propia_es_la_UNICA_y_los_huecos_se_quedan_huecos(monkeypatch):
+    """El presupuesto de MAP-SOURCE-BOUNDARY, comprobado a través de la frontera.
 
-    No duplica el baseline: aquí lo que se mide es que la POLÍTICA sobrevivió al corte, con
-    los proveedores ya en módulos distintos. Si algún doble dejara de morder, el proveedor
-    real intentaría salir y el tripwire lo convertiría en un fallo visible en vez de en
-    lentitud.
+    ACTUALIZACIÓN ESPERADA: antes este test medía «la capa propia primero y Google solo
+    para el hueco real (farmacia)». Ahora el hueco se queda hueco: los dobles de Google se
+    instalan en SU módulo —el único desde el que alguien podría volver a llamarlos— y
+    tienen que quedar en cero, con llave configurada y todo.
     """
-    # OJO: "transporte" NO está en `_CATS_ENTORNO`; es una rama de decisión aparte en
-    # `_servicios_con_coords`. Si el material solo cubriera las seis categorías de la
-    # lista, Google seguiría siendo llamado para transporte y la aserción de abajo
-    # mediría otra cosa. Se cubre explícitamente.
+    from app.config import settings
+
     cubiertas = {c: {"nombre": f"propio {c}", "distancia_m": 100 + i, "cat": c,
-                     "fuente": "propia"}
+                     "fuente": "propio"}
                  for i, c in enumerate([*propia._CATS_ENTORNO, "transporte"])
                  if c != "farmacia"}
     propios, nearest, transporte = _spy(cubiertas), _spy(None), _spy(None)
     monkeypatch.setattr(rutas, "_servicios_propios", propios)
-    monkeypatch.setattr(rutas, "_nearest_categoria", nearest)
-    monkeypatch.setattr(rutas, "_mejor_transporte", transporte)
+    monkeypatch.setattr(google, "_nearest_categoria", nearest)
+    monkeypatch.setattr(google, "_mejor_transporte", transporte)
+    monkeypatch.setattr(settings, "google_maps_api_key", "llave")
 
-    asyncio.run(rutas._servicios_con_coords(-0.18, -78.48, "llave", 6))
+    servicios = asyncio.run(rutas._servicios_con_coords(-0.18, -78.48, 6))
 
     assert propios.llamadas == 1, "la capa propia se consulta exactamente una vez"
-    assert nearest.llamadas == 1, "Google solo para el hueco real (farmacia), ni uno más"
-    assert transporte.llamadas == 0, "la propia ya cubría transporte: Google no se toca"
+    assert nearest.llamadas == 0 and transporte.llamadas == 0, "Google no se toca"
+    assert "farmacia" not in {s["cat"] for s in servicios}, "el hueco no se rellena"
 
 
 # ═════════════════════════════════════════════════════════════════════════════════════
@@ -684,8 +687,7 @@ def test_parchear_la_fachada_de_tools_SIGUE_alcanzando_a_los_llamadores(monkeypa
     doble = _spy({"texto": "doble", "barrio": None, "ciudad": None, "pais": None})
     monkeypatch.setattr(tools, "_reverse_geocode", doble)
     monkeypatch.setattr(rutas, "walk_score_para", _spy(None))
-    monkeypatch.setattr(rutas, "_servicios_con_coords", _spy([]))
-    monkeypatch.setattr(rutas, "_mejor_transporte", _spy(None))
+    monkeypatch.setattr(rutas, "_nearest_propio", _spy(None))   # el recorrido ya es solo capa propia
     asyncio.run(rutas.recorrido_zona(-0.18, -78.48))
     assert doble.llamadas == 1, (
         "el doble no mordió: el import diferido dejó de resolver sobre `app.agent.tools`")
@@ -700,8 +702,7 @@ def test_parchear_el_PROVIDER_de_nominatim_no_alcanza_a_los_llamadores(monkeypat
     monkeypatch.setattr(nominatim, "_reverse_geocode", doble)
     monkeypatch.setattr(tools, "_reverse_geocode", _spy(None))   # el real no sale a la red
     monkeypatch.setattr(rutas, "walk_score_para", _spy(None))
-    monkeypatch.setattr(rutas, "_servicios_con_coords", _spy([]))
-    monkeypatch.setattr(rutas, "_mejor_transporte", _spy(None))
+    monkeypatch.setattr(rutas, "_nearest_propio", _spy(None))
     asyncio.run(rutas.recorrido_zona(-0.18, -78.48))
     assert doble.llamadas == 0
 

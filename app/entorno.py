@@ -3,22 +3,19 @@ Entorno destacado de un inmueble — los "imanes de vida" cercanos que hacen
 fabuloso un informe: centro comercial, colegios, iglesia, UPC (seguridad),
 salud, parques, supermercado, farmacia. Con nombre y distancia.
 
-Estrategia de fuentes (decisión del producto):
-- GOOGLE MAPS PLACES (primario, si hay API key): nombres ricos y completos.
-  Se usa EN VIVO; por términos de Google no se persiste su contenido a largo
-  plazo más allá de lo permitido.
-- OPENSTREETMAP (respaldo y base persistible del catastro): gratis, propio,
-  reutiliza los POIs que ya descargamos para el Walk Score.
+Fuente: OPENSTREETMAP, con los POIs que ya descargamos para el Walk Score (gratis,
+abierto y persistible). Hasta MAP-SOURCE-BOUNDARY (2026-09-30) Google Places iba primero
+cuando había llave; lo que devolvía se PERSISTÍA en `activos_inmutables.servicios_cercanos`
+y se pintaba en el popup del Mapa Vivo, sobre MapLibre. Ese camino ya no existe.
 
 `extraer_entorno_osm(pois, lat, lon)` es PURA (sin red) → testeable.
-`entorno_destacado(lat, lon, pois)` decide la fuente y devuelve el texto.
+`entorno_destacado(lat, lon, pois)` devuelve el texto (o None).
 """
 from __future__ import annotations
 
 import re
 
 
-from app.config import settings
 from app.walk_score import _haversine_m
 
 # Categorías de "imanes de vida": etiqueta + emoji + matcher OSM + tipo Google.
@@ -113,33 +110,18 @@ def extraer_entorno_osm(pois: list[dict], lat: float, lon: float, max_items: int
     items = items[:max_items]
     return {"fuente": "osm", "items": items, "texto": _formatear(items)}
 
-# ── La llamada a Google Places vive ahora en `app/place/providers/google.py` (PLAN04-2.2)
-# Se MOVIO, no se copio: aqui no queda un segundo cuerpo. Con ella viajaron su radio y su
-# plazo, que eran suyos y de nadie mas, y alli llevan prefijo propio para que no puedan
-# confundirse con los de la operacion del Place path.
-#
-# LO QUE SE QUEDA ES LA ELECCION. `entorno_destacado` decide entre Google y OSM, y eso es
-# politica de seleccion entre dos proveedores: nunca vive dentro de un proveedor. Y
-# `extraer_entorno_osm` y `_formatear` se quedan porque son calculo y presentacion sobre
-# POIs ya descargados, no I/O.
-#
-# EL IMPORT ES DIFERIDO A PROPOSITO, y no por estilo: `app/place/providers/google.py`
-# importa de ESTE modulo su taxonomia (`_CATEGORIAS`, `_nombre_valido`, `_formatear`). Un
-# import de nivel de modulo en esta direccion cerraria el ciclo. Se resuelve en el punto de
-# uso, en cada llamada, y hay prueba de que el ciclo no existe.
+# ── La llamada a Google Places vive en `app/place/providers/google.py` (PLAN04-2.2) ──────
+# y desde MAP-SOURCE-BOUNDARY este módulo YA NO la llama: su resultado terminaba persistido
+# y pintado sobre MapLibre. `google.py` sigue importando de aquí su taxonomía
+# (`_CATEGORIAS`, `_nombre_valido`, `_formatear`), y por eso la dirección de la dependencia
+# no cambia: este módulo no importa ningún provider.
 
 
 async def entorno_destacado(lat: float, lon: float, pois: list[dict] | None) -> dict | None:
     """
-    Entorno destacado del inmueble. Usa Google Places si hay API key (en vivo);
-    si no, o si Google falla, cae a OSM (con los POIs ya descargados). None si
-    no hay nada que destacar.
+    Entorno destacado del inmueble, desde OSM (los POIs ya descargados). None si no hay
+    POIs o nada que destacar. Sin Google: ver el docstring del módulo.
     """
-    if settings.google_maps_api_key:
-        from app.place.providers.google import _entorno_google  # diferido: evita ciclo
-        g = await _entorno_google(lat, lon, settings.google_maps_api_key)
-        if g is not None:
-            return g
     if pois:
         return extraer_entorno_osm(pois, lat, lon)
     return None

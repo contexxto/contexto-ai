@@ -4,8 +4,12 @@
       roles, compuertas fail-closed) y nada más (ni políticas, ni DML, ni otras tablas).
   B · PostgreSQL 15 real (`TEST_DATABASE_URL`, también en el CI): con un dueño NO superusuario con
       BYPASSRLS —el doble del `postgres` de producción— la 039 se aplica con el aplicador del
-      producto, los tres roles quedan sin nada, y el backend sigue sirviendo /aura desde la caché
-      (función real `_pois_geo_cached` y `GET /api/v1/assets/{id}/aura`).
+      producto, los tres roles quedan sin nada y el dueño conserva su CRUD.
+
+ACTUALIZACIÓN ESPERADA (MAP-SOURCE-BOUNDARY, 2026-09-30): /aura ya NO lee ni escribe esta caché
+—guardaba el resultado de Google Places, y los pines salen ahora de la capa propia—. Las dos
+pruebas que decían «/aura sigue sirviendo desde la caché» dicen ahora lo contrario, y con la
+tabla envenenada: una entrada fresca en la caché no llega al mapa.
 
 El banco completo (control positivo, compuertas, mutaciones, PG15 y PG17) está en
 `tests/arnes_perimetro_039.py`, que necesita Docker.
@@ -33,8 +37,10 @@ DUENO = "p039_owner"
 ACTIVO = uuid.UUID("0cb128c9-0000-4000-8000-0000000039a1")
 OTRO = uuid.UUID("0cb128c9-0000-4000-8000-0000000039a2")
 LAT, LON = -0.1807, -78.4678
-EN_CACHE = [{"nombre": "Lugar en caché", "lat": -0.18, "lon": -78.48, "distancia_m": 300}]
-DE_GOOGLE = [{"nombre": "Lugar de Google", "lat": -0.19, "lon": -78.47, "distancia_m": 500}]
+EN_CACHE = [{"nombre": "Lugar en caché", "lat": -0.18, "lon": -78.48, "distancia_m": 300,
+             "fuente": "google"}]
+PROPIO = {"farmacia": {"nombre": "Farmacia propia", "lat": -0.181, "lon": -78.468,
+                       "distancia_m": 240, "cat": "farmacia", "fuente": "propio"}}
 
 
 def _sin_comentarios(sql: str) -> str:
@@ -72,13 +78,26 @@ URL = os.getenv("TEST_DATABASE_URL", "")
 pg = pytest.mark.skipif(not URL, reason="sin TEST_DATABASE_URL: no hay Postgres de pruebas")
 
 
-class _Google:
+class _CapaPropia:
+    """Doble de `rutas._servicios_propios`: la capa propia sin PostGIS (el Postgres de pruebas
+    no lo tiene). Cuenta llamadas para demostrar que /aura pregunta a la capa y no a la caché."""
+
     def __init__(self, respuesta):
         self.respuesta, self.llamadas = respuesta, 0
 
     async def __call__(self, lat, lon):
         self.llamadas += 1
         return copy.deepcopy(self.respuesta)
+
+
+def _sin_google(monkeypatch):
+    """Cualquier llamada a Google en este camino es un fallo, no un dato."""
+    import app.place.providers.google as google
+
+    async def _prohibido(*a, **k):
+        raise AssertionError("/aura llamó a Google")
+    for nombre in ("_nearest_categoria", "_mejor_transporte", "_ruta_a_pie", "_entorno_google"):
+        monkeypatch.setattr(google, nombre, _prohibido)
 
 
 @pytest.fixture
@@ -200,24 +219,33 @@ async def test_039_cierra_los_tres_roles_y_el_dueno_conserva_el_crud(banco):
     assert (await _estado(admin))["rls"] is True
 
 
+async def _filas_en_cache(banco):
+    async with banco["dueno"].connect() as cx:
+        return (await cx.execute(text("SELECT count(*) FROM public.aura_pois_cache"))).scalar()
+
+
 @pg
-async def test_039_el_backend_sigue_sirviendo_aura_desde_la_cache(banco, monkeypatch):
-    """Tras la 039, la función REAL del backend (como el dueño) sigue leyendo la caché y, en un
-    miss, degrada a Google como siempre. (Que la escritura del miss persista es PR #171.)"""
+async def test_039_aura_YA_NO_lee_la_cache_aunque_tenga_una_entrada_fresca(banco, monkeypatch):
+    """Tras la 039, y con una entrada FRESCA en la caché para este inmueble —la forma de un
+    envenenamiento, o de un resultado viejo de Google—, `_pois_geo` responde desde la capa
+    propia, no toca la caché y no llama a Google."""
+    import app.rutas as rutas
+
     await _aplica_039(banco)
     async with banco["dueno"].begin() as cx:
         await cx.execute(text(
             "INSERT INTO public.aura_pois_cache (activo_id, pois, computed_at) "
             "VALUES (:id, CAST(:p AS jsonb), now())"), {"id": str(ACTIVO), "p": json.dumps(EN_CACHE)})
-    google = _Google(DE_GOOGLE)
-    monkeypatch.setattr(assets, "_pois_geo", google)
+    capa = _CapaPropia(PROPIO)
+    monkeypatch.setattr(rutas, "_servicios_propios", capa)
+    _sin_google(monkeypatch)
 
-    async with banco["Sesion"]() as db:
-        assert await assets._pois_geo_cached(db, ACTIVO, LAT, LON) == EN_CACHE
-    assert google.llamadas == 0, "el hit sale de la caché, sin Google"
-    async with banco["Sesion"]() as db:
-        assert await assets._pois_geo_cached(db, OTRO, LAT, LON) == DE_GOOGLE
-    assert google.llamadas == 1
+    pois = await assets._pois_geo(LAT, LON)
+    assert [p["nombre"] for p in pois] == ["Farmacia propia"]
+    assert {p["fuente"] for p in pois} == {"propio"}
+    assert capa.llamadas == 1
+    assert await _filas_en_cache(banco) == 1, "la caché no se escribe"
+    assert not hasattr(assets, "_pois_geo_cached"), "el camino de la caché se retiró entero"
 
 
 class _FilaUnica:
@@ -251,8 +279,9 @@ class _SesionHibrida:
 
 
 @pg
-async def test_039_get_aura_por_http_sigue_igual(banco, monkeypatch):
+async def test_039_get_aura_por_http_mismo_contrato_desde_la_capa_propia(banco, monkeypatch):
     import main
+    import app.rutas as rutas
     from app.database import get_db
     from app.limiter import limiter
 
@@ -262,8 +291,8 @@ async def test_039_get_aura_por_http_sigue_igual(banco, monkeypatch):
             "INSERT INTO public.aura_pois_cache (activo_id, pois, computed_at) "
             "VALUES (:id, CAST(:p AS jsonb), now())"), {"id": str(ACTIVO), "p": json.dumps(EN_CACHE)})
     monkeypatch.setattr(limiter, "enabled", False)
-    google = _Google(DE_GOOGLE)
-    monkeypatch.setattr(assets, "_pois_geo", google)
+    monkeypatch.setattr(rutas, "_servicios_propios", _CapaPropia(PROPIO))
+    _sin_google(monkeypatch)
 
     async def _isocronas(db, activo_id, lat, lon):  # fuera del alcance: Valhalla/PostGIS
         return []
@@ -280,5 +309,10 @@ async def test_039_get_aura_por_http_sigue_igual(banco, monkeypatch):
     finally:
         main.app.dependency_overrides.pop(get_db, None)
     assert r.status_code == 200, r.text
-    assert r.json() == {"lat": LAT, "lon": LON, "tipo_activo": "departamento", "pois": EN_CACHE, "isocronas": []}
-    assert google.llamadas == 0
+    d = r.json()
+    assert set(d) == {"lat", "lon", "tipo_activo", "pois", "isocronas"}
+    assert (d["lat"], d["lon"], d["tipo_activo"], d["isocronas"]) == (LAT, LON, "departamento", [])
+    assert d["pois"] == [{"nombre": "Farmacia propia", "lat": -0.181, "lon": -78.468,
+                          "distancia_m": 240, "minutos": 3, "cat": "farmacia", "emoji": "💊",
+                          "color": "#5EEAD4", "fuente": "propio"}]
+    assert await _filas_en_cache(banco) == 1

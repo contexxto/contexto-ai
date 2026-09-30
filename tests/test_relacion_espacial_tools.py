@@ -274,17 +274,23 @@ def _geocodifica(monkeypatch, *, con_google):
         def geocode(self, *a, **k):
             return _Loc()
 
+    llamadas_google = []
+
+    async def _fake_google(address, key):
+        llamadas_google.append(address)
+        return {"lat": ANCLA["latitude"], "lon": ANCLA["longitude"],
+                "formatted": "La Floresta, Quito"}
+
+    # MAP-SOURCE-BOUNDARY: Nominatim se dobla SIEMPRE, porque con llave o sin ella es la
+    # única rama que corre; el doble de Google queda para comprobar que nadie lo llama.
     monkeypatch.setattr(T.settings, "google_maps_api_key",
                         "clave-de-prueba" if con_google else "")
-    if con_google:
-        async def _fake_google(address, key):
-            return {"lat": ANCLA["latitude"], "lon": ANCLA["longitude"],
-                    "formatted": "La Floresta, Quito"}
-        monkeypatch.setattr(T, "_geocode_google", _fake_google)
-    else:
-        monkeypatch.setattr(T, "Nominatim", _FakeNominatim)
-    return json.loads(asyncio.run(
+    monkeypatch.setattr(T, "_geocode_google", _fake_google)
+    monkeypatch.setattr(T, "Nominatim", _FakeNominatim)
+    d = json.loads(asyncio.run(
         T.tool_geocode_address.ainvoke({"address": "La Floresta"})))
+    d["_llamadas_google"] = llamadas_google
+    return d
 
 
 def test_la_rama_NOMINATIM_declara_source_y_geometry_type(monkeypatch):
@@ -297,9 +303,13 @@ def test_la_rama_NOMINATIM_declara_source_y_geometry_type(monkeypatch):
     assert d["latitude"] == ANCLA["latitude"]
 
 
-def test_la_rama_GOOGLE_declara_source_y_geometry_type(monkeypatch):
-    """Google ya traia `source`; le faltaba `geometry_type`. Una sola funcion para las dos
-    ramas: tener dos formas de describir lo mismo es como se desincronizan."""
+def test_con_llave_de_Google_la_tool_SIGUE_en_Nominatim_y_no_llama_a_Google(monkeypatch):
+    """ACTUALIZACION ESPERADA (MAP-SOURCE-BOUNDARY, 2026-09-30). Antes este test fijaba la
+    rama Google (`source: "google"`). Esa rama se retiro: el ancla que devuelve la tool
+    decide que pines pinta MapSeed y la ingesta persiste el punto como `geom`, asi que los
+    dos consumidores terminan sobre MapLibre. Con la llave configurada, la respuesta es la
+    de Nominatim y Google no recibe ni una llamada."""
     d = _geocodifica(monkeypatch, con_google=True)
-    assert d["source"] == "google"
+    assert d["source"] == "nominatim"
     assert d["geometry_type"] == "point"
+    assert d["_llamadas_google"] == []

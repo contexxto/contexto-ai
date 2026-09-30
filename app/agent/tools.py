@@ -16,6 +16,7 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from sqlalchemy import text
 
+from app.place.legado import CAMPOS_LEGADOS, con_contexto_vigente
 from app.config import settings
 from app.database import AsyncSessionLocal
 # La traducción de `walk_score_fuente` vive en `encaje` y se IMPORTA, no se copia: tener dos
@@ -135,6 +136,24 @@ async def _fetch_rows(query: str, params: dict) -> list[dict[str, Any]]:
         result = await session.execute(text(query), params)
         rows = result.mappings().all()
         return [dict(row) for row in rows]
+
+
+# MAP-SOURCE-BOUNDARY · D1. Los textos persistidos de entorno solo llegan al agente con
+# procedencia propia demostrada (app/place/legado.py); hoy ninguno la tiene. Un `null` en
+# esos campos es UNKNOWN, y el modelo tiene que leerlo así: ni «hay», ni «no hay».
+_AVISO_ENTORNO_DESCONOCIDO = (
+    "servicios_cercanos / conectividad = null means UNKNOWN: the stored nearby-services and "
+    "transit text has no verified provenance and is NOT current data. Do not say that a "
+    "service or transit stop exists or does not exist near this property; say you don't have "
+    "verified nearby-services/transit data for it."
+)
+
+
+def _aviso_entorno(filas: list[dict]) -> dict:
+    """La nota para el modelo, solo si alguna fila quedó sin contexto vigente."""
+    if any(f.get(c) is None for f in filas for c in CAMPOS_LEGADOS if c in f):
+        return {"entorno_note": _AVISO_ENTORNO_DESCONOCIDO}
+    return {}
 
 
 def _limpiar_servicios_en(row: dict) -> dict:
@@ -310,10 +329,12 @@ async def tool_search_nearby_assets(
             "message": f"No registered assets within {used} m of this point.",
         })
 
-    rows = [_con_procedencia_caminable(_limpiar_servicios_en(r)) for r in rows]
+    # MAP-SOURCE-BOUNDARY: la frontera de los textos legados, antes que nada.
+    rows = [_con_procedencia_caminable(_limpiar_servicios_en(con_contexto_vigente(r))) for r in rows]
     return json.dumps({
         "assets": rows, "total": len(rows), **relacion,
         "note": "distancia_metros = how far each asset is from the search point; be honest about distance if it is large.",
+        **_aviso_entorno(rows),
     }, default=str)
 
 
@@ -325,7 +346,7 @@ _STOP_WORDS = {"de", "la", "el", "y", "del", "los", "las", "en", "con", "por",
 async def tool_find_assets_by_text(query: str) -> str:
     """
     Find registered assets in OUR OWN catastro by matching their stored address text
-    (and connectivity/services notes) — WITHOUT relying on external geocoding.
+    — WITHOUT relying on external geocoding.
 
     Use this FIRST whenever the user names a street, address, building, or local
     landmark/sector (e.g. "Jorge Salvador Lara", "Quitumbe", "Quicentro Sur").
@@ -348,7 +369,11 @@ async def tool_find_assets_by_text(query: str) -> str:
     if not tokens:
         tokens = [raw]
 
-    params: dict[str, Any] = {"phrase": f"%{raw}%"}
+    # MAP-SOURCE-BOUNDARY · D1: ya NO se busca dentro de `conectividad` / `servicios_cercanos`.
+    # Encontrar un inmueble porque su texto legado nombra un lugar sería usar ese texto como
+    # fuente vigente por la puerta de atrás. Cuando exista `contexto_procedencia`, la búsqueda
+    # puede volver, condicionada a `= 'propio'`.
+    params: dict[str, Any] = {}
     dir_conds = []
     for i, t in enumerate(tokens):
         params[f"t{i}"] = f"%{t}%"
@@ -380,8 +405,6 @@ async def tool_find_assets_by_text(query: str) -> str:
             ORDER BY tt.fecha_publicacion DESC LIMIT 1
         ) t ON true
         WHERE {direccion_match}
-           OR a.conectividad ILIKE :phrase
-           OR a.servicios_cercanos ILIKE :phrase
         ORDER BY _rank ASC, a.created_at DESC
         LIMIT 10
     """
@@ -398,8 +421,8 @@ async def tool_find_assets_by_text(query: str) -> str:
 
     for r in rows:
         r.pop("_rank", None)
-    rows = [_con_procedencia_caminable(_limpiar_servicios_en(r)) for r in rows]
-    return json.dumps({"assets": rows, "total": len(rows)}, default=str)
+    rows = [_con_procedencia_caminable(_limpiar_servicios_en(con_contexto_vigente(r))) for r in rows]
+    return json.dumps({"assets": rows, "total": len(rows), **_aviso_entorno(rows)}, default=str)
 
 
 @tool
@@ -469,7 +492,9 @@ async def tool_fetch_asset_lifecycle_specs(activo_id: str) -> str:
     # ese texto sin verificar (p. ej. "cerca del Trole", "a 20 m", "muy comercial")
     # NO debe presentarse como hecho. Se eliminó del formulario; esto blinda
     # cualquier dato heredado. Robusto a caracteristicas como dict o JSON string.
-    row = rows[0]
+    # MAP-SOURCE-BOUNDARY: y la frontera de los textos legados, ANTES de la curación: lo que
+    # el corredor confirmó es dato propio y sobrevive; el texto sin procedencia, no.
+    row = con_contexto_vigente(rows[0])
     car = row.get("caracteristicas")
     if isinstance(car, str):
         try:
@@ -494,12 +519,19 @@ async def tool_fetch_asset_lifecycle_specs(activo_id: str) -> str:
     if curaciones:
         row["servicios_cercanos"] = aplicar_curacion(row.get("servicios_cercanos"), curaciones)
 
-    return json.dumps({"specs": _con_antiguedades(_con_procedencia_caminable(_limpiar_servicios_en(row)))}, default=str)
+    return json.dumps({"specs": _con_antiguedades(_con_procedencia_caminable(_limpiar_servicios_en(row))),
+                       **_aviso_entorno([row])}, default=str)
 
 
 async def _geocode_google(address: str, key: str) -> dict | None:
-    """Geocodifica con Google Geocoding API (cobertura de calles de Quito MUY superior
-    a OSM, y no confunde estaciones del Metro). Devuelve lat/lon/formatted o None."""
+    """Geocodifica con Google Geocoding API. Devuelve lat/lon/formatted o None.
+
+    SIN LLAMADOR desde MAP-SOURCE-BOUNDARY (2026-09-30). Sus dos consumidores terminaban en
+    MapLibre: `tool_geocode_address` (el ancla del agente decide qué pines pinta MapSeed) y
+    la ingesta (`app/routers/ingest.py`, cuyo punto se persiste como `geom` del inmueble y
+    se pinta en todos los mapas). No se borra porque no hay uso que no termine en mapa del
+    que se haya demostrado el consumidor: si alguno aparece, ese es el sitio. Llamarlo
+    desde un productor de mapa lo rompe `tests/test_map_source_boundary.py`."""
     verify = settings.ssl_verify.lower() != "false"
     params = {
         "address": f"{address.strip()}, Quito, Ecuador",
@@ -524,8 +556,8 @@ async def _geocode_google(address: str, key: str) -> dict | None:
 async def tool_geocode_address(address: str) -> str:
     """
     Convert a human-readable address or neighborhood name into geographic coordinates
-    (latitude and longitude). Uses Google Geocoding (street-accurate in Quito) when an
-    API key is configured, and falls back to OpenStreetMap Nominatim otherwise.
+    (latitude and longitude) with OpenStreetMap Nominatim. Nominatim can be off by a few
+    hundred meters on Quito street addresses: prefer a generous search radius.
 
     NOTE: For finding REGISTERED inventory by a street/sector name, prefer
     tool_find_assets_by_text (it searches our own catastro). Use this geocoder for
@@ -534,22 +566,10 @@ async def tool_geocode_address(address: str) -> str:
     Args:
         address: Free-text address, intersection, or place name in Quito, Ecuador.
     """
-    # 1) Google Geocoding primero (si hay key) — cobertura de Quito muy superior a OSM.
-    if settings.google_maps_api_key:
-        try:
-            g = await _geocode_google(address, settings.google_maps_api_key)
-            if g:
-                return json.dumps({
-                    "found": True,
-                    "address_input": address,
-                    "address_resolved": g["formatted"],
-                    **_ancla_de(g["lat"], g["lon"], "google"),
-                    "tip": "Google geocoding is street-accurate; radius_meters=1500 is fine.",
-                })
-        except Exception:
-            pass  # cualquier fallo de red/cuota → caemos a Nominatim
-
-    # 2) Fallback: OpenStreetMap Nominatim (gratis, sin key, pero flojo en Quito).
+    # MAP-SOURCE-BOUNDARY: SOLO OpenStreetMap Nominatim. Hasta aquí Google Geocoding iba
+    # primero cuando había llave, y los dos consumidores de este resultado terminan en
+    # MapLibre (ver `_geocode_google`). La regresión de precisión frente a Google está
+    # medida en el informe de la unidad.
     # Append Quito context to improve geocoding accuracy
     query = f"{address.strip()}, Quito, Ecuador"
 
@@ -812,7 +832,8 @@ async def tool_traducir_estilo_de_vida(concepto: str) -> str:
         JUICIO: the adjective is the user's, the data is yours, the conclusion is theirs).
       - "servicios": a real named service (mall/supermarket/health/pharmacy/school) that
         may or may not be near THIS property — check servicios_cercanos and cite it if
-        present; say honestly if it's not, never invent one.
+        present; never invent one. If servicios_cercanos is null, that is UNKNOWN (no
+        verified data), not absence: say you don't have that data, never that it isn't there.
       - "protegidos": the concept ties to a PROTECTED trait (family/kids, age, national
         origin, religion, gender, disability) or to "seguridad" (a subjective verdict,
         never a measurement — a decision already made in this product). NEVER translate

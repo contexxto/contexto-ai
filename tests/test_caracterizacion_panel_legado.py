@@ -280,13 +280,24 @@ def test_G2_la_vegetacion_no_altera_el_encaje(monkeypatch):
 
 
 def test_G3_el_parque_medido_si_mueve_el_encaje(monkeypatch):
-    """El contraste que hace válida la prueba anterior: lo MEDIDO sí cuenta."""
-    cerca = _panel(
-        monkeypatch, ["x"], [_row("x", servicios_cercanos="🌳 Parque a ~100 m")], _PREFS_COMPLETAS
-    )
+    """El contraste que hace válida la prueba anterior: lo MEDIDO sí cuenta — si su
+    procedencia propia está demostrada.
+
+    EXPECTED PRODUCT CHANGE (MAP-SOURCE-BOUNDARY · D1, 2026-09-30). Antes bastaba con que
+    `servicios_cercanos` trajera «🌳 Parque a ~100 m» para que el parque puntuara. Ese texto
+    persistido no tiene procedencia propia demostrada (lo escribía Google Places primero), y
+    por eso ya NO alimenta `parque_min`: sin procedencia cuenta exactamente como sin dato. El
+    contraste se conserva con la procedencia declarada, que es como volverá tras el backfill.
+    """
+    parque = {"servicios_cercanos": "🌳 Parque a ~100 m"}
+    propio = _panel(monkeypatch, ["x"], [_row("x", **parque, contexto_procedencia="propio")],
+                    _PREFS_COMPLETAS)
+    legado = _panel(monkeypatch, ["x"], [_row("x", **parque)], _PREFS_COMPLETAS)
     sin = _panel(monkeypatch, ["x"], [_row("x", servicios_cercanos=None)], _PREFS_COMPLETAS)
-    assert cerca["cards"][0]["encaje_declaradas"] == sin["cards"][0]["encaje_declaradas"]
-    assert cerca["cards"][0]["encaje_evaluadas"] != sin["cards"][0]["encaje_evaluadas"]
+    assert propio["cards"][0]["encaje_declaradas"] == sin["cards"][0]["encaje_declaradas"]
+    assert propio["cards"][0]["encaje_evaluadas"] != sin["cards"][0]["encaje_evaluadas"]
+    # El texto sin procedencia: idéntico a no tener dato, en todo lo que decide.
+    assert _decision(legado) == _decision(sin)
 
 
 # ── H. opción priorizada por el modelo ───────────────────────────────────────────

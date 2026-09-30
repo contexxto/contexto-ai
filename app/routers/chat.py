@@ -34,6 +34,7 @@ from app.orden import encaje_ajustado, ordenar_candidatos
 from app.entorno import limpiar_texto_servicios
 from app.entorno_curacion import aplicar_curacion, info_verificacion, parse_servicios
 from app.intencion import analizar_intencion
+from app.place.legado import con_contexto_vigente
 from app.limiter import limiter
 from app.rutas import verificacion_de_entorno
 from app.contracts.decision_v0 import VerificationStatus
@@ -620,7 +621,8 @@ async def comparar_inmuebles(session_id: str, id_a: str, id_b: str) -> dict:
     rows, curaciones = fetched
     by_id: dict[str, dict] = {}
     for r in (rows if isinstance(rows, (list, tuple)) else []):  # rows None/basura → sin filas, no crash
-        r = dict(r)
+        # MAP-SOURCE-BOUNDARY: misma frontera que `_decidir_desde_filas`, antes de la curación.
+        r = con_contexto_vigente(r)
         rid = r.get("id")
         if not rid:
             continue

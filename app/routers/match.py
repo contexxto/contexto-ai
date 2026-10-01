@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
+from app.llm_runtime import CallPurpose, runtime
 from app.database import get_db
 from app.embeddings import (
     EmbeddingError,
@@ -77,9 +77,11 @@ class MatchResponse(BaseModel):
 # ─────────────────────────── Helpers ───────────────────────────
 async def _refine_brief(texto: str) -> str:
     """Claude condensa el brief en una frase de búsqueda rica para embeber."""
+    # Fuera del try: una configuración de modelo no admitida no se degrada al brief crudo.
+    modelo = runtime().sdk_kwargs(CallPurpose.MATCH)
     try:
         resp = await _client().messages.create(
-            model=settings.llm_model,
+            **modelo,
             max_tokens=200,
             system=(
                 "Eres un asistente inmobiliario en Quito. Resume el brief del usuario en UNA "
@@ -141,9 +143,11 @@ async def _justificar(brief_desc: str, modo: str, resultados: list[dict]) -> dic
         f"Brief del usuario ({modo}): {brief_desc}\n\n"
         f"Inmuebles candidatos (JSON):\n{json.dumps(compactos, ensure_ascii=False, default=str)}"
     )
+    # Fuera del try: una configuración de modelo no admitida no se degrada a «sin justificación».
+    modelo = runtime().sdk_kwargs(CallPurpose.MATCH, tool_forzada="explicar_match")
     try:
         resp = await _client().messages.create(
-            model=settings.llm_model,
+            **modelo,
             max_tokens=900,
             system=(
                 "Eres un perito inmobiliario en Quito. Para CADA inmueble candidato, redacta UNA "
@@ -152,7 +156,6 @@ async def _justificar(brief_desc: str, modo: str, resultados: list[dict]) -> dic
                 "inventes datos que no estén en la ficha. Llama SIEMPRE a la herramienta explicar_match."
             ),
             tools=[tool],
-            tool_choice={"type": "tool", "name": "explicar_match"},
             messages=[{"role": "user", "content": contexto}],
         )
         tool_input = next((b.input for b in resp.content if getattr(b, "type", None) == "tool_use"), None)

@@ -352,7 +352,16 @@ async def tool_find_assets_by_text(query: str) -> str:
     landmark/sector (e.g. "Jorge Salvador Lara", "Quitumbe", "Quicentro Sur").
     OpenStreetMap/Nominatim does NOT know most Quito streets and confuses Metro
     station names, so OUR catastro is the source of truth for finding registered
-    properties by name. Only fall back to tool_geocode_address if this returns nothing.
+    properties by name.
+
+    A text match only says the listing is registered under that street or sector. It
+    does NOT establish distance, proximity or transport access (for example, how far a
+    listing is from a Metro station). If your answer will state a distance, a proximity
+    ("near", "300 m", "5 min walk") or transport access, get spatial evidence in this
+    turn first — tool_analyze_location on the listing's lat/lon, or
+    tool_search_nearby_assets around a reference point (tool_geocode_address can place
+    it) — or say that you do not have that measurement. Do not call spatial tools when
+    the question has no spatial dimension.
 
     Returns matching assets with their habitability scores and coordinates (lat/lon).
     You can describe them directly, or call tool_search_nearby_assets with their
@@ -561,7 +570,11 @@ async def tool_geocode_address(address: str) -> str:
 
     NOTE: For finding REGISTERED inventory by a street/sector name, prefer
     tool_find_assets_by_text (it searches our own catastro). Use this geocoder for
-    zone-level context or when our catastro has no match.
+    zone-level context, when our catastro has no match, or to place a REFERENCE POINT
+    (a landmark, a Metro station) when the answer needs the distance or proximity to it.
+    Treat the point as approximate: Nominatim can misplace Quito streets and Metro
+    station names, so prefer tool_analyze_location on a listing's own coordinates when
+    that answers the question.
 
     Args:
         address: Free-text address, intersection, or place name in Quito, Ecuador.

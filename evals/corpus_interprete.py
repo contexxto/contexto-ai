@@ -53,10 +53,12 @@ from app.buyer.extractor import (  # noqa: E402
     AfirmacionAmbiguous, AfirmacionDurable, AfirmacionTurnOnly,
 )
 from app.buyer.interprete import (  # noqa: E402
-    _MAX_TOKENS, _SYSTEM, _TEMPERATURE, _TOOL_CHOICE, _tool_schema, interpretar_mensaje,
+    _MAX_TOKENS, _SYSTEM, _TOOL_NAME, _tool_schema,
+    interpretar_mensaje,
 )
 from app.buyer.mensaje import IdentifiedUserMessage  # noqa: E402
 from app.config import settings  # noqa: E402
+from app.llm_runtime import CallPurpose, runtime  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -379,14 +381,20 @@ def _identidad_config() -> dict:
     """
     # Lo que DETERMINA QUÉ VE EL MODELO. Sólo esto entra en el hash: es la pregunta que el
     # hash tiene que contestar —¿vieron lo mismo estas dos corridas?— y nada más.
+    # Los campos de modelo salen de la MISMA frontera que arma la llamada real: lo registrado es
+    # lo enviado. Con los mismos nombres y valores que antes, el hash de una configuración
+    # anterior no cambia; `extra_body` sólo aparece si el perfil lo usa.
+    modelo = runtime().sdk_kwargs(CallPurpose.INTERPRETE, tool_forzada=_TOOL_NAME)
     campos = {
-        "model": settings.llm_model,
+        "model": modelo["model"],
         "system_sha256": _sha(_SYSTEM),
         "tool_schema_sha256": _sha(json.dumps(_tool_schema(), sort_keys=True,
                                               ensure_ascii=False)),
         "max_tokens": _MAX_TOKENS,
-        "tool_choice": _TOOL_CHOICE,
-        "temperature": _TEMPERATURE if _TEMPERATURE is not None else "unset",
+        "tool_choice": modelo["tool_choice"],
+        "temperature": modelo.get("temperature", "unset"),
+        "thinking": modelo.get("thinking", "unset"),
+        **({"extra_body": modelo["extra_body"]} if "extra_body" in modelo else {}),
     }
     # PROCEDENCIA · de dónde salió, y deliberadamente FUERA del hash.
     #

@@ -219,3 +219,9 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+# ── Parámetros del LLM que dependen del modelo ──────────────────────────────────────────
+# No viven aquí. `llm_model` sólo NOMBRA el modelo; qué admite y cómo se le habla (thinking,
+# effort, temperatura, tool forzada) lo decide la frontera de runtime, `app/llm_runtime.py`,
+# que además falla cerrado si el modelo no tiene perfil registrado.

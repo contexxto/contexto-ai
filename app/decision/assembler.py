@@ -78,6 +78,26 @@ def _json_de(m):
     return d if isinstance(d, dict) else None
 
 
+def activos_vistos_del_turno(messages) -> list[dict]:
+    """Lo que el modelo LEYÓ en las herramientas de este turno: id, dirección, precio, tipo y
+    operación de cada inmueble devuelto, sin repetir. Lo usa el verificador de prosa
+    (MODEL-MIGRATION-PRODUCT-HARDENING 0.1 · H3) para reconocer un inmueble que el panel
+    excluyó cuando la prosa lo presenta como opción. Puro: no toca base ni red."""
+    vistos, ids = [], set()
+    for m in _desde_ultimo_turno(messages):
+        if getattr(m, "type", "") != "tool":
+            continue
+        for a in (_json_de(m) or {}).get("assets") or []:
+            aid = a.get("id") if isinstance(a, dict) else None
+            if isinstance(aid, str) and aid and aid not in ids:
+                ids.add(aid)
+                vistos.append({"id": aid,
+                               "direccion": a.get("direccion_estandarizada") or a.get("direccion"),
+                               "precio": a.get("precio"), "tipo_activo": a.get("tipo_activo"),
+                               "operacion": a.get("operacion")})
+    return vistos
+
+
 def _distancia_normalizada(v) -> float | None:
     """G20-B1-R1 · el borde donde un dato serializado se vuelve evidencia numérica.
 

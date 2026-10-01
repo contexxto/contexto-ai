@@ -1,0 +1,285 @@
+{
+ "_procedencia": "Parámetros de modelo que llegan al proveedor, capturados en el CABLE (httpx.MockTransport) con arneses/paridad_chat_sonnet5/cuerpos_http.py, NO desde el candidato. claude-sonnet-4-5-20250929: commit bc2a6e3 (#180, producción calificada). claude-sonnet-5: commit 186d849 + la perilla de la Fase B (chat adaptive + effort low; RESULTADO_2026-09-30_SONNET5-ADAPTIVE-LOW-PHASE-B = PASS); fuera de CHAT, idéntico a bc2a6e3. Capturado 2026-09-30. `_claves` = claves de primer nivel del cuerpo: una clave nueva (p. ej. un parámetro que se cuela) también rompe la igualdad.",
+ "claude-sonnet-4-5-20250929": {
+  "CHAT · graph.llm_node": {
+   "_claves": [
+    "max_tokens",
+    "messages",
+    "model",
+    "stream",
+    "system",
+    "temperature",
+    "thinking",
+    "tools"
+   ],
+   "max_tokens": 2048,
+   "model": "claude-sonnet-4-5-20250929",
+   "stream": true,
+   "temperature": 0.2,
+   "thinking": {
+    "type": "disabled"
+   }
+  },
+  "CRM · crm_graph.llm_node": {
+   "_claves": [
+    "max_tokens",
+    "messages",
+    "model",
+    "system",
+    "temperature",
+    "thinking",
+    "tools"
+   ],
+   "max_tokens": 1500,
+   "model": "claude-sonnet-4-5-20250929",
+   "temperature": 0.2,
+   "thinking": {
+    "type": "disabled"
+   }
+  },
+  "INTERPRETE · proponer_con_modelo": {
+   "_claves": [
+    "max_tokens",
+    "messages",
+    "model",
+    "system",
+    "thinking",
+    "tool_choice",
+    "tools"
+   ],
+   "max_tokens": 1500,
+   "model": "claude-sonnet-4-5-20250929",
+   "thinking": {
+    "type": "disabled"
+   },
+   "tool_choice": {
+    "name": "registrar_afirmaciones",
+    "type": "tool"
+   }
+  },
+  "JUEZ · run_evals.judge": {
+   "_claves": [
+    "max_tokens",
+    "messages",
+    "model"
+   ],
+   "max_tokens": 200,
+   "model": "claude-haiku-4-5"
+  },
+  "MATCH · _justificar": {
+   "_claves": [
+    "max_tokens",
+    "messages",
+    "model",
+    "system",
+    "thinking",
+    "tool_choice",
+    "tools"
+   ],
+   "max_tokens": 900,
+   "model": "claude-sonnet-4-5-20250929",
+   "thinking": {
+    "type": "disabled"
+   },
+   "tool_choice": {
+    "name": "explicar_match",
+    "type": "tool"
+   }
+  },
+  "MATCH · _refine_brief": {
+   "_claves": [
+    "max_tokens",
+    "messages",
+    "model",
+    "system",
+    "thinking"
+   ],
+   "max_tokens": 200,
+   "model": "claude-sonnet-4-5-20250929",
+   "thinking": {
+    "type": "disabled"
+   }
+  },
+  "PREFERENCIAS · extraer_preferencias": {
+   "_claves": [
+    "max_tokens",
+    "messages",
+    "model",
+    "system",
+    "thinking",
+    "tool_choice",
+    "tools"
+   ],
+   "max_tokens": 400,
+   "model": "claude-sonnet-4-5-20250929",
+   "thinking": {
+    "type": "disabled"
+   },
+   "tool_choice": {
+    "name": "registrar_preferencias",
+    "type": "tool"
+   }
+  },
+  "VISION · extract_ficha_from_b64": {
+   "_claves": [
+    "max_tokens",
+    "messages",
+    "model",
+    "system",
+    "thinking",
+    "tool_choice",
+    "tools"
+   ],
+   "max_tokens": 1024,
+   "model": "claude-sonnet-4-5-20250929",
+   "thinking": {
+    "type": "disabled"
+   },
+   "tool_choice": {
+    "name": "registrar_ficha_visual",
+    "type": "tool"
+   }
+  }
+ },
+ "claude-sonnet-5": {
+  "CHAT · graph.llm_node": {
+   "_claves": [
+    "max_tokens",
+    "messages",
+    "model",
+    "output_config",
+    "stream",
+    "system",
+    "thinking",
+    "tools"
+   ],
+   "max_tokens": 2048,
+   "model": "claude-sonnet-5",
+   "output_config": {
+    "effort": "low"
+   },
+   "stream": true,
+   "thinking": {
+    "type": "adaptive"
+   }
+  },
+  "CRM · crm_graph.llm_node": {
+   "_claves": [
+    "max_tokens",
+    "messages",
+    "model",
+    "system",
+    "thinking",
+    "tools"
+   ],
+   "max_tokens": 1500,
+   "model": "claude-sonnet-5",
+   "thinking": {
+    "type": "disabled"
+   }
+  },
+  "INTERPRETE · proponer_con_modelo": {
+   "_claves": [
+    "max_tokens",
+    "messages",
+    "model",
+    "system",
+    "thinking",
+    "tool_choice",
+    "tools"
+   ],
+   "max_tokens": 1500,
+   "model": "claude-sonnet-5",
+   "thinking": {
+    "type": "disabled"
+   },
+   "tool_choice": {
+    "name": "registrar_afirmaciones",
+    "type": "tool"
+   }
+  },
+  "JUEZ · run_evals.judge": {
+   "_claves": [
+    "max_tokens",
+    "messages",
+    "model"
+   ],
+   "max_tokens": 200,
+   "model": "claude-haiku-4-5"
+  },
+  "MATCH · _justificar": {
+   "_claves": [
+    "max_tokens",
+    "messages",
+    "model",
+    "system",
+    "thinking",
+    "tool_choice",
+    "tools"
+   ],
+   "max_tokens": 900,
+   "model": "claude-sonnet-5",
+   "thinking": {
+    "type": "disabled"
+   },
+   "tool_choice": {
+    "name": "explicar_match",
+    "type": "tool"
+   }
+  },
+  "MATCH · _refine_brief": {
+   "_claves": [
+    "max_tokens",
+    "messages",
+    "model",
+    "system",
+    "thinking"
+   ],
+   "max_tokens": 200,
+   "model": "claude-sonnet-5",
+   "thinking": {
+    "type": "disabled"
+   }
+  },
+  "PREFERENCIAS · extraer_preferencias": {
+   "_claves": [
+    "max_tokens",
+    "messages",
+    "model",
+    "system",
+    "thinking",
+    "tool_choice",
+    "tools"
+   ],
+   "max_tokens": 400,
+   "model": "claude-sonnet-5",
+   "thinking": {
+    "type": "disabled"
+   },
+   "tool_choice": {
+    "name": "registrar_preferencias",
+    "type": "tool"
+   }
+  },
+  "VISION · extract_ficha_from_b64": {
+   "_claves": [
+    "max_tokens",
+    "messages",
+    "model",
+    "system",
+    "thinking",
+    "tool_choice",
+    "tools"
+   ],
+   "max_tokens": 1024,
+   "model": "claude-sonnet-5",
+   "thinking": {
+    "type": "disabled"
+   },
+   "tool_choice": {
+    "name": "registrar_ficha_visual",
+    "type": "tool"
+   }
+  }
+ }
+}

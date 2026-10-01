@@ -1,0 +1,3820 @@
+{
+ "_origen": "Respuestas REALES de claude-sonnet-4-5 / claude-sonnet-5 / claude-sonnet-5-5 (arnés de paridad del chat, 2026-09-30) sobre INVENTARIO SINTÉTICO. Paneles reconstruidos con construir_panel y verificados contra los grabados. No es inventario real.",
+ "casos": [
+  {
+   "id": "claude-sonnet-4-5-20250929/paridad#1/encaje_lidera",
+   "modelo": "claude-sonnet-4-5-20250929",
+   "caso": "encaje_lidera",
+   "reply": "Busqué cerca de la Estación Quitumbe y encontré **3 inmuebles registrados** — un arriendo y dos en venta. El más cercano está a **~167 m** de la estación (menos de 2 min a pie), lo que te pone prácticamente encima del Metro de Quito.\n\n**Lo que coincide con lo que buscas:**\n\nTodos tienen el Metro de Quito (estación Quitumbe) a distancia caminable:\n\n✅ **Av. Mariscal Sucre S48-20 y Quitumbe Ñan** — a ~167 m de la estación (~2 min a pie)  \n   Arriendo $380/mes · Caminabilidad 72 (calculada sobre los comercios reales de la zona)\n\n✅ **Calle Amaru Ñan S45-110** — a ~513 m de la estación (~6 min a pie)  \n   Venta $78,000 · Caminabilidad 68 (calculada sobre los comercios reales de la zona)\n\n✅ **Pasaje Turubamba S50-15** — a ~1.5 km de la estación (~19 min a pie)  \n   Venta $95,000 · Casa · Caminabilidad 55 (calculada sobre los comercios reales de la zona)\n\n**¿Qué te interesa más: arrendar o comprar? ¿O quieres que te cuente el detalle de alguno de estos inmuebles?**",
+   "preferencias": {
+    "transporte": true
+   },
+   "cards": [
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 380.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 2,
+     "caminabilidad": 72,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0009-0000-4000-8000-000000000009",
+     "direccion": "Calle Amaru Ñan S45-110, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "VENTA",
+     "precio": 78000.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 3,
+     "caminabilidad": 68,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0010-0000-4000-8000-000000000010",
+     "direccion": "Pasaje Turubamba S50-15, Quitumbe, Quito",
+     "tipo_activo": "Casa",
+     "operacion": "VENTA",
+     "precio": 95000.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 3,
+     "caminabilidad": 55,
+     "caminabilidad_fuente": "osm"
+    }
+   ],
+   "descartadas": [],
+   "vistas": [
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "precio": 380,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0009-0000-4000-8000-000000000009",
+     "direccion": "Calle Amaru Ñan S45-110, Quitumbe, Quito",
+     "precio": 78000,
+     "tipo_activo": "Departamento",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0010-0000-4000-8000-000000000010",
+     "direccion": "Pasaje Turubamba S50-15, Quitumbe, Quito",
+     "precio": 95000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    }
+   ]
+  },
+  {
+   "id": "claude-sonnet-4-5-20250929/paridad#1/tipo_pedido_no_se_estira",
+   "modelo": "claude-sonnet-4-5-20250929",
+   "caso": "tipo_pedido_no_se_estira",
+   "reply": "Encontré un departamento en Cumbayá, pero tengo que ser directo contigo: **se pasa $60,000 de tu tope de $150,000**.\n\n⚠️ **Av. Interoceánica y Chimborazo** — $210,000 (sobre tu presupuesto por $60,000)  \n• Caminabilidad 70, calculada sobre los comercios reales de la zona  \n• Tiene 3 dormitorios (pediste 2)  \n• Es el único departamento en venta que tengo registrado en Cumbayá ahora mismo\n\n**La realidad de Cumbayá**: es un valle residencial con precios más altos que el promedio de Quito. Los departamentos de 2 dormitorios en tu rango de $150,000 son escasos en esta zona.\n\n**¿Qué te parece si exploramos alternativas?**  \n• Puedo mostrarte departamentos de 2 dormitorios en $150,000 en **otras zonas de Quito** (norte, centro-norte) con mejor conectividad al Metro  \n• O si Cumbayá es innegociable, te cuento más sobre este departamento (aunque exceda tu presupuesto) para que evalúes si vale la pena estirarte  \n• O ampliamos el presupuesto y vemos qué más hay en el valle\n\n¿Qué prefieres?",
+   "preferencias": {
+    "tipo_inmueble": "departamento",
+    "dormitorios": 2,
+    "operacion": "venta",
+    "presupuesto_max": 150000.0
+   },
+   "cards": [
+    {
+     "id": "5e0a0014-0000-4000-8000-000000000014",
+     "direccion": "Av. Interoceánica y Chimborazo, Cumbayá, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "VENTA",
+     "precio": 210000.0,
+     "encaje": 46,
+     "encaje_razones": [
+      {
+       "texto": "Sobre tu tope por $60,000 ($210,000 vs $150,000)",
+       "cumple": "bajo",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Tiene 3 dormitorios, pediste 2",
+       "cumple": "parcial",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 3,
+     "caminabilidad": 70,
+     "caminabilidad_fuente": "osm"
+    }
+   ],
+   "descartadas": [],
+   "vistas": [
+    {
+     "id": "5e0a0011-0000-4000-8000-000000000011",
+     "direccion": "Calle Francisco de Orellana 210, Cumbayá, Quito",
+     "precio": 145000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0012-0000-4000-8000-000000000012",
+     "direccion": "Vía Lumbisí y Pampite, Cumbayá, Quito",
+     "precio": 185000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0013-0000-4000-8000-000000000013",
+     "direccion": "Camino a Lumbisí km 2, Cumbayá, Quito",
+     "precio": 320000,
+     "tipo_activo": "Quinta",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0014-0000-4000-8000-000000000014",
+     "direccion": "Av. Interoceánica y Chimborazo, Cumbayá, Quito",
+     "precio": 210000,
+     "tipo_activo": "Departamento",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0015-0000-4000-8000-000000000015",
+     "direccion": "Calle Pampite E5-40, Cumbayá, Quito",
+     "precio": 139000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    }
+   ]
+  },
+  {
+   "id": "claude-sonnet-4-5-20250929/paridad#1/presupuesto_no_se_ablanda+zona",
+   "modelo": "claude-sonnet-4-5-20250929",
+   "caso": "presupuesto_no_se_ablanda+zona",
+   "reply": "Excelente elección — La Floresta y La Mariscal son de lo más caminable de Quito, perfecto para vivir sin carro. 🚶‍♂️\n\nEncontré **5 opciones: 4 dentro de tu tope de $700 y 1 que se pasa por $10**. Las ordeno por encaje con lo que buscas (departamento, que acepte a tu perro, dentro de presupuesto):\n\n**1. Av. Coruña N26-110 y Valladolid, La Floresta** · $650/mes\n✅ Dentro de tu presupuesto ($650 ≤ $700)  \n✅ Acepta mascotas  \n✅ Caminabilidad 90, calculada sobre los comercios reales de la zona — tienes todo a pie\n\n**2. Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe** · $380/mes  \n✅ Dentro de tu presupuesto ($380 ≤ $700)  \n✅ Acepta mascotas  \n✅ Caminabilidad 72, calculada sobre los comercios reales — zona más residencial, pero lo básico está cerca\n\n**3. Juan León Mera N23-45 y Wilson, La Mariscal** · $700/mes  \n✅ Dentro de tu presupuesto ($700 ≤ $700)  \n✅ Caminabilidad 95, calculada sobre los comercios reales — de las más caminables de Quito  \n⚠️ No tengo confirmación de que acepte mascotas (calculado sobre 2 de las 3 cosas que pediste)\n\n**4. Ladrón de Guevara E11-20 y Coruña, La Floresta** · $710/mes  \n⚠️ Se pasa $10 de tu tope ($710 vs $700)  \n✅ Acepta mascotas  \n✅ Caminabilidad 86, calculada sobre los comercios reales de la zona\n\n**5. Reina Victoria N24-150 y Lizardo García, La Mariscal** · $580/mes  \n✅ Dentro de tu presupuesto ($580 ≤ $700)  \n✅ Caminabilidad 93, calculada sobre los comercios reales  \n⚠️ No acepta mascotas\n\n**El pico:** las dos primeras confirman que aceptan a tu perro Y están dentro de tu presupuesto — la de La Floresta ($650) te deja margen, y la de Quitumbe ($380) te ahorra bastante, aunque queda más al sur.\n\n¿Quieres que te cuente el detalle de alguna (qué incluye, dormitorios, amenidades), o te conecto con el corredor para visitarlas? 🏡",
+   "preferencias": {
+    "tipo_inmueble": "departamento",
+    "operacion": "arriendo",
+    "acepta_mascotas": true,
+    "presupuesto_max": 700.0
+   },
+   "cards": [
+    {
+     "id": "5e0a0001-0000-4000-8000-000000000001",
+     "direccion": "Av. Coruña N26-110 y Valladolid, La Floresta, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 650.0,
+     "encaje": 100,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($650 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 90,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 380.0,
+     "encaje": 100,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($380 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 72,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0002-0000-4000-8000-000000000002",
+     "direccion": "Juan León Mera N23-45 y Wilson, La Mariscal, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 700.0,
+     "encaje": 86,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($700 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 1,
+     "caminabilidad": 95,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0003-0000-4000-8000-000000000003",
+     "direccion": "Ladrón de Guevara E11-20 y Coruña, La Floresta, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 710.0,
+     "encaje": 74,
+     "encaje_razones": [
+      {
+       "texto": "Sobre tu tope por $10 ($710 vs $700)",
+       "cumple": "parcial",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 86,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0006-0000-4000-8000-000000000006",
+     "direccion": "Reina Victoria N24-150 y Lizardo García, La Mariscal, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 580.0,
+     "encaje": 71,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($580 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "No acepta mascotas",
+       "cumple": "bajo",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 1,
+     "caminabilidad": 93,
+     "caminabilidad_fuente": "osm"
+    }
+   ],
+   "descartadas": [],
+   "vistas": [
+    {
+     "id": "5e0a0001-0000-4000-8000-000000000001",
+     "direccion": "Av. Coruña N26-110 y Valladolid, La Floresta, Quito",
+     "precio": 650,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0003-0000-4000-8000-000000000003",
+     "direccion": "Ladrón de Guevara E11-20 y Coruña, La Floresta, Quito",
+     "precio": 710,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0007-0000-4000-8000-000000000007",
+     "direccion": "Guipúzcoa E14-30 y Lugo, La Floresta, Quito",
+     "precio": 260000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0002-0000-4000-8000-000000000002",
+     "direccion": "Juan León Mera N23-45 y Wilson, La Mariscal, Quito",
+     "precio": 700,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0006-0000-4000-8000-000000000006",
+     "direccion": "Reina Victoria N24-150 y Lizardo García, La Mariscal, Quito",
+     "precio": 580,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "precio": 380,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    }
+   ]
+  },
+  {
+   "id": "claude-sonnet-4-5-20250929/reps#1/encaje_lidera",
+   "modelo": "claude-sonnet-4-5-20250929",
+   "caso": "encaje_lidera",
+   "reply": "Perfecto — conozco Quitumbe y tengo tres inmuebles registrados en el sector. Antes de mostrártelos, déjame preguntarte: **¿buscas arrendar o comprar?** (tengo opciones de ambas) y **¿cuál es tu prioridad: estar lo más cerca posible del Metro, o también te importa el presupuesto o el tipo de inmueble?**\n\nCon eso te cuento qué tanto encaja cada uno con lo que necesitas. 🏡",
+   "preferencias": {
+    "transporte": true
+   },
+   "cards": [
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 380.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 2,
+     "caminabilidad": 72,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0009-0000-4000-8000-000000000009",
+     "direccion": "Calle Amaru Ñan S45-110, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "VENTA",
+     "precio": 78000.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 3,
+     "caminabilidad": 68,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0010-0000-4000-8000-000000000010",
+     "direccion": "Pasaje Turubamba S50-15, Quitumbe, Quito",
+     "tipo_activo": "Casa",
+     "operacion": "VENTA",
+     "precio": 95000.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 3,
+     "caminabilidad": 55,
+     "caminabilidad_fuente": "osm"
+    }
+   ],
+   "descartadas": [],
+   "vistas": [
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "precio": 380,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0009-0000-4000-8000-000000000009",
+     "direccion": "Calle Amaru Ñan S45-110, Quitumbe, Quito",
+     "precio": 78000,
+     "tipo_activo": "Departamento",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0010-0000-4000-8000-000000000010",
+     "direccion": "Pasaje Turubamba S50-15, Quitumbe, Quito",
+     "precio": 95000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    }
+   ]
+  },
+  {
+   "id": "claude-sonnet-4-5-20250929/reps#1/presupuesto_no_se_ablanda+zona",
+   "modelo": "claude-sonnet-4-5-20250929",
+   "caso": "presupuesto_no_se_ablanda+zona",
+   "reply": "Excelente elección — La Floresta y La Mariscal son dos de los barrios más caminables de Quito, perfectos para vivir sin carro. 🚶‍♂️\n\nEncontré **5 opciones: 4 dentro de tu tope de $700 y 1 que se pasa por $10**. Todas son departamentos en arriendo, y te las ordeno por encaje con lo que buscas:\n\n✅ **Av. Coruña N26-110 y Valladolid, La Floresta** · $650/mes  \n   · Dentro de tu presupuesto  \n   · Acepta mascotas  \n   · Caminabilidad 90, calculada sobre los comercios reales de la zona\n\n✅ **Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe** · $380/mes  \n   · Dentro de tu presupuesto  \n   · Acepta mascotas  \n   · Caminabilidad 72, calculada sobre los comercios reales de la zona  \n   · *(Esta opción está en Quitumbe, zona sur — la incluyo porque acepta mascotas y está muy por debajo de tu tope)*\n\n✅ **Juan León Mera N23-45 y Wilson, La Mariscal** · $700/mes  \n   · Dentro de tu presupuesto (justo en tu tope)  \n   · Caminabilidad 95, calculada sobre los comercios reales de la zona  \n   · *(No tengo confirmación de si acepta mascotas — habría que verificarlo con el corredor)*\n\n⚠️ **Ladrón de Guevara E11-20 y Coruña, La Floresta** · $710/mes  \n   · Se pasa $10 de tu tope  \n   · Acepta mascotas  \n   · Caminabilidad 86, calculada sobre los comercios reales de la zona\n\n✅ **Reina Victoria N24-150 y Lizardo García, La Mariscal** · $580/mes  \n   · Dentro de tu presupuesto  \n   · Caminabilidad 93, calculada sobre los comercios reales de la zona  \n   · ⚠️ No acepta mascotas\n\n**El pico:** La Floresta y La Mariscal son de lo más caminable que hay en Quito — con tu perro tienes parques, cafés y lo cotidiano a pocos pasos, y sin carro te mueves perfecto.\n\n¿Quieres que profundice en alguna de estas opciones (te cuento el detalle del inmueble y cómo es vivir en esa cuadra), o te conecto con el corredor para coordinar visitas?",
+   "preferencias": {
+    "tipo_inmueble": "departamento",
+    "operacion": "arriendo",
+    "acepta_mascotas": true,
+    "presupuesto_max": 700.0
+   },
+   "cards": [
+    {
+     "id": "5e0a0001-0000-4000-8000-000000000001",
+     "direccion": "Av. Coruña N26-110 y Valladolid, La Floresta, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 650.0,
+     "encaje": 100,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($650 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 90,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 380.0,
+     "encaje": 100,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($380 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 72,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0002-0000-4000-8000-000000000002",
+     "direccion": "Juan León Mera N23-45 y Wilson, La Mariscal, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 700.0,
+     "encaje": 86,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($700 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 1,
+     "caminabilidad": 95,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0003-0000-4000-8000-000000000003",
+     "direccion": "Ladrón de Guevara E11-20 y Coruña, La Floresta, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 710.0,
+     "encaje": 74,
+     "encaje_razones": [
+      {
+       "texto": "Sobre tu tope por $10 ($710 vs $700)",
+       "cumple": "parcial",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 86,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0006-0000-4000-8000-000000000006",
+     "direccion": "Reina Victoria N24-150 y Lizardo García, La Mariscal, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 580.0,
+     "encaje": 71,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($580 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "No acepta mascotas",
+       "cumple": "bajo",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 1,
+     "caminabilidad": 93,
+     "caminabilidad_fuente": "osm"
+    }
+   ],
+   "descartadas": [],
+   "vistas": [
+    {
+     "id": "5e0a0001-0000-4000-8000-000000000001",
+     "direccion": "Av. Coruña N26-110 y Valladolid, La Floresta, Quito",
+     "precio": 650,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0003-0000-4000-8000-000000000003",
+     "direccion": "Ladrón de Guevara E11-20 y Coruña, La Floresta, Quito",
+     "precio": 710,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0007-0000-4000-8000-000000000007",
+     "direccion": "Guipúzcoa E14-30 y Lugo, La Floresta, Quito",
+     "precio": 260000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0002-0000-4000-8000-000000000002",
+     "direccion": "Juan León Mera N23-45 y Wilson, La Mariscal, Quito",
+     "precio": 700,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0006-0000-4000-8000-000000000006",
+     "direccion": "Reina Victoria N24-150 y Lizardo García, La Mariscal, Quito",
+     "precio": 580,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "precio": 380,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    }
+   ]
+  },
+  {
+   "id": "claude-sonnet-4-5-20250929/reps#2/encaje_lidera",
+   "modelo": "claude-sonnet-4-5-20250929",
+   "caso": "encaje_lidera",
+   "reply": "Busqué cerca de la Estación Quitumbe y encontré **3 inmuebles registrados** a distintas distancias. El más cercano está a ~167 metros de la estación (menos de 2 minutos a pie), lo que te pone prácticamente al lado del Metro de Quito — sales sin carro y estás conectado al norte en un par de paradas.\n\n**Qué encontré:**\n\n✅ **Un arriendo a $380/mes** (Av. Mariscal Sucre S48-20 y Quitumbe Ñan) — el más cercano a la estación, a ~167 m  \n✅ **Dos opciones de compra**: una a $78,000 (Calle Amaru Ñan, ~513 m de la estación) y otra casa a $95,000 (Pasaje Turubamba, ~1.5 km)\n\nLas caminabilidades van de 55 a 72 (calculadas sobre los comercios reales de la zona), lo que significa que tienes lo cotidiano a distancia razonable, especialmente en las opciones más cercanas a la estación.\n\n**¿Qué te interesa más: arrendar o comprar? ¿Y cuánto espacio necesitas (dormitorios, m²)?** Con eso te cuento el detalle de las que mejor encajen.",
+   "preferencias": {
+    "transporte": true
+   },
+   "cards": [
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 380.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 2,
+     "caminabilidad": 72,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0009-0000-4000-8000-000000000009",
+     "direccion": "Calle Amaru Ñan S45-110, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "VENTA",
+     "precio": 78000.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 3,
+     "caminabilidad": 68,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0010-0000-4000-8000-000000000010",
+     "direccion": "Pasaje Turubamba S50-15, Quitumbe, Quito",
+     "tipo_activo": "Casa",
+     "operacion": "VENTA",
+     "precio": 95000.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 3,
+     "caminabilidad": 55,
+     "caminabilidad_fuente": "osm"
+    }
+   ],
+   "descartadas": [],
+   "vistas": [
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "precio": 380,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0009-0000-4000-8000-000000000009",
+     "direccion": "Calle Amaru Ñan S45-110, Quitumbe, Quito",
+     "precio": 78000,
+     "tipo_activo": "Departamento",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0010-0000-4000-8000-000000000010",
+     "direccion": "Pasaje Turubamba S50-15, Quitumbe, Quito",
+     "precio": 95000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    }
+   ]
+  },
+  {
+   "id": "claude-sonnet-4-5-20250929/reps#2/presupuesto_no_se_ablanda+zona",
+   "modelo": "claude-sonnet-4-5-20250929",
+   "caso": "presupuesto_no_se_ablanda+zona",
+   "reply": "Excelente elección — La Floresta y La Mariscal son dos de los barrios más caminables de Quito, perfectos para vivir sin carro. 🚶‍♂️\n\nEncontré **5 opciones: 4 dentro de tu tope de $700 y 1 que se pasa por $10**. Las dos zonas que pediste tienen caminabilidad calculada sobre los comercios reales del sector (entre 86 y 95), así que lo cotidiano lo resuelves a pie.\n\n**Las opciones que encajan:**\n\n✅ **Av. Coruña N26-110 y Valladolid, La Floresta** · $650/mes  \n   · Dentro de tu presupuesto  \n   · Acepta mascotas  \n   · Caminabilidad 90 (comercios reales de la zona)\n\n✅ **Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe** · $380/mes  \n   · Dentro de tu presupuesto  \n   · Acepta mascotas  \n   · Caminabilidad 72 (comercios reales de la zona)\n\n✅ **Juan León Mera N23-45 y Wilson, La Mariscal** · $700/mes  \n   · Justo en tu tope  \n   · Caminabilidad 95 (comercios reales de la zona) — la más alta  \n   · *Calculado sobre 2 de las 3 cosas que pediste* (no tengo dato de mascotas)\n\n⚠️ **Ladrón de Guevara E11-20 y Coruña, La Floresta** · $710/mes  \n   · Se pasa $10 de tu tope  \n   · Acepta mascotas  \n   · Caminabilidad 86 (comercios reales de la zona)\n\n✅ **Reina Victoria N24-150 y Lizardo García, La Mariscal** · $580/mes  \n   · Dentro de tu presupuesto  \n   · Caminabilidad 93 (comercios reales de la zona)  \n   · No acepta mascotas\n\n**Mi lectura:** Las dos primeras confirman que aceptan a tu perro y están dentro del presupuesto. La de La Floresta ($650) te deja margen y está en pleno barrio bohemio; la de Quitumbe ($380) es mucho más económica pero con caminabilidad menor (igual funcional sin carro).\n\n¿Quieres que profundice en alguna, o te conecto con el corredor para coordinar visitas?",
+   "preferencias": {
+    "tipo_inmueble": "departamento",
+    "operacion": "arriendo",
+    "acepta_mascotas": true,
+    "presupuesto_max": 700.0
+   },
+   "cards": [
+    {
+     "id": "5e0a0001-0000-4000-8000-000000000001",
+     "direccion": "Av. Coruña N26-110 y Valladolid, La Floresta, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 650.0,
+     "encaje": 100,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($650 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 90,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 380.0,
+     "encaje": 100,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($380 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 72,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0002-0000-4000-8000-000000000002",
+     "direccion": "Juan León Mera N23-45 y Wilson, La Mariscal, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 700.0,
+     "encaje": 86,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($700 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 1,
+     "caminabilidad": 95,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0003-0000-4000-8000-000000000003",
+     "direccion": "Ladrón de Guevara E11-20 y Coruña, La Floresta, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 710.0,
+     "encaje": 74,
+     "encaje_razones": [
+      {
+       "texto": "Sobre tu tope por $10 ($710 vs $700)",
+       "cumple": "parcial",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 86,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0006-0000-4000-8000-000000000006",
+     "direccion": "Reina Victoria N24-150 y Lizardo García, La Mariscal, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 580.0,
+     "encaje": 71,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($580 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "No acepta mascotas",
+       "cumple": "bajo",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 1,
+     "caminabilidad": 93,
+     "caminabilidad_fuente": "osm"
+    }
+   ],
+   "descartadas": [],
+   "vistas": [
+    {
+     "id": "5e0a0001-0000-4000-8000-000000000001",
+     "direccion": "Av. Coruña N26-110 y Valladolid, La Floresta, Quito",
+     "precio": 650,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0003-0000-4000-8000-000000000003",
+     "direccion": "Ladrón de Guevara E11-20 y Coruña, La Floresta, Quito",
+     "precio": 710,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0007-0000-4000-8000-000000000007",
+     "direccion": "Guipúzcoa E14-30 y Lugo, La Floresta, Quito",
+     "precio": 260000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0002-0000-4000-8000-000000000002",
+     "direccion": "Juan León Mera N23-45 y Wilson, La Mariscal, Quito",
+     "precio": 700,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0006-0000-4000-8000-000000000006",
+     "direccion": "Reina Victoria N24-150 y Lizardo García, La Mariscal, Quito",
+     "precio": 580,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "precio": 380,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    }
+   ]
+  },
+  {
+   "id": "claude-sonnet-4-5-20250929/reps#3/encaje_lidera",
+   "modelo": "claude-sonnet-4-5-20250929",
+   "caso": "encaje_lidera",
+   "reply": "Perfecto — Quitumbe es un sector con buena conectividad al Metro de Quito (estación Quitumbe, terminal sur de la Línea 1), y tengo tres inmuebles registrados en la zona. Dos están en venta y uno en arriendo, todos con caminabilidad calculada sobre los comercios reales del sector.\n\nAntes de mostrártelos, ¿qué te importa más: **estar lo más cerca posible del Metro**, **el presupuesto** (¿comprar o arrendar?), o **el tipo de inmueble** (departamento vs casa)?\n\nCon eso te ordeno las opciones por lo que de verdad te sirve. 🏡",
+   "preferencias": {
+    "transporte": true
+   },
+   "cards": [
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 380.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 2,
+     "caminabilidad": 72,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0009-0000-4000-8000-000000000009",
+     "direccion": "Calle Amaru Ñan S45-110, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "VENTA",
+     "precio": 78000.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 3,
+     "caminabilidad": 68,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0010-0000-4000-8000-000000000010",
+     "direccion": "Pasaje Turubamba S50-15, Quitumbe, Quito",
+     "tipo_activo": "Casa",
+     "operacion": "VENTA",
+     "precio": 95000.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 3,
+     "caminabilidad": 55,
+     "caminabilidad_fuente": "osm"
+    }
+   ],
+   "descartadas": [],
+   "vistas": [
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "precio": 380,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0009-0000-4000-8000-000000000009",
+     "direccion": "Calle Amaru Ñan S45-110, Quitumbe, Quito",
+     "precio": 78000,
+     "tipo_activo": "Departamento",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0010-0000-4000-8000-000000000010",
+     "direccion": "Pasaje Turubamba S50-15, Quitumbe, Quito",
+     "precio": 95000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    }
+   ]
+  },
+  {
+   "id": "claude-sonnet-4-5-20250929/reps#3/presupuesto_no_se_ablanda+zona",
+   "modelo": "claude-sonnet-4-5-20250929",
+   "caso": "presupuesto_no_se_ablanda+zona",
+   "reply": "Excelente elección — ambas zonas son muy caminables y están bien conectadas, perfectas para vivir sin carro. 🚶‍♂️\n\nEncontré **4 opciones: 3 dentro de tu tope de $700 y 1 que se pasa por $10.** Las dos primeras confirman que aceptan mascotas, que es lo más importante para ti y tu perro.\n\n**✅ 1. Av. Coruña N26-110 y Valladolid, La Floresta** — $650/mes  \n✅ Dentro de tu presupuesto ($650 ≤ $700)  \n✅ Acepta mascotas  \n✅ Caminabilidad 90, calculada sobre los comercios reales de la zona — tienes todo a pie\n\n**✅ 2. Juan León Mera N23-45 y Wilson, La Mariscal** — $700/mes  \n✅ Dentro de tu presupuesto ($700 ≤ $700)  \n✅ Caminabilidad 95, calculada sobre los comercios reales de la zona — de las más altas  \n⚠️ No tengo confirmación de mascotas en la ficha (puedes preguntarle al corredor)\n\n**⚠️ 3. Ladrón de Guevara E11-20 y Coruña, La Floresta** — $710/mes (se pasa $10 de tu tope)  \n✅ Acepta mascotas  \n✅ Caminabilidad 86, calculada sobre los comercios reales de la zona  \n⚠️ Sobre tu tope por $10 ($710 vs $700)\n\n**✅ 4. Reina Victoria N24-150 y Lizardo García, La Mariscal** — $580/mes  \n✅ Dentro de tu presupuesto ($580 ≤ $700) — la más económica  \n✅ Caminabilidad 93, calculada sobre los comercios reales de la zona  \n❌ No acepta mascotas\n\n---\n\n**Mi recomendación:** la primera (Av. Coruña, La Floresta) encaja perfecto — acepta a tu perro, está dentro del presupuesto y es muy caminable. La tercera (Ladrón de Guevara) también acepta mascotas, pero se pasa $10; si esos $10 no te pesan, vale la pena considerarla.\n\n¿Quieres que te cuente más de alguna en particular, o te conecto con el corredor para coordinar visitas? 🏡",
+   "preferencias": {
+    "tipo_inmueble": "departamento",
+    "operacion": "arriendo",
+    "acepta_mascotas": true,
+    "presupuesto_max": 700.0
+   },
+   "cards": [
+    {
+     "id": "5e0a0001-0000-4000-8000-000000000001",
+     "direccion": "Av. Coruña N26-110 y Valladolid, La Floresta, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 650.0,
+     "encaje": 100,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($650 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 90,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0002-0000-4000-8000-000000000002",
+     "direccion": "Juan León Mera N23-45 y Wilson, La Mariscal, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 700.0,
+     "encaje": 86,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($700 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 1,
+     "caminabilidad": 95,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0003-0000-4000-8000-000000000003",
+     "direccion": "Ladrón de Guevara E11-20 y Coruña, La Floresta, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 710.0,
+     "encaje": 74,
+     "encaje_razones": [
+      {
+       "texto": "Sobre tu tope por $10 ($710 vs $700)",
+       "cumple": "parcial",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 86,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0006-0000-4000-8000-000000000006",
+     "direccion": "Reina Victoria N24-150 y Lizardo García, La Mariscal, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 580.0,
+     "encaje": 71,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($580 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "No acepta mascotas",
+       "cumple": "bajo",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 1,
+     "caminabilidad": 93,
+     "caminabilidad_fuente": "osm"
+    }
+   ],
+   "descartadas": [],
+   "vistas": [
+    {
+     "id": "5e0a0003-0000-4000-8000-000000000003",
+     "direccion": "Ladrón de Guevara E11-20 y Coruña, La Floresta, Quito",
+     "precio": 710,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0007-0000-4000-8000-000000000007",
+     "direccion": "Guipúzcoa E14-30 y Lugo, La Floresta, Quito",
+     "precio": 260000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0001-0000-4000-8000-000000000001",
+     "direccion": "Av. Coruña N26-110 y Valladolid, La Floresta, Quito",
+     "precio": 650,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0002-0000-4000-8000-000000000002",
+     "direccion": "Juan León Mera N23-45 y Wilson, La Mariscal, Quito",
+     "precio": 700,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0006-0000-4000-8000-000000000006",
+     "direccion": "Reina Victoria N24-150 y Lizardo García, La Mariscal, Quito",
+     "precio": 580,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    }
+   ]
+  },
+  {
+   "id": "claude-sonnet-5/paridad#1/encaje_lidera",
+   "modelo": "claude-sonnet-5",
+   "caso": "encaje_lidera",
+   "reply": "Encontré tres inmuebles registrados en el sector de Quitumbe, con caminabilidad calculada sobre los comercios reales de la zona (OpenStreetMap) — no es estimación:\n\n- **Av. Mariscal Sucre S48-20 y Quitumbe Ñan** — arriendo $380, caminabilidad 72 (la más alta de las tres).\n- **Calle Amaru Ñan S45-110** — venta $78,000, caminabilidad 68.\n- **Pasaje Turubamba S50-15** — venta $95,000, caminabilidad 55 (es una casa, no depto).\n\nOjo con algo importante: para ninguno de los tres tengo todavía cargada la conectividad hacia la estación del Metro (no es que no la tengan, simplemente no está registrada en su ficha) — así que no puedo decirte a cuántos minutos caminando queda la estación Quitumbe exactamente para cada uno. Solo sé que están en el sector.\n\n¿Cómo prefieres seguir?\n1. Te cuento más del arriendo de $380 (es el único en alquiler de los tres).\n2. Buscamos algo con dormitorios/presupuesto específico.\n3. Si tienes tu ubicación activada, reviso qué tan lejos quedan realmente de la estación caminando.",
+   "preferencias": {
+    "transporte": true
+   },
+   "cards": [
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 380.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 2,
+     "caminabilidad": 72,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0009-0000-4000-8000-000000000009",
+     "direccion": "Calle Amaru Ñan S45-110, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "VENTA",
+     "precio": 78000.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 3,
+     "caminabilidad": 68,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0010-0000-4000-8000-000000000010",
+     "direccion": "Pasaje Turubamba S50-15, Quitumbe, Quito",
+     "tipo_activo": "Casa",
+     "operacion": "VENTA",
+     "precio": 95000.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 3,
+     "caminabilidad": 55,
+     "caminabilidad_fuente": "osm"
+    }
+   ],
+   "descartadas": [],
+   "vistas": [
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "precio": 380,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0009-0000-4000-8000-000000000009",
+     "direccion": "Calle Amaru Ñan S45-110, Quitumbe, Quito",
+     "precio": 78000,
+     "tipo_activo": "Departamento",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0010-0000-4000-8000-000000000010",
+     "direccion": "Pasaje Turubamba S50-15, Quitumbe, Quito",
+     "precio": 95000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    }
+   ]
+  },
+  {
+   "id": "claude-sonnet-5/paridad#1/tipo_pedido_no_se_estira",
+   "modelo": "claude-sonnet-5",
+   "caso": "tipo_pedido_no_se_estira",
+   "reply": "Te cuento cómo está el panorama en Cumbayá para lo que buscas: departamento, 2 dormitorios, hasta $150,000.\n\nCon ese filtro, **ninguna opción entra en tu tope**. Lo que tengo registrado en Cumbayá es:\n\n⚠️ Av. Interoceánica y Chimborazo, Cumbayá — se pasa **$60,000 de tu tope** ($210,000 vs $150,000)\n⚠️ Es un departamento, como pediste, pero tiene **3 dormitorios** (pediste 2)\n\nEsa es la única opción de tipo departamento que hay registrada en el sector; el resto del inventario en Cumbayá son casas y una quinta, que se salen de lo que pediste (ni son departamento, ni entran en presupuesto).\n\n¿Cómo quieres seguir?\n- ¿Te muestro esa opción de todos modos (aunque se pase del tope) por si quieres verla?\n- ¿Ampliamos la búsqueda a otra zona con más oferta de departamentos en ese rango?\n- ¿Subimos un poco el tope de presupuesto para ver qué aparece?",
+   "preferencias": {
+    "tipo_inmueble": "departamento",
+    "dormitorios": 2,
+    "operacion": "venta",
+    "presupuesto_max": 150000.0
+   },
+   "cards": [
+    {
+     "id": "5e0a0014-0000-4000-8000-000000000014",
+     "direccion": "Av. Interoceánica y Chimborazo, Cumbayá, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "VENTA",
+     "precio": 210000.0,
+     "encaje": 46,
+     "encaje_razones": [
+      {
+       "texto": "Sobre tu tope por $60,000 ($210,000 vs $150,000)",
+       "cumple": "bajo",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Tiene 3 dormitorios, pediste 2",
+       "cumple": "parcial",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 3,
+     "caminabilidad": 70,
+     "caminabilidad_fuente": "osm"
+    }
+   ],
+   "descartadas": [],
+   "vistas": [
+    {
+     "id": "5e0a0011-0000-4000-8000-000000000011",
+     "direccion": "Calle Francisco de Orellana 210, Cumbayá, Quito",
+     "precio": 145000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0012-0000-4000-8000-000000000012",
+     "direccion": "Vía Lumbisí y Pampite, Cumbayá, Quito",
+     "precio": 185000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0013-0000-4000-8000-000000000013",
+     "direccion": "Camino a Lumbisí km 2, Cumbayá, Quito",
+     "precio": 320000,
+     "tipo_activo": "Quinta",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0014-0000-4000-8000-000000000014",
+     "direccion": "Av. Interoceánica y Chimborazo, Cumbayá, Quito",
+     "precio": 210000,
+     "tipo_activo": "Departamento",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0015-0000-4000-8000-000000000015",
+     "direccion": "Calle Pampite E5-40, Cumbayá, Quito",
+     "precio": 139000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    }
+   ]
+  },
+  {
+   "id": "claude-sonnet-5/paridad#1/presupuesto_no_se_ablanda+zona",
+   "modelo": "claude-sonnet-5",
+   "caso": "presupuesto_no_se_ablanda+zona",
+   "reply": "Entre ambas zonas encontré **5 departamentos en arriendo**: 4 dentro de tu tope de $700 y 1 que se pasa por $10. Todos calculan caminabilidad sobre comercios reales del sector (OpenStreetMap), así que ese dato sí está verificado — no es estimación.\n\nCon perro y sin carro, así encajan (calculado sobre 3 de las 4 cosas que pediste — mascotas, precio, tipo; el transporte masivo aún no lo tengo cargado para ninguno):\n\n✅ **Av. Coruña N26-110 y Valladolid, La Floresta** — $650, acepta mascotas, caminabilidad 90 (comercios reales de la zona)\n✅ **Av. Mariscal Sucre, Quitumbe** — $380, acepta mascotas, pero caminabilidad más baja (72) y queda lejos de La Floresta/Mariscal\n✅ **Juan León Mera y Wilson, La Mariscal** — $700 (justo en tu tope), caminabilidad 95 — ojo, sin dato de mascotas\n⚠️ **Ladrón de Guevara y Coruña, La Floresta** — se pasa $10 de tu tope ($710), acepta mascotas, caminabilidad 86\n✅ **Reina Victoria y Lizardo García, La Mariscal** — $580, caminabilidad 93, pero **no acepta mascotas**\n\nSobre el Metro o transporte masivo: no tengo esa conectividad cargada para ninguno de estos cinco, así que no puedo confirmarte cercanía real — es dato pendiente, no ausencia confirmada.\n\n¿Quieres que profundice en alguno (ficha completa, fotos, contacto del corredor), o prefieres que priorice el que mejor resuelve lo de tu perro?",
+   "preferencias": {
+    "tipo_inmueble": "departamento",
+    "operacion": "arriendo",
+    "presupuesto_max": 700.0,
+    "acepta_mascotas": true,
+    "transporte": true
+   },
+   "cards": [
+    {
+     "id": "5e0a0001-0000-4000-8000-000000000001",
+     "direccion": "Av. Coruña N26-110 y Valladolid, La Floresta, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 650.0,
+     "encaje": 89,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($650 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 90,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 380.0,
+     "encaje": 89,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($380 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 72,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0002-0000-4000-8000-000000000002",
+     "direccion": "Juan León Mera N23-45 y Wilson, La Mariscal, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 700.0,
+     "encaje": 78,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($700 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 1,
+     "caminabilidad": 95,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0003-0000-4000-8000-000000000003",
+     "direccion": "Ladrón de Guevara E11-20 y Coruña, La Floresta, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 710.0,
+     "encaje": 69,
+     "encaje_razones": [
+      {
+       "texto": "Sobre tu tope por $10 ($710 vs $700)",
+       "cumple": "parcial",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 86,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0006-0000-4000-8000-000000000006",
+     "direccion": "Reina Victoria N24-150 y Lizardo García, La Mariscal, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 580.0,
+     "encaje": 66,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($580 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "No acepta mascotas",
+       "cumple": "bajo",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 1,
+     "caminabilidad": 93,
+     "caminabilidad_fuente": "osm"
+    }
+   ],
+   "descartadas": [],
+   "vistas": [
+    {
+     "id": "5e0a0001-0000-4000-8000-000000000001",
+     "direccion": "Av. Coruña N26-110 y Valladolid, La Floresta, Quito",
+     "precio": 650,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0003-0000-4000-8000-000000000003",
+     "direccion": "Ladrón de Guevara E11-20 y Coruña, La Floresta, Quito",
+     "precio": 710,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0007-0000-4000-8000-000000000007",
+     "direccion": "Guipúzcoa E14-30 y Lugo, La Floresta, Quito",
+     "precio": 260000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0002-0000-4000-8000-000000000002",
+     "direccion": "Juan León Mera N23-45 y Wilson, La Mariscal, Quito",
+     "precio": 700,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0006-0000-4000-8000-000000000006",
+     "direccion": "Reina Victoria N24-150 y Lizardo García, La Mariscal, Quito",
+     "precio": 580,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "precio": 380,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    }
+   ]
+  },
+  {
+   "id": "claude-sonnet-5/reps#1/encaje_lidera",
+   "modelo": "claude-sonnet-5",
+   "caso": "encaje_lidera",
+   "reply": "Para orientarte bien, cuéntame un poco más de lo que buscas: ¿es para arrendar o comprar, y tienes algún presupuesto o número de dormitorios en mente? Así te muestro opciones que realmente encajen.\n\nMientras tanto, dime también si quieres que te cuente primero cómo es vivir en el sector de Quitumbe (caminabilidad, servicios, conectividad), o si prefieres ir directo a ver el inventario disponible ahí.",
+   "preferencias": {},
+   "cards": [],
+   "descartadas": [],
+   "vistas": []
+  },
+  {
+   "id": "claude-sonnet-5/reps#1/presupuesto_no_se_ablanda+zona",
+   "modelo": "claude-sonnet-5",
+   "caso": "presupuesto_no_se_ablanda+zona",
+   "reply": "Encontré 5 opciones en total: 4 dentro de tu tope de $700 y 1 que se pasa un poco. Te las ordeno tal como te van a aparecer:\n\n✅ **Av. Coruña N26-110 y Valladolid, La Floresta** — $650/mes, dentro de tu presupuesto, departamento, y confirma que acepta mascotas. Caminabilidad 90 (calculada sobre los comercios reales de la zona, según OpenStreetMap) — con lo de no tener carro, eso se traduce en que prácticamente todo lo cotidiano te queda a pie.\n\n✅ **Av. Mariscal Sucre S48-20, Quitumbe** — $380/mes, dentro de tu presupuesto, departamento, acepta mascotas. Caminabilidad 72 (misma fuente), más módica en precio pero queda en otro sector de la ciudad (sur), no en La Floresta/Mariscal.\n\n⚠️ **Juan León Mera N23-45, La Mariscal** — $700/mes, justo en el límite de tu tope, departamento. Aquí solo se pudo medir 2 de las 3 cosas que pediste (presupuesto y tipo) — no tengo confirmación de si acepta mascotas, así que no puedo decirte que encaja del todo. Caminabilidad 95, la más alta de las cinco.\n\n⚠️ **Ladrón de Guevara E11-20, La Floresta** — se pasa $10 de tu tope ($710 vs $700), aunque sí es departamento y sí acepta mascotas. Caminabilidad 86.\n\n⚠️ **Reina Victoria N24-150, La Mariscal** — $580/mes, dentro de tu presupuesto, departamento, pero **no** acepta mascotas según su ficha — con tu perro, esta quedaría descartada aunque el precio y la caminabilidad (93) sean buenos.\n\nNota: en ninguna de las cinco tengo todavía datos verificados de conectividad de transporte o servicios cercanos (aparecen sin registrar), así que no puedo confirmarte aún qué tan cerca están del Metro u otros negocios puntuales.\n\n¿Quieres que profundice en alguna en particular (por ejemplo, la de Coruña, que es la que mejor encaja con presupuesto + mascota + caminabilidad), o te conecto con el corredor para agendar una visita?",
+   "preferencias": {
+    "tipo_inmueble": "departamento",
+    "operacion": "arriendo",
+    "presupuesto_max": 700.0,
+    "acepta_mascotas": true
+   },
+   "cards": [
+    {
+     "id": "5e0a0001-0000-4000-8000-000000000001",
+     "direccion": "Av. Coruña N26-110 y Valladolid, La Floresta, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 650.0,
+     "encaje": 100,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($650 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 90,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 380.0,
+     "encaje": 100,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($380 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 72,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0002-0000-4000-8000-000000000002",
+     "direccion": "Juan León Mera N23-45 y Wilson, La Mariscal, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 700.0,
+     "encaje": 86,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($700 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 1,
+     "caminabilidad": 95,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0003-0000-4000-8000-000000000003",
+     "direccion": "Ladrón de Guevara E11-20 y Coruña, La Floresta, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 710.0,
+     "encaje": 74,
+     "encaje_razones": [
+      {
+       "texto": "Sobre tu tope por $10 ($710 vs $700)",
+       "cumple": "parcial",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 86,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0006-0000-4000-8000-000000000006",
+     "direccion": "Reina Victoria N24-150 y Lizardo García, La Mariscal, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 580.0,
+     "encaje": 71,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($580 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "No acepta mascotas",
+       "cumple": "bajo",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 1,
+     "caminabilidad": 93,
+     "caminabilidad_fuente": "osm"
+    }
+   ],
+   "descartadas": [],
+   "vistas": [
+    {
+     "id": "5e0a0001-0000-4000-8000-000000000001",
+     "direccion": "Av. Coruña N26-110 y Valladolid, La Floresta, Quito",
+     "precio": 650,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0003-0000-4000-8000-000000000003",
+     "direccion": "Ladrón de Guevara E11-20 y Coruña, La Floresta, Quito",
+     "precio": 710,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0007-0000-4000-8000-000000000007",
+     "direccion": "Guipúzcoa E14-30 y Lugo, La Floresta, Quito",
+     "precio": 260000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0002-0000-4000-8000-000000000002",
+     "direccion": "Juan León Mera N23-45 y Wilson, La Mariscal, Quito",
+     "precio": 700,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0006-0000-4000-8000-000000000006",
+     "direccion": "Reina Victoria N24-150 y Lizardo García, La Mariscal, Quito",
+     "precio": 580,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "precio": 380,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    }
+   ]
+  },
+  {
+   "id": "claude-sonnet-5/reps#2/encaje_lidera",
+   "modelo": "claude-sonnet-5",
+   "caso": "encaje_lidera",
+   "reply": "Encontré 3 inmuebles registrados en Quitumbe, pero con una salvedad honesta: ninguno tiene cargada la conectividad al Metro en su ficha (no es que no haya Metro cerca, es que ese dato específico no está registrado para estos activos). Lo que sí tengo, calculado sobre los comercios reales del sector (OpenStreetMap), es la caminabilidad de cada uno:\n\n- **Av. Mariscal Sucre S48-20 y Quitumbe Ñan** — depa en arriendo, $380/mes, caminabilidad 72\n- **Calle Amaru Ñan S45-110** — depa en venta, $78,000, caminabilidad 68\n- **Pasaje Turubamba S50-15** — casa en venta, $95,000, caminabilidad 55\n\nComo no puedo confirmar con dato verificado la distancia real al Metro para ninguno, no puedo decirte cuál está \"más cerca\" de la estación sin arriesgarme a inventar.\n\n¿Te sirve que profundice en el que tiene mejor caminabilidad (el de arriendo), o prefieres que te cuente primero cómo es vivir en el sector de Quitumbe en general?",
+   "preferencias": {
+    "transporte": true
+   },
+   "cards": [
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 380.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 2,
+     "caminabilidad": 72,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0009-0000-4000-8000-000000000009",
+     "direccion": "Calle Amaru Ñan S45-110, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "VENTA",
+     "precio": 78000.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 3,
+     "caminabilidad": 68,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0010-0000-4000-8000-000000000010",
+     "direccion": "Pasaje Turubamba S50-15, Quitumbe, Quito",
+     "tipo_activo": "Casa",
+     "operacion": "VENTA",
+     "precio": 95000.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 3,
+     "caminabilidad": 55,
+     "caminabilidad_fuente": "osm"
+    }
+   ],
+   "descartadas": [],
+   "vistas": [
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "precio": 380,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0009-0000-4000-8000-000000000009",
+     "direccion": "Calle Amaru Ñan S45-110, Quitumbe, Quito",
+     "precio": 78000,
+     "tipo_activo": "Departamento",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0010-0000-4000-8000-000000000010",
+     "direccion": "Pasaje Turubamba S50-15, Quitumbe, Quito",
+     "precio": 95000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    }
+   ]
+  },
+  {
+   "id": "claude-sonnet-5/reps#2/presupuesto_no_se_ablanda+zona",
+   "modelo": "claude-sonnet-5",
+   "caso": "presupuesto_no_se_ablanda+zona",
+   "reply": "Entre La Floresta y La Mariscal tengo 5 departamentos en arriendo que aceptan mascotas (uno en Quitumbe también aparece en el motor, ya te explico por qué). Son 5 opciones en total: 4 dentro de tu tope de $700 y 1 que se pasa por $10.\n\nLa que más destaca es **Av. Coruña N26-110 y Valladolid, La Floresta** — $650/mes, departamento, acepta mascotas, y su caminabilidad de 90 está calculada sobre los comercios reales de la zona (no es estimación). Eso es relevante para ti: sin carro, moverte a pie o en transporte ahí es mucho más viable que en una zona dependiente del auto.\n\nUn resumen rápido de las 5, en el orden en que las verás:\n\n1. **Av. Coruña y Valladolid, La Floresta** — $650, acepta mascotas ✅ dentro de tope\n2. **Av. Mariscal Sucre, Quitumbe** — $380, acepta mascotas ✅ dentro de tope (pero es una zona bastante más alejada del centro, ojo)\n3. **Juan León Mera y Wilson, La Mariscal** — $700, justo en el límite, departamento (sin confirmación de mascotas en la ficha)\n4. **Ladrón de Guevara y Coruña, La Floresta** — $710, acepta mascotas, pero se pasa $10 de tu tope\n5. **Reina Victoria y Lizardo García, La Mariscal** — $580, dentro de tope, pero su ficha indica que **no acepta mascotas**\n\n¿Quieres que te cuente cómo es vivir en La Floresta o en La Mariscal (ruido, ambiente, transporte), o prefieres que profundice en alguno de estos departamentos en particular?",
+   "preferencias": {
+    "tipo_inmueble": "departamento",
+    "operacion": "arriendo",
+    "presupuesto_max": 700.0,
+    "acepta_mascotas": true,
+    "transporte": true
+   },
+   "cards": [
+    {
+     "id": "5e0a0001-0000-4000-8000-000000000001",
+     "direccion": "Av. Coruña N26-110 y Valladolid, La Floresta, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 650.0,
+     "encaje": 89,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($650 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 90,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 380.0,
+     "encaje": 89,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($380 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 72,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0002-0000-4000-8000-000000000002",
+     "direccion": "Juan León Mera N23-45 y Wilson, La Mariscal, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 700.0,
+     "encaje": 78,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($700 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 1,
+     "caminabilidad": 95,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0003-0000-4000-8000-000000000003",
+     "direccion": "Ladrón de Guevara E11-20 y Coruña, La Floresta, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 710.0,
+     "encaje": 69,
+     "encaje_razones": [
+      {
+       "texto": "Sobre tu tope por $10 ($710 vs $700)",
+       "cumple": "parcial",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 86,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0006-0000-4000-8000-000000000006",
+     "direccion": "Reina Victoria N24-150 y Lizardo García, La Mariscal, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 580.0,
+     "encaje": 66,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($580 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "No acepta mascotas",
+       "cumple": "bajo",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 1,
+     "caminabilidad": 93,
+     "caminabilidad_fuente": "osm"
+    }
+   ],
+   "descartadas": [],
+   "vistas": [
+    {
+     "id": "5e0a0001-0000-4000-8000-000000000001",
+     "direccion": "Av. Coruña N26-110 y Valladolid, La Floresta, Quito",
+     "precio": 650,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0003-0000-4000-8000-000000000003",
+     "direccion": "Ladrón de Guevara E11-20 y Coruña, La Floresta, Quito",
+     "precio": 710,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0007-0000-4000-8000-000000000007",
+     "direccion": "Guipúzcoa E14-30 y Lugo, La Floresta, Quito",
+     "precio": 260000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0002-0000-4000-8000-000000000002",
+     "direccion": "Juan León Mera N23-45 y Wilson, La Mariscal, Quito",
+     "precio": 700,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0006-0000-4000-8000-000000000006",
+     "direccion": "Reina Victoria N24-150 y Lizardo García, La Mariscal, Quito",
+     "precio": 580,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "precio": 380,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    }
+   ]
+  },
+  {
+   "id": "claude-sonnet-5/reps#3/encaje_lidera",
+   "modelo": "claude-sonnet-5",
+   "caso": "encaje_lidera",
+   "reply": "Tengo tres inmuebles registrados en el sector de Quitumbe, pero antes de mostrártelos te soy honesto: ninguno tiene cargada la conectividad de transporte en su ficha, así que no puedo confirmarte desde el sistema a cuántos minutos exactos queda cada uno de la estación del Metro de Quito (aunque sabemos que están en el sector). Lo que sí tengo verificado es la caminabilidad, calculada sobre los comercios reales de la zona (OpenStreetMap):\n\n✅ Av. Mariscal Sucre S48-20 y Quitumbe Ñan — caminabilidad 72, arriendo $380/mes\n⚠️ Calle Amaru Ñan S45-110 — caminabilidad 68, venta $78,000\n⚠️ Pasaje Turubamba S50-15 — caminabilidad 55, venta $95,000 (más alejado, es una casa)\n\nComo buscas algo cerca del transporte masivo y ninguna ficha trae ese dato confirmado, no puedo decirte con certeza cuál está objetivamente más cerca de la estación — solo que las tres están dentro del sector Quitumbe.\n\n¿Te interesa que te cuente cómo es vivir en esa zona en general, o prefieres que profundice en alguno de estos tres en particular (por ejemplo, el de arriendo)?",
+   "preferencias": {
+    "transporte": true
+   },
+   "cards": [
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 380.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 2,
+     "caminabilidad": 72,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0009-0000-4000-8000-000000000009",
+     "direccion": "Calle Amaru Ñan S45-110, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "VENTA",
+     "precio": 78000.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 3,
+     "caminabilidad": 68,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0010-0000-4000-8000-000000000010",
+     "direccion": "Pasaje Turubamba S50-15, Quitumbe, Quito",
+     "tipo_activo": "Casa",
+     "operacion": "VENTA",
+     "precio": 95000.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 3,
+     "caminabilidad": 55,
+     "caminabilidad_fuente": "osm"
+    }
+   ],
+   "descartadas": [],
+   "vistas": [
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "precio": 380,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0009-0000-4000-8000-000000000009",
+     "direccion": "Calle Amaru Ñan S45-110, Quitumbe, Quito",
+     "precio": 78000,
+     "tipo_activo": "Departamento",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0010-0000-4000-8000-000000000010",
+     "direccion": "Pasaje Turubamba S50-15, Quitumbe, Quito",
+     "precio": 95000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    }
+   ]
+  },
+  {
+   "id": "claude-sonnet-5/reps#3/presupuesto_no_se_ablanda+zona",
+   "modelo": "claude-sonnet-5",
+   "caso": "presupuesto_no_se_ablanda+zona",
+   "reply": "Entre La Floresta y La Mariscal hay 5 departamentos en arriendo registrados: 4 caben en tu tope de $700 y 1 se pasa por $10.\n\nLidero con el de Av. Coruña y Valladolid (La Floresta) — $650, acepta mascotas, caminabilidad 90 calculada sobre los comercios reales de la zona (OpenStreetMap). Es el que mejor calza de lo que sé, aunque ojo: eso está medido sobre 3 de las 4 cosas que pediste (no tengo dato de transporte masivo cercano para este).\n\nAquí el panorama completo:\n\n1. **Av. Coruña N26-110 y Valladolid, La Floresta** — $650 ✅ dentro de tu tope · departamento ✅ · acepta mascotas ✅\n2. **Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe** — $380 ✅ dentro de tu tope · departamento ✅ · acepta mascotas ✅ (nota: esta es Quitumbe, no La Floresta/Mariscal que pediste, pero la dejo por si te interesa comparar)\n3. **Juan León Mera N23-45 y Wilson, La Mariscal** — $700 ✅ dentro de tu tope (justo en el límite) · departamento ✅ — sin dato de mascotas\n4. **Ladrón de Guevara E11-20 y Coruña, La Floresta** — $710 ⚠️ se pasa $10 de tu tope · departamento ✅ · acepta mascotas ✅\n5. **Reina Victoria N24-150 y Lizardo García, La Mariscal** — $580 ✅ dentro de tu tope · departamento ✅ · ⚠️ no acepta mascotas\n\nSobre el transporte sin carro: no tengo cargada la conectividad (Metro/bus) de ninguno de estos activos todavía, así que no puedo confirmarte distancias a paradas — lo que sí tengo es la caminabilidad, que en los 5 es alta (72–95 según OpenStreetMap).\n\n¿Quieres que profundice en alguno en particular (ficha completa, fotos, contacto del corredor)?",
+   "preferencias": {
+    "tipo_inmueble": "departamento",
+    "operacion": "arriendo",
+    "presupuesto_max": 700.0,
+    "acepta_mascotas": true,
+    "transporte": true
+   },
+   "cards": [
+    {
+     "id": "5e0a0001-0000-4000-8000-000000000001",
+     "direccion": "Av. Coruña N26-110 y Valladolid, La Floresta, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 650.0,
+     "encaje": 89,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($650 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 90,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 380.0,
+     "encaje": 89,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($380 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 72,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0002-0000-4000-8000-000000000002",
+     "direccion": "Juan León Mera N23-45 y Wilson, La Mariscal, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 700.0,
+     "encaje": 78,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($700 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 1,
+     "caminabilidad": 95,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0003-0000-4000-8000-000000000003",
+     "direccion": "Ladrón de Guevara E11-20 y Coruña, La Floresta, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 710.0,
+     "encaje": 69,
+     "encaje_razones": [
+      {
+       "texto": "Sobre tu tope por $10 ($710 vs $700)",
+       "cumple": "parcial",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 86,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0006-0000-4000-8000-000000000006",
+     "direccion": "Reina Victoria N24-150 y Lizardo García, La Mariscal, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 580.0,
+     "encaje": 66,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($580 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "No acepta mascotas",
+       "cumple": "bajo",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 1,
+     "caminabilidad": 93,
+     "caminabilidad_fuente": "osm"
+    }
+   ],
+   "descartadas": [],
+   "vistas": [
+    {
+     "id": "5e0a0001-0000-4000-8000-000000000001",
+     "direccion": "Av. Coruña N26-110 y Valladolid, La Floresta, Quito",
+     "precio": 650,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0003-0000-4000-8000-000000000003",
+     "direccion": "Ladrón de Guevara E11-20 y Coruña, La Floresta, Quito",
+     "precio": 710,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0007-0000-4000-8000-000000000007",
+     "direccion": "Guipúzcoa E14-30 y Lugo, La Floresta, Quito",
+     "precio": 260000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0002-0000-4000-8000-000000000002",
+     "direccion": "Juan León Mera N23-45 y Wilson, La Mariscal, Quito",
+     "precio": 700,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0006-0000-4000-8000-000000000006",
+     "direccion": "Reina Victoria N24-150 y Lizardo García, La Mariscal, Quito",
+     "precio": 580,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "precio": 380,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    }
+   ]
+  },
+  {
+   "id": "claude-sonnet-5-5/paridad55b#1/encaje_lidera",
+   "modelo": "claude-sonnet-5-5",
+   "caso": "encaje_lidera",
+   "reply": "Encontré 3 inmuebles registrados en Quitumbe. Hay una limitación: no tengo cargada la conectividad del Metro de Quito de ninguno. Por eso el motor no pudo medir qué tan cerca están de la estación. Está «calculado sobre 0 de las 1 cosas que pediste».\n\n1. **Av. Mariscal Sucre S48-20 y Quitumbe Ñan**: departamento en **arriendo, $380**. Caminabilidad 72, calculada sobre los comercios reales de la zona.\n2. **Calle Amaru Ñan S45-110**: departamento en **venta, $78,000**. Caminabilidad 68, calculada sobre los comercios reales de la zona.\n3. **Pasaje Turubamba S50-15**: casa en **venta, $95,000**. Caminabilidad 55, calculada sobre los comercios reales de la zona.\n\nLas tres tarjetas de abajo muestran el detalle. La caminabilidad no equivale a cercanía al Metro. Tampoco puedo decirte cuántos minutos hay a pie hasta la estación.\n\nPara orientarte, ¿buscas **arriendo o compra**? Con eso dejo solo las opciones que corresponden. Si me lo pides, también reviso el entorno de alguna de las tres.",
+   "preferencias": {
+    "transporte": true
+   },
+   "cards": [
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 380.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 2,
+     "caminabilidad": 72,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0009-0000-4000-8000-000000000009",
+     "direccion": "Calle Amaru Ñan S45-110, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "VENTA",
+     "precio": 78000.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 3,
+     "caminabilidad": 68,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0010-0000-4000-8000-000000000010",
+     "direccion": "Pasaje Turubamba S50-15, Quitumbe, Quito",
+     "tipo_activo": "Casa",
+     "operacion": "VENTA",
+     "precio": 95000.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 3,
+     "caminabilidad": 55,
+     "caminabilidad_fuente": "osm"
+    }
+   ],
+   "descartadas": [],
+   "vistas": [
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "precio": 380,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0009-0000-4000-8000-000000000009",
+     "direccion": "Calle Amaru Ñan S45-110, Quitumbe, Quito",
+     "precio": 78000,
+     "tipo_activo": "Departamento",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0010-0000-4000-8000-000000000010",
+     "direccion": "Pasaje Turubamba S50-15, Quitumbe, Quito",
+     "precio": 95000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    }
+   ]
+  },
+  {
+   "id": "claude-sonnet-5-5/paridad55b#1/tipo_pedido_no_se_estira",
+   "modelo": "claude-sonnet-5-5",
+   "caso": "tipo_pedido_no_se_estira",
+   "reply": "Ningún departamento en venta en Cumbayá entra en tu tope de $150,000. El catastro solo tiene uno, y se pasa $60,000 de tu tope.\n\nEs el de Av. Interoceánica y Chimborazo, a $210,000. Es un departamento, como pediste, pero tiene 3 dormitorios y tú pediste 2. Su encaje con lo que buscas es del 46%.\n\n- ⚠️ Precio: se pasa $60,000 de tu tope ($210,000 vs $150,000).\n- ⚠️ Dormitorios: 3, pediste 2.\n- Caminabilidad 70, calculada sobre los comercios reales de la zona.\n- No tengo datos verificados de Metro ni de servicios cercanos para este inmueble.\n\nEn Cumbayá también hay casas dentro de tu tope. Una está en Calle Pampite E5-40, a $139,000. Otra está en Calle Francisco de Orellana 210, a $145,000. No son departamentos, así que no las cuento como opciones para lo que pediste.\n\n¿Quieres que ampliemos la búsqueda a otro sector, como Tumbaco o el norte de Quito, para buscar departamentos de 2 dormitorios dentro de tu tope? También puedo darte más detalle del de la Interoceánica, o mostrarte las casas por si te interesa cambiar de tipo de inmueble.",
+   "preferencias": {
+    "tipo_inmueble": "departamento",
+    "dormitorios": 2,
+    "operacion": "venta",
+    "presupuesto_max": 150000.0
+   },
+   "cards": [
+    {
+     "id": "5e0a0014-0000-4000-8000-000000000014",
+     "direccion": "Av. Interoceánica y Chimborazo, Cumbayá, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "VENTA",
+     "precio": 210000.0,
+     "encaje": 46,
+     "encaje_razones": [
+      {
+       "texto": "Sobre tu tope por $60,000 ($210,000 vs $150,000)",
+       "cumple": "bajo",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Tiene 3 dormitorios, pediste 2",
+       "cumple": "parcial",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 3,
+     "caminabilidad": 70,
+     "caminabilidad_fuente": "osm"
+    }
+   ],
+   "descartadas": [],
+   "vistas": [
+    {
+     "id": "5e0a0011-0000-4000-8000-000000000011",
+     "direccion": "Calle Francisco de Orellana 210, Cumbayá, Quito",
+     "precio": 145000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0012-0000-4000-8000-000000000012",
+     "direccion": "Vía Lumbisí y Pampite, Cumbayá, Quito",
+     "precio": 185000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0013-0000-4000-8000-000000000013",
+     "direccion": "Camino a Lumbisí km 2, Cumbayá, Quito",
+     "precio": 320000,
+     "tipo_activo": "Quinta",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0014-0000-4000-8000-000000000014",
+     "direccion": "Av. Interoceánica y Chimborazo, Cumbayá, Quito",
+     "precio": 210000,
+     "tipo_activo": "Departamento",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0015-0000-4000-8000-000000000015",
+     "direccion": "Calle Pampite E5-40, Cumbayá, Quito",
+     "precio": 139000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    }
+   ]
+  },
+  {
+   "id": "claude-sonnet-5-5/paridad55b#1/presupuesto_no_se_ablanda+zona",
+   "modelo": "claude-sonnet-5-5",
+   "caso": "presupuesto_no_se_ablanda+zona",
+   "reply": "En La Floresta y La Mariscal encontré cuatro arriendos. Dos entran en tu tope de $700 y aceptan perro. Uno entra pero no sabemos si acepta perro. Otro se pasa $10 del tope.\n\nEn el panel hay una quinta opción en Quitumbe, al sur. Quedó fuera de las zonas que pediste, así que solo la dejo anotada.\n\n1. **Av. Coruña N26-110 y Valladolid (La Floresta), $650/mes.**\n   ✅ Dentro de tu presupuesto ($650 ≤ $700).\n   ✅ Acepta mascotas, según la ficha.\n   ✅ Caminabilidad 90, calculada sobre los comercios reales de la zona.\n\n2. **Av. Mariscal Sucre S48-20 (Quitumbe), $380/mes.**\n   ✅ Dentro de tu presupuesto ($380 ≤ $700) y acepta mascotas, según la ficha.\n   ⚠️ Caminabilidad 72, calculada sobre los comercios reales de la zona, y queda en el sur, no en tus zonas.\n\n3. **Juan León Mera N23-45 (La Mariscal), $700/mes.**\n   ✅ Dentro de tu presupuesto ($700 ≤ $700).\n   ✅ Caminabilidad 95, calculada sobre los comercios reales de la zona.\n   ⚠️ El encaje está calculado sobre 2 de las 3 cosas que pediste: la ficha no dice si acepta mascotas.\n\n4. **Ladrón de Guevara E11-20 (La Floresta), $710/mes.**\n   ⚠️ Se pasa $10 de tu tope.\n   ✅ Acepta mascotas, según la ficha.\n   ✅ Caminabilidad 86, calculada sobre los comercios reales de la zona.\n\n5. **Reina Victoria N24-150 (La Mariscal), $580/mes.**\n   ✅ Dentro de tu presupuesto ($580 ≤ $700).\n   ⚠️ No acepta mascotas, según la ficha, así que con tu perro no te sirve.\n\nComo no tienes carro, te conviene mirar el transporte. Para ninguno de estos inmuebles tengo datos verificados de Metro ni de servicios cercanos, como parques o veterinarias. Por eso no puedo decirte qué hay cerca en ese aspecto.\n\n¿Quieres que revise el entorno de la Av. Coruña (La Floresta) o el de Juan León Mera (La Mariscal)? También puedo conectarte con el corredor para visitar alguno.",
+   "preferencias": {
+    "tipo_inmueble": "departamento",
+    "operacion": "arriendo",
+    "presupuesto_max": 700.0,
+    "acepta_mascotas": true
+   },
+   "cards": [
+    {
+     "id": "5e0a0001-0000-4000-8000-000000000001",
+     "direccion": "Av. Coruña N26-110 y Valladolid, La Floresta, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 650.0,
+     "encaje": 100,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($650 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 90,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 380.0,
+     "encaje": 100,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($380 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 72,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0002-0000-4000-8000-000000000002",
+     "direccion": "Juan León Mera N23-45 y Wilson, La Mariscal, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 700.0,
+     "encaje": 86,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($700 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 1,
+     "caminabilidad": 95,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0003-0000-4000-8000-000000000003",
+     "direccion": "Ladrón de Guevara E11-20 y Coruña, La Floresta, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 710.0,
+     "encaje": 74,
+     "encaje_razones": [
+      {
+       "texto": "Sobre tu tope por $10 ($710 vs $700)",
+       "cumple": "parcial",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 86,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0006-0000-4000-8000-000000000006",
+     "direccion": "Reina Victoria N24-150 y Lizardo García, La Mariscal, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 580.0,
+     "encaje": 71,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($580 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "No acepta mascotas",
+       "cumple": "bajo",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 1,
+     "caminabilidad": 93,
+     "caminabilidad_fuente": "osm"
+    }
+   ],
+   "descartadas": [],
+   "vistas": [
+    {
+     "id": "5e0a0001-0000-4000-8000-000000000001",
+     "direccion": "Av. Coruña N26-110 y Valladolid, La Floresta, Quito",
+     "precio": 650,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0003-0000-4000-8000-000000000003",
+     "direccion": "Ladrón de Guevara E11-20 y Coruña, La Floresta, Quito",
+     "precio": 710,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0007-0000-4000-8000-000000000007",
+     "direccion": "Guipúzcoa E14-30 y Lugo, La Floresta, Quito",
+     "precio": 260000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0002-0000-4000-8000-000000000002",
+     "direccion": "Juan León Mera N23-45 y Wilson, La Mariscal, Quito",
+     "precio": 700,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0006-0000-4000-8000-000000000006",
+     "direccion": "Reina Victoria N24-150 y Lizardo García, La Mariscal, Quito",
+     "precio": 580,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "precio": 380,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    }
+   ]
+  },
+  {
+   "id": "claude-sonnet-5-5/reps55b#1/encaje_lidera",
+   "modelo": "claude-sonnet-5-5",
+   "caso": "encaje_lidera",
+   "reply": "Encontré tres inmuebles registrados en Quitumbe. Un punto importante: no tengo cargada la conectividad de ninguno. Por eso no puedo decirte a cuántos minutos del Metro de Quito (estación Quitumbe) queda cada uno. El cálculo de encaje cubre 0 de las 1 cosas que pediste (transporte masivo cerca).\n\nEn el orden del panel:\n\n1. **Av. Mariscal Sucre S48-20 y Quitumbe Ñan**: departamento en arriendo, $380. Caminabilidad 72, calculada sobre los comercios reales de la zona.\n2. **Calle Amaru Ñan S45-110**: departamento en venta, $78.000. Caminabilidad 68, calculada sobre los comercios reales de la zona.\n3. **Pasaje Turubamba S50-15**: casa en venta, $95.000. Caminabilidad 55, calculada sobre los comercios reales de la zona.\n\nLos dos primeros tienen mejor caminabilidad, pero eso no dice nada sobre la distancia al Metro.\n\nPara orientarte mejor, ¿buscas arriendo o compra? Si quieres, reviso el entorno de alguno de los tres. También puedo conectarte con el corredor para que confirme la distancia real a la estación.",
+   "preferencias": {
+    "transporte": true
+   },
+   "cards": [
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 380.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 2,
+     "caminabilidad": 72,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0009-0000-4000-8000-000000000009",
+     "direccion": "Calle Amaru Ñan S45-110, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "VENTA",
+     "precio": 78000.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 3,
+     "caminabilidad": 68,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0010-0000-4000-8000-000000000010",
+     "direccion": "Pasaje Turubamba S50-15, Quitumbe, Quito",
+     "tipo_activo": "Casa",
+     "operacion": "VENTA",
+     "precio": 95000.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 3,
+     "caminabilidad": 55,
+     "caminabilidad_fuente": "osm"
+    }
+   ],
+   "descartadas": [],
+   "vistas": [
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "precio": 380,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0009-0000-4000-8000-000000000009",
+     "direccion": "Calle Amaru Ñan S45-110, Quitumbe, Quito",
+     "precio": 78000,
+     "tipo_activo": "Departamento",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0010-0000-4000-8000-000000000010",
+     "direccion": "Pasaje Turubamba S50-15, Quitumbe, Quito",
+     "precio": 95000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    }
+   ]
+  },
+  {
+   "id": "claude-sonnet-5-5/reps55b#1/presupuesto_no_se_ablanda+zona",
+   "modelo": "claude-sonnet-5-5",
+   "caso": "presupuesto_no_se_ablanda+zona",
+   "reply": "Encontré 5 departamentos en arriendo. Cuatro entran en tu tope de $700 y uno se pasa $10. Las tarjetas de abajo están en el orden del motor.\n\n1. **Av. Coruña N26-110 y Valladolid, La Floresta**: $650/mes. Acepta mascotas. Caminabilidad 90, calculada sobre los comercios reales de la zona.\n2. **Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe**: $380/mes. Acepta mascotas. Está en el sur, no en La Floresta ni en La Mariscal. Lo incluyo porque salió en la búsqueda y entra en tu presupuesto. Su caminabilidad es 72, más baja que las demás.\n3. **Juan León Mera N23-45 y Wilson, La Mariscal**: $700/mes, justo en tu tope. Caminabilidad 95. El encaje está calculado sobre 2 de las 3 cosas que pediste, porque no tengo confirmado si acepta mascotas.\n4. **Ladrón de Guevara E11-20 y Coruña, La Floresta**: acepta mascotas, pero se pasa $10 de tu tope ($710 vs $700).\n5. **Reina Victoria N24-150 y Lizardo García, La Mariscal**: $580/mes. No acepta mascotas según la ficha, así que con tu perro no te sirve.\n\n⚠️ No tengo cargados datos de Metro ni de transporte para estos inmuebles. No puedo decirte si hay estación cerca ni si no la hay. Tampoco tengo datos de parques ni de ruido. Como no tienes carro, eso conviene revisarlo antes de decidir.\n\nCon lo que hay, la opción 1 cumple todo lo que pediste: departamento, arriendo dentro de tu tope y mascotas.\n\n¿Quieres que revise la ficha completa de alguna? También puedo conectarte con el corredor para confirmar lo de las mascotas en la opción 3 o para coordinar una visita.",
+   "preferencias": {
+    "tipo_inmueble": "departamento",
+    "operacion": "arriendo",
+    "presupuesto_max": 700.0,
+    "acepta_mascotas": true
+   },
+   "cards": [
+    {
+     "id": "5e0a0001-0000-4000-8000-000000000001",
+     "direccion": "Av. Coruña N26-110 y Valladolid, La Floresta, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 650.0,
+     "encaje": 100,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($650 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 90,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 380.0,
+     "encaje": 100,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($380 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 72,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0002-0000-4000-8000-000000000002",
+     "direccion": "Juan León Mera N23-45 y Wilson, La Mariscal, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 700.0,
+     "encaje": 86,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($700 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 1,
+     "caminabilidad": 95,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0003-0000-4000-8000-000000000003",
+     "direccion": "Ladrón de Guevara E11-20 y Coruña, La Floresta, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 710.0,
+     "encaje": 74,
+     "encaje_razones": [
+      {
+       "texto": "Sobre tu tope por $10 ($710 vs $700)",
+       "cumple": "parcial",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 86,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0006-0000-4000-8000-000000000006",
+     "direccion": "Reina Victoria N24-150 y Lizardo García, La Mariscal, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 580.0,
+     "encaje": 71,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($580 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "No acepta mascotas",
+       "cumple": "bajo",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 1,
+     "caminabilidad": 93,
+     "caminabilidad_fuente": "osm"
+    }
+   ],
+   "descartadas": [],
+   "vistas": [
+    {
+     "id": "5e0a0001-0000-4000-8000-000000000001",
+     "direccion": "Av. Coruña N26-110 y Valladolid, La Floresta, Quito",
+     "precio": 650,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0003-0000-4000-8000-000000000003",
+     "direccion": "Ladrón de Guevara E11-20 y Coruña, La Floresta, Quito",
+     "precio": 710,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0007-0000-4000-8000-000000000007",
+     "direccion": "Guipúzcoa E14-30 y Lugo, La Floresta, Quito",
+     "precio": 260000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0002-0000-4000-8000-000000000002",
+     "direccion": "Juan León Mera N23-45 y Wilson, La Mariscal, Quito",
+     "precio": 700,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0006-0000-4000-8000-000000000006",
+     "direccion": "Reina Victoria N24-150 y Lizardo García, La Mariscal, Quito",
+     "precio": 580,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "precio": 380,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    }
+   ]
+  },
+  {
+   "id": "claude-sonnet-5-5/reps55b#2/encaje_lidera",
+   "modelo": "claude-sonnet-5-5",
+   "caso": "encaje_lidera",
+   "reply": "Encontré tres inmuebles registrados en Quitumbe. Tienen un detalle importante: no puedo decirte cuáles quedan cerca de la estación. En ninguno tengo cargada la conectividad, así que el criterio «transporte masivo cerca» está calculado sobre 0 de las 1 cosas que pediste.\n\nEsto es lo que sí tengo, en el orden del panel:\n\n1. **Av. Mariscal Sucre S48-20 y Quitumbe Ñan**: departamento en arriendo, $380. Caminabilidad 72, calculada sobre los comercios reales de la zona.\n2. **Calle Amaru Ñan S45-110**: departamento en venta, $78.000. Caminabilidad 68, calculada sobre los comercios reales de la zona.\n3. **Pasaje Turubamba S50-15**: casa en venta, $95.000. Caminabilidad 55, calculada sobre los comercios reales de la zona.\n\nUn arriendo y dos ventas no son comparables entre sí, porque el canon es mensual y el precio de venta es un pago único.\n\nPara saber qué tan lejos queda la estación de cada uno, tendría que analizar el punto de cada inmueble.\n\n¿Buscas arriendo o compra? Con eso te muestro solo esa operación y reviso cuál queda más cerca del Metro de Quito (estación Quitumbe).",
+   "preferencias": {
+    "transporte": true
+   },
+   "cards": [
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 380.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 2,
+     "caminabilidad": 72,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0009-0000-4000-8000-000000000009",
+     "direccion": "Calle Amaru Ñan S45-110, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "VENTA",
+     "precio": 78000.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 3,
+     "caminabilidad": 68,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0010-0000-4000-8000-000000000010",
+     "direccion": "Pasaje Turubamba S50-15, Quitumbe, Quito",
+     "tipo_activo": "Casa",
+     "operacion": "VENTA",
+     "precio": 95000.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 3,
+     "caminabilidad": 55,
+     "caminabilidad_fuente": "osm"
+    }
+   ],
+   "descartadas": [],
+   "vistas": [
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "precio": 380,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0009-0000-4000-8000-000000000009",
+     "direccion": "Calle Amaru Ñan S45-110, Quitumbe, Quito",
+     "precio": 78000,
+     "tipo_activo": "Departamento",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0010-0000-4000-8000-000000000010",
+     "direccion": "Pasaje Turubamba S50-15, Quitumbe, Quito",
+     "precio": 95000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    }
+   ]
+  },
+  {
+   "id": "claude-sonnet-5-5/reps55b#2/presupuesto_no_se_ablanda+zona",
+   "modelo": "claude-sonnet-5-5",
+   "caso": "presupuesto_no_se_ablanda+zona",
+   "reply": "Encontré cinco arriendos: cuatro dentro de tu tope de $700 y uno que se pasa $10. Las tarjetas de abajo muestran el detalle.\n\n1. **Av. Coruña N26-110 y Valladolid (La Floresta):** $650/mes, dentro de tu presupuesto. Caminabilidad 90, calculada sobre los comercios reales de la zona.\n2. **Juan León Mera N23-45 y Wilson (La Mariscal):** $700/mes, dentro de tu presupuesto ($700 ≤ $700). Caminabilidad 95, con la misma fuente.\n3. **Reina Victoria N24-150 y Lizardo García (La Mariscal):** $580/mes, dentro de tu presupuesto. Caminabilidad 93.\n4. **Av. Mariscal Sucre S48-20 y Quitumbe Ñan (Quitumbe):** $380/mes, dentro de tu presupuesto. Está en el sur, no en La Floresta ni en La Mariscal. Su caminabilidad es 72.\n5. **Ladrón de Guevara E11-20 y Coruña (La Floresta):** se pasa $10 de tu tope ($710). Caminabilidad 86.\n\nComo no tienes carro, las cuatro opciones de La Floresta y La Mariscal tienen caminabilidad alta. La más barata es la 4, pero está en otra zona.\n\n⚠️ **Tu perro:** no tengo confirmado en ninguna de estas fichas si aceptan mascotas. Tendrías que preguntarlo antes de visitar.\n\n⚠️ **Transporte:** no tengo cargados los datos de Metro ni de buses de estos inmuebles. No puedo decirte qué tan cerca está el transporte.\n\n¿Quieres que revise la ficha de alguno para ver si dice algo de mascotas? También puedo conectarte con el corredor para preguntarle por el perro.",
+   "preferencias": {
+    "tipo_inmueble": "departamento",
+    "operacion": "arriendo",
+    "presupuesto_max": 700.0
+   },
+   "cards": [
+    {
+     "id": "5e0a0001-0000-4000-8000-000000000001",
+     "direccion": "Av. Coruña N26-110 y Valladolid, La Floresta, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 650.0,
+     "encaje": 100,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($650 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 90,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0002-0000-4000-8000-000000000002",
+     "direccion": "Juan León Mera N23-45 y Wilson, La Mariscal, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 700.0,
+     "encaje": 100,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($700 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 1,
+     "caminabilidad": 95,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0006-0000-4000-8000-000000000006",
+     "direccion": "Reina Victoria N24-150 y Lizardo García, La Mariscal, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 580.0,
+     "encaje": 100,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($580 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 1,
+     "caminabilidad": 93,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 380.0,
+     "encaje": 100,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($380 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 72,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0003-0000-4000-8000-000000000003",
+     "direccion": "Ladrón de Guevara E11-20 y Coruña, La Floresta, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 710.0,
+     "encaje": 64,
+     "encaje_razones": [
+      {
+       "texto": "Sobre tu tope por $10 ($710 vs $700)",
+       "cumple": "parcial",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 86,
+     "caminabilidad_fuente": "osm"
+    }
+   ],
+   "descartadas": [],
+   "vistas": [
+    {
+     "id": "5e0a0001-0000-4000-8000-000000000001",
+     "direccion": "Av. Coruña N26-110 y Valladolid, La Floresta, Quito",
+     "precio": 650,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0003-0000-4000-8000-000000000003",
+     "direccion": "Ladrón de Guevara E11-20 y Coruña, La Floresta, Quito",
+     "precio": 710,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0007-0000-4000-8000-000000000007",
+     "direccion": "Guipúzcoa E14-30 y Lugo, La Floresta, Quito",
+     "precio": 260000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0002-0000-4000-8000-000000000002",
+     "direccion": "Juan León Mera N23-45 y Wilson, La Mariscal, Quito",
+     "precio": 700,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0006-0000-4000-8000-000000000006",
+     "direccion": "Reina Victoria N24-150 y Lizardo García, La Mariscal, Quito",
+     "precio": 580,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "precio": 380,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    }
+   ]
+  },
+  {
+   "id": "claude-sonnet-5-5/reps55b#3/encaje_lidera",
+   "modelo": "claude-sonnet-5-5",
+   "caso": "encaje_lidera",
+   "reply": "Tengo tres inmuebles registrados en el sector Quitumbe. Hay una limitación: no tengo cargada la conectividad de ninguno. Por eso no sé a qué distancia está la estación Quitumbe del Metro de Quito en cada caso. El cálculo del encaje se hizo sobre 0 de las 1 cosas que pediste (transporte masivo cerca).\n\nEsto es lo que sí tengo, en el orden del panel:\n\n1. **Av. Mariscal Sucre S48-20 y Quitumbe Ñan**: departamento en arriendo, $380. Caminabilidad 72, calculada sobre los comercios reales de la zona.\n2. **Calle Amaru Ñan S45-110**: departamento en venta, $78,000. Caminabilidad 68, calculada sobre los comercios reales de la zona.\n3. **Pasaje Turubamba S50-15**: casa en venta, $95,000. Caminabilidad 55, calculada sobre los comercios reales de la zona.\n\nLos dos primeros quedan en coordenadas más cercanas entre sí. El tercero queda más al sur. No tengo los tiempos a pie reales hasta la estación, así que no los afirmo.\n\nPara orientarte mejor, ¿buscas arriendo o compra? Si me dices cuál, te reviso el detalle de uno y te cuento lo que tengo de su entorno. También puedo conectarte con el corredor para confirmar la distancia a la estación en una visita.",
+   "preferencias": {
+    "transporte": true
+   },
+   "cards": [
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 380.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 2,
+     "caminabilidad": 72,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0009-0000-4000-8000-000000000009",
+     "direccion": "Calle Amaru Ñan S45-110, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "VENTA",
+     "precio": 78000.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 3,
+     "caminabilidad": 68,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0010-0000-4000-8000-000000000010",
+     "direccion": "Pasaje Turubamba S50-15, Quitumbe, Quito",
+     "tipo_activo": "Casa",
+     "operacion": "VENTA",
+     "precio": 95000.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 3,
+     "caminabilidad": 55,
+     "caminabilidad_fuente": "osm"
+    }
+   ],
+   "descartadas": [],
+   "vistas": [
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "precio": 380,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0009-0000-4000-8000-000000000009",
+     "direccion": "Calle Amaru Ñan S45-110, Quitumbe, Quito",
+     "precio": 78000,
+     "tipo_activo": "Departamento",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0010-0000-4000-8000-000000000010",
+     "direccion": "Pasaje Turubamba S50-15, Quitumbe, Quito",
+     "precio": 95000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    }
+   ]
+  },
+  {
+   "id": "claude-sonnet-5-5/reps55b#3/presupuesto_no_se_ablanda+zona",
+   "modelo": "claude-sonnet-5-5",
+   "caso": "presupuesto_no_se_ablanda+zona",
+   "reply": "Tengo cinco departamentos en arriendo para ti: cuatro dentro de tu tope de $700 y uno que se pasa $10. Te los dejo en el orden del panel:\n\n1. **Av. Coruña N26-110 y Valladolid, La Floresta:** $650/mes. ✅ Acepta mascotas. ✅ Caminabilidad 90, calculada sobre los comercios reales de la zona.\n2. **Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe:** $380/mes. ✅ Acepta mascotas. ⚠️ Está en Quitumbe, al sur, y no en La Floresta ni La Mariscal. Su caminabilidad es 72, calculada sobre los comercios reales de la zona.\n3. **Juan León Mera N23-45 y Wilson, La Mariscal:** $700/mes, dentro de tu tope. ✅ Caminabilidad 95. ⚠️ Su encaje está calculado sobre 2 de las 3 cosas que pediste. No tengo confirmado si acepta mascotas.\n4. **Ladrón de Guevara E11-20 y Coruña, La Floresta:** $710/mes, se pasa $10 de tu tope. ✅ Acepta mascotas. Caminabilidad 86.\n5. **Reina Victoria N24-150 y Lizardo García, La Mariscal:** $580/mes. ✅ Caminabilidad 93. ⚠️ No acepta mascotas, así que con tu perro no te sirve.\n\nPara moverte sin carro, tengo la caminabilidad de cada una. **No tengo cargados los datos de Metro ni de transporte de estos inmuebles**, así que no puedo decirte qué tan cerca queda el transporte.\n\nPor ahora, las opciones 1 y 4 son las que confirman mascotas en tus dos zonas. La opción 4 se pasa del tope.\n\n¿Quieres que revise el estado y el entorno de alguna? ¿O te conecto con el corredor para preguntar por las mascotas en la opción 3 o para coordinar una visita?",
+   "preferencias": {
+    "tipo_inmueble": "departamento",
+    "operacion": "arriendo",
+    "presupuesto_max": 700.0,
+    "acepta_mascotas": true
+   },
+   "cards": [
+    {
+     "id": "5e0a0001-0000-4000-8000-000000000001",
+     "direccion": "Av. Coruña N26-110 y Valladolid, La Floresta, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 650.0,
+     "encaje": 100,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($650 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 90,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 380.0,
+     "encaje": 100,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($380 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 72,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0002-0000-4000-8000-000000000002",
+     "direccion": "Juan León Mera N23-45 y Wilson, La Mariscal, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 700.0,
+     "encaje": 86,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($700 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 1,
+     "caminabilidad": 95,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0003-0000-4000-8000-000000000003",
+     "direccion": "Ladrón de Guevara E11-20 y Coruña, La Floresta, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 710.0,
+     "encaje": 74,
+     "encaje_razones": [
+      {
+       "texto": "Sobre tu tope por $10 ($710 vs $700)",
+       "cumple": "parcial",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 86,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0006-0000-4000-8000-000000000006",
+     "direccion": "Reina Victoria N24-150 y Lizardo García, La Mariscal, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 580.0,
+     "encaje": 71,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($580 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "No acepta mascotas",
+       "cumple": "bajo",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 1,
+     "caminabilidad": 93,
+     "caminabilidad_fuente": "osm"
+    }
+   ],
+   "descartadas": [],
+   "vistas": [
+    {
+     "id": "5e0a0001-0000-4000-8000-000000000001",
+     "direccion": "Av. Coruña N26-110 y Valladolid, La Floresta, Quito",
+     "precio": 650,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0003-0000-4000-8000-000000000003",
+     "direccion": "Ladrón de Guevara E11-20 y Coruña, La Floresta, Quito",
+     "precio": 710,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0007-0000-4000-8000-000000000007",
+     "direccion": "Guipúzcoa E14-30 y Lugo, La Floresta, Quito",
+     "precio": 260000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0002-0000-4000-8000-000000000002",
+     "direccion": "Juan León Mera N23-45 y Wilson, La Mariscal, Quito",
+     "precio": 700,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0006-0000-4000-8000-000000000006",
+     "direccion": "Reina Victoria N24-150 y Lizardo García, La Mariscal, Quito",
+     "precio": 580,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "precio": 380,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    }
+   ]
+  },
+  {
+   "id": "claude-sonnet-5-5/reps55b#4/encaje_lidera",
+   "modelo": "claude-sonnet-5-5",
+   "caso": "encaje_lidera",
+   "reply": "Encontré tres inmuebles registrados en Quitumbe. Un aviso importante: pediste transporte masivo cerca, y en ninguno tengo cargada la conectividad. No puedo decirte a cuánto queda la estación Quitumbe del Metro de Quito desde cada uno. El motor de encaje lo calculó sobre 0 de la 1 cosa que pediste.\n\nEn el orden del panel:\n\n1. **Av. Mariscal Sucre S48-20 y Quitumbe Ñan**: departamento en arriendo, $380. Su caminabilidad es 68... perdón, 72, calculada sobre los comercios reales de la zona.\n2. **Calle Amaru Ñan S45-110**: departamento en venta, $78,000. Caminabilidad 68, calculada sobre los comercios reales de la zona.\n3. **Pasaje Turubamba S50-15**: casa en venta, $95,000. Caminabilidad 55, calculada sobre los comercios reales de la zona.\n\nLa opción 3 es la más baja en caminabilidad. Por eso, si dependes de caminar hasta el transporte, conviene confirmarlo antes de visitarla.\n\nPara seguir, dime cuál de estas dos rutas prefieres:\n- ¿Buscas arriendo o compra? Así te muestro solo una operación y no mezclo canon con precio de venta.\n- ¿Quieres que analice el entorno de alguno de estos puntos, incluido el Metro a pie?",
+   "preferencias": {
+    "transporte": true
+   },
+   "cards": [
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 380.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 2,
+     "caminabilidad": 72,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0009-0000-4000-8000-000000000009",
+     "direccion": "Calle Amaru Ñan S45-110, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "VENTA",
+     "precio": 78000.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 3,
+     "caminabilidad": 68,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0010-0000-4000-8000-000000000010",
+     "direccion": "Pasaje Turubamba S50-15, Quitumbe, Quito",
+     "tipo_activo": "Casa",
+     "operacion": "VENTA",
+     "precio": 95000.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 3,
+     "caminabilidad": 55,
+     "caminabilidad_fuente": "osm"
+    }
+   ],
+   "descartadas": [],
+   "vistas": [
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "precio": 380,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0009-0000-4000-8000-000000000009",
+     "direccion": "Calle Amaru Ñan S45-110, Quitumbe, Quito",
+     "precio": 78000,
+     "tipo_activo": "Departamento",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0010-0000-4000-8000-000000000010",
+     "direccion": "Pasaje Turubamba S50-15, Quitumbe, Quito",
+     "precio": 95000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    }
+   ]
+  },
+  {
+   "id": "claude-sonnet-5-5/reps55b#4/presupuesto_no_se_ablanda+zona",
+   "modelo": "claude-sonnet-5-5",
+   "caso": "presupuesto_no_se_ablanda+zona",
+   "reply": "Tengo 5 arriendos de departamento para ti: 4 dentro de tu tope de $700 y 1 que se pasa $10. Uno de ellos, el #2, no está en La Floresta ni en La Mariscal. Está en Quitumbe, en el sur, y lo incluyo porque el motor lo puntúa muy alto. Las tarjetas de abajo muestran el detalle.\n\n1. **Av. Coruña N26-110 y Valladolid, La Floresta:** $650/mes.\n   ✅ Dentro de tu presupuesto ($650 ≤ $700).\n   ✅ Acepta mascotas.\n   ✅ Caminabilidad 90, calculada sobre los comercios reales de la zona. Eso te sirve si no tienes carro.\n2. **Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe:** $380/mes.\n   ✅ Dentro de tu presupuesto ($380 ≤ $700).\n   ✅ Acepta mascotas.\n   ⚠️ Está lejos de las dos zonas que elegiste. Su caminabilidad es 72, más baja que las demás.\n3. **Juan León Mera N23-45 y Wilson, La Mariscal:** $700/mes.\n   ✅ Dentro de tu presupuesto ($700 ≤ $700).\n   ✅ Caminabilidad 95.\n   ⚠️ El encaje está calculado sobre 2 de las 3 cosas que pediste. La ficha no dice si acepta mascotas, así que habría que preguntarlo.\n4. **Ladrón de Guevara E11-20 y Coruña, La Floresta:** $710/mes.\n   ⚠️ Se pasa $10 de tu tope.\n   ✅ Acepta mascotas.\n   ✅ Caminabilidad 86.\n5. **Reina Victoria N24-150 y Lizardo García, La Mariscal:** $580/mes.\n   ✅ Dentro de tu presupuesto ($580 ≤ $700).\n   ⚠️ No acepta mascotas, así que no sirve para tu perro.\n\n**Con tu perro:** los números 1 y 2 confirman que aceptan mascotas. El #4 también, pero se pasa del tope.\n\n**Lo que no tengo:** para ninguno tengo datos verificados de Metro ni de servicios cercanos. No puedo decirte si hay parque o veterinaria a pocas cuadras.\n\n¿Quieres que profundice en el #1, o prefieres que revise en el #3 si admite mascotas? También puedo conectarte con el corredor para visitar alguno.",
+   "preferencias": {
+    "tipo_inmueble": "departamento",
+    "operacion": "arriendo",
+    "presupuesto_max": 700.0,
+    "acepta_mascotas": true
+   },
+   "cards": [
+    {
+     "id": "5e0a0001-0000-4000-8000-000000000001",
+     "direccion": "Av. Coruña N26-110 y Valladolid, La Floresta, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 650.0,
+     "encaje": 100,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($650 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 90,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 380.0,
+     "encaje": 100,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($380 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 72,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0002-0000-4000-8000-000000000002",
+     "direccion": "Juan León Mera N23-45 y Wilson, La Mariscal, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 700.0,
+     "encaje": 86,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($700 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 1,
+     "caminabilidad": 95,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0003-0000-4000-8000-000000000003",
+     "direccion": "Ladrón de Guevara E11-20 y Coruña, La Floresta, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 710.0,
+     "encaje": 74,
+     "encaje_razones": [
+      {
+       "texto": "Sobre tu tope por $10 ($710 vs $700)",
+       "cumple": "parcial",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "Acepta mascotas",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 86,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0006-0000-4000-8000-000000000006",
+     "direccion": "Reina Victoria N24-150 y Lizardo García, La Mariscal, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 580.0,
+     "encaje": 71,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($580 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      },
+      {
+       "texto": "No acepta mascotas",
+       "cumple": "bajo",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 1,
+     "caminabilidad": 93,
+     "caminabilidad_fuente": "osm"
+    }
+   ],
+   "descartadas": [],
+   "vistas": [
+    {
+     "id": "5e0a0001-0000-4000-8000-000000000001",
+     "direccion": "Av. Coruña N26-110 y Valladolid, La Floresta, Quito",
+     "precio": 650,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0003-0000-4000-8000-000000000003",
+     "direccion": "Ladrón de Guevara E11-20 y Coruña, La Floresta, Quito",
+     "precio": 710,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0007-0000-4000-8000-000000000007",
+     "direccion": "Guipúzcoa E14-30 y Lugo, La Floresta, Quito",
+     "precio": 260000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0002-0000-4000-8000-000000000002",
+     "direccion": "Juan León Mera N23-45 y Wilson, La Mariscal, Quito",
+     "precio": 700,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0006-0000-4000-8000-000000000006",
+     "direccion": "Reina Victoria N24-150 y Lizardo García, La Mariscal, Quito",
+     "precio": 580,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "precio": 380,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    }
+   ]
+  },
+  {
+   "id": "claude-sonnet-5-5/reps55b#5/encaje_lidera",
+   "modelo": "claude-sonnet-5-5",
+   "caso": "encaje_lidera",
+   "reply": "Tengo tres inmuebles registrados en Quitumbe. Un dato importante: no tengo cargada la conectividad de ninguno. Por eso no puedo decirte a cuántos minutos del Metro de Quito (estación Quitumbe) está cada uno. El encaje con \"transporte masivo cerca\" está calculado sobre 0 de la 1 cosa que pediste.\n\nLo que sí tengo es la caminabilidad, calculada sobre los comercios reales de la zona (OpenStreetMap):\n\n1. **Av. Mariscal Sucre S48-20 y Quitumbe Ñan**: departamento en arriendo, $380/mes. Caminabilidad 72.\n2. **Calle Amaru Ñan S45-110**: departamento en venta, $78,000. Caminabilidad 68.\n3. **Pasaje Turubamba S50-15**: casa en venta, $95,000. Caminabilidad 55.\n\nLos dos primeros tienen la caminabilidad más alta, pero eso no equivale a estar cerca del Metro.\n\n¿Buscas arriendo o compra? Según eso, te filtro las opciones. También puedo revisar la zona de cada uno para ver qué datos de transporte hay cerca.",
+   "preferencias": {
+    "transporte": true
+   },
+   "cards": [
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 380.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 2,
+     "caminabilidad": 72,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0009-0000-4000-8000-000000000009",
+     "direccion": "Calle Amaru Ñan S45-110, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "VENTA",
+     "precio": 78000.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 3,
+     "caminabilidad": 68,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0010-0000-4000-8000-000000000010",
+     "direccion": "Pasaje Turubamba S50-15, Quitumbe, Quito",
+     "tipo_activo": "Casa",
+     "operacion": "VENTA",
+     "precio": 95000.0,
+     "encaje": null,
+     "encaje_razones": [],
+     "dormitorios": 3,
+     "caminabilidad": 55,
+     "caminabilidad_fuente": "osm"
+    }
+   ],
+   "descartadas": [],
+   "vistas": [
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "precio": 380,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0009-0000-4000-8000-000000000009",
+     "direccion": "Calle Amaru Ñan S45-110, Quitumbe, Quito",
+     "precio": 78000,
+     "tipo_activo": "Departamento",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0010-0000-4000-8000-000000000010",
+     "direccion": "Pasaje Turubamba S50-15, Quitumbe, Quito",
+     "precio": 95000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    }
+   ]
+  },
+  {
+   "id": "claude-sonnet-5-5/reps55b#5/presupuesto_no_se_ablanda+zona",
+   "modelo": "claude-sonnet-5-5",
+   "caso": "presupuesto_no_se_ablanda+zona",
+   "reply": "En La Floresta y La Mariscal tengo cuatro arriendos registrados. Además salió uno en Quitumbe, en el sur, que no está en ninguna de las dos zonas. Sobre el tope de $700 son cuatro dentro y uno que se pasa. Las tarjetas de abajo siguen el orden del motor.\n\n**Dentro de tu tope de $700:**\n✅ **Av. Coruña (La Floresta)**: $650/mes. Caminabilidad 90, calculada sobre los comercios reales de la zona.\n✅ **Juan León Mera (La Mariscal)**: $700/mes, justo en el tope pero dentro. Caminabilidad 95, con la misma fuente.\n✅ **Reina Victoria (La Mariscal)**: $580/mes. Caminabilidad 93, con la misma fuente.\n✅ **Av. Mariscal Sucre (Quitumbe)**: $380/mes. Es la más barata, pero queda en el sur, lejos de tus dos zonas. Caminabilidad 72.\n\n**Se pasa del tope:**\n⚠️ **Ladrón de Guevara (La Floresta)**: $710/mes, se pasa $10 de tu tope. Caminabilidad 86.\n\nHay dos pendientes que te afectan:\n⚠️ **Mascotas:** no tengo confirmado si alguno acepta perro. Hay que preguntárselo al corredor antes de visitar.\n⚠️ **Metro y transporte:** no tengo cargada la conectividad de estos inmuebles. No puedo decirte si el Metro queda cerca ni si está lejos.\n\n¿Quieres que te conecte con el corredor para preguntar por el perro? También puedo revisar el detalle de alguno, por ejemplo Reina Victoria o Av. Coruña.",
+   "preferencias": {
+    "tipo_inmueble": "departamento",
+    "operacion": "arriendo",
+    "presupuesto_max": 700.0
+   },
+   "cards": [
+    {
+     "id": "5e0a0001-0000-4000-8000-000000000001",
+     "direccion": "Av. Coruña N26-110 y Valladolid, La Floresta, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 650.0,
+     "encaje": 100,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($650 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 90,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0002-0000-4000-8000-000000000002",
+     "direccion": "Juan León Mera N23-45 y Wilson, La Mariscal, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 700.0,
+     "encaje": 100,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($700 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 1,
+     "caminabilidad": 95,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0006-0000-4000-8000-000000000006",
+     "direccion": "Reina Victoria N24-150 y Lizardo García, La Mariscal, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 580.0,
+     "encaje": 100,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($580 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 1,
+     "caminabilidad": 93,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 380.0,
+     "encaje": 100,
+     "encaje_razones": [
+      {
+       "texto": "Dentro de tu presupuesto ($380 ≤ $700)",
+       "cumple": "alto",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 72,
+     "caminabilidad_fuente": "osm"
+    },
+    {
+     "id": "5e0a0003-0000-4000-8000-000000000003",
+     "direccion": "Ladrón de Guevara E11-20 y Coruña, La Floresta, Quito",
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO",
+     "precio": 710.0,
+     "encaje": 64,
+     "encaje_razones": [
+      {
+       "texto": "Sobre tu tope por $10 ($710 vs $700)",
+       "cumple": "parcial",
+       "fuente": "precio publicado"
+      },
+      {
+       "texto": "Es un departamento, como pediste",
+       "cumple": "alto",
+       "fuente": "ficha del inmueble"
+      }
+     ],
+     "dormitorios": 2,
+     "caminabilidad": 86,
+     "caminabilidad_fuente": "osm"
+    }
+   ],
+   "descartadas": [],
+   "vistas": [
+    {
+     "id": "5e0a0001-0000-4000-8000-000000000001",
+     "direccion": "Av. Coruña N26-110 y Valladolid, La Floresta, Quito",
+     "precio": 650,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0003-0000-4000-8000-000000000003",
+     "direccion": "Ladrón de Guevara E11-20 y Coruña, La Floresta, Quito",
+     "precio": 710,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0007-0000-4000-8000-000000000007",
+     "direccion": "Guipúzcoa E14-30 y Lugo, La Floresta, Quito",
+     "precio": 260000,
+     "tipo_activo": "Casa",
+     "operacion": "VENTA"
+    },
+    {
+     "id": "5e0a0002-0000-4000-8000-000000000002",
+     "direccion": "Juan León Mera N23-45 y Wilson, La Mariscal, Quito",
+     "precio": 700,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0006-0000-4000-8000-000000000006",
+     "direccion": "Reina Victoria N24-150 y Lizardo García, La Mariscal, Quito",
+     "precio": 580,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    },
+    {
+     "id": "5e0a0008-0000-4000-8000-000000000008",
+     "direccion": "Av. Mariscal Sucre S48-20 y Quitumbe Ñan, Quitumbe, Quito",
+     "precio": 380,
+     "tipo_activo": "Departamento",
+     "operacion": "ARRIENDO"
+    }
+   ]
+  }
+ ]
+}

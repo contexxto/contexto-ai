@@ -70,6 +70,7 @@ def auditar_explicacion(
     preferencias: dict | None = None,
     descartadas: list[dict] | None = None,
     puerta_abierta: bool = False,
+    vistas: list[dict] | None = None,
 ) -> tuple[ExplanationV0, list[dict]]:
     """Audita la prosa ya emitida y proyecta el veredicto al contrato.
 
@@ -89,5 +90,6 @@ def auditar_explicacion(
     obligarían a cada consumidor a reinterpretar la gravedad por su cuenta, que es el
     problema que esta costura elimina.
     """
-    hallazgos = verificar_prosa(reply, cards, preferencias, descartadas, puerta_abierta)
+    hallazgos = verificar_prosa(reply, cards, preferencias, descartadas, puerta_abierta,
+                                vistas=vistas)
     return ExplanationV0(verification_status=_estado(hallazgos)), hallazgos

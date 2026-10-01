@@ -55,6 +55,7 @@ _RAIZ = Path(__file__).resolve().parent.parent
 if str(_RAIZ) not in sys.path:
     sys.path.insert(0, str(_RAIZ))  # correr desde cualquier cwd, no solo desde la raíz
 
+from app.llm_runtime import JUEZ_MODELO_POR_DEFECTO, CallPurpose, runtime_evaluador  # noqa: E402
 from app.verificacion_prosa import resumen as resumen_prosa, verificar_prosa  # noqa: E402
 
 # La consola de Windows es cp1252 y este informe lleva ✅/✗ y direcciones con tilde. Sin esto,
@@ -93,7 +94,11 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip()
 if API_KEY and not API_KEY.isascii():
     sys.exit("✗ CONTEXTO_API_KEY tiene caracteres no-ASCII (¿quedó el placeholder 'aquí…'?).\n"
              "  Pega SOLO la clave real de Render, sin texto extra ni acentos.")
-JUDGE_MODEL = os.environ.get("CONTEXTO_JUDGE_MODEL", "claude-3-5-haiku-latest")
+# `claude-3-5-haiku-latest` se retiró el 2026-02-19: desde entonces cada llamada fallaba y
+# el `except` de `judge` la contaba como APROBADA. Ver la nota en `judge`.
+# El juez es un modelo EVALUADOR con perfil propio en la frontera de runtime: uno sin perfil
+# falla al primer juicio con ModelConfigError en vez de mandar una request sin configurar.
+JUDGE_MODEL = os.environ.get("CONTEXTO_JUDGE_MODEL", JUEZ_MODELO_POR_DEFECTO)
 TIMEOUT = float(os.environ.get("CONTEXTO_EVAL_TIMEOUT", "120"))  # cold-start de Render
 VERIFY = os.environ.get("CONTEXTO_EVAL_VERIFY", "true").lower() != "false"
 
@@ -228,12 +233,15 @@ def judge(query: str, reply: str, rubric: str) -> tuple[bool, str]:
         f"RÚBRICA (la respuesta APRUEBA solo si cumple esto):\n{rubric}\n\n"
         'Responde ÚNICAMENTE con un JSON válido: {"pass": true|false, "reason": "<máx 20 palabras>"}'
     )
+    # Fuera del try: un juez sin perfil es un error de configuración y detiene el eval; no es
+    # «juez no disponible».
+    modelo = runtime_evaluador(JUDGE_MODEL).http_json(CallPurpose.JUEZ)
     try:
         r = httpx.post(
             "https://api.anthropic.com/v1/messages",
             headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01",
                      "content-type": "application/json"},
-            json={"model": JUDGE_MODEL, "max_tokens": 200,
+            json={**modelo, "max_tokens": 200,
                   "messages": [{"role": "user", "content": prompt}]},
             timeout=60, verify=VERIFY,
         )
@@ -242,8 +250,10 @@ def judge(query: str, reply: str, rubric: str) -> tuple[bool, str]:
         m = re.search(r"\{.*\}", txt, re.S)
         obj = json.loads(m.group(0)) if m else {"pass": False, "reason": "juez sin JSON"}
         return bool(obj.get("pass")), str(obj.get("reason", ""))[:120]
-    except Exception as e:  # noqa: BLE001 — el juez no debe tumbar el eval
-        return True, f"(juez no disponible: {type(e).__name__})"
+    except Exception as e:  # noqa: BLE001 — el juez no debe tumbar el eval…
+        # …pero tampoco aprobar sin haber mirado. Antes esto devolvía True, y con el modelo
+        # del juez retirado la rúbrica de criterio pasaba en verde en TODOS los casos.
+        return False, f"(juez no disponible: {type(e).__name__})"
 
 
 def _guardar(caso_id: str, registro: dict) -> None:

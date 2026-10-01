@@ -14,13 +14,22 @@ Por qué está aparte del gate:
 Uso:
   ./.venv/Scripts/python.exe -m evals.crm_soak
 
-Para no depender de la DB, parcha _leads_del_corredor con una cartera CANNED, así el foco
-es la NARRACIÓN del LLM (¿inventa? ¿segmenta?), no la disponibilidad de datos del piloto.
+No depende de la DB: `sin_db()` reúne TODOS los parches, así el foco es la NARRACIÓN del
+LLM (¿inventa? ¿segmenta?), no la disponibilidad de datos del piloto:
+  - `_leads_del_corredor` → la cartera CANNED;
+  - `_activos_del_corredor` → [] (sin activos, `_reparto_del_corredor` toma su rama sin DB);
+  - `AsyncSessionLocal` → una sesión que REVIENTA si alguien la usa.
+Antes solo se parchaba lo primero: `tool_stats_embudo` también resuelve activos y reparto,
+así que con el .env real el soak leía la DB de PRODUCCIÓN, y sin credenciales esa tool fallaba
+y el soak igual decía «7/7 limpios» sin haber medido la narración de cifras (2026-09-30).
+Por eso un prompt cuya tool falla cuenta como SIN MEDIR, nunca como limpio, y
+tests/test_crm_soak_sin_db.py corre la tool bajo estos mismos parches en el gate.
 """
 from __future__ import annotations
 
 import asyncio
 import sys
+from contextlib import contextmanager
 from unittest.mock import patch
 
 from app.agent.crm_guardrails import evaluar_salida_crm, texto_de_content, tool_jsons_del_turno
@@ -58,6 +67,67 @@ async def _leads_canned(db, owner_user_id, owner_agency_id=None):
     return list(CARTERA)
 
 
+async def _activos_canned(db, owner_user_id, owner_agency_id=None):
+    return []
+
+
+class SoakTocoLaDB(RuntimeError):
+    """Algo en el camino del soak intentó usar la DB."""
+
+
+class _SesionSinDB:
+    """Reemplaza a `AsyncSessionLocal()` durante el soak. Parchar helpers uno por uno es una
+    lista negra: el que nadie parchó lee la DB del .env sin avisar. Esta sesión invierte eso —
+    cualquier uso revienta, la tool falla y el prompt queda SIN MEDIR a la vista."""
+
+    def __init__(self, intentos: list[str]):
+        self._intentos = intentos
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def execute(self, stmt, *args, **kwargs):
+        self._intentos.append(str(stmt))
+        raise SoakTocoLaDB(f"el soak no debe tocar la DB: {stmt}")
+
+    async def rollback(self):  # las tools degradables lo llaman en su except
+        pass
+
+    async def close(self):
+        pass
+
+    def __getattr__(self, nombre):  # scalar, commit, get, add… cualquier otro uso
+        self._intentos.append(nombre)
+        raise SoakTocoLaDB(f"el soak no debe tocar la DB: .{nombre}")
+
+
+@contextmanager
+def sin_db():
+    """Todos los parches del soak. Devuelve la lista de intentos de usar la DB."""
+    intentos: list[str] = []
+    with patch("app.routers.assets._leads_del_corredor", _leads_canned), \
+         patch("app.routers.assets._activos_del_corredor", _activos_canned), \
+         patch("app.database.AsyncSessionLocal", lambda: _SesionSinDB(intentos)):
+        yield intentos
+
+
+def errores_de_tools(msgs: list) -> list[str]:
+    """Las tools que fallaron en el turno. El ToolNode convierte la excepción en un
+    ToolMessage(status='error') y el LLM narra «no pude acceder»: el guardrail de cifras no
+    ve nada que objetar y el prompt pasaba como limpio sin haber medido nada."""
+    from langchain_core.messages import HumanMessage, ToolMessage
+    out: list[str] = []
+    for m in reversed(msgs or []):
+        if isinstance(m, HumanMessage):
+            break
+        if isinstance(m, ToolMessage) and getattr(m, "status", None) == "error":
+            out.append(f"{m.name}: {texto_de_content(m.content)[:160]}")
+    return list(reversed(out))
+
+
 async def _run_prompt(prompt: str):
     from langchain_core.messages import AIMessage, HumanMessage
     from app.agent.crm_graph import compiled_crm_graph
@@ -68,7 +138,7 @@ async def _run_prompt(prompt: str):
     texto = next((texto_de_content(m.content) for m in reversed(msgs)
                   if isinstance(m, AIMessage) and not getattr(m, "tool_calls", None)), "")
     tool_jsons = tool_jsons_del_turno(msgs)
-    return texto, evaluar_salida_crm(texto, tool_jsons)
+    return texto, evaluar_salida_crm(texto, tool_jsons), errores_de_tools(msgs)
 
 
 async def main() -> int:
@@ -82,14 +152,21 @@ async def main() -> int:
         return 0
 
     fallos = 0
-    # Parcha la fuente de datos para no depender de la DB del piloto.
-    with patch("app.routers.assets._leads_del_corredor", _leads_canned):
+    sin_medir = 0
+    # Ni la DB del piloto ni la del .env: ver sin_db().
+    with sin_db():
         for prompt, tipo in PROMPTS:
             try:
-                texto, res = await _run_prompt(prompt)
+                texto, res, errores = await _run_prompt(prompt)
             except Exception as exc:  # noqa: BLE001
                 print(f"\n❌ [{tipo}] {prompt!r} -> EXCEPCIÓN: {exc}")
                 fallos += 1
+                continue
+            if errores:
+                print(f"\n❌ [{tipo}] {prompt} -> SIN MEDIR: falló una tool, el LLM narró el error")
+                for e in errores:
+                    print(f"   ⚠️ {e}")
+                sin_medir += 1
                 continue
             cifra, fh, rechazo = res["cifra"], res["fair_housing"], res.get("fh_rechazo")
             grave = (tipo == "cifra" and cifra) or (tipo == "segmenta" and fh)
@@ -105,9 +182,11 @@ async def main() -> int:
             if rechazo:
                 print(f"   ✔ rechazó correctamente la segmentación (buena señal): {rechazo}")
 
-    print(f"\n{'='*60}\nSoak CRM Vivo: {len(PROMPTS)-fallos}/{len(PROMPTS)} limpios.",
-          "TODO OK." if not fallos else f"{fallos} con violación — revisar prompt/guardrail antes de lanzar.")
-    return 1 if fallos else 0
+    limpios = len(PROMPTS) - fallos - sin_medir
+    print(f"\n{'='*60}\nSoak CRM Vivo: {limpios}/{len(PROMPTS)} limpios.",
+          "TODO OK." if not (fallos or sin_medir) else
+          f"{fallos} con violación, {sin_medir} sin medir — revisar antes de lanzar.")
+    return 1 if (fallos or sin_medir) else 0
 
 
 if __name__ == "__main__":

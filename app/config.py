@@ -94,6 +94,16 @@ class Settings(BaseSettings):
     # fail-closed y sin comodín.
     buyer_unresolved_product: bool = False
 
+    # RELEASE-ISOLATION-041 · la escritura de evidencia de PLACE-PROVENANCE-041. APAGADA de
+    # fábrica. Su ACTIVATION es una unidad propia, con su GO y su preflight. Sin este flag, el
+    # código de la 041 se encendía SOLO al ver las columnas en la base, y desplegar `main`
+    # por cualquier otra razón la activaba como efecto colateral.
+    #
+    # El escritor (`assets._recompute_walk_score`) sólo escribe evidencia si este flag es True
+    # Y el esquema de la 041 existe. Apagado, o ausente del entorno, toma el camino de siempre:
+    # ni consulta el catálogo ni toca las columnas `*_evidencia`.
+    place_provenance_041_write_enabled: bool = False
+
     # G16 · el mercado monetario que ESTE DESPLIEGUE del Buyer Harness puede usar como
     # contexto determinista para acreditar expresiones monetarias que por sí solas serían
     # ambiguas ("900 dólares"). NO es la moneda del comprador ni parte de `BuyerContextV0`:

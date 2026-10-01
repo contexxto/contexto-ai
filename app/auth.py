@@ -12,6 +12,7 @@ Provee:
 """
 import json
 import logging
+import ssl
 import time
 
 import httpx
@@ -23,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
+from app.tls_salida import verificacion_httpx
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +47,8 @@ def _jwks_url() -> str:
     return f"{settings.supabase_url.rstrip('/')}/auth/v1/.well-known/jwks.json"
 
 
-def _ssl_verify() -> bool:
-    return settings.ssl_verify.lower() != "false"
+def _ssl_verify() -> bool | ssl.SSLContext:
+    return verificacion_httpx()
 
 
 async def _get_jwks(force: bool = False) -> list[dict]:

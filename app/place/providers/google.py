@@ -29,6 +29,7 @@ import httpx
 from app.config import settings
 from app.entorno import _CATEGORIAS, _formatear, _nombre_valido
 from app.place.providers import _MARGEN_MARCA_M, _es_marca
+from app.tls_salida import verificacion_httpx
 from app.walk_score import _haversine_m
 
 # Timeout por llamada a Google (Places/Directions). El path del mapa hace 2 secuenciales;
@@ -100,7 +101,7 @@ async def _nearest_categoria(lat: float, lon: float, cat: str, key: str, tipos: 
     }
     headers = {"Content-Type": "application/json", "X-Goog-Api-Key": key,
                "X-Goog-FieldMask": "places.displayName,places.location"}
-    verify = settings.ssl_verify.lower() != "false"
+    verify = verificacion_httpx()
     try:
         async with httpx.AsyncClient(verify=verify, timeout=_TIMEOUT) as c:
             r = await c.post("https://places.googleapis.com/v1/places:searchNearby", json=body, headers=headers)
@@ -210,7 +211,7 @@ async def _entorno_google(lat: float, lon: float, key: str, max_items: int = 8) 
     Demo de Maps. Una llamada POR categoría (el más cercano), así garantizamos
     colegio, UPC, etc. aunque haya muchas tiendas más cerca.
     """
-    verify = settings.ssl_verify.lower() != "false"
+    verify = verificacion_httpx()
     async with httpx.AsyncClient(verify=verify, timeout=_ENTORNO_TIMEOUT) as c:
         resultados = await asyncio.gather(
             *[_google_nearest(c, cat, lat, lon, key) for cat in _CATEGORIAS],

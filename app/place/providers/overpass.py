@@ -33,6 +33,7 @@ from __future__ import annotations
 import httpx
 
 from app.config import settings
+from app.tls_salida import verificacion_httpx
 
 # Endpoints públicos de Overpass (probamos en orden si uno falla).
 _OVERPASS_MIRRORS = (
@@ -56,7 +57,7 @@ async def _fetch_pois(lat: float, lon: float, timeout: float = _TIMEOUT) -> list
         f"node(around:{_RADIUS_M},{lat},{lon})[railway=station];"
         ");out body;"
     )
-    verify = settings.ssl_verify.lower() != "false"
+    verify = verificacion_httpx()
     for url in _OVERPASS_MIRRORS:
         try:
             async with httpx.AsyncClient(verify=verify, timeout=timeout) as c:

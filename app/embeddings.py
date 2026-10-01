@@ -15,6 +15,7 @@ queda pendiente. Por eso estas funciones lanzan EmbeddingError y el llamador dec
 """
 import hashlib
 import logging
+import ssl
 from typing import Literal
 
 import httpx
@@ -22,6 +23,7 @@ from sqlalchemy import text as _sql
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.tls_salida import verificacion_httpx
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +42,8 @@ class EmbeddingDimError(EmbeddingError):
     """El vector devuelto no tiene la dimensión esperada (config rota)."""
 
 
-def _verify() -> bool:
-    return settings.ssl_verify.lower() != "false"
+def _verify() -> bool | ssl.SSLContext:
+    return verificacion_httpx()
 
 
 async def _post_multimodal(content: list[dict], input_type: InputType) -> list[float]:

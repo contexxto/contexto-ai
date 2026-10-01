@@ -31,6 +31,7 @@ import httpx
 from app.config import settings
 from app.llm_runtime import CallPurpose, runtime
 from app.encaje import DIMENSIONES
+from app.tls_salida import verificacion_httpx
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +136,7 @@ def _client() -> anthropic.AsyncAnthropic:
     construye una vez, dentro del loop del primer uso real, con el control de SSL local."""
     global _client_singleton
     if _client_singleton is None:
-        verify = settings.ssl_verify.lower() != "false"
+        verify = verificacion_httpx()
         _client_singleton = anthropic.AsyncAnthropic(
             api_key=settings.anthropic_api_key,
             http_client=httpx.AsyncClient(verify=verify, timeout=20.0),

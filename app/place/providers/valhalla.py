@@ -41,6 +41,7 @@ import logging
 import httpx
 
 from app.config import settings
+from app.tls_salida import verificacion_httpx
 
 # El nombre se escribe a mano a proposito. Ver el docstring: `__name__` cambiaria la
 # etiqueta de los avisos operativos como efecto colateral de haber movido el fichero.
@@ -64,7 +65,7 @@ async def isocrona(lat: float, lon: float, minutos=_CONTORNOS_DEFECTO) -> list[d
         "denoise": 0.5,
         "generalize": 50,
     }
-    verify = settings.ssl_verify.lower() != "false"
+    verify = verificacion_httpx()
     try:
         async with httpx.AsyncClient(verify=verify, timeout=_TIMEOUT) as c:
             r = await c.post(f"{settings.valhalla_url}/isochrone", json=body)

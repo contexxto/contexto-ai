@@ -690,6 +690,8 @@ async def test_el_escritor_nuevo_escribe_texto_y_evidencia_como_dueno_tras_la_04
     monkeypatch.setattr(assets, "_fetch_pois", _fetch)
     monkeypatch.setattr(rutas, "_recolectar_zona", _recolecta)
     monkeypatch.setattr(assets, "AsyncSessionLocal", banco["Sesion"])
+    # RELEASE-ISOLATION-041: este caso describe la 041 ACTIVADA; el flag va encendido.
+    monkeypatch.setattr(assets.settings, "place_provenance_041_write_enabled", True)
     monkeypatch.setattr(assets, "ensure_walk_score_fuente_column", _nada)
     uid = str(uuid.UUID(int=1))
     async with banco["Sesion"]() as s:

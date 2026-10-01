@@ -2197,8 +2197,13 @@ async def _recompute_walk_score(asset_id: str, lat: float, lon: float) -> None:
         # marca de procedencia y no se muestra en mapas (app/place/legado.py). Con la 041, el
         # mismo fetch da además la EVIDENCIA de cada dimensión (PLACE-PROVENANCE-041).
         from app.rutas import analizar_zona  # lazy: evita import circular
-        async with AsyncSessionLocal() as s0:
-            con_041 = await esquema_041_presente(s0)
+        # RELEASE-ISOLATION-041: la evidencia sólo se escribe con el flag explícito Y la 041 en
+        # la base. Con el flag apagado (o ausente) ni se mira el catálogo: es el camino de antes
+        # de la 041, aunque las columnas existan.
+        con_041 = False
+        if settings.place_provenance_041_write_enabled:
+            async with AsyncSessionLocal() as s0:
+                con_041 = await esquema_041_presente(s0)
         docs = {"servicios": None, "conectividad": None}
         try:
             if con_041:

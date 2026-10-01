@@ -496,6 +496,8 @@ async def test_el_escritor_real_escribe_evidencia_que_la_base_acepta(banco, monk
     monkeypatch.setattr(assets, "_fetch_pois", _fetch)
     monkeypatch.setattr(rutas, "_recolectar_zona", _recolecta)
     monkeypatch.setattr(assets, "AsyncSessionLocal", banco["Sesion"])
+    # RELEASE-ISOLATION-041: este caso describe la 041 ACTIVADA; el flag va encendido.
+    monkeypatch.setattr(assets.settings, "place_provenance_041_write_enabled", True)
     monkeypatch.setattr(assets, "ensure_walk_score_fuente_column", _nada)
     uid = str(uuid.UUID(int=1))
 
@@ -692,6 +694,8 @@ async def test_legacy_writer_cannot_leave_stale_structured_evidence_W1_real(banc
     monkeypatch.setattr(assets, "_fetch_pois", _fetch)
     monkeypatch.setattr(rutas, "_recolectar_zona", _recolecta)
     monkeypatch.setattr(assets, "AsyncSessionLocal", banco["Sesion"])
+    # RELEASE-ISOLATION-041: este caso describe la 041 ACTIVADA; el flag va encendido.
+    monkeypatch.setattr(assets.settings, "place_provenance_041_write_enabled", True)
     monkeypatch.setattr(assets, "ensure_walk_score_fuente_column", _nada)
     if caso.startswith("catálogo"):
         monkeypatch.setattr(assets, "esquema_041_presente", _sin_041)
@@ -733,6 +737,8 @@ async def test_W1_escribe_texto_y_evidencia_de_forma_atomica_y_un_fallo_no_deja_
     monkeypatch.setattr(assets, "_fetch_pois", _fetch)
     monkeypatch.setattr(rutas, "_recolectar_zona", _recolecta)
     monkeypatch.setattr(assets, "AsyncSessionLocal", banco["Sesion"])
+    # RELEASE-ISOLATION-041: este caso describe la 041 ACTIVADA; el flag va encendido.
+    monkeypatch.setattr(assets.settings, "place_provenance_041_write_enabled", True)
     monkeypatch.setattr(assets, "ensure_walk_score_fuente_column", _nada)
     monkeypatch.setattr(assets, "a_json", _a_json_roto)
     await assets._recompute_walk_score(uid, LAT, LON)     # best-effort: traga el error del CHECK
@@ -744,6 +750,58 @@ async def test_W1_escribe_texto_y_evidencia_de_forma_atomica_y_un_fallo_no_deja_
     assert despues["servicios_cercanos"] != antes["servicios_cercanos"] and despues["se"] != antes["se"]
     assert despues["conectividad"] != antes["conectividad"] and despues["ce"] != antes["ce"]
     assert not _sin_evidencia_rancia(antes, despues)
+
+
+# ── B9b · RELEASE-ISOLATION-041: el escenario de Render, en la base real ─────────────
+@pg
+async def test_con_la_041_aplicada_y_el_flag_apagado_el_escritor_real_no_escribe_evidencia(banco, monkeypatch):
+    """Lo que hará `main` en Render: el esquema 041 EXISTE y `PLACE_PROVENANCE_041_WRITE_ENABLED`
+    no. El escritor REAL toma el camino previo a la 041.
+
+    1. Sobre una fila SIN evidencia, no escribe evidencia. Es la parte que muerde si alguien quita
+       el gate: con él quitado, el escritor deja aquí un documento nuevo.
+    2. Sobre una fila CON evidencia, no la deja rancia junto al texto nuevo. Ojo: la sembrada es el
+       mismo documento que produciría el escritor, así que esta parte sola NO distingue el gate
+       (el trigger anula un documento que no cambia), y por eso va después de la 1."""
+    import app.place.persistible as persistible
+    import app.routers.assets as assets
+    import app.rutas as rutas
+    from tests.test_place_provenance_041 import COMPLETA, LAT, LON, _materia
+    monkeypatch.setattr(persistible, "_esquema_041_visto", False)
+    await _aplica(banco["dueno"])
+    uid = str(uuid.UUID(int=1))
+    vacia = await _fila_entorno(banco, uid)
+    assert vacia["se"] is None and vacia["ce"] is None
+
+    async def _fetch(lat, lon, timeout=None):
+        return [{"lat": LAT, "lon": LON, "tags": {"amenity": "pharmacy", "name": "Farmacia OSM"}}]
+
+    async def _recolecta(lat, lon):
+        return _materia(COMPLETA)
+
+    async def _nada(*a, **k):
+        return None
+    monkeypatch.setattr(assets, "_fetch_pois", _fetch)
+    monkeypatch.setattr(rutas, "_recolectar_zona", _recolecta)
+    monkeypatch.setattr(assets, "AsyncSessionLocal", banco["Sesion"])
+    monkeypatch.setattr(assets, "ensure_walk_score_fuente_column", _nada)
+    assert assets.settings.place_provenance_041_write_enabled is False, "el valor de fábrica, sin tocar"
+    # 1 · fila sin evidencia: el escritor escribe el texto y NO escribe evidencia.
+    await assets._recompute_walk_score(uid, LAT, LON)
+    tras_1 = await _fila_entorno(banco, uid)
+    assert tras_1["servicios_cercanos"] != vacia["servicios_cercanos"], "el escritor no escribió"
+    assert tras_1["se"] is None and tras_1["ce"] is None, "con el flag apagado no se escribe evidencia"
+    # 2 · fila con evidencia: no queda rancia junto al texto nuevo.
+    await _siembra_evidencia(banco, uid)
+    antes = await _fila_entorno(banco, uid)
+    assert antes["se"] is not None and antes["ce"] is not None
+    await assets._recompute_walk_score(uid, LAT, LON)
+    despues = await _fila_entorno(banco, uid)
+    assert despues["servicios_cercanos"] != antes["servicios_cercanos"], "el escritor no escribió"
+    assert despues["se"] is None and despues["ce"] is None
+    assert not _sin_evidencia_rancia(antes, despues)
+    async with banco["Sesion"]() as s:
+        assert await persistible.esquema_041_presente(s), "la prueba exige la 041 aplicada"
 
 
 # ── B8 · CONTROLES NEGATIVOS: quitar una guarda material pone esto en rojo ─────────

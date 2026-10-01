@@ -473,7 +473,9 @@ class _Sesion:
         pass
 
 
-def _escribe(monkeypatch, sesion, servicios=COMPLETA, capa_caida=False):
+def _escribe(monkeypatch, sesion, servicios=COMPLETA, capa_caida=False, flag=True):
+    """Estos casos describen la 041 ACTIVADA: el flag de RELEASE-ISOLATION-041 va encendido.
+    Lo que pasa con el flag apagado lo fija `tests/test_release_isolation_041.py`."""
     async def _fetch(lat, lon, timeout=None):
         return [{"lat": LAT, "lon": LON, "tags": {"amenity": "pharmacy", "name": "Farmacia OSM"}}]
 
@@ -488,6 +490,7 @@ def _escribe(monkeypatch, sesion, servicios=COMPLETA, capa_caida=False):
     monkeypatch.setattr(rutas, "_recolectar_zona", _recolecta)
     monkeypatch.setattr(assets, "AsyncSessionLocal", lambda: sesion)
     monkeypatch.setattr(assets, "ensure_walk_score_fuente_column", _nada)
+    monkeypatch.setattr(assets.settings, "place_provenance_041_write_enabled", flag)
     asyncio.run(assets._recompute_walk_score("activo-1", LAT, LON))
     assert len(sesion.updates) == 1, sesion.updates
     return sesion.updates[0]

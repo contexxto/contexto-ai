@@ -52,6 +52,7 @@ from app.contracts.place_v0 import (
     PlaceContextV0,
 )
 from app.place.assembler import MateriaDeZona, _nombre_limpio
+from app.place.clasificacion import clasificar_parada, clasificar_servicio
 
 log = logging.getLogger("foso")
 
@@ -175,7 +176,7 @@ def evidencia_servicios(materia: MateriaDeZona, contexto: PlaceContextV0
 
     items: list[ServiceItemEvidenceV0] = []
     evidencias: list[EvidenceRefV0] = [metodo]
-    incompletos = 0
+    incompletos = sin_clasificacion = 0
     for s in materia.servicios:
         if s.get("cat") == "transporte":
             continue
@@ -183,21 +184,36 @@ def evidencia_servicios(materia: MateriaDeZona, contexto: PlaceContextV0
         if proc is None or s.get("distancia_m") is None or not s.get("cat"):
             incompletos += 1
             continue
+        clase = clasificar_servicio(s)
+        if clase.objeto is None:
+            # La capa trae una categoría de origen que el método declarado NO convierte en la de
+            # Contexto: afirmar que la decidió ese método sería falso. No se persiste.
+            log.warning("foso=clasificacion_no_reconstruible poi=%s: %s", s.get("poi_id"), clase.motivo)
+            sin_clasificacion += 1
+            continue
         enlaces, evs = proc
         items.append(ServiceItemEvidenceV0(
             place=NearbyPlaceV0(category=s["cat"], distance_m=float(s["distancia_m"]),
                                 name=_nombre_limpio(s.get("nombre")), poi_id=str(s["poi_id"])),
-            **enlaces))
+            classification=clase.objeto, **enlaces))
         evidencias.extend(evs)
     if not items:
         # El contexto dice que había servicios, pero ninguno tiene procedencia completa: no hay
         # nada que se pueda AFIRMAR con evidencia. Eso es UNKNOWN, no «no hay servicios».
         return None
+    limitaciones = []
+    if incompletos:
+        limitaciones.append(f"{incompletos} servicio(s) sin procedencia completa no se persistieron")
+    if sin_clasificacion:
+        limitaciones.append(f"{sin_clasificacion} servicio(s) con una categoría de origen que el método "
+                            "de clasificación no explica no se persistieron")
+    sin_origen = sum(1 for i in items if i.classification.source_category is None)
+    if sin_origen:
+        limitaciones.append(f"{sin_origen} servicio(s) sin categoría de origen conservada por la capa: "
+                            "la categoría es de Contexto y la de la fuente se desconoce")
     return NearbyPlacesEvidenceV0(
         status=MeasureStatus.AVAILABLE, items=tuple(items), evidence=tuple(evidencias),
-        limitations=() if not incompletos else (
-            f"{incompletos} servicio(s) sin procedencia completa no se persistieron",),
-        **base)
+        limitations=tuple(limitaciones), **base)
 
 
 def evidencia_conectividad(materia: MateriaDeZona, contexto: PlaceContextV0
@@ -221,15 +237,24 @@ def evidencia_conectividad(materia: MateriaDeZona, contexto: PlaceContextV0
     proc = _procedencia(materia, "nearest_transit", t, metodo)
     if proc is None or materia.transporte_distancia_m is None:
         return None
+    modo = "masivo" if t.get("es_masivo") else "parada"
+    clase = clasificar_parada(t, modo)
+    if clase.objeto is None:
+        log.warning("foso=clasificacion_no_reconstruible parada=%s: %s", t.get("poi_id"), clase.motivo)
+        return None
     enlaces, evidencias = proc
     stop = TransitItemEvidenceV0(
-        stop=NearestTransitV0(distance_m=float(materia.transporte_distancia_m),
-                              mode="masivo" if t.get("es_masivo") else "parada",
+        stop=NearestTransitV0(distance_m=float(materia.transporte_distancia_m), mode=modo,
                               name=_nombre_limpio(t.get("nombre")), stop_id=str(t["poi_id"])),
-        **enlaces)
+        classification=clase.objeto, **enlaces)
     todas = [metodo, *evidencias]
     duracion = None
     limitaciones: list[str] = []
+    if clase.objeto.source_category is None:
+        por_que = ("el subtipo «metro» sale de dos etiquetas de OSM distintas"
+                   if t.get("categoria_capa_origen") == "metro" else "la capa no trae su subtipo")
+        limitaciones.append(f"la capa no conserva la categoría de origen de la parada ({por_que}): "
+                            "el modo es de Contexto y la etiqueta de la fuente se desconoce")
     if materia.transporte_minutos is not None:
         if materia.transporte_ruta_medida:
             # Hoy nadie lo produce: la única ruta medida que existió fue de Google Routes, que no

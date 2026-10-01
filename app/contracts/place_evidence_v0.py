@@ -17,6 +17,18 @@ etiqueta así mezcla tres preguntas distintas y las contesta todas a la vez:
 Aquí cada elemento enlaza cada eje por separado, y el tipo de la evidencia enlazada tiene que
 ser el de su eje: un método no puede hacerse pasar por fuente, ni una fuente por verificación.
 
+LA CATEGORÍA TIENE DOS AUTORIDADES, y el documento las separa (SOURCE-CATEGORY, D-1):
+
+    SOURCE RECORD → SOURCE CATEGORY → MÉTODO DE CLASIFICACIÓN DE CONTEXTO → CATEGORÍA DE CONTEXTO
+
+`place.category` (y `stop.mode`) es la categoría FUNCIONAL que decidió Contexto, no lo que dijo el
+dataset. Hasta SOURCE-CATEGORY el documento la colgaba de una SOURCE `public_dataset` sin decirlo,
+y un «supermercado» se leía como afirmación de Overture cuando Overture decía `grocery_store`.
+Cada elemento lleva ahora `classification`: quién decidió (`authority`), con qué regla versionada
+(`method`) y qué categoría dio la fuente, tal cual, en su espacio de nombres (`source_category`,
+`source_category_namespace`; NULL = la capa no la conserva). Es un CÓDIGO, como
+`DistanceMethod`, y no prosa en `methodology`, que ya no admite otra responsabilidad.
+
 QUÉ SE REUTILIZA, sin modificarlo:
   · `EvidenceRefV0` / `SourceType` / `PersistencePolicy` — la procedencia;
   · `NearbyPlaceV0` / `NearestTransitV0` — el VALOR de cada elemento;
@@ -49,6 +61,8 @@ INVARIANTES que hace cumplir (y que la 041 repite como CHECK en la base):
   4. Ningún proveedor Google: el contenido histórico de Places/Routes no vuelve a entrar.
   5. Línea recta = `derived`; minutos por paso fijo = `estimated` con evidencia heurística.
      Una estimación en línea recta NUNCA se rotula como tiempo de ruta.
+  6. Todo elemento declara su clasificación (`authority` = Contexto, `method` del tipo de
+     elemento), y la categoría de origen, si la hay, es del MISMO dataset que su SOURCE.
 """
 
 from __future__ import annotations
@@ -109,6 +123,76 @@ _CLASE_DE_DURACION = {
 }
 
 
+class CategoryAuthority(StrEnum):
+    """Quién decidió la categoría funcional del elemento."""
+
+    CONTEXTO = "contexto"
+    """Contexto, con una regla propia y versionada (`CategoryMethod`). Nunca la fuente: lo que dijo
+    la fuente va aparte, en `source_category`."""
+
+
+class CategoryMethod(StrEnum):
+    """La regla EXACTA que convirtió la categoría de la fuente en la de Contexto. Las tablas viven
+    congeladas en `app/place/clasificacion.py`, y un test las ata a la ingesta real
+    (`scripts/foso_pois_spike.py`): si la ingesta cambia su mapeo, se versiona el método."""
+
+    CONTEXTO_POI_CATEGORY_V0 = "contexto_poi_category_v0"
+    """`place.category` de un servicio: la agrupación de la ingesta de la capa propia (Overture
+    `categories.primary` por `CAT_LEAF`; OSM por su cadena de etiquetas)."""
+
+    CONTEXTO_TRANSIT_MODE_V0 = "contexto_transit_mode_v0"
+    """`stop.mode` de la parada: `masivo` si el subtipo de la capa es metro, estación de tren,
+    terminal o estación; `parada` en otro caso."""
+
+
+class SourceCategoryNamespace(StrEnum):
+    """DÓNDE está, en la fuente, el valor de `source_category`. Sin esto, «station» de OSM
+    `railway` y de `public_transport` serían el mismo valor, y una hoja de `categories.primary`
+    de Overture no se distinguiría de una de su taxonomía nueva."""
+
+    OVERTURE_CATEGORIES_PRIMARY = "overture:categories.primary"
+    OSM_AMENITY = "osm:amenity"
+    OSM_SHOP = "osm:shop"
+    OSM_LEISURE = "osm:leisure"
+    OSM_RAILWAY = "osm:railway"
+    OSM_HIGHWAY = "osm:highway"
+    OSM_PUBLIC_TRANSPORT = "osm:public_transport"
+
+    @property
+    def dataset(self) -> str:
+        """El dataset del espacio de nombres: tiene que ser el `provider` de la SOURCE del elemento."""
+        return self.value.split(":", 1)[0]
+
+
+class CategoryClassificationV0(_Base):
+    """La procedencia de la CATEGORÍA de un elemento, separada de la de su registro.
+
+    Responde sin inferir: «¿quién decidió que este POI es `supermercado`?» → `authority` con
+    `method`; «¿qué dijo la fuente?» → `source_category` en `source_category_namespace`.
+    """
+
+    authority: CategoryAuthority
+    method: CategoryMethod
+    source_category: str | None = Field(min_length=1)
+    """El valor de la fuente TAL CUAL (`grocery_store`, `convenience`). Nunca otra normalización de
+    Contexto. NULL = la capa no lo conserva: se declara, no se adivina. Obligatorio aunque sea NULL,
+    para que un documento sin la clave no pase por uno que dice «no se sabe»."""
+
+    source_category_namespace: SourceCategoryNamespace | None
+    """Obligatorio con `source_category`, y NULL con él."""
+
+    @model_validator(mode="after")
+    def _valor_y_espacio_van_juntos(self) -> CategoryClassificationV0:
+        if (self.source_category is None) != (self.source_category_namespace is None):
+            raise ValueError("source_category y source_category_namespace van juntos: un valor sin "
+                             "su espacio de nombres no se puede reconstruir, y un espacio sin valor "
+                             "no afirma nada")
+        if self.source_category is not None and self.source_category != self.source_category.strip():
+            raise ValueError("source_category es el valor de la fuente tal cual; no se recorta ni se "
+                             "retoca")
+        return self
+
+
 def _ids_utilizables(v: tuple[str, ...]) -> tuple[str, ...]:
     if any(not i.strip() for i in v):
         raise ValueError("un identificador de evidencia vacío no apunta a nada")
@@ -118,7 +202,10 @@ def _ids_utilizables(v: tuple[str, ...]) -> tuple[str, ...]:
 
 
 class _ProcedenciaDeElemento(_Base):
-    """Los tres ejes de procedencia de un elemento, cada uno por separado."""
+    """Los tres ejes de procedencia de un elemento, cada uno por separado. La CATEGORÍA, que es un
+    cuarto eje, la declara cada elemento concreto en `classification`."""
+
+    classification: CategoryClassificationV0
 
     source_evidence_id: str = Field(min_length=1)
     """→ `PUBLIC_DATASET`: el registro del dataset abierto del que sale el lugar."""
@@ -138,8 +225,16 @@ class _ProcedenciaDeElemento(_Base):
                 "verification": self.verification_evidence_ids}
 
 
+def _exigir_metodo(c: CategoryClassificationV0, metodo: CategoryMethod, de: str) -> None:
+    if c.method is not metodo:
+        raise ValueError(f"{de} se clasifica con {metodo.value}, no con {c.method.value}")
+
+
 class ServiceItemEvidenceV0(_ProcedenciaDeElemento):
-    """Un servicio cercano (un POI de la capa propia) con su procedencia."""
+    """Un servicio cercano (un POI de la capa propia) con su procedencia.
+
+    `place.category` es la categoría de CONTEXTO; lo que dijo la fuente está en `classification`.
+    """
 
     place: NearbyPlaceV0
 
@@ -149,11 +244,15 @@ class ServiceItemEvidenceV0(_ProcedenciaDeElemento):
         cierra, no habría forma de saber qué evidencia guardada lo nombra."""
         if not self.place.poi_id:
             raise ValueError("un elemento persistido exige place.poi_id (la identidad en la capa)")
+        _exigir_metodo(self.classification, CategoryMethod.CONTEXTO_POI_CATEGORY_V0, "un servicio")
         return self
 
 
 class TransitItemEvidenceV0(_ProcedenciaDeElemento):
-    """La parada o estación más cercana, con su procedencia."""
+    """La parada o estación más cercana, con su procedencia.
+
+    `stop.mode` es la clasificación de CONTEXTO; lo que dijo la fuente está en `classification`.
+    """
 
     stop: NearestTransitV0
 
@@ -161,6 +260,7 @@ class TransitItemEvidenceV0(_ProcedenciaDeElemento):
     def _identidad_obligatoria(self) -> TransitItemEvidenceV0:
         if not self.stop.stop_id:
             raise ValueError("un elemento persistido exige stop.stop_id (la identidad en la capa)")
+        _exigir_metodo(self.classification, CategoryMethod.CONTEXTO_TRANSIT_MODE_V0, "una parada")
         return self
 
 
@@ -274,6 +374,16 @@ class _DocumentoDeDimension(_Base):
             for eje, ids in el.enlaces().items():
                 for i in ids:
                     _exigir_enlace(por_id, i, eje, tipo_por_eje[eje])
+            # La categoría de origen es del MISMO dataset que el registro: una hoja de Overture no
+            # puede colgar de un nodo de OSM, ni al revés.
+            ns = el.classification.source_category_namespace
+            fuente = por_id[el.source_evidence_id]
+            if ns is not None and ns.dataset != fuente.provider:
+                raise ValueError(
+                    f"source_category en {ns.value} pero la SOURCE del elemento es de "
+                    f"provider={fuente.provider}: la categoría de origen tiene que ser del registro "
+                    "que la respalda"
+                )
         for eje, (ids, tipos) in self._enlaces_extra().items():
             for i in ids:
                 _exigir_enlace(por_id, i, eje, tipos)

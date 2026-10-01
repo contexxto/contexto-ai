@@ -19,6 +19,7 @@ import ast
 import dataclasses
 import json
 import pathlib
+import re
 
 import anthropic
 import httpx
@@ -154,7 +155,7 @@ def _escaneo():
     for rel, fuente in _ficheros():
         props, m = _analizar(fuente)
         if rel == "app/config.py":  # define `llm_model` y su default; nada más
-            m = [x for x in m if "claude-sonnet-4-5-20250929" not in x]
+            m = [x for x in m if not x.endswith(f"id de modelo literal {M5!r}")]
         if props:
             inventario[rel] = props
         if m:
@@ -453,6 +454,28 @@ def test_el_registro_es_exactamente_el_de_esta_unidad():
         "claude-haiku-4-5": ("claude-haiku-4-5", "evaluador"),
     }
     assert perfil(M45) is SONNET_45 and perfil(M5) is SONNET_5
+
+
+@pytest.mark.parametrize("entorno,esperado", [({}, SONNET_5), ({"LLM_MODEL": M45}, SONNET_45)])
+def test_el_default_es_sonnet_5_y_llm_model_explicito_elige_45(monkeypatch, entorno, esperado):
+    """Sin `LLM_MODEL`, `Settings` resuelve al perfil de Sonnet 5, el que corre en producción desde
+    el 2026-10-01. Con `LLM_MODEL` explícito, 4.5 sigue siendo seleccionable: el rollback es sólo
+    de entorno mientras Anthropic lo sirva."""
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+    for k, v in {"POSTGRES_DB": "t", "POSTGRES_USER": "t", "POSTGRES_PASSWORD": "t", **entorno}.items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.setattr(config.settings, "llm_model", config.Settings(_env_file=None).llm_model)
+    assert runtime().perfil is esperado
+
+
+def test_los_tres_defaults_declarativos_coinciden():
+    """`Settings`, `render.yaml` y `.env.example` declaran el mismo modelo, y tiene perfil de
+    producto. Si uno deriva, el repositorio vuelve a decir un modelo mientras producción corre otro."""
+    render = re.search(r"- key: LLM_MODEL\s+value: (\S+)", (RAIZ / "render.yaml").read_text(encoding="utf-8"))
+    ejemplo = re.search(r"^LLM_MODEL=(\S+)$", (RAIZ / ".env.example").read_text(encoding="utf-8"), re.M)
+    assert render and ejemplo
+    assert {config.Settings.model_fields["llm_model"].default, render[1], ejemplo[1]} == {M5}
+    assert perfil(M5).rol == "producto"
 
 
 # ═════════════════════════════ el juez de los evals (de #180) ═════════════════════════════

@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     postgres_port: int = 5432
 
     anthropic_api_key: str = ""
-    llm_model: str = "claude-sonnet-4-5-20250929"
+    llm_model: str = "claude-sonnet-5"
     ssl_verify: str = "true"
 
     # E3.2b.4 · shadow wiring del Buyer Updater. APAGADO por defecto, y el default es la

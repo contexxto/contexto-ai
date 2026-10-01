@@ -30,10 +30,16 @@ sino "el proveedor no contesto", y de esa diferencia depende que `PlaceContextV0
 
 from __future__ import annotations
 
+import logging
+import time
+from urllib.parse import urlparse
+
 import httpx
 
 from app.config import settings
 from app.tls_salida import verificacion_httpx
+
+_log = logging.getLogger(__name__)
 
 # Endpoints públicos de Overpass (probamos en orden si uno falla).
 _OVERPASS_MIRRORS = (
@@ -59,18 +65,33 @@ async def _fetch_pois(lat: float, lon: float, timeout: float = _TIMEOUT) -> list
     )
     verify = verificacion_httpx()
     for url in _OVERPASS_MIRRORS:
+        t0 = time.perf_counter()
         try:
             async with httpx.AsyncClient(verify=verify, timeout=timeout) as c:
                 resp = await c.post(url, data={"data": query},
                                     headers={"User-Agent": "contexto_ai_v2"})
                 resp.raise_for_status()
                 elements = resp.json().get("elements", [])
-        except Exception:  # noqa: BLE001 — best-effort; probamos el siguiente mirror
+        except Exception as exc:  # noqa: BLE001 — best-effort; probamos el siguiente mirror
+            # PLACE-EVIDENCE-WRITE-DECOUPLING: antes este fallo no dejaba rastro y un `None` no se
+            # podía explicar. Ni la consulta (lleva coordenadas) ni el texto del error: el mirror,
+            # el tiempo, la clase y el HTTP si lo hubo.
+            respuesta = getattr(exc, "response", None)
+            _log.warning("overpass provider=overpass mirror=%s op=pois_radio elapsed_ms=%d outcome=fallo "
+                         "exc=%s http=%s", _host(url), int((time.perf_counter() - t0) * 1000),
+                         type(exc).__name__, getattr(respuesta, "status_code", None))
             continue
         pois = [
             {"lat": e["lat"], "lon": e["lon"], "tags": e.get("tags", {})}
             for e in elements
             if e.get("type") == "node" and "lat" in e and "lon" in e
         ]
+        _log.info("overpass provider=overpass mirror=%s op=pois_radio elapsed_ms=%d outcome=ok http=%s pois=%d",
+                  _host(url), int((time.perf_counter() - t0) * 1000), resp.status_code, len(pois))
         return pois
+    _log.warning("overpass provider=overpass op=pois_radio outcome=sin_respuesta mirrors=%d", len(_OVERPASS_MIRRORS))
     return None
+
+
+def _host(url: str) -> str:
+    return urlparse(url).hostname or "?"

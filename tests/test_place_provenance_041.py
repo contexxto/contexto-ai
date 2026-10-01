@@ -500,6 +500,8 @@ def _escribe(monkeypatch, sesion, servicios=COMPLETA, capa_caida=False, flag=Tru
         return None
     monkeypatch.setattr(assets, "_fetch_pois", _fetch)
     monkeypatch.setattr(rutas, "_recolectar_zona", _recolecta)
+    # PLACE-EVIDENCE-WRITE-DECOUPLING: con la 041, la evidencia sale SOLO de la capa propia.
+    monkeypatch.setattr(rutas, "_recolectar_capa_propia", _recolecta)
     monkeypatch.setattr(assets, "AsyncSessionLocal", lambda: sesion)
     monkeypatch.setattr(assets, "ensure_walk_score_fuente_column", _nada)
     monkeypatch.setattr(assets.settings, "place_provenance_041_write_enabled", flag)

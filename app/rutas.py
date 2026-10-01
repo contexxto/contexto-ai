@@ -405,6 +405,23 @@ async def _recolectar_zona(lat: float, lon: float) -> MateriaDeZona:
         _reverse_geocode(lat, lon), walk_score_para(lat, lon), _servicios_con_coords(lat, lon, 6),
         return_exceptions=True,
     )
+    return _materia_de_zona(lat, lon, geo, walk, servicios)
+
+
+async def _recolectar_capa_propia(lat: float, lon: float) -> MateriaDeZona:
+    """SOLO la capa propia (`pois_vivos`): ni Overpass ni Nominatim.
+
+    PLACE-EVIDENCE-WRITE-DECOUPLING: la evidencia persistida de servicios y transporte sale
+    entera de aquí (`documentos_persistibles` no lee `walk` ni `lugar`), así que derivarla no
+    puede depender de que un servicio público externo responda. La materia es la misma que la de
+    `_recolectar_zona`, con `lugar` y `walk` vacíos: lo que el contexto no sepa de ellos queda
+    UNKNOWN, no se inventa.
+    """
+    return _materia_de_zona(lat, lon, {}, {}, await _servicios_con_coords(lat, lon, 6))
+
+
+def _materia_de_zona(lat: float, lon: float, geo, walk, servicios) -> MateriaDeZona:
+    """La materia prima a partir de lo recolectado. Pura: no consulta nada."""
     geo = geo if isinstance(geo, dict) else {}
     walk = walk if isinstance(walk, dict) else {}
     servicios = servicios if isinstance(servicios, list) else []
@@ -543,6 +560,31 @@ async def analizar_zona_con_evidencia(lat: float, lon: float) -> tuple[dict, dic
     materia = await _recolectar_zona(lat, lon)
     contexto = ensamblar_place_context(materia)
     return derivar_salida_legacy(contexto, materia), documentos_persistibles(materia, contexto)
+
+
+@dataclass(frozen=True)
+class EvidenciaDeLugar:
+    """Lo que la capa propia respalda de un punto: los dos documentos persistibles (cada uno
+    `None` = UNKNOWN) y la prosa que el contexto deriva de la MISMA materia."""
+
+    documentos: dict
+    servicios_texto: str | None
+    conectividad_texto: str | None
+
+
+async def evidencia_de_capa_propia(lat: float, lon: float) -> EvidenciaDeLugar:
+    """La evidencia de lugar de un punto, SOLO desde la capa propia (PLACE-EVIDENCE-WRITE-DECOUPLING).
+
+    Independiente de Overpass y de Nominatim: es lo que el escritor persiste aunque Overpass no
+    responda, y lo que un dry-run o backfill futuro puede derivar sin reconstruir la lógica. Los
+    documentos son exactamente los de `analizar_zona_con_evidencia` (que la usó el escritor hasta
+    esta unidad): `documentos_persistibles` no lee ni `walk` ni `lugar`.
+    """
+    from app.place.persistible import documentos_persistibles  # lazy: sin ciclo en el import
+    materia = await _recolectar_capa_propia(lat, lon)
+    contexto = ensamblar_place_context(materia)
+    return EvidenciaDeLugar(documentos_persistibles(materia, contexto), prosa_servicios(contexto),
+                            prosa_conectividad(contexto))
 
 
 async def analizar_zona(lat: float, lon: float) -> dict:

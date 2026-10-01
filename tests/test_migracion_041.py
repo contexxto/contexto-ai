@@ -495,6 +495,7 @@ async def test_el_escritor_real_escribe_evidencia_que_la_base_acepta(banco, monk
         return None
     monkeypatch.setattr(assets, "_fetch_pois", _fetch)
     monkeypatch.setattr(rutas, "_recolectar_zona", _recolecta)
+    monkeypatch.setattr(rutas, "_recolectar_capa_propia", _recolecta)
     monkeypatch.setattr(assets, "AsyncSessionLocal", banco["Sesion"])
     # RELEASE-ISOLATION-041: este caso describe la 041 ACTIVADA; el flag va encendido.
     monkeypatch.setattr(assets.settings, "place_provenance_041_write_enabled", True)
@@ -708,6 +709,7 @@ async def test_legacy_writer_cannot_leave_stale_structured_evidence_W1_real(banc
         return False
     monkeypatch.setattr(assets, "_fetch_pois", _fetch)
     monkeypatch.setattr(rutas, "_recolectar_zona", _recolecta)
+    monkeypatch.setattr(rutas, "_recolectar_capa_propia", _recolecta)
     monkeypatch.setattr(assets, "AsyncSessionLocal", banco["Sesion"])
     # RELEASE-ISOLATION-041: este caso describe la 041 ACTIVADA; el flag va encendido.
     monkeypatch.setattr(assets.settings, "place_provenance_041_write_enabled", True)
@@ -751,6 +753,7 @@ async def test_W1_escribe_texto_y_evidencia_de_forma_atomica_y_un_fallo_no_deja_
         return real(doc)
     monkeypatch.setattr(assets, "_fetch_pois", _fetch)
     monkeypatch.setattr(rutas, "_recolectar_zona", _recolecta)
+    monkeypatch.setattr(rutas, "_recolectar_capa_propia", _recolecta)
     monkeypatch.setattr(assets, "AsyncSessionLocal", banco["Sesion"])
     # RELEASE-ISOLATION-041: este caso describe la 041 ACTIVADA; el flag va encendido.
     monkeypatch.setattr(assets.settings, "place_provenance_041_write_enabled", True)
@@ -798,6 +801,7 @@ async def test_con_la_041_aplicada_y_el_flag_apagado_el_escritor_real_no_escribe
         return None
     monkeypatch.setattr(assets, "_fetch_pois", _fetch)
     monkeypatch.setattr(rutas, "_recolectar_zona", _recolecta)
+    monkeypatch.setattr(rutas, "_recolectar_capa_propia", _recolecta)
     monkeypatch.setattr(assets, "AsyncSessionLocal", banco["Sesion"])
     monkeypatch.setattr(assets, "ensure_walk_score_fuente_column", _nada)
     assert assets.settings.place_provenance_041_write_enabled is False, "el valor de fábrica, sin tocar"

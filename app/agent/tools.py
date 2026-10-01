@@ -19,6 +19,7 @@ from sqlalchemy import text
 from app.place.legado import CAMPOS_LEGADOS, con_contexto_vigente
 from app.config import settings
 from app.database import AsyncSessionLocal
+from app.tls_salida import verificacion_httpx
 # La traducción de `walk_score_fuente` vive en `encaje` y se IMPORTA, no se copia: tener dos
 # tablas fue exactamente el fallo de procedencia del 2026-08-29 (G19.0).
 from app.encaje import resolver_procedencia_caminabilidad
@@ -541,7 +542,7 @@ async def _geocode_google(address: str, key: str) -> dict | None:
     se pinta en todos los mapas). No se borra porque no hay uso que no termine en mapa del
     que se haya demostrado el consumidor: si alguno aparece, ese es el sitio. Llamarlo
     desde un productor de mapa lo rompe `tests/test_map_source_boundary.py`."""
-    verify = settings.ssl_verify.lower() != "false"
+    verify = verificacion_httpx()
     params = {
         "address": f"{address.strip()}, Quito, Ecuador",
         "key": key,

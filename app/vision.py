@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from app.config import settings
 from app.llm_runtime import CallPurpose, runtime
+from app.tls_salida import verificacion_httpx
 
 # Claude recomienda lado máximo ~1568px; reescalamos para controlar tokens/costo.
 _MAX_DIM = 1568
@@ -94,7 +95,7 @@ _SYSTEM_PROMPT = (
 
 
 def _client() -> anthropic.AsyncAnthropic:
-    verify = settings.ssl_verify.lower() != "false"
+    verify = verificacion_httpx()
     return anthropic.AsyncAnthropic(
         api_key=settings.anthropic_api_key,
         http_client=httpx.AsyncClient(verify=verify, timeout=60.0),
@@ -107,7 +108,7 @@ async def fetch_image_jpeg_b64(url: str) -> str:
     Se expone como función pública para reutilizar la MISMA imagen tanto en la
     extracción de ficha (visión) como en el embedding (Voyage), sin doble descarga.
     """
-    verify = settings.ssl_verify.lower() != "false"
+    verify = verificacion_httpx()
     # Muchos CDNs (Wikimedia, etc.) bloquean clientes sin User-Agent de navegador.
     headers = {
         # El +URL del User-Agent es a dónde mira el operador de un CDN cuando decide si

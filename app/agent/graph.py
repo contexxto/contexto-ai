@@ -26,16 +26,19 @@ from app.fair_housing import detectar_steering
 from app.llm_runtime import CallPurpose, runtime
 from app.texto_salida import texto_de_salida
 from app.preferencias import extraer_preferencias
+from app.tls_salida import verificacion_httpx
 
 # Garantiza que la key esté disponible para cualquier llamada directa al SDK
 os.environ["ANTHROPIC_API_KEY"] = settings.anthropic_api_key
 
 # En redes corporativas con SSL inspection, el proxy intercepta TLS con su propio cert.
 # Python no lo reconoce → CERTIFICATE_VERIFY_FAILED.
-# ssl_verify=false desactiva la verificación SOLO en dev local (nunca en producción).
-_ssl_verify = settings.ssl_verify.lower() != "false"
+# SSL_VERIFY=system lo resuelve con la verificación ENCENDIDA (ver app/tls_salida.py).
+# SSL_VERIFY=false la desactiva SOLO en dev local (nunca en producción) y, además, para
+# todo el proceso con los parches de abajo: `system` no los aplica.
+_ssl_verify = verificacion_httpx()
 
-if not _ssl_verify:
+if _ssl_verify is False:
     # Patch 1: contexto SSL de Python (afecta urllib3, requests)
     ssl._create_default_https_context = ssl._create_unverified_context  # noqa: SLF001
 

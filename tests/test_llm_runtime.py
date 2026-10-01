@@ -19,6 +19,7 @@ import ast
 import dataclasses
 import json
 import pathlib
+import re
 
 import anthropic
 import httpx
@@ -92,9 +93,27 @@ def _splat_proposito(valor: ast.AST, asign: dict[str, ast.AST]) -> str | None:
     return _proposito_de(valor) if valor is not None else None
 
 
-def _analizar(fuente: str) -> tuple[list[str], list[str]]:
-    """(propósitos de las llamadas al LLM en orden, infracciones)."""
+def _default_de_llm_model(arbol: ast.Module) -> ast.Constant | None:
+    """El nodo literal que es el default de `Settings.llm_model` (`llm_model: str = "<id>"` en el
+    cuerpo de `class Settings`, de primer nivel), o None si no tiene exactamente esa forma."""
+    for clase in arbol.body:
+        if isinstance(clase, ast.ClassDef) and clase.name == "Settings":
+            for n in clase.body:
+                if (isinstance(n, ast.AnnAssign) and isinstance(n.target, ast.Name)
+                        and n.target.id == "llm_model" and isinstance(n.value, ast.Constant)):
+                    return n.value
+    return None
+
+
+def _analizar(fuente: str, default_llm_model: str | None = None) -> tuple[list[str], list[str]]:
+    """(propósitos de las llamadas al LLM en orden, infracciones).
+
+    Con `default_llm_model`, se admite UN literal de modelo: el NODO que es el default de
+    `Settings.llm_model`, y sólo si vale exactamente eso. Otro literal idéntico en el mismo fichero
+    (otro campo, el módulo o la misma línea) sigue siendo una infracción."""
     arbol = ast.parse(fuente)
+    nodo = _default_de_llm_model(arbol) if default_llm_model else None
+    exento = nodo if nodo is not None and nodo.value == default_llm_model else None
     padre_funcion: dict[ast.AST, ast.AST] = {}
     for f in ast.walk(arbol):
         if isinstance(f, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -106,7 +125,8 @@ def _analizar(fuente: str) -> tuple[list[str], list[str]]:
             malas.append((n.lineno, "lee settings.llm_model fuera de la frontera"))
         if isinstance(n, ast.Name) and n.id in ("THINKING_APAGADO", "temperatura_llm"):
             malas.append((n.lineno, f"{n.id} (conocimiento de modelo disperso)"))
-        if isinstance(n, ast.Constant) and isinstance(n.value, str) and n.value.startswith("claude-"):
+        if isinstance(n, ast.Constant) and isinstance(n.value, str) and n.value.startswith("claude-") \
+                and n is not exento:
             malas.append((n.lineno, f"id de modelo literal {n.value!r}"))
         if isinstance(n, ast.Dict):
             pares = {k.value: v for k, v in zip(n.keys, n.values) if isinstance(k, ast.Constant)}
@@ -152,9 +172,8 @@ def _ficheros():
 def _escaneo():
     inventario, malas = {}, {}
     for rel, fuente in _ficheros():
-        props, m = _analizar(fuente)
-        if rel == "app/config.py":  # define `llm_model` y su default; nada más
-            m = [x for x in m if "claude-sonnet-4-5-20250929" not in x]
+        # app/config.py define `llm_model` y su default; nada más.
+        props, m = _analizar(fuente, default_llm_model=M5 if rel == "app/config.py" else None)
         if props:
             inventario[rel] = props
         if m:
@@ -231,6 +250,30 @@ def test_la_guarda_acepta_las_formas_correctas():
         "    h = httpx.post('https://api.anthropic.com/v1/messages', json={**j, 'max_tokens': 5})\n"
     )
     assert _analizar(buena) == (["MATCH", "CHAT", "JUEZ"], [])
+
+
+_DEFAULT = 'class Settings(BaseSettings):\n    llm_model: str = "claude-sonnet-5"\n'
+
+
+@pytest.mark.parametrize("fuente,malas", [
+    (_DEFAULT, []),
+    # un segundo literal IDÉNTICO: en otro campo, en el módulo, en la misma línea
+    (_DEFAULT + '    respaldo: str = "claude-sonnet-5"\n', ["línea 3: id de modelo literal 'claude-sonnet-5'"]),
+    ('MODELO = "claude-sonnet-5"\n' + _DEFAULT, ["línea 1: id de modelo literal 'claude-sonnet-5'"]),
+    (_DEFAULT.replace('"\n', '"; x = "claude-sonnet-5"\n'), ["línea 2: id de modelo literal 'claude-sonnet-5'"]),
+    # otro id como default, o el mismo fuera de `Settings`
+    (_DEFAULT.replace("sonnet-5", "sonnet-5-5"), ["línea 2: id de modelo literal 'claude-sonnet-5-5'"]),
+    (_DEFAULT.replace("class Settings", "class Otra"), ["línea 2: id de modelo literal 'claude-sonnet-5'"]),
+])
+def test_la_excepcion_de_config_es_solo_el_default_de_llm_model(fuente, malas):
+    assert _analizar(fuente, default_llm_model=M5) == ([], malas)
+
+
+def test_config_declara_un_solo_id_de_modelo_y_es_el_default_de_llm_model():
+    arbol = ast.parse((RAIZ / "app" / "config.py").read_text(encoding="utf-8"))
+    literales = [n for n in ast.walk(arbol)
+                 if isinstance(n, ast.Constant) and isinstance(n.value, str) and n.value.startswith("claude-")]
+    assert literales == [_default_de_llm_model(arbol)] and literales[0].value == M5
 
 
 # ═════════════════════════════ 3 · lo que llega al proveedor ═════════════════════════════
@@ -453,6 +496,28 @@ def test_el_registro_es_exactamente_el_de_esta_unidad():
         "claude-haiku-4-5": ("claude-haiku-4-5", "evaluador"),
     }
     assert perfil(M45) is SONNET_45 and perfil(M5) is SONNET_5
+
+
+@pytest.mark.parametrize("entorno,esperado", [({}, SONNET_5), ({"LLM_MODEL": M45}, SONNET_45)])
+def test_el_default_es_sonnet_5_y_llm_model_explicito_elige_45(monkeypatch, entorno, esperado):
+    """Sin `LLM_MODEL`, `Settings` resuelve al perfil de Sonnet 5, el que corre en producción desde
+    el 2026-10-01. Con `LLM_MODEL` explícito, 4.5 sigue siendo seleccionable: el rollback es sólo
+    de entorno mientras Anthropic lo sirva."""
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+    for k, v in {"POSTGRES_DB": "t", "POSTGRES_USER": "t", "POSTGRES_PASSWORD": "t", **entorno}.items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.setattr(config.settings, "llm_model", config.Settings(_env_file=None).llm_model)
+    assert runtime().perfil is esperado
+
+
+def test_los_tres_defaults_declarativos_coinciden():
+    """`Settings`, `render.yaml` y `.env.example` declaran el mismo modelo, y tiene perfil de
+    producto. Si uno deriva, el repositorio vuelve a decir un modelo mientras producción corre otro."""
+    render = re.search(r"- key: LLM_MODEL\s+value: (\S+)", (RAIZ / "render.yaml").read_text(encoding="utf-8"))
+    ejemplo = re.search(r"^LLM_MODEL=(\S+)$", (RAIZ / ".env.example").read_text(encoding="utf-8"), re.M)
+    assert render and ejemplo
+    assert {config.Settings.model_fields["llm_model"].default, render[1], ejemplo[1]} == {M5}
+    assert perfil(M5).rol == "producto"
 
 
 # ═════════════════════════════ el juez de los evals (de #180) ═════════════════════════════

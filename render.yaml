@@ -33,7 +33,7 @@ services:
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: LLM_MODEL
-        value: claude-sonnet-4-5-20250929
+        value: claude-sonnet-5
       - key: SSL_VERIFY
         value: "true"
       # Conexiones a Postgres — TECHO COMPARTIDO de 15 (Session Pooler de Supabase).

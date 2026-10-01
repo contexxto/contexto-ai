@@ -54,20 +54,32 @@ INGESTA = "2026-09-22T14:30:03+00:00"
 LAT, LON = -0.1755, -78.4858
 
 
+# La categoría de ORIGEN que la capa guarda para cada (dataset, categoría de Contexto) sintética:
+# la hoja de Overture tal cual, o el subtipo con que la ingesta codifica la etiqueta de OSM.
+_ORIGEN_EN_CAPA = {
+    ("osm", "parque"): "park", ("osm", "farmacia"): "pharmacy", ("osm", "supermercado"): "supermercado",
+    ("overture", "salud"): "hospital", ("overture", "farmacia"): "pharmacy",
+    ("overture", "supermercado"): "supermarket", ("overture", "parque"): "park",
+    ("overture", "educacion"): "school", ("overture", "centro_comercial"): "shopping_center",
+}
+
+
 def _poi(cat, d, poi_id, *, dataset="osm", dataset_id=None, nombre=None, **extra):
-    """Un POI con la forma EXACTA que devuelve `_servicios_propios` desde la 041."""
+    """Un POI con la forma EXACTA que devuelve `_servicios_propios` (041 + SOURCE-CATEGORY)."""
     base = {"nombre": nombre or f"{cat.capitalize()} Sintético {poi_id}", "cat": cat,
             "distancia_m": d, "lat": LAT, "lon": LON, "fuente": "propio", "marca": None,
             "verificado_en": None, "poi_id": poi_id, "dataset": dataset,
             "dataset_id": dataset_id or f"{dataset}/{poi_id}", "capa_actualizado_en": INGESTA,
-            "verificado_en_ts": None, "verificacion_accion": None}
+            "verificado_en_ts": None, "verificacion_accion": None,
+            "categoria_capa_origen": _ORIGEN_EN_CAPA.get((dataset, cat))}
     base.update(extra)
     return base
 
 
 def _transporte(d=640, poi_id=900, masivo=True, **extra):
+    subtipo = "metro" if masivo else "parada_bus"
     return _poi("transporte", d, poi_id, nombre="Estación Sintética", es_masivo=masivo,
-                subtipo="metro" if masivo else "parada", **extra)
+                subtipo=subtipo, **{"categoria_capa_origen": subtipo, **extra})
 
 
 def _materia(servicios, *, ruta_medida=False):

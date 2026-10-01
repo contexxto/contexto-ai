@@ -551,7 +551,10 @@ async def test_la_capa_real_proyecta_la_procedencia_y_su_documento_pasa_el_check
             "('Farmacia Real', 'farmacia', NULL, ST_SetSRID(ST_MakePoint(-78.4860, -0.1757), 4326), 'overture', "
             " '08f-real-1', NULL, 'quito', '2026-09-22 14:30:03+00'), "
             "('Estación Real', 'transporte', 'metro', ST_SetSRID(ST_MakePoint(-78.4830, -0.1740), 4326), 'osm', "
-            " NULL, 'node/7003', 'quito', '2026-09-22 14:30:03+00')"))
+            " NULL, 'node/7003', 'quito', '2026-09-22 14:30:03+00'), "
+            # SOURCE-CATEGORY: la forma del POI 60717 (Overture `grocery_store`, agrupado como supermercado).
+            "('Bizcochos Real', 'supermercado', 'grocery_store', ST_SetSRID(ST_MakePoint(-78.4857, -0.1756), 4326), "
+            " 'overture', '08f-real-60717', NULL, 'quito', '2026-09-22 14:30:03+00')"))
         await cx.execute(text(
             "INSERT INTO entorno_curacion (activo_id, accion, nombre, corredor_id, poi_id, creado_en) "
             "SELECT :a, 'confirmado', 'Farmacia Real', :c, id, '2026-09-25 10:00:00+00' "
@@ -579,6 +582,18 @@ async def test_la_capa_real_proyecta_la_procedencia_y_su_documento_pasa_el_check
     assert por_id[vid].source_type is SourceType.OPERATOR_DECLARED
     assert por_id[vid].observed_at.isoformat().startswith("2026-09-25T10:00:00")
     assert c.stop.stop.mode == "masivo" and c.walk_duration.value_class.value == "estimated"
+
+    # SOURCE-CATEGORY: por el SQL REAL, la categoría de origen llega tal cual y la de Contexto se
+    # declara como propia; donde la capa no la guarda (NULL) o la perdió (metro), queda NULL.
+    assert capa["supermercado"]["categoria_capa_origen"] == "grocery_store"
+    assert capa["parque"]["categoria_capa_origen"] is None
+    sup = next(i for i in s.items if i.place.category == "supermercado")
+    assert (sup.classification.authority.value, sup.classification.method.value) == \
+        ("contexto", "contexto_poi_category_v0")
+    assert (sup.classification.source_category, sup.classification.source_category_namespace.value) == \
+        ("grocery_store", "overture:categories.primary")
+    assert next(i for i in s.items if i.place.category == "parque").classification.source_category is None
+    assert c.stop.classification.source_category is None
 
     await _aplica(banco["dueno"])
     r = await _intenta(banco["dueno"], "UPDATE public.activos_inmutables SET "

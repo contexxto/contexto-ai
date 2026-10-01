@@ -83,7 +83,7 @@ _RADIO_TRANSP_M = 3000  # el hub masivo puede estar más lejos (mismo criterio q
 _PROPIOS_ENTORNO_SQL = text("""
     SELECT DISTINCT ON (categoria)
         id, categoria, nombre, marca, verificado_en,
-        fuente, overture_id, osm_id, actualizado_en, verificacion_accion,
+        fuente, overture_id, osm_id, actualizado_en, verificacion_accion, categoria_overture,
         ST_Y(geom) AS lat, ST_X(geom) AS lon,
         ROUND(ST_Distance(geom::geography,
               ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography))::int AS distancia_m
@@ -150,6 +150,11 @@ def _procedencia_de_fila(f) -> dict:
         # Cuándo un corredor pisó el lugar, con hora, y qué dijo.
         "verificado_en_ts": _iso(f.get("verificado_en")),
         "verificacion_accion": f.get("verificacion_accion"),
+        # La categoría de ORIGEN tal como la guarda la capa (SOURCE-CATEGORY): para Overture,
+        # `categories.primary` tal cual; para OSM, el subtipo que codifica la etiqueta. `categoria`
+        # es la de Contexto; sin esto, la evidencia la presentaba como si fuera de la fuente.
+        # Lo traduce a la fuente `app/place/clasificacion.py`, no este módulo.
+        "categoria_capa_origen": f.get("categoria_overture"),
     }
 
 

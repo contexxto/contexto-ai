@@ -92,9 +92,13 @@ jobs:
         id: refresco
         # Reintentos por Overpass, que es inestable: el 2026-07-27 devolvió 504 en sus
         # dos endpoints, 2 de 3 veces seguidas. Misma lógica que tenía refresco_pois.cmd.
-        #   0 = las dos fuentes respondieron
-        #   2 = una fuente caída — reintentable, los datos viejos quedan intactos
-        #   1 = error duro — reintentar no ayuda
+        # Desde POI-REFRESH-SOURCE-ISOLATION (2026-10-02) cada fuente (Overture, OSM) se obtiene,
+        # valida y escribe en SU transacción: una fuente fallida no impide refrescar la otra.
+        #   0 = las dos fuentes se obtuvieron y se escribieron
+        #   2 = ninguna rota pero alguna caída — reintentable; lo que respondió YA quedó escrito y
+        #       el reintento lo vuelve a escribir (upsert idempotente, mismas guardas de cierre)
+        #   1 = alguna fuente ROTA (esquema, datos inválidos, escritura) — reintentar no ayuda; la
+        #       otra pudo refrescarse: el «Resumen por fuente» del log dice cuál
         # La espera es de 10 min (el .cmd usaba 15): suficiente para la ventana de
         # recuperación de Overpass sin estirar el job de más.
         run: |
@@ -106,7 +110,7 @@ jobs:
             echo "intento $intento terminó con código $rc"
             if [ "$rc" = "0" ]; then break; fi
             if [ "$rc" = "1" ]; then
-              echo "::error::Error duro en el refresco de POIs — no se reintenta."
+              echo "::error::Fuente ROTA en el refresco de POIs — no se reintenta. La otra pudo refrescarse: ver «Resumen por fuente»."
               break
             fi
             if [ "$intento" != "3" ]; then
@@ -121,6 +125,8 @@ jobs:
         # El script ya avisa por su cuenta en el error duro, pero no en el código 2
         # (porque se reintenta). Esto cubre el caso de agotar los tres intentos.
         # Además, GitHub notifica por su cuenta los workflows fallidos al autor.
+        # El aviso lee logs/refresco_pois_estado_<ciudad>.json (lo deja la última corrida) para
+        # decir QUÉ fuente falló: OVERTURE ROTA · OSM OK, OSM CAÍDA · OVERTURE OK, o las dos.
         if: failure()
         run: |
           python scripts/foso_pois_spike.py "${CIUDAD}" --solo-avisar "codigo ${{ steps.refresco.outputs.codigo }}" || true

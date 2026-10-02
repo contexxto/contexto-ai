@@ -254,9 +254,14 @@ def actualizacion_declarada(sources) -> str | None:
     information applies to»; `""` apunta al registro ENTERO. Se toma el `update_time` de la ÚNICA entrada
     de `sources[]` con `property` vacía, y SOLO si trae zona horaria explícita (`Z` u offset). Sin zona
     (p. ej. Foursquare: `2026-04-12T00:00:00.000`) → None: no se supone UTC. Ninguna o varias entradas
-    raíz → None. No es una observación del lugar ni la hora de ingesta (para meta coincide con la fecha
-    de su volcado: es lo que la fuente declara del registro, nada más). `sources[]` se guarda entero en
-    `source_lineage`, así que la evidencia original no se pierde aunque esto dé None."""
+    raíz → None.
+    La FECHA DEL VOLCADO no es la actualización del registro: si el instante cae (en UTC) en el mismo día
+    que la `version` que declara esa misma entrada raíz —la del volcado de su dataset—, es el sello del
+    volcado → None. Medido (2026-10-02, release 2026-08-19.0, bbox de Quito): meta trae
+    `2026-08-10T00:00:00.000Z` con `version` `2026-08-10` en sus 2841 registros (su volcado); Microsoft,
+    instantes propios de 2021-11 a 2025-09 con `version` `2025-10-20` (pasan). No es una observación del
+    lugar ni la hora de ingesta. `sources[]` se guarda entero en `source_lineage`, así que la evidencia
+    original no se pierde aunque esto dé None."""
     if not isinstance(sources, list):
         return None
     raiz = [s for s in sources if isinstance(s, dict) and s.get("property") in ("", None)]
@@ -268,6 +273,8 @@ def actualizacion_declarada(sources) -> str | None:
         return None
     if dt.tzinfo is None or dt.utcoffset() is None:
         return None
+    if str(raiz[0].get("version") or "") == dt.astimezone(timezone.utc).date().isoformat():
+        return None                                  # el sello del volcado del dataset, no del registro
     return dt.isoformat()
 
 

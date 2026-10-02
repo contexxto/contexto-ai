@@ -9,6 +9,8 @@ Matriz A–AD del mandato WRITER CODE+CI 0.1, en tres capas:
   · POSTGIS (local, `TEST_POSTGIS_URL`): el `main()` REAL contra un esquema con la 043 REAL: atomicidad de
     POIs + corrida, la FK diferida, el enlace por fila, cierres que no re-enlazan, histórico intacto, contadores
     que cuadran con SQL, permisos intactos y lectores sin columnas nuevas.
+  · POSTGRES REAL SIN POSTGIS (`TEST_DATABASE_URL`: CI 15, local 17.6): la compuerta 043 y cada manifiesto que
+    produce el escritor contra los CHECK REALES de la 043, sobre el banco de su suite.
 """
 from __future__ import annotations
 
@@ -18,6 +20,7 @@ import pathlib
 import re
 
 import pytest
+from sqlalchemy import text
 
 from tests.test_poi_refresh_source_isolation import (  # noqa: F401 — fixtures y ayudantes de #189
     BINDER, HUELLA_PRUEBA, RAIZ, SCRIPT, SHA_PRUEBA, SOURCES_PRUEBA, URL_PG, _corre, _estado, _foto, _fuentes, _motor,
@@ -42,6 +45,13 @@ def _corridas(motor) -> dict:
     ([{"property": "", "update_time": "2026-08-10T00:00:00Z"},
       {"property": "", "update_time": "2026-08-11T00:00:00Z"}], None),                                  # dos raíces
     ([{"property": "", "update_time": "ayer"}], None), ([{"property": "", "update_time": None}], None),
+    # el sello del VOLCADO (mismo día UTC que la `version` de su dataset) no es la actualización del registro
+    ([{"property": "", "update_time": "2026-08-10T00:00:00.000Z", "version": "2026-08-10"}], None),           # meta
+    ([{"property": "", "update_time": "2026-08-10T14:07:42Z", "version": "2026-08-10"}], None),
+    ([{"property": "", "update_time": "2026-08-09T20:00:00-05:00", "version": "2026-08-10"}], None),         # en UTC
+    ([{"property": "", "update_time": "2025-09-24T07:57:19.737Z", "version": "2025-10-20"}],
+     "2025-09-24T07:57:19.737000+00:00"),                                                                     # Microsoft
+    ([{"property": "", "update_time": "2026-08-10T00:00:00Z", "version": "v3"}], "2026-08-10T00:00:00+00:00"),
     ([], None), (None, None), ("no es lista", None)])
 def test_J_K_source_updated_at_solo_con_una_raiz_y_zona_explicita(foso, fuentes, esperado):
     assert foso.actualizacion_declarada(fuentes) == esperado
@@ -55,7 +65,8 @@ def test_L_M_N_la_huella_del_esquema_es_determinista_y_detecta_cambios(foso, duc
     con = duckdb_spatial.connect()
     con.execute("LOAD spatial;")                      # para que la copia conserve la GEOMETRY (GeoParquet)
     for nombre, sql in (("v1_tipo", f"SELECT * REPLACE (CAST(version AS BIGINT) AS version) FROM read_parquet('{v1a}')"),
-                        ("v1_otros_datos", f"SELECT * REPLACE (id || '-x' AS id, 1 AS version) FROM read_parquet('{v1a}') WHERE id <> 'ov-2'"),
+                        ("v1_otros_datos", f"SELECT * REPLACE (id || '-x' AS id, 1 AS version) "
+                                           f"FROM read_parquet('{v1a}') WHERE id <> 'ov-2'"),
                         ("v1_sin_geo", f"SELECT * REPLACE (ST_AsWKB(geometry) AS geometry) FROM read_parquet('{v1a}')")):
         con.execute(f"COPY ({sql}) TO '{(tmp_path / (nombre + '.parquet')).as_posix()}' (FORMAT parquet)")
     con.close()
@@ -66,7 +77,8 @@ def test_L_M_N_la_huella_del_esquema_es_determinista_y_detecta_cambios(foso, duc
     # N · misma estructura (otros datos, otras filas) → misma huella; y la definición canónica es la documentada.
     assert huella(v1a) == huella(v1a) == huella(v1b) == otra["v1_otros_datos"]
     canonica = "\n".join(sorted(f"{n}\t{t}" for n, t, *_ in filas))
-    assert huella(v1a) == hashlib.sha256(canonica.encode("utf-8")).hexdigest() and re.fullmatch(r"[0-9a-f]{64}", huella(v1a))
+    assert huella(v1a) == hashlib.sha256(canonica.encode("utf-8")).hexdigest()
+    assert re.fullmatch(r"[0-9a-f]{64}", huella(v1a))
     # M · sin `categories` (v2), con un tipo distinto o con la geometría como BLOB sin metadatos `geo` → otra huella.
     assert huella(v2) != huella(v1a)
     assert otra["v1_tipo"] != huella(v1a) and otra["v1_sin_geo"] != huella(v1a)
@@ -153,7 +165,8 @@ def test_B_I_overture_categories_conserva_version_sources_verbatim_y_la_regla_de
         assert f["source_category"] == f["cat_leaf"] and f["source_category_namespace"] == "overture:categories.primary"
         assert json.loads(f["source_lineage"]) == originales[oid], "sources[] VERBATIM (con su licencia)"
     assert [f["source_record_version"] for f in (filas["ov-1"], filas["ov-2"], filas["ov-3"])] == ["9", "4", "2"]
-    assert filas["ov-1"]["source_updated_at"] == "2026-08-10T00:00:00+00:00"            # meta, con Z
+    assert filas["ov-1"]["source_updated_at"] is None, "meta: el sello de su volcado → NULL"
+    assert filas["ov-2"]["source_updated_at"] == "2025-09-24T07:57:19.737000+00:00"   # Microsoft: el del registro
     assert filas["ov-3"]["source_updated_at"] is None, "Foursquare sin zona → NULL"
     assert json.loads(filas["ov-3"]["source_lineage"])[0]["license"] == "Apache-2.0"
 
@@ -429,7 +442,7 @@ def test_PG_B_E_F_G_las_dos_ok_procedencia_real_y_contadores_que_cuadran(foso, d
     p = _provenance(esquema_pg)
     for oid in ("ov-1", "ov-2", "ov-3"):
         assert (p[oid]["run"], p[oid]["ns"], p[oid]["cat"]) == (o["id"], "overture:categories.primary", p[oid]["legado"])
-    assert p["ov-1"]["upd"] == _utc("2026-08-10T00:00:00+00:00") and p["ov-3"]["upd"] is None
+    assert p["ov-1"]["upd"] is None and p["ov-3"]["upd"] is None                  # volcado de meta / sin zona
     assert p["ov-2"]["upd"] == _utc("2025-09-24T07:57:19.737+00:00")
     con = duckdb_spatial.connect()
     original = dict(con.execute(f"SELECT id, sources FROM read_parquet('{v1}')").fetchall())
@@ -545,3 +558,135 @@ def test_AA_ningun_lector_de_la_app_nombra_la_procedencia_nueva():
     sql_app = "\n".join(re.findall(r'text\("""(.*?)"""\)', "\n".join(
         p.read_text(encoding="utf-8") for p in (RAIZ / "app").rglob("*.py")), re.S))
     assert not re.search(r"\bsource_category", sql_app)
+
+
+# ═══════════════════ POSTGRES REAL SIN POSTGIS (CI: 15 · local: 17.6, la versión de producción) ═══════════════════
+# El banco de la suite de la 043 (`pois_propios` como la mide producción, la 023 y la 040 REALES, dueño NOSUPERUSER +
+# BYPASSRLS como `postgres`). Sin PostGIS el upsert no corre (ST_MakePoint), pero la compuerta y el MANIFIESTO del
+# escritor sí: lo que `_manifiesto` produce para cada desenlace real se inserta contra los CHECK REALES de la 043.
+from tests.test_migracion_043 import DUENO, URL as URL_CI, _aplica, banco  # noqa: E402,F401 — fixture del banco
+
+pg_ci = pytest.mark.skipif(not URL_CI, reason="sin TEST_DATABASE_URL: no hay Postgres de pruebas")
+
+
+def _motor_sincrono(foso):
+    from sqlalchemy.pool import NullPool
+    return foso.create_engine(foso._a_sincrona(URL_CI), poolclass=NullPool,
+                              connect_args={"options": f"-c role={DUENO} -c search_path=public"})
+
+
+def _desenlaces(foso) -> dict:
+    """Un `ResultadoFuente` por cada desenlace que `obtener`/`escribir` producen de verdad."""
+    R, t0, t1 = foso.ResultadoFuente, "2026-10-01T22:00:01+00:00", "2026-10-01T22:00:09+00:00"
+    base = {"started_at": t0}
+    return {
+        "overture_ok": R("overture", estado="ok", release="2026-08-19.0", obtenidas=2753, validadas=2753,
+                         endpoint="s3://overturemaps-us-west-2/release/2026-08-19.0/theme=places/type=place/*",
+                         schema_fingerprint=HUELLA_PRUEBA, fetched_at=t1, **base),
+        "osm_ok": R("osm", estado="ok", obtenidas=5788, validadas=5788, endpoint="https://overpass-api.de/api/interpreter",
+                    snapshot_at="2026-10-01T21:58:12+00:00", fetched_at=t1, **base),
+        "overture_rota_binder": R("overture", estado="rota", release="2026-09-23.1", fase="obtencion",
+                                  clase="BinderException", schema_fingerprint=HUELLA_PRUEBA,
+                                  endpoint="s3://overturemaps-us-west-2/release/2026-09-23.1/theme=places/type=place/*",
+                                  **base),
+        "overture_caida_sin_huella": R("overture", estado="caida", release="2026-09-23.1", fase="obtencion",
+                                       clase="HTTPException", **base),
+        "osm_caida_sin_respuesta": R("osm", estado="caida", fase="obtencion", clase="SinRespuesta", **base),
+        "osm_rota_validacion": R("osm", estado="rota", fase="validacion", clase="DatasetInvalido", obtenidas=12,
+                                 endpoint="https://overpass-api.de/api/interpreter",
+                                 snapshot_at="2026-10-01T21:58:12+00:00", fetched_at=t1, **base),
+        "overture_rota_escritura": R("overture", estado="rota", release="2026-08-19.0", fase="escritura",
+                                     clase="IntegrityError", obtenidas=2753, validadas=2753,
+                                     schema_fingerprint=HUELLA_PRUEBA, fetched_at=t1, **base),
+        "osm_rota_esquema043": R("osm", estado="rota", fase="escritura", clase="Esquema043Ausente", obtenidas=5788,
+                                 validadas=5788, snapshot_at="2026-10-01T21:58:12+00:00", fetched_at=t1, **base),
+    }
+
+
+@pg_ci
+async def test_PGCI_compuerta_043_sobre_postgres_real(foso, banco):
+    eng = _motor_sincrono(foso)
+    try:
+        sin = foso.verificar_esquema_043(eng)
+        assert "no existe poi_ingestion_run" in sin and len(sin) >= 3, sin       # antes de la 043: FAIL CLOSED
+        await _aplica(banco)
+        assert foso.verificar_esquema_043(eng) == [], "con la 043 REAL: la compuerta abre"
+        async with banco["dueno"].begin() as cx:                                 # 043 incompleta → vuelve a cerrar
+            await cx.execute(text("ALTER TABLE public.pois_propios DROP CONSTRAINT fk_pois_ingestion_run"))
+        assert foso.verificar_esquema_043(eng) == ["falta la FK diferida fk_pois_ingestion_run"]
+    finally:
+        eng.dispose()
+
+
+@pg_ci
+async def test_PGCI_cada_manifiesto_real_entra_por_los_check_de_la_043(foso, banco):
+    await _aplica(banco)
+    eng = _motor_sincrono(foso)
+    ident = {"code_sha": SHA_PRUEBA, "invocation_ref": "github-actions:refresco-pois:1:1"}
+    try:
+        for nombre, r in _desenlaces(foso).items():
+            cont = {"escritas": r.validadas, "cerradas": 3} if r.estado == "ok" else {}
+            with eng.begin() as db:
+                db.execute(foso.INSERT_CORRIDA, foso._manifiesto(r, ident, **cont))
+        with eng.connect() as db:
+            filas = {f.id: f for f in db.execute(text(
+                "SELECT id::text AS id, source_provider, status, error_class, error_phase, rows_written, rows_closed, "
+                "source_release, source_schema_fingerprint, source_snapshot_at, code_sha FROM poi_ingestion_run"))}
+    finally:
+        eng.dispose()
+    assert len(filas) == 8
+    ok = [f for f in filas.values() if f.status == "ok"]
+    assert sorted((f.source_provider, f.rows_written, f.rows_closed) for f in ok) == [("osm", 5788, 3),
+                                                                                    ("overture", 2753, 3)]
+    assert all(f.rows_written is None and f.rows_closed is None and f.error_class and f.error_phase
+               for f in filas.values() if f.status != "ok")
+    assert {f.code_sha for f in filas.values()} == {SHA_PRUEBA}
+
+
+@pg_ci
+@pytest.mark.parametrize("dano,restriccion", [
+    ("ok_sin_huella", "ck_pir_release"), ("ok_sin_cerradas", "ck_pir_ok_completa"), ("sha_rama", "ck_pir_sha"),
+    ("osm_con_release", "ck_pir_release"), ("caida_en_escritura", "ck_pir_fase"), ("fallo_con_escritas", "ck_pir_fallo")])
+async def test_PGCI_un_manifiesto_incoherente_lo_rechaza_la_043(foso, banco, dano, restriccion):
+    """Control positivo: el escritor no puede «colar» una corrida que la 043 no admite."""
+    await _aplica(banco)
+    d = _desenlaces(foso)
+    ident = {"code_sha": SHA_PRUEBA, "invocation_ref": None}
+    r, cont = d["overture_ok"], {"escritas": 2753, "cerradas": 0}
+    if dano == "ok_sin_huella":
+        r.schema_fingerprint = None
+    elif dano == "ok_sin_cerradas":
+        cont = {"escritas": 2753}
+    elif dano == "sha_rama":
+        ident["code_sha"] = "main"
+    elif dano == "osm_con_release":
+        r = d["osm_ok"]
+        r.release = "2026-08-19.0"
+    elif dano == "caida_en_escritura":
+        r = d["osm_caida_sin_respuesta"]
+        r.fase, cont = "escritura", {}
+    fila = foso._manifiesto(r, ident, **cont)
+    if dano == "osm_con_release":
+        fila["source_release"] = "2026-08-19.0"      # `_manifiesto` ya lo anula para OSM: se fuerza a mano
+    if dano == "fallo_con_escritas":
+        fila = {**foso._manifiesto(d["osm_rota_validacion"], ident), "rows_written": 12}
+    eng = _motor_sincrono(foso)
+    try:
+        with pytest.raises(Exception) as exc:
+            with eng.begin() as db:
+                db.execute(foso.INSERT_CORRIDA, fila)
+    finally:
+        eng.dispose()
+    assert restriccion in str(exc.value)
+
+
+def test_PGCI_manifiesto_osm_nunca_lleva_release_ni_huella(foso):
+    """Sin base: `_manifiesto` deja NULL lo que la fuente no tiene, aunque el resultado lo traiga por error."""
+    r = _desenlaces(foso)["osm_ok"]
+    r.release, r.schema_fingerprint = "2026-08-19.0", HUELLA_PRUEBA
+    m = foso._manifiesto(r, {"code_sha": SHA_PRUEBA, "invocation_ref": None}, escritas=1, cerradas=0)
+    assert (m["source_release"], m["source_schema_fingerprint"]) == (None, None)
+    o = _desenlaces(foso)["overture_ok"]
+    o.snapshot_at = "2026-10-01T21:58:12+00:00"
+    assert foso._manifiesto(o, {"code_sha": SHA_PRUEBA, "invocation_ref": None}, escritas=1,
+                            cerradas=0)["source_snapshot_at"] is None

@@ -138,7 +138,8 @@ def _ov(m, oid, cat="salud", hoja="hospital"):
                           "lat": -0.2, "confidence": 0.9, "overture_id": oid, "osm_id": None, "marca": None,
                           "direccion": None, "operativo": True, "fuente": "overture",
                           "source_category": hoja, "source_category_namespace": m.NS_OVERTURE,
-                          "source_record_version": "7", "source_updated_at": "2026-08-10T00:00:00+00:00",
+                          "source_record_version": "7",
+                          "source_updated_at": m.actualizacion_declarada(SOURCES_PRUEBA),  # meta: su volcado → None
                           "source_lineage": json.dumps(SOURCES_PRUEBA, ensure_ascii=False)})
 
 
@@ -225,11 +226,12 @@ def _parquet(duckdb, ruta: pathlib.Path, con_categories: bool) -> str:
     p = ruta.as_posix()
     categories = ("{'primary': hoja_v1, 'alternate': NULL::VARCHAR[]} AS categories," if con_categories else "")
     # `version` y `sources` como en los DOS releases medidos (2026-08-19.0 y 2026-09-23.1): R4 los lee. Cada
-    # registro con su raíz (`property` = '') y la entrada de la confianza; ov-3 con una raíz SIN zona horaria
-    # (como Foursquare) para que `source_updated_at` dé NULL.
+    # registro con su raíz (`property` = '') y la entrada de la confianza, con la `version` de SU dataset: ov-1
+    # meta con el sello de su volcado (mismo día que su `version`: `source_updated_at` NULL), ov-2 Microsoft con
+    # un instante propio (se conserva) y ov-3 Foursquare SIN zona horaria (NULL).
     fuente = ("{'property': '', 'dataset': ds, 'license': lic, 'record_id': 'rec-' || id, 'update_time': ut, "
               "'confidence': conf::DOUBLE, 'between': NULL::DOUBLE[], 'provider': lower(ds), 'resource': lower(ds), "
-              "'version': '2026-08-10'}")
+              "'version': vf}")
     conf_ov = ("{'property': '/properties/confidence', 'dataset': 'Overture', 'license': 'CDLA-Permissive-2.0', "
                "'record_id': NULL::VARCHAR, 'update_time': '2026-08-14T19:46:07Z', 'confidence': NULL::DOUBLE, "
                "'between': NULL::DOUBLE[], 'provider': 'overture', 'resource': 'confidence_calculation', "
@@ -245,12 +247,12 @@ def _parquet(duckdb, ruta: pathlib.Path, con_categories: bool) -> str:
                  [{{'freeform': 'Calle sintética'}}] AS addresses, {{'names': {{'primary': NULL::VARCHAR}}}} AS brand,
                  'open' AS operating_status, ver::INTEGER AS version, [{fuente}, {conf_ov}] AS sources
           FROM (VALUES ('ov-1', 'Hospital Uno', 'hospital', 'hospital', -78.50, -0.20, 0.91, 9, 'meta',
-                        'CDLA-Permissive-2.0', '2026-08-10T00:00:00.000Z'),
+                        'CDLA-Permissive-2.0', '2026-08-10T00:00:00.000Z', '2026-08-10'),
                        ('ov-2', 'Centro Dos', 'shopping_center', 'shopping_mall', -78.49, -0.19, 0.95, 4, 'Microsoft',
-                        'CDLA-Permissive-2.0', '2025-09-24T07:57:19.737Z'),
+                        'CDLA-Permissive-2.0', '2025-09-24T07:57:19.737Z', '2025-10-20'),
                        ('ov-3', 'Clínica Tres', 'medical_center', 'outpatient_care_facility', -78.48, -0.18, 0.80, 2,
-                        'Foursquare', 'Apache-2.0', '2026-04-12T00:00:00.000'))
-               t(id, nombre, hoja_v1, hoja_v2, lon, lat, conf, ver, ds, lic, ut)
+                        'Foursquare', 'Apache-2.0', '2026-04-12T00:00:00.000', '2026-04-14'))
+               t(id, nombre, hoja_v1, hoja_v2, lon, lat, conf, ver, ds, lic, ut, vf)
         ) TO '{p}' (FORMAT parquet)""")
     con.close()
     return p

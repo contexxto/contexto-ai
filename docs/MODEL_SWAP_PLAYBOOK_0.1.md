@@ -13,7 +13,7 @@ DISCOVER → PROFILE → PREFLIGHT → CONTRACT PROBES → PARITY HARNESS → QU
 | pieza | dónde | qué hace |
 |---|---|---|
 | Frontera de runtime | `app/llm_runtime.py` | `ModelProfile` (capacidades + configuración calificada por propósito), `CallPurpose`, `ModelRuntime`. Único lugar que sabe qué admite cada modelo. |
-| Registro | `REGISTRO` en ese módulo | Perfiles de producto: `claude-sonnet-4-5`, `claude-sonnet-5`. Evaluador: `claude-haiku-4-5`, sólo para el juez de evals. Se valida al importar. |
+| Registro | `REGISTRO` en ese módulo | Perfiles de producto calificados: `claude-sonnet-4-5`, `claude-sonnet-5`. Candidato (sólo evaluación): `claude-sonnet-5-5`. Evaluador: `claude-haiku-4-5`, sólo para el juez de evals. Se valida al importar. |
 | Guarda e inventario | `tests/test_llm_runtime.py` | Inventario exacto de call sites y guarda AST: nadie fija `model`, `thinking`, `temperature`, `effort` ni `tool_choice` fuera de la frontera. |
 | Golden del cable | `tests/fixtures/llm_wire_calificado.json` | Lo que debe llegar al proveedor en los 8 call sites, por modelo. Sale de la configuración **calificada**, nunca del código candidato. |
 | Arnés de paridad | `Whaber-Claude Code/arneses/paridad_chat_sonnet5/` (fuera del repo) | El endpoint real del chat por ASGI, fixtures sin base, tripwire de red, dos capas RAW/SYSTEM, captura del cable (`cuerpos_http.py`). |
@@ -47,13 +47,15 @@ Qué mirar siempre:
    - capacidades declaradas **sólo como verificadas**;
    - `propositos` con una `PurposeConfig` para cada propósito de producto.
 2. Punto de partida conservador para `propositos`: la configuración del modelo activo que el nuevo admita. Si algo no se admite, **no se omite**: se elige una alternativa explícita y se marca como pendiente de calificar.
-3. Añadirlo a `REGISTRO` (`_registro(...)`).
+3. Añadirlo a `REGISTRO` (`_registro(...)`) con `estado="candidato"`. Un perfil candidato **no se puede elegir** con `LLM_MODEL`: sólo con `LLM_PERMITIR_CANDIDATO=true`, que existe para los arneses de evaluación y nunca en producción. Pasa a `"calificado"` en un PR propio, después de QUALIFY.
 4. Correr `tests/test_llm_runtime.py`. `validar_perfil` rechaza al importar cualquier combinación incoherente:
    - un thinking no admitido;
-   - `effort` sin transporte o sin adaptive;
+   - `effort` sin transporte, fuera de lo admitido para su modo de thinking (p. ej. `between_tools` sólo con low/medium/high), o ausente con thinking activo;
    - `temperature` en un modelo que no la admite;
    - omitir `thinking` cuando el default del modelo es razonar;
+   - un perfil de producto sin forma de exigir una tool: ni forzada (`tool_forzada`) ni `tool_auto`;
    - propósitos que faltan o sobran.
+5. Si el modelo no admite tool forzada (Sonnet 5.5), `tool_auto=True`: la tool obligatoria viaja con `tool_choice: auto`, y `ModelRuntime.input_de_tool` exige que llegue. Si no llega, o llega truncada, rechazada o repartida en varias llamadas, lanza `ToolObligatoriaAusente`, y cada call site cae en el fallo que ya tenía ante un error del proveedor, registrado. `strict` **no** se usa: con 5.5 partía la extracción en varias llamadas (SONNET55 QUALIFY 0.1).
 
 Registrar un perfil **no** lo activa. Ningún call site cambia.
 
@@ -75,7 +77,8 @@ Una llamada mínima por capacidad declarada, para confirmar que el proveedor ace
 **Cómo se detectan capacidades incompatibles:**
 - **Un 400** = la capacidad no existe. El perfil se corrige; nunca se envuelve en un `try`.
 - **Un éxito silencioso con otro comportamiento** (p. ej. razona aunque se pidió apagado) = incompatible también.
-- Antecedentes: Sonnet 5 responde 400 a `temperature`; Sonnet 5.5 responde 400 a `thinking: disabled` y a `tool_choice` forzado. Por eso 5.5 **no tiene perfil**.
+- Antecedentes: Sonnet 5 responde 400 a `temperature`; Sonnet 5.5 responde 400 a `thinking: disabled` y a `tool_choice` forzado. Por eso el perfil candidato de 5.5 usa `between_tools` y `tool_auto` (sondas: `arneses/sonnet55_q/resultados/sondas_api.json`).
+- **Un 200 no basta.** `strict` en las tools de 5.5 dio 200 y aun así rompió la extracción (llamadas repartidas, campos perdidos, `max_tokens`). Cada capacidad se mide también por su efecto en la salida, no sólo por si el proveedor la acepta.
 
 ## 5 · PARITY HARNESS · comparar contra el modelo activo
 

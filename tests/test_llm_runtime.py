@@ -31,14 +31,14 @@ from app import config, llm_runtime, preferencias, vision
 from app.agent import crm_graph, graph
 from app.buyer import interprete
 from app.llm_runtime import (
-    HAIKU_45_JUEZ, REGISTRO, SONNET_5, SONNET_45, CallPurpose, ModelConfigError, ModelRuntime,
-    PurposeConfig, Thinking, perfil, runtime, runtime_evaluador, validar_perfil,
+    HAIKU_45_JUEZ, REGISTRO, SONNET_5, SONNET_45, SONNET_55, CallPurpose, ModelConfigError, ModelRuntime,
+    PurposeConfig, Thinking, ToolObligatoriaAusente, perfil, runtime, runtime_evaluador, validar_perfil,
 )
 from app.routers import match
 
 RAIZ = pathlib.Path(__file__).resolve().parent.parent
 FRONTERA = "app/llm_runtime.py"
-M45, M5 = "claude-sonnet-4-5-20250929", "claude-sonnet-5"
+M45, M5, M55 = "claude-sonnet-4-5-20250929", "claude-sonnet-5", "claude-sonnet-5-5"
 GOLDEN = json.loads((RAIZ / "tests" / "fixtures" / "llm_wire_calificado.json").read_text(encoding="utf-8"))
 
 
@@ -402,7 +402,7 @@ def test_el_eval_del_interprete_registra_lo_mismo_que_antes_en_45(monkeypatch):
 
 # ═════════════════════════════ 4 · falla cerrado ═════════════════════════════
 
-@pytest.mark.parametrize("model_id", ["claude-sonnet-5-5", "claude-sonnet-4-5", "claude-opus-5", "", "gpt-5"])
+@pytest.mark.parametrize("model_id", ["claude-sonnet-9", "claude-sonnet-4-5", "claude-opus-5", "", "gpt-5"])
 def test_modelo_sin_perfil_falla(monkeypatch, model_id):
     monkeypatch.setattr(config.settings, "llm_model", model_id)
     with pytest.raises(ModelConfigError, match="sin perfil registrado"):
@@ -410,7 +410,7 @@ def test_modelo_sin_perfil_falla(monkeypatch, model_id):
 
 
 def test_modelo_sin_perfil_tumba_el_arranque_del_chat_y_del_crm(monkeypatch):
-    monkeypatch.setattr(config.settings, "llm_model", "claude-sonnet-5-5")
+    monkeypatch.setattr(config.settings, "llm_model", "claude-sonnet-9")
     with pytest.raises(ModelConfigError):
         graph._build_graph()
     with pytest.raises(ModelConfigError):
@@ -420,7 +420,7 @@ def test_modelo_sin_perfil_tumba_el_arranque_del_chat_y_del_crm(monkeypatch):
 async def test_las_micro_llamadas_no_tragan_el_error_de_configuracion(monkeypatch):
     """`extraer_preferencias` y `match` degradan ante un fallo del PROVEEDOR; ante una
     configuración no admitida se detienen: degradar ahí sería esconder un despliegue roto."""
-    monkeypatch.setattr(config.settings, "llm_model", "claude-sonnet-5-5")
+    monkeypatch.setattr(config.settings, "llm_model", "claude-sonnet-9")
     monkeypatch.setattr(config.settings, "anthropic_api_key", "sk-falsa")
     with pytest.raises(ModelConfigError):
         await preferencias.extraer_preferencias(["quiero 2 dormitorios"])
@@ -489,13 +489,18 @@ def test_registro_duplicado_falla():
 
 
 def test_el_registro_es_exactamente_el_de_esta_unidad():
-    """Perfiles de producto: sólo 4.5 y Sonnet 5. El evaluador sólo sirve al juez."""
+    """Perfiles de producto: 4.5 y Sonnet 5 calificados, 5.5 candidato. El evaluador sólo sirve al juez."""
     assert {m: (p.clave, p.rol) for m, p in REGISTRO.items()} == {
         M45: ("claude-sonnet-4-5", "producto"),
         M5: ("claude-sonnet-5", "producto"),
+        M55: ("claude-sonnet-5-5", "producto"),
         "claude-haiku-4-5": ("claude-haiku-4-5", "evaluador"),
     }
     assert perfil(M45) is SONNET_45 and perfil(M5) is SONNET_5
+    # 5.5 está registrado para EVALUARLO: no es calificado ni seleccionable sin el permiso explícito.
+    assert {m: p.estado for m, p in REGISTRO.items()} == {
+        M45: "calificado", M5: "calificado", M55: "candidato", "claude-haiku-4-5": "calificado"}
+    assert perfil(M55, permitir_candidato=True) is SONNET_55
 
 
 @pytest.mark.parametrize("entorno,esperado", [({}, SONNET_5), ({"LLM_MODEL": M45}, SONNET_45)])
@@ -536,3 +541,143 @@ def test_el_juez_que_no_responde_no_aprueba(monkeypatch):
 
 def test_el_juez_por_defecto_no_es_un_modelo_retirado():
     assert not run_evals.JUDGE_MODEL.startswith("claude-3")
+
+
+# ════════════════ 5 · Sonnet 5.5 · perfil CANDIDATO (SONNET55 QUALIFY 0.1) ════════════════
+# Contrato verificado contra la API el 2026-10-01 (arneses/sonnet55_q/resultados/sondas_api.json).
+
+def test_55_es_candidato_y_no_se_elige_sin_permiso_explicito(monkeypatch):
+    """Registrado para evaluarlo, nunca seleccionable por accidente: ni por LLM_MODEL a secas ni
+    como default."""
+    assert config.Settings.model_fields["llm_permitir_candidato"].default is False
+    with pytest.raises(ModelConfigError, match="CANDIDATO"):
+        perfil(M55)
+    monkeypatch.setattr(config.settings, "llm_model", M55)
+    monkeypatch.setattr(config.settings, "llm_permitir_candidato", False)
+    with pytest.raises(ModelConfigError, match="CANDIDATO"):
+        runtime()
+    with pytest.raises(ModelConfigError, match="CANDIDATO"):
+        graph._build_graph()
+    monkeypatch.setattr(config.settings, "llm_permitir_candidato", True)
+    assert runtime().perfil is SONNET_55
+
+
+def test_configuracion_de_55_legible():
+    r = ModelRuntime(SONNET_55)
+    assert r.langchain_kwargs(CallPurpose.CHAT) == {
+        "model": M55, "thinking": {"type": "adaptive"},
+        "model_kwargs": {"extra_body": {"output_config": {"effort": "low"}}}}
+    assert r.langchain_kwargs(CallPurpose.CRM) == {
+        "model": M55, "thinking": {"type": "between_tools"},
+        "model_kwargs": {"extra_body": {"output_config": {"effort": "low"}}}}
+    assert r.sdk_kwargs(CallPurpose.MATCH) == {
+        "model": M55, "thinking": {"type": "between_tools"}, "extra_body": {"output_config": {"effort": "low"}}}
+    for p, tool in ((CallPurpose.PREFERENCIAS, "registrar_preferencias"),
+                    (CallPurpose.INTERPRETE, "registrar_afirmaciones"),
+                    (CallPurpose.MATCH, "explicar_match"), (CallPurpose.VISION, "registrar_ficha_visual")):
+        assert r.sdk_kwargs(p, tool_forzada=tool) == {
+            "model": M55, "thinking": {"type": "between_tools"},
+            "extra_body": {"output_config": {"effort": "low"}}, "tool_choice": {"type": "auto"}}
+
+
+async def test_el_cable_de_55_en_los_8_call_sites(monkeypatch):
+    """Lo que el contrato 5.5 rechaza con 400 no llega nunca al proveedor: ni `disabled`, ni tool
+    forzada, ni `temperature`. Las tools viajan IGUAL que en Sonnet 5 (sin `strict`)."""
+    monkeypatch.setattr(config.settings, "llm_permitir_candidato", True)
+    cable = await _capturar_cable(monkeypatch, M55)
+    obligatorias = {"PREFERENCIAS · extraer_preferencias", "INTERPRETE · proponer_con_modelo",
+                    "MATCH · _justificar", "VISION · extract_ficha_from_b64"}
+    assert obligatorias < set(cable) and set(cable) == set(GOLDEN[M5])
+    for sitio, cuerpo in cable.items():
+        assert cuerpo is not None, f"{sitio}: no llegó nada al proveedor"
+        if sitio.startswith("JUEZ"):
+            assert _parametros(cuerpo) == GOLDEN[M5][sitio]
+            continue
+        assert cuerpo["model"] == M55, sitio
+        assert cuerpo["thinking"]["type"] in ("adaptive", "between_tools"), sitio
+        assert cuerpo["output_config"]["effort"] in ("low", "medium", "high"), sitio
+        assert "temperature" not in cuerpo, sitio
+        assert (cuerpo.get("tool_choice") or {}).get("type") in (None, "auto"), sitio
+        assert not any(t.get("strict") for t in cuerpo.get("tools") or []), sitio
+        if sitio in obligatorias:
+            assert cuerpo["tool_choice"] == {"type": "auto"} and len(cuerpo["tools"]) == 1, sitio
+    assert cable["CHAT · graph.llm_node"]["thinking"] == {"type": "adaptive"}
+
+
+@pytest.mark.parametrize("perfil_malo,motivo", [
+    (_con(SONNET_55, CallPurpose.PREFERENCIAS, PurposeConfig(Thinking.DISABLED)), "thinking 'disabled' no admitido"),
+    (_con(SONNET_55, CallPurpose.CRM, PurposeConfig(Thinking.BETWEEN_TOOLS, effort="xhigh")),
+     "effort 'xhigh' no admitido con thinking 'between_tools'"),
+    (_con(SONNET_55, CallPurpose.CRM, PurposeConfig(Thinking.BETWEEN_TOOLS, effort="max")),
+     "effort 'max' no admitido con thinking 'between_tools'"),
+    (_con(SONNET_55, CallPurpose.CRM, PurposeConfig(Thinking.BETWEEN_TOOLS)), "'between_tools' sin effort explícito"),
+    (_con(SONNET_55, CallPurpose.CHAT, PurposeConfig(Thinking.ADAPTIVE)), "'adaptive' sin effort explícito"),
+    (_con(SONNET_55, CallPurpose.CHAT, PurposeConfig(Thinking.OMITIDO, effort="low")), "omitir `thinking` encendería"),
+    (_con(SONNET_5, CallPurpose.CRM, PurposeConfig(Thinking.BETWEEN_TOOLS, effort="low")),
+     "thinking 'between_tools' no admitido"),
+    (dataclasses.replace(SONNET_55, tool_auto=False), "sin forma de exigir una tool"),
+    (dataclasses.replace(SONNET_55, tool_forzada=True), "tool forzada y auto a la vez"),
+    (dataclasses.replace(SONNET_55, propositos={k: v for k, v in SONNET_55.propositos.items()
+                                                if k is not CallPurpose.VISION}), "que faltan \\['vision'\\]"),
+    (dataclasses.replace(SONNET_55, estado="probando"), "estado 'probando' desconocido"),
+])
+def test_el_registro_rechaza_perfiles_55_incoherentes(perfil_malo, motivo):
+    with pytest.raises(ModelConfigError, match=motivo):
+        validar_perfil(perfil_malo)
+
+
+# ── la tool obligatoria: presencia exigida ─────────────────────────────────────────────
+
+class _Bloque:
+    def __init__(self, tipo, nombre=None, entrada=None):
+        self.type, self.name, self.input = tipo, nombre, entrada
+
+
+class _Resp:
+    def __init__(self, stop, *bloques):
+        self.stop_reason, self.content = stop, list(bloques)
+
+
+def test_input_de_tool():
+    con_tool = _Resp("tool_use", _Bloque("text"), _Bloque("tool_use", "t", {"a": 1}))
+    for p in (SONNET_5, SONNET_55):
+        assert ModelRuntime(p).input_de_tool(con_tool, "t") == {"a": 1}
+        for sin in (_Resp("end_turn", _Bloque("text")), _Resp("tool_use", _Bloque("tool_use", "otra", {}))):
+            with pytest.raises(ToolObligatoriaAusente, match="sin tool_use"):
+                ModelRuntime(p).input_de_tool(sin, "t")
+    # Con tool forzada (5) se conserva lo de siempre. Sin ella (5.5) no vale una respuesta truncada
+    # o rechazada aunque traiga el tool_use, ni una obligación repartida en varias llamadas: es lo
+    # que 5.5 hacía con `strict` (resultados/micro_p_btlow__S55A.jsonl).
+    for cortada in (_Resp("max_tokens", _Bloque("tool_use", "t", {"a": 1})),
+                    _Resp("refusal", _Bloque("tool_use", "t", {"a": 1})),
+                    _Resp("tool_use", _Bloque("tool_use", "t", {"a": 1}), _Bloque("tool_use", "t", {"b": 2}))):
+        assert ModelRuntime(SONNET_5).input_de_tool(cortada, "t") == {"a": 1}
+        with pytest.raises(ToolObligatoriaAusente, match="max_tokens|refusal|2 llamadas"):
+            ModelRuntime(SONNET_55).input_de_tool(cortada, "t")
+
+
+def _cliente_que_responde(contenido: list, stop: str = "end_turn"):
+    def _h(_req):
+        return httpx.Response(200, json={
+            "id": "msg_x", "type": "message", "role": "assistant", "model": M55, "content": contenido,
+            "stop_reason": stop, "stop_sequence": None, "usage": {"input_tokens": 1, "output_tokens": 1}})
+    return anthropic.AsyncAnthropic(api_key="sk-falsa", max_retries=0,
+                                    http_client=httpx.AsyncClient(transport=httpx.MockTransport(_h)))
+
+
+async def test_55_sin_tool_cae_en_el_fallo_de_siempre_de_cada_proposito_y_queda_registrado(monkeypatch, caplog):
+    """Sin tool forzada, el modelo puede contestar en texto. No se degrada en silencio: cada
+    propósito cae en el MISMO fallo que ya tenía ante un error del proveedor, y queda en el log."""
+    monkeypatch.setattr(config.settings, "llm_model", M55)
+    monkeypatch.setattr(config.settings, "llm_permitir_candidato", True)
+    monkeypatch.setattr(config.settings, "anthropic_api_key", "sk-falsa")
+    solo_texto = [{"type": "text", "text": "No necesito la herramienta."}]
+    for m in (preferencias, interprete, match, vision):
+        monkeypatch.setattr(m, "_client", lambda: _cliente_que_responde(solo_texto))
+    caplog.set_level("WARNING")
+    assert await preferencias.extraer_preferencias(["quiero 2 dormitorios"]) == {}
+    assert await interprete.proponer_con_modelo("quiero comprar") == ()
+    assert await match._justificar("b", "texto", [{"activo_id": "a", "direccion": "d", "tipo_activo": "t"}]) == {}
+    with pytest.raises(vision.ExtractionInvalidError):
+        await vision.extract_ficha_from_b64("AAAA")
+    assert caplog.text.count("tool obligatoria") >= 3, caplog.text

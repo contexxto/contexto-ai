@@ -76,7 +76,7 @@ from app.buyer.extractor import (
     construir_lote,
 )
 from app.config import settings
-from app.llm_runtime import CallPurpose, runtime
+from app.llm_runtime import CallPurpose, ToolObligatoriaAusente, runtime
 from app.tls_salida import verificacion_httpx
 
 logger = logging.getLogger(__name__)
@@ -457,10 +457,12 @@ async def proponer_con_modelo(texto: str) -> Sequence[PropuestaV0 | PropuestaRig
         tools=[_tool_schema()],
         messages=[{"role": "user", "content": texto}],
     )
-    for bloque in respuesta.content:
-        if getattr(bloque, "type", "") == "tool_use" and getattr(bloque, "name", "") == _TOOL_NAME:
-            return _parsear(bloque.input)
-    return ()
+    try:
+        return _parsear(runtime().input_de_tool(respuesta, _TOOL_NAME))
+    except ToolObligatoriaAusente as exc:
+        # Sin propuestas no hay estado: mismo resultado que antes, ahora registrado.
+        logger.warning("intérprete sin propuestas: %s", exc)
+        return ()
 
 
 def _tipar_monto(cruda):

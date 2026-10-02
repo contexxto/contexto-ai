@@ -18,7 +18,7 @@ from PIL import Image
 from pydantic import BaseModel, Field, ValidationError
 
 from app.config import settings
-from app.llm_runtime import CallPurpose, runtime
+from app.llm_runtime import CallPurpose, ToolObligatoriaAusente, runtime
 from app.tls_salida import verificacion_httpx
 
 # Claude recomienda lado máximo ~1568px; reescalamos para controlar tokens/costo.
@@ -196,12 +196,10 @@ async def extract_ficha_from_b64(jpeg_b64: str) -> FichaVision:
         }],
     )
 
-    tool_input = next(
-        (b.input for b in resp.content if getattr(b, "type", None) == "tool_use"),
-        None,
-    )
-    if tool_input is None:
-        raise ExtractionInvalidError("Claude no devolvió una llamada a la herramienta.")
+    try:
+        tool_input = runtime().input_de_tool(resp, "registrar_ficha_visual")
+    except ToolObligatoriaAusente as exc:
+        raise ExtractionInvalidError("Claude no devolvió una llamada a la herramienta.") from exc
 
     try:
         return FichaVision.model_validate(tool_input)

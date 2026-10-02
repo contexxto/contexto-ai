@@ -28,6 +28,9 @@ class Settings(BaseSettings):
 
     anthropic_api_key: str = ""
     llm_model: str = "claude-sonnet-5"
+    # Un perfil CANDIDATO (registrado para evaluarlo, no calificado) sólo se puede elegir con
+    # esto encendido: es para arneses de evaluación, nunca para producción. Ver llm_runtime.
+    llm_permitir_candidato: bool = False
     ssl_verify: str = "true"
 
     # E3.2b.4 · shadow wiring del Buyer Updater. APAGADO por defecto, y el default es la

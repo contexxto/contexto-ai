@@ -168,9 +168,9 @@ async def extraer_preferencias(mensajes_usuario: list[str]) -> dict:
             tools=[_TOOL],
             messages=[{"role": "user", "content": f"Mensajes del usuario:\n{conversacion}"}],
         )
-        for block in resp.content:
-            if getattr(block, "type", "") == "tool_use" and getattr(block, "name", "") == "registrar_preferencias":
-                return _sanitizar(block.input)
+        # Sin la tool (o, sin tool forzada, truncada, rechazada o repartida) →
+        # ToolObligatoriaAusente → el mismo {} que un error del proveedor, pero registrado.
+        return _sanitizar(runtime().input_de_tool(resp, "registrar_preferencias"))
     except Exception as e:  # noqa: BLE001 — el encaje es un extra; jamás debe romper el chat
         logger.warning("extraer_preferencias degradó a {} (%s: %s)", type(e).__name__, e)
     return {}

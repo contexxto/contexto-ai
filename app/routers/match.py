@@ -158,11 +158,11 @@ async def _justificar(brief_desc: str, modo: str, resultados: list[dict]) -> dic
             tools=[tool],
             messages=[{"role": "user", "content": contexto}],
         )
-        tool_input = next((b.input for b in resp.content if getattr(b, "type", None) == "tool_use"), None)
+        tool_input = runtime().input_de_tool(resp, "explicar_match")
         if tool_input:
             return {it["activo_id"]: it.get("por_que_encaja", "") for it in tool_input.get("items", [])}
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001 — la justificación es cosmética; nunca rompe el match
+        logger.warning("match sin justificación (%s: %s)", type(exc).__name__, exc)
     return {}
 
 

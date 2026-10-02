@@ -11,6 +11,12 @@ Dos capas:
   · POSTGIS (local, con `TEST_POSTGIS_URL`; el Postgres del CI no trae PostGIS): migraciones REALES
     014→022 en un esquema desechable, el `main()` REAL escribiendo, fallos de escritura forzados por
     trigger a mitad de un upsert, y la equivalencia del camino feliz con el script ANTERIOR (`25303ff3`).
+
+POI-SOURCE-PROVENANCE (R4, 2026-10-02): el escritor EXIGE el esquema 043 y escribe procedencia. Estas pruebas
+siguen midiendo el aislamiento de #189 con el contrato nuevo: el banco PostGIS aplica también la 023, el perímetro
+mínimo de la 040 (RLS + `security_invoker`) y la 043 REAL; las filas de prueba llevan la procedencia que ya
+entregan los lectores reales; y una fuente que falla deja su corrida fallida en la base (antes: «no abre la
+base»). La matriz propia de R4 vive en `tests/test_poi_source_provenance_writer.py`.
 """
 from __future__ import annotations
 
@@ -30,6 +36,21 @@ RAIZ = pathlib.Path(__file__).resolve().parent.parent
 SCRIPT = RAIZ / "scripts" / "foso_pois_spike.py"
 URL_FALSA = "postgresql+psycopg://refresco:clave-que-no-debe-salir@localhost:5432/x"
 BINDER = 'Referenced table "categories" not found'
+SHA_PRUEBA = "0123456789abcdef0123456789abcdef01234567"
+HUELLA_PRUEBA = "f" * 64
+# La etiqueta OSM REAL que produce cada subtipo en la cadena de `pull_osm_transporte` (R4 la conserva).
+ETIQUETA_OSM = {"parada_bus": ("highway", "bus_stop"), "park": ("leisure", "park"), "garden": ("leisure", "garden"),
+                "pharmacy": ("amenity", "pharmacy"), "metro": ("railway", "subway_entrance"),
+                "estacion_tren": ("railway", "station"), "terminal_bus": ("amenity", "bus_station"),
+                "estacion": ("public_transport", "station"), "supermercado": ("shop", "supermarket"),
+                "minimarket": ("shop", "convenience"), "place_of_worship": ("amenity", "place_of_worship"),
+                "police": ("amenity", "police")}
+SOURCES_PRUEBA = [{"property": "", "dataset": "meta", "license": "CDLA-Permissive-2.0", "record_id": "1264674866906410",
+                   "update_time": "2026-08-10T00:00:00.000Z", "confidence": 0.58, "between": None, "provider": "meta",
+                   "resource": "meta", "version": "2026-08-10"},
+                  {"property": "/properties/confidence", "dataset": "Overture", "license": "CDLA-Permissive-2.0",
+                   "record_id": None, "update_time": "2026-08-14T19:46:07Z", "confidence": None, "between": None,
+                   "provider": "overture", "resource": "confidence_calculation", "version": "2026-08-14"}]
 
 
 def _carga(ruta: pathlib.Path = SCRIPT, nombre: str = "foso_iso"):
@@ -112,15 +133,27 @@ CIERRA_OV, CIERRA_OSM = "fuente = 'overture'", "fuente = 'osm'"
 
 
 def _ov(m, oid, cat="salud", hoja="hospital"):
+    """Una fila de Overture como la entrega `pull_overture` (con su procedencia de `categories.primary`)."""
     return m._normalizar({"nombre": f"Overture {oid}", "categoria": cat, "cat_leaf": hoja, "lon": -78.5,
                           "lat": -0.2, "confidence": 0.9, "overture_id": oid, "osm_id": None, "marca": None,
-                          "direccion": None, "operativo": True, "fuente": "overture"})
+                          "direccion": None, "operativo": True, "fuente": "overture",
+                          "source_category": hoja, "source_category_namespace": m.NS_OVERTURE,
+                          "source_record_version": "7", "source_updated_at": "2026-08-10T00:00:00+00:00",
+                          "source_lineage": json.dumps(SOURCES_PRUEBA, ensure_ascii=False)})
 
 
 def _osm(m, oid, cat="transporte", sub="parada_bus"):
+    """Una fila de OSM como la entrega `pull_osm_transporte` (con la etiqueta REAL que casó)."""
+    clave, valor = ETIQUETA_OSM[sub]
     return m._normalizar({"nombre": f"OSM {oid}", "categoria": cat, "cat_leaf": sub, "lon": -78.49, "lat": -0.19,
                           "confidence": None, "overture_id": None, "osm_id": oid, "marca": None, "direccion": None,
-                          "operativo": True, "fuente": "osm"})
+                          "operativo": True, "fuente": "osm", "source_category": valor,
+                          "source_category_namespace": f"osm:{clave}"})
+
+
+def _sin_corrida(filas):
+    """Los parámetros del upsert SIN el enlace a la corrida (que el escritor añade al escribir)."""
+    return [{k: v for k, v in f.items() if k != "ingestion_run_id"} for f in filas]
 
 
 @pytest.fixture
@@ -133,11 +166,23 @@ def foso(monkeypatch, tmp_path):
     m.avisos = []
     monkeypatch.setattr(m, "avisar_ops", lambda asunto, detalle: m.avisos.append((asunto, detalle)) or True)
     monkeypatch.setattr(sys, "argv", ["foso_pois_spike.py", "quito", "--sin-validacion"])
+    # R4: el SHA del código por la vía explícita de fuera de Actions (en el CI, GITHUB_ACTIONS=true daría el
+    # GITHUB_SHA del runner; aquí se fija para que las pruebas sean deterministas).
+    for k in ("GITHUB_ACTIONS", "GITHUB_SHA", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT", "GITHUB_WORKFLOW",
+              "REFRESCO_POIS_INVOCATION_REF"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("REFRESCO_POIS_CODE_SHA", SHA_PRUEBA)
+    # La huella del esquema de Overture se observa con un DESCRIBE del release: aquí, una fija (la real se
+    # prueba aparte, `m._huella_real`, contra parquets locales).
+    m._huella_real = m.huella_esquema_overture
+    monkeypatch.setattr(m, "huella_esquema_overture", lambda glob: HUELLA_PRUEBA)
     return m
 
 
 def _motor(monkeypatch, m, **k) -> MotorFalso:
     motor = MotorFalso(**k)
+    # El motor falso no tiene catálogo: la compuerta 043 se da por cumplida (se prueba contra PostGIS aparte).
+    monkeypatch.setattr(m, "verificar_esquema_043", lambda eng: [])
 
     def _crea(url, **kw):
         motor.creado = True
@@ -179,6 +224,16 @@ def _parquet(duckdb, ruta: pathlib.Path, con_categories: bool) -> str:
     v1 trae `categories` además de `taxonomy`; v2 (2026-09-23.x, esquema v2.0.0) ya no la trae."""
     p = ruta.as_posix()
     categories = ("{'primary': hoja_v1, 'alternate': NULL::VARCHAR[]} AS categories," if con_categories else "")
+    # `version` y `sources` como en los DOS releases medidos (2026-08-19.0 y 2026-09-23.1): R4 los lee. Cada
+    # registro con su raíz (`property` = '') y la entrada de la confianza; ov-3 con una raíz SIN zona horaria
+    # (como Foursquare) para que `source_updated_at` dé NULL.
+    fuente = ("{'property': '', 'dataset': ds, 'license': lic, 'record_id': 'rec-' || id, 'update_time': ut, "
+              "'confidence': conf::DOUBLE, 'between': NULL::DOUBLE[], 'provider': lower(ds), 'resource': lower(ds), "
+              "'version': '2026-08-10'}")
+    conf_ov = ("{'property': '/properties/confidence', 'dataset': 'Overture', 'license': 'CDLA-Permissive-2.0', "
+               "'record_id': NULL::VARCHAR, 'update_time': '2026-08-14T19:46:07Z', 'confidence': NULL::DOUBLE, "
+               "'between': NULL::DOUBLE[], 'provider': 'overture', 'resource': 'confidence_calculation', "
+               "'version': '2026-08-14'}")
     con = duckdb.connect()
     con.execute("LOAD spatial;")
     con.execute(f"""
@@ -188,11 +243,14 @@ def _parquet(duckdb, ruta: pathlib.Path, con_categories: bool) -> str:
                  hoja_v2 AS basic_category, conf::DOUBLE AS confidence, ST_Point(lon, lat) AS geometry,
                  {{'xmin': lon, 'xmax': lon, 'ymin': lat, 'ymax': lat}} AS bbox,
                  [{{'freeform': 'Calle sintética'}}] AS addresses, {{'names': {{'primary': NULL::VARCHAR}}}} AS brand,
-                 'open' AS operating_status
-          FROM (VALUES ('ov-1', 'Hospital Uno', 'hospital', 'hospital', -78.50, -0.20, 0.91),
-                       ('ov-2', 'Centro Dos', 'shopping_center', 'shopping_mall', -78.49, -0.19, 0.95),
-                       ('ov-3', 'Clínica Tres', 'medical_center', 'outpatient_care_facility', -78.48, -0.18, 0.80))
-               t(id, nombre, hoja_v1, hoja_v2, lon, lat, conf)
+                 'open' AS operating_status, ver::INTEGER AS version, [{fuente}, {conf_ov}] AS sources
+          FROM (VALUES ('ov-1', 'Hospital Uno', 'hospital', 'hospital', -78.50, -0.20, 0.91, 9, 'meta',
+                        'CDLA-Permissive-2.0', '2026-08-10T00:00:00.000Z'),
+                       ('ov-2', 'Centro Dos', 'shopping_center', 'shopping_mall', -78.49, -0.19, 0.95, 4, 'Microsoft',
+                        'CDLA-Permissive-2.0', '2025-09-24T07:57:19.737Z'),
+                       ('ov-3', 'Clínica Tres', 'medical_center', 'outpatient_care_facility', -78.48, -0.18, 0.80, 2,
+                        'Foursquare', 'Apache-2.0', '2026-04-12T00:00:00.000'))
+               t(id, nombre, hoja_v1, hoja_v2, lon, lat, conf, ver, ds, lic, ut)
         ) TO '{p}' (FORMAT parquet)""")
     con.close()
     return p
@@ -246,7 +304,8 @@ def test_B_binder_real_de_overture_no_impide_refrescar_osm(foso, duckdb_spatial,
     assert motor.ejecutadas(UPSERT_OV) == [] and motor.ejecutadas(CIERRA_OV) == [], \
         "Overture rota: 0 escrituras y 0 cierres"
     [(res, _, filas)] = motor.ejecutadas(UPSERT_OSM)
-    assert res == "commit" and filas == osm
+    assert res == "commit" and _sin_corrida(filas) == osm
+    assert len({f["ingestion_run_id"] for f in filas}) == 1, "todas las filas OSM de esta corrida, a SU corrida"
     [(res, _, cierre)] = motor.ejecutadas(CIERRA_OSM)
     assert res == "commit" and cierre["ids"] == ["node/1", "node/2", "way/3"]
     f = _fuentes(_estado(tmp_path))
@@ -292,14 +351,27 @@ def test_D_osm_sin_red_no_escribe_ni_cierra_y_overture_si(foso, monkeypatch, tmp
 
 
 # ══ E · las dos fallan ═══════════════════════════════════════════════════════════════════════════
-def test_E_las_dos_fallan_no_abre_la_base_y_no_dice_refrescada(foso, monkeypatch, tmp_path, capsys):
+def _solo_corridas(motor):
+    """Desde R4, con las dos fuentes fallidas la base SOLO recibe sus corridas fallidas: ni DDL, ni POIs, ni
+    cierres; cada corrida en SU transacción pequeña."""
+    sentencias = [s for t in motor.transacciones for s, _ in t["sentencias"]]
+    assert not any(s.startswith(("INSERT INTO pois_propios", "UPDATE pois_propios", "CREATE ", "ALTER "))
+                   for s in sentencias), "0 escrituras, 0 cierres, 0 DDL"
+    corridas = motor.ejecutadas("INSERT INTO poi_ingestion_run")
+    assert len(motor.tx_con("INSERT INTO poi_ingestion_run")) == len(corridas) == 2
+    return {p["source_provider"]: p for _, _, p in corridas}
+
+
+def test_E_las_dos_fallan_no_escriben_y_no_dice_refrescada(foso, monkeypatch, tmp_path, capsys):
     def _rota():
         raise foso.duckdb.BinderException(f"Binder Error: {BINDER}!")
     monkeypatch.setattr(foso, "pull_overture", _rota)
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: None)
     motor = _motor(monkeypatch, foso)
     assert _corre(foso) == 1
-    assert motor.creado is False, "sin ninguna fuente útil no se conecta a la base: 0 escrituras, 0 cierres"
+    c = _solo_corridas(motor)
+    assert (c["overture"]["status"], c["overture"]["error_phase"]) == ("rota", "obtencion")
+    assert (c["osm"]["status"], c["osm"]["error_class"]) == ("caida", "SinRespuesta")
     e = _estado(tmp_path)
     assert e["resultado"] == "SIN REFRESCO · OVERTURE ROTA · OSM CAÍDA"
     assert "La capa NO se actualizó" in capsys.readouterr().out
@@ -307,7 +379,7 @@ def test_E_las_dos_fallan_no_abre_la_base_y_no_dice_refrescada(foso, monkeypatch
     assert "SIN REFRESCO · OVERTURE ROTA · OSM CAÍDA" in asunto
 
 
-def test_E2_las_dos_caidas_es_reintentable_y_tampoco_abre_la_base(foso, monkeypatch, tmp_path):
+def test_E2_las_dos_caidas_es_reintentable_y_tampoco_escriben(foso, monkeypatch, tmp_path):
     import requests
 
     def _sin_red():
@@ -315,7 +387,8 @@ def test_E2_las_dos_caidas_es_reintentable_y_tampoco_abre_la_base(foso, monkeypa
     monkeypatch.setattr(foso, "pull_overture", _sin_red)
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: None)
     motor = _motor(monkeypatch, foso)
-    assert _corre(foso) == 2 and motor.creado is False and foso.avisos == []
+    assert _corre(foso) == 2 and foso.avisos == []
+    assert {p["status"] for p in _solo_corridas(motor).values()} == {"caida"}
     assert _estado(tmp_path)["resultado"] == "SIN REFRESCO · OVERTURE CAÍDA · OSM CAÍDA"
 
 
@@ -427,8 +500,8 @@ def test_L_camino_feliz_ejecuta_exactamente_lo_mismo_que_antes(foso, monkeypatch
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: osm)
     motor = _motor(monkeypatch, foso, previos={"overture": 3, "osm": 2}, cierres={"overture": 1, "osm": 0})
     assert _corre(foso) == 0
-    negocio = [(s, p) for t in motor.transacciones for s, p in t["sentencias"]
-               if s.startswith(("INSERT INTO pois_propios", "UPDATE pois_propios"))]
+    negocio = [(s, _sin_corrida(p) if isinstance(p, list) else p) for t in motor.transacciones
+               for s, p in t["sentencias"] if s.startswith(("INSERT INTO pois_propios", "UPDATE pois_propios"))]
     esperado = [(" ".join(str(foso.UPSERT_OVERTURE).split()), ov),
                 (" ".join(str(foso.CERRAR_OVERTURE).split()), {"ciudad": "quito", "ids": ["ov-a", "ov-b"]}),
                 (" ".join(str(foso.UPSERT_OSM).split()), osm),
@@ -529,7 +602,17 @@ def test_N_un_error_de_escritura_solo_deja_la_clase(foso, monkeypatch, tmp_path,
 URL_PG = os.getenv("TEST_POSTGIS_URL", "")            # postgresql+psycopg://… con PostGIS (local)
 pg = pytest.mark.skipif(not URL_PG, reason="sin TEST_POSTGIS_URL: el Postgres del CI no trae PostGIS")
 MIGRACIONES = ("014_pois_propios.sql", "019_pois_propios_ciudad.sql", "020_pois_propios_id_origen_unico.sql",
-               "021_pois_propios_iglesia_seguridad.sql", "022_osm_id_con_tipo.sql")
+               "021_pois_propios_iglesia_seguridad.sql", "022_osm_id_con_tipo.sql", "023_curacion_engancha_poi.sql")
+
+
+def aplica_043(c, esquema: str) -> None:
+    """La 043 REAL sobre el esquema desechable: su texto nombra `public.`, que aquí es `<esquema>.`. Antes, lo
+    mínimo del perímetro de la 040 que la 043 exige como precondición (RLS en la capa, `security_invoker` en la
+    vista); el dueño es quien aplica, sin grantees externos."""
+    c.execute("ALTER TABLE pois_propios ENABLE ROW LEVEL SECURITY")
+    c.execute("ALTER VIEW pois_vivos SET (security_invoker = true)")
+    sql = (RAIZ / "migrations" / "043_poi_source_provenance.sql").read_text(encoding="utf-8")
+    c.execute(sql.replace("public.", f"{esquema}."))
 VIEJO = "2026-09-22 14:30:03+00"
 
 
@@ -548,6 +631,7 @@ def _banco(conninfo: str, esquema: str) -> dict:
         c.execute(f"SET search_path TO {esquema}, public")
         for mig in MIGRACIONES:
             c.execute((RAIZ / "migrations" / mig).read_text(encoding="utf-8"))
+        aplica_043(c, esquema)
         c.execute(f"""
             INSERT INTO pois_propios (nombre, categoria, categoria_overture, geom, fuente, confianza, overture_id, osm_id,
                                       operativo, ciudad, actualizado_en) VALUES

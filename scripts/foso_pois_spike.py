@@ -21,14 +21,17 @@ Lee DATABASE_URL_OVERRIDE del .env (patron de scripts/asignar_corredor.py).
 NOTA: TODO SINCRONO (DuckDB + asyncio crashea el GIL en Windows). requests con verify=False
 para Overpass (inspeccion SSL corporativa local, mismo criterio que SSL_VERIFY=false).
 """
+import hashlib
 import json
 import math
 import os
 import re
 import sys
 import time
+import uuid
 from collections import Counter
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -196,9 +199,25 @@ CAT_LEAF = {
 }
 LEAF_TO_CAT = {leaf: cat for cat, leafs in CAT_LEAF.items() for leaf in leafs}
 
+# ── POI-SOURCE-PROVENANCE (R4, migración 043) ─────────────────────────────────────────────────────
+# Tres autoridades que no se mezclan:
+#   FUENTE    lo que el proveedor dice de su registro: source_category, source_record_version,
+#             source_updated_at, source_lineage (por fila) · source_release, source_snapshot_at (corrida);
+#   INGESTA   lo que Contexto VIO al leer: source_category_namespace, ingestion_run_id (fila) ·
+#             reader_contract, source_schema_fingerprint, source_endpoint, code_sha, instantes, contadores,
+#             estado y error (corrida);
+#   CONTEXTO  `categoria`: la clasificación funcional. Jamás se escribe en `source_*`.
+# Los LECTORES llevan versión: un cambio en la semántica de lectura exige una versión nueva, y la
+# migración a `taxonomy` (R3) será OTRO lector, nunca este.
+LECTOR_OVERTURE = "overture_places_categories_v1"   # `categories.primary`, el parser de siempre (D-4 sin reparar)
+LECTOR_OSM = "osm_overpass_nwr_body_center_v1"      # la consulta `nwr … out body center` de siempre
+NS_OVERTURE = "overture:categories.primary"
+_PROC = ("source_category", "source_category_namespace", "source_record_version", "source_updated_at",
+         "source_lineage")
+
 # Claves comunes a TODO POI (Overture y OSM) — el executemany exige el mismo shape.
 _KEYS = ("nombre", "categoria", "cat_leaf", "lon", "lat", "confidence",
-         "overture_id", "osm_id", "marca", "direccion", "operativo", "fuente", "ciudad")
+         "overture_id", "osm_id", "marca", "direccion", "operativo", "fuente", "ciudad") + _PROC
 
 
 def _normalizar(p: dict) -> dict:
@@ -207,8 +226,57 @@ def _normalizar(p: dict) -> dict:
     return d
 
 
+def huella_esquema_overture(glob: str) -> str:
+    """sha256 de la estructura que Contexto OBSERVA en el release (OBSERVACIÓN DE LA INGESTA).
+
+    No es una versión declarada por Overture (el dato no la trae: el Parquet solo lleva `geo` 1.1.0 y
+    `ARROW:schema`), ni «places/v2». Entra al hash, exactamente: cada columna de PRIMER nivel de
+    `DESCRIBE SELECT * FROM read_parquet(<glob>)` como `nombre<TAB>tipo`, con el tipo COMPLETO tal como lo
+    escribe DuckDB (los STRUCT y las LIST anidados incluidos, en su orden de campos); las líneas ordenadas
+    por nombre (el orden físico no es material para un lector que selecciona por nombre) y unidas por
+    `\\n`, en UTF-8. Misma estructura → misma huella; una columna o un tipo distintos → otra. Si el
+    `DESCRIBE` falla, no hay huella: nunca se inventa."""
+    con = duckdb.connect()
+    try:
+        con.execute("INSTALL httpfs; LOAD httpfs; SET s3_region='us-west-2';")
+        filas = con.execute(f"DESCRIBE SELECT * FROM read_parquet('{glob}')").fetchall()
+    finally:
+        con.close()
+    canonica = "\n".join(sorted(f"{nombre}\t{tipo}" for nombre, tipo, *_ in filas))
+    return hashlib.sha256(canonica.encode("utf-8")).hexdigest()
+
+
+def actualizacion_declarada(sources) -> str | None:
+    """`source_updated_at`: el instante que DECLARA el registro fuente, o None.
+
+    Regla (documentada por Overture, `SourceItem`): `update_time` es la «Last update time of the source
+    data record» y `property` es «A JSON Pointer identifying the property (field) that this source
+    information applies to»; `""` apunta al registro ENTERO. Se toma el `update_time` de la ÚNICA entrada
+    de `sources[]` con `property` vacía, y SOLO si trae zona horaria explícita (`Z` u offset). Sin zona
+    (p. ej. Foursquare: `2026-04-12T00:00:00.000`) → None: no se supone UTC. Ninguna o varias entradas
+    raíz → None. No es una observación del lugar ni la hora de ingesta (para meta coincide con la fecha
+    de su volcado: es lo que la fuente declara del registro, nada más). `sources[]` se guarda entero en
+    `source_lineage`, así que la evidencia original no se pierde aunque esto dé None."""
+    if not isinstance(sources, list):
+        return None
+    raiz = [s for s in sources if isinstance(s, dict) and s.get("property") in ("", None)]
+    if len(raiz) != 1 or not isinstance(raiz[0].get("update_time"), str):
+        return None
+    try:
+        dt = datetime.fromisoformat(raiz[0]["update_time"].strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None or dt.utcoffset() is None:
+        return None
+    return dt.isoformat()
+
+
 def pull_overture() -> list[dict]:
-    """Places del bbox de Quito en nuestras 6 categorías, confianza ≥ CONF_MIN."""
+    """Places del bbox de Quito en nuestras 6 categorías, confianza ≥ CONF_MIN.
+
+    El LECTOR es el de siempre (`categories.primary`): contra un release sin `categories` (esquema v2.0.0,
+    2026-09-23.x) sigue fallando con BinderException — D-4 NO se repara aquí (R3). Lo único nuevo es que
+    también lee `version` y `sources` (presentes en v1 y v2) para conservar la procedencia por fila."""
     release = overture_release()
     print(f"   Overture release: {release}")
     leaf_list = "', '".join(LEAF_TO_CAT.keys())
@@ -218,7 +286,8 @@ def pull_overture() -> list[dict]:
         q = f"""
             SELECT id AS overture_id, names.primary AS nombre, categories.primary AS cat_leaf,
                    confidence, ST_Y(geometry) AS lat, ST_X(geometry) AS lon,
-                   addresses[1].freeform AS direccion, brand.names.primary AS marca, operating_status
+                   addresses[1].freeform AS direccion, brand.names.primary AS marca, operating_status,
+                   version, sources
             FROM read_parquet('{overture_glob(release)}')
             WHERE bbox.xmin BETWEEN {BBOX['xmin']} AND {BBOX['xmax']}
               AND bbox.ymin BETWEEN {BBOX['ymin']} AND {BBOX['ymax']}
@@ -226,7 +295,7 @@ def pull_overture() -> list[dict]:
               AND categories.primary IN ('{leaf_list}')
         """
         cols = ["overture_id", "nombre", "cat_leaf", "confidence", "lat", "lon",
-                "direccion", "marca", "operating_status"]
+                "direccion", "marca", "operating_status", "version", "sources"]
         raw = [dict(zip(cols, r)) for r in con.execute(q).fetchall()]
     finally:
         con.close()
@@ -249,6 +318,14 @@ def pull_overture() -> list[dict]:
         r["operativo"] = (r.get("operating_status") != "closed")
         r["osm_id"] = None
         r["fuente"] = "overture"
+        # Procedencia (FUENTE): el valor de `categories.primary` TAL CUAL —el mismo que va a
+        # `categoria_overture`, como exige la 043 para este espacio—, la versión del registro y su
+        # `sources[]` VERBATIM (con su licencia, sin interpretarla). El espacio es de la INGESTA.
+        r["source_category"] = r["cat_leaf"]
+        r["source_category_namespace"] = NS_OVERTURE
+        r["source_record_version"] = None if r.get("version") is None else str(r["version"])
+        r["source_updated_at"] = actualizacion_declarada(r.get("sources"))
+        r["source_lineage"] = None if r.get("sources") is None else json.dumps(r["sources"], ensure_ascii=False)
         out.append(_normalizar(r))
     return out
 
@@ -260,6 +337,21 @@ _OVERPASS_ENDPOINTS = [
     # cayeron JUNTOS dos veces el 27-28/07/2026 (504); un tercero independiente
     # baja la probabilidad de corrida incompleta del refresco semanal.
 ]
+
+# Lo que `pull_overture`/`pull_osm_transporte` observan de la CORRIDA (no de una fila). Variables de módulo
+# y no valores de retorno a propósito: `pull_*()` conserva su firma (las pruebas y los arneses la usan).
+ULTIMA_OSM: dict = {}
+
+
+def _instante_con_zona(texto) -> str | None:
+    """Un instante ISO 8601 CON zona → ISO normalizado; sin zona, vacío o ilegible → None (no se supone UTC)."""
+    if not isinstance(texto, str) or not texto.strip():
+        return None
+    try:
+        dt = datetime.fromisoformat(texto.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return dt.isoformat() if dt.tzinfo is not None and dt.utcoffset() is not None else None
 
 
 def pull_osm_transporte() -> list[dict]:
@@ -302,12 +394,18 @@ def pull_osm_transporte() -> list[dict]:
     """
     headers = {"User-Agent": "whaber-foso-spike/1.0 (contacto: dev@whaber.local)"}
     elems = None
+    ULTIMA_OSM.clear()
     for url in _OVERPASS_ENDPOINTS:
         try:
             r = requests.post(url, data={"data": query}, headers=headers,
                               timeout=120, verify=False)
             r.raise_for_status()
-            elems = r.json().get("elements", [])
+            cuerpo = r.json()
+            elems = cuerpo.get("elements", [])
+            # Procedencia de la CORRIDA: qué mirror respondió y la instantánea que DECLARA Overpass
+            # (`osm3s.timestamp_osm_base`). Con `out body` no llega ni `version` ni `timestamp` por elemento.
+            ULTIMA_OSM["endpoint"] = url
+            ULTIMA_OSM["snapshot_at"] = _instante_con_zona((cuerpo.get("osm3s") or {}).get("timestamp_osm_base"))
             break
         except Exception as ex:  # rate-limit / caído → probar siguiente mirror
             print(f"   ⚠️ Overpass {url.split('/')[2]} falló ({str(ex)[:60]})")
@@ -332,10 +430,13 @@ def pull_osm_transporte() -> list[dict]:
         # Sin nombre NO entra: "Encontré Farmacia a 200 m" es peor experiencia que
         # caer a Google. En transporte sí entra sin nombre (una parada anónima sigue
         # sirviendo). Medido: descarta ~40 farmacias y ~78 tiendas de 1.679.
+        # `etiqueta` = la (clave, valor) REAL que casó en esta cadena: es la categoría de la FUENTE.
+        # El mapeo a `categoria`/subtipo (Contexto) NO cambia: solo se deja de perder qué etiqueta fue.
         if tags.get("amenity") == "pharmacy":
             if not tags.get("name"):
                 continue
             categoria, subtipo, nombre = "farmacia", "pharmacy", tags["name"]
+            etiqueta = ("amenity", "pharmacy")
         elif tags.get("shop") in ("supermarket", "convenience"):
             if not tags.get("name"):
                 continue
@@ -347,10 +448,12 @@ def pull_osm_transporte() -> list[dict]:
             # abierta a priorizar sin recargar.
             subtipo = "supermercado" if tags["shop"] == "supermarket" else "minimarket"
             nombre = tags["name"]
+            etiqueta = ("shop", tags["shop"])
         elif tags.get("amenity") == "place_of_worship":
             if not tags.get("name"):
                 continue
             categoria, subtipo, nombre = "iglesia", "place_of_worship", tags["name"]
+            etiqueta = ("amenity", "place_of_worship")
         elif tags.get("amenity") == "police":
             # El PUESTO DE POLICÍA como servicio físico (igual que un hospital), NO una
             # medida de qué tan seguro es el barrio. El canon prohíbe lo segundo; esto
@@ -358,6 +461,7 @@ def pull_osm_transporte() -> list[dict]:
             if not tags.get("name"):
                 continue
             categoria, subtipo, nombre = "seguridad", "police", tags["name"]
+            etiqueta = ("amenity", "police")
         elif tags.get("leisure") in ("park", "garden"):
             # Refuerzo a la categoría más flaca (Overture: 109 en todo Quito por su
             # umbral de confianza; OSM tiene 357 parques CON NOMBRE). Solo con nombre,
@@ -366,17 +470,26 @@ def pull_osm_transporte() -> list[dict]:
             if not tags.get("name"):
                 continue
             categoria, subtipo, nombre = "parque", tags["leisure"], tags["name"]
+            etiqueta = ("leisure", tags["leisure"])
         # ── transporte ───────────────────────────────────────────────────────
         elif tags.get("railway") == "subway_entrance" or tags.get("station") == "subway":
             categoria, subtipo, nombre = "transporte", "metro", tags.get("name") or "Estación de Metro"
+            # Las dos etiquetas dan el MISMO subtipo; la procedencia guarda cuál fue (en el orden de la
+            # condición: `railway` primero).
+            etiqueta = (("railway", "subway_entrance") if tags.get("railway") == "subway_entrance"
+                        else ("station", "subway"))
         elif tags.get("railway") == "station":
             categoria, subtipo, nombre = "transporte", "estacion_tren", tags.get("name") or "Estación de tren"
+            etiqueta = ("railway", "station")
         elif tags.get("amenity") == "bus_station":
             categoria, subtipo, nombre = "transporte", "terminal_bus", tags.get("name") or "Terminal de bus"
+            etiqueta = ("amenity", "bus_station")
         elif tags.get("public_transport") == "station":
             categoria, subtipo, nombre = "transporte", "estacion", tags.get("name") or "Estación"
+            etiqueta = ("public_transport", "station")
         elif tags.get("highway") == "bus_stop":
             categoria, subtipo, nombre = "transporte", "parada_bus", tags.get("name") or "Parada de bus"
+            etiqueta = ("highway", "bus_stop")
         else:
             continue
         out.append(_normalizar({
@@ -387,6 +500,10 @@ def pull_osm_transporte() -> list[dict]:
             # colapsaría en una fila. Migración 022 prefijó las filas previas (nodos).
             "overture_id": None, "osm_id": f"{el['type']}/{el['id']}", "marca": None,
             "direccion": None, "operativo": True, "fuente": "osm",
+            # Procedencia: la etiqueta REAL (FUENTE) y su clave como espacio (INGESTA). `out body` no trae
+            # versión ni fecha por elemento, ni hay `sources[]`: NULL, no se inventa.
+            "source_category": etiqueta[1], "source_category_namespace": f"osm:{etiqueta[0]}",
+            "source_record_version": None, "source_updated_at": None, "source_lineage": None,
         }))
     return out
 
@@ -443,14 +560,96 @@ _COLS = """(nombre, categoria, categoria_overture, geom, fuente, confianza,
 _VALS = """(:nombre, :categoria, :cat_leaf, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326),
             :fuente, :confidence, :overture_id, :osm_id, :marca, :direccion, :operativo, :ciudad)"""
 
+# R4 · la procedencia va APARTE de las columnas de negocio (`_COLS`/`_VALS`/`_SET` no cambian: otros arneses
+# las recomponen). Un UPSERT que vuelve a observar la fila la re-enlaza a la corrida ACTUAL y sobrescribe sus
+# campos de origen; un cierre (CERRAR_*) no los toca.
+_COLS_PROC = ("ingestion_run_id, source_category, source_category_namespace, source_record_version, "
+              "source_updated_at, source_lineage")
+_VALS_PROC = ("CAST(:ingestion_run_id AS uuid), :source_category, :source_category_namespace, :source_record_version, "
+              "CAST(:source_updated_at AS timestamptz), CAST(:source_lineage AS jsonb)")
+_SET_PROC = ", ".join(f"{c} = EXCLUDED.{c}" for c in _COLS_PROC.split(", "))
+
+
+def _mas(tupla: str, extra: str) -> str:
+    """`(a, b)` + `c, d` → `(a, b, c, d)`."""
+    return tupla.strip()[:-1].rstrip() + ",\n            " + extra + ")"
+
+
 UPSERT_OVERTURE = text(f"""
-    INSERT INTO pois_propios {_COLS} VALUES {_VALS}
-    ON CONFLICT (overture_id) WHERE overture_id IS NOT NULL DO UPDATE SET {_SET}
+    INSERT INTO pois_propios {_mas(_COLS, _COLS_PROC)} VALUES {_mas(_VALS, _VALS_PROC)}
+    ON CONFLICT (overture_id) WHERE overture_id IS NOT NULL DO UPDATE SET {_SET.rstrip()},
+        {_SET_PROC}
 """)
 UPSERT_OSM = text(f"""
-    INSERT INTO pois_propios {_COLS} VALUES {_VALS}
-    ON CONFLICT (osm_id) WHERE osm_id IS NOT NULL DO UPDATE SET {_SET}
+    INSERT INTO pois_propios {_mas(_COLS, _COLS_PROC)} VALUES {_mas(_VALS, _VALS_PROC)}
+    ON CONFLICT (osm_id) WHERE osm_id IS NOT NULL DO UPDATE SET {_SET.rstrip()},
+        {_SET_PROC}
 """)
+
+# El MANIFIESTO de la corrida (migración 043). Lo inserta el escritor AL FINAL de la transacción de su fuente
+# (la FK de `pois_propios.ingestion_run_id` es diferida); una fuente fallida, en una transacción propia.
+_CORRIDA_COLS = ("id", "source_provider", "ciudad", "status", "reader_contract", "source_release",
+                 "source_schema_fingerprint", "source_snapshot_at", "source_endpoint", "code_sha", "invocation_ref",
+                 "started_at", "fetched_at", "completed_at", "rows_fetched", "rows_valid", "rows_written",
+                 "rows_closed", "error_class", "error_phase")
+_CORRIDA_CAST = {"id": "uuid", "source_snapshot_at": "timestamptz", "started_at": "timestamptz",
+                 "fetched_at": "timestamptz", "completed_at": "timestamptz"}
+INSERT_CORRIDA = text(
+    f"INSERT INTO poi_ingestion_run ({', '.join(_CORRIDA_COLS)}) VALUES ("
+    + ", ".join(f"CAST(:{c} AS {_CORRIDA_CAST[c]})" if c in _CORRIDA_CAST else f":{c}" for c in _CORRIDA_COLS) + ")")
+
+# La COMPUERTA 043: sin el esquema exacto, el escritor no escribe NADA (ni POIs, ni cierres, ni corridas).
+# Nombres sin esquema: se resuelven por `search_path`, como `pois_propios` en el resto del script.
+FIRMA_PROC_043 = ("ingestion_run_id:uuid:f:f,source_category:text:f:f,source_category_namespace:text:f:f,"
+                  "source_record_version:text:f:f,source_updated_at:timestamp with time zone:f:f,source_lineage:jsonb:f:f")
+FIRMA_CORRIDA_043 = ("id:uuid:t:t,source_provider:text:t:f,ciudad:text:t:f,status:text:t:f,reader_contract:text:t:f,"
+                     "source_release:text:f:f,source_schema_fingerprint:text:f:f,"
+                     "source_snapshot_at:timestamp with time zone:f:f,source_endpoint:text:f:f,code_sha:text:t:f,"
+                     "invocation_ref:text:f:f,started_at:timestamp with time zone:t:f,"
+                     "fetched_at:timestamp with time zone:f:f,completed_at:timestamp with time zone:t:f,"
+                     "rows_fetched:integer:f:f,rows_valid:integer:f:f,rows_written:integer:f:f,rows_closed:integer:f:f,"
+                     "error_class:text:f:f,error_phase:text:f:f")
+CKS_043 = ["ck_pois_categoria_fuente_con_espacio", "ck_pois_columna_legada_coherente", "ck_pois_corrida_exige_espacio",
+           "ck_pois_espacio_de_su_fuente", "ck_pois_espacio_vocabulario", "ck_pois_linaje_forma",
+           "ck_pois_procedencia_exige_corrida"]
+_FIRMA = ("string_agg(attname || ':' || format_type(atttypid, atttypmod) || ':' || "
+          "CASE WHEN attnotnull THEN 't' ELSE 'f' END || ':' || CASE WHEN atthasdef THEN 't' ELSE 'f' END, ',' ORDER BY attnum)")
+VERIFICA_043 = text(rf"""
+    SELECT to_regclass('poi_ingestion_run') IS NOT NULL AS corridas,
+           (SELECT {_FIRMA} FROM pg_attribute WHERE attrelid = to_regclass('pois_propios') AND NOT attisdropped
+              AND attname IN ('ingestion_run_id', 'source_category', 'source_category_namespace',
+                              'source_record_version', 'source_updated_at', 'source_lineage')) AS firma_proc,
+           (SELECT {_FIRMA} FROM pg_attribute WHERE attrelid = to_regclass('poi_ingestion_run') AND attnum > 0
+              AND NOT attisdropped) AS firma_corrida,
+           (SELECT count(*) FROM pg_constraint WHERE conrelid = to_regclass('pois_propios') AND contype = 'c'
+              AND convalidated AND conname = ANY(CAST(:cks AS text[]))) AS cks_capa,
+           (SELECT count(*) FROM pg_constraint WHERE conrelid = to_regclass('pois_propios') AND contype = 'f'
+              AND conname = 'fk_pois_ingestion_run' AND condeferrable AND condeferred AND confdeltype = 'r'
+              AND convalidated AND confrelid = to_regclass('poi_ingestion_run')) AS fk,
+           (SELECT count(*) FROM pg_constraint WHERE conrelid = to_regclass('poi_ingestion_run') AND convalidated
+              AND (conname LIKE 'ck\_pir\_%' OR conname = 'uq_pir_id_proveedor_ciudad')) AS cks_corrida
+""")
+
+
+def verificar_esquema_043(eng) -> list[str]:
+    """Qué le falta a la base para el esquema 043 (vacío = completo). Solo lectura de catálogo. Si la base no
+    responde, la excepción sube: el llamador la trata como «no se puede escribir»."""
+    with eng.connect() as db:
+        v = db.execute(VERIFICA_043, {"cks": CKS_043}).mappings().one()
+    faltas = []
+    if not v["corridas"]:
+        faltas.append("no existe poi_ingestion_run")
+    if v["firma_proc"] != FIRMA_PROC_043:
+        faltas.append("las 6 columnas de procedencia de pois_propios no están exactas")
+    if v["corridas"] and v["firma_corrida"] != FIRMA_CORRIDA_043:
+        faltas.append("poi_ingestion_run no tiene las columnas exactas")
+    if v["cks_capa"] != len(CKS_043):
+        faltas.append(f"invariantes de pois_propios: {v['cks_capa']} de {len(CKS_043)}")
+    if v["fk"] != 1:
+        faltas.append("falta la FK diferida fk_pois_ingestion_run")
+    if v["corridas"] and v["cks_corrida"] != 16:
+        faltas.append(f"invariantes de poi_ingestion_run: {v['cks_corrida']} de 16")
+    return faltas
 
 # Lo que sigue en la tabla pero YA NO viene del origen: se marca cerrado, NO se borra.
 # Un POI que desaparece de Overture/OSM puede ser un cierre real o un borrado erróneo
@@ -527,6 +726,15 @@ class ResultadoFuente:
     segundos: float = 0.0
     fase: str | None = None                       # dónde falló: obtencion | validacion | escritura
     error: str | None = None                      # clase (+ 1.ª línea al obtener). Nunca SQL ni URL.
+    # ── R4 · la CORRIDA (poi_ingestion_run) ──
+    run_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    clase: str | None = None                      # SOLO la clase del error: lo único que se persiste
+    started_at: str | None = None
+    fetched_at: str | None = None
+    endpoint: str | None = None
+    snapshot_at: str | None = None                # OSM: osm3s.timestamp_osm_base
+    schema_fingerprint: str | None = None         # Overture: huella del esquema OBSERVADO
+    manifiesto: str | None = None                 # 'persistido' | 'NOT PERSISTED'
 
     def linea(self) -> str:
         def v(x):
@@ -538,7 +746,8 @@ class ResultadoFuente:
 
     def resumen(self) -> dict:
         return {k: getattr(self, k) for k in ("fuente", "estado", "release", "obtenidas", "validadas",
-                                               "escritas", "cerradas", "segundos", "fase", "error")}
+                                               "escritas", "cerradas", "segundos", "fase", "error",
+                                               "run_id", "manifiesto")}
 
 
 def _primera_linea(exc: BaseException) -> str:
@@ -578,13 +787,61 @@ def _invalidas(fuente: str, filas) -> list[str]:
         if not all(isinstance(p[k], (int, float)) and not isinstance(p[k], bool) and math.isfinite(p[k])
                    for k in ("lat", "lon")):
             motivos["coordenadas"] += 1
+        # R4 · procedencia coherente ANTES de tocar la base (la 043 lo exige igual; aquí falla cerrado sin
+        # escribir): toda fila declara de qué campo sale su categoría de origen, del MISMO dataset; en Overture,
+        # `categories.primary` es el valor de `categoria_overture` tal cual (el que lee Place Evidence v0).
+        ns, cat_origen = p.get("source_category_namespace"), p.get("source_category")
+        if fuente == "overture":
+            if ns != NS_OVERTURE or cat_origen != p["cat_leaf"] or not cat_origen:
+                motivos["procedencia de la categoría"] += 1
+        elif not (isinstance(ns, str) and ns.startswith("osm:") and isinstance(cat_origen, str) and cat_origen):
+            motivos["procedencia de la categoría"] += 1
+        if fuente == "osm" and any(p.get(k) is not None for k in
+                                   ("source_record_version", "source_updated_at", "source_lineage")):
+            motivos["procedencia que OSM no entrega"] += 1
     return [f"{n} fila(s) con {m}" for m, n in motivos.items()]
 
 
+def _ahora() -> str:
+    """Reloj de la corrida (UTC, con zona). Un solo reloj —el del proceso— para started/fetched/completed."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+_SHA = re.compile(r"[0-9a-f]{40}")
+
+
+def code_sha() -> str | None:
+    """El SHA EXACTO del código que corre, o None (FAIL CLOSED). En GitHub Actions, `GITHUB_SHA` (el commit que
+    el runner sacó); fuera de Actions, SOLO la vía explícita `REFRESCO_POIS_CODE_SHA`. Nunca un nombre de rama,
+    «main», «latest» ni un `git rev-parse` de un árbol que podría estar modificado: 40 hex en minúsculas o nada."""
+    v = os.getenv("GITHUB_SHA", "") if os.getenv("GITHUB_ACTIONS") == "true" else os.getenv("REFRESCO_POIS_CODE_SHA", "")
+    v = (v or "").strip()
+    return v if _SHA.fullmatch(v) else None
+
+
+def invocation_ref() -> str | None:
+    """Referencia NO secreta y reproducible de la ejecución: `github-actions:<workflow>:<run_id>:<attempt>` en
+    Actions; fuera, `REFRESCO_POIS_INVOCATION_REF` si se fija, o NULL. Sin URLs ni tokens."""
+    if os.getenv("GITHUB_ACTIONS") == "true" and os.getenv("GITHUB_RUN_ID", "").isdigit():
+        flujo = re.sub(r"[^A-Za-z0-9_.-]", "_", os.getenv("GITHUB_WORKFLOW", "") or "-")[:60]
+        intento = os.getenv("GITHUB_RUN_ATTEMPT", "1")
+        return f"github-actions:{flujo}:{os.getenv('GITHUB_RUN_ID')}:{intento if intento.isdigit() else '1'}"
+    v = (os.getenv("REFRESCO_POIS_INVOCATION_REF") or "").strip()
+    return v[:120] if v else None
+
+
+class _SinNadaQueEscribir(Exception):
+    """Control de flujo: sin fuente útil (o sin el esquema 043) no hay DDL T0 ni foto previa."""
+
+
 def _pull_overture_con_release(r: "ResultadoFuente") -> list[dict]:
-    """`pull_overture()` SIN TOCAR, con el release que eligió anotado en el resultado. Se resuelve
-    una vez y se le pasa por OVERTURE_RELEASE para que el anotado sea exactamente el leído."""
+    """`pull_overture()` con el release que eligió anotado en el resultado. Se resuelve una vez y se le pasa
+    por OVERTURE_RELEASE para que el anotado sea exactamente el leído. Antes de leer, Contexto OBSERVA la
+    estructura del release (`huella_esquema_overture`): si eso falla, no hay huella; si lo que falla después
+    es el lector (p. ej. el Binder de D-4), la huella observada SÍ queda en la corrida ROTA."""
     r.release = overture_release()
+    r.endpoint = overture_glob(r.release)
+    r.schema_fingerprint = huella_esquema_overture(r.endpoint)
     previo = os.environ.get("OVERTURE_RELEASE")
     os.environ["OVERTURE_RELEASE"] = r.release
     try:
@@ -599,23 +856,30 @@ def _pull_overture_con_release(r: "ResultadoFuente") -> list[dict]:
 def obtener(fuente: str) -> ResultadoFuente:
     """Descarga y valida UNA fuente. Nunca lanza: lo que pase queda en el resultado."""
     r = ResultadoFuente(fuente)
+    r.started_at = _ahora()
     t0 = time.time()
     try:
         filas = _pull_overture_con_release(r) if fuente == "overture" else pull_osm_transporte()
     except Exception as exc:  # noqa: BLE001 — se registra en SU estado; la otra fuente sigue
         r.estado = FUENTE_CAIDA if _es_caida(exc) else FUENTE_ROTA
-        r.fase, r.error = "obtencion", _primera_linea(exc)
+        r.fase, r.error, r.clase = "obtencion", _primera_linea(exc), type(exc).__name__
         r.segundos = time.time() - t0
         print(f"   ❌ {fuente}: {r.error}")
         return r
     r.segundos = time.time() - t0
+    if fuente == "osm":
+        r.endpoint, r.snapshot_at = ULTIMA_OSM.get("endpoint"), ULTIMA_OSM.get("snapshot_at")
     if filas is None:  # contrato de pull_osm_transporte: None = ningún endpoint respondió (≠ [])
-        r.estado, r.fase, r.error = FUENTE_CAIDA, "obtencion", "ningún endpoint respondió"
+        r.estado, r.fase, r.error, r.clase = FUENTE_CAIDA, "obtencion", "ningún endpoint respondió", "SinRespuesta"
         return r
+    r.fetched_at = _ahora()
     r.obtenidas = len(filas) if isinstance(filas, list) else None
     invalidas = _invalidas(fuente, filas)
+    if fuente == "overture" and not (r.release and r.schema_fingerprint):
+        # La 043 exige release + huella en una corrida OK de Overture: sin ellas, la estructura no se observó.
+        invalidas.append("release o huella de esquema no observados")
     if invalidas:
-        r.estado, r.fase = FUENTE_ROTA, "validacion"
+        r.estado, r.fase, r.clase = FUENTE_ROTA, "validacion", "DatasetInvalido"
         r.error = ("dataset inválido: " + "; ".join(invalidas))[:300]
         print(f"   ❌ {fuente}: {r.error}")
         return r
@@ -623,19 +887,51 @@ def obtener(fuente: str) -> ResultadoFuente:
     return r
 
 
-def escribir(eng, r: ResultadoFuente) -> None:
-    """UNA transacción para ESTA fuente: upsert + cierre con sus guardas. Si algo falla, se
-    revierte ESTA fuente y nada más: la otra confirmó, o confirmará, en la suya.
+def _manifiesto(r: ResultadoFuente, ident: dict, **contadores) -> dict:
+    """La fila de `poi_ingestion_run` de ESTA corrida. Lo que no se observó, va NULL."""
+    ok = r.estado == FUENTE_OK
+    return {"id": r.run_id, "source_provider": r.fuente, "ciudad": CIUDAD, "status": r.estado,
+            "reader_contract": LECTOR_OVERTURE if r.fuente == "overture" else LECTOR_OSM,
+            "source_release": r.release if r.fuente == "overture" else None,
+            "source_schema_fingerprint": r.schema_fingerprint if r.fuente == "overture" else None,
+            "source_snapshot_at": r.snapshot_at if r.fuente == "osm" else None,
+            "source_endpoint": r.endpoint, "code_sha": ident["code_sha"], "invocation_ref": ident["invocation_ref"],
+            "started_at": r.started_at, "fetched_at": r.fetched_at, "completed_at": _ahora(),
+            "rows_fetched": r.obtenidas, "rows_valid": r.validadas,
+            "rows_written": contadores.get("escritas") if ok else None,
+            "rows_closed": contadores.get("cerradas") if ok else None,
+            "error_class": None if ok else r.clase, "error_phase": None if ok else r.fase}
+
+
+def registrar_fallo(eng, r: ResultadoFuente, ident: dict) -> None:
+    """Una fuente CAÍDA o ROTA deja su corrida en una transacción PROPIA y pequeña, sin ninguna fila de POIs.
+    Si ni eso se puede guardar, se dice: MANIFEST NOT PERSISTED. Sin reintento, sin fingir éxito."""
+    try:
+        with eng.begin() as db:
+            db.execute(INSERT_CORRIDA, _manifiesto(r, ident))
+        r.manifiesto = "persistido"
+    except Exception as exc:  # noqa: BLE001 — el aviso de la fuente fallida ya sale por _salir
+        r.manifiesto = "NOT PERSISTED"
+        print(f"   ⚠️ {r.fuente}: MANIFEST NOT PERSISTED ({type(exc).__name__})")
+
+
+def escribir(eng, r: ResultadoFuente, ident: dict) -> None:
+    """UNA transacción para ESTA fuente: upsert + cierre con sus guardas + SU corrida. Si algo falla, se
+    revierte ESTA fuente ENTERA —POIs, cierres y corrida— y nada más: la otra confirmó, o confirmará, en la
+    suya. Después, la corrida fallida se intenta guardar aparte (`registrar_fallo`).
 
     UPSERT por identificador de origen (migración 020): la fila sobrevive al refresco con su `id`.
-    Antes era TRUNCATE (borraba TODOS los mercados, migración 019) y luego DELETE+INSERT."""
+    Antes era TRUNCATE (borraba TODOS los mercados, migración 019) y luego DELETE+INSERT.
+    R4: cada fila escrita queda enlazada a ESTA corrida (`ingestion_run_id`); la corrida se inserta AL FINAL,
+    con los contadores ya conocidos (la FK es diferida: se comprueba en el COMMIT)."""
     upsert, cerrar, clave = ((UPSERT_OVERTURE, CERRAR_OVERTURE, "overture_id") if r.fuente == "overture"
                              else (UPSERT_OSM, CERRAR_OSM, "osm_id"))
+    filas = [{**p, "ingestion_run_id": r.run_id} for p in r.filas]
     t0 = time.time()
     try:
         with eng.begin() as db:
-            if r.filas:
-                db.execute(upsert, r.filas)
+            if filas:
+                db.execute(upsert, filas)
             # Cierre POR FUENTE con la guarda de caída brusca, contada en el mismo punto que antes
             # (tras el upsert de esta fuente). Ver el incidente del 2026-07-27 en CERRAR_*.
             previos_f = db.execute(text(
@@ -648,12 +944,14 @@ def escribir(eng, r: ResultadoFuente) -> None:
             else:
                 ids = [p[clave] for p in r.filas]
                 cerradas = db.execute(cerrar, {"ciudad": CIUDAD, "ids": ids or [""]}).rowcount
-        r.escritas, r.cerradas = len(r.filas), cerradas
+            db.execute(INSERT_CORRIDA, _manifiesto(r, ident, escritas=len(filas), cerradas=cerradas))
+        r.escritas, r.cerradas, r.manifiesto = len(filas), cerradas, "persistido"
     except Exception as exc:  # noqa: BLE001 — rollback de ESTA fuente; la otra no se toca
         # Solo la clase: el texto de un error de la base arrastra SQL, parámetros o el host.
-        r.estado, r.fase, r.error = FUENTE_ROTA, "escritura", type(exc).__name__
+        r.estado, r.fase, r.error, r.clase = FUENTE_ROTA, "escritura", type(exc).__name__, type(exc).__name__
         r.escritas = r.cerradas = 0
         print(f"   ❌ {r.fuente}: la escritura falló ({r.error}) → revertida; la otra fuente no se toca")
+        registrar_fallo(eng, r, ident)
     r.segundos += time.time() - t0
 
 
@@ -715,6 +1013,17 @@ def main():
     BBOX = CIUDADES[CIUDAD]
     print(f"═══ Mercado: {CIUDAD.upper()} · bbox lon[{BBOX['xmin']}, {BBOX['xmax']}] "
           f"lat[{BBOX['ymin']}, {BBOX['ymax']}] ═══", flush=True)
+    # R4: cada corrida guarda el SHA EXACTO del código que la ejecutó. Sin él no se escribe nada.
+    sha = code_sha()
+    if sha is None:
+        print("❌ CODE SHA no determinable (GITHUB_SHA en Actions, REFRESCO_POIS_CODE_SHA fuera; 40 hex) "
+              "→ FAIL CLOSED: 0 escrituras, 0 cierres, 0 corridas.")
+        _guarda_estado([], "SIN REFRESCO · CODE SHA NO DETERMINABLE", 1)
+        avisar_ops(f"[Contexto] Refresco de POIs SIN REFRESCO · CODE SHA NO DETERMINABLE · {CIUDAD}",
+                   "El refresco no sabe qué código lo ejecuta (GITHUB_SHA / REFRESCO_POIS_CODE_SHA): "
+                   "no escribe procedencia sin él. No se tocó la base.")
+        sys.exit(1)
+    ident = {"code_sha": sha, "invocation_ref": invocation_ref()}
 
     print("── 1) Overture Places (6 categorías, umbral de conf por categoría) ──", flush=True)
     ov = obtener("overture")
@@ -737,8 +1046,8 @@ def main():
         print(f"     {cat:16} {n}")
 
     if not utiles:
-        print("❌ Ninguna fuente se obtuvo — abortado ANTES de tocar la DB. La capa NO se actualizó.")
-        _salir(fuentes)
+        print("❌ Ninguna fuente se obtuvo — La capa NO se actualizó (0 escrituras, 0 cierres). "
+              "Solo se registran sus corridas fallidas, si la base lo permite.")
 
     # NullPool: una conexión secuencial. Ver la nota en scripts/asignar_corredor.py —
     # con el pool por defecto este script solo podría agotar el techo de Supabase.
@@ -748,8 +1057,27 @@ def main():
     eng = create_engine(SYNC_URL, echo=False, poolclass=NullPool,
                         connect_args=db_tls.kwargs_psycopg(SYNC_URL))
     try:
-        print("── 3) Cargando a pois_propios ──", flush=True)
+        # R4 · COMPUERTA 043 (solo lectura de catálogo), ANTES de cualquier escritura y del DDL T0.
         try:
+            faltas = verificar_esquema_043(eng)
+        except Exception as exc:  # noqa: BLE001 — base inalcanzable: tampoco se puede registrar nada
+            faltas = [f"la base no respondió ({type(exc).__name__})"]
+        if faltas:
+            print("❌ ESQUEMA 043 AUSENTE O INCOMPLETO → FAIL CLOSED: 0 escrituras, 0 cierres, 0 corridas. "
+                  "MANIFEST NOT PERSISTED. " + "; ".join(faltas))
+            for f in fuentes:
+                if f.estado == FUENTE_OK:
+                    f.estado, f.fase, f.error, f.clase = FUENTE_ROTA, "escritura", "Esquema043Ausente", "Esquema043Ausente"
+                f.manifiesto = "NOT PERSISTED"
+            utiles = []
+            fuentes_a_registrar = []
+        else:
+            fuentes_a_registrar = fuentes
+        if utiles:
+            print("── 3) Cargando a pois_propios ──", flush=True)
+        try:
+            if not utiles:
+                raise _SinNadaQueEscribir
             with eng.begin() as db:
                 # El DDL idempotente y la foto previa: su propia transacción, antes de las fuentes.
                 for stmt in DDL.strip().split(";"):
@@ -764,18 +1092,21 @@ def main():
                   f"{sum(len(f.filas) for f in utiles)}")
             if otras:
                 print("   intactas: " + ", ".join(f"{c}={n}" for c, n in otras))
+        except _SinNadaQueEscribir:
+            pass                            # sin fuente útil (o sin 043) no hay DDL T0 ni foto previa
         except Exception as exc:  # noqa: BLE001 — sin esquema no escribe ninguna fuente
             for f in utiles:
-                f.estado, f.fase, f.error = FUENTE_ROTA, "escritura", type(exc).__name__
+                f.estado, f.fase, f.error, f.clase = FUENTE_ROTA, "escritura", type(exc).__name__, type(exc).__name__
             print(f"   ❌ preparar la tabla falló ({type(exc).__name__}) → no se escribe ninguna fuente")
             utiles = []
 
-        for f in fuentes:
+        for f in fuentes_a_registrar:
             if f.estado == FUENTE_OK:
-                escribir(eng, f)
+                escribir(eng, f, ident)
             else:
                 print(f"   ⚠️ '{f.fuente}' {_ETIQUETA[f.estado]} ({f.fase}) → NO se escribe ni se cierra "
                       "ninguno de sus POIs")
+                registrar_fallo(eng, f, ident)
 
         if any(f.estado == FUENTE_OK for f in fuentes):
             with eng.connect() as db:
@@ -882,6 +1213,8 @@ def _salir(fuentes: list[ResultadoFuente]):
     print("\n── Resumen por fuente ──")
     for f in fuentes:
         print("   " + f.linea())
+    for f in fuentes:
+        print(f"   corrida {f.fuente}: {f.run_id} · manifiesto {f.manifiesto or 'no intentado'}")
     print(f"   RESULTADO: {resultado} · código {codigo}")
     _guarda_estado(fuentes, resultado, codigo)
     if codigo == 0:

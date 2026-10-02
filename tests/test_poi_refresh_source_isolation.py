@@ -95,6 +95,8 @@ class _Conexion:
             return _R(rowcount=self.motor.cierres.get(fuente, 0))
         if "AS cobertura_previa" in s:          # R3: la cobertura previa por categoría de Overture
             return _R(filas=list(self.motor.cobertura.items()))
+        if "AS operativo_en_capa" in s:         # R3 · M0: qué GERS `closed` siguen operativos en la capa
+            return _R(filas=[(i,) for i in params["ids"] if i in self.motor.operativos])
         if "GROUP BY 1" in s:
             return _R(filas=[])
         if s.startswith("SELECT count(*)"):
@@ -103,9 +105,9 @@ class _Conexion:
 
 
 class MotorFalso:
-    def __init__(self, previos=None, cierres=None, falla_en=None, cobertura=None):
+    def __init__(self, previos=None, cierres=None, falla_en=None, cobertura=None, operativos=()):
         self.previos, self.cierres, self.falla_en = previos or {}, cierres or {}, falla_en
-        self.cobertura = cobertura or {}
+        self.cobertura, self.operativos = cobertura or {}, set(operativos)
         self.transacciones: list[dict] = []
         self.creado = False
         self.dispuesto = False

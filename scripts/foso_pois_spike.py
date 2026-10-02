@@ -202,13 +202,18 @@ LEAF_TO_CAT = {leaf: cat for cat, leafs in CAT_LEAF.items() for leaf in leafs}
 # ── POI-SOURCE-PROVENANCE (R4, migración 043) ─────────────────────────────────────────────────────
 # Tres autoridades que no se mezclan:
 #   FUENTE    lo que el proveedor dice de su registro: source_category, source_record_version,
-#             source_updated_at, source_lineage (por fila) · source_release, source_snapshot_at (corrida);
+#             source_lineage (por fila) · source_release, source_snapshot_at (corrida);
 #   INGESTA   lo que Contexto VIO al leer: source_category_namespace, ingestion_run_id (fila) ·
 #             reader_contract, source_schema_fingerprint, source_endpoint, code_sha, instantes, contadores,
 #             estado y error (corrida);
 #   CONTEXTO  `categoria`: la clasificación funcional. Jamás se escribe en `source_*`.
 # Los LECTORES llevan versión: un cambio en la semántica de lectura exige una versión nueva, y la
 # migración a `taxonomy` (R3) será OTRO lector, nunca este.
+# `source_updated_at` = NULL en TODA fila (decisión del fundador, R1 · 2026-10-02): R4 CONSERVA la
+# procedencia, no interpreta el tiempo de la fuente. En Overture, `sources[].update_time` puede ser la
+# actualización del registro o la del dataset según el proveedor, y compararlo con `version` sería
+# inferencia: queda ÍNTEGRO dentro de `source_lineage` (OVERTURE-SOURCE-TIME-SEMANTICS = DEFER TO R5).
+# En OSM, `out body` no trae fecha por elemento. `_invalidas` rechaza cualquier fila que la traiga.
 LECTOR_OVERTURE = "overture_places_categories_v1"   # `categories.primary`, el parser de siempre (D-4 sin reparar)
 LECTOR_OSM = "osm_overpass_nwr_body_center_v1"      # la consulta `nwr … out body center` de siempre
 NS_OVERTURE = "overture:categories.primary"
@@ -244,38 +249,6 @@ def huella_esquema_overture(glob: str) -> str:
         con.close()
     canonica = "\n".join(sorted(f"{nombre}\t{tipo}" for nombre, tipo, *_ in filas))
     return hashlib.sha256(canonica.encode("utf-8")).hexdigest()
-
-
-def actualizacion_declarada(sources) -> str | None:
-    """`source_updated_at`: el instante que DECLARA el registro fuente, o None.
-
-    Regla (documentada por Overture, `SourceItem`): `update_time` es la «Last update time of the source
-    data record» y `property` es «A JSON Pointer identifying the property (field) that this source
-    information applies to»; `""` apunta al registro ENTERO. Se toma el `update_time` de la ÚNICA entrada
-    de `sources[]` con `property` vacía, y SOLO si trae zona horaria explícita (`Z` u offset). Sin zona
-    (p. ej. Foursquare: `2026-04-12T00:00:00.000`) → None: no se supone UTC. Ninguna o varias entradas
-    raíz → None.
-    La FECHA DEL VOLCADO no es la actualización del registro: si el instante cae (en UTC) en el mismo día
-    que la `version` que declara esa misma entrada raíz —la del volcado de su dataset—, es el sello del
-    volcado → None. Medido (2026-10-02, release 2026-08-19.0, bbox de Quito): meta trae
-    `2026-08-10T00:00:00.000Z` con `version` `2026-08-10` en sus 2841 registros (su volcado); Microsoft,
-    instantes propios de 2021-11 a 2025-09 con `version` `2025-10-20` (pasan). No es una observación del
-    lugar ni la hora de ingesta. `sources[]` se guarda entero en `source_lineage`, así que la evidencia
-    original no se pierde aunque esto dé None."""
-    if not isinstance(sources, list):
-        return None
-    raiz = [s for s in sources if isinstance(s, dict) and s.get("property") in ("", None)]
-    if len(raiz) != 1 or not isinstance(raiz[0].get("update_time"), str):
-        return None
-    try:
-        dt = datetime.fromisoformat(raiz[0]["update_time"].strip().replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if dt.tzinfo is None or dt.utcoffset() is None:
-        return None
-    if str(raiz[0].get("version") or "") == dt.astimezone(timezone.utc).date().isoformat():
-        return None                                  # el sello del volcado del dataset, no del registro
-    return dt.isoformat()
 
 
 def pull_overture() -> list[dict]:
@@ -331,7 +304,7 @@ def pull_overture() -> list[dict]:
         r["source_category"] = r["cat_leaf"]
         r["source_category_namespace"] = NS_OVERTURE
         r["source_record_version"] = None if r.get("version") is None else str(r["version"])
-        r["source_updated_at"] = actualizacion_declarada(r.get("sources"))
+        r["source_updated_at"] = None   # R4 no interpreta `update_time`: va íntegro en el linaje (R5)
         r["source_lineage"] = None if r.get("sources") is None else json.dumps(r["sources"], ensure_ascii=False)
         out.append(_normalizar(r))
     return out
@@ -806,6 +779,8 @@ def _invalidas(fuente: str, filas) -> list[str]:
         if fuente == "osm" and any(p.get(k) is not None for k in
                                    ("source_record_version", "source_updated_at", "source_lineage")):
             motivos["procedencia que OSM no entrega"] += 1
+        if p.get("source_updated_at") is not None:
+            motivos["source_updated_at: R4 no interpreta el tiempo de la fuente (R5)"] += 1
     return [f"{n} fila(s) con {m}" for m, n in motivos.items()]
 
 

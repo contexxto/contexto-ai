@@ -1,7 +1,7 @@
 """POI-SOURCE-PROVENANCE · WRITER (R4): el refresco de POIs escribe procedencia REAL bajo el esquema 043.
 
 Matriz A–AD del mandato WRITER CODE+CI 0.1, en tres capas:
-  · PURA (CI): la regla de `source_updated_at`, la huella del esquema observado, el SHA y la referencia de la
+  · PURA (CI): `source_updated_at` NULL en todo Overture (R1), la huella del esquema, el SHA y la referencia de la
     ejecución, el lector REAL de OSM (etiqueta exacta + instantánea de Overpass) y el de Overture (contra parquets
     locales con la estructura REAL de los releases medidos).
   · ORQUESTACIÓN (CI): el `main()` REAL con el motor falso de #189: compuerta 043, una corrida por fuente, las
@@ -35,26 +35,51 @@ def _corridas(motor) -> dict:
 
 
 # ══════════════════════════════════════ PURA ══════════════════════════════════════════════════════
-@pytest.mark.parametrize("fuentes,esperado", [
-    ([{"property": "", "update_time": "2026-08-10T00:00:00.000Z"}], "2026-08-10T00:00:00+00:00"),       # meta
-    ([{"property": "", "update_time": "2025-09-24T07:57:19.737Z"}], "2025-09-24T07:57:19.737000+00:00"),  # Microsoft
-    ([{"property": "", "update_time": "2026-04-12T08:00:00-05:00"}], "2026-04-12T08:00:00-05:00"),     # offset explícito
-    ([{"property": None, "update_time": "2026-08-10T00:00:00Z"}], "2026-08-10T00:00:00+00:00"),        # raíz sin pointer
-    ([{"property": "", "update_time": "2026-04-12T00:00:00.000"}], None),                               # J · SIN zona
-    ([{"property": "/properties/confidence", "update_time": "2026-08-14T19:46:07Z"}], None),            # sin raíz
-    ([{"property": "", "update_time": "2026-08-10T00:00:00Z"},
-      {"property": "", "update_time": "2026-08-11T00:00:00Z"}], None),                                  # dos raíces
-    ([{"property": "", "update_time": "ayer"}], None), ([{"property": "", "update_time": None}], None),
-    # el sello del VOLCADO (mismo día UTC que la `version` de su dataset) no es la actualización del registro
-    ([{"property": "", "update_time": "2026-08-10T00:00:00.000Z", "version": "2026-08-10"}], None),           # meta
-    ([{"property": "", "update_time": "2026-08-10T14:07:42Z", "version": "2026-08-10"}], None),
-    ([{"property": "", "update_time": "2026-08-09T20:00:00-05:00", "version": "2026-08-10"}], None),         # en UTC
-    ([{"property": "", "update_time": "2025-09-24T07:57:19.737Z", "version": "2025-10-20"}],
-     "2025-09-24T07:57:19.737000+00:00"),                                                                     # Microsoft
-    ([{"property": "", "update_time": "2026-08-10T00:00:00Z", "version": "v3"}], "2026-08-10T00:00:00+00:00"),
-    ([], None), (None, None), ("no es lista", None)])
-def test_J_K_source_updated_at_solo_con_una_raiz_y_zona_explicita(foso, fuentes, esperado):
-    assert foso.actualizacion_declarada(fuentes) == esperado
+# R1 (decisión del fundador, 2026-10-02): `source_updated_at` = NULL en TODO Overture. R4 conserva la procedencia;
+# la semántica temporal de `sources[].update_time` (registro o dataset, según el proveedor) es de R5
+# (OVERTURE-SOURCE-TIME-SEMANTICS = DEFER TO R5). El dato sigue íntegro en `source_lineage`.
+def _todos_los_update_time(fuentes) -> list:
+    return [(s.get("dataset"), s.get("property"), s.get("update_time")) for s in fuentes]
+
+
+def test_J_K_R4_no_promueve_update_time_de_ningun_proveedor_y_lo_conserva_en_el_linaje(foso, duckdb_spatial,
+                                                                                        tmp_path, monkeypatch):
+    """J/K (R1): Meta y Microsoft con zona, Foursquare sin zona → `source_updated_at` NULL en los tres; cada
+    `update_time` (la raíz y la de la confianza) sigue en `source_lineage` con el MISMO texto."""
+    v1 = _parquet(duckdb_spatial, tmp_path / "v1.parquet", con_categories=True)
+    monkeypatch.setattr(foso, "overture_glob", lambda rel: v1)
+    filas = {f["overture_id"]: f for f in foso.pull_overture()}
+    con = duckdb_spatial.connect()
+    originales = dict(con.execute(f"SELECT id, sources FROM read_parquet('{v1}')").fetchall())
+    con.close()
+    proveedores = {oid: originales[oid][0]["dataset"] for oid in originales}
+    assert proveedores == {"ov-1": "meta", "ov-2": "Microsoft", "ov-3": "Foursquare"}
+    assert originales["ov-1"][0]["update_time"].endswith("Z") and originales["ov-2"][0]["update_time"].endswith("Z")
+    assert not originales["ov-3"][0]["update_time"].endswith("Z")            # Foursquare, sin zona
+    assert set(filas) == set(originales)
+    for oid, f in filas.items():
+        assert f["source_updated_at"] is None, (proveedores[oid], "R4 no interpreta el tiempo de la fuente")
+        linaje = json.loads(f["source_lineage"])
+        assert linaje == originales[oid], "sources[] estructuralmente íntegro"
+        assert _todos_los_update_time(linaje) == _todos_los_update_time(originales[oid]), \
+            "ningún update_time se pierde ni se reescribe en el linaje"
+
+
+def test_J_K_R4_no_interpreta_frescura_ninguna_linea_de_codigo_lee_update_time():
+    """Estático: el código del escritor (sin comentarios ni docstrings) no nombra `update_time` en ninguna forma
+    —ni clave, ni atributo, ni variable, ni función— y no tiene compuerta de frescura (R5)."""
+    import ast
+    arbol = ast.parse(SCRIPT.read_text(encoding="utf-8"))
+    docstrings = {id(n.body[0].value) for n in ast.walk(arbol)
+                  if isinstance(n, (ast.Module, ast.FunctionDef, ast.ClassDef, ast.AsyncFunctionDef)) and n.body
+                  and isinstance(n.body[0], ast.Expr) and isinstance(n.body[0].value, ast.Constant)}
+    textos = [n.value for n in ast.walk(arbol) if isinstance(n, ast.Constant) and isinstance(n.value, str)
+              and id(n) not in docstrings]
+    nombres = ([n.attr for n in ast.walk(arbol) if isinstance(n, ast.Attribute)]
+               + [n.id for n in ast.walk(arbol) if isinstance(n, ast.Name)]
+               + [n.name for n in ast.walk(arbol) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))])
+    assert not [x for x in textos + nombres if "update_time" in x]
+    assert not [x for x in nombres if re.search(r"(?i)fresc|fresh|actualizacion_declarada", x)]
 
 
 def test_L_M_N_la_huella_del_esquema_es_determinista_y_detecta_cambios(foso, duckdb_spatial, tmp_path):
@@ -153,8 +178,7 @@ def test_F_G_H_osm_conserva_la_etiqueta_real_la_instantanea_y_nada_inventado(fos
     assert foso.ULTIMA_OSM["snapshot_at"] is None, "sin osm3s no se inventa la instantánea"
 
 
-def test_B_I_overture_categories_conserva_version_sources_verbatim_y_la_regla_de_fecha(foso, duckdb_spatial, tmp_path,
-                                                                                         monkeypatch):
+def test_B_I_overture_categories_conserva_version_y_sources_verbatim(foso, duckdb_spatial, tmp_path, monkeypatch):
     v1 = _parquet(duckdb_spatial, tmp_path / "v1.parquet", con_categories=True)
     monkeypatch.setattr(foso, "overture_glob", lambda rel: v1)
     filas = {f["overture_id"]: f for f in foso.pull_overture()}
@@ -165,9 +189,7 @@ def test_B_I_overture_categories_conserva_version_sources_verbatim_y_la_regla_de
         assert f["source_category"] == f["cat_leaf"] and f["source_category_namespace"] == "overture:categories.primary"
         assert json.loads(f["source_lineage"]) == originales[oid], "sources[] VERBATIM (con su licencia)"
     assert [f["source_record_version"] for f in (filas["ov-1"], filas["ov-2"], filas["ov-3"])] == ["9", "4", "2"]
-    assert filas["ov-1"]["source_updated_at"] is None, "meta: el sello de su volcado → NULL"
-    assert filas["ov-2"]["source_updated_at"] == "2025-09-24T07:57:19.737000+00:00"   # Microsoft: el del registro
-    assert filas["ov-3"]["source_updated_at"] is None, "Foursquare sin zona → NULL"
+    assert [filas[o]["source_updated_at"] for o in ("ov-1", "ov-2", "ov-3")] == [None, None, None]   # R1
     assert json.loads(filas["ov-3"]["source_lineage"])[0]["license"] == "Apache-2.0"
 
 
@@ -307,13 +329,16 @@ def test_R_overture_ok_y_osm_rota_por_validacion(foso, monkeypatch):
     assert c["overture"][1]["status"] == "ok" and [r for r, _, _ in motor.ejecutadas(UPSERT_OV)] == ["commit"]
 
 
-@pytest.mark.parametrize("dano", ["ns_ajeno", "categoria_distinta_de_la_columna_legada", "osm_con_lineage"])
+@pytest.mark.parametrize("dano", ["ns_ajeno", "categoria_distinta_de_la_columna_legada", "osm_con_lineage",
+                                  "overture_con_fecha_de_la_fuente"])
 def test_la_procedencia_incoherente_invalida_su_fuente_antes_de_la_base(foso, monkeypatch, dano):
     ov, osm = [_ov(foso, "ov-a")], [_osm(foso, "node/1")]
     if dano == "ns_ajeno":
         ov[0]["source_category_namespace"] = "overture:taxonomy.primary"
     elif dano == "categoria_distinta_de_la_columna_legada":
         ov[0]["source_category"] = "grocery_store"
+    elif dano == "overture_con_fecha_de_la_fuente":                     # R1: una promoción de update_time no pasa
+        ov[0]["source_updated_at"] = "2025-09-24T07:57:19.737000+00:00"
     else:
         osm[0]["source_lineage"] = "[]"
     monkeypatch.setattr(foso, "pull_overture", lambda: ov)
@@ -442,8 +467,8 @@ def test_PG_B_E_F_G_las_dos_ok_procedencia_real_y_contadores_que_cuadran(foso, d
     p = _provenance(esquema_pg)
     for oid in ("ov-1", "ov-2", "ov-3"):
         assert (p[oid]["run"], p[oid]["ns"], p[oid]["cat"]) == (o["id"], "overture:categories.primary", p[oid]["legado"])
-    assert p["ov-1"]["upd"] is None and p["ov-3"]["upd"] is None                  # volcado de meta / sin zona
-    assert p["ov-2"]["upd"] == _utc("2025-09-24T07:57:19.737+00:00")
+    assert [p[o]["upd"] for o in ("ov-1", "ov-2", "ov-3")] == [None, None, None]                       # R1
+    assert _psql(esquema_pg, "SELECT count(*) FROM pois_propios WHERE source_updated_at IS NOT NULL")[0][0] == 0
     con = duckdb_spatial.connect()
     original = dict(con.execute(f"SELECT id, sources FROM read_parquet('{v1}')").fetchall())
     con.close()

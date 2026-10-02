@@ -139,7 +139,7 @@ def _ov(m, oid, cat="salud", hoja="hospital"):
                           "direccion": None, "operativo": True, "fuente": "overture",
                           "source_category": hoja, "source_category_namespace": m.NS_OVERTURE,
                           "source_record_version": "7",
-                          "source_updated_at": m.actualizacion_declarada(SOURCES_PRUEBA),  # meta: su volcado → None
+                          "source_updated_at": None,          # R1: R4 no interpreta update_time (va en el linaje)
                           "source_lineage": json.dumps(SOURCES_PRUEBA, ensure_ascii=False)})
 
 
@@ -227,8 +227,8 @@ def _parquet(duckdb, ruta: pathlib.Path, con_categories: bool) -> str:
     categories = ("{'primary': hoja_v1, 'alternate': NULL::VARCHAR[]} AS categories," if con_categories else "")
     # `version` y `sources` como en los DOS releases medidos (2026-08-19.0 y 2026-09-23.1): R4 los lee. Cada
     # registro con su raíz (`property` = '') y la entrada de la confianza, con la `version` de SU dataset: ov-1
-    # meta con el sello de su volcado (mismo día que su `version`: `source_updated_at` NULL), ov-2 Microsoft con
-    # un instante propio (se conserva) y ov-3 Foursquare SIN zona horaria (NULL).
+    # meta con zona (el sello de su volcado), ov-2 Microsoft con zona y un instante propio, ov-3 Foursquare SIN
+    # zona. R1: `source_updated_at` es NULL en los tres; su `update_time` va íntegro en `source_lineage`.
     fuente = ("{'property': '', 'dataset': ds, 'license': lic, 'record_id': 'rec-' || id, 'update_time': ut, "
               "'confidence': conf::DOUBLE, 'between': NULL::DOUBLE[], 'provider': lower(ds), 'resource': lower(ds), "
               "'version': vf}")

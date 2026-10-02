@@ -147,16 +147,28 @@ def _sql_de_la_capa(raiz: Path):
                     yield f.relative_to(raiz).as_posix(), s
 
 
+# R3 · OVERTURE TAXONOMY V1 (2026-10-02): la ÚNICA consulta del producto que nombra una columna de la 043 es la guarda
+# de cobertura del ESCRITOR (`COBERTURA_PREVIA_OVERTURE`, D-R3-2): mide la caída por categoría frente a lo que ACEPTÓ la
+# última corrida OK de Overture, y eso solo se sabe por `ingestion_run_id` (contar todas las operativas convertiría las
+# filas que R3 ya no cierra por ausencia en una caída falsa que crece con el tiempo). No es un lector del producto: lo
+# que lee no sale del refresco. Solo esa consulta, solo `ingestion_run_id`; ningún `source_*`, ningún lector de `app/`.
+EXCEPCION_R3 = ("scripts/foso_pois_spike.py", "AS cobertura_previa", {"ingestion_run_id"})
+
+
 def test_A_ningun_lector_productivo_hace_select_estrella_ni_nombra_las_columnas_nuevas():
-    hallazgos, vistos = [], 0
+    hallazgos, vistos, excepcion = [], 0, 0
     for fichero, sql in _sql_de_la_capa(RAIZ):
         vistos += 1
         if _SELECT_ESTRELLA.search(sql.replace("count(*)", "")):
             hallazgos.append((fichero, "SELECT *", sql[:80]))
-        for col in NUEVAS:
-            if re.search(rf"\b{col}\b", sql):
-                hallazgos.append((fichero, col, sql[:80]))
+        nombradas = {col for col in NUEVAS if re.search(rf"\b{col}\b", sql)}
+        if (fichero, EXCEPCION_R3[1] in sql) == (EXCEPCION_R3[0], True):
+            excepcion += 1
+            assert nombradas == EXCEPCION_R3[2], f"la guarda de cobertura solo puede nombrar ingestion_run_id: {nombradas}"
+            continue
+        hallazgos += [(fichero, col, sql[:80]) for col in sorted(nombradas)]
     assert vistos >= 10, f"la guarda no encontró los lectores de la capa ({vistos}): sería vacua"
+    assert excepcion == 1, f"la excepción de R3 debe existir exactamente una vez ({excepcion})"
     assert not hallazgos, hallazgos
     # La vista de la 023 enumera sus columnas: lo nuevo de `pois_propios` no llega a ningún lector.
     vista = re.search(r"CREATE OR REPLACE VIEW pois_vivos AS(.*?)FROM pois_propios p", M023.read_text(encoding="utf-8"), re.S)

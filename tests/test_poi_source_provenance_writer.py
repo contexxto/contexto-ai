@@ -24,7 +24,7 @@ from sqlalchemy import text
 
 from tests.test_poi_refresh_source_isolation import (  # noqa: F401 — fixtures y ayudantes de #189
     BINDER, HUELLA_PRUEBA, RAIZ, SCRIPT, SHA_PRUEBA, SOURCES_PRUEBA, URL_PG, _corre, _estado, _foto, _fuentes, _motor,
-    _osm, _ov, _parquet, _sin_corrida, _trigger_que_falla, duckdb_spatial, esquema_pg, foso, pg)
+    _osm, _ov, _parquet, _parquet_r3, _sin_corrida, _trigger_que_falla, duckdb_spatial, esquema_pg, foso, pg)
 
 CORRIDA = "INSERT INTO poi_ingestion_run"
 UPSERT_OV, UPSERT_OSM = "ON CONFLICT (overture_id)", "ON CONFLICT (osm_id)"
@@ -193,17 +193,21 @@ def test_B_I_overture_categories_conserva_version_y_sources_verbatim(foso, duckd
     assert json.loads(filas["ov-3"]["source_lineage"])[0]["license"] == "Apache-2.0"
 
 
-def test_Z_ningun_camino_de_esta_unidad_escribe_taxonomy(foso):
-    fuente = SCRIPT.read_text(encoding="utf-8")
-    assert "overture:taxonomy.primary" not in fuente and foso.NS_OVERTURE == "overture:categories.primary"
+def test_Z_taxonomy_solo_por_su_lector_nuevo_y_el_de_categories_intacto(foso):
+    """Cable trampa de R4 («ningún camino escribe taxonomy»), actualizado A PROPÓSITO por R3: ahora `taxonomy.primary`
+    entra, pero SOLO por un lector NUEVO y versionado, con su espacio propio; el lector de `categories.primary` y su
+    espacio siguen intactos, y el contrato v0 de Place Evidence NO aprende el espacio nuevo (D-R3-3)."""
+    assert foso.NS_OVERTURE == "overture:categories.primary"
     assert foso.LECTOR_OVERTURE == "overture_places_categories_v1" and foso.LECTOR_OSM == "osm_overpass_nwr_body_center_v1"
+    assert (foso.LECTOR_OVERTURE_TAXONOMIA, foso.NS_OVERTURE_TAXONOMIA) == ("overture_places_taxonomy_v1",
+                                                                          "overture:taxonomy.primary")
     from app.contracts.place_evidence_v0 import SourceCategoryNamespace
     assert "overture:taxonomy.primary" not in {n.value for n in SourceCategoryNamespace}
 
 
 # ═══════════════════════════════════ ORQUESTACIÓN ═════════════════════════════════════════════════
 def test_A_sin_esquema_043_falla_cerrado_sin_escribir_nada(foso, monkeypatch, tmp_path, capsys):
-    monkeypatch.setattr(foso, "pull_overture", lambda: [_ov(foso, "ov-a")])
+    monkeypatch.setattr(foso, "pull_overture_taxonomia", lambda: [_ov(foso, "ov-a")])
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: [_osm(foso, "node/1")])
     motor = _motor(monkeypatch, foso, previos={"overture": 1, "osm": 1})
     monkeypatch.setattr(foso, "verificar_esquema_043", lambda eng: ["no existe poi_ingestion_run"])
@@ -217,7 +221,7 @@ def test_A_sin_esquema_043_falla_cerrado_sin_escribir_nada(foso, monkeypatch, tm
 
 
 def test_A2_base_inalcanzable_en_la_compuerta_es_lo_mismo(foso, monkeypatch, tmp_path):
-    monkeypatch.setattr(foso, "pull_overture", lambda: [_ov(foso, "ov-a")])
+    monkeypatch.setattr(foso, "pull_overture_taxonomia", lambda: [_ov(foso, "ov-a")])
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: [_osm(foso, "node/1")])
     motor = _motor(monkeypatch, foso)
 
@@ -231,7 +235,7 @@ def test_A2_base_inalcanzable_en_la_compuerta_es_lo_mismo(foso, monkeypatch, tmp
 def test_P_sha_invalido_falla_cerrado_antes_de_todo(foso, monkeypatch, tmp_path):
     monkeypatch.setenv("REFRESCO_POIS_CODE_SHA", "main")
     llamado = []
-    monkeypatch.setattr(foso, "pull_overture", lambda: llamado.append("ov") or [])
+    monkeypatch.setattr(foso, "pull_overture_taxonomia", lambda: llamado.append("ov") or [])
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: llamado.append("osm") or [])
     motor = _motor(monkeypatch, foso)
     assert _corre(foso) == 1
@@ -244,7 +248,7 @@ def test_P_sha_invalido_falla_cerrado_antes_de_todo(foso, monkeypatch, tmp_path)
 
 def test_S_las_dos_ok_una_corrida_por_fuente_en_su_transaccion_con_sus_contadores(foso, monkeypatch, tmp_path):
     ov, osm = [_ov(foso, "ov-a"), _ov(foso, "ov-b")], [_osm(foso, "node/1"), _osm(foso, "way/2", "parque", "park")]
-    monkeypatch.setattr(foso, "pull_overture", lambda: ov)
+    monkeypatch.setattr(foso, "pull_overture_taxonomia", lambda: ov)
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: osm)
     monkeypatch.setattr(foso, "ULTIMA_OSM", {"endpoint": "https://overpass-api.de/api/interpreter",
                                              "snapshot_at": "2026-10-02T04:37:05+00:00"})
@@ -259,8 +263,9 @@ def test_S_las_dos_ok_una_corrida_por_fuente_en_su_transaccion_con_sus_contadore
         assert {f["ingestion_run_id"] for f in filas} == {c[fuente][1]["id"]}
     o, s = c["overture"][1], c["osm"][1]
     assert (o["status"], o["reader_contract"], o["source_release"], o["source_schema_fingerprint"],
-            o["source_snapshot_at"]) == ("ok", "overture_places_categories_v1", "2026-09-23.1", HUELLA_PRUEBA, None)
-    assert (o["rows_fetched"], o["rows_valid"], o["rows_written"], o["rows_closed"]) == (2, 2, 2, 1)
+            o["source_snapshot_at"]) == ("ok", "overture_places_taxonomy_v1", "2026-09-23.1", HUELLA_PRUEBA, None)
+    # R3: sin `operating_status='closed'` declarado por la fuente, Overture no cierra nada (antes: 1 por ausencia).
+    assert (o["rows_fetched"], o["rows_valid"], o["rows_written"], o["rows_closed"]) == (2, 2, 2, 0)
     assert (s["status"], s["reader_contract"], s["source_release"], s["source_schema_fingerprint"],
             s["source_snapshot_at"]) == ("ok", "osm_overpass_nwr_body_center_v1", None, None, "2026-10-02T04:37:05+00:00")
     for p in (o, s):
@@ -269,21 +274,24 @@ def test_S_las_dos_ok_una_corrida_por_fuente_en_su_transaccion_con_sus_contadore
     assert {x["manifiesto"] for x in _fuentes(_estado(tmp_path)).values()} == {"persistido"}
 
 
-def test_C_Q_overture_taxonomy_rota_con_su_huella_y_osm_ok(foso, duckdb_spatial, monkeypatch, tmp_path):
-    v2 = _parquet(duckdb_spatial, tmp_path / "v2.parquet", con_categories=False)   # el esquema de 2026-09-23.x
-    monkeypatch.setattr(foso, "overture_glob", lambda rel: v2)
+def test_C_Q_overture_con_esquema_desconocido_rota_con_su_huella_y_osm_ok(foso, duckdb_spatial, monkeypatch, tmp_path):
+    """R4 · C/Q con el lector VIGENTE: la falla real del lector (R3: un esquema que `overture_places_taxonomy_v1` no
+    conoce, aquí un `taxonomy` con un campo nuevo) deja la corrida ROTA con la huella OBSERVADA antes de leer."""
+    raro = _parquet_r3(duckdb_spatial, tmp_path / "campo_nuevo.parquet", taxonomy_tipo="con_campo_nuevo")
+    monkeypatch.setattr(foso, "overture_glob", lambda rel: raro)
     monkeypatch.setattr(foso, "huella_esquema_overture", foso._huella_real)      # la huella REAL del parquet
     osm = [_osm(foso, "node/1"), _osm(foso, "node/2")]
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: osm)
     motor = _motor(monkeypatch, foso, previos={"osm": 2})
-    assert _corre(foso) == 1                                                       # D-4 sigue: degradado / exit 1
+    assert _corre(foso) == 1                                                       # degradado / exit 1
     assert motor.ejecutadas(UPSERT_OV) == [] and motor.ejecutadas("fuente = 'overture'") == []
     c = _corridas(motor)
     res, o = c["overture"]
     assert res == "commit" and len(motor.tx_con(CORRIDA)) == 2
-    assert (o["status"], o["error_phase"], o["error_class"]) == ("rota", "obtencion", "BinderException")
-    assert o["source_release"] == "2026-09-23.1" and o["source_schema_fingerprint"] == foso._huella_real(v2), \
-        "la estructura SÍ se observó antes del Binder: su huella queda"
+    assert (o["status"], o["error_phase"], o["error_class"], o["reader_contract"]) == (
+        "rota", "obtencion", "EsquemaInesperado", "overture_places_taxonomy_v1")
+    assert o["source_release"] == "2026-09-23.1" and o["source_schema_fingerprint"] == foso._huella_real(raro), \
+        "la estructura SÍ se observó antes de fallar: su huella queda"
     assert o["rows_written"] is o["rows_closed"] is o["fetched_at"] is None
     assert c["osm"][1]["status"] == "ok" and [r for r, _, _ in motor.ejecutadas(UPSERT_OSM)] == ["commit"]
 
@@ -305,7 +313,7 @@ def test_D_overture_sin_red_es_caida_registrada(foso, monkeypatch):
 
     def _caida():
         raise requests.ConnectionError("Max retries exceeded with url: https://user:secreto@s3/x")
-    monkeypatch.setattr(foso, "pull_overture", _caida)
+    monkeypatch.setattr(foso, "pull_overture_taxonomia", _caida)
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: [_osm(foso, "node/1")])
     motor = _motor(monkeypatch, foso, previos={"osm": 1})
     assert _corre(foso) == 2
@@ -315,7 +323,7 @@ def test_D_overture_sin_red_es_caida_registrada(foso, monkeypatch):
 
 
 def test_R_overture_ok_y_osm_rota_por_validacion(foso, monkeypatch):
-    monkeypatch.setattr(foso, "pull_overture", lambda: [_ov(foso, "ov-a")])
+    monkeypatch.setattr(foso, "pull_overture_taxonomia", lambda: [_ov(foso, "ov-a")])
     malo = _osm(foso, "node/1")
     malo["source_category_namespace"] = None                                       # procedencia incompleta
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: [malo])
@@ -329,19 +337,23 @@ def test_R_overture_ok_y_osm_rota_por_validacion(foso, monkeypatch):
     assert c["overture"][1]["status"] == "ok" and [r for r, _, _ in motor.ejecutadas(UPSERT_OV)] == ["commit"]
 
 
-@pytest.mark.parametrize("dano", ["ns_ajeno", "categoria_distinta_de_la_columna_legada", "osm_con_lineage",
-                                  "overture_con_fecha_de_la_fuente"])
+@pytest.mark.parametrize("dano", ["ns_ajeno", "columna_legada_con_valor", "hoja_sin_regla", "categoria_distinta_de_la_regla",
+                                  "osm_con_lineage", "overture_con_fecha_de_la_fuente"])
 def test_la_procedencia_incoherente_invalida_su_fuente_antes_de_la_base(foso, monkeypatch, dano):
     ov, osm = [_ov(foso, "ov-a")], [_osm(foso, "node/1")]
-    if dano == "ns_ajeno":
-        ov[0]["source_category_namespace"] = "overture:taxonomy.primary"
-    elif dano == "categoria_distinta_de_la_columna_legada":
-        ov[0]["source_category"] = "grocery_store"
+    if dano == "ns_ajeno":                        # R3: una fila del lector de taxonomy que dice venir de `categories`
+        ov[0]["source_category_namespace"] = "overture:categories.primary"
+    elif dano == "columna_legada_con_valor":      # I4: con `taxonomy.primary`, `categoria_overture` va NULL
+        ov[0]["cat_leaf"] = "hospital"
+    elif dano == "hoja_sin_regla":                # una hoja que la tabla v1 no tiene (p. ej. un descendiente)
+        ov[0]["source_category"] = "dental_clinic"
+    elif dano == "categoria_distinta_de_la_regla":
+        ov[0]["categoria"] = "farmacia"
     elif dano == "overture_con_fecha_de_la_fuente":                     # R1: una promoción de update_time no pasa
         ov[0]["source_updated_at"] = "2025-09-24T07:57:19.737000+00:00"
     else:
         osm[0]["source_lineage"] = "[]"
-    monkeypatch.setattr(foso, "pull_overture", lambda: ov)
+    monkeypatch.setattr(foso, "pull_overture_taxonomia", lambda: ov)
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: osm)
     motor = _motor(monkeypatch, foso, previos={"overture": 1, "osm": 1})
     assert _corre(foso) == 1
@@ -355,7 +367,7 @@ def test_T_las_dos_fallan_dos_corridas_fallidas_y_cero_pois(foso, monkeypatch, t
         raise foso.duckdb.BinderException(f"Binder Error: {BINDER}!")
     malo = _osm(foso, "node/1")
     malo["categoria"] = "salud"
-    monkeypatch.setattr(foso, "pull_overture", _rota)
+    monkeypatch.setattr(foso, "pull_overture_taxonomia", _rota)
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: [malo])
     motor = _motor(monkeypatch, foso, previos={"overture": 2753, "osm": 5788})
     assert _corre(foso) == 1
@@ -369,7 +381,7 @@ def test_T_las_dos_fallan_dos_corridas_fallidas_y_cero_pois(foso, monkeypatch, t
 
 
 def test_U_V_un_fallo_de_escritura_revierte_pois_y_corrida_y_deja_la_fallida_aparte(foso, monkeypatch, tmp_path):
-    monkeypatch.setattr(foso, "pull_overture", lambda: [_ov(foso, "ov-a")])
+    monkeypatch.setattr(foso, "pull_overture_taxonomia", lambda: [_ov(foso, "ov-a")])
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: [_osm(foso, "node/1")])
     motor = _motor(monkeypatch, foso, previos={"overture": 1}, falla_en=UPSERT_OSM)
     assert _corre(foso) == 1
@@ -386,7 +398,7 @@ def test_U_V_un_fallo_de_escritura_revierte_pois_y_corrida_y_deja_la_fallida_apa
 
 
 def test_manifest_not_persisted_si_ni_la_corrida_fallida_entra(foso, monkeypatch, tmp_path, capsys):
-    monkeypatch.setattr(foso, "pull_overture", lambda: [_ov(foso, "ov-a")])
+    monkeypatch.setattr(foso, "pull_overture_taxonomia", lambda: [_ov(foso, "ov-a")])
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: [_osm(foso, "node/1")])
     _motor(monkeypatch, foso, previos={"overture": 1}, falla_en="INSERT INTO poi_ingestion_run")
     assert _corre(foso) == 1
@@ -440,7 +452,7 @@ def test_PG_A_sin_043_no_escribe_nada(foso, esquema_pg, monkeypatch):
         c.execute("ALTER TABLE pois_propios DROP CONSTRAINT ck_pois_linaje_forma")       # 043 INCOMPLETA
     antes = _foto(esquema_pg)
     monkeypatch.setattr(foso, "SYNC_URL", esquema_pg["url"])
-    monkeypatch.setattr(foso, "pull_overture", lambda: [_ov(foso, "ov-a")])
+    monkeypatch.setattr(foso, "pull_overture_taxonomia", lambda: [_ov(foso, "ov-a")])
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: [_osm(foso, "node/1")])
     assert _corre(foso) == 1
     assert _foto(esquema_pg) == antes and _corridas_bd(esquema_pg) == []
@@ -449,9 +461,9 @@ def test_PG_A_sin_043_no_escribe_nada(foso, esquema_pg, monkeypatch):
 @pg
 def test_PG_B_E_F_G_las_dos_ok_procedencia_real_y_contadores_que_cuadran(foso, duckdb_spatial, esquema_pg, monkeypatch,
                                                                          tmp_path):
-    v1 = _parquet(duckdb_spatial, tmp_path / "v1.parquet", con_categories=True)
-    monkeypatch.setattr(foso, "overture_glob", lambda rel: v1)
-    monkeypatch.setattr(foso, "overture_release", lambda: "2026-08-19.0")
+    # R3: el lector VIGENTE (`overture_places_taxonomy_v1`) contra un release con la estructura y las rutas REALES.
+    v2 = _parquet_r3(duckdb_spatial, tmp_path / "v2.parquet")
+    monkeypatch.setattr(foso, "overture_glob", lambda rel: v2)
     monkeypatch.setattr(foso, "huella_esquema_overture", foso._huella_real)
     osm = [_osm(foso, "node/1"), _osm(foso, "node/2"), _osm(foso, "way/9", "parque", "park")]
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: osm)
@@ -460,19 +472,25 @@ def test_PG_B_E_F_G_las_dos_ok_procedencia_real_y_contadores_que_cuadran(foso, d
     monkeypatch.setattr(foso, "SYNC_URL", esquema_pg["url"])
     assert _corre(foso) == 0
     o, s = [{c["source_provider"]: c for c in _corridas_bd(esquema_pg)}[k] for k in ("overture", "osm")]
-    assert (o["status"], o["source_release"], o["source_schema_fingerprint"]) == ("ok", "2026-08-19.0", foso._huella_real(v1))
+    assert (o["status"], o["reader_contract"], o["source_release"], o["source_schema_fingerprint"]) == (
+        "ok", "overture_places_taxonomy_v1", "2026-09-23.1", foso._huella_real(v2))
     assert (s["status"], s["source_snapshot_at"], s["source_release"]) == (
         "ok", _utc("2026-10-02T04:37:05+00:00"), None)
     assert o["code_sha"] == s["code_sha"] == SHA_PRUEBA
     p = _provenance(esquema_pg)
-    for oid in ("ov-1", "ov-2", "ov-3"):
-        assert (p[oid]["run"], p[oid]["ns"], p[oid]["cat"]) == (o["id"], "overture:categories.primary", p[oid]["legado"])
-    assert [p[o]["upd"] for o in ("ov-1", "ov-2", "ov-3")] == [None, None, None]                       # R1
-    assert _psql(esquema_pg, "SELECT count(*) FROM pois_propios WHERE source_updated_at IS NOT NULL")[0][0] == 0
     con = duckdb_spatial.connect()
-    original = dict(con.execute(f"SELECT id, sources FROM read_parquet('{v1}')").fetchall())
+    original = {i: (prim, src) for i, prim, src in con.execute(
+        f"SELECT id, taxonomy.primary, sources FROM read_parquet('{v2}')").fetchall()}
     con.close()
-    assert all(p[oid]["lin"] == original[oid] for oid in original), "I · sources[] ida y vuelta por la base"
+    aceptadas = ("ov-h1", "ov-ocf", "ov-ph", "ov-gr", "ov-sc", "ov-cu", "ov-pre", "ov-pk", "ov-pg", "ov-sm", "ov-ds")
+    for oid in aceptadas:      # la FUENTE tal cual, en SU espacio; la columna legada NULL (I4)
+        assert (p[oid]["run"], p[oid]["ns"], p[oid]["cat"], p[oid]["legado"]) == (
+            o["id"], "overture:taxonomy.primary", original[oid][0], None)
+        assert p[oid]["lin"] == original[oid][1], "I · sources[] ida y vuelta por la base"
+        assert p[oid]["upd"] is None                                                                  # R1
+    assert not ({"ov-low", "ov-lowpk", "ov-dent", "ov-hc", "ov-rest", "ov-null", "far-ucc", "far-dr"} & set(p)), \
+        "lo no aceptado (confianza, descendiente, nodo padre, fuera del mapa, sin taxonomía, fuera del bbox) no entra"
+    assert _psql(esquema_pg, "SELECT count(*) FROM pois_propios WHERE source_updated_at IS NOT NULL")[0][0] == 0
     for oid in ("node/1", "node/2", "way/9"):
         assert (p[oid]["run"], p[oid]["ver"], p[oid]["upd"], p[oid]["lin"]) == (s["id"], None, None, None)
     assert (p["node/1"]["ns"], p["node/1"]["cat"]) == ("osm:highway", "bus_stop")
@@ -481,13 +499,15 @@ def test_PG_B_E_F_G_las_dos_ok_procedencia_real_y_contadores_que_cuadran(foso, d
         assert c["rows_written"] == _psql(esquema_pg, "SELECT count(*) FROM pois_propios WHERE ingestion_run_id = %s",
                                           c["id"])[0][0]
     assert s["rows_closed"] == 1 and p["node/3"]["operativo"] is False
-    assert o["rows_closed"] == 2 and p["ov-a"]["operativo"] is False and p["ov-b"]["operativo"] is False
+    # R3 (D-R3-2): `ov-a`/`ov-b` (legadas, no vinieron) NO se cierran por ausencia y su procedencia sigue NULL.
+    assert o["rows_closed"] == 0 and p["ov-a"]["operativo"] is True and p["ov-b"]["operativo"] is True
+    assert all(p[x][k] is None for x in ("ov-a", "ov-b") for k in ("run", "cat", "ns", "ver", "lin"))
 
 
 @pg
 def test_PG_W_X_Y_cierre_no_reenlaza_reobservada_si_e_historico_intacto(foso, esquema_pg, monkeypatch):
     monkeypatch.setattr(foso, "SYNC_URL", esquema_pg["url"])
-    monkeypatch.setattr(foso, "pull_overture", lambda: [_ov(foso, "ov-a"), _ov(foso, "ov-b")])
+    monkeypatch.setattr(foso, "pull_overture_taxonomia", lambda: [_ov(foso, "ov-a"), _ov(foso, "ov-b")])
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: [_osm(foso, "node/1"), _osm(foso, "node/2"),
                                                               _osm(foso, "node/3")])
     assert _corre(foso) == 0
@@ -506,7 +526,7 @@ def test_PG_W_X_Y_cierre_no_reenlaza_reobservada_si_e_historico_intacto(foso, es
 @pg
 def test_PG_Y_el_historico_no_tocado_queda_null(foso, esquema_pg, monkeypatch):
     monkeypatch.setattr(foso, "SYNC_URL", esquema_pg["url"])
-    monkeypatch.setattr(foso, "pull_overture", lambda: (_ for _ in ()).throw(
+    monkeypatch.setattr(foso, "pull_overture_taxonomia", lambda: (_ for _ in ()).throw(
         foso.duckdb.BinderException(f"Binder Error: {BINDER}!")))
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: [_osm(foso, "node/1"), _osm(foso, "node/2"),
                                                               _osm(foso, "node/3")])
@@ -526,7 +546,10 @@ def test_PG_U_V_fallo_a_mitad_revierte_pois_y_corrida_ok(foso, esquema_pg, monke
         _trigger_que_falla(esquema_pg, "overture_id", "ov-boom")
     antes = _foto(esquema_pg)
     monkeypatch.setattr(foso, "SYNC_URL", esquema_pg["url"])
-    monkeypatch.setattr(foso, "pull_overture", lambda: [{**_ov(foso, "ov-a"), "nombre": "NUEVO"}] +
+    # R3: `ov-b` vuelve también: con solo `ov-a`, salud caería 50 % frente a la siembra y la guarda de cobertura
+    # (correctamente) invalidaría Overture, que aquí tiene que ser la fuente SANA.
+    monkeypatch.setattr(foso, "pull_overture_taxonomia", lambda: [{**_ov(foso, "ov-a"), "nombre": "NUEVO"},
+                                                                  _ov(foso, "ov-b")] +
                         ([_ov(foso, "ov-boom")] if fuente == "overture" else []))
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: [{**_osm(foso, "node/1"), "nombre": "NUEVO"}] +
                         ([_osm(foso, "node/666")] if fuente == "osm" else []))
@@ -550,7 +573,7 @@ def test_PG_AA_AB_lectores_sin_columnas_nuevas_y_permisos_intactos(foso, esquema
     vista = [r[0] for r in _psql(esquema_pg, "SELECT attname FROM pg_attribute WHERE attrelid = 'pois_vivos'::regclass "
                                              "AND attnum > 0 AND NOT attisdropped ORDER BY attnum")]
     monkeypatch.setattr(foso, "SYNC_URL", esquema_pg["url"])
-    monkeypatch.setattr(foso, "pull_overture", lambda: [_ov(foso, "ov-a")])
+    monkeypatch.setattr(foso, "pull_overture_taxonomia", lambda: [_ov(foso, "ov-a")])
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: [_osm(foso, "node/1")])
     assert _corre(foso) in (0, 1)
     assert _psql(esquema_pg, acl, esquema_pg["esquema"]) == antes

@@ -21,10 +21,14 @@ Lee DATABASE_URL_OVERRIDE del .env (patron de scripts/asignar_corredor.py).
 NOTA: TODO SINCRONO (DuckDB + asyncio crashea el GIL en Windows). requests con verify=False
 para Overpass (inspeccion SSL corporativa local, mismo criterio que SSL_VERIFY=false).
 """
+import json
+import math
 import os
 import re
 import sys
 import time
+from collections import Counter
+from dataclasses import dataclass, field
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -482,6 +486,219 @@ NEAREST_SQL = text("""
 """)
 
 
+
+# ── POI-REFRESH-SOURCE-ISOLATION (2026-10-02) · cada fuente es independiente ──────────
+#
+# EL DEFECTO (corrida #7 del workflow, 2026-09-29): Overture publicó su esquema v2.0.0 sin
+# `categories`, y `pull_overture()` lanzó BinderException ANTES de que se descargara OSM. Como
+# además toda la carga vivía en UNA transacción, el refresco entero abortaba: OSM, que no depende
+# de Overture, quedó congelado con ella. Ahora:
+#   · cada fuente se OBTIENE y se VALIDA por separado; su fallo queda en SU estado y no impide
+#     la otra;
+#   · cada fuente se ESCRIBE en SU propia transacción (upsert + cierre): atómica dentro de la
+#     fuente, independiente entre fuentes. Un fallo al escribir una no revierte la otra;
+#   · una fuente que no se obtuvo, no se validó o no se escribió NO cierra nada, NO cuenta como
+#     «0 filas» y NO se reporta como refrescada.
+# Lo que NO cambia: las consultas, el mapeo, los umbrales, el upsert, las sentencias de cierre y
+# sus guardas (que se evalúan en el mismo punto que antes: tras el upsert de esa fuente).
+FUENTE_OK = "ok"
+FUENTE_CAIDA = "caida"   # no respondió (red, HTTP): reintentable
+FUENTE_ROTA = "rota"     # error duro (esquema, datos inválidos, escritura): reintentar no ayuda
+_ETIQUETA = {FUENTE_OK: "OK", FUENTE_CAIDA: "CAÍDA", FUENTE_ROTA: "ROTA"}
+
+# Lo que una fila puede ser, por fuente: la estructura que ya producen los pull. Es una guarda
+# ESTRUCTURAL (no se escribe basura); el mapeo y los umbrales ya los aplicó el pull.
+_CATS_OSM = frozenset({"transporte", "supermercado", "farmacia", "iglesia", "seguridad", "parque"})
+_ID_OSM = re.compile(r"^(node|way|relation)/\d+$")
+
+
+@dataclass
+class ResultadoFuente:
+    """Lo que pasó con UNA fuente en esta corrida. Es lo que se resume, se guarda y se avisa."""
+
+    fuente: str                                   # 'overture' | 'osm'
+    estado: str | None = None
+    release: str | None = None
+    filas: list | None = field(default=None, repr=False)
+    obtenidas: int | None = None
+    validadas: int | None = None
+    escritas: int = 0
+    cerradas: int = 0
+    segundos: float = 0.0
+    fase: str | None = None                       # dónde falló: obtencion | validacion | escritura
+    error: str | None = None                      # clase (+ 1.ª línea al obtener). Nunca SQL ni URL.
+
+    def linea(self) -> str:
+        def v(x):
+            return "-" if x is None else x
+        return (f"fuente={self.fuente} release={v(self.release)} estado={_ETIQUETA.get(self.estado, self.estado)} "
+                f"obtenidas={v(self.obtenidas)} validadas={v(self.validadas)} escritas={self.escritas} "
+                f"cerradas={self.cerradas} segundos={self.segundos:.1f}"
+                + (f" fase_error={self.fase} error={self.error}" if self.error else ""))
+
+    def resumen(self) -> dict:
+        return {k: getattr(self, k) for k in ("fuente", "estado", "release", "obtenidas", "validadas",
+                                               "escritas", "cerradas", "segundos", "fase", "error")}
+
+
+def _primera_linea(exc: BaseException) -> str:
+    """Clase + primera línea del mensaje, recortada. Para errores de OBTENCIÓN (fuente pública)."""
+    texto = (str(exc).strip().splitlines() or [""])[0]
+    return f"{type(exc).__name__}: {texto[:160]}" if texto else type(exc).__name__
+
+
+def _es_caida(exc: BaseException) -> bool:
+    """¿La fuente NO RESPONDIÓ (red, HTTP), o respondió y lo que dio no sirve? Lo primero se
+    reintenta; lo segundo no (un esquema roto no se arregla en 10 minutos)."""
+    return isinstance(exc, (requests.ConnectionError, requests.Timeout, duckdb.HTTPException))
+
+
+def _invalidas(fuente: str, filas) -> list[str]:
+    """Por qué el conjunto NO es escribible (vacío = válido). Una sola fila mala invalida la FUENTE
+    entera: escribir el resto sería una escritura parcial de esa fuente."""
+    if not isinstance(filas, list):
+        return [f"la fuente no devolvió una lista ({type(filas).__name__})"]
+    motivos: Counter = Counter()
+    for p in filas:
+        if not isinstance(p, dict) or set(p) != set(_KEYS):
+            motivos["forma de fila distinta"] += 1
+            continue
+        if p["fuente"] != fuente or p["ciudad"] != CIUDAD:
+            motivos["fuente o ciudad ajena"] += 1
+        if fuente == "overture":
+            if not (isinstance(p["overture_id"], str) and p["overture_id"].strip()) or p["osm_id"] is not None:
+                motivos["identificador de Overture"] += 1
+            if p["categoria"] not in CONF_MIN:
+                motivos["categoría"] += 1
+        else:
+            if not (isinstance(p["osm_id"], str) and _ID_OSM.match(p["osm_id"])) or p["overture_id"] is not None:
+                motivos["identificador de OSM"] += 1
+            if p["categoria"] not in _CATS_OSM:
+                motivos["categoría"] += 1
+        if not all(isinstance(p[k], (int, float)) and not isinstance(p[k], bool) and math.isfinite(p[k])
+                   for k in ("lat", "lon")):
+            motivos["coordenadas"] += 1
+    return [f"{n} fila(s) con {m}" for m, n in motivos.items()]
+
+
+def _pull_overture_con_release(r: "ResultadoFuente") -> list[dict]:
+    """`pull_overture()` SIN TOCAR, con el release que eligió anotado en el resultado. Se resuelve
+    una vez y se le pasa por OVERTURE_RELEASE para que el anotado sea exactamente el leído."""
+    r.release = overture_release()
+    previo = os.environ.get("OVERTURE_RELEASE")
+    os.environ["OVERTURE_RELEASE"] = r.release
+    try:
+        return pull_overture()
+    finally:
+        if previo is None:
+            os.environ.pop("OVERTURE_RELEASE", None)
+        else:
+            os.environ["OVERTURE_RELEASE"] = previo
+
+
+def obtener(fuente: str) -> ResultadoFuente:
+    """Descarga y valida UNA fuente. Nunca lanza: lo que pase queda en el resultado."""
+    r = ResultadoFuente(fuente)
+    t0 = time.time()
+    try:
+        filas = _pull_overture_con_release(r) if fuente == "overture" else pull_osm_transporte()
+    except Exception as exc:  # noqa: BLE001 — se registra en SU estado; la otra fuente sigue
+        r.estado = FUENTE_CAIDA if _es_caida(exc) else FUENTE_ROTA
+        r.fase, r.error = "obtencion", _primera_linea(exc)
+        r.segundos = time.time() - t0
+        print(f"   ❌ {fuente}: {r.error}")
+        return r
+    r.segundos = time.time() - t0
+    if filas is None:  # contrato de pull_osm_transporte: None = ningún endpoint respondió (≠ [])
+        r.estado, r.fase, r.error = FUENTE_CAIDA, "obtencion", "ningún endpoint respondió"
+        return r
+    r.obtenidas = len(filas) if isinstance(filas, list) else None
+    invalidas = _invalidas(fuente, filas)
+    if invalidas:
+        r.estado, r.fase = FUENTE_ROTA, "validacion"
+        r.error = ("dataset inválido: " + "; ".join(invalidas))[:300]
+        print(f"   ❌ {fuente}: {r.error}")
+        return r
+    r.validadas, r.filas, r.estado = len(filas), filas, FUENTE_OK
+    return r
+
+
+def escribir(eng, r: ResultadoFuente) -> None:
+    """UNA transacción para ESTA fuente: upsert + cierre con sus guardas. Si algo falla, se
+    revierte ESTA fuente y nada más: la otra confirmó, o confirmará, en la suya.
+
+    UPSERT por identificador de origen (migración 020): la fila sobrevive al refresco con su `id`.
+    Antes era TRUNCATE (borraba TODOS los mercados, migración 019) y luego DELETE+INSERT."""
+    upsert, cerrar, clave = ((UPSERT_OVERTURE, CERRAR_OVERTURE, "overture_id") if r.fuente == "overture"
+                             else (UPSERT_OSM, CERRAR_OSM, "osm_id"))
+    t0 = time.time()
+    try:
+        with eng.begin() as db:
+            if r.filas:
+                db.execute(upsert, r.filas)
+            # Cierre POR FUENTE con la guarda de caída brusca, contada en el mismo punto que antes
+            # (tras el upsert de esta fuente). Ver el incidente del 2026-07-27 en CERRAR_*.
+            previos_f = db.execute(text(
+                "SELECT count(*) FROM pois_propios WHERE ciudad=:c AND operativo AND fuente=:f"
+            ), {"c": CIUDAD, "f": r.fuente}).scalar()
+            cerradas = 0
+            if previos_f and len(r.filas) < previos_f * UMBRAL_CAIDA:
+                print(f"   ⚠️ '{r.fuente}' trajo {len(r.filas)} vs {previos_f} en tabla "
+                      f"(<{UMBRAL_CAIDA:.0%}) → respuesta parcial, NO se cierra nada. Revisar.")
+            else:
+                ids = [p[clave] for p in r.filas]
+                cerradas = db.execute(cerrar, {"ciudad": CIUDAD, "ids": ids or [""]}).rowcount
+        r.escritas, r.cerradas = len(r.filas), cerradas
+    except Exception as exc:  # noqa: BLE001 — rollback de ESTA fuente; la otra no se toca
+        # Solo la clase: el texto de un error de la base arrastra SQL, parámetros o el host.
+        r.estado, r.fase, r.error = FUENTE_ROTA, "escritura", type(exc).__name__
+        r.escritas = r.cerradas = 0
+        print(f"   ❌ {r.fuente}: la escritura falló ({r.error}) → revertida; la otra fuente no se toca")
+    r.segundos += time.time() - t0
+
+
+def codigo_de_salida(fuentes: list[ResultadoFuente]) -> int:
+    """0 = todas OK · 2 = ninguna rota pero alguna caída (reintentable) · 1 = alguna rota (no se
+    reintenta: un esquema roto no se arregla esperando). Mismos códigos que antes."""
+    estados = {f.estado for f in fuentes}
+    if FUENTE_ROTA in estados:
+        return 1
+    if FUENTE_CAIDA in estados:
+        return 2
+    return 0
+
+
+def veredicto(fuentes: list[ResultadoFuente]) -> str:
+    partes = " · ".join(f"{f.fuente.upper()} {_ETIQUETA[f.estado]}" for f in fuentes)
+    if all(f.estado == FUENTE_OK for f in fuentes):
+        return f"COMPLETO · {partes}"
+    if not any(f.estado == FUENTE_OK for f in fuentes):
+        return f"SIN REFRESCO · {partes}"
+    return f"DEGRADADO · {partes}"
+
+
+def _ruta_estado(ciudad: str) -> Path:
+    """`logs/` (ignorado por git), o `REFRESCO_POIS_ESTADO` si se fija (pruebas)."""
+    fijada = os.getenv("REFRESCO_POIS_ESTADO", "").strip()
+    if fijada:
+        return Path(fijada)
+    return Path(__file__).resolve().parent.parent / "logs" / f"refresco_pois_estado_{ciudad}.json"
+
+
+def _guarda_estado(fuentes: list[ResultadoFuente], resultado: str, codigo: int) -> None:
+    """El resumen por fuente, para que el aviso del workflow (--solo-avisar) diga QUÉ fuente falló.
+    Sin secretos: estados, conteos, release y clase de error."""
+    try:
+        ruta = _ruta_estado(CIUDAD)
+        ruta.parent.mkdir(parents=True, exist_ok=True)
+        ruta.write_text(json.dumps({"ciudad": CIUDAD, "escrito_en": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                                    "resultado": resultado, "codigo": codigo,
+                                    "fuentes": [f.resumen() for f in fuentes]}, ensure_ascii=False, indent=1),
+                        encoding="utf-8")
+    except OSError as exc:
+        print(f"⚠️  No se pudo guardar el estado del refresco ({type(exc).__name__}).")
+
+
 def main():
     global CIUDAD, BBOX
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
@@ -500,28 +717,28 @@ def main():
           f"lat[{BBOX['ymin']}, {BBOX['ymax']}] ═══", flush=True)
 
     print("── 1) Overture Places (6 categorías, umbral de conf por categoría) ──", flush=True)
-    t0 = time.time()
-    pois = pull_overture()
-    print(f"   {len(pois)} POIs Overture ({time.time()-t0:.0f}s)")
+    ov = obtener("overture")
+    if ov.estado == FUENTE_OK:
+        print(f"   {ov.validadas} POIs Overture ({ov.segundos:.0f}s)")
     print("── 2) OSM: transporte + comercio + culto/UPC (Overpass) ──", flush=True)
-    t0 = time.time()
-    transp = pull_osm_transporte()          # None = Overpass caído (≠ [] = sin resultados)
-    osm_ok = transp is not None
-    transp = transp or []
-    print(f"   {len(transp)} POIs de OSM ({time.time()-t0:.0f}s)"
-          + ("" if osm_ok else "  ⚠️ FUENTE CAÍDA"))
-    pois += transp
+    osm = obtener("osm")
+    if osm.estado == FUENTE_OK:
+        print(f"   {osm.validadas} POIs de OSM ({osm.segundos:.0f}s)")
+    elif osm.estado == FUENTE_CAIDA:
+        print("   0 POIs de OSM  ⚠️ FUENTE CAÍDA")
+    fuentes = [ov, osm]
+    utiles = [f for f in fuentes if f.estado == FUENTE_OK]
 
     por_cat: dict[str, int] = {}
-    for p in pois:
-        por_cat[p["categoria"]] = por_cat.get(p["categoria"], 0) + 1
+    for f in utiles:
+        for p in f.filas:
+            por_cat[p["categoria"]] = por_cat.get(p["categoria"], 0) + 1
     for cat, n in sorted(por_cat.items(), key=lambda x: -x[1]):
         print(f"     {cat:16} {n}")
 
-    if not pois:
-        print("❌ Cero POIs cosechados — abortado ANTES de tocar la DB "
-              "(si no, borraríamos la ciudad y la dejaríamos vacía).")
-        sys.exit(1)
+    if not utiles:
+        print("❌ Ninguna fuente se obtuvo — abortado ANTES de tocar la DB. La capa NO se actualizó.")
+        _salir(fuentes)
 
     # NullPool: una conexión secuencial. Ver la nota en scripts/asignar_corredor.py —
     # con el pool por defecto este script solo podría agotar el techo de Supabase.
@@ -530,64 +747,53 @@ def main():
     # refresco-pois.yml en su ruta canónica antes de este paso.
     eng = create_engine(SYNC_URL, echo=False, poolclass=NullPool,
                         connect_args=db_tls.kwargs_psycopg(SYNC_URL))
-    with eng.begin() as db:
+    try:
         print("── 3) Cargando a pois_propios ──", flush=True)
-        for stmt in DDL.strip().split(";"):
-            if stmt.strip():
-                db.execute(text(stmt))
+        try:
+            with eng.begin() as db:
+                # El DDL idempotente y la foto previa: su propia transacción, antes de las fuentes.
+                for stmt in DDL.strip().split(";"):
+                    if stmt.strip():
+                        db.execute(text(stmt))
+                otras = db.execute(text(
+                    "SELECT ciudad, count(*) FROM pois_propios WHERE ciudad <> :c GROUP BY 1"
+                ), {"c": CIUDAD}).all()
+                previos = db.execute(text(
+                    "SELECT count(*) FROM pois_propios WHERE ciudad = :c"), {"c": CIUDAD}).scalar()
+            print(f"   en la tabla antes: {previos} POIs de '{CIUDAD}' · cosechados ahora: "
+                  f"{sum(len(f.filas) for f in utiles)}")
+            if otras:
+                print("   intactas: " + ", ".join(f"{c}={n}" for c, n in otras))
+        except Exception as exc:  # noqa: BLE001 — sin esquema no escribe ninguna fuente
+            for f in utiles:
+                f.estado, f.fase, f.error = FUENTE_ROTA, "escritura", type(exc).__name__
+            print(f"   ❌ preparar la tabla falló ({type(exc).__name__}) → no se escribe ninguna fuente")
+            utiles = []
 
-        # UPSERT por ciudad (migración 020). Antes era TRUNCATE (borraba TODOS los
-        # mercados, migración 019) y luego DELETE+INSERT (perdía el `id` y la
-        # antigüedad de cada POI). Ahora la fila sobrevive al refresco.
-        otras = db.execute(text(
-            "SELECT ciudad, count(*) FROM pois_propios WHERE ciudad <> :c GROUP BY 1"
-        ), {"c": CIUDAD}).all()
-        previos = db.execute(text(
-            "SELECT count(*) FROM pois_propios WHERE ciudad = :c"), {"c": CIUDAD}).scalar()
-        print(f"   en la tabla antes: {previos} POIs de '{CIUDAD}' · cosechados ahora: {len(pois)}")
-        if otras:
-            print("   intactas: " + ", ".join(f"{c}={n}" for c, n in otras))
+        for f in fuentes:
+            if f.estado == FUENTE_OK:
+                escribir(eng, f)
+            else:
+                print(f"   ⚠️ '{f.fuente}' {_ETIQUETA[f.estado]} ({f.fase}) → NO se escribe ni se cierra "
+                      "ninguno de sus POIs")
 
-        ov = [p for p in pois if p.get("overture_id")]
-        osm = [p for p in pois if p.get("osm_id")]
-        if ov:
-            db.execute(UPSERT_OVERTURE, ov)
-        if osm:
-            db.execute(UPSERT_OSM, osm)
+        if any(f.estado == FUENTE_OK for f in fuentes):
+            with eng.connect() as db:
+                n = db.execute(text("SELECT count(*) FROM pois_propios WHERE ciudad = :c AND operativo"),
+                               {"c": CIUDAD}).scalar()
+                total = db.execute(text("SELECT count(*) FROM pois_propios")).scalar()
+            print(f"   upsert: {ov.escritas} Overture + {osm.escritas} OSM · marcados cerrados: "
+                  f"{ov.cerradas + osm.cerradas}")
+            print(f"   operativos en '{CIUDAD}': {n} ✅  (tabla completa, incl. cerrados: {total})")
 
-        # Cierre POR FUENTE, y solo si esa fuente respondió con volumen creíble.
-        # Dos guardas, ambas nacidas del incidente del 2026-07-27 (ver CERRAR_*):
-        #   (a) fuente caída  → no se cierra nada de ella.
-        #   (b) caída brusca  → si trae <50% de lo que había, se asume respuesta parcial.
-        cerrados = 0
-        for nombre_f, filas, sent, ok in (
-            ("overture", ov, CERRAR_OVERTURE, True),
-            ("osm", osm, CERRAR_OSM, osm_ok),
-        ):
-            previos_f = db.execute(text(
-                "SELECT count(*) FROM pois_propios WHERE ciudad=:c AND operativo AND fuente=:f"
-            ), {"c": CIUDAD, "f": nombre_f}).scalar()
-            if not ok:
-                print(f"   ⚠️ '{nombre_f}' no respondió → NO se cierra ninguno de sus "
-                      f"{previos_f} POIs")
-                continue
-            if previos_f and len(filas) < previos_f * UMBRAL_CAIDA:
-                print(f"   ⚠️ '{nombre_f}' trajo {len(filas)} vs {previos_f} en tabla "
-                      f"(<{UMBRAL_CAIDA:.0%}) → respuesta parcial, NO se cierra nada. Revisar.")
-                continue
-            ids = [p["overture_id" if nombre_f == "overture" else "osm_id"] for p in filas]
-            cerrados += db.execute(sent, {"ciudad": CIUDAD, "ids": ids or [""]}).rowcount
-
-        n = db.execute(text("SELECT count(*) FROM pois_propios WHERE ciudad = :c AND operativo"),
-                       {"c": CIUDAD}).scalar()
-        total = db.execute(text("SELECT count(*) FROM pois_propios")).scalar()
-        print(f"   upsert: {len(ov)} Overture + {len(osm)} OSM · marcados cerrados: {cerrados}")
-        print(f"   operativos en '{CIUDAD}': {n} ✅  (tabla completa, incl. cerrados: {total})")
-
-    if sin_validacion:
+        if not sin_validacion and any(f.estado == FUENTE_OK for f in fuentes):
+            _validacion_humana(eng)
+    finally:
         eng.dispose()
-        _salir(osm_ok)
+    _salir(fuentes)
 
+
+def _validacion_humana(eng) -> None:
     with eng.connect() as db:
         print("\n── 4) Validación: nuestra capa vs Google (servicios_cercanos guardado) ──", flush=True)
         # Prioriza inmuebles que SÍ tengan servicios guardados (para un vs-Google real).
@@ -613,9 +819,6 @@ def main():
                 print(f"     {p['categoria']:16} {p['nombre']}{marca} · {p['distancia_m']} m · {conf} · {p['fuente']}")
             sc = (a["servicios_cercanos"] or "").strip().replace("\n", " ")
             print(f"   GOOGLE: {sc[:260] or '(vacío)'}")
-
-    eng.dispose()
-    _salir(osm_ok)
 
 
 def avisar_ops(asunto: str, detalle: str) -> bool:
@@ -663,38 +866,69 @@ def avisar_ops(asunto: str, detalle: str) -> bool:
         return False
 
 
-def _salir(osm_ok: bool):
-    """Código de salida con SEÑAL, para que la tarea programada no corra a ciegas.
+def _salir(fuentes: list[ResultadoFuente]):
+    """Código de salida con SEÑAL y resumen POR FUENTE, para que nada corra a ciegas.
 
-    Hasta 2026-07-28 esto salía siempre 0, incluso con Overpass caído: la corrida
-    quedaba a medias y nadie se enteraba. Ahora:
-      0 = las dos fuentes respondieron.
-      2 = una fuente no respondió (los datos viejos quedaron intactos, no se cerró
-          nada). Es REINTENTABLE — `refresco_pois.cmd` lo reintenta.
-      1 = error duro (excepción sin capturar, o cero POIs cosechados).
+      0 = las dos fuentes se obtuvieron y se escribieron.
+      2 = ninguna rota, pero alguna no respondió: lo que sí respondió quedó escrito y lo de la
+          caída quedó intacto (no se cerró nada). Es REINTENTABLE: el workflow y
+          `refresco_pois.cmd` reintentan, y el reintento vuelve a escribir la fuente sana (upsert
+          idempotente; el cierre repite sus guardas).
+      1 = alguna fuente ROTA (esquema, datos inválidos, escritura): no se reintenta. La otra
+          pudo quedar escrita: el resumen y el aviso dicen cuál.
+    Hasta el 2026-10-02 un error de Overture salía con 1 sin haber tocado OSM.
     """
-    if osm_ok:
+    resultado, codigo = veredicto(fuentes), codigo_de_salida(fuentes)
+    print("\n── Resumen por fuente ──")
+    for f in fuentes:
+        print("   " + f.linea())
+    print(f"   RESULTADO: {resultado} · código {codigo}")
+    _guarda_estado(fuentes, resultado, codigo)
+    if codigo == 0:
         print("\n✅ Refresco completo — las dos fuentes respondieron.")
-        sys.exit(0)
-    print("\n⚠️ Refresco INCOMPLETO: Overpass no respondió. Overture sí se actualizó; "
-          "los POIs de OSM quedaron como estaban (no se cerró ninguno). Reintentable.")
-    sys.exit(2)
+    elif codigo == 2:
+        print("\n⚠️ Refresco INCOMPLETO: alguna fuente no respondió. Lo que respondió se actualizó; "
+              "lo de la caída quedó como estaba (no se cerró ninguno). Reintentable.")
+    else:
+        print("\n❌ Refresco con una fuente ROTA: no se reintenta. Ver el resumen por fuente.")
+        avisar_ops(f"[Contexto] Refresco de POIs {resultado} · {CIUDAD}",
+                   "El refresco de pois_propios terminó con al menos una fuente rota.\n"
+                   "Una fuente rota NO escribe ni cierra nada; la otra pudo refrescarse.\n\n"
+                   + "\n".join(f.linea() for f in fuentes))
+    sys.exit(codigo)
+
+
+def _estado_guardado(ciudad: str) -> dict | None:
+    try:
+        return json.loads(_ruta_estado(ciudad).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def avisar_tras_reintentos(argv: list[str]) -> bool:
+    """Modo aviso puro (`--solo-avisar`): el workflow y refresco_pois.cmd lo invocan cuando agotan
+    sus reintentos, para que una tubería caída deje de ser un log que nadie abre. No toca red de
+    datos ni base. Lee el resumen por fuente que dejó la última corrida para decir QUÉ falló."""
+    # El motivo es lo que venga DESPUÉS de la bandera; el primer argumento suelto ANTES de ella es
+    # el slug de la ciudad (tomarlo como motivo daría un aviso que dice "Motivo: quito").
+    i = argv.index("--solo-avisar")
+    motivo = next((a for a in argv[i + 1:] if not a.startswith("--")), "motivo no indicado")
+    ciudad = next((a for a in argv[1:i] if not a.startswith("-")), CIUDAD).strip().lower()
+    estado = _estado_guardado(ciudad)
+    por_fuente = ("\n".join(" · ".join(f"{k}={v}" for k, v in f.items() if v is not None)
+                            for f in estado["fuentes"]) if estado else "(sin resumen por fuente guardado)")
+    return avisar_ops(
+        f"[Contexto] El refresco de POIs falló · {ciudad}" + (f" · {estado['resultado']}" if estado else ""),
+        f"La tarea semanal de pois_propios terminó sin éxito tras sus reintentos.\n\n"
+        f"Ciudad: {ciudad}\nMotivo/código: {motivo}\n\n"
+        f"Última corrida, por fuente:\n{por_fuente}\n\n"
+        f"Revisar el log más reciente en logs\\refresco_pois_{ciudad}_*.log",
+    )
 
 
 if __name__ == "__main__":
-    # Modo aviso puro: refresco_pois.cmd lo invoca cuando agota sus reintentos, para que
-    # una tubería caída deje de ser un log que nadie abre. No toca red de datos ni base.
     if "--solo-avisar" in sys.argv:
-        # El motivo es lo que venga DESPUÉS de la bandera; el primer argumento suelto es
-        # el slug de la ciudad y tomarlo daría un aviso que dice "Motivo: quito".
-        _tras = sys.argv[sys.argv.index("--solo-avisar") + 1:]
-        motivo = next((a for a in _tras if not a.startswith("--")), "motivo no indicado")
-        avisar_ops(
-            f"[Contexto] El refresco de POIs falló · {CIUDAD}",
-            f"La tarea semanal de pois_propios terminó sin éxito tras sus reintentos.\n\n"
-            f"Ciudad: {CIUDAD}\nMotivo/código: {motivo}\n\n"
-            f"Revisar el log más reciente en logs\\refresco_pois_{CIUDAD}_*.log",
-        )
+        avisar_tras_reintentos(sys.argv)
         sys.exit(0)
     # El corte por credencial ausente vive aqui, no en el cuerpo del modulo: ver
     # exigir_credencial_de_base(). Va DESPUES de --solo-avisar a proposito.

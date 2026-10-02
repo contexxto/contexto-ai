@@ -371,13 +371,21 @@ def _huella_lf(nombre: str) -> str:
     return hashlib.sha256((RAIZ / "migrations" / nombre).read_bytes().replace(b"\r\n", b"\n")).hexdigest()
 
 
-def test_16_8_ni_la_041_ni_la_042_cambian_y_no_hay_migracion_nueva():
-    """SOURCE-CATEGORY es solo código: el CHECK de la 041 no mira dentro de los elementos."""
+def test_16_8_ni_la_041_ni_la_042_cambian_y_ninguna_migracion_posterior_toca_el_destino_de_v0():
+    """SOURCE-CATEGORY es solo código: el CHECK de la 041 no mira dentro de los elementos.
+
+    Hasta la 042 esta guarda exigía además que NO hubiera migración nueva. La primera posterior es la 043
+    (POI-SOURCE-PROVENANCE: solo `pois_propios` y `poi_ingestion_run`); lo que se conserva es la intención: ninguna
+    migración posterior a la 042 puede tocar el destino de la evidencia de v0 (`activos_inmutables`)."""
     assert _huella_lf("041_place_provenance_evidencia.sql") == \
         "a6520be482bfb051a91eeb4e9a8cecce67d76017c6f8eb0fea884a0c174560df"
     assert _huella_lf("042_place_evidence_target_authority.sql") == \
         "95305ee000269f202b25dfaf74c4a905fdcb44939a377ef3b6c998d2955a9ff1"
-    assert max(p.name for p in (RAIZ / "migrations").glob("[0-9][0-9][0-9]_*.sql")).startswith("042_")
+    posteriores = sorted(p for p in (RAIZ / "migrations").glob("[0-9][0-9][0-9]_*.sql") if p.name[:3] > "042")
+    assert [p.name for p in posteriores][:1] == ["043_poi_source_provenance.sql"]
+    for p in posteriores:
+        ejecutable = "\n".join(l.split("--", 1)[0] for l in p.read_text(encoding="utf-8").splitlines())
+        assert "activos_inmutables" not in ejecutable, p.name
 
 
 def test_16_9_sin_google():

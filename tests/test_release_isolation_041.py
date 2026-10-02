@@ -61,7 +61,8 @@ def _escribir(monkeypatch, con_041: bool, flag: bool | None):
     async def _recolecta(lat, lon):
         return _materia(COMPLETA)
 
-    original = rutas.analizar_zona_con_evidencia
+    # PLACE-EVIDENCE-WRITE-DECOUPLING: con la 041 el escritor deriva la evidencia SOLO de la capa propia.
+    original = rutas.evidencia_de_capa_propia
 
     async def _con_evidencia(lat, lon):
         llamadas["con_evidencia"] += 1
@@ -72,7 +73,8 @@ def _escribir(monkeypatch, con_041: bool, flag: bool | None):
 
     monkeypatch.setattr(assets, "_fetch_pois", _fetch)
     monkeypatch.setattr(rutas, "_recolectar_zona", _recolecta)
-    monkeypatch.setattr(rutas, "analizar_zona_con_evidencia", _con_evidencia)
+    monkeypatch.setattr(rutas, "_recolectar_capa_propia", _recolecta)
+    monkeypatch.setattr(rutas, "evidencia_de_capa_propia", _con_evidencia)
     monkeypatch.setattr(assets, "AsyncSessionLocal", lambda: sesion)
     monkeypatch.setattr(assets, "ensure_walk_score_fuente_column", _nada)
     if flag is not None:

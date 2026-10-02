@@ -23,6 +23,7 @@ from app.database import AsyncSessionLocal, get_db
 from app.limiter import limiter
 from app.models import ActivoInmutable
 from app.place.legado import con_contexto_vigente
+from app.contracts.place_v0 import MeasureStatus
 from app.place.persistible import (
     a_json,
     esquema_041_presente,
@@ -2187,16 +2188,6 @@ async def _recompute_walk_score(asset_id: str, lat: float, lon: float) -> None:
     silencioso ante fallos (si Overpass no responde, se queda el heurístico).
     """
     try:
-        # Un solo fetch de POIs → walk score + conectividad + entorno destacado.
-        pois = await _fetch_pois(lat, lon, timeout=20.0)
-        if pois is None:
-            return
-        ws = compute_walk_score(pois, lat, lon)
-        # Conectividad y entorno: PRIMERO nuestra capa (analizar_zona, sin Google desde
-        # MAP-SOURCE-BOUNDARY); OSM de respaldo. Sin la 041 en la base, el texto se escribe SIN
-        # marca de procedencia y no se muestra en mapas (app/place/legado.py). Con la 041, el
-        # mismo fetch da además la EVIDENCIA de cada dimensión (PLACE-PROVENANCE-041).
-        from app.rutas import analizar_zona  # lazy: evita import circular
         # RELEASE-ISOLATION-041: la evidencia sólo se escribe con el flag explícito Y la 041 en
         # la base. Con el flag apagado (o ausente) ni se mira el catálogo: es el camino de antes
         # de la 041, aunque las columnas existan.
@@ -2204,13 +2195,22 @@ async def _recompute_walk_score(asset_id: str, lat: float, lon: float) -> None:
         if settings.place_provenance_041_write_enabled:
             async with AsyncSessionLocal() as s0:
                 con_041 = await esquema_041_presente(s0)
-        docs = {"servicios": None, "conectividad": None}
+        if con_041:
+            # PLACE-EVIDENCE-WRITE-DECOUPLING: la evidencia (capa propia) ya no espera a Overpass.
+            await _escribe_con_evidencia(asset_id, lat, lon)
+            return
+        # Sin la 041 (hoy en producción): el camino de siempre, paso a paso y byte a byte.
+        # Un solo fetch de POIs → walk score + conectividad + entorno destacado.
+        pois = await _fetch_pois(lat, lon, timeout=20.0)
+        if pois is None:
+            return
+        ws = compute_walk_score(pois, lat, lon)
+        # Conectividad y entorno: PRIMERO nuestra capa (analizar_zona, sin Google desde
+        # MAP-SOURCE-BOUNDARY); OSM de respaldo. Sin la 041 en la base, el texto se escribe SIN
+        # marca de procedencia y no se muestra en mapas (app/place/legado.py).
+        from app.rutas import analizar_zona  # lazy: evita import circular
         try:
-            if con_041:
-                from app.rutas import analizar_zona_con_evidencia
-                az, docs = await analizar_zona_con_evidencia(lat, lon)
-            else:
-                az = await analizar_zona(lat, lon)
+            az = await analizar_zona(lat, lon)
         except Exception:  # noqa: BLE001
             az = {}
         conect = az.get("conectividad") or (extraer_conectividad(pois, lat, lon) or {}).get("texto")
@@ -2221,27 +2221,103 @@ async def _recompute_walk_score(asset_id: str, lat: float, lon: float) -> None:
             # (ws["fuente"] es siempre "osm" aquí). Auto-sana la columna por si el proceso
             # arrancó por este job antes de cualquier publish/anuncio.
             await ensure_walk_score_fuente_column(session)
-            if con_041:
-                # Con la 041: cada dimensión guarda su evidencia, y el texto se RENDERIZA de ella.
-                # Una dimensión sin evidencia (capa caída, sin cobertura, respaldo OSM) queda en
-                # NULL y conserva el texto de respaldo, que la lectura trata como legado sin
-                # verificar. Así nunca queda una evidencia vieja junto a un texto nuevo.
-                valores.update(
-                    s=formatear_servicios(docs["servicios"]) or ent,
-                    c=formatear_conectividad(docs["conectividad"]) or conect,
-                    se=a_json(docs["servicios"]), ce=a_json(docs["conectividad"]))
-                sql = ("UPDATE activos_inmutables SET walk_score = :w, walk_score_fuente = :f, "
-                       "conectividad = :c, servicios_cercanos = :s, "
-                       "servicios_evidencia = CAST(:se AS jsonb), "
-                       "conectividad_evidencia = CAST(:ce AS jsonb) WHERE id = :id")
-            else:
-                # Sin la 041 (hoy en producción): el mismo UPDATE de siempre, byte a byte.
-                sql = ("UPDATE activos_inmutables SET walk_score = :w, walk_score_fuente = :f, "
-                       "conectividad = :c, servicios_cercanos = :s WHERE id = :id")
+            sql = ("UPDATE activos_inmutables SET walk_score = :w, walk_score_fuente = :f, "
+                   "conectividad = :c, servicios_cercanos = :s WHERE id = :id")
             await session.execute(text(sql), valores)
             await session.commit()
-    except Exception:  # noqa: BLE001 — best-effort; nunca debe tumbar nada
-        pass
+    except Exception as exc:  # noqa: BLE001 — best-effort; nunca debe tumbar nada
+        # Antes se tragaba en silencio. Solo la CLASE: el texto de un error de base arrastra SQL y
+        # parámetros, y este registro no puede convertirse en una fuga.
+        logging.getLogger(__name__).warning("foso=recompute_fallo activo=%s clase=%s",
+                                            str(asset_id)[:8], type(exc).__name__)
+
+
+# PLACE-EVIDENCE-WRITE-DECOUPLING · las columnas que el escritor de la 041 puede tocar, en el ORDEN
+# de su UPDATE: con las seis, la sentencia es byte a byte la de antes de esta unidad.
+_COLUMNAS_DEL_ESCRITOR = (
+    ("w", "walk_score = :w"),
+    ("f", "walk_score_fuente = :f"),
+    ("c", "conectividad = :c"),
+    ("s", "servicios_cercanos = :s"),
+    ("se", "servicios_evidencia = CAST(:se AS jsonb)"),
+    ("ce", "conectividad_evidencia = CAST(:ce AS jsonb)"),
+)
+
+
+def _plan_de_escritura(docs: dict, ws: dict | None, ent: str | None, conect: str | None) -> dict | None:
+    """Los valores del ÚNICO UPDATE de negocio (`{parámetro: valor}`), o `None` = NO-WRITE. Pura.
+
+    · Overpass respondió (`ws`): lo de siempre. Las seis columnas; cada dimensión con su
+      evidencia y el texto RENDERIZADO de ella o, sin evidencia, el texto de respaldo y la
+      evidencia en NULL (una evidencia vieja nunca queda junto a un texto nuevo).
+    · Overpass NO respondió: SOLO las dimensiones que la capa propia respalda con un documento
+      `available`, con el texto renderizado de ese documento. Ni walk score (no se fabrica, no se
+      pone 0, no se toca su procedencia), ni texto de respaldo (que sin Overpass no existe), ni un
+      documento `insufficient_evidence`: sin Overpass, «no hay en nuestra capa» no sobrescribe lo
+      que ya está. Sin ninguna dimensión `available` → NO-WRITE, como antes.
+    """
+    if ws is not None:
+        return {"w": ws["walk_score"], "f": ws["fuente"],
+                "c": formatear_conectividad(docs["conectividad"]) or conect,
+                "s": formatear_servicios(docs["servicios"]) or ent,
+                "se": a_json(docs["servicios"]), "ce": a_json(docs["conectividad"])}
+    valores: dict = {}
+    for doc, texto, evidencia, formatear in ((docs["conectividad"], "c", "ce", formatear_conectividad),
+                                             (docs["servicios"], "s", "se", formatear_servicios)):
+        if doc is not None and doc.status is MeasureStatus.AVAILABLE:
+            valores[texto], valores[evidencia] = formatear(doc), a_json(doc)
+    return valores or None
+
+
+def _sql_del_plan(valores: dict) -> str:
+    """El UPDATE con SOLO las columnas del plan. Los fragmentos son constantes: nada se interpola."""
+    sets = ", ".join(fragmento for parametro, fragmento in _COLUMNAS_DEL_ESCRITOR if parametro in valores)
+    return f"UPDATE activos_inmutables SET {sets} WHERE id = :id"
+
+
+def _estado_doc(doc) -> str:
+    return "unknown" if doc is None else doc.status.value
+
+
+async def _escribe_con_evidencia(asset_id: str, lat: float, lon: float) -> None:
+    """El escritor con la 041 activada (PLACE-EVIDENCE-WRITE-DECOUPLING).
+
+    Antes, un `None` de Overpass cortaba TODO en el primer paso, incluida la evidencia de lugar,
+    que sale entera de la capa propia (medido en el canario: dos intentos NO-WRITE por Overpass).
+    Ahora son tres pasos independientes y como máximo UNA escritura:
+      1. la evidencia de lugar, SOLO de la capa propia (`rutas.evidencia_de_capa_propia`);
+      2. Overpass, solo para el walk score y el texto de respaldo de siempre;
+      3. `_plan_de_escritura` → UN UPDATE, con el texto y la evidencia de cada dimensión en la
+         MISMA sentencia (el trigger de la 041 nunca ve un texto nuevo junto a evidencia vieja).
+    Con Overpass respondiendo, el UPDATE es idéntico al de antes de esta unidad.
+    """
+    log = logging.getLogger(__name__)
+    from app.rutas import evidencia_de_capa_propia  # lazy: evita import circular
+    try:
+        ev = await evidencia_de_capa_propia(lat, lon)
+    except Exception as exc:  # noqa: BLE001 — capa caída: la evidencia queda UNKNOWN, no se inventa
+        log.warning("foso=evidencia_capa_propia_fallo activo=%s clase=%s", str(asset_id)[:8], type(exc).__name__)
+        ev = None
+    docs = ev.documentos if ev is not None else {"servicios": None, "conectividad": None}
+    pois = await _fetch_pois(lat, lon, timeout=20.0)
+    ws = conect = ent = None
+    if pois is not None:
+        ws = compute_walk_score(pois, lat, lon)
+        # El respaldo de siempre: primero la prosa de NUESTRA capa; si no hay, la de OSM.
+        conect = (ev.conectividad_texto if ev else None) or (extraer_conectividad(pois, lat, lon) or {}).get("texto")
+        ent = (ev.servicios_texto if ev else None) or (await entorno_destacado(lat, lon, pois) or {}).get("texto")
+    valores = _plan_de_escritura(docs, ws, ent, conect)
+    log.info("foso=recompute activo=%s servicios=%s conectividad=%s overpass=%s escritura=%s columnas=%s",
+             str(asset_id)[:8], _estado_doc(docs["servicios"]), _estado_doc(docs["conectividad"]),
+             "ok" if pois is not None else "sin_respuesta", "update" if valores else "no-write",
+             ",".join(p for p, _ in _COLUMNAS_DEL_ESCRITOR if valores and p in valores) or "-")
+    if valores is None:
+        return
+    async with AsyncSessionLocal() as session:
+        # El NO-OP DDL de siempre, sin ampliar ni rediseñar (fuera del alcance de esta unidad).
+        await ensure_walk_score_fuente_column(session)
+        await session.execute(text(_sql_del_plan(valores)), {**valores, "id": asset_id})
+        await session.commit()
 
 
 @router.post(

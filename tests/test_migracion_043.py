@@ -19,8 +19,9 @@ producto: solo esquema, sin backfill, sin tocar el escritor ni Place Evidence v0
         · invariantes: la regla central (taxonomy.primary ⇒ categoria_overture NULL), procedencia
           parcial, forma del linaje, FK compuesta diferida, manifiesto;
         · rollback lógico exacto, reaplicación = no-op, estados ajenos = FAIL CLOSED;
-        · el escritor ACTUAL de `main` sigue escribiendo sin conocer las columnas (con PostGIS, el
-          `main()` real: Overture sigue ROTA por D-4 y OSM se refresca);
+        · el escritor PRE-R4 (`f8614e1d`, el de producción hasta R4 y el de su rollback) sigue escribiendo
+          sin conocer las columnas (con PostGIS, el `main()` real: Overture sigue ROTA por D-4 y OSM se
+          refresca);
         · lectores (/aura, chat, mapa) y Place Evidence v0 devuelven EXACTAMENTE lo mismo.
 `MIGRACION_043_RUTA` existe SOLO para el control por mutación (evidencia del informe): apunta las
 pruebas a una copia mutada de la 043 para comprobar que la prueba que vigila cada regla se pone roja.
@@ -39,7 +40,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import text
 
-from tests.test_poi_refresh_source_isolation import (_corre, _estado, _fuentes, _osm, _parquet,  # noqa: F401
+from tests.test_poi_refresh_source_isolation import (_carga, _corre, _estado, _fuentes, _osm, _parquet,  # noqa: F401
                                                      duckdb_spatial, foso)
 
 RAIZ = Path(__file__).resolve().parents[1]
@@ -792,12 +793,28 @@ async def test_B_lectores_aura_chat_mapa_y_place_evidence_v0_devuelven_exactamen
     assert "taxonomy" not in todo
 
 
+PRE_R4 = "f8614e1d761409541483aec881f7b39c62db8c02"   # main con la 043 aplicada y el escritor que aún no la conoce
+
+
 @pg
-async def test_B_el_escritor_actual_de_main_corre_sobre_la_043_overture_sigue_rota_y_osm_se_refresca(
+async def test_B_el_escritor_pre_r4_corre_sobre_la_043_overture_sigue_rota_y_osm_se_refresca(
         banco, foso, duckdb_spatial, monkeypatch, tmp_path):
+    """El escritor PRE-R4 EXACTO (`f8614e1d`): el que corre hoy en producción sobre la 043 y el que volvería con un
+    rollback de R4. Desde R4 el escritor de la rama ya no es este (su contrato lo prueba
+    `tests/test_poi_source_provenance_writer.py`), así que se toma de la historia de git."""
     if not banco["postgis"]:
         pytest.skip("el upsert real del escritor usa PostGIS: el Postgres del CI no lo trae")
     pytest.importorskip("psycopg")
+    import subprocess
+    p = subprocess.run(["git", "show", f"{PRE_R4}:scripts/foso_pois_spike.py"], cwd=RAIZ, capture_output=True)
+    if p.returncode != 0:
+        pytest.skip("sin historia git (clon superficial): no hay escritor PRE-R4 que cargar")
+    ruta = tmp_path / "foso_pre_r4.py"
+    ruta.write_bytes(p.stdout)
+    pre = _carga(ruta, "foso_pre_r4")
+    for nombre in ("overture_release", "avisar_ops"):
+        monkeypatch.setattr(pre, nombre, getattr(foso, nombre))
+    pre.avisos = foso.avisos
     await _aplica(banco)
     d = banco["dueno"]
     huella_overture = ("SELECT md5(string_agg(md5(row(" + COLS14 + ")::text), ',' ORDER BY id)) FROM public.pois_propios "
@@ -806,14 +823,16 @@ async def test_B_el_escritor_actual_de_main_corre_sobre_la_043_overture_sigue_ro
     operativas_antes = set(await _lista(d, "SELECT osm_id FROM public.pois_propios WHERE fuente='osm' AND operativo"))
     url = (URL.replace("postgresql+asyncpg://", "postgresql+psycopg://") + ("&" if "?" in URL else "?")
            + f"options=-c%20role%3D{DUENO}%20-c%20search_path%3Dpublic")
-    monkeypatch.setattr(foso, "SYNC_URL", url)
+    monkeypatch.setattr(pre, "SYNC_URL", url)
     v2 = _parquet(duckdb_spatial, tmp_path / "v2.parquet", con_categories=False)   # Overture 2026-09-23.x (D-4)
-    monkeypatch.setattr(foso, "overture_glob", lambda rel: v2)
-    lote = [_osm(foso, oid) for oid in sorted(operativas_antes)[1:]] + [_osm(foso, "node/9001")]
+    monkeypatch.setattr(pre, "overture_glob", lambda rel: v2)
+    # Las filas con la forma del escritor PRE-R4 (sin las claves de procedencia que entrega el lector R4).
+    lote = [pre._normalizar(_osm(foso, oid)) for oid in sorted(operativas_antes)[1:]] + [
+        pre._normalizar(_osm(foso, "node/9001"))]
     lote[0]["nombre"] = "OSM refrescado sobre la 043"
-    monkeypatch.setattr(foso, "pull_osm_transporte", lambda: lote)
+    monkeypatch.setattr(pre, "pull_osm_transporte", lambda: lote)
 
-    assert _corre(foso) == 1                                     # alguna fuente ROTA: Overture (D-4), igual que hoy
+    assert _corre(pre) == 1                                      # alguna fuente ROTA: Overture (D-4), igual que hoy
     f = _fuentes(_estado(tmp_path))
     assert (f["overture"]["estado"], f["overture"]["fase"]) == ("rota", "obtencion")
     assert "categories" in f["overture"]["error"]

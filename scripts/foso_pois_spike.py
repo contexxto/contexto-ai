@@ -322,6 +322,7 @@ _CLASE_DE_ESTADO = {None: SIN_SENAL, "open": ABIERTO, "temporarily_closed": CERR
                     "permanently_closed": CERRADO_PERMANENTE}
 CLASES_PRESENCIA = frozenset({ABIERTO, SIN_SENAL})                  # D-OS-1/2: la confianza de Contexto decide si entran
 CLASES_CERRADAS = frozenset({CERRADO_TEMPORAL, CERRADO_PERMANENTE})  # D-OS-2: la confianza NO las filtra
+CLASES_EXPLICITAS = frozenset({ABIERTO, CERRADO_TEMPORAL, CERRADO_PERMANENTE})   # la fuente AFIRMA un estado
 
 
 def clase_de_estado(valor) -> str:
@@ -473,9 +474,12 @@ def pull_overture_taxonomia() -> list[dict]:
                        (`_matriz_de_estado`, misma transacción, antes del upsert).
     Devuelve las observaciones que la regla ACEPTA: de PRESENCIA (OPEN/NULL + mapa + ruta + confianza, `operativo=true`)
     y de CIERRE EXPLÍCITO (TEMPORARILY/PERMANENTLY_CLOSED + mapa + ruta, CUALQUIER confianza, `operativo=false`); la
-    clase de cada GERS va aparte en `ULTIMA_OVERTURE["estados"]` (la forma de la fila no cambia). Un cierre explícito
-    que la regla NO acepta (sin taxonomía, jerarquía inválida, fuera del mapa, nodo padre, descendiente) se cuenta y se
-    avisa, y la fila NO se toca: su procedencia vigente sigue explicando su `categoria` (M0).
+    clase de cada GERS va aparte en `ULTIMA_OVERTURE["estados"]` (la forma de la fila no cambia). DURABILITY GUARD:
+    en R3 v1 un estado observado NO autoriza ninguna transición de `operativo` (ver la matriz sobre
+    `ESTADO_EN_CAPA_OVERTURE`): los cierres se OBSERVAN, se cuentan y se avisan; no se escriben. Un estado explícito
+    (open / temporarily / permanently_closed) cuya observación la regla NO acepta (sin taxonomía, jerarquía inválida,
+    fuera del mapa, nodo padre, descendiente, bajo la confianza) se cuenta en `explicitos_no_representables` y se avisa si
+    implicaría una transición en la capa; la fila NO se toca: su procedencia vigente sigue explicando su `categoria`.
     Lo NO aceptado no se escribe y NO se cierra: «Contexto no lo ingirió» no es «el lugar cerró».
     Guardas que invalidan Overture entera (sin escribir ni cerrar): esquema distinto y estado fuera del contrato (al
     obtener), ruta distinta de la aceptada en una hoja aceptada y hoja aceptada que desaparece del release (en la
@@ -500,8 +504,9 @@ def pull_overture_taxonomia() -> list[dict]:
         obs = {"registros_bbox": len(filas), "por_estado": Counter(), "aceptadas": Counter(),
                "bajo_confianza": Counter(), "fuera_del_mapa": 0, "nodo_padre": Counter(), "descendientes_conocidos": 0,
                "descendientes_nuevos": Counter(), "sin_taxonomia": 0, "jerarquia_invalida": 0,
-               "ruta_distinta": Counter(), "cerrados_aceptados": Counter(), "cerrados_no_representables": Counter()}
-        deriva, no_representables, presentes, out, estados, invalidos = [], [], set(), [], {}, Counter()
+               "ruta_distinta": Counter(), "cierres_explicitos_observados": Counter(),
+               "explicitos_no_representables": Counter()}
+        deriva, no_representables, presentes, out, estados, invalidos = [], {}, set(), [], {}, Counter()
         for (oid, nombre, primary, jerarquia, conf, lat, lon, direccion, marca, valor_estado, version,
              sources) in filas:
             clase = clase_de_estado(valor_estado)               # ESTADO FUENTE (explícito)
@@ -533,7 +538,7 @@ def pull_overture_taxonomia() -> list[dict]:
                     motivo = "bajo_confianza"
                 else:
                     if cierre_explicito:
-                        obs["cerrados_aceptados"][clase] += 1
+                        obs["cierres_explicitos_observados"][clase] += 1
                     else:
                         obs["aceptadas"][cat] += 1
                     estados[oid] = clase
@@ -560,12 +565,12 @@ def pull_overture_taxonomia() -> list[dict]:
             else:
                 obs["fuera_del_mapa"] += 1
                 motivo = "fuera_del_mapa"
-            if cierre_explicito and motivo is not None:
-                # La fuente declara un cierre que la regla NO acepta. El contrato actual (una sola procedencia por
-                # fila, 043) no puede representarlo sin destruir la que explica la `categoria` vigente: se OBSERVA
-                # (cuenta y GERS), se AVISA si toca la capa, y la fila NO se toca (R5 / historia futura).
-                obs["cerrados_no_representables"][motivo] += 1
-                no_representables.append(oid)
+            if clase in CLASES_EXPLICITAS and motivo is not None:
+                # La fuente AFIRMA un estado que la regla NO acepta. El contrato actual (una sola procedencia por fila,
+                # 043) no puede representarlo sin destruir la que explica la `categoria` vigente: se OBSERVA (cuenta,
+                # GERS y su clase), se AVISA si implicaría una transición en la capa, y la fila NO se toca (R5).
+                obs["explicitos_no_representables"][motivo] += 1
+                no_representables[oid] = clase
         if invalidos:
             raise GuardaTaxonomia("EstadoOperativoInvalido",
                                   f"operating_status fuera del contrato {ESTADOS_OPERATIVOS_V1} + NULL: "
@@ -577,7 +582,7 @@ def pull_overture_taxonomia() -> list[dict]:
     nuevos = dict(obs["descendientes_nuevos"])
     ULTIMA_OVERTURE.update({
         "observacion": {k: (dict(v) if isinstance(v, Counter) else v) for k, v in obs.items()},
-        "deriva": sorted(set(deriva)), "cerrados_no_representables": no_representables, "estados": estados,
+        "deriva": sorted(set(deriva)), "explicitos_no_representables": no_representables, "estados": estados,
         "alertas": [f"descendiente NUEVO no ingerido: {p} ({n} registros)" for p, n in sorted(nuevos.items())]})
     if not out and not deriva:
         raise RuntimeError(f"Overture devolvió 0 filas aceptadas para el release {release} y el bbox de {CIUDAD}. "
@@ -817,9 +822,9 @@ _VALS = """(:nombre, :categoria, :cat_leaf, ST_SetSRID(ST_MakePoint(:lon, :lat),
 
 # R4 · la procedencia va APARTE de las columnas de negocio (`_COLS`/`_VALS`/`_SET` no cambian: otros arneses
 # las recomponen). Un UPSERT que vuelve a observar la fila la re-enlaza a la corrida ACTUAL y sobrescribe sus
-# campos de origen; un cierre por AUSENCIA (CERRAR_OSM) no los toca. R3: Overture no tiene sentencia de cierre; un
-# cierre EXPLÍCITO aceptado (`permanently_closed` / `temporarily_closed`) entra por este mismo UPSERT con
-# `operativo = false`, la procedencia y la categoría de la corrida actual (`_matriz_de_estado` decide QUÉ filas).
+# campos de origen; un cierre por AUSENCIA (CERRAR_OSM) no los toca. R3: Overture no tiene sentencia de cierre y, por la
+# DURABILITY GUARD, este UPSERT solo da de alta filas nuevas activas o re-observa filas activas (`_matriz_de_estado`
+# decide QUÉ filas; `_guarda_durabilidad` impide que cambie el `operativo` de ninguna fila existente).
 _COLS_PROC = ("ingestion_run_id, source_category, source_category_namespace, source_record_version, "
               "source_updated_at, source_lineage")
 _VALS_PROC = ("CAST(:ingestion_run_id AS uuid), :source_category, :source_category_namespace, :source_record_version, "
@@ -929,21 +934,28 @@ CERRAR_OSM = text(_CERRAR.format(f="osm", col="osm_id"))
 # M0 · NO hay sentencia de cierre propia de Overture. La 043 guarda UNA procedencia vigente por fila, y esa procedencia
 # tiene que seguir explicando la `categoria` vigente (procedencia → regla → categoría): todo cambio de una fila entra
 # por el UPSERT normal, con la procedencia y la categoría de ESTA corrida.
-# OPERATING STATUS · MATRIZ AUTORIZADA (D-OS-1…5), sobre observaciones que la regla acepta (taxonomía + ruta exacta):
+# OPERATING STATUS · DURABILITY GUARD (R3 v1). Overture conserva sus releases públicos un máximo de ~60 días y el
+# changelog no guarda el valor completo de `operating_status`; la 043 no tiene dónde conservarlo. Por eso, hasta que
+# exista persistencia durable del estado fuente, OBSERVAR un estado ≠ AUTORIZAR una transición: ninguna transición de
+# `operativo` puede depender de una observación de `operating_status` que Contexto no conserve. Se OBSERVA, se CLASIFICA,
+# se CUENTA y se AVISA; el estado canónico no se mueve.
+# MATRIZ TEMPORAL AUTORIZADA (sobre observaciones que la regla acepta: taxonomía + ruta exacta):
 #
-#                                  fila NUEVA           fila OPERATIVA        fila CERRADA
-#   OPEN               + conf OK   INSERT (true)        UPDATE (true)         REOPEN (true)
-#   UNKNOWN (NULL)     + conf OK   INSERT (true)        UPDATE (true)         NO TOUCH · cuenta + aviso
-#   TEMPORARILY_CLOSED (cualq.)    NO INSERT · cuenta   CLOSE (false)         KEEP CLOSED (false)
-#   PERMANENTLY_CLOSED (cualq.)    NO INSERT · cuenta   CLOSE (false)         KEEP CLOSED (false)
-#   INVALID_STATUS                 Overture ROTA al obtener: no escribe, no cambia ningún estado
+#                                 fila NUEVA               fila ACTIVA                    fila CERRADA
+#   NULL               + conf OK  INSERT (activa)          UPDATE (sigue activa)          NO TOUCH · cuenta + aviso
+#   OPEN               + conf OK  INSERT (activa)          UPDATE (sigue activa)          NO TOUCH · cuenta + aviso
+#   TEMPORARILY_CLOSED (cualq.)   NO INSERT · cuenta+aviso NO TOUCH · cuenta + aviso      NO TOUCH · cuenta + aviso
+#   PERMANENTLY_CLOSED (cualq.)   NO INSERT · cuenta+aviso NO TOUCH · cuenta + aviso      NO TOUCH · cuenta + aviso
+#   INVALID_STATUS                Overture ROTA al obtener: no escribe, no cambia ningún estado
 #
-# NULL NO es `open`: no reabre. Un cierre explícito solo muta una fila EXISTENTE cuya `categoria` sigue siendo la que
-# la regla da a `source_category` (si no, cuenta + aviso, sin mutar: no se mezcla taxonomía con estado). KEEP CLOSED
-# escribe la fila por el UPSERT normal (sigue cerrada; su procedencia pasa a ser la observación del cierre).
-# Esta lectura —misma transacción, SOLO LECTURA y ANTES del upsert— da el estado previo y la categoría de cada GERS
-# observado (aceptado o no representable): de ella salen la matriz, `rows_closed` (transiciones REALES abierta →
-# cerrada) y los avisos.
+# Lo ÚNICO que se escribe: una fila NUEVA activa por PRESENCIA (OPEN/NULL; no es una transición de un estado canónico
+# previo) y la re-observación de una fila ACTIVA que sigue activa. `_guarda_durabilidad` lo exige estructuralmente: si
+# alguna escritura cambiara el `operativo` de una fila existente, o escribiera una fila cerrada, Overture queda ROTA sin
+# escribir nada. Una observación explícita sobre una fila que ya está en ese estado TAMPOCO reemplaza su procedencia.
+# DEUDA R5 (prerrequisito, documentada): preservar durablemente el estado fuente / la observación temporal ANTES de
+# habilitar transiciones de estado canónico (reapertura por `open`, cierre por `temporarily/permanently_closed`).
+# Esta lectura —misma transacción, SOLO LECTURA y ANTES del upsert— da el estado previo de cada GERS observado (aceptado
+# o explícito no representable): de ella salen la matriz, la guarda y los avisos.
 ESTADO_EN_CAPA_OVERTURE = text("""
     SELECT overture_id, operativo AS operativo_en_capa, categoria FROM pois_propios
     WHERE ciudad = :c AND fuente = 'overture' AND overture_id = ANY(CAST(:ids AS text[]))
@@ -1033,7 +1045,7 @@ class ResultadoFuente:
     lector: str | None = None                     # → poi_ingestion_run.reader_contract
     observacion: dict | None = None               # contadores: aceptadas, bajo_confianza, fuera_del_mapa, nodo_padre…
     alertas: list = field(default_factory=list)   # p. ej. descendientes nuevos (no se ingieren, se avisan)
-    cerrados_no_representables: list = field(default_factory=list, repr=False)   # GERS con cierre que la regla no acepta
+    explicitos_no_representables: dict = field(default_factory=dict, repr=False)   # GERS → clase del estado explícito no aceptado
     estados: dict = field(default_factory=dict, repr=False)    # OPERATING STATUS: GERS aceptado → su clase de estado
 
     def linea(self) -> str:
@@ -1198,7 +1210,7 @@ def obtener(fuente: str) -> ResultadoFuente:
     if fuente == "overture":
         r.observacion = ULTIMA_OVERTURE.get("observacion")
         r.alertas = list(ULTIMA_OVERTURE.get("alertas") or [])
-        r.cerrados_no_representables = list(ULTIMA_OVERTURE.get("cerrados_no_representables") or [])
+        r.explicitos_no_representables = dict(ULTIMA_OVERTURE.get("explicitos_no_representables") or {})
         r.estados = dict(ULTIMA_OVERTURE.get("estados") or {})
         deriva = ULTIMA_OVERTURE.get("deriva") or []
         if deriva:
@@ -1249,45 +1261,70 @@ def registrar_fallo(eng, r: ResultadoFuente, ident: dict) -> None:
         print(f"   ⚠️ {r.fuente}: MANIFEST NOT PERSISTED ({type(exc).__name__})")
 
 
-# Las decisiones de la matriz que ESCRIBEN la fila (por el upsert normal) y las que la dejan intacta.
-_ESCRIBEN = frozenset({"insertadas", "actualizadas", "reabiertas", "cerradas", "siguen_cerradas"})
+# DURABILITY GUARD · las ÚNICAS decisiones que escriben: alta de una fila nueva activa y re-observación de una activa.
+_ESCRIBEN = frozenset({"insertadas", "actualizadas"})
+# Las que se cuentan Y se avisan (el estado observado querría mover la fila; no hay evidencia durable para hacerlo).
+_AVISAN = ("reobservadas_sin_open_explicito", "explicit_open_on_closed", "temporary_closed_on_active",
+           "permanent_closed_on_active", "explicit_close_on_closed", "explicit_close_new")
 
 
-def _decision(clase: str, previo: tuple | None, categoria: str) -> str:
-    """UNA celda de la matriz (ver el bloque OPERATING STATUS sobre `ESTADO_EN_CAPA_OVERTURE`). `previo` = (operativo,
+def _decision(clase: str, previo: tuple | None) -> str:
+    """UNA celda de la matriz temporal (ver DURABILITY GUARD sobre `ESTADO_EN_CAPA_OVERTURE`). `previo` = (operativo,
     categoria) de la fila en la capa, o None si el GERS no está. Explícita para cada clase: nada por «distinto de X»."""
-    if clase == ABIERTO:
-        return "insertadas" if previo is None else ("actualizadas" if previo[0] else "reabiertas")
     if clase == SIN_SENAL:
-        return "insertadas" if previo is None else ("actualizadas" if previo[0] else "reobservadas_sin_open_explicito")
-    if clase in (CERRADO_TEMPORAL, CERRADO_PERMANENTE):
         if previo is None:
-            return "cerradas_nuevas_omitidas"                  # D-OS-4: un cierre no crea la fila
-        if previo[1] != categoria:
-            return "cierre_categoria_incompatible"             # §3: no mezclar taxonomía y estado
-        return "cerradas" if previo[0] else "siguen_cerradas"
+            return "insertadas"
+        return "actualizadas" if previo[0] else "reobservadas_sin_open_explicito"
+    if clase == ABIERTO:
+        if previo is None:
+            return "insertadas"
+        return "actualizadas" if previo[0] else "explicit_open_on_closed"        # reabrir exige evidencia durable
+    if clase == CERRADO_TEMPORAL:
+        if previo is None:
+            return "explicit_close_new"
+        return "temporary_closed_on_active" if previo[0] else "explicit_close_on_closed"
+    if clase == CERRADO_PERMANENTE:
+        if previo is None:
+            return "explicit_close_new"
+        return "permanent_closed_on_active" if previo[0] else "explicit_close_on_closed"
     raise ValueError(f"clase de estado no válida en la matriz: {clase!r}")   # INVALID no llega aquí (rota al obtener)
+
+
+def _guarda_durabilidad(filas: list[dict], capa: dict) -> None:
+    """DURABILITY GUARD (R3 v1), estructural: NINGUNA escritura puede cambiar el `operativo` de una fila existente ni
+    escribir una fila cerrada. Solo pasan: fila NUEVA con `operativo=true` y fila EXISTENTE activa que sigue activa.
+    Si algo más llegara aquí (un error de la matriz), Overture queda ROTA sin escribir nada."""
+    malas = [p["overture_id"] for p in filas
+             if p["operativo"] is not True or (capa.get(p["overture_id"]) is not None and capa[p["overture_id"]][0] is not True)]
+    if malas:
+        raise GuardaTaxonomia("TransicionSinEvidenciaDurable",
+                              f"{len(malas)} escritura(s) cambiarían el estado canónico sin evidencia durable del estado "
+                              f"fuente (R5): " + ", ".join(malas[:10]))
 
 
 def _matriz_de_estado(db, r: ResultadoFuente) -> tuple[list[dict], Counter, dict, list[str]]:
     """OPERATING STATUS · en la MISMA transacción, SOLO LECTURA y ANTES del upsert: el estado previo de cada GERS
-    observado → la decisión de la matriz. Devuelve (filas que se escriben, conteo por decisión, GERS de las decisiones
-    que se avisan, GERS operativos de la capa que la fuente declara cerrados y la regla NO acepta)."""
-    ids = [p["overture_id"] for p in r.filas] + r.cerrados_no_representables
+    observado → la decisión de la matriz temporal → la guarda de durabilidad. Devuelve (filas que se escriben, conteo
+    por decisión, GERS de las decisiones que se avisan, GERS de la capa a los que un estado explícito NO representable
+    les implicaría una transición)."""
+    ids = [p["overture_id"] for p in r.filas] + list(r.explicitos_no_representables)
     capa = {}
     if ids:
         capa = {oid: (op, cat) for oid, op, cat in db.execute(ESTADO_EN_CAPA_OVERTURE, {"c": CIUDAD, "ids": ids}).all()}
-    escribir_, conteo = [], Counter()
-    avisos = {"reobservadas_sin_open_explicito": [], "cierre_categoria_incompatible": []}
+    escribir_, conteo, avisos = [], Counter(), {k: [] for k in _AVISAN}
     for p in r.filas:
-        decision = _decision(r.estados[p["overture_id"]], capa.get(p["overture_id"]), p["categoria"])
+        decision = _decision(r.estados[p["overture_id"]], capa.get(p["overture_id"]))
         conteo[decision] += 1
         if decision in avisos:
             avisos[decision].append(p["overture_id"])
         if decision in _ESCRIBEN:
             escribir_.append(p)
-    en_capa = sorted(oid for oid in r.cerrados_no_representables if capa.get(oid, (False, None))[0])
-    return escribir_, conteo, avisos, en_capa
+    _guarda_durabilidad(escribir_, capa)
+    if r.explicitos_no_representables:
+        conteo["explicit_status_not_representable"] = len(r.explicitos_no_representables)
+    con_transicion = sorted(oid for oid, clase in r.explicitos_no_representables.items() if oid in capa and (
+        (clase in CLASES_CERRADAS and capa[oid][0]) or (clase == ABIERTO and not capa[oid][0])))
+    return escribir_, conteo, avisos, con_transicion
 
 
 def _guarda_cobertura(db, r: ResultadoFuente) -> None:
@@ -1321,10 +1358,10 @@ def escribir(eng, r: ResultadoFuente, ident: dict) -> None:
     R4: cada fila escrita queda enlazada a ESTA corrida (`ingestion_run_id`); la corrida se inserta AL FINAL,
     con los contadores ya conocidos (la FK es diferida: se comprueba en el COMMIT).
     R3: en Overture, la guarda de cobertura va PRIMERO (antes de escribir nada) y no hay sentencia de cierre: la
-    MATRIZ de OPERATING STATUS (`_matriz_de_estado`, solo lectura, misma transacción) decide qué observaciones
-    aceptadas entran por el upsert; un cierre explícito sobre una fila operativa entra con `operativo = false` (y su
-    procedencia y categoría actuales) y `rows_closed` cuenta esas transiciones REALES abierta → cerrada. OSM no cambia:
-    cierra por ausencia, con su guarda."""
+    MATRIZ TEMPORAL de OPERATING STATUS (`_matriz_de_estado`, solo lectura, misma transacción) decide qué observaciones
+    aceptadas entran por el upsert, y la DURABILITY GUARD exige que ninguna cambie el `operativo` de una fila existente:
+    en R3 v1 no hay transiciones de estado canónico (`rows_closed` = 0); los estados explícitos se cuentan y se avisan.
+    OSM no cambia: cierra por ausencia, con su guarda."""
     es_overture = r.fuente == "overture"
     upsert, clave = (UPSERT_OVERTURE, "overture_id") if es_overture else (UPSERT_OSM, "osm_id")
     filas = [{**p, "ingestion_run_id": r.run_id} for p in r.filas]
@@ -1338,7 +1375,7 @@ def escribir(eng, r: ResultadoFuente, ident: dict) -> None:
                 _guarda_cobertura(db, r)
                 a_escribir, matriz, avisos, no_representables_en_capa = _matriz_de_estado(db, r)
                 filas = [{**p, "ingestion_run_id": r.run_id} for p in a_escribir]
-                cerradas = matriz["cerradas"]
+                cerradas = 0          # DURABILITY GUARD: ninguna transición abierta → cerrada en R3 v1 (ver la guarda)
             if filas:
                 db.execute(upsert, filas)
             if not es_overture:
@@ -1358,26 +1395,31 @@ def escribir(eng, r: ResultadoFuente, ident: dict) -> None:
         if es_overture:
             if r.observacion is not None:
                 r.observacion["matriz"] = dict(matriz)
-                r.observacion["cerrados_no_representables_en_capa"] = no_representables_en_capa
+                r.observacion["explicitos_no_representables_con_transicion"] = no_representables_en_capa
 
             def _gers(ids):
                 return ", ".join(ids[:20]) + (" …" if len(ids) > 20 else "")
+            textos = {
+                "reobservadas_sin_open_explicito": "POI(s) CERRADOS de la capa reaparecen con operating_status NULL: NULL "
+                                                   "no es `open` → siguen cerrados y NO se tocan",
+                "explicit_open_on_closed": "POI(s) CERRADOS de la capa vienen `open` en la fuente: reabrir exige conservar "
+                                           "durablemente esa evidencia (R5) → NO se tocan",
+                "temporary_closed_on_active": "POI(s) ACTIVOS de la capa vienen `temporarily_closed`: cerrar exige "
+                                              "evidencia durable (R5) → NO se tocan",
+                "permanent_closed_on_active": "POI(s) ACTIVOS de la capa vienen `permanently_closed`: cerrar exige "
+                                              "evidencia durable (R5) → NO se tocan",
+                "explicit_close_on_closed": "POI(s) ya CERRADOS de la capa vienen cerrados en la fuente: NO se reemplaza "
+                                            "su procedencia histórica (R5)",
+                "explicit_close_new": "lugar(es) que la capa NO tiene vienen cerrados en la fuente: NO se crean"}
+            for clave in _AVISAN:
+                ids = avisos.get(clave) or []
+                if ids:
+                    r.alertas.append(f"{len(ids)} {textos[clave]} [{clave}]. GERS: " + _gers(ids))
             if no_representables_en_capa:
                 r.alertas.append(
-                    f"la fuente declara CERRADOS {len(no_representables_en_capa)} POI(s) ACTIVOS de la capa que la regla "
-                    f"{LECTOR_OVERTURE_TAXONOMIA} no acepta: NO se cierran ni se re-enlazan (R5). GERS: "
-                    + _gers(no_representables_en_capa))
-            sin_open = avisos.get("reobservadas_sin_open_explicito") or []
-            if sin_open:
-                r.alertas.append(
-                    f"{len(sin_open)} POI(s) CERRADOS de la capa reaparecen con operating_status NULL: NULL no es "
-                    f"`open` → siguen cerrados y NO se tocan (D-OS-1). GERS: " + _gers(sin_open))
-            incompatibles = avisos.get("cierre_categoria_incompatible") or []
-            if incompatibles:
-                r.alertas.append(
-                    f"la fuente declara CERRADOS {len(incompatibles)} POI(s) de la capa cuya categoría vigente NO es la "
-                    f"que la regla da a su taxonomía: NO se mutan (no se mezcla taxonomía y estado). GERS: "
-                    + _gers(incompatibles))
+                    f"la fuente afirma un estado para {len(no_representables_en_capa)} POI(s) de la capa que implicaría "
+                    f"una transición, pero la regla {LECTOR_OVERTURE_TAXONOMIA} no acepta esa observación: NO se tocan "
+                    f"[explicit_status_not_representable]. GERS: " + _gers(no_representables_en_capa))
     except GuardaTaxonomia as exc:  # R3 · la guarda invalidó Overture ANTES de escribir o cerrar: nada se tocó
         r.estado, r.fase, r.clase = FUENTE_ROTA, "validacion", exc.clase
         r.error = f"{exc.clase}: {exc}"[:300]

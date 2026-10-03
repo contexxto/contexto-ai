@@ -231,6 +231,126 @@ def _normalizar(p: dict) -> dict:
     return d
 
 
+# ── R3 · OVERTURE TAXONOMY V1 (2026-10-02) ───────────────────────────────────────────────────────
+# Overture v2.0.0 (2026-09-23.x) eliminó `categories`; la categoría vive en `taxonomy.primary` + `taxonomy.hierarchy`.
+# Este es OTRO lector (el de `categories.primary`, `pull_overture`, queda intacto): lee la HOJA EXACTA y exige la RUTA
+# EXACTA aceptada. Nunca un subárbol, nunca un nodo padre, nunca `basic_category`. Overture no declara versión de
+# taxonomía en el dato: lo que se versiona es ESTE lector (cambiar la tabla o una ruta ⇒ `..._v2`).
+# Evidencia de cada entrada: RESULTADO_2026-10-02_R3_OVERTURE_TAXONOMY_V1_CODE_DATA_PREFLIGHT.md §11/§15.
+# `outpatient_care_facility` es la sucesora oficial de `medical_center` (D-R3-1): SOLO la hoja exacta; sus 128
+# descendientes (dental, laboratorio, fisioterapia…) NO heredan `salud`.
+LECTOR_OVERTURE_TAXONOMIA = "overture_places_taxonomy_v1"
+NS_OVERTURE_TAXONOMIA = "overture:taxonomy.primary"
+TAXONOMIA_V1: dict[str, tuple[tuple[str, ...], str]] = {   # hoja → (ruta aceptada, categoría de Contexto)
+    "hospital":                 (("health_care", "hospital"), "salud"),
+    "outpatient_care_facility": (("health_care", "outpatient_care_facility"), "salud"),
+    "urgent_care_clinic":       (("health_care", "emergency_or_urgent_care_facility", "urgent_care_clinic"), "salud"),
+    "pharmacy":                 (("shopping", "specialty_store", "pharmacy_and_drug_store", "pharmacy"), "farmacia"),
+    "drugstore":                (("shopping", "specialty_store", "pharmacy_and_drug_store", "drugstore"), "farmacia"),
+    "grocery_store":            (("shopping", "food_and_beverage_store", "grocery_store"), "supermercado"),
+    "school":                   (("education", "place_of_learning", "school"), "educacion"),
+    "college_university":       (("education", "place_of_learning", "college_university"), "educacion"),
+    "preschool":                (("education", "place_of_learning", "school", "preschool"), "educacion"),
+    "park":                     (("sports_and_recreation", "park"), "parque"),
+    "playground":               (("sports_and_recreation", "park", "playground"), "parque"),
+    "shopping_mall":            (("shopping", "shopping_mall"), "centro_comercial"),
+    "department_store":         (("shopping", "department_store"), "centro_comercial"),
+}
+
+
+def huella_mapa_taxonomia(mapa: dict) -> str:
+    """sha256 de la tabla (hoja, ruta aceptada, categoría), ordenada por hoja. Es la VERSIÓN de la regla."""
+    canon = "\n".join(f"{h}\t{' > '.join(r)}\t{c}" for h, (r, c) in sorted(mapa.items()))
+    return hashlib.sha256(canon.encode("utf-8")).hexdigest()
+
+
+HUELLA_TAXONOMIA_V1 = "8be8274fddeb14db474614767a60a3032ae22da0753b49ef1cc261c1502fec7a"
+# El registro que hace RECONSTRUIBLE la regla de cada corrida: `poi_ingestion_run.reader_contract` → su tabla.
+MAPAS_POR_LECTOR = {LECTOR_OVERTURE_TAXONOMIA: TAXONOMIA_V1}
+# Nodos que son ANCESTRO de una hoja aceptada sin ser hoja aceptada (`health_care`, `education`, `shopping`…): un
+# registro con `primary` en uno de ellos no determina UNA categoría de Contexto → no se ingiere (ambiguo).
+ANCESTROS_V1 = frozenset(n for ruta, _ in TAXONOMIA_V1.values() for n in ruta[:-1]) - set(TAXONOMIA_V1)
+# Los descendientes de cada ruta aceptada que YA existían en 2026-09-23.1 (agregado global del release, sha256
+# 84e4df65…, evidencia del preflight R3). No se ingieren nunca (no heredan la categoría del padre); uno que NO esté
+# aquí es un descendiente NUEVO: tampoco se ingiere, pero se AVISA (puede ser una división de una hoja aceptada).
+DESCENDIENTES_CONOCIDOS_V1 = frozenset("""
+acupuncture addiction_rehabilitation_center aesthetic_medicine allergy_and_immunology anesthesiology
+animal_assisted_therapy architecture_school aromatherapy asian_grocery_store audiology ayurveda
+behavior_analysis behavioral_or_mental_health_clinic body_contouring business_school cardiology
+charter_school child_psychiatry childrens_hospital chiropractic community_health_center
+complementary_and_alternative_medicine concierge_medicine cosmetic_dentistry counseling
+crisis_intervention_service dental_clinic dental_hygiene dentistry_school dermatology diagnostic_imaging
+doctors_office dog_park doula_service ear_nose_and_throat elementary_school endocrinology endodontics
+endoscopy engineering_school environmental_medicine ethical_grocery_store family_counseling family_practice
+gastroenterology general_dentistry general_hospital genetics geriatric_medicine geriatric_psychiatry
+gerontology hematology hepatology high_school homeopathy hyperbaric_medicine hypnotherapy immunodermatology
+indian_grocery_store infectious_disease internal_medicine international_grocery_store japanese_grocery_store
+kindergarten korean_grocery_store kosher_grocery_store laboratory_testing lactation_service law_school
+marriage_or_relationship_counseling maternity_center medical_sciences_school mexican_grocery_store
+middle_school midwifery mobile_clinic montessori_school mountain_bike_park national_park
+naturopathic_medicine nephrology neurology neuropathology neurotology nursing obstetrics_and_gynecology
+occupational_medicine occupational_therapy oncology ophthalmology optometry organic_grocery_store
+orthodontics orthopedics orthotics osteopathic_medicine otolaryngology otology pain_management
+paternity_testing pathology pediatric_anesthesiology pediatric_cardiology pediatric_clinic
+pediatric_dentistry pediatric_endocrinology pediatric_gastroenterology pediatric_infectious_disease
+pediatric_nephrology pediatric_neurology pediatric_oncology pediatric_pulmonology pediatric_radiology
+periodontics pharmacy_school phlebology physical_therapy podiatry prenatal_and_perinatal_care
+preventive_medicine primary_care_or_general_clinic private_school proctology prosthetics prosthodontics
+psychiatric_hospital psychiatry psychoanalysis psychology psychomotor_therapy psychotherapy
+public_health_clinic public_school pulmonology radiology reflexology refractive_surgery_or_lasik
+rehabilitation_center reiki religious_school reproductive_perinatal_and_womens_care retina_services
+rheumatology russian_grocery_store science_school sex_therapy sleep_medicine specialized_health_care
+specialty_hospital speech_therapy sports_medicine sports_psychology state_park stress_management_service
+suicide_prevention_service tattoo_removal toxicology traditional_chinese_medicine tui_na ultrasound_imaging
+urology vascular_medicine veterans_hospital veterinary_school vision_or_eye_care_clinic waldorf_school
+water_park
+""".split())
+# Guarda de COBERTURA (D-R3-2): si una categoría de Contexto cae más de esto frente a la observación anterior, el
+# lector no se cree el resultado (deriva de taxonomía probable) y Overture NO escribe ni cierra. NO es regla de cierre.
+CAIDA_MAX_COBERTURA = 0.10
+
+# R3 · OPERATING STATUS (contrato OFICIAL de Overture: `schema/places/place.yaml`, v2.0.0 = main, el mismo enum desde
+# v1.16.0). `operating_status ∈ {open, permanently_closed, temporarily_closed}`: NO existe `closed`. Es OPCIONAL desde
+# v1.17.0 (commit 7133a5a3, 2026-05-06) y, desde la nota de 2026-05-20, NULL por defecto («null instead of open»).
+# NULL NO es `open`: es «sin señal de estado». La confianza mide EXISTENCIA, no estado (2026-09-23.1: 978 895
+# `permanently_closed`, solo 4 744 con confidence 0). Evidencia: RESULTADO_2026-10-02_R3_OPERATING_STATUS_SEMANTICS_
+# PREFLIGHT.md. Cada valor se clasifica EXPLÍCITAMENTE; nada se decide por «distinto de X».
+ESTADOS_OPERATIVOS_V1 = ("open", "permanently_closed", "temporarily_closed")
+ABIERTO, SIN_SENAL, CERRADO_TEMPORAL, CERRADO_PERMANENTE, ESTADO_INVALIDO = (
+    "OPEN", "UNKNOWN_STATUS", "TEMPORARILY_CLOSED", "PERMANENTLY_CLOSED", "INVALID_STATUS")
+_CLASE_DE_ESTADO = {None: SIN_SENAL, "open": ABIERTO, "temporarily_closed": CERRADO_TEMPORAL,
+                    "permanently_closed": CERRADO_PERMANENTE}
+CLASES_PRESENCIA = frozenset({ABIERTO, SIN_SENAL})                  # D-OS-1/2: la confianza de Contexto decide si entran
+CLASES_CERRADAS = frozenset({CERRADO_TEMPORAL, CERRADO_PERMANENTE})  # D-OS-2: la confianza NO las filtra
+CLASES_EXPLICITAS = frozenset({ABIERTO, CERRADO_TEMPORAL, CERRADO_PERMANENTE})   # la fuente AFIRMA un estado
+
+
+def clase_de_estado(valor) -> str:
+    """`operating_status` de la fuente → su clase (OPEN · UNKNOWN_STATUS · TEMPORARILY_CLOSED · PERMANENTLY_CLOSED ·
+    INVALID_STATUS). Cualquier valor fuera del contrato es INVALID_STATUS: Overture entera queda ROTA (D-OS-5)."""
+    return _CLASE_DE_ESTADO.get(valor, ESTADO_INVALIDO) if isinstance(valor, (str, type(None))) else ESTADO_INVALIDO
+
+
+def categoria_de_la_regla(reader_contract: str | None, namespace: str | None, source_category: str | None) -> str | None:
+    """RECONSTRUCCIÓN (M0): la categoría de Contexto que la regla de ESA corrida da a ESE valor de la fuente, o None.
+    Fila → `ingestion_run_id` → `reader_contract` (+ `code_sha`) → esta tabla. Nunca se infiere de `categoria`."""
+    if reader_contract in MAPAS_POR_LECTOR and namespace == NS_OVERTURE_TAXONOMIA:
+        entrada = MAPAS_POR_LECTOR[reader_contract].get(source_category)
+        return entrada[1] if entrada else None
+    if reader_contract == LECTOR_OVERTURE and namespace == NS_OVERTURE:
+        return LEAF_TO_CAT.get(source_category)
+    return None
+
+
+class GuardaTaxonomia(Exception):
+    """Una guarda de R3 que invalida la fuente Overture ANTES de escribir o cerrar. `clase` es lo único que se
+    persiste en la corrida (`error_class`); el texto (sin SQL ni URL) va al resumen."""
+
+    def __init__(self, clase: str, detalle: str):
+        super().__init__(detalle)
+        self.clase = clase
+
+
 def huella_esquema_overture(glob: str) -> str:
     """sha256 de la estructura que Contexto OBSERVA en el release (OBSERVACIÓN DE LA INGESTA).
 
@@ -307,6 +427,166 @@ def pull_overture() -> list[dict]:
         r["source_updated_at"] = None   # R4 no interpreta `update_time`: va íntegro en el linaje (R5)
         r["source_lineage"] = None if r.get("sources") is None else json.dumps(r["sources"], ensure_ascii=False)
         out.append(_normalizar(r))
+    return out
+
+
+# Lo que `pull_overture_taxonomia` observa de la CORRIDA (como ULTIMA_OSM): la observación estructurada (contadores),
+# la deriva que invalida la fuente, las alertas (descendientes nuevos) y los GERS que la FUENTE declara cerrados.
+ULTIMA_OVERTURE: dict = {}
+# Los tipos EXACTOS de lo que el lector usa. Cualquier otro tipo (un campo nuevo en `taxonomy`, `hierarchy` como texto…)
+# es un esquema que este lector no conoce: falla cerrado al obtener (Overture ROTA, sin escribir ni cerrar).
+ESQUEMA_TAXONOMIA_V1 = {"id": "VARCHAR", "confidence": "DOUBLE", "operating_status": "VARCHAR", "version": "INTEGER",
+                        "taxonomy": 'STRUCT("primary" VARCHAR, hierarchy VARCHAR[], alternates VARCHAR[])'}
+COLUMNAS_TAXONOMIA_V1 = ("names", "geometry", "addresses", "brand", "sources", "bbox")
+
+
+def _verifica_esquema_taxonomia(con, glob: str) -> None:
+    tipos = {n: t for n, t, *_ in con.execute(f"DESCRIBE SELECT * FROM read_parquet('{glob}')").fetchall()}
+    malos = [f"{c}={tipos.get(c, 'AUSENTE')}" for c, t in ESQUEMA_TAXONOMIA_V1.items() if tipos.get(c) != t]
+    malos += [f"{c}=AUSENTE" for c in COLUMNAS_TAXONOMIA_V1 if c not in tipos]
+    if malos:
+        raise GuardaTaxonomia("EsquemaInesperado", "esquema que el lector " + LECTOR_OVERTURE_TAXONOMIA
+                              + " no conoce: " + ", ".join(malos))
+
+
+def _hojas_ausentes_del_release(con, glob: str, hojas) -> list[str]:
+    """De las hojas aceptadas que no aparecen en el bbox, cuáles NO existen en NINGÚN registro del release. Que falte
+    en una ciudad es normal (Quito no tiene `drugstore`); que falte en el release entero es un renombre o una
+    retirada: la regla ya no describe la taxonomía publicada. Medido: ~4 s si existe (se corta al primero), ~84 s si
+    no (recorre el release)."""
+    return [h for h in sorted(hojas) if not con.execute(
+        f"SELECT count(*) FROM (SELECT 1 FROM read_parquet('{glob}') WHERE taxonomy.primary = ? LIMIT 1)", [h]
+    ).fetchone()[0]]
+
+
+def pull_overture_taxonomia() -> list[dict]:
+    """El lector `overture_places_taxonomy_v1` (R3): Places del bbox → hoja exacta + ruta exacta → categoría de Contexto.
+
+    Mantiene SEPARADAS cinco dimensiones que el lector de `categories` mezclaba (D-R3-2 + OPERATING STATUS):
+      TAXONOMÍA        ¿`taxonomy.primary` es una hoja de la tabla versionada? (si no: NO se ingiere);
+      JERARQUÍA        ¿`hierarchy` es EXACTAMENTE la ruta aceptada? (si no, en una hoja aceptada: DERIVA → Overture
+                       ROTA con cualquier confianza y cualquier estado);
+      CONFIANZA        el umbral de Contexto por categoría: decide la PRESENCIA (`open` / NULL), nunca un cierre;
+      ESTADO FUENTE    `operating_status` clasificado EXPLÍCITAMENTE (`clase_de_estado`): OPEN · UNKNOWN_STATUS (NULL) ·
+                       TEMPORARILY_CLOSED · PERMANENTLY_CLOSED · INVALID_STATUS (cualquier otro valor: Overture ROTA
+                       ANTES de escribir, D-OS-5);
+      ESTADO PREVIO    el de la fila en la capa: este lector NO lo conoce; la matriz se aplica en `escribir`
+                       (`_matriz_de_estado`, misma transacción, antes del upsert).
+    Devuelve las observaciones que la regla ACEPTA: de PRESENCIA (OPEN/NULL + mapa + ruta + confianza, `operativo=true`)
+    y de CIERRE EXPLÍCITO (TEMPORARILY/PERMANENTLY_CLOSED + mapa + ruta, CUALQUIER confianza, `operativo=false`); la
+    clase de cada GERS va aparte en `ULTIMA_OVERTURE["estados"]` (la forma de la fila no cambia). DURABILITY GUARD:
+    en R3 v1 un estado observado NO autoriza ninguna transición de `operativo` (ver la matriz sobre
+    `ESTADO_EN_CAPA_OVERTURE`): los cierres se OBSERVAN, se cuentan y se avisan; no se escriben. Un estado explícito
+    (open / temporarily / permanently_closed) cuya observación la regla NO acepta (sin taxonomía, jerarquía inválida,
+    fuera del mapa, nodo padre, descendiente, bajo la confianza) se cuenta en `explicitos_no_representables` y se avisa si
+    implicaría una transición en la capa; la fila NO se toca: su procedencia vigente sigue explicando su `categoria`.
+    Lo NO aceptado no se escribe y NO se cierra: «Contexto no lo ingirió» no es «el lugar cerró».
+    Guardas que invalidan Overture entera (sin escribir ni cerrar): esquema distinto y estado fuera del contrato (al
+    obtener), ruta distinta de la aceptada en una hoja aceptada y hoja aceptada que desaparece del release (en la
+    validación de `obtener`)."""
+    ULTIMA_OVERTURE.clear()
+    if huella_mapa_taxonomia(TAXONOMIA_V1) != HUELLA_TAXONOMIA_V1:
+        raise GuardaTaxonomia("MapaSinVersion", "la tabla de " + LECTOR_OVERTURE_TAXONOMIA + " cambió sin versión nueva")
+    release = overture_release()
+    glob = overture_glob(release)
+    print(f"   Overture release: {release} · lector {LECTOR_OVERTURE_TAXONOMIA}")
+    con = duckdb.connect()
+    try:
+        con.execute("INSTALL spatial; INSTALL httpfs; LOAD spatial; LOAD httpfs; SET s3_region='us-west-2';")
+        _verifica_esquema_taxonomia(con, glob)
+        filas = con.execute(f"""
+            SELECT id, names.primary, taxonomy.primary, taxonomy.hierarchy, confidence, ST_Y(geometry), ST_X(geometry),
+                   addresses[1].freeform, brand.names.primary, operating_status, version, sources
+            FROM read_parquet('{glob}')
+            WHERE bbox.xmin BETWEEN {BBOX['xmin']} AND {BBOX['xmax']}
+              AND bbox.ymin BETWEEN {BBOX['ymin']} AND {BBOX['ymax']}
+        """).fetchall()
+        obs = {"registros_bbox": len(filas), "por_estado": Counter(), "aceptadas": Counter(),
+               "bajo_confianza": Counter(), "fuera_del_mapa": 0, "nodo_padre": Counter(), "descendientes_conocidos": 0,
+               "descendientes_nuevos": Counter(), "sin_taxonomia": 0, "jerarquia_invalida": 0,
+               "ruta_distinta": Counter(), "cierres_explicitos_observados": Counter(),
+               "explicitos_no_representables": Counter()}
+        deriva, no_representables, presentes, out, estados, invalidos = [], {}, set(), [], {}, Counter()
+        for (oid, nombre, primary, jerarquia, conf, lat, lon, direccion, marca, valor_estado, version,
+             sources) in filas:
+            clase = clase_de_estado(valor_estado)               # ESTADO FUENTE (explícito)
+            obs["por_estado"][clase] += 1
+            if clase == ESTADO_INVALIDO:
+                invalidos[repr(valor_estado)] += 1
+                continue
+            cierre_explicito = clase in CLASES_CERRADAS
+            motivo = None                           # por qué la regla NO acepta esta observación (None = aceptada)
+            ruta = tuple(jerarquia or ())
+            if primary is None:                                 # TAXONOMÍA
+                obs["sin_taxonomia"] += 1
+                motivo = "sin_taxonomia"
+            elif not ruta or ruta[-1] != primary:               # JERARQUÍA (contrato de Overture)
+                obs["jerarquia_invalida"] += 1      # viola el contrato de Overture: `primary` = último de `hierarchy`
+                motivo = "jerarquia_invalida"
+            elif primary in TAXONOMIA_V1:
+                presentes.add(primary)
+                aceptada, cat = TAXONOMIA_V1[primary]
+                if ruta != aceptada:                            # JERARQUÍA (regla de Contexto)
+                    # Deriva de la FUENTE, sea cual sea la confianza o el estado: ni `confidence` (regla de aceptación
+                    # de Contexto) ni un cierre pueden ocultar que la taxonomía publicada ya no es la que la regla
+                    # describe.
+                    obs["ruta_distinta"][f"{primary} @ {' > '.join(ruta)}"] += 1
+                    deriva.append(f"{primary}: ruta {' > '.join(ruta)} ≠ aceptada {' > '.join(aceptada)}")
+                    motivo = "ruta_distinta"
+                elif not cierre_explicito and (conf is None or conf <= CONF_FLOOR or conf < CONF_MIN[cat]):
+                    obs["bajo_confianza"][cat] += 1                # CONFIANZA: solo decide la PRESENCIA (D-OS-2)
+                    motivo = "bajo_confianza"
+                else:
+                    if cierre_explicito:
+                        obs["cierres_explicitos_observados"][clase] += 1
+                    else:
+                        obs["aceptadas"][cat] += 1
+                    estados[oid] = clase
+                    out.append(_normalizar({
+                        "nombre": nombre, "categoria": cat, "cat_leaf": None, "lon": lon, "lat": lat,
+                        "confidence": conf, "overture_id": oid, "osm_id": None, "marca": marca, "direccion": direccion,
+                        # PRESENCIA (OPEN / NULL) → true; CIERRE EXPLÍCITO (TEMPORARILY / PERMANENTLY_CLOSED) → false.
+                        # Lo que la fila de la capa haga con esto lo decide la matriz (`_matriz_de_estado`).
+                        "operativo": clase in CLASES_PRESENCIA, "fuente": "overture",
+                        # FUENTE: `taxonomy.primary` TAL CUAL; la INGESTA declara el campo. `categoria_overture`
+                        # (:cat_leaf) va NULL: v0 la rotula siempre `categories.primary` (I4 de la 043 lo exige).
+                        "source_category": primary, "source_category_namespace": NS_OVERTURE_TAXONOMIA,
+                        "source_record_version": None if version is None else str(version), "source_updated_at": None,
+                        "source_lineage": None if sources is None else json.dumps(sources, ensure_ascii=False)}))
+            elif primary in ANCESTROS_V1:
+                obs["nodo_padre"][primary] += 1
+                motivo = "nodo_padre"
+            elif any(len(ruta) > len(a) and ruta[:len(a)] == a for a, _ in TAXONOMIA_V1.values()):
+                if primary in DESCENDIENTES_CONOCIDOS_V1:
+                    obs["descendientes_conocidos"] += 1
+                else:
+                    obs["descendientes_nuevos"][primary] += 1
+                motivo = "descendiente"
+            else:
+                obs["fuera_del_mapa"] += 1
+                motivo = "fuera_del_mapa"
+            if clase in CLASES_EXPLICITAS and motivo is not None:
+                # La fuente AFIRMA un estado que la regla NO acepta. El contrato actual (una sola procedencia por fila,
+                # 043) no puede representarlo sin destruir la que explica la `categoria` vigente: se OBSERVA (cuenta,
+                # GERS y su clase), se AVISA si implicaría una transición en la capa, y la fila NO se toca (R5).
+                obs["explicitos_no_representables"][motivo] += 1
+                no_representables[oid] = clase
+        if invalidos:
+            raise GuardaTaxonomia("EstadoOperativoInvalido",
+                                  f"operating_status fuera del contrato {ESTADOS_OPERATIVOS_V1} + NULL: "
+                                  + ", ".join(f"{v}×{n}" for v, n in sorted(invalidos.items())))
+        desaparecidas = _hojas_ausentes_del_release(con, glob, set(TAXONOMIA_V1) - presentes)
+    finally:
+        con.close()
+    deriva += [f"{h}: la hoja aceptada no existe en el release {release}" for h in desaparecidas]
+    nuevos = dict(obs["descendientes_nuevos"])
+    ULTIMA_OVERTURE.update({
+        "observacion": {k: (dict(v) if isinstance(v, Counter) else v) for k, v in obs.items()},
+        "deriva": sorted(set(deriva)), "explicitos_no_representables": no_representables, "estados": estados,
+        "alertas": [f"descendiente NUEVO no ingerido: {p} ({n} registros)" for p, n in sorted(nuevos.items())]})
+    if not out and not deriva:
+        raise RuntimeError(f"Overture devolvió 0 filas aceptadas para el release {release} y el bbox de {CIUDAD}. "
+                           "No se continúa.")
     return out
 
 
@@ -542,7 +822,9 @@ _VALS = """(:nombre, :categoria, :cat_leaf, ST_SetSRID(ST_MakePoint(:lon, :lat),
 
 # R4 · la procedencia va APARTE de las columnas de negocio (`_COLS`/`_VALS`/`_SET` no cambian: otros arneses
 # las recomponen). Un UPSERT que vuelve a observar la fila la re-enlaza a la corrida ACTUAL y sobrescribe sus
-# campos de origen; un cierre (CERRAR_*) no los toca.
+# campos de origen; un cierre por AUSENCIA (CERRAR_OSM) no los toca. R3: Overture no tiene sentencia de cierre y, por la
+# DURABILITY GUARD, este UPSERT solo da de alta filas nuevas activas o re-observa filas activas (`_matriz_de_estado`
+# decide QUÉ filas; `_guarda_durabilidad` impide que cambie el `operativo` de ninguna fila existente).
 _COLS_PROC = ("ingestion_run_id, source_category, source_category_namespace, source_record_version, "
               "source_updated_at, source_lineage")
 _VALS_PROC = ("CAST(:ingestion_run_id AS uuid), :source_category, :source_category_namespace, :source_record_version, "
@@ -645,8 +927,52 @@ _CERRAR = """
     WHERE ciudad = :ciudad AND operativo AND fuente = '{f}'
       AND {col} IS NOT NULL AND {col} <> ALL(CAST(:ids AS text[]))
 """
-CERRAR_OVERTURE = text(_CERRAR.format(f="overture", col="overture_id"))
 CERRAR_OSM = text(_CERRAR.format(f="osm", col="osm_id"))
+# R3 (D-R3-2) · en Overture la AUSENCIA ya NO cierra. Lo que el lector no aceptó (fuera del mapa, bajo la confianza
+# de Contexto, taxonomía desconocida) o lo que no vino sigue siendo un lugar que la fuente NO dijo cerrado: marcarlo
+# `operativo = false` sería afirmar un hecho que nadie observó. La semántica temporal de la ausencia es R5 · freshness.
+# M0 · NO hay sentencia de cierre propia de Overture. La 043 guarda UNA procedencia vigente por fila, y esa procedencia
+# tiene que seguir explicando la `categoria` vigente (procedencia → regla → categoría): todo cambio de una fila entra
+# por el UPSERT normal, con la procedencia y la categoría de ESTA corrida.
+# OPERATING STATUS · DURABILITY GUARD (R3 v1). Overture conserva sus releases públicos un máximo de ~60 días y el
+# changelog no guarda el valor completo de `operating_status`; la 043 no tiene dónde conservarlo. Por eso, hasta que
+# exista persistencia durable del estado fuente, OBSERVAR un estado ≠ AUTORIZAR una transición: ninguna transición de
+# `operativo` puede depender de una observación de `operating_status` que Contexto no conserve. Se OBSERVA, se CLASIFICA,
+# se CUENTA y se AVISA; el estado canónico no se mueve.
+# MATRIZ TEMPORAL AUTORIZADA (sobre observaciones que la regla acepta: taxonomía + ruta exacta):
+#
+#                                 fila NUEVA               fila ACTIVA                    fila CERRADA
+#   NULL               + conf OK  INSERT (activa)          UPDATE (sigue activa)          NO TOUCH · cuenta + aviso
+#   OPEN               + conf OK  INSERT (activa)          UPDATE (sigue activa)          NO TOUCH · cuenta + aviso
+#   TEMPORARILY_CLOSED (cualq.)   NO INSERT · cuenta+aviso NO TOUCH · cuenta + aviso      NO TOUCH · cuenta + aviso
+#   PERMANENTLY_CLOSED (cualq.)   NO INSERT · cuenta+aviso NO TOUCH · cuenta + aviso      NO TOUCH · cuenta + aviso
+#   INVALID_STATUS                Overture ROTA al obtener: no escribe, no cambia ningún estado
+#
+# Lo ÚNICO que se escribe: una fila NUEVA activa por PRESENCIA (OPEN/NULL; no es una transición de un estado canónico
+# previo) y la re-observación de una fila ACTIVA que sigue activa. `_guarda_durabilidad` lo exige estructuralmente: si
+# alguna escritura cambiara el `operativo` de una fila existente, o escribiera una fila cerrada, Overture queda ROTA sin
+# escribir nada. Una observación explícita sobre una fila que ya está en ese estado TAMPOCO reemplaza su procedencia.
+# DEUDA R5 (prerrequisito, documentada): preservar durablemente el estado fuente / la observación temporal ANTES de
+# habilitar transiciones de estado canónico (reapertura por `open`, cierre por `temporarily/permanently_closed`).
+# Esta lectura —misma transacción, SOLO LECTURA y ANTES del upsert— da el estado previo de cada GERS observado (aceptado
+# o explícito no representable): de ella salen la matriz, la guarda y los avisos.
+ESTADO_EN_CAPA_OVERTURE = text("""
+    SELECT overture_id, operativo AS operativo_en_capa, categoria FROM pois_propios
+    WHERE ciudad = :c AND fuente = 'overture' AND overture_id = ANY(CAST(:ids AS text[]))
+""")
+# R3 · la cobertura PREVIA por categoría contra la que se mide la caída: las filas operativas que observó la última
+# corrida OK de Overture de esta ciudad; si no hubo ninguna (la primera corrida R3), todas las operativas de Overture
+# (la capa legada). Solo lectura, dentro de la MISMA transacción y ANTES del upsert.
+COBERTURA_PREVIA_OVERTURE = text("""
+    SELECT categoria, count(*) AS cobertura_previa FROM pois_propios
+    WHERE ciudad = :c AND fuente = 'overture' AND operativo
+      AND (ingestion_run_id = (SELECT id FROM poi_ingestion_run
+                               WHERE source_provider = 'overture' AND ciudad = :c AND status = 'ok'
+                               ORDER BY completed_at DESC LIMIT 1)
+           OR NOT EXISTS (SELECT 1 FROM poi_ingestion_run
+                          WHERE source_provider = 'overture' AND ciudad = :c AND status = 'ok'))
+    GROUP BY 1
+""")
 
 # Si una fuente trae menos de esta fracción de lo que ya había, se asume respuesta
 # parcial (no un cierre masivo real) y NO se cierra nada de esa fuente.
@@ -715,6 +1041,12 @@ class ResultadoFuente:
     snapshot_at: str | None = None                # OSM: osm3s.timestamp_osm_base
     schema_fingerprint: str | None = None         # Overture: huella del esquema OBSERVADO
     manifiesto: str | None = None                 # 'persistido' | 'NOT PERSISTED'
+    # ── R3 · el lector que se ejecutó y lo que observó (sin migración: va al resumen, al estado y al aviso) ──
+    lector: str | None = None                     # → poi_ingestion_run.reader_contract
+    observacion: dict | None = None               # contadores: aceptadas, bajo_confianza, fuera_del_mapa, nodo_padre…
+    alertas: list = field(default_factory=list)   # p. ej. descendientes nuevos (no se ingieren, se avisan)
+    explicitos_no_representables: dict = field(default_factory=dict, repr=False)   # GERS → clase del estado explícito no aceptado
+    estados: dict = field(default_factory=dict, repr=False)    # OPERATING STATUS: GERS aceptado → su clase de estado
 
     def linea(self) -> str:
         def v(x):
@@ -727,7 +1059,7 @@ class ResultadoFuente:
     def resumen(self) -> dict:
         return {k: getattr(self, k) for k in ("fuente", "estado", "release", "obtenidas", "validadas",
                                                "escritas", "cerradas", "segundos", "fase", "error",
-                                               "run_id", "manifiesto")}
+                                               "run_id", "manifiesto", "lector", "observacion", "alertas")}
 
 
 def _primera_linea(exc: BaseException) -> str:
@@ -742,9 +1074,13 @@ def _es_caida(exc: BaseException) -> bool:
     return isinstance(exc, (requests.ConnectionError, requests.Timeout, duckdb.HTTPException))
 
 
-def _invalidas(fuente: str, filas) -> list[str]:
+def _invalidas(fuente: str, filas, lector: str | None = None, estados: dict | None = None) -> list[str]:
     """Por qué el conjunto NO es escribible (vacío = válido). Una sola fila mala invalida la FUENTE
-    entera: escribir el resto sería una escritura parcial de esa fuente."""
+    entera: escribir el resto sería una escritura parcial de esa fuente. La coherencia de la procedencia se juzga
+    con la regla del LECTOR que produjo las filas (por defecto, el lector vigente de cada fuente). Con `estados`
+    (OPERATING STATUS), cada fila de Overture tiene que tener una clase de estado válida y su `operativo` tiene que ser
+    EXACTAMENTE el de esa clase (presencia → true, cierre explícito → false)."""
+    lector = lector or (LECTOR_OVERTURE_TAXONOMIA if fuente == "overture" else LECTOR_OSM)
     if not isinstance(filas, list):
         return [f"la fuente no devolvió una lista ({type(filas).__name__})"]
     motivos: Counter = Counter()
@@ -771,7 +1107,18 @@ def _invalidas(fuente: str, filas) -> list[str]:
         # escribir): toda fila declara de qué campo sale su categoría de origen, del MISMO dataset; en Overture,
         # `categories.primary` es el valor de `categoria_overture` tal cual (el que lee Place Evidence v0).
         ns, cat_origen = p.get("source_category_namespace"), p.get("source_category")
-        if fuente == "overture":
+        if fuente == "overture" and lector == LECTOR_OVERTURE_TAXONOMIA:
+            # R3: `taxonomy.primary` en su espacio, la columna legada NULL (I4) y la categoría = la de la tabla v1.
+            entrada = TAXONOMIA_V1.get(cat_origen)
+            if (ns != NS_OVERTURE_TAXONOMIA or p["cat_leaf"] is not None or entrada is None
+                    or entrada[1] != p["categoria"]):
+                motivos["procedencia de la categoría"] += 1
+            if estados is not None:
+                clase = estados.get(p["overture_id"])
+                if (clase not in CLASES_PRESENCIA | CLASES_CERRADAS
+                        or p["operativo"] is not (clase in CLASES_PRESENCIA)):
+                    motivos["estado operativo de la fuente"] += 1
+        elif fuente == "overture":
             if ns != NS_OVERTURE or cat_origen != p["cat_leaf"] or not cat_origen:
                 motivos["procedencia de la categoría"] += 1
         elif not (isinstance(ns, str) and ns.startswith("osm:") and isinstance(cat_origen, str) and cat_origen):
@@ -817,17 +1164,19 @@ class _SinNadaQueEscribir(Exception):
 
 
 def _pull_overture_con_release(r: "ResultadoFuente") -> list[dict]:
-    """`pull_overture()` con el release que eligió anotado en el resultado. Se resuelve una vez y se le pasa
-    por OVERTURE_RELEASE para que el anotado sea exactamente el leído. Antes de leer, Contexto OBSERVA la
-    estructura del release (`huella_esquema_overture`): si eso falla, no hay huella; si lo que falla después
-    es el lector (p. ej. el Binder de D-4), la huella observada SÍ queda en la corrida ROTA."""
+    """El lector VIGENTE de Overture (R3: `pull_overture_taxonomia`, `overture_places_taxonomy_v1`) con el release que
+    eligió anotado en el resultado. Se resuelve una vez y se le pasa por OVERTURE_RELEASE para que el anotado sea
+    exactamente el leído. Antes de leer, Contexto OBSERVA la estructura del release (`huella_esquema_overture`): si
+    eso falla, no hay huella; si lo que falla después es el lector (p. ej. un esquema que no conoce), la huella
+    observada SÍ queda en la corrida ROTA. El lector de `categories.primary` (`pull_overture`) ya no se ejecuta: desde
+    v2.0.0 ese campo no existe (D-4)."""
     r.release = overture_release()
     r.endpoint = overture_glob(r.release)
     r.schema_fingerprint = huella_esquema_overture(r.endpoint)
     previo = os.environ.get("OVERTURE_RELEASE")
     os.environ["OVERTURE_RELEASE"] = r.release
     try:
-        return pull_overture()
+        return pull_overture_taxonomia()
     finally:
         if previo is None:
             os.environ.pop("OVERTURE_RELEASE", None)
@@ -838,13 +1187,15 @@ def _pull_overture_con_release(r: "ResultadoFuente") -> list[dict]:
 def obtener(fuente: str) -> ResultadoFuente:
     """Descarga y valida UNA fuente. Nunca lanza: lo que pase queda en el resultado."""
     r = ResultadoFuente(fuente)
+    r.lector = LECTOR_OVERTURE_TAXONOMIA if fuente == "overture" else LECTOR_OSM
     r.started_at = _ahora()
     t0 = time.time()
     try:
         filas = _pull_overture_con_release(r) if fuente == "overture" else pull_osm_transporte()
     except Exception as exc:  # noqa: BLE001 — se registra en SU estado; la otra fuente sigue
         r.estado = FUENTE_CAIDA if _es_caida(exc) else FUENTE_ROTA
-        r.fase, r.error, r.clase = "obtencion", _primera_linea(exc), type(exc).__name__
+        # Una guarda de R3 persiste SU clase (EsquemaInesperado, MapaSinVersion); el resto, la de la excepción.
+        r.fase, r.error, r.clase = "obtencion", _primera_linea(exc), getattr(exc, "clase", None) or type(exc).__name__
         r.segundos = time.time() - t0
         print(f"   ❌ {fuente}: {r.error}")
         return r
@@ -856,7 +1207,20 @@ def obtener(fuente: str) -> ResultadoFuente:
         return r
     r.fetched_at = _ahora()
     r.obtenidas = len(filas) if isinstance(filas, list) else None
-    invalidas = _invalidas(fuente, filas)
+    if fuente == "overture":
+        r.observacion = ULTIMA_OVERTURE.get("observacion")
+        r.alertas = list(ULTIMA_OVERTURE.get("alertas") or [])
+        r.explicitos_no_representables = dict(ULTIMA_OVERTURE.get("explicitos_no_representables") or {})
+        r.estados = dict(ULTIMA_OVERTURE.get("estados") or {})
+        deriva = ULTIMA_OVERTURE.get("deriva") or []
+        if deriva:
+            # R3 · la regla ya no describe la taxonomía publicada (ruta distinta o hoja desaparecida): Overture
+            # ENTERA queda ROTA, antes de cualquier escritura o cierre. OSM sigue en lo suyo.
+            r.estado, r.fase, r.clase = FUENTE_ROTA, "validacion", "DerivaTaxonomia"
+            r.error = ("deriva de taxonomía: " + "; ".join(deriva))[:300]
+            print(f"   ❌ {fuente}: {r.error}")
+            return r
+    invalidas = _invalidas(fuente, filas, r.lector, r.estados if fuente == "overture" else None)
     if fuente == "overture" and not (r.release and r.schema_fingerprint):
         # La 043 exige release + huella en una corrida OK de Overture: sin ellas, la estructura no se observó.
         invalidas.append("release o huella de esquema no observados")
@@ -873,7 +1237,7 @@ def _manifiesto(r: ResultadoFuente, ident: dict, **contadores) -> dict:
     """La fila de `poi_ingestion_run` de ESTA corrida. Lo que no se observó, va NULL."""
     ok = r.estado == FUENTE_OK
     return {"id": r.run_id, "source_provider": r.fuente, "ciudad": CIUDAD, "status": r.estado,
-            "reader_contract": LECTOR_OVERTURE if r.fuente == "overture" else LECTOR_OSM,
+            "reader_contract": r.lector or (LECTOR_OVERTURE_TAXONOMIA if r.fuente == "overture" else LECTOR_OSM),
             "source_release": r.release if r.fuente == "overture" else None,
             "source_schema_fingerprint": r.schema_fingerprint if r.fuente == "overture" else None,
             "source_snapshot_at": r.snapshot_at if r.fuente == "osm" else None,
@@ -897,6 +1261,93 @@ def registrar_fallo(eng, r: ResultadoFuente, ident: dict) -> None:
         print(f"   ⚠️ {r.fuente}: MANIFEST NOT PERSISTED ({type(exc).__name__})")
 
 
+# DURABILITY GUARD · las ÚNICAS decisiones que escriben: alta de una fila nueva activa y re-observación de una activa.
+_ESCRIBEN = frozenset({"insertadas", "actualizadas"})
+# Las que se cuentan Y se avisan (el estado observado querría mover la fila; no hay evidencia durable para hacerlo).
+_AVISAN = ("reobservadas_sin_open_explicito", "explicit_open_on_closed", "temporary_closed_on_active",
+           "permanent_closed_on_active", "explicit_close_on_closed", "explicit_close_new")
+
+
+def _decision(clase: str, previo: tuple | None) -> str:
+    """UNA celda de la matriz temporal (ver DURABILITY GUARD sobre `ESTADO_EN_CAPA_OVERTURE`). `previo` = (operativo,
+    categoria) de la fila en la capa, o None si el GERS no está. Explícita para cada clase: nada por «distinto de X»."""
+    if clase == SIN_SENAL:
+        if previo is None:
+            return "insertadas"
+        return "actualizadas" if previo[0] else "reobservadas_sin_open_explicito"
+    if clase == ABIERTO:
+        if previo is None:
+            return "insertadas"
+        return "actualizadas" if previo[0] else "explicit_open_on_closed"        # reabrir exige evidencia durable
+    if clase == CERRADO_TEMPORAL:
+        if previo is None:
+            return "explicit_close_new"
+        return "temporary_closed_on_active" if previo[0] else "explicit_close_on_closed"
+    if clase == CERRADO_PERMANENTE:
+        if previo is None:
+            return "explicit_close_new"
+        return "permanent_closed_on_active" if previo[0] else "explicit_close_on_closed"
+    raise ValueError(f"clase de estado no válida en la matriz: {clase!r}")   # INVALID no llega aquí (rota al obtener)
+
+
+def _guarda_durabilidad(filas: list[dict], capa: dict) -> None:
+    """DURABILITY GUARD (R3 v1), estructural: NINGUNA escritura puede cambiar el `operativo` de una fila existente ni
+    escribir una fila cerrada. Solo pasan: fila NUEVA con `operativo=true` y fila EXISTENTE activa que sigue activa.
+    Si algo más llegara aquí (un error de la matriz), Overture queda ROTA sin escribir nada."""
+    malas = [p["overture_id"] for p in filas
+             if p["operativo"] is not True or (capa.get(p["overture_id"]) is not None and capa[p["overture_id"]][0] is not True)]
+    if malas:
+        raise GuardaTaxonomia("TransicionSinEvidenciaDurable",
+                              f"{len(malas)} escritura(s) cambiarían el estado canónico sin evidencia durable del estado "
+                              f"fuente (R5): " + ", ".join(malas[:10]))
+
+
+def _matriz_de_estado(db, r: ResultadoFuente) -> tuple[list[dict], Counter, dict, list[str]]:
+    """OPERATING STATUS · en la MISMA transacción, SOLO LECTURA y ANTES del upsert: el estado previo de cada GERS
+    observado → la decisión de la matriz temporal → la guarda de durabilidad. Devuelve (filas que se escriben, conteo
+    por decisión, GERS de las decisiones que se avisan, GERS de la capa a los que un estado explícito NO representable
+    les implicaría una transición)."""
+    ids = [p["overture_id"] for p in r.filas] + list(r.explicitos_no_representables)
+    capa = {}
+    if ids:
+        capa = {oid: (op, cat) for oid, op, cat in db.execute(ESTADO_EN_CAPA_OVERTURE, {"c": CIUDAD, "ids": ids}).all()}
+    escribir_, conteo, avisos = [], Counter(), {k: [] for k in _AVISAN}
+    for p in r.filas:
+        decision = _decision(r.estados[p["overture_id"]], capa.get(p["overture_id"]))
+        conteo[decision] += 1
+        if decision in avisos:
+            avisos[decision].append(p["overture_id"])
+        if decision in _ESCRIBEN:
+            escribir_.append(p)
+    _guarda_durabilidad(escribir_, capa)
+    if r.explicitos_no_representables:
+        conteo["explicit_status_not_representable"] = len(r.explicitos_no_representables)
+    con_transicion = sorted(oid for oid, clase in r.explicitos_no_representables.items() if oid in capa and (
+        (clase in CLASES_CERRADAS and capa[oid][0]) or (clase == ABIERTO and not capa[oid][0])))
+    return escribir_, conteo, avisos, con_transicion
+
+
+def _guarda_cobertura(db, r: ResultadoFuente) -> None:
+    """R3 · D-R3-2: si una categoría de Contexto cae MÁS del 10 % frente a la cobertura previa (§ COBERTURA_PREVIA_*),
+    la taxonomía probablemente cambió bajo el lector: Overture no escribe ni cierra. Es una guarda de DERIVA, no una
+    regla de cierre (con o sin ella, lo no aceptado jamás se cierra).
+      DENOMINADOR  las filas Overture OPERATIVAS de la ciudad que observó la última corrida OK (o, si no hubo, la capa
+                   legada), por `categoria`.
+      NUMERADOR    TODAS las observaciones que la regla acepta por TAXONOMÍA + RUTA, por categoría, ANTES de la matriz:
+                   las de presencia (OPEN / NULL con la confianza de Contexto) Y los cierres explícitos (cualquier
+                   confianza), estén o no en la capa y se escriban o no. Un cierre es un ESTADO de la fuente, no la
+                   desaparición de una hoja: contarlo evita confundir «la fuente dice que cerró» con «la taxonomía
+                   cambió». Igual con las presencias NULL sobre filas cerradas (no se tocan, pero existen)."""
+    previa = {cat: n for cat, n in db.execute(COBERTURA_PREVIA_OVERTURE, {"c": CIUDAD}).all()}
+    nueva = Counter(p["categoria"] for p in r.filas)
+    caidas = [f"{cat} {nueva.get(cat, 0)} < {n}·{1 - CAIDA_MAX_COBERTURA:.0%}" for cat, n in sorted(previa.items())
+              if n and nueva.get(cat, 0) < n * (1 - CAIDA_MAX_COBERTURA)]
+    if r.observacion is not None:
+        r.observacion["cobertura"] = {cat: [n, nueva.get(cat, 0)] for cat, n in sorted(previa.items())}
+    if caidas:
+        raise GuardaTaxonomia("CaidaDeCobertura", "cobertura por categoría bajo el umbral: " + "; ".join(caidas))
+
+
 def escribir(eng, r: ResultadoFuente, ident: dict) -> None:
     """UNA transacción para ESTA fuente: upsert + cierre con sus guardas + SU corrida. Si algo falla, se
     revierte ESTA fuente ENTERA —POIs, cierres y corrida— y nada más: la otra confirmó, o confirmará, en la
@@ -905,29 +1356,76 @@ def escribir(eng, r: ResultadoFuente, ident: dict) -> None:
     UPSERT por identificador de origen (migración 020): la fila sobrevive al refresco con su `id`.
     Antes era TRUNCATE (borraba TODOS los mercados, migración 019) y luego DELETE+INSERT.
     R4: cada fila escrita queda enlazada a ESTA corrida (`ingestion_run_id`); la corrida se inserta AL FINAL,
-    con los contadores ya conocidos (la FK es diferida: se comprueba en el COMMIT)."""
-    upsert, cerrar, clave = ((UPSERT_OVERTURE, CERRAR_OVERTURE, "overture_id") if r.fuente == "overture"
-                             else (UPSERT_OSM, CERRAR_OSM, "osm_id"))
+    con los contadores ya conocidos (la FK es diferida: se comprueba en el COMMIT).
+    R3: en Overture, la guarda de cobertura va PRIMERO (antes de escribir nada) y no hay sentencia de cierre: la
+    MATRIZ TEMPORAL de OPERATING STATUS (`_matriz_de_estado`, solo lectura, misma transacción) decide qué observaciones
+    aceptadas entran por el upsert, y la DURABILITY GUARD exige que ninguna cambie el `operativo` de una fila existente:
+    en R3 v1 no hay transiciones de estado canónico (`rows_closed` = 0); los estados explícitos se cuentan y se avisan.
+    OSM no cambia: cierra por ausencia, con su guarda."""
+    es_overture = r.fuente == "overture"
+    upsert, clave = (UPSERT_OVERTURE, "overture_id") if es_overture else (UPSERT_OSM, "osm_id")
     filas = [{**p, "ingestion_run_id": r.run_id} for p in r.filas]
     t0 = time.time()
     try:
+        no_representables_en_capa: list[str] = []
+        matriz, avisos = Counter(), {}
         with eng.begin() as db:
+            cerradas = 0
+            if es_overture:
+                _guarda_cobertura(db, r)
+                a_escribir, matriz, avisos, no_representables_en_capa = _matriz_de_estado(db, r)
+                filas = [{**p, "ingestion_run_id": r.run_id} for p in a_escribir]
+                cerradas = 0          # DURABILITY GUARD: ninguna transición abierta → cerrada en R3 v1 (ver la guarda)
             if filas:
                 db.execute(upsert, filas)
-            # Cierre POR FUENTE con la guarda de caída brusca, contada en el mismo punto que antes
-            # (tras el upsert de esta fuente). Ver el incidente del 2026-07-27 en CERRAR_*.
-            previos_f = db.execute(text(
-                "SELECT count(*) FROM pois_propios WHERE ciudad=:c AND operativo AND fuente=:f"
-            ), {"c": CIUDAD, "f": r.fuente}).scalar()
-            cerradas = 0
-            if previos_f and len(r.filas) < previos_f * UMBRAL_CAIDA:
-                print(f"   ⚠️ '{r.fuente}' trajo {len(r.filas)} vs {previos_f} en tabla "
-                      f"(<{UMBRAL_CAIDA:.0%}) → respuesta parcial, NO se cierra nada. Revisar.")
-            else:
-                ids = [p[clave] for p in r.filas]
-                cerradas = db.execute(cerrar, {"ciudad": CIUDAD, "ids": ids or [""]}).rowcount
+            if not es_overture:
+                # Cierre POR FUENTE con la guarda de caída brusca, contada en el mismo punto que antes
+                # (tras el upsert de esta fuente). Ver el incidente del 2026-07-27 en CERRAR_*.
+                previos_f = db.execute(text(
+                    "SELECT count(*) FROM pois_propios WHERE ciudad=:c AND operativo AND fuente=:f"
+                ), {"c": CIUDAD, "f": r.fuente}).scalar()
+                if previos_f and len(r.filas) < previos_f * UMBRAL_CAIDA:
+                    print(f"   ⚠️ '{r.fuente}' trajo {len(r.filas)} vs {previos_f} en tabla "
+                          f"(<{UMBRAL_CAIDA:.0%}) → respuesta parcial, NO se cierra nada. Revisar.")
+                else:
+                    ids = [p[clave] for p in r.filas]
+                    cerradas = db.execute(CERRAR_OSM, {"ciudad": CIUDAD, "ids": ids or [""]}).rowcount
             db.execute(INSERT_CORRIDA, _manifiesto(r, ident, escritas=len(filas), cerradas=cerradas))
         r.escritas, r.cerradas, r.manifiesto = len(filas), cerradas, "persistido"
+        if es_overture:
+            if r.observacion is not None:
+                r.observacion["matriz"] = dict(matriz)
+                r.observacion["explicitos_no_representables_con_transicion"] = no_representables_en_capa
+
+            def _gers(ids):
+                return ", ".join(ids[:20]) + (" …" if len(ids) > 20 else "")
+            textos = {
+                "reobservadas_sin_open_explicito": "POI(s) CERRADOS de la capa reaparecen con operating_status NULL: NULL "
+                                                   "no es `open` → siguen cerrados y NO se tocan",
+                "explicit_open_on_closed": "POI(s) CERRADOS de la capa vienen `open` en la fuente: reabrir exige conservar "
+                                           "durablemente esa evidencia (R5) → NO se tocan",
+                "temporary_closed_on_active": "POI(s) ACTIVOS de la capa vienen `temporarily_closed`: cerrar exige "
+                                              "evidencia durable (R5) → NO se tocan",
+                "permanent_closed_on_active": "POI(s) ACTIVOS de la capa vienen `permanently_closed`: cerrar exige "
+                                              "evidencia durable (R5) → NO se tocan",
+                "explicit_close_on_closed": "POI(s) ya CERRADOS de la capa vienen cerrados en la fuente: NO se reemplaza "
+                                            "su procedencia histórica (R5)",
+                "explicit_close_new": "lugar(es) que la capa NO tiene vienen cerrados en la fuente: NO se crean"}
+            for clave in _AVISAN:
+                ids = avisos.get(clave) or []
+                if ids:
+                    r.alertas.append(f"{len(ids)} {textos[clave]} [{clave}]. GERS: " + _gers(ids))
+            if no_representables_en_capa:
+                r.alertas.append(
+                    f"la fuente afirma un estado para {len(no_representables_en_capa)} POI(s) de la capa que implicaría "
+                    f"una transición, pero la regla {LECTOR_OVERTURE_TAXONOMIA} no acepta esa observación: NO se tocan "
+                    f"[explicit_status_not_representable]. GERS: " + _gers(no_representables_en_capa))
+    except GuardaTaxonomia as exc:  # R3 · la guarda invalidó Overture ANTES de escribir o cerrar: nada se tocó
+        r.estado, r.fase, r.clase = FUENTE_ROTA, "validacion", exc.clase
+        r.error = f"{exc.clase}: {exc}"[:300]
+        r.escritas = r.cerradas = 0
+        print(f"   ❌ {r.fuente}: {r.error} → NO se escribe ni se cierra nada de Overture")
+        registrar_fallo(eng, r, ident)
     except Exception as exc:  # noqa: BLE001 — rollback de ESTA fuente; la otra no se toca
         # Solo la clase: el texto de un error de la base arrastra SQL, parámetros o el host.
         r.estado, r.fase, r.error, r.clase = FUENTE_ROTA, "escritura", type(exc).__name__, type(exc).__name__
@@ -1197,8 +1695,18 @@ def _salir(fuentes: list[ResultadoFuente]):
         print("   " + f.linea())
     for f in fuentes:
         print(f"   corrida {f.fuente}: {f.run_id} · manifiesto {f.manifiesto or 'no intentado'}")
+    for f in fuentes:
+        if f.observacion is not None:   # R3: lo que el lector vio y NO ingirió (sin migración: log + estado + aviso)
+            print(f"   observación {f.fuente} ({f.lector}): " + json.dumps(f.observacion, ensure_ascii=False))
+    alertas = [f"{f.fuente}: {a}" for f in fuentes for a in f.alertas]
+    for a in alertas:
+        print(f"   ⚠️ AVISO {a}")
     print(f"   RESULTADO: {resultado} · código {codigo}")
     _guarda_estado(fuentes, resultado, codigo)
+    if alertas and codigo != 1:   # con 1 ya sale el aviso de fuente rota, que las incluye
+        avisar_ops(f"[Contexto] Refresco de POIs · AVISO DE TAXONOMÍA Y ESTADO · {CIUDAD}",
+                   "El refresco terminó sin fuente rota, pero la fuente trae algo que la regla NO aplicó (no se "
+                   "ingirió, o no se cambió el estado de la fila):\n\n" + "\n".join(alertas))
     if codigo == 0:
         print("\n✅ Refresco completo — las dos fuentes respondieron.")
     elif codigo == 2:
@@ -1209,7 +1717,8 @@ def _salir(fuentes: list[ResultadoFuente]):
         avisar_ops(f"[Contexto] Refresco de POIs {resultado} · {CIUDAD}",
                    "El refresco de pois_propios terminó con al menos una fuente rota.\n"
                    "Una fuente rota NO escribe ni cierra nada; la otra pudo refrescarse.\n\n"
-                   + "\n".join(f.linea() for f in fuentes))
+                   + "\n".join(f.linea() for f in fuentes)
+                   + ("\n\nAvisos:\n" + "\n".join(alertas) if alertas else ""))
     sys.exit(codigo)
 
 

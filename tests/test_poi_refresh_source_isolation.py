@@ -17,6 +17,15 @@ siguen midiendo el aislamiento de #189 con el contrato nuevo: el banco PostGIS a
 mínimo de la 040 (RLS + `security_invoker`) y la 043 REAL; las filas de prueba llevan la procedencia que ya
 entregan los lectores reales; y una fuente que falla deja su corrida fallida en la base (antes: «no abre la
 base»). La matriz propia de R4 vive en `tests/test_poi_source_provenance_writer.py`.
+
+R3 · OVERTURE TAXONOMY V1 (2026-10-02): el lector VIGENTE de Overture es `pull_overture_taxonomia`
+(`overture_places_taxonomy_v1`); el de `categories.primary` (`pull_overture`) queda intacto y ya no se ejecuta. Las
+pruebas de orquestación inyectan el lector vigente y sus filas (`_ov`, con `taxonomy.primary`); la falla REAL de
+Overture es ahora un esquema que el lector no conoce (un release sin `taxonomy`). Y, por D-R3-2, Overture ya NO
+cierra por ausencia: solo con un cierre EXPLÍCITO de la fuente (`operating_status` = `permanently_closed` o
+`temporarily_closed`, el contrato oficial; `closed` no existe). OSM no cambia. El aislamiento entre fuentes se mide
+exactamente igual. Las matrices propias de R3 viven en `tests/test_r3_overture_taxonomy.py` y
+`tests/test_r3_operating_status.py`.
 """
 from __future__ import annotations
 
@@ -86,6 +95,10 @@ class _Conexion:
         if s.startswith("UPDATE pois_propios SET operativo = false"):
             fuente = "overture" if "fuente = 'overture'" in s else "osm"
             return _R(rowcount=self.motor.cierres.get(fuente, 0))
+        if "AS cobertura_previa" in s:          # R3: la cobertura previa por categoría de Overture
+            return _R(filas=list(self.motor.cobertura.items()))
+        if "AS operativo_en_capa" in s:         # R3 · OPERATING STATUS: estado previo (operativo, categoria) por GERS
+            return _R(filas=[(i, *self.motor.capa[i]) for i in params["ids"] if i in self.motor.capa])
         if "GROUP BY 1" in s:
             return _R(filas=[])
         if s.startswith("SELECT count(*)"):
@@ -94,8 +107,10 @@ class _Conexion:
 
 
 class MotorFalso:
-    def __init__(self, previos=None, cierres=None, falla_en=None):
+    def __init__(self, previos=None, cierres=None, falla_en=None, cobertura=None, capa=None):
         self.previos, self.cierres, self.falla_en = previos or {}, cierres or {}, falla_en
+        # capa: GERS de Overture que YA están en `pois_propios` → (operativo, categoria). Lo que no está, es nuevo.
+        self.cobertura, self.capa = cobertura or {}, dict(capa or {})
         self.transacciones: list[dict] = []
         self.creado = False
         self.dispuesto = False
@@ -129,15 +144,17 @@ class MotorFalso:
 
 
 UPSERT_OV, UPSERT_OSM = "ON CONFLICT (overture_id)", "ON CONFLICT (osm_id)"
-CIERRA_OV, CIERRA_OSM = "fuente = 'overture'", "fuente = 'osm'"
+# R3: el fragmento es el del UPDATE de cierre (la consulta de cobertura, de solo lectura, también nombra la fuente)
+CIERRA_OV, CIERRA_OSM = "AND operativo AND fuente = 'overture'", "AND operativo AND fuente = 'osm'"
 
 
 def _ov(m, oid, cat="salud", hoja="hospital"):
-    """Una fila de Overture como la entrega `pull_overture` (con su procedencia de `categories.primary`)."""
-    return m._normalizar({"nombre": f"Overture {oid}", "categoria": cat, "cat_leaf": hoja, "lon": -78.5,
+    """Una fila de Overture como la entrega el lector VIGENTE (R3, `pull_overture_taxonomia`): `taxonomy.primary` en
+    su espacio y la columna legada `categoria_overture` (:cat_leaf) NULL, como exige I4 de la 043."""
+    return m._normalizar({"nombre": f"Overture {oid}", "categoria": cat, "cat_leaf": None, "lon": -78.5,
                           "lat": -0.2, "confidence": 0.9, "overture_id": oid, "osm_id": None, "marca": None,
                           "direccion": None, "operativo": True, "fuente": "overture",
-                          "source_category": hoja, "source_category_namespace": m.NS_OVERTURE,
+                          "source_category": hoja, "source_category_namespace": m.NS_OVERTURE_TAXONOMIA,
                           "source_record_version": "7",
                           "source_updated_at": None,          # R1: R4 no interpreta update_time (va en el linaje)
                           "source_lineage": json.dumps(SOURCES_PRUEBA, ensure_ascii=False)})
@@ -150,6 +167,21 @@ def _osm(m, oid, cat="transporte", sub="parada_bus"):
                           "confidence": None, "overture_id": None, "osm_id": oid, "marca": None, "direccion": None,
                           "operativo": True, "fuente": "osm", "source_category": valor,
                           "source_category_namespace": f"osm:{clave}"})
+
+
+def _inyecta_lector(monkeypatch, m, lector):
+    """Inyecta un lector de Overture de PRUEBA. OPERATING STATUS: el escritor exige la clase de estado de cada GERS
+    aceptado (`ULTIMA_OVERTURE["estados"]`, la deja el lector real). Las filas inyectadas se DECLARAN aquí: presencia
+    con estado NULL (UNKNOWN_STATUS, el caso dominante real: 71 650 de 71 655 en Quito) si `operativo` es true; cierre
+    explícito permanente si es false. Lo que el lector lance (caída, esquema) pasa tal cual."""
+    def _envuelto():
+        filas = lector()
+        if isinstance(filas, list):
+            m.ULTIMA_OVERTURE["estados"] = {
+                f["overture_id"]: (m.SIN_SENAL if f.get("operativo", True) else m.CERRADO_PERMANENTE)
+                for f in filas if isinstance(f, dict) and f.get("overture_id")}
+        return filas
+    monkeypatch.setattr(m, "pull_overture_taxonomia", _envuelto)
 
 
 def _sin_corrida(filas):
@@ -177,6 +209,9 @@ def foso(monkeypatch, tmp_path):
     # prueba aparte, `m._huella_real`, contra parquets locales).
     m._huella_real = m.huella_esquema_overture
     monkeypatch.setattr(m, "huella_esquema_overture", lambda glob: HUELLA_PRUEBA)
+    # R3: ninguna prueba toca la red. Si una prueba no inyecta su lector ni su parquet, el lector REAL de Overture
+    # lee un archivo local que no existe y falla al instante (IOException), en vez de ir al S3 de Overture.
+    monkeypatch.setattr(m, "overture_glob", lambda rel: (tmp_path / f"sin_red_{rel}.parquet").as_posix())
     return m
 
 
@@ -258,6 +293,70 @@ def _parquet(duckdb, ruta: pathlib.Path, con_categories: bool) -> str:
     return p
 
 
+# ══ R3 · parquets con la estructura REAL de 2026-09-23.x y RUTAS REALES de la taxonomía ═════════════
+# (id, nombre, taxonomy.primary, taxonomy.hierarchy ' > ', confidence, lon, lat, operating_status, version)
+FUERA_BBOX = (-70.0, 10.0)        # existe en el release, no en Quito: para la comprobación de existencia global
+BASE_R3 = [
+    ("ov-h1", "Hospital Uno", "hospital", "health_care > hospital", 0.91, -78.50, -0.20, None, 9),
+    ("ov-ocf", "Centro Médico", "outpatient_care_facility", "health_care > outpatient_care_facility", 0.80, -78.48, -0.18, None, 2),
+    ("ov-ph", "Farmacia", "pharmacy", "shopping > specialty_store > pharmacy_and_drug_store > pharmacy", 0.70, -78.49, -0.21, "open", 3),
+    ("ov-gr", "Tienda", "grocery_store", "shopping > food_and_beverage_store > grocery_store", 0.75, -78.47, -0.22, None, 1),
+    ("ov-sc", "Escuela", "school", "education > place_of_learning > school", 0.80, -78.46, -0.23, None, 1),
+    ("ov-cu", "Universidad", "college_university", "education > place_of_learning > college_university", 0.80, -78.45, -0.24, None, 1),
+    ("ov-pre", "Jardín", "preschool", "education > place_of_learning > school > preschool", 0.80, -78.44, -0.25, None, 1),
+    ("ov-pk", "Parque", "park", "sports_and_recreation > park", 0.85, -78.43, -0.26, None, 1),
+    ("ov-pg", "Juegos", "playground", "sports_and_recreation > park > playground", 0.90, -78.42, -0.27, None, 1),
+    ("ov-sm", "Centro Dos", "shopping_mall", "shopping > shopping_mall", 0.95, -78.41, -0.28, None, 4),
+    ("ov-ds", "Almacén", "department_store", "shopping > department_store", 0.90, -78.42, -0.29, None, 1),
+    ("far-ucc", "Urgencias lejos", "urgent_care_clinic",
+     "health_care > emergency_or_urgent_care_facility > urgent_care_clinic", 0.90, *FUERA_BBOX, None, 1),
+    ("far-dr", "Droguería lejos", "drugstore",
+     "shopping > specialty_store > pharmacy_and_drug_store > drugstore", 0.90, *FUERA_BBOX, None, 1),
+    # lo que la regla NO ingiere (cada clase de la observación)
+    ("ov-low", "Hospital dudoso", "hospital", "health_care > hospital", 0.50, -78.50, -0.20, None, 1),
+    ("ov-lowpk", "Parque dudoso", "park", "sports_and_recreation > park", 0.60, -78.43, -0.26, None, 1),
+    ("ov-dent", "Dental", "dental_clinic", "health_care > outpatient_care_facility > dental_clinic", 0.90, -78.48, -0.18, None, 1),
+    ("ov-hc", "Salud genérica", "health_care", "health_care", 0.90, -78.48, -0.18, None, 1),
+    ("ov-rest", "Restaurante", "restaurant", "food_and_drink > restaurant", 0.90, -78.48, -0.18, None, 1),
+    ("ov-null", "Sin taxonomía", None, None, 0.90, -78.48, -0.18, None, 1),
+]
+
+
+def _parquet_r3(duckdb, ruta: pathlib.Path, filas=BASE_R3, sin_taxonomy: bool = False,
+                taxonomy_tipo: str | None = None) -> str:
+    """Un places con los TIPOS REALES de 2026-09-23.x (sin `categories`) y las filas dadas. `sin_taxonomy` y
+    `taxonomy_tipo` fabrican un esquema que el lector v1 NO conoce."""
+    p = ruta.as_posix()
+
+    def lit(v):
+        return "NULL" if v is None else ("'" + str(v).replace("'", "''") + "'" if isinstance(v, str) else repr(v))
+    valores = ",\n".join("(" + ", ".join(lit(v) for v in f) + ")" for f in filas)
+    if sin_taxonomy:
+        taxonomy = ""
+    elif taxonomy_tipo == "con_campo_nuevo":
+        taxonomy = ("CASE WHEN prim IS NULL THEN NULL ELSE {'primary': prim, 'hierarchy': string_split(jer, ' > '), "
+                    "'alternates': NULL::VARCHAR[], 'basic': prim} END AS taxonomy,")
+    else:
+        taxonomy = ("CASE WHEN prim IS NULL THEN NULL ELSE {'primary': prim, 'hierarchy': string_split(jer, ' > '), "
+                    "'alternates': NULL::VARCHAR[]} END AS taxonomy,")
+    fuente = ("{'property': '', 'dataset': 'meta', 'license': 'CDLA-Permissive-2.0', 'record_id': 'rec-' || id, "
+              "'update_time': '2026-09-14T00:00:00.000Z', 'confidence': conf::DOUBLE, 'between': NULL::DOUBLE[], "
+              "'provider': 'meta', 'resource': 'meta', 'version': '2026-09-14'}")
+    con = duckdb.connect()
+    con.execute("LOAD spatial;")
+    con.execute(f"""
+        COPY (
+          SELECT id::VARCHAR AS id, {{'primary': nombre}} AS names, {taxonomy}
+                 prim AS basic_category, conf::DOUBLE AS confidence, ST_Point(lon, lat) AS geometry,
+                 {{'xmin': lon::DOUBLE, 'xmax': lon::DOUBLE, 'ymin': lat::DOUBLE, 'ymax': lat::DOUBLE}} AS bbox,
+                 [{{'freeform': 'Calle sintética'}}] AS addresses, {{'names': {{'primary': NULL::VARCHAR}}}} AS brand,
+                 estado::VARCHAR AS operating_status, ver::INTEGER AS version, [{fuente}] AS sources
+          FROM (VALUES {valores}) t(id, nombre, prim, jer, conf, lon, lat, estado, ver)
+        ) TO '{p}' (FORMAT parquet)""")
+    con.close()
+    return p
+
+
 def test_pull_overture_real_reproduce_el_binder_de_2026_09_23(foso, duckdb_spatial, tmp_path, monkeypatch):
     """La regresión exacta de la corrida #7: el parser actual, SIN reparar, contra el esquema v2."""
     v2 = _parquet(duckdb_spatial, tmp_path / "v2.parquet", con_categories=False)
@@ -279,7 +378,7 @@ def test_pull_overture_real_sigue_leyendo_el_esquema_v1(foso, duckdb_spatial, tm
 # ══ A · las dos OK ═══════════════════════════════════════════════════════════════════════════════
 def test_A_las_dos_ok_cada_una_en_su_transaccion(foso, monkeypatch, tmp_path, capsys):
     ov, osm = [_ov(foso, "ov-a"), _ov(foso, "ov-b")], [_osm(foso, "node/1"), _osm(foso, "way/2", "parque", "park")]
-    monkeypatch.setattr(foso, "pull_overture", lambda: ov)
+    _inyecta_lector(monkeypatch, foso, lambda: ov)
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: osm)
     motor = _motor(monkeypatch, foso, previos={"overture": 2, "osm": 2}, cierres={"overture": 1, "osm": 0})
     assert _corre(foso) == 0
@@ -287,7 +386,8 @@ def test_A_las_dos_ok_cada_una_en_su_transaccion(foso, monkeypatch, tmp_path, ca
     assert t_ov is not t_osm, "cada fuente escribe en SU transacción"
     assert t_ov["resultado"] == t_osm["resultado"] == "commit"
     assert [s for s, _ in t_ov["sentencias"] if CIERRA_OSM in s or UPSERT_OSM in s] == []
-    assert len(motor.ejecutadas(CIERRA_OV)) == len(motor.ejecutadas(CIERRA_OSM)) == 1
+    # R3 (D-R3-2): sin cierre explícito de la fuente, Overture no cierra; OSM sigue cerrando por ausencia.
+    assert (len(motor.ejecutadas(CIERRA_OV)), len(motor.ejecutadas(CIERRA_OSM))) == (0, 1)
     e = _estado(tmp_path)
     assert e["codigo"] == 0 and e["resultado"] == "COMPLETO · OVERTURE OK · OSM OK"
     assert _fuentes(e)["overture"]["release"] == "2026-09-23.1"
@@ -296,9 +396,11 @@ def test_A_las_dos_ok_cada_una_en_su_transaccion(foso, monkeypatch, tmp_path, ca
 
 
 # ══ B · el caso central: Overture con el BinderException REAL, OSM OK ════════════════════════════
-def test_B_binder_real_de_overture_no_impide_refrescar_osm(foso, duckdb_spatial, monkeypatch, tmp_path, capsys):
-    v2 = _parquet(duckdb_spatial, tmp_path / "v2.parquet", con_categories=False)
-    monkeypatch.setattr(foso, "overture_glob", lambda rel: v2)       # pull_overture REAL, sin reparar
+def test_B_fallo_real_de_overture_no_impide_refrescar_osm(foso, duckdb_spatial, monkeypatch, tmp_path, capsys):
+    """El caso central de #189 con el lector VIGENTE. Desde R3 el esquema v2 se lee (el Binder de `categories` era
+    del lector viejo); el fallo REAL del lector es ahora un esquema que no conoce: un release sin `taxonomy`."""
+    roto = _parquet_r3(duckdb_spatial, tmp_path / "sin_taxonomy.parquet", sin_taxonomy=True)
+    monkeypatch.setattr(foso, "overture_glob", lambda rel: roto)      # pull_overture_taxonomia REAL
     osm = [_osm(foso, "node/1"), _osm(foso, "node/2"), _osm(foso, "way/3", "parque", "park")]
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: osm)
     motor = _motor(monkeypatch, foso, previos={"osm": 4}, cierres={"osm": 1})
@@ -312,11 +414,11 @@ def test_B_binder_real_de_overture_no_impide_refrescar_osm(foso, duckdb_spatial,
     assert res == "commit" and cierre["ids"] == ["node/1", "node/2", "way/3"]
     f = _fuentes(_estado(tmp_path))
     assert f["overture"]["estado"] == "rota" and f["overture"]["fase"] == "obtencion"
-    assert "BinderException" in f["overture"]["error"] and BINDER in f["overture"]["error"]
+    assert "taxonomy=AUSENTE" in f["overture"]["error"]
     assert f["overture"]["escritas"] == f["overture"]["cerradas"] == 0 and f["overture"]["obtenidas"] is None
     assert (f["osm"]["estado"], f["osm"]["escritas"], f["osm"]["cerradas"]) == ("ok", 3, 1)
     [(asunto, detalle)] = foso.avisos
-    assert "DEGRADADO · OVERTURE ROTA · OSM OK" in asunto and "BinderException" in detalle
+    assert "DEGRADADO · OVERTURE ROTA · OSM OK" in asunto and "taxonomy=AUSENTE" in detalle
     salida = capsys.readouterr().out
     assert "RESULTADO: DEGRADADO · OVERTURE ROTA · OSM OK · código 1" in salida
 
@@ -330,7 +432,7 @@ def test_C_overture_sin_red_es_caida_y_osm_se_escribe(foso, monkeypatch, tmp_pat
         if excepcion == "requests":
             raise requests.ConnectionError("Max retries exceeded")
         raise foso.duckdb.HTTPException("HTTP Error: 503 Service Unavailable")
-    monkeypatch.setattr(foso, "pull_overture", _caida)
+    _inyecta_lector(monkeypatch, foso, _caida)
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: [_osm(foso, "node/1")])
     motor = _motor(monkeypatch, foso, previos={"osm": 1})
     assert _corre(foso) == 2                                          # reintentable
@@ -343,7 +445,7 @@ def test_C_overture_sin_red_es_caida_y_osm_se_escribe(foso, monkeypatch, tmp_pat
 
 # ══ D · Overture OK, OSM sin red ═════════════════════════════════════════════════════════════════
 def test_D_osm_sin_red_no_escribe_ni_cierra_y_overture_si(foso, monkeypatch, tmp_path):
-    monkeypatch.setattr(foso, "pull_overture", lambda: [_ov(foso, "ov-a")])
+    _inyecta_lector(monkeypatch, foso, lambda: [_ov(foso, "ov-a")])
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: None)   # contrato: None = ningún endpoint
     motor = _motor(monkeypatch, foso, previos={"overture": 1}, cierres={"overture": 0})
     assert _corre(foso) == 2
@@ -367,7 +469,7 @@ def _solo_corridas(motor):
 def test_E_las_dos_fallan_no_escriben_y_no_dice_refrescada(foso, monkeypatch, tmp_path, capsys):
     def _rota():
         raise foso.duckdb.BinderException(f"Binder Error: {BINDER}!")
-    monkeypatch.setattr(foso, "pull_overture", _rota)
+    _inyecta_lector(monkeypatch, foso, _rota)
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: None)
     motor = _motor(monkeypatch, foso)
     assert _corre(foso) == 1
@@ -386,7 +488,7 @@ def test_E2_las_dos_caidas_es_reintentable_y_tampoco_escriben(foso, monkeypatch,
 
     def _sin_red():
         raise requests.Timeout("timeout")
-    monkeypatch.setattr(foso, "pull_overture", _sin_red)
+    _inyecta_lector(monkeypatch, foso, _sin_red)
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: None)
     motor = _motor(monkeypatch, foso)
     assert _corre(foso) == 2 and foso.avisos == []
@@ -406,7 +508,7 @@ def test_F_overture_invalido_no_escribe_nada_de_overture_y_osm_si(foso, monkeypa
         filas[1]["lat"] = float("nan")
     else:
         filas = {"no": "lista"}
-    monkeypatch.setattr(foso, "pull_overture", lambda: filas)
+    _inyecta_lector(monkeypatch, foso, lambda: filas)
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: [_osm(foso, "node/1")])
     motor = _motor(monkeypatch, foso, previos={"osm": 1})
     assert _corre(foso) == 1
@@ -426,7 +528,7 @@ def test_G_osm_invalido_no_escribe_nada_de_osm_y_overture_si(foso, monkeypatch, 
         filas[0]["categoria"] = "salud"
     else:
         filas[0]["fuente"] = "overture"
-    monkeypatch.setattr(foso, "pull_overture", lambda: [_ov(foso, "ov-a")])
+    _inyecta_lector(monkeypatch, foso, lambda: [_ov(foso, "ov-a")])
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: filas)
     motor = _motor(monkeypatch, foso, previos={"overture": 1})
     assert _corre(foso) == 1
@@ -440,7 +542,7 @@ def test_G_osm_invalido_no_escribe_nada_de_osm_y_overture_si(foso, monkeypatch, 
 
 # ══ H / I · solo una fuente obtenida y validada cierra, y con sus guardas ═════════════════════════
 def test_H_una_fuente_fallida_no_cierra_aunque_tenga_muchos_previos(foso, monkeypatch):
-    monkeypatch.setattr(foso, "pull_overture", lambda: (_ for _ in ()).throw(
+    _inyecta_lector(monkeypatch, foso, lambda: (_ for _ in ()).throw(
         foso.duckdb.BinderException(f"Binder Error: {BINDER}!")))
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: [_osm(foso, "node/1")])
     motor = _motor(monkeypatch, foso, previos={"overture": 2753, "osm": 1})
@@ -451,7 +553,7 @@ def test_H_una_fuente_fallida_no_cierra_aunque_tenga_muchos_previos(foso, monkey
 
 @pytest.mark.parametrize("previos,cierra", [(2, True), (4, True), (5, False), (9061, False)])
 def test_I_la_fuente_sana_cierra_solo_si_pasa_la_guarda_de_caida(foso, monkeypatch, capsys, previos, cierra):
-    monkeypatch.setattr(foso, "pull_overture", lambda: [_ov(foso, "ov-a")])
+    _inyecta_lector(monkeypatch, foso, lambda: [_ov(foso, "ov-a")])
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: [_osm(foso, "node/1"), _osm(foso, "node/2")])
     motor = _motor(monkeypatch, foso, previos={"overture": 1, "osm": previos})
     assert _corre(foso) == 0
@@ -462,7 +564,7 @@ def test_I_la_fuente_sana_cierra_solo_si_pasa_la_guarda_de_caida(foso, monkeypat
 
 # ══ J / K · un fallo DE ESCRITURA revierte solo su fuente ════════════════════════════════════════
 def test_J_falla_el_upsert_de_overture_y_osm_igual_confirma(foso, monkeypatch, tmp_path):
-    monkeypatch.setattr(foso, "pull_overture", lambda: [_ov(foso, "ov-a")])
+    _inyecta_lector(monkeypatch, foso, lambda: [_ov(foso, "ov-a")])
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: [_osm(foso, "node/1")])
     motor = _motor(monkeypatch, foso, previos={"osm": 1}, falla_en=UPSERT_OV)
     assert _corre(foso) == 1
@@ -475,7 +577,7 @@ def test_J_falla_el_upsert_de_overture_y_osm_igual_confirma(foso, monkeypatch, t
 
 
 def test_K_falla_el_upsert_de_osm_y_overture_queda_confirmada(foso, monkeypatch, tmp_path):
-    monkeypatch.setattr(foso, "pull_overture", lambda: [_ov(foso, "ov-a")])
+    _inyecta_lector(monkeypatch, foso, lambda: [_ov(foso, "ov-a")])
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: [_osm(foso, "node/1")])
     motor = _motor(monkeypatch, foso, previos={"overture": 1}, falla_en=UPSERT_OSM)
     assert _corre(foso) == 1
@@ -487,7 +589,7 @@ def test_K_falla_el_upsert_de_osm_y_overture_queda_confirmada(foso, monkeypatch,
 
 
 def test_K2_falla_el_ddl_y_ninguna_fuente_escribe(foso, monkeypatch, tmp_path):
-    monkeypatch.setattr(foso, "pull_overture", lambda: [_ov(foso, "ov-a")])
+    _inyecta_lector(monkeypatch, foso, lambda: [_ov(foso, "ov-a")])
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: [_osm(foso, "node/1")])
     motor = _motor(monkeypatch, foso, falla_en="CREATE TABLE IF NOT EXISTS pois_propios")
     assert _corre(foso) == 1
@@ -498,19 +600,20 @@ def test_K2_falla_el_ddl_y_ninguna_fuente_escribe(foso, monkeypatch, tmp_path):
 # ══ L · camino feliz: mismas sentencias, mismos datos, mismas guardas que antes ═══════════════════
 def test_L_camino_feliz_ejecuta_exactamente_lo_mismo_que_antes(foso, monkeypatch, capsys):
     ov, osm = [_ov(foso, "ov-a"), _ov(foso, "ov-b")], [_osm(foso, "node/1"), _osm(foso, "way/2", "parque", "park")]
-    monkeypatch.setattr(foso, "pull_overture", lambda: ov)
+    _inyecta_lector(monkeypatch, foso, lambda: ov)
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: osm)
     motor = _motor(monkeypatch, foso, previos={"overture": 3, "osm": 2}, cierres={"overture": 1, "osm": 0})
     assert _corre(foso) == 0
     negocio = [(s, _sin_corrida(p) if isinstance(p, list) else p) for t in motor.transacciones
                for s, p in t["sentencias"] if s.startswith(("INSERT INTO pois_propios", "UPDATE pois_propios"))]
+    # R3 (D-R3-2): Overture ya NO cierra por ausencia: sin un cierre EXPLÍCITO de la fuente no hay UPDATE de cierre de
+    # Overture. OSM, idéntico a antes.
     esperado = [(" ".join(str(foso.UPSERT_OVERTURE).split()), ov),
-                (" ".join(str(foso.CERRAR_OVERTURE).split()), {"ciudad": "quito", "ids": ["ov-a", "ov-b"]}),
                 (" ".join(str(foso.UPSERT_OSM).split()), osm),
                 (" ".join(str(foso.CERRAR_OSM).split()), {"ciudad": "quito", "ids": ["node/1", "way/2"]})]
     assert negocio == esperado
     salida = capsys.readouterr().out
-    assert "upsert: 2 Overture + 2 OSM · marcados cerrados: 1" in salida
+    assert "upsert: 2 Overture + 2 OSM · marcados cerrados: 0" in salida
     assert motor.kw.get("connect_args") == {} and motor.url == URL_FALSA       # misma política TLS (loopback)
 
 
@@ -576,7 +679,7 @@ def test_M_solo_avisar_por_la_linea_de_comandos_real(tmp_path):
 def test_N_el_aviso_dice_que_fuente_se_rompio(foso, monkeypatch, tmp_path, capsys, rompe, esperado):
     def _rota():
         raise foso.duckdb.BinderException(f"Binder Error: {BINDER}!")
-    monkeypatch.setattr(foso, "pull_overture", _rota if rompe in ("overture", "las_dos") else lambda: [_ov(foso, "ov-a")])
+    _inyecta_lector(monkeypatch, foso, _rota if rompe in ("overture", "las_dos") else lambda: [_ov(foso, "ov-a")])
     monkeypatch.setattr(foso, "pull_osm_transporte",
                         (lambda: [{"roto": True}]) if rompe in ("osm", "las_dos") else (lambda: [_osm(foso, "node/1")]))
     motor = _motor(monkeypatch, foso, previos={"overture": 1, "osm": 1})
@@ -592,7 +695,7 @@ def test_N_el_aviso_dice_que_fuente_se_rompio(foso, monkeypatch, tmp_path, capsy
 
 
 def test_N_un_error_de_escritura_solo_deja_la_clase(foso, monkeypatch, tmp_path, capsys):
-    monkeypatch.setattr(foso, "pull_overture", lambda: [_ov(foso, "ov-a")])
+    _inyecta_lector(monkeypatch, foso, lambda: [_ov(foso, "ov-a")])
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: [_osm(foso, "node/1")])
     _motor(monkeypatch, foso, previos={"overture": 1}, falla_en=UPSERT_OSM)
     _corre(foso)
@@ -684,12 +787,12 @@ def _trigger_que_falla(esq, columna, valor):
 
 
 @pg
-def test_PG_B_overture_binder_real_osm_escribe_y_cierra_overture_intacta(foso, duckdb_spatial, esquema_pg,
-                                                                           monkeypatch, tmp_path):
+def test_PG_B_overture_rota_real_osm_escribe_y_cierra_overture_intacta(foso, duckdb_spatial, esquema_pg,
+                                                                         monkeypatch, tmp_path):
     antes = _foto(esquema_pg)
     monkeypatch.setattr(foso, "SYNC_URL", esquema_pg["url"])
-    v2 = _parquet(duckdb_spatial, tmp_path / "v2.parquet", con_categories=False)
-    monkeypatch.setattr(foso, "overture_glob", lambda rel: v2)
+    roto = _parquet_r3(duckdb_spatial, tmp_path / "sin_taxonomy.parquet", sin_taxonomy=True)   # R3: fallo REAL
+    monkeypatch.setattr(foso, "overture_glob", lambda rel: roto)
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: [
         {**_osm(foso, "node/1"), "nombre": "OSM refrescado 1"}, _osm(foso, "node/2"), _osm(foso, "node/4")])
     assert _corre(foso) == 1
@@ -708,7 +811,7 @@ def test_PG_J_un_fallo_a_mitad_del_upsert_de_overture_lo_revierte_entero_y_osm_c
     _trigger_que_falla(esquema_pg, "overture_id", "ov-boom")
     antes = _foto(esquema_pg)
     monkeypatch.setattr(foso, "SYNC_URL", esquema_pg["url"])
-    monkeypatch.setattr(foso, "pull_overture", lambda: [{**_ov(foso, "ov-a"), "nombre": "Overture NUEVO a"},
+    _inyecta_lector(monkeypatch, foso, lambda: [{**_ov(foso, "ov-a"), "nombre": "Overture NUEVO a"},
                                                          _ov(foso, "ov-boom")])
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: [_osm(foso, "node/1"), _osm(foso, "node/2"),
                                                               _osm(foso, "node/3")])
@@ -724,7 +827,7 @@ def test_PG_K_un_fallo_a_mitad_del_upsert_de_osm_no_toca_overture_ya_confirmada(
     _trigger_que_falla(esquema_pg, "osm_id", "node/666")
     antes = _foto(esquema_pg)
     monkeypatch.setattr(foso, "SYNC_URL", esquema_pg["url"])
-    monkeypatch.setattr(foso, "pull_overture", lambda: [{**_ov(foso, "ov-a"), "nombre": "Overture NUEVO a"},
+    _inyecta_lector(monkeypatch, foso, lambda: [{**_ov(foso, "ov-a"), "nombre": "Overture NUEVO a"},
                                                          _ov(foso, "ov-b")])
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: [{**_osm(foso, "node/1"), "nombre": "OSM NUEVO 1"},
                                                               _osm(foso, "node/666")])
@@ -753,9 +856,10 @@ def test_PG_L_camino_feliz_deja_la_tabla_igual_que_el_script_anterior(foso, esqu
     viejo = _carga(ruta, "foso_anterior")
     ov = [{**_ov(foso, "ov-a"), "nombre": "Overture NUEVO a"}, _ov(foso, "ov-c")]
     osm = [_osm(foso, "node/1"), _osm(foso, "node/2"), _osm(foso, "way/9", "parque", "park")]
+    siembra = _foto(esquema_pg)
     # el NUEVO sobre este esquema…
     monkeypatch.setattr(foso, "SYNC_URL", esquema_pg["url"])
-    monkeypatch.setattr(foso, "pull_overture", lambda: ov)
+    _inyecta_lector(monkeypatch, foso, lambda: ov)
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: osm)
     assert _corre(foso) == 0
     nuevo = _foto(esquema_pg)
@@ -771,5 +875,8 @@ def test_PG_L_camino_feliz_deja_la_tabla_igual_que_el_script_anterior(foso, esqu
         anterior = _foto(gemelo)
     finally:
         _borra(gemelo["conninfo"], gemelo["esquema"])
-    assert nuevo == anterior, "con las dos fuentes sanas, la tabla queda EXACTAMENTE como con el script anterior"
-    assert nuevo["node/3"]["operativo"] is False and nuevo["ov-b"]["operativo"] is False   # los dos cierran
+    # R3 (D-R3-2): la ÚNICA diferencia con el script anterior es la que manda el fundador. `ov-b` ya no vino de
+    # Overture: el anterior la cerraba por ausencia (afirmaba «cerrado» sin que la fuente lo dijera); R3 no la toca.
+    assert {k for k in nuevo if nuevo[k] != anterior.get(k)} == {"ov-b"}, "todo lo demás, EXACTAMENTE igual"
+    assert anterior["ov-b"]["operativo"] is False and nuevo["ov-b"] == siembra["ov-b"], "R3: ov-b intacta"
+    assert nuevo["node/3"]["operativo"] is False, "OSM sigue cerrando por ausencia (no cambia)"

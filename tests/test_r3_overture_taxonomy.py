@@ -4,9 +4,12 @@ Overture v2.0.0 (2026-09-23.x) eliminó `categories`; el lector de `categories.p
 OTRO lector, versionado: `taxonomy.primary` + la RUTA EXACTA aceptada → categoría de Contexto. Nunca subárbol, nunca
 nodo padre, nunca `basic_category`. Y separa lo que el lector viejo mezclaba (D-R3-2): lo que Contexto NO ingiere
 (fuera del mapa, bajo su umbral de confianza, taxonomía desconocida o ausente del resultado) ya NO se cierra.
-M0 FINAL: `operating_status = 'closed'` solo cambia una fila cuando ESA observación entra por la regla normal (el upsert
-la escribe cerrada, con su procedencia y su categoría actuales); un `closed` no aceptado se cuenta y se avisa, y la
-fila NO se toca: la procedencia vigente de toda fila sigue explicando su categoría vigente.
+M0 FINAL + OPERATING STATUS: un cierre EXPLÍCITO de la fuente (`permanently_closed` / `temporarily_closed`, el contrato
+oficial; `closed` NO existe) solo cambia una fila EXISTENTE cuando la regla acepta esa observación (mapa + ruta, con
+cualquier confianza): el upsert la escribe cerrada, con su procedencia y su categoría actuales; un cierre no aceptado se
+cuenta y se avisa, y la fila NO se toca: la procedencia vigente de toda fila sigue explicando su categoría vigente.
+La matriz completa de estado (NULL no reabre, un cierre no crea filas, enum inválido = ROTA) vive en
+`tests/test_r3_operating_status.py`.
 
 Matriz (RESULTADO_2026-10-02_R3_OVERTURE_TAXONOMY_V1_CODE_DATA_PREFLIGHT.md §16 + el mandato CODE+CI):
   F1 esquema v2 real · F2 deriva de esquema · F3 mapeos seguros · F4 reparentado · F5 renombre · F6 cambio semántico
@@ -112,15 +115,15 @@ def test_F4_reparentado_de_una_hoja_aceptada_es_deriva(foso, duckdb_spatial, mon
 def test_F4_deriva_con_confianza_bajo_el_piso_rompe_overture_sin_escribir_ni_cerrar(foso, duckdb_spatial, monkeypatch,
                                                                                     tmp_path, conf):
     """PATCH M0 · 1: hoja mapeada + ruta distinta + confianza < CONF_FLOOR (o NULL) → Overture ROTA (DerivaTaxonomia),
-    0 escrituras y 0 cierres, aunque el release traiga además un `closed` explícito. OSM sigue."""
+    0 escrituras y 0 cierres, aunque el release traiga además un cierre explícito. OSM sigue."""
     filas = _con(BASE_R3, _fila("ov-rep", "hospital", "health_care > medical_facility > hospital", conf=conf),
                  _fila("ov-cerrado", "pharmacy", "shopping > specialty_store > pharmacy_and_drug_store > pharmacy",
-                       estado="closed"))
+                       estado="permanently_closed"))
     _con_lector_real(foso, duckdb_spatial, monkeypatch, tmp_path, filas)
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: [_osm(foso, "node/1")])
     motor = _motor(monkeypatch, foso, previos={"osm": 1}, cierres={"overture": 5})
     assert _corre(foso) == 1
-    for fragmento in ("cobertura_previa", UPSERT_OV, CIERRE_OV):
+    for fragmento in ("cobertura_previa", "AS operativo_en_capa", UPSERT_OV, CIERRE_OV):
         assert motor.ejecutadas(fragmento) == [], fragmento
     o = _corridas(motor)["overture"][1]
     assert (o["status"], o["error_phase"], o["error_class"], o["rows_written"], o["rows_closed"]) == (
@@ -351,21 +354,21 @@ def test_F10_osm_rota_overture_se_escribe_sola(foso, duckdb_spatial, monkeypatch
                                          ({"centro_comercial": 2, "farmacia": 1}, True), ({"educacion": 4}, False)])
 def test_F13_C6_caida_de_cobertura_falla_antes_de_escribir_o_cerrar(foso, duckdb_spatial, monkeypatch, tmp_path,
                                                                      previa, pasa):
-    """10 %: salud 2 aceptadas → previa 2 pasa (2 ≥ 1,8), previa 3 no (2 < 2,7). C6: con un `closed` ACEPTADO en el
-    release (que cerraría por el upsert) y otro no representable, si la guarda falla no se escribe ni se cierra nada."""
-    filas = _con(BASE_R3, _fila("ov-cerrado", "restaurant", "food_and_drink > restaurant", estado="closed"),
+    """10 %: salud 2 aceptadas → previa 2 pasa (2 ≥ 1,8), previa 3 no (2 < 2,7). C6: con un cierre explícito ACEPTADO
+    en el release (que cerraría por el upsert) y otro no representable, si la guarda falla no se escribe ni se cierra."""
+    filas = _con(BASE_R3, _fila("ov-cerrado", "restaurant", "food_and_drink > restaurant", estado="permanently_closed"),
                  _fila("ov-cerrada-ok", "pharmacy", "shopping > specialty_store > pharmacy_and_drug_store > pharmacy",
-                       estado="closed"))
+                       estado="permanently_closed"))
     _con_lector_real(foso, duckdb_spatial, monkeypatch, tmp_path, filas)
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: [_osm(foso, "node/1")])
-    motor = _motor(monkeypatch, foso, previos={"osm": 1}, cobertura=previa, operativos={"ov-cerrada-ok"})
+    motor = _motor(monkeypatch, foso, previos={"osm": 1}, cobertura=previa, capa={"ov-cerrada-ok": (True, "farmacia")})
     codigo = _corre(foso)
     [t_ov] = [t for t in motor.transacciones if any("cobertura_previa" in s for s, _ in t["sentencias"])]
     if pasa:
         assert codigo == 0 and t_ov["resultado"] == "commit"
         sent = [s for s, _ in t_ov["sentencias"]]
         assert sent[0].startswith("SELECT categoria"), "la guarda va PRIMERO"
-        assert "AS operativo_en_capa" in sent[1] and UPSERT_OV in sent[2], "medir (solo lectura) → upsert → corrida"
+        assert "AS operativo_en_capa" in sent[1] and UPSERT_OV in sent[2], "estado previo (solo lectura) → upsert → corrida"
         assert len(motor.ejecutadas(UPSERT_OV)) == 1 and motor.ejecutadas(CIERRE_OV) == []
         assert _corridas(motor)["overture"][1]["rows_closed"] == 1, "la transición REAL de ov-cerrada-ok"
     else:
@@ -390,10 +393,12 @@ def test_C1_C4_lo_no_aceptado_no_cierra(foso, duckdb_spatial, monkeypatch, tmp_p
     filas = _con(BASE_R3, *([fila] if fila else []))
     _con_lector_real(foso, duckdb_spatial, monkeypatch, tmp_path, filas)
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: [_osm(foso, "node/1")])
-    motor = _motor(monkeypatch, foso, previos={"overture": 50, "osm": 1}, cierres={"overture": 7}, operativos={"ov-x"})
+    motor = _motor(monkeypatch, foso, previos={"overture": 50, "osm": 1}, cierres={"overture": 7},
+                   capa={"ov-x": (True, "salud")})
     assert _corre(foso) == 0
-    assert _cierres_ov(motor) == [], "sin `closed` aceptado de la fuente, Overture no cierra NADA"
-    assert motor.ejecutadas("AS operativo_en_capa") == [], "sin ningún `closed`, ni siquiera se mide"
+    assert _cierres_ov(motor) == [], "sin cierre explícito aceptado de la fuente, Overture no cierra NADA"
+    [(_, lectura, _)] = motor.ejecutadas("AS operativo_en_capa")
+    assert lectura.startswith("SELECT"), "el estado previo se LEE (una vez), nunca se escribe"
     [(_, _, escritas)] = motor.ejecutadas(UPSERT_OV)
     assert "ov-x" not in {f["overture_id"] for f in escritas}
     assert _corridas(motor)["overture"][1]["rows_closed"] == 0
@@ -401,47 +406,51 @@ def test_C1_C4_lo_no_aceptado_no_cierra(foso, duckdb_spatial, monkeypatch, tmp_p
 
 CERRADAS_C5 = [
     _fila("ov-cerrado-aceptado", "pharmacy", "shopping > specialty_store > pharmacy_and_drug_store > pharmacy",
-          estado="closed"),                                                                    # aceptada y en la capa
+          estado="permanently_closed"),                                                        # en la capa, activa
     _fila("ov-cerrado-nuevo", "pharmacy", "shopping > specialty_store > pharmacy_and_drug_store > pharmacy",
-          estado="closed"),                                                                    # aceptada, NO en la capa
-    _fila("ov-cerrado-bajo", "hospital", "health_care > hospital", conf=0.40, estado="closed"),  # bajo la confianza
+          estado="permanently_closed"),                                                        # NO está en la capa
+    _fila("ov-cerrado-bajo", "hospital", "health_care > hospital", conf=0.40,
+          estado="temporarily_closed"),                                                        # bajo la confianza
     _fila("ov-cerrado-sinmapa", "dental_clinic", "health_care > outpatient_care_facility > dental_clinic",
-          estado="closed"),                                                                    # taxonomía sin regla
-    _fila("ov-cerrado-sintax", None, None, estado="closed"),                                    # taxonomía NULL
-    _fila("ov-cerrado-otro", "restaurant", "food_and_drink > restaurant", estado="closed")]     # fuera, NO en la capa
+          estado="permanently_closed"),                                                        # taxonomía sin regla
+    _fila("ov-cerrado-sintax", None, None, estado="permanently_closed"),                        # taxonomía NULL
+    _fila("ov-cerrado-otro", "restaurant", "food_and_drink > restaurant", estado="permanently_closed")]  # fuera, NO en la capa
 
 
-def test_C5_M0_closed_solo_cambia_la_fila_por_la_regla_normal(foso, duckdb_spatial, monkeypatch, tmp_path):
-    """M0 FINAL: `closed` ACEPTADO → el upsert normal (operativo=false, procedencia y categoría actuales); `closed` NO
-    aceptado → se observa, se cuenta y se AVISA si la fila está activa en la capa, pero NO se emite ninguna escritura
-    sobre ella. `rows_closed` = transiciones REALES abierta → cerrada (no las filas nuevas ya cerradas)."""
+def test_C5_M0_un_cierre_explicito_solo_cambia_la_fila_por_la_regla_normal(foso, duckdb_spatial, monkeypatch, tmp_path):
+    """M0 FINAL + OPERATING STATUS: cierre explícito ACEPTADO (mapa + ruta, CUALQUIER confianza) sobre una fila EXISTENTE
+    → el upsert normal (operativo=false, procedencia y categoría actuales); sobre un GERS que NO está → no se crea
+    (D-OS-4); NO aceptado → se observa, se cuenta y se AVISA si la fila está activa, sin ninguna escritura sobre ella.
+    `rows_closed` = transiciones REALES abierta → cerrada."""
     _con_lector_real(foso, duckdb_spatial, monkeypatch, tmp_path, _con(BASE_R3, *CERRADAS_C5))
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: [_osm(foso, "node/1")])
-    capa = {"ov-cerrado-aceptado", "ov-cerrado-bajo", "ov-cerrado-sinmapa", "ov-cerrado-sintax"}
-    motor = _motor(monkeypatch, foso, previos={"osm": 1}, operativos=capa, cierres={"overture": 99})
+    capa = {"ov-cerrado-aceptado": (True, "farmacia"), "ov-cerrado-bajo": (True, "salud"),
+            "ov-cerrado-sinmapa": (True, "salud"), "ov-cerrado-sintax": (True, "educacion")}
+    motor = _motor(monkeypatch, foso, previos={"osm": 1}, capa=capa, cierres={"overture": 99})
     assert _corre(foso) == 0
     [(_, _, escritas)] = motor.ejecutadas(UPSERT_OV)
     run = _corridas(motor)["overture"][1]
     por_id = {f["overture_id"]: f for f in escritas}
-    for oid in ("ov-cerrado-aceptado", "ov-cerrado-nuevo"):
+    for oid, hoja, cat in (("ov-cerrado-aceptado", "pharmacy", "farmacia"), ("ov-cerrado-bajo", "hospital", "salud")):
         f = por_id[oid]
         assert (f["operativo"], f["ingestion_run_id"], f["source_category"], f["source_category_namespace"],
-                f["categoria"]) == (False, run["id"], "pharmacy", "overture:taxonomy.primary", "farmacia"), oid
+                f["categoria"]) == (False, run["id"], hoja, "overture:taxonomy.primary", cat), oid
         assert foso.categoria_de_la_regla(run["reader_contract"], f["source_category_namespace"],
                                           f["source_category"]) == f["categoria"], "procedencia → regla → categoría"
-    no_aceptadas = {"ov-cerrado-bajo", "ov-cerrado-sinmapa", "ov-cerrado-sintax", "ov-cerrado-otro"}
+    assert "ov-cerrado-nuevo" not in por_id, "D-OS-4: un cierre no crea la fila"
+    no_aceptadas = {"ov-cerrado-sinmapa", "ov-cerrado-sintax", "ov-cerrado-otro"}
     assert not (no_aceptadas & set(por_id)), "lo no aceptado no entra al upsert"
     escrituras_ov = [s for t in motor.transacciones for s, _ in t["sentencias"]
                      if s.startswith(("UPDATE pois_propios", "DELETE")) and "overture" in s]
     assert escrituras_ov == [] and motor.ejecutadas(CIERRE_OV) == [], "Overture no tiene ninguna otra escritura"
-    assert run["rows_closed"] == 1, "solo ov-cerrado-aceptado pasa de abierta a cerrada (ov-cerrado-nuevo ya nace cerrada)"
+    assert run["rows_closed"] == 2 and run["rows_written"] == len(ACEPTADAS_BASE) + 2
     o = _fuentes(_estado(tmp_path))["overture"]["observacion"]
-    assert o["cerrados_aceptados"] == 2
-    assert o["cerrados_no_representables"] == {"bajo_confianza": 1, "descendiente": 1, "sin_taxonomia": 1,
-                                               "fuera_del_mapa": 1}
-    assert o["cerrados_no_representables_en_capa"] == ["ov-cerrado-bajo", "ov-cerrado-sinmapa", "ov-cerrado-sintax"]
+    assert o["cerrados_aceptados"] == {"PERMANENTLY_CLOSED": 2, "TEMPORARILY_CLOSED": 1}
+    assert o["cerrados_no_representables"] == {"descendiente": 1, "sin_taxonomia": 1, "fuera_del_mapa": 1}
+    assert o["cerrados_no_representables_en_capa"] == ["ov-cerrado-sinmapa", "ov-cerrado-sintax"]
+    assert o["matriz"] == {"insertadas": len(ACEPTADAS_BASE), "cerradas": 2, "cerradas_nuevas_omitidas": 1}
     [(asunto, detalle)] = foso.avisos
-    assert "AVISO DE TAXONOMÍA" in asunto and "3 POI(s) ACTIVOS de la capa" in detalle and "ov-cerrado-otro" not in detalle
+    assert "AVISO DE TAXONOMÍA" in asunto and "2 POI(s) ACTIVOS de la capa" in detalle and "ov-cerrado-otro" not in detalle
 
 
 def test_C7_el_cambio_de_overture_no_toca_la_semantica_de_osm(foso, duckdb_spatial, monkeypatch, tmp_path):
@@ -518,44 +527,46 @@ def test_PG_C1_C5_F11_dos_corridas_reales_la_frontera_de_cierre_en_la_base(foso,
               _fila("x-dent", "dental_clinic", "health_care > outpatient_care_facility > dental_clinic"),        # C2
               _fila("x-null", None, None),                                                                      # C3
               _fila("x-cerradaA", "pharmacy", "shopping > specialty_store > pharmacy_and_drug_store > pharmacy",
-                    estado="closed"),                                                    # aceptada + closed
+                    estado="permanently_closed"),                                        # aceptada + cierre
               _fila("x-nueva-cerrada", "pharmacy", "shopping > specialty_store > pharmacy_and_drug_store > pharmacy",
-                    estado="closed"),                                                    # aceptada + closed, NUEVA
+                    estado="permanently_closed"),                                        # cierre, NUEVA → no se crea
               _fila("x-cerradaB", "grocery_store", "shopping > food_and_beverage_store > grocery_store", conf=0.40,
-                    estado="closed"),                                                    # bajo la confianza + closed
+                    estado="temporarily_closed"),                                        # bajo la confianza + cierre
               _fila("x-cerradaC", "dental_clinic", "health_care > outpatient_care_facility > dental_clinic",
-                    estado="closed"),                                                    # sin regla + closed
-              _fila("x-cerradaD", None, None, estado="closed")]                          # taxonomía NULL + closed
+                    estado="permanently_closed"),                                        # sin regla + cierre
+              _fila("x-cerradaD", None, None, estado="permanently_closed")]              # taxonomía NULL + cierre
     r2 = _parquet_r3(duckdb_spatial, tmp_path / "r2.parquet", BASE_R3 + _estables(30) + casos2)        # C4: x-gone
     monkeypatch.setattr(foso, "overture_glob", lambda rel: r2)
     foso.avisos.clear()
     assert _corre(foso) == 0
     d, prov2 = _filas_json(esquema_pg), _provenance(esquema_pg)
     run2 = [c for c in _corridas_bd(esquema_pg) if c["source_provider"] == "overture"][-1]
-    # C1–C4 y los `closed` NO aceptados: la fila, BYTE A BYTE igual (estado, categoría, procedencia, todo)
-    for oid in ("x-conf", "x-dent", "x-null", "x-gone", "x-cerradaB", "x-cerradaC", "x-cerradaD"):
+    # C1–C4 y los cierres NO aceptados: la fila, BYTE A BYTE igual (estado, categoría, procedencia, todo)
+    for oid in ("x-conf", "x-dent", "x-null", "x-gone", "x-cerradaC", "x-cerradaD"):
         assert d[oid] == antes[oid], f"{oid}: no aceptada ⇒ la fila no se toca"
         assert prov2[oid]["run"] == run1["id"] and prov2[oid]["operativo"] is True, oid
-    # aceptada + closed → el upsert normal: cerrada, procedencia y categoría ACTUALES, reconstruible
+    assert "x-nueva-cerrada" not in d, "D-OS-4: un cierre explícito NO crea la fila"
+    # cierre explícito aceptado (con CUALQUIER confianza: x-cerradaB, D-OS-2) → el upsert normal: cerrada, procedencia y
+    # categoría ACTUALES, reconstruible
     con = duckdb_spatial.connect()
     fuente2 = {i: (p, str(v), s) for i, p, v, s in con.execute(
         f"SELECT id, taxonomy.primary, version, sources FROM read_parquet('{r2}')").fetchall()}
     con.close()
-    for oid in ("x-cerradaA", "x-nueva-cerrada"):
+    for oid in ("x-cerradaA", "x-cerradaB"):
         p = prov2[oid]
         assert (p["operativo"], p["run"], p["ns"], p["legado"]) == (False, run2["id"], "overture:taxonomy.primary", None)
         assert (p["cat"], p["ver"], p["lin"]) == fuente2[oid], f"{oid}: la observación de cierre, tal cual"
-    assert run2["rows_closed"] == 1, "transición REAL abierta → cerrada: solo x-cerradaA (x-nueva-cerrada nace cerrada)"
+    assert run2["rows_closed"] == 2, "transiciones REALES abierta → cerrada: x-cerradaA y x-cerradaB"
     # M0 FINAL · procedencia vigente → regla vigente → categoría vigente, en TODA fila con procedencia
     assert _invariante_m0(esquema_pg, foso) == run2["rows_written"] + sum(
         1 for oid in d if prov2.get(oid, {}).get("run") == run1["id"])
-    # la señal NO se ignora: se cuenta y se avisa (los 3 `closed` no aceptados que están activos en la capa)
+    # la señal NO se ignora: se cuenta y se avisa (los 2 cierres no aceptados que están activos en la capa)
     o = _fuentes(_estado(tmp_path))["overture"]["observacion"]
-    assert o["cerrados_aceptados"] == 2 and o["cerrados_no_representables"] == {
-        "bajo_confianza": 1, "descendiente": 1, "sin_taxonomia": 1}
-    assert o["cerrados_no_representables_en_capa"] == ["x-cerradaB", "x-cerradaC", "x-cerradaD"]
+    assert o["cerrados_aceptados"] == {"PERMANENTLY_CLOSED": 2, "TEMPORARILY_CLOSED": 1}
+    assert o["cerrados_no_representables"] == {"descendiente": 1, "sin_taxonomia": 1}
+    assert o["cerrados_no_representables_en_capa"] == ["x-cerradaC", "x-cerradaD"]
     [(asunto, detalle)] = foso.avisos
-    assert "AVISO DE TAXONOMÍA" in asunto and "x-cerradaB, x-cerradaC, x-cerradaD" in detalle
+    assert "AVISO DE TAXONOMÍA" in asunto and "x-cerradaC, x-cerradaD" in detalle
     osm2 = [c for c in _corridas_bd(esquema_pg) if c["source_provider"] == "osm"][-1]          # C7: OSM, como siempre
     assert all(prov2[n]["run"] == osm2["id"] and prov2[n]["operativo"] for n in ("node/1", "node/2", "node/3"))
     # F11 · lo legado que nunca se re-observó, intacto y sin procedencia
@@ -599,26 +610,26 @@ def test_PG_F9_F11_reconstruccion_desde_la_base_y_el_legado_honesto(foso, duckdb
 def test_PG_F10_deriva_deja_overture_byte_identica_y_osm_escribe(foso, duckdb_spatial, esquema_pg, monkeypatch,
                                                                  tmp_path, conf):
     """Deriva de ruta en una hoja aceptada con CUALQUIER confianza (0,9 · 0,40 · NULL) → Overture ROTA, 0 escrituras
-    y 0 cierres en la base real (aunque el release traiga un `closed` aceptable de una fila de la capa)."""
+    y 0 cierres en la base real (aunque el release traiga un cierre explícito aceptable de una fila de la capa)."""
     _siembra_overture(esquema_pg, [("ov-ph", "farmacia", "pharmacy")])
     antes = _filas_json(esquema_pg)
     monkeypatch.setattr(foso, "SYNC_URL", esquema_pg["url"])
     _con_lector_real(foso, duckdb_spatial, monkeypatch, tmp_path,
                      _con(BASE_R3, _fila("ov-rep", "hospital", "health_care > medical_facility > hospital", conf=conf),
                           _fila("ov-ph", "pharmacy", "shopping > specialty_store > pharmacy_and_drug_store > pharmacy",
-                                estado="closed"), quitar=("ov-ph",)))
+                                estado="permanently_closed"), quitar=("ov-ph",)))
     monkeypatch.setattr(foso, "pull_osm_transporte", lambda: [{**_osm(foso, "node/1"), "nombre": "OSM NUEVO"},
                                                               _osm(foso, "node/2")])
     assert _corre(foso) == 1
     d, f = _foto(esquema_pg), _filas_json(esquema_pg)
     assert {k: f[k] for k in f if not k.startswith("node/")} == {k: antes[k] for k in antes if not k.startswith("node/")}, \
-        "Overture: 0 escrituras y 0 cierres, byte a byte (incluida ov-ph, que la fuente declara `closed`)"
+        "Overture: 0 escrituras y 0 cierres, byte a byte (incluida ov-ph, que la fuente declara cerrada)"
     assert d["node/1"]["nombre"] == "OSM NUEVO" and d["node/3"]["operativo"] is False
     assert {c["source_provider"]: (c["status"], c["error_class"]) for c in _corridas_bd(esquema_pg)} == {
         "overture": ("rota", "DerivaTaxonomia"), "osm": ("ok", None)}
 
 
-# ═════════ M0 FINAL · los `closed` contra los CHECK REALES de la 043 (corre en el CI: PG15 sin PostGIS) ═════════
+# ═════════ OPERATING STATUS · la matriz contra los CHECK REALES de la 043 (corre en el CI: PG15 sin PostGIS) ═════════
 from tests.test_migracion_043 import URL as URL_CI, _aplica, banco  # noqa: E402,F401 — fixture del banco de la 043
 from tests.test_poi_source_provenance_writer import _motor_sincrono  # noqa: E402
 
@@ -626,23 +637,29 @@ pg_ci = pytest.mark.skipif(not URL_CI, reason="sin TEST_DATABASE_URL: no hay Pos
 
 
 @pg_ci
-async def test_PGCI_M0_los_closed_se_miden_sin_tocar_ninguna_fila_bajo_la_043(foso, banco):
-    """M0 FINAL contra la 043 REAL (corre en el CI): Overture ya no tiene sentencia de cierre. Lo único que el escritor
-    ejecuta sobre los `closed`, antes del upsert, es UNA lectura: cuántas de las ACEPTADAS siguen operativas
-    (`rows_closed` = transiciones reales) y cuáles de las NO aceptadas están activas en la capa (el aviso). La tabla
-    queda BYTE A BYTE igual: ninguna fila no aceptada se cierra, se re-enlaza ni cambia de categoría."""
+async def test_PGCI_OS_la_matriz_lee_el_estado_previo_sin_tocar_ninguna_fila_bajo_la_043(foso, banco):
+    """OPERATING STATUS contra la 043 REAL (corre en el CI): Overture no tiene sentencia de cierre. Lo único que el
+    escritor ejecuta ANTES del upsert es UNA lectura del estado previo (operativo, categoria) de los GERS observados; de
+    ella sale cada celda de la matriz. La tabla queda BYTE A BYTE igual tras medir."""
     from sqlalchemy import text
     await _aplica(banco)
     eng = _motor_sincrono(foso)
-    capa = [("m0-abierta-aceptada", "farmacia", "pharmacy", True), ("m0-ya-cerrada", "farmacia", "pharmacy", False),
-            ("m0-bajo", "salud", "hospital", True), ("m0-sinmapa", "salud", "medical_center", True),
-            ("m0-sintax", "educacion", "school", True), ("m0-historica", "parque", "park", True)]
+    capa = [("m0-abierta", "farmacia", "pharmacy", True), ("m0-cerrada", "farmacia", "pharmacy", False),
+            ("m0-null-cerrada", "salud", "hospital", False), ("m0-open-cerrada", "parque", "park", False),
+            ("m0-incompatible", "educacion", "school", True), ("m0-historica", "parque", "park", True),
+            ("m0-no-repr", "salud", "medical_center", True)]
     r = foso.ResultadoFuente("overture", estado="ok", lector=foso.LECTOR_OVERTURE_TAXONOMIA,
-                             cerrados_no_representables=["m0-bajo", "m0-sinmapa", "m0-sintax", "m0-fuera-de-la-capa"])
-    r.filas = [{"overture_id": "m0-abierta-aceptada", "operativo": False},   # aceptada `closed`, hoy abierta
-               {"overture_id": "m0-ya-cerrada", "operativo": False},         # aceptada `closed`, ya cerrada
-               {"overture_id": "m0-nueva", "operativo": False},              # aceptada `closed`, no está en la capa
-               {"overture_id": "m0-historica", "operativo": True}]           # aceptada abierta
+                             cerrados_no_representables=["m0-no-repr", "m0-fuera-de-la-capa"])
+    r.filas = [{"overture_id": "m0-abierta", "categoria": "farmacia"},          # PERMANENTLY_CLOSED · activa → CLOSE
+               {"overture_id": "m0-cerrada", "categoria": "farmacia"},          # TEMPORARILY_CLOSED · cerrada → KEEP
+               {"overture_id": "m0-nueva", "categoria": "farmacia"},            # PERMANENTLY_CLOSED · nueva → NO INSERT
+               {"overture_id": "m0-null-cerrada", "categoria": "salud"},        # NULL · cerrada → NO TOUCH
+               {"overture_id": "m0-open-cerrada", "categoria": "parque"},       # OPEN · cerrada → REOPEN
+               {"overture_id": "m0-incompatible", "categoria": "salud"},        # cierre · categoría distinta → NO MUTATE
+               {"overture_id": "m0-historica", "categoria": "parque"}]          # NULL · activa → UPDATE
+    r.estados = {"m0-abierta": foso.CERRADO_PERMANENTE, "m0-cerrada": foso.CERRADO_TEMPORAL,
+                 "m0-nueva": foso.CERRADO_PERMANENTE, "m0-null-cerrada": foso.SIN_SENAL, "m0-open-cerrada": foso.ABIERTO,
+                 "m0-incompatible": foso.CERRADO_PERMANENTE, "m0-historica": foso.SIN_SENAL}
     todo = text("SELECT md5(string_agg(row_to_json(p)::text, '|' ORDER BY p.id)) FROM pois_propios p")
     try:
         with eng.begin() as db:
@@ -654,16 +671,21 @@ async def test_PGCI_M0_los_closed_se_miden_sin_tocar_ninguna_fila_bajo_la_043(fo
         with eng.connect() as db:
             antes = db.execute(todo).scalar()
         with eng.begin() as db:
-            transiciones, en_capa = foso._cerrados_en_capa(db, r)
+            escribir, conteo, avisos, en_capa = foso._matriz_de_estado(db, r)
         with eng.connect() as db:
             despues = db.execute(todo).scalar()
     finally:
         eng.dispose()
-    assert transiciones == 1, "solo m0-abierta-aceptada pasará de abierta a cerrada (por el upsert normal)"
-    assert en_capa == ["m0-bajo", "m0-sinmapa", "m0-sintax"], "los `closed` no aceptados ACTIVOS en la capa (el aviso)"
-    assert despues == antes, "la medición es SOLO LECTURA: la tabla entera, byte a byte, igual"
-    assert "UPDATE" not in str(foso.OPERATIVOS_EN_CAPA_OVERTURE).upper() and not hasattr(foso, "CERRAR_OVERTURE"), \
-        "Overture ya no tiene sentencia de cierre propia"
+    assert {p["overture_id"] for p in escribir} == {"m0-abierta", "m0-cerrada", "m0-open-cerrada", "m0-historica"}
+    assert conteo == {"cerradas": 1, "siguen_cerradas": 1, "cerradas_nuevas_omitidas": 1,
+                      "reobservadas_sin_open_explicito": 1, "reabiertas": 1, "cierre_categoria_incompatible": 1,
+                      "actualizadas": 1}
+    assert avisos == {"reobservadas_sin_open_explicito": ["m0-null-cerrada"],
+                      "cierre_categoria_incompatible": ["m0-incompatible"]}
+    assert en_capa == ["m0-no-repr"], "los cierres no representables ACTIVOS en la capa (el aviso)"
+    assert despues == antes, "la lectura del estado previo es SOLO LECTURA: la tabla entera, byte a byte, igual"
+    assert "UPDATE" not in str(foso.ESTADO_EN_CAPA_OVERTURE).upper() and not hasattr(foso, "CERRAR_OVERTURE"), \
+        "Overture no tiene sentencia de cierre propia"
 
 
 # ══════════════════════════ F15 · el dato REAL de Quito (fixture congelado, local) ═══════════════════
@@ -697,6 +719,13 @@ def test_F15_el_lector_sobre_el_bbox_real_de_quito_2026_09_23_1(foso, duckdb_spa
     assert dict(Counter(f["categoria"] for f in filas)) == {"salud": 724, "educacion": 960, "farmacia": 451,
                                                             "supermercado": 304, "centro_comercial": 138, "parque": 129}
     assert len(filas) == 2706 and obs["observacion"]["registros_bbox"] == 71655
-    assert (obs["observacion"]["cerrados_aceptados"], obs["observacion"]["cerrados_no_representables"]) == (0, {}), \
-        "operating_status: 71650 NULL + 5 open, ningún closed"
-    assert foso._invalidas("overture", filas, foso.LECTOR_OVERTURE_TAXONOMIA) == []
+    # OPERATING STATUS: el DOMINIO observado (no un literal supuesto) ⊆ el contrato oficial + NULL
+    con = duckdb_spatial.connect()
+    dominio = {v for v, in con.execute(f"SELECT DISTINCT operating_status FROM read_parquet('{quito.as_posix()}')").fetchall()}
+    con.close()
+    assert dominio <= set(foso.ESTADOS_OPERATIVOS_V1) | {None} and dominio == {None, "open"}
+    assert obs["observacion"]["por_estado"] == {"UNKNOWN_STATUS": 71650, "OPEN": 5}
+    assert (obs["observacion"]["cerrados_aceptados"], obs["observacion"]["cerrados_no_representables"]) == ({}, {}), \
+        "Quito 2026-09-23.1: ningún cierre explícito (0 permanently_closed, 0 temporarily_closed)"
+    assert set(foso.ULTIMA_OVERTURE["estados"].values()) == {"UNKNOWN_STATUS"}, "las 2706 aceptadas: NULL (sin señal)"
+    assert foso._invalidas("overture", filas, foso.LECTOR_OVERTURE_TAXONOMIA, foso.ULTIMA_OVERTURE["estados"]) == []

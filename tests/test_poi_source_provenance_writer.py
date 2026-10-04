@@ -80,7 +80,13 @@ def test_J_K_R4_no_interpreta_frescura_ninguna_linea_de_codigo_lee_update_time()
                + [n.id for n in ast.walk(arbol) if isinstance(n, ast.Name)]
                + [n.name for n in ast.walk(arbol) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))])
     assert not [x for x in textos + nombres if "update_time" in x]
-    assert not [x for x in nombres if re.search(r"(?i)fresc|fresh|actualizacion_declarada", x)]
+    # Lo que R5 sigue reservándose es la frescura de los REGISTROS de Overture (`update_time`): prohibida en cualquier
+    # nombre. La ÚNICA excepción, autorizada por el mandato «OSM SNAPSHOT FRESHNESS GUARD · CODE+CI» (D-OSM-1): la
+    # guarda de la INSTANTÁNEA que declara Overpass (`osm3s.timestamp_osm_base` frente al máximo `source_snapshot_at`
+    # aceptado). Lista CERRADA de sus nombres: cualquier otro nombre con «fresc/fresh» sigue fallando aquí.
+    guarda_osm = {"FRESCURA_OSM", "PISO_FRESCURA_OSM_SQL", "_FRESCURA_ACEPTA", "PisoFrescuraIlegible",
+                  "leer_piso_frescura_osm", "_veredicto_frescura"}
+    assert not [x for x in nombres if re.search(r"(?i)fresc|fresh|actualizacion_declarada", x) and x not in guarda_osm]
 
 
 def test_L_M_N_la_huella_del_esquema_es_determinista_y_detecta_cambios(foso, duckdb_spatial, tmp_path):
@@ -174,9 +180,12 @@ def test_F_G_H_osm_conserva_la_etiqueta_real_la_instantanea_y_nada_inventado(fos
                                                                                                     "subway_entrance")
     assert filas["node/9"]["cat_leaf"] == filas["node/8"]["cat_leaf"] == "metro", "el subtipo de Contexto NO cambió"
     assert foso.ULTIMA_OSM == {"endpoint": foso._OVERPASS_ENDPOINTS[0], "snapshot_at": "2026-10-02T04:37:05+00:00"}  # F
+    # Sin `osm3s` no se inventa la instantánea… y, desde la OSM SNAPSHOT FRESHNESS GUARD (D-OSM-1, F8), tampoco se
+    # acepta el espejo: es INVERIFICABLE. Si ninguno la declara, no hay nada que escribir (None ≠ lista vacía).
     _overpass(foso, monkeypatch, elementos, osm3s=False)
-    foso.pull_osm_transporte()
-    assert foso.ULTIMA_OSM["snapshot_at"] is None, "sin osm3s no se inventa la instantánea"
+    assert foso.pull_osm_transporte() is None
+    assert foso.ULTIMA_OSM == {} and foso.FRESCURA_OSM["clase"] == "SinSnapshotVigente"
+    assert [i["resultado"] for i in foso.FRESCURA_OSM["intentos"]] == ["INVERIFICABLE"] * len(foso._OVERPASS_ENDPOINTS)
 
 
 def test_B_I_overture_categories_conserva_version_y_sources_verbatim(foso, duckdb_spatial, tmp_path, monkeypatch):
@@ -214,7 +223,11 @@ def test_A_sin_esquema_043_falla_cerrado_sin_escribir_nada(foso, monkeypatch, tm
     monkeypatch.setattr(foso, "verificar_esquema_043", lambda eng: ["no existe poi_ingestion_run"])
     assert _corre(foso) == 1
     sentencias = [s for t in motor.transacciones for s, _ in t["sentencias"]]
-    assert sentencias == [], f"0 escrituras, 0 cierres, 0 corridas, 0 DDL: {sentencias}"
+    # OSM SNAPSHOT FRESHNESS GUARD: lo ÚNICO que llega a la base antes de la compuerta es la lectura del piso, en su
+    # propia transacción de SOLO LECTURA (sin el esquema 043 real fallaría y OSM quedaría CAÍDA, sin red).
+    assert [s.split(" FROM ")[0] for s in sentencias] == ["SET TRANSACTION READ ONLY",
+                                                         "SELECT max(source_snapshot_at)"],         f"0 escrituras, 0 cierres, 0 corridas, 0 DDL: {sentencias}"
+    assert [t["tipo"] for t in motor.transacciones] == ["connect"]
     f = _fuentes(_estado(tmp_path))
     assert {(x["estado"], x["fase"], x["error"], x["manifiesto"]) for x in f.values()} == {
         ("rota", "escritura", "Esquema043Ausente", "NOT PERSISTED")}
@@ -229,7 +242,10 @@ def test_A2_base_inalcanzable_en_la_compuerta_es_lo_mismo(foso, monkeypatch, tmp
     def _caida(eng):
         raise ConnectionError("server closed the connection (host db.secreto)")
     monkeypatch.setattr(foso, "verificar_esquema_043", _caida)
-    assert _corre(foso) == 1 and [t for t in motor.transacciones if t["sentencias"]] == []
+    assert _corre(foso) == 1
+    # Solo la lectura del piso de frescura (solo lectura, antes de la compuerta): ninguna escritura.
+    assert [(t["tipo"], [s.split(" FROM ")[0] for s, _ in t["sentencias"]]) for t in motor.transacciones
+            if t["sentencias"]] == [("connect", ["SET TRANSACTION READ ONLY", "SELECT max(source_snapshot_at)"])]
     assert "db.secreto" not in (tmp_path / "estado.json").read_text(encoding="utf-8")
 
 

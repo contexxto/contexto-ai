@@ -89,7 +89,10 @@ def _corre_ingesta_osm(foso, monkeypatch):
             return None
 
         def json(self):
-            return {"elements": copy.deepcopy(elementos)}
+            # Como toda respuesta REAL de Overpass, declara su instantánea (`osm3s`): sin ella, la OSM SNAPSHOT
+            # FRESHNESS GUARD rechaza el espejo por inverificable (D-OSM-1).
+            return {"osm3s": {"timestamp_osm_base": "2026-10-02T14:53:35Z", "copyright": "ODbL"},
+                    "elements": copy.deepcopy(elementos)}
 
     monkeypatch.setattr(foso.requests, "post", lambda *a, **k: _Resp())
     filas = foso.pull_osm_transporte()

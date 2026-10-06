@@ -6,14 +6,16 @@ Both tools connect directly to the async engine to remain framework-agnostic
 import asyncio
 import json
 import re
+import uuid
 from datetime import date, datetime, timedelta, timezone
-from typing import Any
+from typing import Annotated, Any
 
 import httpx
 from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut, GeocoderUnavailable
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
+from langgraph.prebuilt import InjectedState
 from sqlalchemy import text
 
 from app.place.legado import CAMPOS_LEGADOS, con_contexto_vigente
@@ -742,53 +744,166 @@ async def tool_analyze_investment(activo_id: str) -> str:
     return json.dumps(resultado, ensure_ascii=False, default=str)
 
 
-@tool
-async def tool_connect_with_broker(config: RunnableConfig, activo_id: str | None = None) -> str:
-    """
-    Connect the interested user with the HUMAN broker who owns the property, IN-CHAT.
+# ── SEC-X3-R0 · el LLM no produce el efecto del handoff ──────────────────────────────────
+#
+# Hasta esta unidad, `tool_connect_with_broker` llamaba a `registrar_handoff`: un tool call
+# del modelo bastaba para escribir `handoff_sesion` y `asignacion`, avisar al corredor
+# (campana, push, correo diferido) y —en una conversación sin QR— abrirle a él y a su
+# agencia el transcript completo. El «consentimiento» existía solo en el prompt y en este
+# docstring. Eso confundía dos cosas que no son la misma:
+#
+#     DECISIÓN ≠ PERMISO PARA EJECUTAR        ·        SALIDA DEL LLM ≠ ACTO DEL COMPRADOR
+#
+# Ahora la tool NO tiene efecto. Solo comprueba que el inmueble del que se habla sea válido
+# para pedir contacto EN ESTA conversación y le dice al modelo cómo pedírselo a la persona:
+# con el control explícito «Hablar con el corredor», que llama a POST /{sid}/handoff con la
+# autoridad de sesión de siempre. Ese clic es el único camino al efecto.
+#
+# Las comprobaciones RESTRINGEN, nunca conceden: un fallo de cualquiera devuelve ok:false y
+# el control humano sigue disponible igual. Ninguna fabrica permiso desde la prosa.
 
-    Use this at the CLOSING moment — when the user asks to VISIT, asks for CONTACT,
-    wants to talk to an agent/broker, or is clearly ready to decide. ALWAYS confirm
-    with the user FIRST ("¿te conecto con el corredor?") before calling it: this
-    transfers the conversation (consent + data minimization). The owning broker is
-    notified and can reply to the lead inside Contexto.
+# Resultado común: la tool no escribe, no avisa y no comparte nada, pase lo que pase.
+_SIN_EFECTO = {"efecto": "ninguno", "contacto_registrado": False, "corredor_avisado": False}
+
+_CONTROL_EXPLICITO = "Hablar con el corredor"
+
+
+def _uuid_canonico(valor: Any) -> str | None:
+    """Forma canónica (minúsculas, con guiones) de un UUID; None si no lo es."""
+    if valor is None:
+        return None
+    try:
+        return str(uuid.UUID(str(valor).strip()))
+    except (ValueError, AttributeError, TypeError):
+        return None
+
+
+def _activo_del_prefijo_qr(session_id: str) -> str | None:
+    """El inmueble que un `session_id` `qr-{activo}-…` lleva dentro; None si no es de QR.
+
+    Misma regla que `app.routers.chat.activo_de_session` (paridad congelada en
+    tests/test_sec_x3_r0_handoff_sin_efecto.py). Se replica aquí para que el agente no
+    dependa del router: aquí el prefijo solo sirve para RECHAZAR un inmueble distinto,
+    nunca para conceder nada.
+    """
+    if session_id.startswith("qr-") and len(session_id) >= 39:
+        return _uuid_canonico(session_id[3:39])
+    return None
+
+
+def _ids_mostrados_en_la_conversacion(messages) -> set[str]:
+    """IDs que las tools de búsqueda devolvieron en ESTE hilo, en forma canónica.
+
+    Reutiliza el MISMO lector que arma el panel (`app.decision.assembler._ids_en`) en vez
+    de interpretar la conversación de otra manera: es el conjunto de resultados del hilo,
+    no lo que el modelo diga en prosa. Solo se usa para negar.
+    """
+    # Import diferido: mantiene a tools.py fuera del grafo de imports del Decision Core.
+    from app.decision.assembler import _ids_en
+    return {c for c in (_uuid_canonico(i) for i in _ids_en(messages or [], 10**6)) if c}
+
+
+async def _activo_para_contacto(activo_id: str) -> dict[str, Any] | None:
+    """¿Existe el inmueble y tiene a quién avisar? SOLO LECTURA: un SELECT, sin commit."""
+    filas = await _fetch_rows(
+        "SELECT id::text AS id, "
+        "(owner_user_id IS NOT NULL OR owner_agency_id IS NOT NULL) AS con_corredor "
+        "FROM activos_inmutables WHERE id = CAST(:id AS uuid)",
+        {"id": activo_id},
+    )
+    return filas[0] if filas else None
+
+
+def _respuesta_sin_efecto(ok: bool, motivo: str, mensaje: str, activo_id: str | None = None) -> str:
+    return json.dumps({"ok": ok, "motivo": motivo, "activo_id": activo_id, **_SIN_EFECTO,
+                       "message": mensaje}, ensure_ascii=False)
+
+
+@tool
+async def tool_connect_with_broker(
+    config: RunnableConfig,
+    state: Annotated[dict, InjectedState],
+    activo_id: str | None = None,
+) -> str:
+    """
+    Check the property before pointing the user to the HUMAN broker. This tool DOES NOT
+    contact anyone: it does not notify the broker, does not register any request and does
+    not share the conversation. Only the user can request contact, by pressing the
+    "Hablar con el corredor" control in the app; that click is their consent to share the
+    conversation with the broker.
+
+    Use it when the user wants to VISIT, asks for CONTACT, or wants to talk to a broker.
+    If it answers ok=true, tell the user in one sentence to press "Hablar con el corredor"
+    (below, next to the message box). If ok=false, explain the reason briefly (for example,
+    ask which property they mean). NEVER say that you connected them, that the broker was
+    notified, or that someone will contact them.
 
     Args:
-        activo_id: UUID of the property the user is interested in. PASS IT whenever you
-            know which one it is — it is what routes the lead to the broker who owns it.
-            Use the exact id from a previous tool result; NEVER invent one. Omit it only
-            if the user has not settled on a property yet. If the user names the property
-            in a LATER turn ("sí, ese departamento"), call this tool AGAIN with the id:
-            that attaches it to the request you already registered.
+        activo_id: UUID of the property, copied exactly from a search result of THIS
+            conversation; NEVER invent one. In a conversation that started from a property
+            sign (QR), omit it: the property is the one on the sign.
 
-    Never invent the broker's phone or email; the connection happens through this tool.
+    Never invent the broker's phone or email.
     """
     session_id = ((config or {}).get("configurable") or {}).get("thread_id")
     if not session_id:
-        return json.dumps({"ok": False, "message": "Sin contexto de sesión; no puedo conectar ahora."})
-    # Import diferido: chat.py importa el grafo (→ tools), así que importar aquí
-    # arriba crearía un ciclo. Mismo patrón que tool_analyze_location/_investment.
-    from app.routers.chat import registrar_handoff
+        return _respuesta_sin_efecto(False, "SIN_SESION", "Sin contexto de sesión.")
+
+    pedido = None
+    if activo_id is not None and str(activo_id).strip():
+        pedido = _uuid_canonico(activo_id)
+        if pedido is None:
+            return _respuesta_sin_efecto(
+                False, "ACTIVO_ID_INVALIDO",
+                "Ese identificador no es válido. No inventes ids: usa el de un resultado de "
+                "esta conversación o pregúntale a la persona cuál inmueble le interesa.")
+
+    del_letrero = _activo_del_prefijo_qr(session_id)
+    if del_letrero:
+        # Conversación nacida de un letrero: el control humano solo puede llegar al corredor
+        # de ESE inmueble. Un inmueble distinto se rechaza —antes se sustituía en silencio.
+        if pedido and pedido != del_letrero:
+            return _respuesta_sin_efecto(
+                False, "ACTIVO_DISTINTO_AL_DEL_LETRERO",
+                "En esta conversación, «Hablar con el corredor» conecta con el corredor del "
+                "inmueble del letrero, no con el de ese otro inmueble. No digas que puedes "
+                "conectarla con el corredor de ese otro inmueble.", pedido)
+        candidato = del_letrero
+    else:
+        if not pedido:
+            return _respuesta_sin_efecto(
+                False, "SIN_INMUEBLE",
+                "Falta saber qué inmueble le interesa. Pregúntale cuál de los que vio.")
+        mostrados = _ids_mostrados_en_la_conversacion((state or {}).get("messages"))
+        if pedido not in mostrados:
+            return _respuesta_sin_efecto(
+                False, "NO_MOSTRADO_EN_LA_CONVERSACION",
+                "Ese inmueble no salió en los resultados de esta conversación. No lo uses: "
+                "pregúntale a la persona cuál de los inmuebles que vio le interesa.", pedido)
+        candidato = pedido
+
     try:
-        res = await registrar_handoff(session_id, activo_id=activo_id)
-    except Exception as e:  # noqa: BLE001 — un fallo de handoff no debe tumbar el turno
-        return json.dumps({"ok": False, "message": f"No pude registrar la conexión ({type(e).__name__})."})
-    if not res.get("activo_id"):
-        # Sin inmueble no hay corredor a quien avisar y NO se guarda nada: cada hilo de
-        # handoff es (conversación, inmueble). El mensaje es explícito para que el agente
-        # no le prometa al usuario que ya lo están atendiendo — antes lo hacía, y era falso.
-        return json.dumps({
-            "ok": False, "estado": None, "con_inmueble": False, "corredor_avisado": False,
-            "message": ("NO se registró nada: sin saber QUÉ inmueble le interesa no hay corredor "
-                        "a quien avisar. NO le digas al usuario que ya tiene su solicitud un "
-                        "corredor. Pregúntale cuál de los inmuebles que viste le interesa y vuelve "
-                        "a llamar a esta herramienta con su activo_id."),
-        })
-    return json.dumps({
-        "ok": True, "estado": "solicitado", "con_inmueble": True,
-        "message": ("Listo: avisé al corredor del inmueble. Confírmale al usuario que lo "
-                    "contactarán en breve dentro de Contexto."),
-    })
+        fila = await _activo_para_contacto(candidato)
+    except Exception as e:  # noqa: BLE001 — una lectura fallida no debe tumbar el turno
+        return _respuesta_sin_efecto(
+            False, "ERROR_DE_LECTURA",
+            f"No pude comprobar el inmueble ({type(e).__name__}). No prometas nada.", candidato)
+    if not fila:
+        return _respuesta_sin_efecto(
+            False, "INMUEBLE_INEXISTENTE",
+            "Ese inmueble no existe en el catálogo. No lo uses.", candidato)
+    if not fila.get("con_corredor"):
+        return _respuesta_sin_efecto(
+            False, "SIN_CORREDOR",
+            "Ese inmueble no tiene un corredor registrado a quien contactar. No prometas contacto.",
+            candidato)
+
+    return _respuesta_sin_efecto(
+        True, "LISTO_PARA_QUE_LA_PERSONA_LO_PIDA",
+        "NO se contactó a nadie y no se compartió nada. Para hablar con el corredor de este "
+        f"inmueble, la persona debe pulsar «{_CONTROL_EXPLICITO}» (abajo, junto al campo de "
+        "mensaje): ese clic es lo que le comparte la conversación al corredor. Díselo en una "
+        "frase. NUNCA digas que ya la conectaste ni que el corredor fue avisado.", candidato)
 
 
 @tool

@@ -361,7 +361,49 @@ def test_9c_el_prompt_no_atribuye_el_contacto_a_la_tool():
 async def test_9d_el_resultado_nunca_afirma_que_hubo_contacto(efectos, catalogo):
     r = await _invocar(SESION_LIBRE, ACTIVO, [_busqueda(ACTIVO)])
     assert "avisé" not in r["message"].lower()
-    assert "NO se contactó a nadie" in r["message"]
+    assert "no contactó a nadie ni produjo ningún efecto de handoff" in r["message"]
+    assert "no produjo ninguna nueva divulgación ni cambió la audiencia" in r["message"]
+
+
+# ── 9e · CLOSEOUT: sin sobreafirmar lo que pertenece a SEC-X2-R0 ──────────────────────────
+#
+# SEC-X3-R0 prueba LLM OUTPUT ≠ BUYER ACT. NO prueba ATTRIBUTION ≠ DISCLOSURE AUTHORITY:
+# en una sesión qr- el código heredado (X-2) puede haber concedido audiencia del transcript
+# ANTES del clic. Ningún texto de esta unidad puede afirmar que «no se compartió nada» ni que
+# el clic es el (primer) momento en que se comparte la conversación.
+
+_SOBREAFIRMACIONES = (
+    "no se compartió nada",
+    "no se comparte nada",
+    "comparte la conversación",
+    "compartir la conversación",
+    "consentimiento para compartir",
+)
+
+
+async def test_9e_ningun_resultado_afirma_que_no_se_compartio_nada(efectos, catalogo):
+    casos = [(SESION_LIBRE, ACTIVO, [_busqueda(ACTIVO)]), (SESION_QR, None, []),
+             (SESION_LIBRE, "abc", []), (SESION_QR, OTRO, []),
+             (SESION_LIBRE, OTRO, [_busqueda(ACTIVO)]), (SESION_LIBRE, None, [])]
+    for sesion, activo, hilo in casos:
+        texto = (await _invocar(sesion, activo, hilo))["message"].lower()
+        for frase in _SOBREAFIRMACIONES:
+            assert frase not in texto, (sesion, activo, frase)
+
+
+def test_9f_el_prompt_no_hace_del_clic_el_momento_de_la_divulgacion():
+    from app.agent.graph import SYSTEM_PROMPT
+    texto = SYSTEM_PROMPT.content.lower()
+    for frase in _SOBREAFIRMACIONES + ("ese clic es",):
+        assert frase not in texto, frase
+    assert "no comparte nada" not in texto
+
+
+def test_9g_la_descripcion_de_la_tool_no_sobreafirma():
+    desc = T.tool_connect_with_broker.description.lower()
+    for frase in ("share the conversation", "consent to share", "that click is"):
+        assert frase not in desc, frase
+    assert "creates no new disclosure" in desc
 
 
 # ── 10 · por el camino REAL: ToolNode inyecta el estado y no hay efecto ───────────────────

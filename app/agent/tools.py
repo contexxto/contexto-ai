@@ -757,12 +757,16 @@ async def tool_analyze_investment(activo_id: str) -> str:
 # Ahora la tool NO tiene efecto. Solo comprueba que el inmueble del que se habla sea válido
 # para pedir contacto EN ESTA conversación y le dice al modelo cómo pedírselo a la persona:
 # con el control explícito «Hablar con el corredor», que llama a POST /{sid}/handoff con la
-# autoridad de sesión de siempre. Ese clic es el único camino al efecto.
+# autoridad de sesión de siempre. Ese clic es el único camino al efecto del HANDOFF.
+#
+# Lo que esta unidad NO afirma: que antes del clic nadie pueda leer el transcript. En una
+# sesión qr- el código heredado puede haber concedido ya esa audiencia (X-2): esa propiedad
+# es de SEC-X2-R0. Aquí solo se prueba que la tool no crea efecto ni audiencia NUEVA.
 #
 # Las comprobaciones RESTRINGEN, nunca conceden: un fallo de cualquiera devuelve ok:false y
 # el control humano sigue disponible igual. Ninguna fabrica permiso desde la prosa.
 
-# Resultado común: la tool no escribe, no avisa y no comparte nada, pase lo que pase.
+# Resultado común: la tool no escribe, no avisa y no cambia la audiencia, pase lo que pase.
 _SIN_EFECTO = {"efecto": "ninguno", "contacto_registrado": False, "corredor_avisado": False}
 
 _CONTROL_EXPLICITO = "Hablar con el corredor"
@@ -827,10 +831,10 @@ async def tool_connect_with_broker(
 ) -> str:
     """
     Check the property before pointing the user to the HUMAN broker. This tool DOES NOT
-    contact anyone: it does not notify the broker, does not register any request and does
-    not share the conversation. Only the user can request contact, by pressing the
-    "Hablar con el corredor" control in the app; that click is their consent to share the
-    conversation with the broker.
+    contact anyone and produces no handoff effect: it does not notify the broker, does not
+    register any request, and creates no new disclosure (it does not change who can read
+    the conversation). To request contact with the broker, the user must press the
+    "Hablar con el corredor" control in the app.
 
     Use it when the user wants to VISIT, asks for CONTACT, or wants to talk to a broker.
     If it answers ok=true, tell the user in one sentence to press "Hablar con el corredor"
@@ -900,10 +904,11 @@ async def tool_connect_with_broker(
 
     return _respuesta_sin_efecto(
         True, "LISTO_PARA_QUE_LA_PERSONA_LO_PIDA",
-        "NO se contactó a nadie y no se compartió nada. Para hablar con el corredor de este "
-        f"inmueble, la persona debe pulsar «{_CONTROL_EXPLICITO}» (abajo, junto al campo de "
-        "mensaje): ese clic es lo que le comparte la conversación al corredor. Díselo en una "
-        "frase. NUNCA digas que ya la conectaste ni que el corredor fue avisado.", candidato)
+        "Esta herramienta no contactó a nadie ni produjo ningún efecto de handoff, y no produjo "
+        "ninguna nueva divulgación ni cambió la audiencia de la conversación. Para solicitar "
+        f"contacto con el corredor de este inmueble, la persona debe pulsar «{_CONTROL_EXPLICITO}» "
+        "(abajo, junto al campo de mensaje). Díselo en una frase. NUNCA digas que ya la "
+        "conectaste ni que el corredor fue avisado.", candidato)
 
 
 @tool

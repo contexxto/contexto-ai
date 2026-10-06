@@ -2582,19 +2582,24 @@ async def registrar_handoff(
     quien: str = "Un interesado",
 ) -> dict:
     """Registra el handoff de una sesión y notifica al corredor dueño del inmueble.
-    Lógica ÚNICA compartida por el endpoint HTTP (botón del frontend) y por la tool del
-    agente (tool_connect_with_broker) — patrón API-first: el agente cierra sin un botón.
+
+    SEC-X3-R0 deja el endpoint HTTP del control explícito «Hablar con el corredor»
+    (`solicitar_handoff`) como ÚNICO llamador de esta función desde app/. Esta afirmación se
+    refiere al efecto de handoff; no afirma que antes del clic no exista audiencia legacy
+    sobre el transcript (por ejemplo, X-2, que corresponde a SEC-X2-R0). La tool del agente
+    (`tool_connect_with_broker`) ya NO llega aquí: una salida del LLM no es un acto del
+    comprador. Lo congela tests/test_sec_x3_r0_handoff_sin_efecto.py.
 
     activo_id explícito: las conversaciones que NO vienen de un QR no llevan el inmueble
     en el session_id, y sin él el handoff moría en silencio — nadie notificado y el lead
-    invisible en el CRM. Quien conoce el inmueble (el agente que lo acaba de recomendar,
-    o el botón del frontend) lo pasa aquí. El del session_id manda si existe: viene del
-    QR escaneado, que es evidencia más fuerte que la inferencia del agente."""
+    invisible en el CRM. El endpoint recibe el activo_id enviado por el frontend; la
+    exactitud de esa selección pertenece a UI-04 / SEC-X2-R0. El del session_id manda si
+    existe: viene del QR escaneado."""
     activo_id = activo_de_session(session_id) or _uuid_valido(activo_id)
     if not activo_id:
         # Sin inmueble no hay corredor a quien entregar el lead. Antes se guardaba una fila
-        # sin inmueble que no llegaba a nadie; ahora se dice en voz alta y quien llama
-        # (la tool del agente o el endpoint) le pregunta al usuario CUÁL le interesa.
+        # sin inmueble que no llegaba a nadie; ahora se dice en voz alta y el endpoint
+        # le pregunta al usuario CUÁL le interesa.
         return {"ok": False, "estado": None, "activo_id": None, "corredor_whatsapp": None}
     async with AsyncSessionLocal() as db:
         await ensure_handoff_tables(db)

@@ -227,7 +227,12 @@ def test_10_el_prompt_prohibe_prometer_un_aviso_futuro():
     from app.agent.graph import SYSTEM_PROMPT
     texto = SYSTEM_PROMPT.content
     assert "NUNCA prometas avisar, escribir, contactar ni notificar al usuario más adelante" in texto
-    assert "tool_connect_with_broker confirmó" in texto, "la excepción del handoff real desapareció"
+    # SEC-X3-R0: la excepción ya no es «un handoff que la tool confirmó» —la tool no tiene
+    # efecto—, sino el contacto que la PERSONA pidió con el control explícito.
+    assert "después de que la persona lo pidió con «Hablar con el" in texto, (
+        "la excepción del handoff real desapareció")
+    assert "tool_connect_with_broker confirmó" not in texto, (
+        "el prompt volvió a afirmar que la tool confirma un handoff")
 
 
 @pytest.mark.parametrize("frase", [

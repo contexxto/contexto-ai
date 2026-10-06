@@ -35,11 +35,14 @@ ARCH-DEBT-F2-01
 Imports preexistentes de `app.agent` hacia `app.routers` que NO pertenecen al carril de
 decisión:
 
-    tools.py      → registrar_handoff                          (handoff)
     crm_tools.py  → _activos_del_corredor, _funnel_y_orden,
                     _leads_del_corredor, _reparto_del_corredor (CRM)
     crm_tools.py  → _leads_del_corredor                        (CRM)
     crm_tools.py  → transcript_de_sesion, ensure_handoff_tables (handoff)
+
+SALDADO por SEC-X3-R0 (2026-10-06): `tools.py → registrar_handoff`. La tool del agente
+dejó de producir el efecto del handoff (salida del LLM ≠ acto del comprador) y, con eso,
+dejó de importar el router. Se retira del baseline en vez de seguir afirmando que existe.
 
 Y fuera de `agent/`, misma familia de problema:
 
@@ -51,9 +54,9 @@ solo por ponerles fecha: es deuda transversal y se resuelve cuando haya una tare
 explícita de separación CRM/handoff, o cuando uno de esos módulos entre en una fase donde
 moverlo sea natural.
 
-**Grandfathering EXACTO, no genérico.** Se toleran esos cuatro imports concretos. Si
-aparece un quinto, este test falla. Esa es toda la diferencia entre una excepción
-registrada y un precedente.
+**Grandfathering EXACTO, no genérico.** Se toleran esos imports concretos y ni uno más. Si
+aparece otro, este test falla. Esa es toda la diferencia entre una excepción registrada y
+un precedente.
 """
 
 import ast
@@ -87,7 +90,7 @@ def _modulos_py(carpeta: str):
 # El baseline exacto, por (fichero, módulo importado). Los NOMBRES importados no se
 # congelan: lo que se tolera es la dependencia, no su superficie concreta.
 GRANDFATHERED: set[tuple[str, str]] = {
-    ("app/agent/tools.py", "app.routers.chat"),
+    # ("app/agent/tools.py", "app.routers.chat") — SALDADO por SEC-X3-R0; ver la cabecera.
     ("app/agent/crm_tools.py", "app.routers.assets"),
     ("app/agent/crm_tools.py", "app.routers.chat"),
 }
@@ -155,7 +158,7 @@ def test_C2_el_carril_de_decision_no_depende_de_routers():
 
 
 def test_C4_ningun_import_nuevo_de_agent_hacia_routers():
-    """El corazón de la excepción: se toleran los cuatro preexistentes y ni uno más.
+    """El corazón de la excepción: se toleran los preexistentes inventariados y ni uno más.
 
     Si esto falla porque añadiste un import legítimo, la respuesta NO es ampliar la lista
     sin pensarlo: es preguntarse si esa dependencia debía existir, y si la respuesta es

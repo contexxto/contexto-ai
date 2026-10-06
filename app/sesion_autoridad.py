@@ -26,6 +26,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import secrets
+import uuid
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict
@@ -217,7 +218,12 @@ def _nuevo_session_id(activo_id: str | None) -> str:
     ahora es aleatorio del servidor. El `device_key` no entra en la autoridad.
     """
     aleatorio = secrets.token_urlsafe(12)
-    return f"qr-{activo_id}-{aleatorio}" if activo_id else f"session-{aleatorio}"
+    if not activo_id:
+        return f"session-{aleatorio}"
+    # SEC-X2-R0 · defensa en profundidad: el prefijo solo admite un UUID canónico. Antes se
+    # interpolaba el valor crudo del cliente (`'abc-123'`, mayúsculas) y nacían sesiones
+    # `qr-ABC…` que ningún `LIKE` en minúsculas volvía a encontrar. ValueError si no es UUID.
+    return f"qr-{uuid.UUID(str(activo_id))}-{aleatorio}"
 
 
 async def crear_sesion(

@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import axios from 'axios'
-import { Users, RefreshCw, Flame, MapPin, Sparkles, BarChart3, Compass, TrendingUp, Clock, AlertTriangle, ChevronRight, Bell, Thermometer, Snowflake, Moon, MessageCircle } from 'lucide-react'
+import { Users, RefreshCw, Flame, MapPin, Sparkles, BarChart3, Compass, TrendingUp, Clock, AlertTriangle, ChevronRight, Bell, Thermometer, Snowflake, Moon, MessageCircle, Lock } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
+import { ETIQUETA_SIN_SOLICITUD, conversacionVisible, pidioCorredor } from './divulgacionLead'
 import Campana from './Campana'
 import { activarPush } from './push'
 import { LeadChat } from './LeadsPanel'
@@ -15,6 +16,9 @@ const C = {
 const NIVEL = {
   caliente: { c: 'var(--coral)', Icon: Flame }, tibio: { c: '#E8B84B', Icon: Thermometer }, frio: { c: '#5E9BE0', Icon: Snowflake },
 }
+// SEC-X2-R0: lead sin solicitud registrada de corredor. El nivel es una inferencia de su conversación
+// y el servidor ya no lo entrega: no se le pinta «frío», sino neutro.
+const NEUTRO = { c: '#8A8A93', Icon: Lock }
 // Frescura del lead (hace cuánto no interactúa) → la que importa para reenganche.
 const FRESCURA = {
   activo: { c: 'var(--teal)', lbl: 'Activo' },
@@ -194,7 +198,9 @@ export default function CRM() {
     // El período ANTERIOR de igual largo: la base del delta.
     const prev = dias ? todos.filter((l) => enVentana(l, dias, 1)) : []
     const cuenta = (arr, f) => arr.filter(f).length
-    const pide = (l) => l.handoff_estado || l.handoff_sugerido
+    // SEC-X2-R0: «Piden corredor» cuenta solo el ACTO de la persona. `handoff_sugerido` es
+    // una inferencia sobre su conversación y no es una solicitud.
+    const pide = (l) => pidioCorredor(l)
 
     // Un delta solo existe si hubo período anterior CON DATOS. Sin eso no se muestra ▲0:
     // un cero afirmaría "no cambió" donde lo cierto es "no hay con qué comparar" — la
@@ -228,7 +234,9 @@ export default function CRM() {
   const onPanelSeed = (ps) => {
     if (!ps) { setLeadPuente(null); return }   // turno SIN señal → caduca el puente (CTA agresiva), conserva el foco
     if (ps.foco === 'lead') {
-      const l = resolverLead(ps.resalta, d?.leads || [])
+      // SEC-X2-R0: el puente solo lleva a interesados que pidieron corredor (de los demás el
+      // Copiloto no tiene detalle que mostrar: su conversación es privada).
+      const l = resolverLead(ps.resalta, (d?.leads || []).filter(conversacionVisible))
       if (l) { setLeadPuente(l); setPanelSeed(ps) }   // SOLO si resuelve a un interesado real
       else setLeadPuente(null)                        // ref no resuelve → sin puente (limpia uno viejo); conserva foco
     } else {
@@ -268,8 +276,11 @@ export default function CRM() {
   )
 
   const leadRow = (l, i) => {
-    const n = NIVEL[l.nivel] || NIVEL.frio
-    const pide = !!l.handoff_estado
+    // SEC-X2-R0: sin solicitud no hay nivel, etapa, conteo ni reenganche (el servidor los
+    // devuelve en null): la fila dice solo que llegó y que no hay solicitud registrada.
+    const visible = conversacionVisible(l)
+    const n = visible ? (NIVEL[l.nivel] || NIVEL.frio) : NEUTRO
+    const pide = pidioCorredor(l)
     const on = sel && sel.session_id === l.session_id
     const fr = FRESCURA[l.frescura]
     const t = haceCuanto(l.ultima_actividad)
@@ -288,9 +299,13 @@ export default function CRM() {
               <span style={{ fontSize: '.58rem', fontWeight: 800, color: '#06201C', padding: '2px 7px',
                              borderRadius: 999, background: C.tealHi }}>NUEVO</span>
             )}
-            <span style={{ fontSize: '.58rem', fontWeight: 700, color: n.c, padding: '2px 7px', borderRadius: 999,
-                           background: n.c + '18', border: `1px solid ${n.c}44` }}>{ESTADO_LBL[l.estado] || l.estado}</span>
-            {l.reenganche && (
+            {(visible ? (ESTADO_LBL[l.estado] || l.estado) : ETIQUETA_SIN_SOLICITUD) && (
+              <span style={{ fontSize: '.58rem', fontWeight: 700, color: n.c, padding: '2px 7px', borderRadius: 999,
+                             background: n.c + '18', border: `1px solid ${n.c}44` }}>
+                {visible ? (ESTADO_LBL[l.estado] || l.estado) : ETIQUETA_SIN_SOLICITUD}
+              </span>
+            )}
+            {visible && l.reenganche && (
               <span style={{ fontSize: '.58rem', fontWeight: 700, color: '#E8B84B', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                 <Sparkles size={10} /> reenganche
               </span>
@@ -306,8 +321,11 @@ export default function CRM() {
           </div>
         </div>
         <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-          <div style={{ fontSize: '.68rem', color: C.muted }}><MessageCircle size={12} style={{ verticalAlign: '-2px', marginRight: 5 }} />{l.mensajes ?? 0}</div>
-          {(pide || l.handoff_sugerido) ? (
+          {/* Sin solicitud el conteo llega en null: pintarlo como 0 afirmaría que no escribió. */}
+          {visible && l.mensajes != null && (
+            <div style={{ fontSize: '.68rem', color: C.muted }}><MessageCircle size={12} style={{ verticalAlign: '-2px', marginRight: 5 }} />{l.mensajes}</div>
+          )}
+          {(pide || l.handoff_sugerido === true) ? (
             <span style={{ fontSize: '.58rem', fontWeight: 700, color: n.c, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
               <Flame size={10} /> Contactar
             </span>
@@ -388,6 +406,15 @@ export default function CRM() {
         Todos ({d?.total || 0})
       </button>
       {RAIL.map(railRow)}
+      {/* SEC-X2-R0: el embudo cuenta solo a quien pidió corredor. Los demás llegaron a tus
+          fichas, pero su conversación es privada: se dicen aparte, sin etapa. */}
+      {d?.atribuidos > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '.72rem',
+                      color: C.muted, padding: '7px 9px', marginTop: 4, borderTop: `1px solid ${C.line}` }}>
+          <span><Lock size={11} style={{ verticalAlign: '-1px', marginRight: 5 }} />{ETIQUETA_SIN_SOLICITUD}</span>
+          <span style={{ fontWeight: 800 }}>{d.atribuidos}</span>
+        </div>
+      )}
     </div>
   )
 
@@ -694,10 +721,12 @@ export default function CRM() {
               : { position: 'fixed', top: 0, right: 0, bottom: 0, width: 'min(430px, 100vw)', zIndex: 1200,
                   display: 'flex', flexDirection: 'column', padding: '16px 14px',
                   borderLeft: `1px solid ${C.line}`, background: C.panel, boxShadow: '-8px 0 44px rgba(0,0,0,.55)' }}>
+              {/* SEC-X2-R0: el Copiloto se enfoca en un interesado solo si este pidió hablar
+                  con el corredor; si no, trabaja la cartera (su conversación es privada). */}
               <CRMChat
-                key={asistente === 'copiloto' ? `copiloto-${sel?.session_id || 'cartera'}` : 'estratega'}
+                key={asistente === 'copiloto' ? `copiloto-${(conversacionVisible(sel) && sel.session_id) || 'cartera'}` : 'estratega'}
                 modo={asistente}
-                lead={asistente === 'copiloto' ? sel : null}
+                lead={asistente === 'copiloto' && conversacionVisible(sel) ? sel : null}
                 onClose={() => setAsistente(null)} />
             </div>
           )}

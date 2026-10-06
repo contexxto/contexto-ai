@@ -15,6 +15,9 @@ import ResultCards from './ResultCards'
 import DeltaEncaje from './DeltaEncaje'
 import Launcher from './Launcher'
 import AttachSheet from './AttachSheet'
+import PedirCorredor from './PedirCorredor'
+import { activoDelLetrero, candidatosDelUltimoPanel, canonico } from './pedidoCorredor'
+import { mensajeErrorLetrero, useDireccionLetrero } from './direccionLetrero'
 import { COPY_AVISO, cuerpoActivar, cuerpoCerrar, cuerpoDesactivar, guardarPreferencia, leerPreferencia,
 } from './avisoReenganche'
 
@@ -527,6 +530,9 @@ export default function App() {
   // Detalle de un inmueble abierto desde una tarjeta de resultado (overlay sin
   // perder el chat). Reutiliza AnuncioView; al cerrar volvemos a la conversación.
   const [openAnuncioId, setOpenAnuncioId] = useState(null)
+  // Dirección del letrero que abrió el chat ({ id, direccion }). Solo ETIQUETA del botón de
+  // corredor: no decide nada, y solo se usa si su id coincide con el letrero vigente.
+  const [letreroInfo, setLetreroInfo] = useState(null)
   const [dragOver, setDragOver] = useState(false)
   const [geo, setGeo] = useState(null)          // {lat, lon} | null — ubicación del usuario
   const [geoLoading, setGeoLoading] = useState(false)
@@ -541,7 +547,9 @@ export default function App() {
   const lastAiRef = useRef('')   // última respuesta del agente (para bloquear ecos/reenvíos)
   const [modoCorredor, setModoCorredor] = useState(false)  // handoff en vivo: el lead habla con el corredor (no el AI)
   const handoffSeenRef = useRef(0)                          // último id de mensaje de handoff visto
-  const [handoffPendiente, setHandoffPendiente] = useState(false)  // handoff esperando registro del lead
+  // SEC-X2-R0: el inmueble que la persona ELIGIÓ, esperando a que se registre. Era un
+  // booleano y, tras el login, el inmueble se recalculaba: ya no era el del clic.
+  const [handoffPendiente, setHandoffPendiente] = useState(null)
   const [corredorWhatsapp, setCorredorWhatsapp] = useState(null)   // WhatsApp del corredor (si lo cargó) → botón wa.me en el handoff
   // Hilo abierto = (conversación, inmueble). `hiloSeleccionado` es la elección explícita
   // (llegó por el aviso o por la bandeja) y por eso puede disparar una recarga; `hiloActivo`
@@ -862,11 +870,17 @@ export default function App() {
     } finally { setLoading(false) }
   }, [])
 
+  // El bootstrap puede rechazar el letrero (404: el inmueble no existe; 422: el id no es un
+  // UUID). Sin esto quedaba una promesa rechazada sin manejar y un chat vacío sin explicación.
+  const abrirLetrero = useCallback((id) => {
+    loadFromDeepLink(id).catch((e) => setError(mensajeErrorLetrero(e)))
+  }, [loadFromDeepLink])
+
   useEffect(() => {
     // Con QR arrancamos en la página de anuncio (anuncioMode=true); el informe del
     // agente se dispara desde el CTA, no en el montaje.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (deepLinkId && !anuncioMode) loadFromDeepLink(deepLinkId)
+    if (deepLinkId && !anuncioMode) abrirLetrero(deepLinkId)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -997,12 +1011,24 @@ export default function App() {
 
     // Modo corredor: el mensaje va al corredor humano (in-platform), no al agente.
     if (modoCorredor) {
+      const hilo = hiloActivo || hiloSeleccionado   // fuera del try: el catch lo necesita
       try {
-        const hilo = hiloActivo || hiloSeleccionado
         await axios.post(`${API_BASE}/api/v1/chat/${sessionId}/handoff/mensaje`,
           { texto: userText },
           { params: hilo ? { activo_id: hilo } : undefined, headers: apiHeadersSesion(sessionId) })
-      } catch { setError('No se pudo enviar tu mensaje al corredor. Intenta de nuevo.') }
+      } catch (e) {
+        if (e?.response?.status === 409) {
+          // SEC-X2-R0: el hilo no tiene una solicitud registrada (histórico) o ya no está
+          // autorizado. Se sale del modo corredor y se quita ese hilo para que reaparezca
+          // el botón: retomarlo exige una solicitud nueva de la persona.
+          setPrefiereAgente(true)
+          setModoCorredor(false)
+          setHilosCorredor((prev) => prev.filter((h) => h.activo_id !== hilo))
+          setError('Tu conversación con el corredor necesita una nueva solicitud. Pulsa «Hablar con el corredor» para retomarla.')
+        } else {
+          setError('No se pudo enviar tu mensaje al corredor. Intenta de nuevo.')
+        }
+      }
       return
     }
 
@@ -1372,35 +1398,49 @@ export default function App() {
     subscribeUserPush(true)
   }, [subscribeUserPush])
 
-  // Inmueble candidato de una conversación SIN QR: el primero de las tarjetas del último
-  // mensaje que trajo resultados. Es lo que el usuario tiene delante cuando pide corredor,
-  // y lo que enruta el lead a su dueño. Null si aún no se ha mostrado ninguno.
-  const activoCandidato = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const r = messages[i]?.results
-      if (Array.isArray(r) && r.length && r[0]?.id) return r[0].id
-    }
-    return null
-  }, [messages])
+  // SEC-X2-R0 · ATRIBUCIÓN ≠ AUTORIDAD. Aquí vivía `activoCandidato`: la PRIMERA tarjeta del
+  // último panel, cuyo orden puede decidirlo el propio LLM. Pedir corredor la enviaba sin que
+  // la persona la hubiera elegido. Ahora solo se calculan OPCIONES; el inmueble que viaja es
+  // el del control que la persona pulsa (pedidoCorredor.js · PedirCorredor.jsx).
+  const candidatosCorredor = useMemo(() => candidatosDelUltimoPanel(messages), [messages])
+  // El inmueble del letrero, solo si la conversación abierta nació de él (la URL /a/{id}
+  // sobrevive a cambiar de conversación).
+  let sesionDelLetrero = null
+  try { sesionDelLetrero = deepLinkId ? localStorage.getItem('ctx_qr_' + deepLinkId) : null } catch { /* sin storage */ }
+  const letrero = activoDelLetrero({ deepLinkId, sessionId, sesionDelLetrero })
+  // Su dirección, solo para la etiqueta: la que trajo el anuncio o, si no la hay (conversación
+  // reabierta desde la barra lateral), la del endpoint público del anuncio.
+  const direccionCapturada = letreroInfo?.id && letreroInfo.id === letrero ? letreroInfo.direccion : null
+  const direccionConsultada = useDireccionLetrero(letrero, direccionCapturada)
+  const direccionLetrero = direccionCapturada || direccionConsultada
 
-  // Handoff en vivo: el lead pide hablar con el corredor (dentro de Contexto).
-  // Requiere registro (correo/Google) → identidad + poder avisarle. Si no hay
-  // sesión, abrimos el registro y reintentamos el handoff al autenticarse.
-  const iniciarHandoff = useCallback(async () => {
+  // Handoff en vivo: el lead pide hablar con el corredor (dentro de Contexto) DE UN INMUEBLE
+  // CONCRETO: el que eligió con el clic (`activoId`). Requiere registro (correo/Google) →
+  // identidad + poder avisarle. Si no hay sesión, abrimos el registro y, al autenticarse,
+  // se pide EL MISMO inmueble: nunca se recalcula.
+  const iniciarHandoff = useCallback(async (activoId) => {
+    const elegido = canonico(activoId)
+    if (!elegido) return   // FALLA CERRADO: sin un inmueble elegido no se pide nada
     if (authEnabled && !session) {
-      setHandoffPendiente(true)
+      setHandoffPendiente(elegido)
       setAuthOpen(true)
       return
     }
     try {
-      // Fuera del flujo de QR el inmueble NO viaja en el session_id: mandamos el candidato
-      // que el usuario tiene en pantalla, o el corredor no se resuelve y el lead se pierde.
+      // Contrato SEC-X2-R0: el inmueble va en el CUERPO. El query repite el mismo valor solo
+      // por compatibilidad con el backend anterior, que lo lee de ahí.
       const { data } = await axios.post(
-        `${API_BASE}/api/v1/chat/${sessionId}/handoff`, {},
-        { params: activoCandidato ? { activo_id: activoCandidato } : undefined, headers: apiHeadersSesion(sessionId) })
+        `${API_BASE}/api/v1/chat/${sessionId}/handoff`, { activo_id: elegido },
+        { params: { activo_id: elegido }, headers: apiHeadersSesion(sessionId) })
+      // Si el servidor registró OTRO inmueble, no se anuncia «Te conecté»: no es lo que se pidió.
+      if (canonico(data?.activo_id) !== elegido) {
+        setError('No se pudo confirmar tu solicitud para el inmueble que elegiste. Inténtalo de nuevo.')
+        return
+      }
       if (data?.corredor_whatsapp) setCorredorWhatsapp(data.corredor_whatsapp)
       // Puede ser un SEGUNDO corredor de la misma conversación: el hilo pasa a ser este.
-      if (data?.activo_id) { setHiloActivo(data.activo_id); setHiloSeleccionado(data.activo_id) }
+      setHiloActivo(elegido); setHiloSeleccionado(elegido)
+      setPrefiereAgente(false)   // acaba de pedir al corredor: el sondeo ya puede mantenerlo ahí
       setModoCorredor(true)
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(), role: 'ai', deCorredor: true,   // aviso del sistema: sin interfaz del agente
@@ -1414,9 +1454,10 @@ export default function App() {
       // mirar sin la consola del aparato. Ahora el propio mensaje dice qué pasó — el
       // servidor respondió con un código, o no respondió (red / CORS / servicio caído).
       const codigo = e?.response?.status
-      const detalle = e?.response?.data?.detail
-      // 409 = "falta saber qué inmueble": no es una avería, es una pregunta. Se muestra
-      // tal cual, en el idioma del usuario, sin códigos ni jerga.
+      // Solo texto: un `detail` en forma de lista (422) se pintaría «[object Object]».
+      const detalle = typeof e?.response?.data?.detail === 'string' ? e.response.data.detail : null
+      // 409 = el servidor no acepta ese inmueble para esta conversación: no es una avería.
+      // Se muestra tal cual, en el idioma del usuario, sin códigos ni jerga.
       if (codigo === 409 && detalle) { setError(detalle); return }
       setError(
         codigo
@@ -1425,11 +1466,15 @@ export default function App() {
       )
       console.warn('handoff falló:', e)
     }
-  }, [sessionId, session, subscribeToPush, activoCandidato])
+  }, [sessionId, session, subscribeToPush])
 
-  // Tras registrarse, continúa el handoff que quedó pendiente.
+  // Tras registrarse, continúa el handoff que quedó pendiente, con el inmueble que se eligió.
   useEffect(() => {
-    if (session && handoffPendiente) { setHandoffPendiente(false); iniciarHandoff() }
+    if (session && handoffPendiente) {
+      const elegido = handoffPendiente
+      setHandoffPendiente(null)
+      iniciarHandoff(elegido)
+    }
   }, [session, handoffPendiente, iniciarHandoff])
 
   // Sondeo del handoff: trae respuestas del corredor y, si el corredor ya entró, activa
@@ -1772,7 +1817,10 @@ export default function App() {
       )
     }
     return <AnuncioView id={deepLinkId}
-      onChat={() => { setAnuncioMode(false); loadFromDeepLink(deepLinkId) }}
+      onChat={(info) => {
+        setLetreroInfo({ id: canonico(deepLinkId), direccion: info?.direccion || null })
+        setAnuncioMode(false); abrirLetrero(deepLinkId)
+      }}
       onExpandMap={() => setAnuncioMapaOpen(true)} />
   }
 
@@ -2151,9 +2199,9 @@ export default function App() {
       </header>
 
       {authOpen && (
-        <Auth motivo={handoffPendiente ? 'Regístrate para hablar con un corredor — así puede responderte y avisarte.' : null}
+        <Auth motivo={handoffPendiente ? 'Regístrate para hablar con el corredor — así puede responderte y avisarte.' : null}
           initialMode={authMode}
-          onClose={() => { setAuthOpen(false); setHandoffPendiente(false) }}
+          onClose={() => { setAuthOpen(false); setHandoffPendiente(null) }}
           onAuthed={(s) => { setSession(s); setAccessToken(s?.access_token) }} />
       )}
       {publishOpen && <MisPublicaciones onClose={() => setPublishOpen(false)} />}
@@ -2239,11 +2287,11 @@ export default function App() {
       <div style={{
         padding:`14px ${rellenoColumna({ enTelefono: isMobile })} 18px`, flexShrink:0,
       }}>
-        {/* Antes esto era solo `deepLinkId`: el botón de corredor existía únicamente en el
-            chat del QR. La conversación normal (la mayoría) se quedaba sin salida al humano
-            en el pico de intención. Ahora también aparece cuando ya hay un inmueble
-            candidato en pantalla — que es lo que enruta el lead a su dueño. */}
-        {(deepLinkId || activoCandidato || modoCorredor || hilosCorredor.length > 0) && (
+        {/* El botón de corredor aparece en la conversación del letrero y cuando hay inmuebles
+            en pantalla. SEC-X2-R0: `letrero` y no `deepLinkId` a secas (la URL /a/{id}
+            sobrevive a cambiar de conversación), y los inmuebles en pantalla son OPCIONES
+            que la persona elige, no un candidato elegido por ella. */}
+        {(letrero || candidatosCorredor.length > 0 || modoCorredor || hilosCorredor.length > 0) && (
           modoCorredor ? (
             <>
               {/* Con QUIÉN habla. Con varios corredores abiertos, "hablas con el corredor"
@@ -2284,10 +2332,11 @@ export default function App() {
               {corredorWhatsapp && (
                 /* El enlace salía como /a/null en cualquier conversación que no viniera de
                    un QR (deepLinkId es null ahí): el interesado le mandaba al corredor un
-                   link roto de su propio inmueble. Ahora sale del hilo abierto. */
+                   link roto de su propio inmueble. Ahora sale del hilo abierto, y el letrero
+                   solo como respaldo (un /a/{id} viejo en la URL puede ser de otro inmueble). */
                 <a href={`https://wa.me/${corredorWhatsapp}?text=${encodeURIComponent(
-                     (deepLinkId || hiloActivo || hiloSeleccionado)
-                       ? `Hola, vi tu inmueble en Contexto y me interesa: ${window.location.origin}/a/${deepLinkId || hiloActivo || hiloSeleccionado}`
+                     (hiloActivo || hiloSeleccionado || letrero)
+                       ? `Hola, vi tu inmueble en Contexto y me interesa: ${window.location.origin}/a/${hiloActivo || hiloSeleccionado || letrero}`
                        : 'Hola, vi tu inmueble en Contexto y me interesa.')}`}
                    target="_blank" rel="noopener noreferrer"
                    style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:7, margin:'0 0 8px',
@@ -2315,13 +2364,12 @@ export default function App() {
             </div>
           ) : (
             <div style={{ display:'flex', gap:8, justifyContent:'center', flexWrap:'wrap', margin:'0 0 8px' }}>
-              <button onClick={iniciarHandoff}
-                style={{ display:'flex', alignItems:'center', gap:7, padding:'7px 14px',
-                         borderRadius:999, cursor:'pointer', fontSize:'.78rem', fontWeight:600,
-                         background:'rgba(45,189,182,.10)', border:'1px solid rgba(45,189,182,.3)', color:'var(--teal-text)' }}>
-                <Handshake size={14} />
-                Hablar con el corredor
-              </button>
+              {/* SEC-X2-R0: el inmueble lo elige la persona con el clic; con varios en
+                  pantalla, pregunta «¿Por cuál inmueble?» y no elige por ella. */}
+              <PedirCorredor
+                key={`${sessionId}|${letrero || ''}|${candidatosCorredor.map((c) => c.id).join(',')}`}
+                letrero={letrero} direccionLetrero={direccionLetrero}
+                candidatos={candidatosCorredor} onPedir={iniciarHandoff} />
               {avisoEstado === 'activado' ? (
                 <span style={{ display:'flex', alignItems:'center', gap:7, flexWrap:'wrap', padding:'7px 14px',
                                borderRadius:999, fontSize:'.78rem', fontWeight:600,

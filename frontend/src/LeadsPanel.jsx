@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
-import { X, Users, RefreshCw, Flame, ArrowLeft, Send, MessageCircle, Sparkles, Copy, Check, AlertTriangle, Thermometer, Snowflake, Moon } from 'lucide-react'
+import { X, Users, RefreshCw, Flame, ArrowLeft, Send, MessageCircle, Sparkles, Copy, Check, AlertTriangle, Thermometer, Snowflake, Moon, Lock } from 'lucide-react'
 import { API_BASE, apiHeaders } from './api'
 import { renderMarkdown } from './markdown'
+import { ETIQUETA_SIN_SOLICITUD, conversacionVisible, frasePrivada, pidioCorredor, puntaje } from './divulgacionLead'
 
 const C = {
   bg: 'var(--bg)', panel: 'var(--surface-1)', teal: 'var(--teal)', tealHi: 'var(--teal-bright)',
@@ -11,6 +12,9 @@ const C = {
 const NIVEL = {
   caliente: { c: 'var(--coral)', Icon: Flame }, tibio: { c: '#E8B84B', Icon: Thermometer }, frio: { c: '#5E9BE0', Icon: Snowflake },
 }
+// SEC-X2-R0: lead sin solicitud registrada de corredor. Sin nivel (es una inferencia de su
+// conversación), así que tampoco se le pinta «frío»: color neutro y candado.
+const NEUTRO = { c: '#8A8A93', Icon: Lock }
 // Icono de temperatura del lead. Componente y no expresion inline para que
 // el JSX siga leyendose.
 const NivelIcon = ({ nivel, size = 13 }) => {
@@ -99,6 +103,14 @@ export default function LeadsPanel({ activo, onClose }) {
                       {ESTADO_LBL[e]} <strong style={{ color: C.tealHi }}>{d.funnel?.[e] || 0}</strong>
                     </span>
                   ))}
+                  {/* El embudo solo cuenta a quien pidió corredor; el resto llegó pero su
+                      conversación es privada. */}
+                  {d.atribuidos > 0 && (
+                    <span style={{ fontSize: '.72rem', padding: '4px 10px', borderRadius: 999,
+                                   background: 'rgba(255,255,255,.04)', border: `1px solid ${C.line}`, color: C.muted }}>
+                      {ETIQUETA_SIN_SOLICITUD} <strong style={{ color: C.text }}>{d.atribuidos}</strong>
+                    </span>
+                  )}
                 </div>
 
                 {d.total === 0 ? (
@@ -109,23 +121,32 @@ export default function LeadsPanel({ activo, onClose }) {
                   </div>
                 ) : (
                   <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {d.leads.map((l, i) => {
-                      const n = NIVEL[l.nivel] || NIVEL.frio
-                      const pide = !!l.handoff_estado
+                    {(d.leads || []).map((l, i) => {
+                      // SEC-X2-R0: sin solicitud, el servidor no entrega nada derivado de la
+                      // conversación (nivel, estado, score, razones…) y la interfaz no lo ofrece.
+                      const visible = conversacionVisible(l)
+                      const n = visible ? (NIVEL[l.nivel] || NIVEL.frio) : NEUTRO
+                      const pide = pidioCorredor(l)
+                      const contactar = pide || l.handoff_sugerido === true
+                      const pts = puntaje(l)
                       return (
-                        <div key={i} style={{ border: `1px solid ${(pide || l.handoff_sugerido) ? n.c + '66' : C.line}`, borderRadius: 14,
+                        <div key={i} style={{ border: `1px solid ${contactar ? n.c + '66' : C.line}`, borderRadius: 14,
                                               padding: '12px 13px', background: 'rgba(255,255,255,.03)' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                             <n.Icon size={18} color={n.c} />
                             <div>
                               <div style={{ fontWeight: 700, fontSize: '.9rem' }}>{l.lead}</div>
-                              <div style={{ fontSize: '.72rem', color: n.c, fontWeight: 700, textTransform: 'capitalize' }}>
-                                {ESTADO_LBL[l.estado] || l.estado}{pide ? ' · pidió corredor' : ''}
+                              <div style={{ fontSize: '.72rem', color: n.c, fontWeight: 700, textTransform: visible ? 'capitalize' : 'none' }}>
+                                {visible
+                                  ? `${ESTADO_LBL[l.estado] || l.estado || ''}${pide ? ' · pidió corredor' : ''}`
+                                  : ETIQUETA_SIN_SOLICITUD}
                               </div>
                             </div>
                             <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
-                              <div style={{ fontWeight: 800, fontSize: '1.05rem' }}>{l.score}<span style={{ fontSize: '.6rem', color: C.muted }}>/100</span></div>
-                              {(pide || l.handoff_sugerido) && (
+                              {pts != null && (
+                                <div style={{ fontWeight: 800, fontSize: '1.05rem' }}>{pts}<span style={{ fontSize: '.6rem', color: C.muted }}>/100</span></div>
+                              )}
+                              {contactar && (
                                 <div style={{ fontSize: '.62rem', color: n.c, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 3, justifyContent: 'flex-end' }}>
                                   <Flame size={11} /> Contactar
                                 </div>
@@ -133,7 +154,7 @@ export default function LeadsPanel({ activo, onClose }) {
                             </div>
                           </div>
                           <div style={{ marginTop: 9, fontSize: '.74rem', color: C.muted }}>
-                            {(l.razones || []).slice(0, 3).join(' · ')}
+                            {visible ? (l.razones || []).slice(0, 3).join(' · ') : frasePrivada(l)}
                           </div>
                           {(FRESCURA[l.frescura] || l.reenganche) && (
                             <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -152,13 +173,15 @@ export default function LeadsPanel({ activo, onClose }) {
                               )}
                             </div>
                           )}
-                          <button onClick={() => setConvo(l)}
-                            style={{ marginTop: 10, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                     gap: 7, padding: '8px', borderRadius: 10, cursor: 'pointer', fontWeight: 700, fontSize: '.78rem',
-                                     background: (pide || l.handoff_sugerido) ? `linear-gradient(90deg, ${C.teal}, ${C.tealHi})` : 'rgba(255,255,255,.05)',
-                                     border: `1px solid ${C.line}`, color: (pide || l.handoff_sugerido) ? '#0E0D13' : C.tealHi }}>
-                            <MessageCircle size={14} /> Entrar a la conversación
-                          </button>
+                          {visible && (
+                            <button onClick={() => setConvo(l)}
+                              style={{ marginTop: 10, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                       gap: 7, padding: '8px', borderRadius: 10, cursor: 'pointer', fontWeight: 700, fontSize: '.78rem',
+                                       background: contactar ? `linear-gradient(90deg, ${C.teal}, ${C.tealHi})` : 'rgba(255,255,255,.05)',
+                                       border: `1px solid ${C.line}`, color: contactar ? '#0E0D13' : C.tealHi }}>
+                              <MessageCircle size={14} /> Entrar a la conversación
+                            </button>
+                          )}
                         </div>
                       )
                     })}
@@ -189,6 +212,9 @@ export function LeadChat({ activo, lead, onBack }) {
   const [error, setError] = useState(null)
   const [copiadoRe, setCopiadoRe] = useState(false)
   const finRef = useRef(null)
+  // SEC-X2-R0: sin solicitud registrada, su conversación no se pide ni se
+  // responde (el servidor contestaría 403): no hay sondeo, ni envío, ni reenganche.
+  const visible = conversacionVisible(lead)
 
   async function copiarRe() {
     try {
@@ -198,6 +224,7 @@ export function LeadChat({ activo, lead, onBack }) {
   }
 
   async function cargar() {
+    if (!conversacionVisible(lead)) return
     try {
       const { data } = await axios.get(`${API_BASE}/api/v1/assets/${activo.id}/leads/${lead.session_id}/conversacion`,
         { headers: apiHeaders() })
@@ -206,14 +233,16 @@ export function LeadChat({ activo, lead, onBack }) {
     } catch { setMsgs([]) }
   }
   useEffect(() => {
+    if (!visible) return
     cargar()
     const iv = setInterval(cargar, 6000)   // sondea nuevos mensajes del interesado
     return () => clearInterval(iv)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lead.session_id])
+  }, [lead.session_id, visible])
   useEffect(() => { finRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [msgs])
 
   async function responder() {
+    if (!conversacionVisible(lead)) return
     const t = texto.trim()
     if (!t || enviando) return
     setTexto(''); setEnviando(true); setError(null)
@@ -249,6 +278,14 @@ export function LeadChat({ activo, lead, onBack }) {
   const fr = FRESCURA[lead.frescura]
   const ult = haceCuanto(lead.ultima_actividad)
 
+  if (!visible) return <LeadPrivado lead={lead} fr={fr} ult={ult} onBack={onBack} />
+
+  // Cada dato se pinta solo si llegó: nunca «null/100», «undefined» ni un separador huérfano.
+  const pts = puntaje(lead)
+  const estadoLbl = ESTADO_LBL[lead.estado] || lead.estado || null
+  const detalle = [estadoLbl, pts != null ? `${pts}/100` : null,
+    lead.mensajes != null ? `💬 ${lead.mensajes}` : null, ult].filter(Boolean).join(' · ')
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 10, paddingRight: 26, flexShrink: 0 }}>
@@ -264,8 +301,7 @@ export function LeadChat({ activo, lead, onBack }) {
             )}
           </div>
           <div style={{ fontSize: '.72rem', color: C.muted, marginTop: 2 }}>
-            <NivelIcon nivel={lead.nivel} /> {ESTADO_LBL[lead.estado]} · {lead.score}/100
-            {lead.mensajes != null ? ` · 💬 ${lead.mensajes}` : ''}{ult ? ` · ${ult}` : ''}
+            <NivelIcon nivel={lead.nivel} /> {detalle}
           </div>
         </div>
       </div>
@@ -335,6 +371,39 @@ export function LeadChat({ activo, lead, onBack }) {
                    background: texto.trim() ? `linear-gradient(90deg,${C.teal},${C.tealHi})` : 'rgba(45,189,182,.12)', color: '#0E0D13' }}>
           <Send size={16} />
         </button>
+      </div>
+    </div>
+  )
+}
+
+// SEC-X2-R0: lo que el corredor ve de quien llegó sin solicitud registrada de hablar con él. Solo
+// datos de llegada (quién, cómo, cuándo); su conversación queda privada hasta que lo pida.
+function LeadPrivado({ lead, fr, ult, onBack }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 10, paddingRight: 26, flexShrink: 0 }}>
+        <button onClick={onBack} aria-label="Volver"
+          style={{ background: 'none', border: 'none', color: C.tealHi, cursor: 'pointer', display: 'flex' }}>
+          <ArrowLeft size={18} />
+        </button>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+            <span style={{ fontWeight: 800, fontSize: '1rem' }}>{lead.lead}</span>
+            {fr && (
+              <span style={{ fontSize: '.58rem', fontWeight: 700, color: fr.c, padding: '2px 7px', borderRadius: 999,
+                             background: fr.c + '18', border: `1px solid ${fr.c}44` }}>{fr.Icon && <fr.Icon size={11} style={{ verticalAlign: '-2px', marginRight: 4 }} />}{fr.lbl}</span>
+            )}
+          </div>
+          <div style={{ fontSize: '.72rem', color: C.muted, marginTop: 2 }}>
+            {[lead.direccion, ult].filter(Boolean).join(' · ')}
+          </div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start', padding: '12px 13px', borderRadius: 12,
+                    background: 'rgba(255,255,255,.03)', border: `1px solid ${C.line}`,
+                    fontSize: '.82rem', color: C.text, lineHeight: 1.5 }}>
+        <Lock size={15} color={NEUTRO.c} style={{ flexShrink: 0, marginTop: 2 }} />
+        <span>{frasePrivada(lead)}</span>
       </div>
     </div>
   )

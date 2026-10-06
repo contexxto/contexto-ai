@@ -226,7 +226,9 @@ ENDPOINTS = {
     "3·GET /{sid}/intencion": lambda s, u, r: chat.session_intencion(_peticion(r), s, u),
     "4·POST /{sid}/handoff/push": lambda s, u, r: chat.registrar_push_subscription(
         _peticion(r), s, {"endpoint": "https://push.example/x"}, u),
-    "5·POST /{sid}/handoff": lambda s, u, r: chat.solicitar_handoff(_peticion(r), s, None, u),
+    # SEC-X2-R0 (actualización esperada): el acto viaja en el CUERPO; sin él, 409 antes del efecto.
+    "5·POST /{sid}/handoff": lambda s, u, r: chat.solicitar_handoff(
+        _peticion(r), s, None, u, chat.SolicitudHandoff(activo_id=ACTIVO)),
     "6·POST /{sid}/handoff/mensaje": lambda s, u, r: chat.handoff_mensaje_lead(
         _peticion(r), s, chat.HandoffMsg(texto="hola"), None, u),
     "7·POST /comparar": lambda s, u, r: chat.comparar_endpoint(

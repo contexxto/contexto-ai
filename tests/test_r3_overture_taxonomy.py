@@ -253,7 +253,9 @@ def test_el_lector_viejo_no_cambio_ni_una_linea(foso):
         return next(ast.unparse(n) for n in ast.walk(ast.parse(texto)) if isinstance(n, ast.FunctionDef) and n.name == nombre)
     actual = (RAIZ / "scripts" / "foso_pois_spike.py").read_text(encoding="utf-8")
     base = p.stdout.decode("utf-8")
-    for nombre in ("pull_overture", "pull_osm_transporte", "huella_esquema_overture", "overture_release"):
+    # `pull_osm_transporte` salió de esta lista con la OSM SNAPSHOT FRESHNESS GUARD (D-OSM-1), que la cambia A
+    # PROPÓSITO: su consulta y su mapeo siguen fijados contra `main` en tests/test_osm_snapshot_freshness_guard.py.
+    for nombre in ("pull_overture", "huella_esquema_overture", "overture_release"):
         assert funcion(actual, nombre) == funcion(base, nombre), nombre
     for constante in ('LECTOR_OVERTURE = "overture_places_categories_v1"', 'NS_OVERTURE = "overture:categories.primary"',
                       'LECTOR_OSM = "osm_overpass_nwr_body_center_v1"'):

@@ -614,6 +614,81 @@ def _instante_con_zona(texto) -> str | None:
     return dt.isoformat() if dt.tzinfo is not None and dt.utcoffset() is not None else None
 
 
+# ── OSM SNAPSHOT FRESHNESS GUARD (2026-10-04, D-OSM-1) ───────────────────────────────────────────────────────────
+#
+# EL DEFECTO (corrida 37133309229, 2026-10-03): `overpass-api.de` dio 504 y el espejo de respaldo
+# `overpass.kumi.systems` respondió con una instantánea del 2026-07-15 15:22:01Z (`osm3s.timestamp_osm_base`), ~79
+# días más vieja que la ya aplicada (2026-10-02 14:53:35Z). El bucle de espejos tomaba la primera respuesta HTTP 200:
+# se aplicó, y cerró 171 POIs y reabrió 27 con datos viejos. Las guardas de VOLUMEN (50 %, postcheck) miden cuánto
+# llega, no de CUÁNDO es.
+#
+# LA REGLA: cada espejo DECLARA su instantánea; se compara con el PISO DE FRESCURA = el MÁXIMO `source_snapshot_at`
+# que Contexto ya ACEPTÓ para OSM en esta ciudad (corridas `ok` del lector vigente; `PISO_FRESCURA_OSM_SQL`). Es el
+# máximo HISTÓRICO, no la última corrida por fecha de ejecución: una corrida desfasada que se haya colado (como la
+# 37133309229) no baja el piso.
+#     instantánea  > piso → se ACEPTA                 instantánea == piso → se ACEPTA (idempotente)
+#     instantánea  < piso → espejo DESFASADO: no se usa, se prueba el siguiente
+#     sin instantánea, ilegible o sin zona → espejo INVERIFICABLE: no se usa, se prueba el siguiente
+# Si ningún espejo da una instantánea aceptable (por HTTP, desfasado o inverificable), OSM queda CAÍDA: 0
+# escrituras, 0 cierres (contrato de `pull_osm_transporte`: None ≠ lista vacía); Overture sigue en lo suyo. Un espejo
+# desfasado NO es una fuente ROTA: otro espejo puede estar al día y, si ninguno lo está, reintentar más tarde sirve.
+# La autoridad es la instantánea que DECLARA la fuente frente a la que ya se aceptó: nunca el reloj del runner.
+# El piso lo lee `main` de la base ANTES de aceptar ningún espejo (`leer_piso_frescura_osm`, su propia transacción
+# de SOLO LECTURA); si no se puede leer, no se acepta ninguno. Sin migración: reutiliza `poi_ingestion_run`.
+PISO_FRESCURA_OSM_SQL = text("""
+    SELECT max(source_snapshot_at) FROM poi_ingestion_run
+    WHERE source_provider = 'osm' AND ciudad = :c AND status = 'ok'
+      AND reader_contract = :lector AND source_snapshot_at IS NOT NULL
+""")
+_FRESCURA_ACEPTA = frozenset({"ACEPTADO", "IDEMPOTENTE"})
+
+
+class PisoFrescuraIlegible(Exception):
+    """No se pudo leer el piso de frescura de OSM: no se acepta ningún espejo (OSM CAÍDA, sin red ni escritura)."""
+    clase = "PisoFrescuraIlegible"
+
+
+# El piso de ESTA corrida, que fija `main` antes de obtener OSM (módulo y no argumento, como ULTIMA_OSM:
+# `pull_osm_transporte()` conserva su firma; las pruebas y los arneses la usan).
+#   None                       → la ciudad no tiene historia OSM aceptada: vale cualquier instantánea VERIFICABLE;
+#   datetime (con zona)        → el máximo histórico aceptado;
+#   PisoFrescuraIlegible(...)  → no se pudo leer: no se acepta ningún espejo.
+PISO_OSM = None
+# Lo que la guarda observó en ESTA corrida: el piso, cada espejo (resultado e instantánea declarada) y, si OSM cae, la
+# clase. Va a la observación de OSM (log, estado). ULTIMA_OSM conserva su contrato: el espejo ACEPTADO y su instantánea.
+FRESCURA_OSM: dict = {}
+
+
+def leer_piso_frescura_osm(eng):
+    """El PISO DE FRESCURA de OSM para `CIUDAD`: una lectura EXPLÍCITA (`PISO_FRESCURA_OSM_SQL`), en su propia
+    transacción de SOLO LECTURA, del máximo `source_snapshot_at` aceptado. None = no hay historia. Si la lectura falla
+    o el valor no es un instante con zona, devuelve `PisoFrescuraIlegible` (no lanza: el llamador decide)."""
+    try:
+        with eng.connect() as db:
+            db.execute(text("SET TRANSACTION READ ONLY"))
+            piso = db.execute(PISO_FRESCURA_OSM_SQL, {"c": CIUDAD, "lector": LECTOR_OSM}).scalar()
+    except Exception as exc:  # noqa: BLE001 — sin piso no se acepta ningún espejo (solo la clase: nunca SQL ni host)
+        return PisoFrescuraIlegible(type(exc).__name__)
+    if piso is None:
+        return None
+    if not isinstance(piso, datetime) or piso.tzinfo is None or piso.utcoffset() is None:
+        return PisoFrescuraIlegible(f"piso de tipo {type(piso).__name__} sin zona")
+    return piso
+
+
+def _veredicto_frescura(instante: str | None, piso) -> str:
+    """Una celda de la guarda: la instantánea que DECLARA el espejo (ISO con zona, de `_instante_con_zona`) frente al
+    piso. Explícita para cada caso: ACEPTADO · IDEMPOTENTE · DESFASADO · INVERIFICABLE."""
+    if instante is None:
+        return "INVERIFICABLE"
+    candidata = datetime.fromisoformat(instante)
+    if piso is None or candidata > piso:
+        return "ACEPTADO"
+    if candidata == piso:
+        return "IDEMPOTENTE"
+    return "DESFASADO"
+
+
 def pull_osm_transporte() -> list[dict]:
     """POIs de OSM: transporte + el comercio de barrio que Overture no ve. Overpass, sin auth.
 
@@ -655,24 +730,50 @@ def pull_osm_transporte() -> list[dict]:
     headers = {"User-Agent": "whaber-foso-spike/1.0 (contacto: dev@whaber.local)"}
     elems = None
     ULTIMA_OSM.clear()
+    FRESCURA_OSM.clear()
+    piso = PISO_OSM
+    FRESCURA_OSM.update({"piso": piso.isoformat() if isinstance(piso, datetime) else None, "intentos": []})
+    if isinstance(piso, PisoFrescuraIlegible):
+        # OSM SNAPSHOT FRESHNESS GUARD: sin piso no hay con qué juzgar a ningún espejo → no se pide ninguno.
+        FRESCURA_OSM.update({"clase": piso.clase, "error": f"piso de frescura ilegible ({piso}): ningún espejo"})
+        print(f"   ⚠️ piso de frescura de OSM ilegible ({piso}) → no se acepta ningún espejo; NO se cerrará ningún "
+              "POI de OSM")
+        return None
     for url in _OVERPASS_ENDPOINTS:
         try:
             r = requests.post(url, data={"data": query}, headers=headers,
                               timeout=120, verify=False)
             r.raise_for_status()
             cuerpo = r.json()
-            elems = cuerpo.get("elements", [])
             # Procedencia de la CORRIDA: qué mirror respondió y la instantánea que DECLARA Overpass
             # (`osm3s.timestamp_osm_base`). Con `out body` no llega ni `version` ni `timestamp` por elemento.
+            # OSM SNAPSHOT FRESHNESS GUARD: esa instantánea decide si el espejo se ACEPTA, antes de leer un solo
+            # elemento. Desfasado o inverificable = fallo de ESTE espejo: se prueba el siguiente.
+            instante = _instante_con_zona((cuerpo.get("osm3s") or {}).get("timestamp_osm_base"))
+            veredicto = _veredicto_frescura(instante, piso)
+            FRESCURA_OSM["intentos"].append({"endpoint": url, "resultado": veredicto, "instantanea": instante})
+            if veredicto not in _FRESCURA_ACEPTA:
+                print(f"   ⚠️ Overpass {url.split('/')[2]}: instantánea "
+                      + (f"{instante} < piso {piso.isoformat()}" if veredicto == "DESFASADO"
+                         else "ausente, ilegible o sin zona")
+                      + f" → espejo {veredicto}: no se usa, se prueba el siguiente")
+                continue
+            elems = cuerpo.get("elements", [])
             ULTIMA_OSM["endpoint"] = url
-            ULTIMA_OSM["snapshot_at"] = _instante_con_zona((cuerpo.get("osm3s") or {}).get("timestamp_osm_base"))
+            ULTIMA_OSM["snapshot_at"] = instante
             break
         except Exception as ex:  # rate-limit / caído → probar siguiente mirror
+            FRESCURA_OSM["intentos"].append({"endpoint": url, "resultado": "FALLO", "error": type(ex).__name__})
             print(f"   ⚠️ Overpass {url.split('/')[2]} falló ({str(ex)[:60]})")
-    if elems is None:  # todos los mirrors fallaron
+    if elems is None:  # ningún mirror dio una instantánea aceptable
         # Devuelve None (≠ lista vacía) para que el llamador NO confunda "Overpass caído"
         # con "OSM ya no tiene estos POIs" y no cierre nada. Ver incidente en CERRAR_*.
-        print("   ⚠️ ningún endpoint de Overpass respondió — NO se cerrará ningún POI de OSM")
+        if any(i["resultado"] != "FALLO" for i in FRESCURA_OSM["intentos"]):
+            FRESCURA_OSM.update({"clase": "SinSnapshotVigente",
+                                 "error": "ningún espejo dio una instantánea vigente (desfasada o inverificable)"})
+            print("   ⚠️ ningún espejo de Overpass dio una instantánea vigente — NO se cerrará ningún POI de OSM")
+        else:
+            print("   ⚠️ ningún endpoint de Overpass respondió — NO se cerrará ningún POI de OSM")
         return None
     out = []
     for el in elems:
@@ -1190,6 +1291,8 @@ def obtener(fuente: str) -> ResultadoFuente:
     r.lector = LECTOR_OVERTURE_TAXONOMIA if fuente == "overture" else LECTOR_OSM
     r.started_at = _ahora()
     t0 = time.time()
+    if fuente == "osm":
+        FRESCURA_OSM.clear()  # OSM SNAPSHOT FRESHNESS GUARD: lo llena el lector real (uno inyectado lo deja vacío)
     try:
         filas = _pull_overture_con_release(r) if fuente == "overture" else pull_osm_transporte()
     except Exception as exc:  # noqa: BLE001 — se registra en SU estado; la otra fuente sigue
@@ -1202,8 +1305,15 @@ def obtener(fuente: str) -> ResultadoFuente:
     r.segundos = time.time() - t0
     if fuente == "osm":
         r.endpoint, r.snapshot_at = ULTIMA_OSM.get("endpoint"), ULTIMA_OSM.get("snapshot_at")
-    if filas is None:  # contrato de pull_osm_transporte: None = ningún endpoint respondió (≠ [])
-        r.estado, r.fase, r.error, r.clase = FUENTE_CAIDA, "obtencion", "ningún endpoint respondió", "SinRespuesta"
+        if FRESCURA_OSM:   # OSM SNAPSHOT FRESHNESS GUARD: el piso y cada espejo, al resumen, al estado y al log
+            r.observacion = {"frescura": {**FRESCURA_OSM,
+                                          "intentos": [dict(i) for i in FRESCURA_OSM.get("intentos", [])]}}
+    if filas is None:  # contrato de pull_osm_transporte: None = ningún espejo ACEPTABLE (≠ [])
+        # La clase dice por qué: SinRespuesta (todos por HTTP: la de siempre) · SinSnapshotVigente (alguno respondió,
+        # pero desfasado o inverificable) · PisoFrescuraIlegible (no se pudo leer el piso). Las tres son CAÍDA.
+        r.estado, r.fase = FUENTE_CAIDA, "obtencion"
+        r.error = FRESCURA_OSM.get("error", "ningún endpoint respondió")
+        r.clase = FRESCURA_OSM.get("clase", "SinRespuesta")
         return r
     r.fetched_at = _ahora()
     r.obtenidas = len(filas) if isinstance(filas, list) else None
@@ -1478,7 +1588,7 @@ def _guarda_estado(fuentes: list[ResultadoFuente], resultado: str, codigo: int) 
 
 
 def main():
-    global CIUDAD, BBOX
+    global CIUDAD, BBOX, PISO_OSM
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
     flags = {a.lower() for a in sys.argv[1:] if a.startswith("-")}
     # El paso 4 es para leerlo con ojos humanos; en las corridas programadas solo
@@ -1509,7 +1619,22 @@ def main():
     ov = obtener("overture")
     if ov.estado == FUENTE_OK:
         print(f"   {ov.validadas} POIs Overture ({ov.segundos:.0f}s)")
+
+    # NullPool: una conexión secuencial. Ver la nota en scripts/asignar_corredor.py —
+    # con el pool por defecto este script solo podría agotar el techo de Supabase.
+    # TLS del núcleo (#137): verify-full con el ancla de app/db_tls, por connect_args — en
+    # psycopg los kwargs ganan sobre la conninfo. En el runner, el ancla la instala
+    # refresco-pois.yml en su ruta canónica antes de este paso.
+    # OSM SNAPSHOT FRESHNESS GUARD: el motor se crea ANTES de obtener OSM (crearlo no conecta) para leer el piso de
+    # frescura antes de aceptar ningún espejo; la lectura va en su PROPIA transacción de solo lectura, separada de
+    # cualquier escritura (que sigue empezando después de la compuerta 043, como antes).
+    eng = create_engine(SYNC_URL, echo=False, poolclass=NullPool,
+                        connect_args=db_tls.kwargs_psycopg(SYNC_URL))
     print("── 2) OSM: transporte + comercio + culto/UPC (Overpass) ──", flush=True)
+    PISO_OSM = leer_piso_frescura_osm(eng)
+    print("   piso de frescura OSM: " + (PISO_OSM.isoformat() if isinstance(PISO_OSM, datetime) else
+                                         "sin historia (vale cualquier instantánea verificable)" if PISO_OSM is None
+                                         else f"ILEGIBLE ({PISO_OSM})"), flush=True)
     osm = obtener("osm")
     if osm.estado == FUENTE_OK:
         print(f"   {osm.validadas} POIs de OSM ({osm.segundos:.0f}s)")
@@ -1529,13 +1654,6 @@ def main():
         print("❌ Ninguna fuente se obtuvo — La capa NO se actualizó (0 escrituras, 0 cierres). "
               "Solo se registran sus corridas fallidas, si la base lo permite.")
 
-    # NullPool: una conexión secuencial. Ver la nota en scripts/asignar_corredor.py —
-    # con el pool por defecto este script solo podría agotar el techo de Supabase.
-    # TLS del núcleo (#137): verify-full con el ancla de app/db_tls, por connect_args — en
-    # psycopg los kwargs ganan sobre la conninfo. En el runner, el ancla la instala
-    # refresco-pois.yml en su ruta canónica antes de este paso.
-    eng = create_engine(SYNC_URL, echo=False, poolclass=NullPool,
-                        connect_args=db_tls.kwargs_psycopg(SYNC_URL))
     try:
         # R4 · COMPUERTA 043 (solo lectura de catálogo), ANTES de cualquier escritura y del DDL T0.
         try:

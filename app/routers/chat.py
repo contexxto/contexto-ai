@@ -2583,16 +2583,18 @@ async def registrar_handoff(
 ) -> dict:
     """Registra el handoff de una sesión y notifica al corredor dueño del inmueble.
 
-    SEC-X3-R0: su ÚNICO llamador es el endpoint HTTP del control explícito «Hablar con el
-    corredor» (`solicitar_handoff`). La tool del agente (`tool_connect_with_broker`) ya NO
-    llega aquí: una salida del LLM no es un acto del comprador, y el efecto (fila, aviso,
-    audiencia del transcript) solo lo dispara el clic de la persona. Lo congela
-    tests/test_sec_x3_r0_handoff_sin_efecto.py.
+    SEC-X3-R0 deja el endpoint HTTP del control explícito «Hablar con el corredor»
+    (`solicitar_handoff`) como ÚNICO llamador de esta función desde app/. Esta afirmación se
+    refiere al efecto de handoff; no afirma que antes del clic no exista audiencia legacy
+    sobre el transcript (por ejemplo, X-2, que corresponde a SEC-X2-R0). La tool del agente
+    (`tool_connect_with_broker`) ya NO llega aquí: una salida del LLM no es un acto del
+    comprador. Lo congela tests/test_sec_x3_r0_handoff_sin_efecto.py.
 
     activo_id explícito: las conversaciones que NO vienen de un QR no llevan el inmueble
     en el session_id, y sin él el handoff moría en silencio — nadie notificado y el lead
-    invisible en el CRM. El botón del frontend pasa aquí el inmueble que la persona tiene
-    en pantalla. El del session_id manda si existe: viene del QR escaneado."""
+    invisible en el CRM. El endpoint recibe el activo_id enviado por el frontend; la
+    exactitud de esa selección pertenece a UI-04 / SEC-X2-R0. El del session_id manda si
+    existe: viene del QR escaneado."""
     activo_id = activo_de_session(session_id) or _uuid_valido(activo_id)
     if not activo_id:
         # Sin inmueble no hay corredor a quien entregar el lead. Antes se guardaba una fila

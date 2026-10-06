@@ -406,6 +406,42 @@ def test_9g_la_descripcion_de_la_tool_no_sobreafirma():
     assert "creates no new disclosure" in desc
 
 
+# ── 9h/9i · FINAL CLOSEOUT: el corredor recibe una solicitud, no la decisión ──────────────
+#
+#     DECISIÓN ≠ AUTORIDAD
+#     HANDOFF ≠ TRANSFERENCIA DE LA PROPIEDAD DE LA DECISIÓN
+#
+# El corredor recibe una solicitud de contacto / atención humana: no adquiere la decisión del
+# comprador ni autoridad sobre ella. Y el docstring de `registrar_handoff` no puede afirmar lo
+# que es de SEC-X2-R0 (audiencia legacy antes del clic) ni de UI-04 (qué inmueble manda el
+# botón). Se compara en texto plano: una frase partida en dos líneas sigue siendo la frase.
+
+def _plano(texto: str) -> str:
+    return " ".join(texto.lower().split())
+
+
+def test_9h_el_prompt_no_transfiere_la_decision_al_corredor():
+    from app.agent.graph import SYSTEM_PROMPT
+    texto = _plano(SYSTEM_PROMPT.content)
+    for frase in ("transfiere la decisión", "transferir la decisión", "se le transfiere",
+                  "transferencia de la decisión", "traspasa la decisión", "cede la decisión",
+                  "delega la decisión", "asume la decisión", "decisión pasa al corredor",
+                  "en manos del corredor", "el corredor decide", "decide el corredor"):
+        assert frase not in texto, frase
+    assert ("solicitar contacto con un corredor humano para continuar la atención o coordinar "
+            "el siguiente paso") in texto
+
+
+def test_9i_el_docstring_de_registrar_handoff_no_sobreafirma():
+    doc = _plano(chat.registrar_handoff.__doc__ or "")
+    for frase in ("solo lo dispara el clic", "audiencia del transcript) solo", "solo el clic",
+                  "no se comparte nada", "no se compartió nada", "en pantalla",
+                  "que ve la persona", "está viendo"):
+        assert frase not in doc, frase
+    assert "no afirma que antes del clic no exista audiencia legacy sobre el transcript" in doc
+    assert "la exactitud de esa selección pertenece a ui-04 / sec-x2-r0" in doc
+
+
 # ── 10 · por el camino REAL: ToolNode inyecta el estado y no hay efecto ───────────────────
 
 async def test_10_toolnode_inyecta_el_hilo_y_no_produce_efecto(efectos, catalogo):

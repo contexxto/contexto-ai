@@ -818,8 +818,7 @@ async def _leads_de_activo(db: AsyncSession, activo_id: str, direccion: str | No
         # Los que no vienen del QR no están en thread_ids: añádelos para que se listen.
         # SEC-X2-R0: SOLO si la persona pidió contacto para ESTE inmueble. Una conversación
         # sin letrero no tiene otra atribución que esa fila, y una fila histórica (NULL) no
-        # prueba quién la creó —podía ser el agente o el corredor—: no se lista. (Esto además
-        # sostiene la compuerta del transcript para el Copiloto: ver `divulgacion_autorizada`.)
+        # prueba quién la creó —podía ser el agente o el corredor—: no se lista.
         conocidos = set(thread_ids)
         thread_ids = list(thread_ids) + [
             r["session_id"] for r in h_rows
@@ -901,12 +900,15 @@ async def _leads_de_activo(db: AsyncSession, activo_id: str, direccion: str | No
         act = actividad_map.get(sid) or {}
         horas = _horas(act.get("ultima_actividad"))
         try:
-            # SEC-X2-R0b: las señales del handoff, solo del hilo de ESTE inmueble (el resultado
-            # llega a su corredor): ni mensajes sin inmueble ni los del hilo de otro corredor.
+            # El resultado llega al corredor de ESTE inmueble: la semántica sale solo de fuentes
+            # con alcance demostrado a él (SEC-X2-R0b: handoff exacto; SEC-X2-R0c: nada del
+            # AgentState de la sesión, que no tiene procedencia por inmueble).
             a = await intencion_de_sesion(sid, horas_inactividad=horas, activo_id=str(activo_id))
         except Exception:  # noqa: BLE001
             continue
-        if not a.get("turnos"):
+        # Pertenencia = la persona escribió algo (en el chat o en el hilo de X). `interactuo` es
+        # un metadato de existencia: retener el contenido no saca al lead de la lista.
+        if not (a.get("turnos") or a.get("interactuo")):
             continue  # solo escaneó / sin mensajes propios → aún no es un lead real
         device = sid[len(prefix):len(prefix) + 36] or sid
         ho = handoff_map.get(sid) or {}
@@ -928,7 +930,9 @@ async def _leads_de_activo(db: AsyncSession, activo_id: str, direccion: str | No
             # verdad, y es mejor que heredar el 'QR' fijo que este campo tenía antes.
             "email": email, "fuente": canal_map.get(sid, "desconocido"),
             "estado": a["estado"], "nivel": a["nivel"], "score": a["score"],
-            "mensajes": a.get("turnos") or 0,
+            # Mensajes del hilo de ESTE inmueble (R0c). Sin ninguno → None, no 0: el lead está en la
+            # lista porque escribió (al agente), y «0» afirmaría que no escribió.
+            "mensajes": a.get("turnos") or None,
             "resumen": a["resumen"], "razones": a["razones"],
             "handoff_sugerido": a["handoff_sugerido"], "accion_sugerida": a["accion_sugerida"],
             "handoff_estado": ho.get("estado"),
@@ -1268,38 +1272,21 @@ async def metricas_lift(
             actividad_por_sid = {r["session_id"]: dict(r) for r in filas}
         except Exception:  # noqa: BLE001 — sin actividad aún no debe romper la métrica
             await db.rollback()
-    # ── Funnel por RECORRIDO: el PICO de intención alcanzado (historial persistido en
-    # intencion_evento, Fase 0), no el snapshot del estado actual. Un lead que llegó a
-    # 'intencion' y luego se enfrió cuenta como 'intencion' — lo honesto para el embudo
-    # (cuán LEJOS llegó, no dónde idlea ahora). Respaldo: el estado vivo si aún no hay
-    # transiciones registradas para esa sesión (leads previos al despliegue de la Fase 0).
-    _DEPTH = {"anonimo": 0, "identificado": 1, "explorando": 2, "enganchado": 3,
-              "intencion": 4, "confirmado": 5, "completado": 6, "returning": 4, "dormido": 2}
-    pico_por_sid: dict[str, str] = {}
-    if sids:
-        try:
-            evs = (await db.execute(
-                text("SELECT session_id, estado FROM intencion_evento WHERE session_id = ANY(:ids)"),
-                {"ids": sids})).mappings().all()
-            for e in evs:
-                s, es = e["session_id"], e["estado"]
-                if s not in pico_por_sid or _DEPTH.get(es, 0) > _DEPTH.get(pico_por_sid[s], 0):
-                    pico_por_sid[s] = es
-        except Exception:  # noqa: BLE001 — sin historial aún → cae al estado vivo, no rompe la métrica
-            await db.rollback()
-    # Unidad = LEAD; estado = pico alcanzado (historial) o el vivo de respaldo; handoff es EVENTO.
-    # SEC-X2-R0: el pico de intención también es una inferencia sobre la conversación. Para
-    # quien no pidió contacto se sustituye por el cubo neutro 'atribuido' (el historial interno
-    # NO se toca). Y «handoff» es el acto de la persona: una respuesta del corredor ya no lo
-    # fabrica. Discontinuidad declarada: las filas históricas no prueban la solicitud.
+    # Unidad = LEAD; handoff es EVENTO (el acto de la persona: una respuesta del corredor no lo
+    # fabrica). La etapa es una inferencia sobre la conversación:
+    #   - SEC-X2-R0: quien no pidió contacto va al cubo neutro 'atribuido';
+    #   - SEC-X2-R0c: para quien sí pidió, la etapa es la del CRM acotado al inmueble (fuentes con
+    #     alcance demostrado), ya NO el pico de `intencion_evento`. Ese historial se calcula en
+    #     cada turno sobre TODO el AgentState de la sesión —también lo que la persona habló de
+    #     otros inmuebles antes de pedir este— y con N de piloto el cubo identifica a la persona.
+    #     El historial interno NO se toca (cómputo interno ≠ divulgación al corredor).
+    # Discontinuidad declarada: con R0c el embudo deja de medir el «recorrido» por contenido.
     leads_u = [{"session_id": l.get("session_id"),
-                "estado": ((pico_por_sid.get(l.get("session_id")) or l.get("estado"))
-                           if l.get("pidio_corredor") else "atribuido"),
+                "estado": (l.get("estado") if l.get("pidio_corredor") else "atribuido"),
                 "handoff": bool(l.get("pidio_corredor"))} for l in leads]
     out = resumen_lift(leads_u, actividad_por_sid, datetime.now(timezone.utc))
-    out["_funnel_fuente"] = ("recorrido: pico de intención alcanzado, del historial persistido "
-                             "(intencion_evento, Fase 0); estado actual en vivo como respaldo")
-    out["_transiciones_registradas"] = len(pico_por_sid)
+    out["_funnel_fuente"] = ("etapa del CRM acotada al inmueble (solo fuentes con alcance demostrado, "
+                             "SEC-X2-R0c); sin solicitud → 'atribuido'")
     return out
 
 
@@ -1324,7 +1311,8 @@ class CorredorMsg(BaseModel):
 
 
 async def _assert_sesion_del_activo(db: AsyncSession, session_id: str, activo_id) -> None:
-    """El corredor de ESTE inmueble solo accede a la conversación si la persona lo PIDIÓ.
+    """El corredor de ESTE inmueble solo accede al hilo de ESTE inmueble si la persona lo PIDIÓ
+    (a la conversación de la persona con el agente, nunca: SEC-X2-R0c).
 
     SEC-X2-R0 · ATRIBUCIÓN ≠ AUTORIDAD DE DIVULGACIÓN. Antes valían dos orígenes:
       1. el session_id llevaba el inmueble dentro (`qr-{activo}-…`): haber llegado por un
@@ -1352,13 +1340,13 @@ async def _assert_sesion_del_activo(db: AsyncSession, session_id: str, activo_id
                             # «registrada»: una fila histórica sin la marca no prueba que la
                             # persona NO lo pidiera, solo que no hay evidencia de que lo hiciera.
                             detail="No hay una solicitud de contacto registrada para este "
-                                   "inmueble: la conversación es privada hasta que la persona "
-                                   "la pida.")
+                                   "inmueble: el hilo con la persona se abre solo cuando ella "
+                                   "pide contacto.")
 
 
 @router.get(
     "/{activo_id}/leads/{session_id}/conversacion",
-    summary="Conversación completa de un interesado (para el corredor)",
+    summary="Hilo del handoff de un interesado con ESTE inmueble (para el corredor)",
 )
 @limiter.limit("60/minute")
 async def lead_conversacion(
@@ -1368,7 +1356,9 @@ async def lead_conversacion(
     await _assert_owner(db, activo_id, user)
     await _assert_sesion_del_activo(db, session_id, activo_id)
     from app.routers.chat import transcript_de_sesion, ensure_handoff_tables
-    # Con el inmueble: el lector vuelve a exigir la solicitud para ESTE (sesión, inmueble).
+    # SEC-X2-R0c: siempre `[]` —la conversación con el agente no se divulga al corredor— y el campo
+    # se conserva por contrato. La compuerta de SOLICITUD de esta ruta es solo
+    # `_assert_sesion_del_activo` (la de propiedad es `_assert_owner`).
     trans = await transcript_de_sesion(session_id, str(activo_id))
     try:
         await ensure_handoff_tables(db)

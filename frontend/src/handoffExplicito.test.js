@@ -187,13 +187,13 @@ describe('divulgacionLead: la regla, por comportamiento', () => {
     expect(ETIQUETA_SIN_SOLICITUD).toBe('Sin solicitud registrada')
     expect(frasePrivada(privado)).toBe(
       'Llegó por el letrero (QR). No hay una solicitud de contacto registrada: '
-      + 'su conversación es privada hasta que la persona la pida.')
+      + 'el hilo con la persona se abre solo cuando ella pide contacto.')
     expect(frasePrivada({ ...privado, fuente: 'buscador' })).toMatch(/^Llegó por un buscador\. /)
     expect(frasePrivada({ ...privado, fuente: 'directo' })).toMatch(/^Llegó por un canal sin identificar\. /)
     // Sin registro de llegada no se afirma ningún canal.
     for (const fuente of [null, undefined, 'desconocido']) {
       const t = frasePrivada({ ...privado, fuente })
-      expect(t).toBe('No hay una solicitud de contacto registrada: su conversación es privada hasta que la persona la pida.')
+      expect(t).toBe('No hay una solicitud de contacto registrada: el hilo con la persona se abre solo cuando ella pide contacto.')
       expect(t).not.toMatch(/null|undefined|NaN/)
     }
     for (const t of [ETIQUETA_SIN_SOLICITUD, frasePrivada(privado)]) expect(t).not.toMatch(/[Aa]ún no/)

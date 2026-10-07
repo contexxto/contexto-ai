@@ -53,7 +53,7 @@ export function fuenteLegible(fuente) {
 export const ETIQUETA_SIN_SOLICITUD = 'Sin solicitud registrada'
 
 const PRIVADA = 'No hay una solicitud de contacto registrada: '
-  + 'su conversación es privada hasta que la persona la pida.'
+  + 'el hilo con la persona se abre solo cuando ella pide contacto.'
 
 /** La línea neutral que sustituye a la conversación cuando no hay solicitud registrada. */
 export function frasePrivada(l) {

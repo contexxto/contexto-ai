@@ -117,7 +117,7 @@ export default function LeadsPanel({ activo, onClose }) {
                   <div style={{ textAlign: 'center', padding: '26px 12px', color: C.muted }}>
                     <Users size={26} color={C.teal} style={{ marginBottom: 8 }} />
                     <div style={{ color: C.text, fontSize: '.9rem', marginBottom: 4 }}>Aún no hay interesados.</div>
-                    <div style={{ fontSize: '.78rem' }}>Cuando alguien escanee el QR y converse con el agente, aparecerá aquí con su nivel de intención.</div>
+                    <div style={{ fontSize: '.78rem' }}>Cuando alguien escanee el QR y converse con el agente, aparecerá aquí.</div>
                   </div>
                 ) : (
                   <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -334,7 +334,7 @@ export function LeadChat({ activo, lead, onBack }) {
 
       <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0, padding: '4px 2px' }}>
         {!msgs && <div style={{ color: C.muted, textAlign: 'center', padding: '20px 0' }}>Cargando…</div>}
-        {msgs && msgs.length === 0 && <div style={{ color: C.muted, textAlign: 'center', padding: '20px 0', fontSize: '.82rem' }}>Sin mensajes todavía.</div>}
+        {msgs && msgs.length === 0 && <div style={{ color: C.muted, textAlign: 'center', padding: '20px 0', fontSize: '.82rem' }}>Sin mensajes en este hilo todavía. Su conversación con el agente es privada.</div>}
         {(msgs || []).map((m, i) => {
           const b = bubble(m.autor)
           return (

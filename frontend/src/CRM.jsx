@@ -365,7 +365,7 @@ export default function CRM() {
       </div>
       <div style={{ fontWeight: 700, color: C.text, fontSize: '1.05rem' }}>Elige un interesado</div>
       <div style={{ color: C.muted, fontSize: '.88rem', lineHeight: 1.6, maxWidth: 320 }}>
-        Selecciona a alguien de la lista para <span style={{ color: C.tealHi }}>ver y retomar su conversación</span> con el agente.
+        Selecciona a alguien de la lista para <span style={{ color: C.tealHi }}>ver su hilo contigo</span>.
       </div>
       <div style={{ color: C.muted, fontSize: '.78rem', marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
         <Compass size={14} color={C.teal} /> ¿Estrategia de toda tu cartera? Abre el <span style={{ color: C.tealHi }}>Estratega</span> (arriba a la derecha).
@@ -448,7 +448,7 @@ export default function CRM() {
               <Compass size={15} color={C.teal} /> Estratega
             </button>
             <button onClick={() => { setAsistente((a) => (a === 'copiloto' ? null : 'copiloto')); setAnalisis(false); setLeadPuente(null) }}
-              title="El Copiloto te ayuda con la conversación de cada interesado"
+              title="El Copiloto te ayuda con el hilo de cada interesado"
               style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '.8rem', fontWeight: 600, padding: '6px 13px',
                        borderRadius: 999, cursor: 'pointer', border: `1px solid ${C.line}`,
                        background: asistente === 'copiloto' ? 'rgba(45,189,182,.15)' : 'rgba(255,255,255,.05)',

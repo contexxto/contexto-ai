@@ -132,7 +132,7 @@ def test_A4_solo_registrar_handoff_escribe_la_autoridad_en_todo_app():
 
 
 def test_A5_los_consumidores_del_hilo_exigen_la_solicitud():
-    for fn in (chat._hilo_de_sesion, chat._hilos_de_sesion, chat.divulgacion_autorizada,
+    for fn in (chat._hilo_de_sesion, chat._hilos_de_sesion,
                chat.estado_handoff, chat.handoff_mensaje_lead, chat.registrar_push_subscription):
         assert "principal_requested_at is not null" in _sql(fn), fn.__name__
     # El buyer escribe al corredor con UPDATE: un mensaje nunca crea un hilo.
@@ -212,9 +212,12 @@ async def test_A10_la_autoridad_falla_cerrado_si_la_base_falla(monkeypatch):
             return False
 
     monkeypatch.setattr(chat, "AsyncSessionLocal", lambda: _Rota())
-    assert await chat.divulgacion_autorizada("qr-" + X + "-a") is False
-    assert await chat.divulgacion_autorizada("session-a", X) is False
+    monkeypatch.setattr(chat, "agent_graph", _Grafo)
     assert await chat.transcript_de_sesion("qr-" + X + "-a") == []
+    assert await chat.transcript_de_sesion("session-a", X) == []
+    # Sin base, la proyección del corredor no tiene ni la solicitud ni el hilo de X: nada.
+    a = await chat.intencion_de_sesion("session-a", activo_id=X)
+    assert "Pidió hablar con el corredor" not in a["razones"] and a["turnos"] == 0
 
 
 async def test_A11_bootstrap_con_inmueble_inexistente_404_sin_crear_sesion(monkeypatch):
@@ -434,8 +437,9 @@ async def test_B_B_qr_con_solicitud_explicita_el_corredor_de_X_lee_y_responde(ba
                                "WHERE session_id = :s AND activo_id = CAST(:a AS uuid)", s=sid, a=X)
     assert marca is not None
     for quien in (DUENO_X, COLEGA_X):
-        conv = await _lee(Sesion, sid, X, quien)
-        assert conv["transcript"] and conv["transcript"][0]["autor"] == "lead"
+        conv = await _lee(Sesion, sid, X, quien)       # abre el HILO de X (sin 403)…
+        assert conv["estado"] == "solicitado"
+        assert conv["transcript"] == []                 # …no la conversación con el agente (R0c)
     assert (await _responde(Sesion, sid, X, DUENO_X))["ok"]
     estado, corredor, marca2 = (await _fila(Sesion, sid, X))
     assert estado == "activo" and corredor == DUENO_X.user_id and marca2 == marca   # no reescribe la marca
@@ -459,7 +463,7 @@ async def test_B_C_sesion_normal_con_solicitud_solo_abre_al_corredor_de_ESE_inmu
     Sesion, _ = base
     sid = "session-normal03"
     assert (await chat.registrar_handoff(sid, activo_id=X))["ok"]
-    assert (await _lee(Sesion, sid, X, DUENO_X))["transcript"]
+    assert (await _lee(Sesion, sid, X, DUENO_X))["estado"] == "solicitado"
     with pytest.raises(HTTPException) as e:          # el corredor de Y no recibe nada
         await _lee(Sesion, sid, Y, DUENO_Y)
     assert e.value.status_code == 403
@@ -489,7 +493,6 @@ async def test_B_D_fila_historica_NULL_no_hereda_autoridad_por_ninguna_puerta(ba
         assert await chat._hilo_de_sesion(db, sid) is None
         assert await chat._hilo_de_sesion(db, sid, X) is None
         assert await chat._hilos_de_sesion(db, sid) == []
-    assert await chat.divulgacion_autorizada(sid) is False
     assert await chat.transcript_de_sesion(sid) == []
     async with Sesion() as db:                        # sin letrero y NULL: ni se lista
         assert await A._leads_de_activo(db, X) == []
@@ -517,8 +520,6 @@ async def test_B_E_el_corredor_no_puede_autoconcederse(base):
 async def test_B_F_el_prefijo_qr_por_si_solo_nunca_concede(base):
     Sesion, _ = base
     sid = f"qr-{X}-letrero06"
-    assert await chat.divulgacion_autorizada(sid) is False
-    assert await chat.divulgacion_autorizada(sid, X) is False
     assert await chat.transcript_de_sesion(sid) == []
     assert await chat.transcript_de_sesion(sid, X) == []
     async with Sesion() as db:
@@ -596,7 +597,7 @@ async def test_B_I_el_crm_y_el_copiloto_no_reciben_derivados_antes_de_la_solicit
     assert leads[0]["pidio_corredor"] is True and leads[0]["score"] == 88
     assert leads[0]["handoff_estado"] == "solicitado"
     tl = json.loads(await crm.tool_timeline_de_lead.ainvoke({"referencia": "dev1"}, config=config))
-    assert tl["transcript"] and tl["score"] == 88
+    assert tl["transcript"] == [] and tl["score"] == 88   # R0c: el agente nunca llega al corredor
 
 
 async def _lead_qr_historico(Sesion, sid: str):
@@ -892,8 +893,9 @@ async def test_B_P_la_proyeccion_del_crm_no_deriva_senales_de_contenido_sin_proc
     assert "Pidió hablar con el corredor" in para_x["razones"]
     assert "Pidió hablar con el corredor" in leads[0]["razones"]
     assert "Pidió hablar con el corredor" not in invalido["razones"]
-    assert para_x["turnos"] == invalido["turnos"] + 1                 # + «hola» (X)
-    assert sesion_entera["turnos"] == invalido["turnos"] + 3          # + NULL + Y + X
+    # R0c: para el corredor de X los turnos son SOLO los del hilo de X (el transcript, no).
+    assert para_x["turnos"] == 1 and invalido["turnos"] == 0          # «hola» (X) · nada
+    assert sesion_entera["turnos"] == 4                               # transcript + NULL + Y + X
 
 
 @pg
@@ -951,3 +953,230 @@ async def test_B_J2_residual_copiloto_tras_solicitud_nueva_solo_deberia_ver_X(ba
     if "mensaje para X" not in textos:     # precondición: RuntimeError ≠ AssertionError → rojo, no xfail
         raise RuntimeError(f"el Copiloto ni siquiera trae el hilo de X: {textos}")
     assert textos == ["mensaje para X"]
+
+
+# ══ SEC-X2-R0c · el contexto de la SESIÓN no cruza la frontera del inmueble ════════════
+#
+#     AUTORIDAD PARA EL INMUEBLE X ≠ AUTORIDAD SOBRE TODA LA SESIÓN
+#     LO DERIVADO NO ADQUIERE MÁS AUTORIDAD QUE SU FUENTE
+#
+# Los mensajes del AgentState no tienen procedencia por inmueble: la misma conversación habla de
+# Y antes de que la persona pida al corredor de X. Ni el transcript (ruta HTTP y Copiloto) ni la
+# semántica derivada (etapa, nivel, score, razones, resumen, turnos, embudo de lift) que ve el
+# corredor de X pueden salir de ahí. Del AgentState queda solo un metadato de EXISTENCIA
+# (`interactuo`) para que retener el contenido no saque al lead de la lista. El comprador sigue
+# viendo su conversación, y el cómputo interno sin inmueble no cambia.
+
+from langchain_core.messages import ToolMessage  # noqa: E402
+
+_CONVERSACION_Y = [
+    HumanMessage(content="Me interesa el departamento de la Av. Y 2. ¿Cuánto cuesta? ¿Es negociable?"),
+    AIMessage(content="", tool_calls=[{"name": "tool_analyze_investment", "args": {"activo_id": Y},
+                                       "id": "t1"}]),
+    ToolMessage(content='{"rentabilidad_bruta": 7.1}', name="tool_analyze_investment", tool_call_id="t1"),
+    AIMessage(content="El departamento de la Av. Y 2 renta 7,1 % bruto."),
+    HumanMessage(content="Quiero invertir ahí; mi presupuesto es 300 mil. ¿Puedo agendar una visita? "
+                         "Mi teléfono es 0991234567"),
+    HumanMessage(content="¿Cómo es vivir en ese barrio? ¿Es seguro? ¿Y comparado con otras opciones "
+                         "cuál conviene?"),
+]
+_HUELLAS_Y = ("Av. Y 2", "300 mil", "0991234567", "7,1", "barrio")   # solo existen en el AgentState
+
+
+def _grafo(por_sesion: dict, defecto=()):
+    """AgentState por sesión (el `_Grafo` del fixture da el mismo a todas)."""
+    class _Estado:
+        def __init__(self, mensajes):
+            self.values = {"messages": list(mensajes)}
+
+    class _G:
+        class compiled_graph:
+            @staticmethod
+            async def aget_state(config):
+                sid = ((config or {}).get("configurable") or {}).get("thread_id")
+                return _Estado(por_sesion.get(sid, defecto))
+
+    return _G
+
+
+def test_A18_transcript_de_sesion_no_lee_el_agentstate():
+    arbol = ast.parse(inspect.getsource(chat.transcript_de_sesion).lstrip())
+    nombres = {n.id for n in ast.walk(arbol) if isinstance(n, ast.Name)}
+    atributos = {n.attr for n in ast.walk(arbol) if isinstance(n, ast.Attribute)}
+    assert "agent_graph" not in nombres and not ({"aget_state", "compiled_graph"} & atributos)
+
+
+_LECTORES_AGENTSTATE = {   # todos del COMPRADOR, salvo intencion_de_sesion (acotada en modo corredor)
+    "app/routers/chat.py::_snapshot_de_la_ejecucion", "app/routers/chat.py::comparar_inmuebles",
+    "app/routers/chat.py::_stream_agent", "app/routers/chat.py::chat",
+    "app/routers/chat.py::list_sessions", "app/routers/chat.py::get_shared",
+    "app/routers/chat.py::get_session_history", "app/routers/chat.py::intencion_de_sesion",
+}
+
+
+def test_A19_inventario_cerrado_de_lectores_del_agentstate_del_comprador():
+    """Un lector NUEVO del AgentState del comprador (grafo `agent_graph.compiled_graph`) tiene que
+    clasificarse: si su salida llega a un corredor, viola SEC-X2-R0c."""
+    lectores = set()
+    for py in (RAIZ / "app").rglob("*.py"):
+        fuente = py.read_text(encoding="utf-8")
+        if "compiled_graph" not in fuente:
+            continue
+        for fn in ast.walk(ast.parse(fuente)):
+            if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            for n in ast.walk(fn):
+                if (isinstance(n, ast.Attribute) and n.attr in ("aget_state", "aget_state_history",
+                                                                "get_state", "get_state_history")
+                        and isinstance(n.value, ast.Attribute) and n.value.attr == "compiled_graph"):
+                    lectores.add(f"{py.relative_to(RAIZ).as_posix()}::{fn.name}")
+    assert lectores == _LECTORES_AGENTSTATE, lectores
+
+
+@pg
+async def test_C_A_el_corredor_de_X_no_recibe_la_conversacion_con_el_agente(base, monkeypatch):
+    """Mandato 1-5: la sesión habló de Y con el agente; la persona pide X. El corredor de X (y su
+    agencia) ve el hilo exacto de X; ni el transcript, ni el contenido de Y, ni lo NULL."""
+    import json
+    Sesion, _ = base
+    sid = "session-r0c-corredor"
+    monkeypatch.setattr(chat, "agent_graph", _grafo({sid: _CONVERSACION_Y}))
+    await _sembrar_legado_y_pedir(Sesion, sid)       # handoff: NULL + Y; acto para X; mensaje para X
+    for quien in (DUENO_X, COLEGA_X):
+        conv = await _lee(Sesion, sid, X, quien)
+        assert conv["transcript"] == []
+        assert conv["handoff"] == [{"autor": "lead", "texto": "mensaje para X"}]
+        plano = json.dumps(conv, ensure_ascii=False)
+        for huella in _HUELLAS_Y + ("legado sin inmueble", "mensaje para Y"):
+            assert huella not in plano, huella
+
+
+@pg
+async def test_C_B_el_copiloto_de_X_tampoco_recibe_la_conversacion_ni_sus_derivados(base, monkeypatch):
+    """La misma frontera por la otra puerta: `tool_timeline_de_lead` (intención REAL, sin stub).
+    Su lectura de `handoff_mensaje` sin filtro es X-1 (B_J2); aquí solo se mira el AgentState."""
+    import json
+    import app.agent.crm_tools as crm
+    Sesion, _ = base
+    sid = "session-r0c-copiloto"
+    monkeypatch.setattr(chat, "agent_graph", _grafo({sid: _CONVERSACION_Y}))
+    await _sembrar_legado_y_pedir(Sesion, sid)
+    config = {"configurable": {"owner_user_id": DUENO_X.user_id, "owner_agency_id": None}}
+    tl = json.loads(await crm.tool_timeline_de_lead.ainvoke({"referencia": "Lead #sess"}, config=config))
+    assert tl["transcript"] == []
+    assert "vacío NO significa" in tl["_transcript"]   # el LLM no puede concluir que no habló
+    assert tl["razones"] == ["Pidió hablar con el corredor"]
+    plano = json.dumps(tl, ensure_ascii=False)
+    for huella in _HUELLAS_Y:
+        assert huella not in plano, huella
+    st = json.loads(await crm.tool_stats_embudo.ainvoke({}, config=config))
+    assert [l["score"] for l in st["calientes_o_piden_corredor"]] == [tl["score"]]
+
+
+@pg
+async def test_C_C_la_proyeccion_del_corredor_no_cambia_con_contenido_hostil_de_la_sesion(base, monkeypatch):
+    """Mandato 6: insertar en el AgentState una conversación hostil sobre Y (precio, inversión con
+    la tool, visita, zona, comparación, más turnos) NO mueve nada de lo que ve el corredor de X:
+    ni el análisis, ni el lead del CRM, ni el embudo de lift (que ya no lee el pico de
+    `intencion_evento`, calculado sobre toda la sesión)."""
+    from sqlalchemy import text
+    Sesion, _ = base
+    sid = "session-r0c-invariante"
+    await _sembrar_legado_y_pedir(Sesion, sid)
+    async with Sesion() as db:                     # historial INTERNO hostil: «completado»
+        await chat.ensure_intencion_tables(db)
+        await db.execute(text("INSERT INTO intencion_evento (session_id, estado, nivel) "
+                              "VALUES (:s, 'completado', 'caliente')"), {"s": sid})
+        await db.commit()
+
+    async def _proyeccion(mensajes):
+        monkeypatch.setattr(chat, "agent_graph", _grafo({sid: mensajes}))
+        analisis = await chat.intencion_de_sesion(sid, activo_id=X)
+        async with Sesion() as db:
+            leads = await A._leads_de_activo(db, X)
+            lift = await A.metricas_lift(_peticion(), DUENO_X, db)
+        return analisis, leads, lift
+
+    a0, l0, m0 = await _proyeccion([HumanMessage(content="hola")])
+    a1, l1, m1 = await _proyeccion(_CONVERSACION_Y)
+    assert a0 == a1
+    assert l0 == l1 and len(l1) == 1 and l1[0]["pidio_corredor"] is True
+    assert m0["funnel"] == m1["funnel"] == {"intencion": 1}
+    assert l1[0]["razones"] == ["Pidió hablar con el corredor"] and l1[0]["mensajes"] == 1
+    # Control: la MISMA conversación sí mueve el cómputo interno sin inmueble (no se apagó el motor).
+    interno = await chat.intencion_de_sesion(sid)
+    assert "Preguntó el precio" in interno["razones"] and "Evalúa la inversión" in interno["razones"]
+
+
+@pg
+async def test_C_D_el_hilo_exacto_de_X_si_alimenta_la_semantica_de_X(base, monkeypatch):
+    """Mandato 7: lo que la persona le escribió al corredor de X (procedencia exacta) cuenta."""
+    from sqlalchemy import text
+    Sesion, _ = base
+    sid = "session-r0c-hilo-x"
+    monkeypatch.setattr(chat, "agent_graph", _grafo({sid: _CONVERSACION_Y}))
+    await _sembrar_legado_y_pedir(Sesion, sid)
+    async with Sesion() as db:
+        await db.execute(text(
+            "INSERT INTO handoff_mensaje (session_id, autor, texto, activo_id) "
+            "VALUES (:s, 'lead', 'quiero agendar una visita el sabado', CAST(:x AS uuid))"),
+            {"s": sid, "x": X})
+        await db.commit()
+    a = await chat.intencion_de_sesion(sid, activo_id=X)
+    assert "Quiere visitar/ver el inmueble" in a["razones"] and a["turnos"] == 2
+    assert "Preguntó el precio" not in a["razones"] and "Evalúa la inversión" not in a["razones"]
+
+
+@pg
+async def test_C_E_retener_el_contenido_no_saca_al_lead_de_la_lista(base, monkeypatch):
+    """Mandato 8: la pertenencia sale de un metadato de existencia (`interactuo`), no del contenido.
+    Un lead del letrero que solo habló con el agente sigue como atribución; uno que pidió X y
+    solo habló con el agente sigue listado (con la semántica de X: la solicitud); quien solo
+    escaneó sigue fuera, como antes."""
+    from sqlalchemy import text
+    Sesion, _ = base
+    qr_chat, qr_escaneo, pedido = f"qr-{X}-r0c00001", f"qr-{X}-r0c00002", "session-r0c-pedido"
+    monkeypatch.setattr(chat, "agent_graph", _grafo({
+        qr_chat: _CONVERSACION_Y, pedido: _CONVERSACION_Y,
+        qr_escaneo: [HumanMessage(content="El usuario escaneó el QR del inmueble.")]}))
+    async with Sesion() as db:
+        await chat.ensure_handoff_tables(db)
+        for s in (qr_chat, qr_escaneo):
+            await db.execute(text("INSERT INTO checkpoints VALUES (:s)"), {"s": s})
+        await db.commit()
+    assert (await chat.registrar_handoff(pedido, activo_id=X))["ok"]
+    async with Sesion() as db:
+        por = {l["session_id"]: l for l in await A._leads_de_activo(db, X)}
+    assert set(por) == {qr_chat, pedido}
+    assert por[qr_chat]["pidio_corredor"] is False
+    for clave in A._DERIVADOS_RETENIDOS:
+        assert por[qr_chat][clave] is None, clave
+    assert por[pedido]["pidio_corredor"] is True
+    assert por[pedido]["razones"] == ["Pidió hablar con el corredor"]
+    assert por[pedido]["mensajes"] is None     # sin mensajes en el hilo de X: None, nunca «0» (sí escribió)
+
+
+@pg
+async def test_C_F_el_comprador_sigue_viendo_su_conversacion_y_el_computo_interno_no_cambia(base, monkeypatch):
+    """Mandato 9: nada de esto toca el AgentState ni lo que la persona ve de sí misma."""
+    Sesion, _ = base
+    sid = "session-r0c-comprador"
+    estado = list(_CONVERSACION_Y)
+    monkeypatch.setattr(chat, "agent_graph", _grafo({sid: estado}))
+    assert (await chat.registrar_handoff(sid, activo_id=X))["ok"]
+    assert (await _lee(Sesion, sid, X, DUENO_X))["transcript"] == []      # el corredor: nada
+    assert estado == _CONVERSACION_Y                                       # el AgentState, intacto
+
+    async def _ok(*_a, **_k):
+        return None
+
+    async def _sin_preferencias(*_a, **_k):
+        return {}
+
+    monkeypatch.setattr(chat, "_exigir_autoridad", _ok)
+    monkeypatch.setattr(chat.assembler, "extraer_preferencias", _sin_preferencias)
+    historial = await chat.get_session_history(_peticion(), sid, None)
+    plano = str(historial)
+    assert "Av. Y 2" in plano and "0991234567" in plano                  # la persona: todo
+    propio = await chat.intencion_de_sesion(sid)                          # su endpoint / el cron
+    assert "Preguntó el precio" in propio["razones"] and "interactuo" not in propio

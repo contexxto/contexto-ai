@@ -115,8 +115,9 @@ async def tool_stats_embudo(config: RunnableConfig) -> str:
 
 @tool
 async def tool_timeline_de_lead(referencia: str, config: RunnableConfig) -> str:
-    """Devuelve la historia completa de UN interesado del corredor: su conversación con el agente
-    (transcript), los mensajes del handoff con el corredor, y su estado/score/razones actuales.
+    """Devuelve la historia de UN interesado del corredor: los mensajes del handoff de la sesión (no
+    asumas que todos son con este corredor) y su estado/score/razones actuales. `transcript` llega SIEMPRE vacío: la conversación de la
+    persona con el agente es privada y no se divulga al corredor (no significa que no haya hablado).
     'referencia' es cómo el corredor nombra al lead: su email, su nombre, o su id corto (ej. '#ba0a'
     o 'ba0a'). Solo busca entre los interesados del corredor (o de su agencia)."""
     from sqlalchemy import text as _text
@@ -150,6 +151,8 @@ async def tool_timeline_de_lead(referencia: str, config: RunnableConfig) -> str:
         "frescura": match.get("frescura"), "direccion": match.get("direccion"),
         "razones": match.get("razones"), "reenganche_sugerido": (match.get("reenganche") or {}).get("mensaje"),
         "transcript": transcript, "handoff": handoff,
+        "_transcript": "retenido por diseño: la conversación con el agente es privada (SEC-X2-R0c); "
+                       "vacío NO significa que la persona no haya hablado",
         "_proveniencia": "score es heurístico (estimación); las etapas/eventos son del motor de intención.",
     }, ensure_ascii=False)
 

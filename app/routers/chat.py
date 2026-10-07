@@ -2494,79 +2494,29 @@ def _texto(content) -> str:
     return texto_de_content(content)
 
 
-async def divulgacion_autorizada(session_id: str, activo_id: str | None = None) -> bool:
-    """SEC-X2-R0 · ¿pidió la persona, de forma explícita, contacto con un corredor?
-
-    Con `activo_id`: para ESE inmueble. Sin él: para alguno de esta conversación.
-
-    La única fuente es `handoff_sesion.principal_requested_at`, que solo escribe el acto
-    explícito de la persona (`registrar_handoff`). NO cuentan:
-      - el prefijo `qr-` ni ningún otro metadato de llegada (ATRIBUCIÓN ≠ AUTORIDAD);
-      - la mera existencia de una fila: el corredor podía fabricarla (`responder_lead`) y las
-        filas históricas no prueban quién la pidió (NULL = sin evidencia → sin autoridad).
-
-    La variante sin inmueble la usa el Copiloto para el TRANSCRIPT (no pasa el activo). Es
-    equivalente a «autorizada para X» SOLO por dos invariantes de otras funciones: un
-    corredor solo nombra leads de su lista, y la lista solo trae (a) sesiones `qr-{X}` de sus
-    inmuebles —en las que `registrar_handoff` solo admite X— o (b) sesiones ligadas a X por
-    una fila AUTORIZADA (`_leads_de_activo`). Lo congela
-    tests/test_sec_x2_r0_disclosure_authority.py. NO cubre los `handoff_mensaje` históricos
-    que el Copiloto lee con su propia consulta sin filtro (costura de X-1, fuera de esta
-    unidad): ese residual está declarado y caracterizado en el mismo fichero de tests.
-
-    Cualquier fallo (tabla o columna aún ausente) es «no autorizada»: falla cerrado."""
-    pedido = _uuid_valido(activo_id) if activo_id else None
-    if activo_id and not pedido:
-        return False
-    try:
-        async with AsyncSessionLocal() as db:
-            if pedido:
-                fila = (await db.execute(text(
-                    "SELECT 1 FROM handoff_sesion WHERE session_id = :s "
-                    "AND activo_id = CAST(:a AS uuid) AND principal_requested_at IS NOT NULL"),
-                    {"s": session_id, "a": pedido})).scalar()
-            else:
-                fila = (await db.execute(text(
-                    "SELECT 1 FROM handoff_sesion WHERE session_id = :s "
-                    "AND principal_requested_at IS NOT NULL LIMIT 1"),
-                    {"s": session_id})).scalar()
-    except Exception:  # noqa: BLE001 — sin tabla/columna: no hay evidencia, no hay autoridad
-        return False
-    return bool(fila)
-
-
 async def transcript_de_sesion(session_id: str, activo_id: str | None = None) -> list[dict]:
-    """Transcripción usuario/asistente de la sesión (para que el corredor lea el hilo).
+    """La parte de la conversación con el AGENTE que se divulga al corredor: hoy, ninguna.
 
-    SEC-X2-R0: solo con la solicitud explícita de la persona (`divulgacion_autorizada`).
-    Sin ella devuelve `[]` a CUALQUIER llamador —también al Copiloto del CRM, que lo llama
-    sin pasar por `_assert_sesion_del_activo`—. Antes, haber llegado por un letrero bastaba
-    para que el corredor leyera la conversación completa. (Esto cierra el transcript; los
-    mensajes del handoff los lee cada consumidor con su propia consulta.)"""
-    if not await divulgacion_autorizada(session_id, activo_id):
-        return []
-    try:
-        state = await agent_graph.compiled_graph.aget_state(_langgraph_config(session_id))
-    except Exception:  # noqa: BLE001
-        return []
-    msgs = (state.values or {}).get("messages", []) if (state and state.values) else []
-    # str(m.content) dejaba el repr de Python cuando el content viene como lista de
-    # bloques — que es el caso normal del turno final tras usar tools. El corredor leía
-    # "[{'text': 'Departamento en...', 'type': 'text'}]" en vez de la respuesta. Mismo
-    # fallo que texto_de_content ya arreglaba en el guardrail; se reutiliza en vez de
-    # volver a escribirlo. Import diferido: crm_guardrails importa del grafo.
-    from app.agent.crm_guardrails import texto_de_content
-    out: list[dict] = []
-    for m in msgs:
-        if isinstance(m, HumanMessage):
-            c = _CTX_RE.sub("", texto_de_content(m.content)).strip()
-            if c and not c.startswith("El usuario escaneó el QR"):
-                out.append({"autor": "lead", "texto": c})
-        elif isinstance(m, AIMessage) and not getattr(m, "tool_calls", None):
-            c = texto_de_content(m.content).strip()
-            if c:
-                out.append({"autor": "agente", "texto": c})
-    return out
+    SEC-X2-R0c · AUTORIDAD PARA EL INMUEBLE X ≠ AUTORIDAD SOBRE TODA LA SESIÓN.
+    Los mensajes del AgentState no llevan procedencia por inmueble: una misma conversación
+    puede hablar de Y y de Z antes de que la persona pida al corredor de X. Divulgarlos al
+    corredor de X porque la persona pidió X era lavar con una autoridad acotada un contenido
+    que no lo está. Y la procedencia NO se infiere (ni por el idioma, ni por la dirección
+    mencionada, ni por el orden de las tarjetas, ni por las tools, ni por el prefijo `qr-`).
+
+    Antes (SEC-X2-R0): con la solicitud para X devolvía TODO el transcript de la sesión. Ahora
+    devuelve `[]` a sus dos llamadores —la ruta HTTP del corredor (`lead_conversacion`) y el
+    Copiloto (`tool_timeline_de_lead`)— y conserva la firma para no romper el contrato de sus
+    respuestas. Lo que sí llega al corredor de X por la ruta HTTP es el hilo del handoff con
+    `activo_id = X` exacto. EXCEPCIÓN DECLARADA (X-1, fuera de esta unidad): el Copiloto lee con su
+    propia consulta los `handoff_mensaje` de TODA la sesión, sin filtro por inmueble; lo
+    caracterizan los xfail estrictos B_J y B_J2.
+
+    El AgentState no se toca y la persona sigue viendo su propia conversación (/history no
+    pasa por aquí). Compartir algo de la conversación con el corredor exigiría procedencia por
+    mensaje o segmento, o un acto explícito aparte que autorice un alcance definido: ninguna de
+    las dos cosas es parte de SEC-X2-R0."""
+    return []
 
 
 async def _hilo_de_sesion(db, session_id: str, activo_id: str | None = None, *,
@@ -2698,7 +2648,10 @@ async def registrar_handoff(
       - El inmueble tiene que existir.
       - Escribe `principal_requested_at`, el hecho de autoridad, y conserva el primero
         (COALESCE): repetir la solicitud no reescribe cuándo se pidió. Es lo único que abre
-        la conversación al corredor de ESE inmueble (ver `divulgacion_autorizada`).
+        al corredor de ESE inmueble el hilo del handoff de ESE inmueble (mensajes con
+        `activo_id` exacto). La conversación con el agente no se le divulga (SEC-X2-R0c,
+        `transcript_de_sesion`). El Copiloto aún lee los `handoff_mensaje` de toda la sesión:
+        residual X-1, declarado.
       - Qué inmueble eligió la persona lo fija su acto en la interfaz (UI-04): aquí no se
         infiere ninguno.
     Esta afirmación se refiere al efecto de handoff; no afirma que no haya existido audiencia
@@ -2934,13 +2887,20 @@ async def intencion_de_sesion(session_id: str, horas_inactividad: float | None =
 
     horas_inactividad: si se pasa, permite derivar el estado 'dormido' (reenganche).
 
-    activo_id (SEC-X2-R0b): lo pasa SOLO la proyección del CRM de ESE inmueble, cuyo resultado
-    llega al corredor. Entonces las señales del handoff se toman únicamente del hilo de ese
-    inmueble: mensajes con `activo_id` exacto y «pidió corredor» = solicitud registrada para él.
-    Un mensaje sin inmueble (procedencia desconocida) o del hilo de OTRO corredor no puede
-    convertirse en razones, score o etapa que vea este corredor por una solicitud posterior.
-    Un activo_id inválido falla cerrado (sin señales del handoff).
-    Sin activo_id (cron de reenganche, endpoint del propio comprador) el cálculo no cambia."""
+    activo_id: lo pasa SOLO la proyección del CRM de ESE inmueble, cuyo resultado llega al
+    corredor (audiencia = corredor de X). Entonces la semántica (etapa, nivel, score, razones,
+    resumen, turnos, reenganche) sale ÚNICAMENTE de fuentes con alcance demostrado a X:
+      - SEC-X2-R0b: los mensajes del handoff con `activo_id` exacto (ni NULL ni otro hilo) y
+        «pidió corredor» = solicitud registrada para X;
+      - SEC-X2-R0c: NADA del AgentState —ni el texto de la persona, ni las tools, ni el uso del
+        análisis de inversión, ni cuántos turnos hubo—, porque sus mensajes no tienen
+        procedencia por inmueble: lo que habló de Y no puede volverse una razón para el
+        corredor de X. Del AgentState queda solo `interactuo` (que la persona escribió algo):
+        un metadato de EXISTENCIA para que el lead siga en la lista, nunca contenido.
+    Atribución y tiempo (`es_qr`, `horas_inactividad`) siguen contando: no son contenido.
+    Un activo_id inválido falla cerrado (sin señales del handoff ni del AgentState).
+    Sin activo_id (cron de reenganche, endpoint del propio comprador) el cálculo no cambia:
+    CÓMPUTO INTERNO ≠ DIVULGACIÓN AL CORREDOR (el egreso del reenganche es otra unidad)."""
     from app.intencion import analizar_intencion
 
     config = _langgraph_config(session_id)
@@ -2970,6 +2930,14 @@ async def intencion_de_sesion(session_id: str, horas_inactividad: float | None =
                 if "investment" in nombre.lower():
                     uso_inversion = True
 
+    # SEC-X2-R0c: para el corredor de X, el AgentState no alimenta la semántica. Se conserva solo
+    # la EXISTENCIA de interacción (pertenencia a la lista); el texto, las tools y los turnos se
+    # descartan antes del motor.
+    para_corredor = activo_id is not None
+    interactuo = bool(mensajes_usuario)
+    if para_corredor:
+        mensajes_usuario, herramientas, uso_inversion = [], 0, False
+
     # Señales del handoff in-platform: pedir corredor es el pico de intención, y los
     # mensajes que el lead escribió al corredor ("quiero reservar una visita") también
     # cuentan como señales (viven en handoff_mensaje, fuera del estado del agente).
@@ -2977,7 +2945,7 @@ async def intencion_de_sesion(session_id: str, horas_inactividad: float | None =
     para = _uuid_valido(activo_id) if activo_id else None
     # Si piden el hilo de un inmueble con un id que no sirve: falla cerrado (sin señales del
     # handoff), nunca la sesión entera.
-    sesion_entera = not activo_id
+    sesion_entera = not para_corredor
     try:
         async with AsyncSessionLocal() as db:
             if para:
@@ -3017,6 +2985,8 @@ async def intencion_de_sesion(session_id: str, horas_inactividad: float | None =
         horas_inactividad=horas_inactividad,
     )
     analisis["session_id"] = session_id
+    if para_corredor:
+        analisis["interactuo"] = interactuo
     return analisis
 
 

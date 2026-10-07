@@ -1363,12 +1363,21 @@ async def lead_conversacion(
     try:
         await ensure_handoff_tables(db)
         rows = (await db.execute(text(
-            "SELECT autor, texto FROM handoff_mensaje WHERE session_id = :s "
+            "SELECT m.autor, m.texto FROM handoff_mensaje m "
+            "  JOIN handoff_sesion h "
+            "    ON h.session_id = m.session_id AND h.activo_id = m.activo_id "
+            "WHERE m.session_id = :s "
             # Solo ESTE hilo, por inmueble EXACTO: el corredor de un inmueble no puede leer lo
             # que el interesado habla con el corredor de otro. SEC-X2-R0b: el `OR activo_id IS
             # NULL` que rescataba mensajes sin inmueble se retiró; un mensaje de procedencia
             # desconocida NO es contenido autorizado para X, aunque la persona pida X después.
-            "  AND activo_id = CAST(:a AS uuid) ORDER BY id ASC"),
+            "  AND m.activo_id = CAST(:a AS uuid) "
+            # SEC-X2-C1 · UNA AUTORIDAD NUEVA NO AUTORIZA CONTENIDO ANTIGUO: solo lo escrito desde
+            # la solicitud. Lo anterior del mismo hilo es historial del comprador (lo ve él en
+            # `historicos`), y su solicitud nueva no se lo divulga al corredor. Sin `creado_en`, fuera.
+            "  AND h.principal_requested_at IS NOT NULL "
+            "  AND m.creado_en >= h.principal_requested_at "
+            "ORDER BY m.id ASC"),
             {"s": session_id, "a": str(activo_id)})).mappings().all()
         hmsgs = [{"autor": r["autor"], "texto": r["texto"]} for r in rows]
         estado = (await db.execute(text(

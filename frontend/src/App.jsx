@@ -16,6 +16,8 @@ import DeltaEncaje from './DeltaEncaje'
 import Launcher from './Launcher'
 import AttachSheet from './AttachSheet'
 import PedirCorredor from './PedirCorredor'
+import HistorialAnterior from './HistorialAnterior'
+import { historicosDe } from './historicosHandoff'
 import { activoDelLetrero, candidatosDelUltimoPanel, canonico } from './pedidoCorredor'
 import { mensajeErrorLetrero, useDireccionLetrero } from './direccionLetrero'
 import { COPY_AVISO, cuerpoActivar, cuerpoCerrar, cuerpoDesactivar, guardarPreferencia, leerPreferencia,
@@ -557,6 +559,9 @@ export default function App() {
   const [hiloSeleccionado, setHiloSeleccionado] = useState(hiloDeUrl)
   const [hiloActivo, setHiloActivo] = useState(hiloDeUrl)
   const [hilosCorredor, setHilosCorredor] = useState([])   // todos los corredores de esta conversación
+  // SEC-X2-C1 · historial ANTERIOR del handoff (solo lectura, solo para el dueño). Va aparte a propósito:
+  // nunca entra en `messages`, no activa el modo corredor ni habilita escribirle.
+  const [historicosHandoff, setHistoricosHandoff] = useState([])
   // El interesado pidió volver a hablar con Contexto. Sin esta marca el sondeo lo devolvía
   // al corredor en el siguiente tick: había un candado: entrar un corredor era de una sola
   // dirección y la conversación con el agente quedaba muerta para siempre.
@@ -740,10 +745,16 @@ export default function App() {
     // Nueva sesión (o vacía) → resetea el handoff de cámara ANTES de cualquier early-return,
     // para que el 1er mapa haga ease-in y NO vuele desde el encuadre de la sesión anterior.
     mapBboxRef.current = null
+    // El historial anterior es de ESTA conversación: al cambiar de conversación, se vacía.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHistoricosHandoff([])
     // Sin conversación resuelta no hay nada que pedir: `sessionId` es `null` entre el
     // montaje y la respuesta del bootstrap, y también mientras «nuevo chat» va y vuelve.
     if (!sessionId) return
     if (skipFirstRestore.current) { skipFirstRestore.current = false; return }
+    // Una respuesta que llega DESPUÉS de cambiar de conversación no puede pintar el historial anterior
+    // de la otra (SEC-X2-C1): solo cuenta mientras esta conversación siga abierta.
+    let vigente = true
     axios.get(`${API_BASE}/api/v1/chat/${sessionId}/history`, { headers: apiHeadersSesion(sessionId) })
       .then(({ data }) => {
         if (!data.messages?.length) return
@@ -768,6 +779,8 @@ export default function App() {
           .then(({ data: h }) => {
             if (h?.activo_id) setHiloActivo(h.activo_id)
             setHilosCorredor(h?.hilos || [])
+            // SEC-X2-C1: lo histórico se guarda APARTE; el hilo actual sigue siendo solo `mensajes`.
+            if (vigente) setHistoricosHandoff(historicosDe(h))
             const hm = h?.mensajes || []
             if (!hm.length) return
             for (const m of hm) handoffSeenRef.current = Math.max(handoffSeenRef.current, m.id)
@@ -782,6 +795,7 @@ export default function App() {
           .catch(() => { /* sin handoff en esta conversación: normal */ })
       })
       .catch(() => {}) // silent — no history yet
+    return () => { vigente = false }
     // hiloSeleccionado en las dependencias: cambiar de corredor recarga la conversación
     // ENTERA, que es justo lo que se espera al abrir el otro hilo desde la bandeja.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2241,6 +2255,9 @@ export default function App() {
             aviso={avisoError}
           />
         )}
+
+        {/* SEC-X2-C1: el historial anterior, aparte y sin acciones (no reabre el contacto). */}
+        <HistorialAnterior mensajes={historicosHandoff} />
 
         {messages.map((msg, i) => (
           <Message key={msg.id} msg={msg} onCopy={handleCopy} copied={copied}

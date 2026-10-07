@@ -2554,18 +2554,79 @@ async def _hilo_de_sesion(db, session_id: str, activo_id: str | None = None, *,
 
 async def _hilos_de_sesion(db, session_id: str) -> list[dict]:
     """Todos los corredores con los que habla esta conversación (para elegir hilo).
-    SEC-X2-R0: solo los hilos que la persona pidió."""
+    SEC-X2-R0: solo los hilos que la persona pidió. SEC-X2-C1: `mensajes` cuenta el hilo ACTUAL
+    (desde la solicitud); lo anterior es historial y no forma parte del hilo que se escribe."""
     rows = (await db.execute(text(
         "SELECT h.activo_id::text AS activo_id, h.estado, "
         "       a.direccion_estandarizada AS direccion, "
         "       (SELECT count(*) FROM handoff_mensaje m "
-        "         WHERE m.session_id = h.session_id AND m.activo_id = h.activo_id) AS mensajes "
+        "         WHERE m.session_id = h.session_id AND m.activo_id = h.activo_id "
+        "           AND m.creado_en >= h.principal_requested_at) AS mensajes "
         "  FROM handoff_sesion h "
         "  LEFT JOIN activos_inmutables a ON a.id = h.activo_id "
         " WHERE h.session_id = :s AND h.principal_requested_at IS NOT NULL "
         " ORDER BY h.actualizado_en DESC NULLS LAST"),
         {"s": session_id})).mappings().all()
     return [dict(r) for r in rows]
+
+
+async def _historicos_del_dueno(db, session_id: str) -> list[dict]:
+    """SEC-X2-C1 · el historial LEGACY del handoff: de SOLO LECTURA y solo para el DUEÑO.
+
+    UNA AUTORIDAD NUEVA NO AUTORIZA CONTENIDO ANTIGUO. Esto es una costura de compatibilidad de
+    lectura para el comprador, no una migración de autoridad: no abre el hilo, no habilita
+    escribir, no llega al corredor y no prueba a qué inmueble pertenecía la conversación. Quién
+    puede pedirla lo decide quien llama: `estado_handoff`, solo con `Autoridad.OWNER` y `desde == 0`.
+
+    Frontera temporal: `handoff_sesion.principal_requested_at`. Un mensaje del hilo exacto es
+    HISTÓRICO si su fila no tiene la marca o si se escribió ANTES de ella; desde la marca en
+    adelante es del hilo actual (`mensajes`) y aquí no se repite. Sin `creado_en` no hay frontera
+    demostrable: esa fila no se devuelve.
+
+    Guarda de ambigüedad (falla cerrado → `[]`). Un `activo_id` histórico no nulo NO es procedencia
+    por sí solo: el relleno de arranque que retiró R0b lo asignaba con UNA fila cualquiera de la
+    sesión. Solo se devuelve algo si la sesión entera apunta a UN único inmueble y no queda nada sin
+    explicar:
+      - exactamente un `activo_id` distinto entre `handoff_sesion` y `handoff_mensaje`;
+      - ninguna fila de `handoff_sesion` sin inmueble (esquema anterior a la PK compuesta);
+      - ningún mensaje con `activo_id` NULL;
+      - ningún mensaje cuyo `activo_id` no tenga su fila exacta en `handoff_sesion`.
+    No se infiere nada del prefijo `qr-`, de direcciones en la prosa, de las tools, del último
+    inmueble, del orden de las tarjetas ni del estado del frontend. La guarda y la lectura van en
+    UNA sentencia: misma instantánea, sin carrera entre comprobar y leer.
+
+    Lo que sale no lleva `activo_id` ni dirección: la asociación histórica no es una prueba de
+    procedencia y la interfaz no debe presentarla como verificada."""
+    rows = (await db.execute(text(
+        "WITH guarda AS ("
+        "  SELECT"
+        "    (SELECT count(*) FROM handoff_sesion WHERE session_id = :s AND activo_id IS NULL)"
+        "      AS filas_sin_inmueble,"
+        "    (SELECT count(*) FROM handoff_mensaje WHERE session_id = :s AND activo_id IS NULL)"
+        "      AS mensajes_sin_inmueble,"
+        "    (SELECT count(*) FROM handoff_mensaje x WHERE x.session_id = :s AND NOT EXISTS ("
+        "        SELECT 1 FROM handoff_sesion y"
+        "         WHERE y.session_id = x.session_id AND y.activo_id = x.activo_id))"
+        "      AS mensajes_sin_hilo_exacto,"
+        "    (SELECT count(DISTINCT u.activo_id) FROM ("
+        "        SELECT activo_id FROM handoff_sesion WHERE session_id = :s"
+        "        UNION ALL"
+        "        SELECT activo_id FROM handoff_mensaje WHERE session_id = :s) u)"
+        "      AS inmuebles"
+        ") "
+        "SELECT m.id, m.autor, m.texto, m.creado_en "
+        "  FROM handoff_mensaje m "
+        "  JOIN handoff_sesion h ON h.session_id = m.session_id AND h.activo_id = m.activo_id "
+        "  CROSS JOIN guarda g "
+        " WHERE g.filas_sin_inmueble = 0 AND g.mensajes_sin_inmueble = 0 "
+        "   AND g.mensajes_sin_hilo_exacto = 0 AND g.inmuebles = 1 "
+        "   AND m.session_id = :s AND m.autor IN ('lead', 'corredor') "
+        "   AND m.creado_en IS NOT NULL "
+        "   AND (h.principal_requested_at IS NULL OR m.creado_en < h.principal_requested_at) "
+        " ORDER BY m.id ASC"),
+        {"s": session_id})).mappings().all()
+    return [{"id": r["id"], "autor": r["autor"], "texto": r["texto"],
+             "creado_en": r["creado_en"].isoformat()} for r in rows]
 
 
 _ASIGNACION_DDL = [
@@ -2844,40 +2905,64 @@ async def estado_handoff(request: Request, session_id: str, desde: int = 0,
     # OJO con el `vacio` de abajo: NO sirve como denegación. Devolver "no hay handoff" a
     # quien no tiene autoridad y "aquí están los mensajes" a quien sí, distingue la sesión
     # que existe de la que no. La denegación tiene que ser el 404 de siempre.
-    await _exigir_autoridad(request, session_id, user)
+    autoridad = await _exigir_autoridad(request, session_id, user)
 
+    # SEC-X2-C1 · `mensajes` es el hilo ACTUAL autorizado; `historicos`, el historial LEGACY de
+    # solo lectura del dueño. Son campos SEPARADOS a propósito: lo histórico no entra en
+    # `mensajes`, no fabrica un handoff activo (activo/estado/corredor_whatsapp/hilos siguen
+    # saliendo solo del hilo actual) y no habilita escribir (eso lo decide `_hilo_de_sesion`).
     vacio = {"activo": False, "estado": None, "mensajes": [],
-             "corredor_whatsapp": None, "activo_id": None, "hilos": []}
+             "corredor_whatsapp": None, "activo_id": None, "hilos": [], "historicos": []}
     async with AsyncSessionLocal() as db:
+        res = dict(vacio)
         try:
             hilo = await _hilo_de_sesion(db, session_id, activo_id)
-            if hilo is None:
-                return vacio
-            est = (await db.execute(text(
-                "SELECT estado FROM handoff_sesion "
-                "WHERE session_id = :s AND activo_id = CAST(:a AS uuid) "
-                "  AND principal_requested_at IS NOT NULL"),
-                {"s": session_id, "a": hilo})).scalar()
-            if est is None:
-                return vacio
-            rows = (await db.execute(text(
-                "SELECT id, autor, texto FROM handoff_mensaje "
-                # Solo los de ESTE hilo, por inmueble EXACTO. SEC-X2-R0b: aquí había un
-                # `OR activo_id IS NULL` que rescataba mensajes sin inmueble; con él, una
-                # solicitud nueva para X metía en el hilo de X contenido de procedencia
-                # desconocida. Una autoridad nueva no lava la falta de procedencia.
-                "WHERE session_id = :s AND id > :d "
-                "  AND activo_id = CAST(:a AS uuid) ORDER BY id ASC"),
-                {"s": session_id, "d": desde, "a": hilo})).mappings().all()
-            # Se resuelve en cada sondeo para que el botón de WhatsApp sobreviva a un
-            # reload del interesado (el POST /handoff no se re-dispara al recargar).
-            wsp = await _whatsapp_de_activo(db, hilo)
-            hilos = await _hilos_de_sesion(db, session_id)
+            est = None
+            if hilo is not None:
+                est = (await db.execute(text(
+                    "SELECT estado FROM handoff_sesion "
+                    "WHERE session_id = :s AND activo_id = CAST(:a AS uuid) "
+                    "  AND principal_requested_at IS NOT NULL"),
+                    {"s": session_id, "a": hilo})).scalar()
+            if est is not None:
+                rows = (await db.execute(text(
+                    "SELECT m.id, m.autor, m.texto FROM handoff_mensaje m "
+                    "  JOIN handoff_sesion h "
+                    "    ON h.session_id = m.session_id AND h.activo_id = m.activo_id "
+                    # Solo los de ESTE hilo, por inmueble EXACTO. SEC-X2-R0b: aquí había un
+                    # `OR activo_id IS NULL` que rescataba mensajes sin inmueble; con él, una
+                    # solicitud nueva para X metía en el hilo de X contenido de procedencia
+                    # desconocida. Una autoridad nueva no lava la falta de procedencia.
+                    "WHERE m.session_id = :s AND m.id > :d "
+                    "  AND m.activo_id = CAST(:a AS uuid) "
+                    # SEC-X2-C1 · y solo desde la solicitud: lo anterior a la marca es historial
+                    # (`historicos`), no el hilo actual. Sin `creado_en` no hay frontera: fuera.
+                    "  AND h.principal_requested_at IS NOT NULL "
+                    "  AND m.creado_en >= h.principal_requested_at "
+                    "ORDER BY m.id ASC"),
+                    {"s": session_id, "d": desde, "a": hilo})).mappings().all()
+                # Se resuelve en cada sondeo para que el botón de WhatsApp sobreviva a un
+                # reload del interesado (el POST /handoff no se re-dispara al recargar).
+                wsp = await _whatsapp_de_activo(db, hilo)
+                hilos = await _hilos_de_sesion(db, session_id)
+                res = {"activo": True, "estado": est, "corredor_whatsapp": wsp, "activo_id": hilo,
+                       "hilos": hilos, "historicos": [],
+                       "mensajes": [{"id": r["id"], "autor": r["autor"], "texto": r["texto"]}
+                                    for r in rows]}
         except Exception:  # noqa: BLE001 — tablas aún no existen
-            return vacio
-    return {"activo": True, "estado": est, "corredor_whatsapp": wsp, "activo_id": hilo,
-            "hilos": hilos,
-            "mensajes": [{"id": r["id"], "autor": r["autor"], "texto": r["texto"]} for r in rows]}
+            await db.rollback()
+            res = dict(vacio)
+        # Solo el DUEÑO autenticado (fuente canónica: chat_sessions.user_id vía `_decidir`) y solo
+        # en la lectura inicial. La capacidad anónima no lo recibe en C1 v0: el censo de producción
+        # (C0B) no encontró ninguna sesión anónima reanudable con historial, y no se construye
+        # autoridad que nadie usa. Un fallo aquí no tumba el hilo actual: falla cerrado a [].
+        if desde == 0 and autoridad is Autoridad.OWNER:
+            try:
+                res["historicos"] = await _historicos_del_dueno(db, session_id)
+            except Exception:  # noqa: BLE001
+                await db.rollback()
+                res["historicos"] = []
+    return res
 
 
 async def intencion_de_sesion(session_id: str, horas_inactividad: float | None = None,
@@ -2949,20 +3034,36 @@ async def intencion_de_sesion(session_id: str, horas_inactividad: float | None =
     try:
         async with AsyncSessionLocal() as db:
             if para:
-                est = (await db.execute(text(
-                    "SELECT estado FROM handoff_sesion WHERE session_id = :s "
+                marca = (await db.execute(text(
+                    "SELECT principal_requested_at FROM handoff_sesion WHERE session_id = :s "
                     "AND activo_id = CAST(:a AS uuid) AND principal_requested_at IS NOT NULL"),
                     {"s": session_id, "a": para})).scalar()
-                pidio_corredor = est is not None
-                # Los mensajes sellados EXACTAMENTE a este inmueble cuentan aunque la solicitud
-                # sea histórica (sin marca): la pertenencia del lead al CRM no depende de la
-                # autoridad, y los derivados de un lead sin solicitud ya los retiene la
-                # proyección (SEC-X2-R0). Lo NULL y lo de otro hilo no cuentan nunca.
-                hmsgs = (await db.execute(text(
-                    "SELECT texto FROM handoff_mensaje WHERE session_id = :s AND autor = 'lead' "
-                    "AND activo_id = CAST(:a AS uuid) ORDER BY id"),
-                    {"s": session_id, "a": para})).scalars().all()
-                mensajes_usuario.extend([t for t in hmsgs if t])
+                pidio_corredor = marca is not None
+                # SEC-X2-C1 · PERTENENCIA ≠ SEMÁNTICA. Que la persona escribiera en el hilo exacto
+                # de X (en cualquier momento) es un metadato de EXISTENCIA, como `interactuo`: el
+                # lead sigue en la lista aunque su contenido se retenga (la lección de R0b). Lo NULL
+                # y lo de otro hilo no cuentan nunca.
+                escribio_en_x = (await db.execute(text(
+                    "SELECT EXISTS (SELECT 1 FROM handoff_mensaje WHERE session_id = :s "
+                    "AND autor = 'lead' AND activo_id = CAST(:a AS uuid))"),
+                    {"s": session_id, "a": para})).scalar()
+                interactuo = interactuo or bool(escribio_en_x)
+                # El CONTENIDO que alimenta la semántica para el corredor de X (etapa, nivel, score,
+                # razones, resumen, turnos, reenganche) es solo el posterior a la solicitud: lo
+                # anterior es historial del comprador, y una solicitud nueva no lo vuelve visible
+                # para el corredor. Sin solicitud, nada del handoff alimenta esa semántica.
+                if pidio_corredor:
+                    hmsgs = (await db.execute(text(
+                        "SELECT m.texto FROM handoff_mensaje m "
+                        "  JOIN handoff_sesion h "
+                        "    ON h.session_id = m.session_id AND h.activo_id = m.activo_id "
+                        "WHERE m.session_id = :s AND m.autor = 'lead' "
+                        "  AND m.activo_id = CAST(:a AS uuid) "
+                        "  AND h.principal_requested_at IS NOT NULL "
+                        "  AND m.creado_en >= h.principal_requested_at "
+                        "ORDER BY m.id"),
+                        {"s": session_id, "a": para})).scalars().all()
+                    mensajes_usuario.extend([t for t in hmsgs if t])
             elif sesion_entera:
                 est = (await db.execute(text(
                     "SELECT estado FROM handoff_sesion WHERE session_id = :s LIMIT 1"),

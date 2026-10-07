@@ -104,7 +104,12 @@ def test_A3_la_respuesta_del_corredor_nunca_crea_la_fila_ni_la_autoridad():
     assert "principal_requested_at =" not in sql and "principal_requested_at," not in sql
 
 
-_LECTURA = re.compile(r"principal_requested_at\s+is\s+(not\s+)?null")
+# Lecturas del hecho: `IS [NOT] NULL`, `SELECT principal_requested_at FROM` y, desde SEC-X2-C1, la
+# COMPARACIÓN con la marca (`creado_en >= h.principal_requested_at`: la frontera temporal). Un `=` sigue
+# contando como escritura (SET, INSERT, COALESCE…): ver test_A4b.
+_LECTURA = re.compile(r"principal_requested_at\s+is\s+(not\s+)?null"
+                      r"|(?:>=|<=|<|>)\s*(?:\w+\.)?principal_requested_at"
+                      r"|select\s+principal_requested_at\s+from")
 
 
 def test_A4_solo_registrar_handoff_escribe_la_autoridad_en_todo_app():
@@ -129,6 +134,23 @@ def test_A4_solo_registrar_handoff_escribe_la_autoridad_en_todo_app():
             if _LECTURA.sub(" ", texto).count("principal_requested_at"):
                 escritores.add(f"{py.relative_to(RAIZ).as_posix()}::{fn.name}")
     assert escritores == {"app/routers/chat.py::registrar_handoff"}, escritores
+
+
+@pytest.mark.parametrize("sql, escribe", [
+    ("update handoff_sesion set principal_requested_at = now() where session_id = :s", True),
+    ("insert into handoff_sesion (session_id, principal_requested_at) values (:s, now())", True),
+    ("set principal_requested_at = coalesce(handoff_sesion.principal_requested_at, "
+     "excluded.principal_requested_at)", True),
+    ("update handoff_sesion set principal_requested_at = h.principal_requested_at", True),
+    ("update handoff_sesion set principal_requested_at = now() where m.creado_en >= h.principal_requested_at",
+     True),
+    ("where h.principal_requested_at is not null and m.creado_en >= h.principal_requested_at", False),
+    ("and (h.principal_requested_at is null or m.creado_en < h.principal_requested_at)", False),
+    ("select principal_requested_at from handoff_sesion where session_id = :s", False),
+])
+def test_A4b_el_detector_distingue_la_frontera_temporal_de_una_escritura(sql, escribe):
+    """SEC-X2-C1 lee la marca por comparación; el detector de A4 no puede volverse ciego a una escritura."""
+    assert (_LECTURA.sub(" ", sql).count("principal_requested_at") > 0) is escribe
 
 
 def test_A5_los_consumidores_del_hilo_exigen_la_solicitud():
@@ -498,9 +520,13 @@ async def test_B_D_fila_historica_NULL_no_hereda_autoridad_por_ninguna_puerta(ba
         assert await A._leads_de_activo(db, X) == []
     assert await _uno(Sesion, "SELECT count(*) FROM handoff_mensaje") == 1
     assert avisos == []
-    # Un acto NUEVO de la persona sí la convierte (y no reescribe el estado del hilo).
+    # Un acto NUEVO de la persona abre el hilo (sin 403, y sin reescribir el estado del hilo)…
     assert (await chat.registrar_handoff(sid, activo_id=X))["ok"]
-    assert (await _lee(Sesion, sid, X, DUENO_X))["handoff"] == [{"autor": "lead", "texto": "mensaje viejo"}]
+    conv = await _lee(Sesion, sid, X, DUENO_X)
+    # …pero SEC-X2-C1: UNA AUTORIDAD NUEVA NO AUTORIZA CONTENIDO ANTIGUO. El «mensaje viejo» es anterior
+    # a la marca: es historial del comprador (lo ve él en `historicos`), no del corredor. Antes de C1 este
+    # test esperaba verlo aquí.
+    assert conv["handoff"] == [] and conv["estado"] == "activo"
     estado, _, marca = await _fila(Sesion, sid, X)
     assert estado == "activo" and marca is not None
 
@@ -699,6 +725,7 @@ def test_A17_inventario_cerrado_de_lectores_de_mensajes_del_handoff():
         "app/routers/assets.py::lead_conversacion",          # inmueble exacto (R0b)
         "app/routers/chat.py::estado_handoff",               # inmueble exacto (R0b)
         "app/routers/chat.py::_hilos_de_sesion",             # conteo por m.activo_id = h.activo_id
+        "app/routers/chat.py::_historicos_del_dueno",        # C1: solo dueño, guarda de ambigüedad
         "app/routers/chat.py::intencion_de_sesion",          # exacto cuando lo pide el CRM (R0b)
         "app/agent/crm_tools.py::tool_timeline_de_lead",     # RESIDUAL X-1 (B_J, B_J2)
     }, lectores
@@ -933,7 +960,10 @@ async def test_B_Q_el_lead_qr_historico_sigue_listado_como_atribucion(base, monk
     assert leads[0]["pidio_corredor"] is False
     # Y la fila histórica SIN marca no es «pidió corredor» ni dentro del análisis.
     analisis = await chat.intencion_de_sesion(f"qr-{X}-lega0003", activo_id=X)
-    assert analisis["turnos"] == 1 and "Pidió hablar con el corredor" not in analisis["razones"]
+    # SEC-X2-C1: sin solicitud, el contenido del handoff no alimenta la semántica del corredor (antes de C1:
+    # turnos == 1). La EXISTENCIA del mensaje exacto sí mantiene al lead en la lista (`interactuo`).
+    assert analisis["turnos"] == 0 and analisis["interactuo"] is True
+    assert "Pidió hablar con el corredor" not in analisis["razones"]
     for clave in A._DERIVADOS_RETENIDOS:
         assert leads[0][clave] is None, clave
     assert A._funnel_y_orden(leads)["atribuidos"] == 1
@@ -1180,3 +1210,370 @@ async def test_C_F_el_comprador_sigue_viendo_su_conversacion_y_el_computo_intern
     assert "Av. Y 2" in plano and "0991234567" in plano                  # la persona: todo
     propio = await chat.intencion_de_sesion(sid)                          # su endpoint / el cron
     assert "Preguntó el precio" in propio["razones"] and "interactuo" not in propio
+
+
+# ══ SEC-X2-C1 · el historial LEGACY del comprador: de solo lectura y solo para el dueño ══════
+#
+#     UNA AUTORIDAD NUEVA NO AUTORIZA CONTENIDO ANTIGUO
+#     ASOCIACIÓN HISTÓRICA ≠ PRUEBA DE PROCEDENCIA
+#     LECTURA DEL COMPRADOR ≠ DIVULGACIÓN AL CORREDOR ≠ AUTORIDAD PARA ESCRIBIR
+#
+# Frontera temporal: `principal_requested_at`. Lo anterior a la marca (o todo, si no hay marca) es
+# historial del comprador: `historicos`, solo para el DUEÑO autenticado (chat_sessions.user_id por
+# `_decidir`), solo en la lectura inicial (`desde == 0`) y solo si la sesión apunta a UN único inmueble
+# sin nada sin explicar. Lo posterior es el hilo actual (`mensajes`): lo único que ve el corredor y lo
+# único que alimenta la semántica de su CRM. Bloques: D_A…D_K = casos A…K del mandato.
+
+COMPRADOR = CurrentUser(user_id="00000000-0000-4000-8000-0000000000c1", nombre="Compradora")
+OTRA_CUENTA = CurrentUser(user_id="00000000-0000-4000-8000-0000000000c2", nombre="Otra cuenta")
+CAPACIDAD = "capacidad-de-prueba-c1"          # valor de prueba; solo se guarda su hash
+_VACIO_C1 = {"activo": False, "estado": None, "mensajes": [], "corredor_whatsapp": None,
+             "activo_id": None, "hilos": [], "historicos": []}
+
+
+def _peticion_con(resume: str | None = None) -> Request:
+    cab = [(chat._CABECERA_RESUME.encode(), resume.encode())] if resume else []
+    return Request({"type": "http", "method": "GET", "path": "/", "headers": cab,
+                    "client": ("test", 0), "query_string": b""})
+
+
+@pytest.fixture
+async def base_c1(base, monkeypatch):
+    """`base` + `chat_sessions` (la fuente canónica de autoridad) con la puerta REAL (`_decidir`)."""
+    from sqlalchemy import text
+    import app.sesion_autoridad as SA
+    Sesion, avisos = base
+    async with Sesion() as db:
+        await db.execute(text(
+            "CREATE TABLE chat_sessions (session_id text PRIMARY KEY, user_id uuid, "
+            "resume_token_hash text, resume_issued_at timestamptz, resume_revoked_at timestamptz)"))
+        await db.commit()
+    monkeypatch.setattr(SA, "AsyncSessionLocal", Sesion)
+    return Sesion, avisos
+
+
+async def _conversacion(Sesion, sid, *, dueno=None, capacidad=None):
+    from sqlalchemy import text
+    from app.sesion_autoridad import hash_de
+    async with Sesion() as db:
+        await db.execute(text(
+            "INSERT INTO chat_sessions (session_id, user_id, resume_token_hash, resume_issued_at) "
+            "VALUES (:s, CAST(:u AS uuid), :h, now())"),
+            {"s": sid, "u": dueno.user_id if dueno else None, "h": hash_de(capacidad) if capacidad else None})
+        await db.commit()
+
+
+async def _legado(Sesion, sid, mensajes, filas=(X,), *, dias=2):
+    """Hilo LEGACY tal como lo dejó el código anterior a R0: filas SIN marca (con corredor, como el
+    `responder_lead` viejo) y mensajes ya sellados con un inmueble. `mensajes`: (autor, texto, activo)."""
+    from sqlalchemy import text
+    async with Sesion() as db:
+        await chat.ensure_handoff_tables(db)
+        for a in filas:
+            await db.execute(text(
+                "INSERT INTO handoff_sesion (session_id, activo_id, estado, corredor_id) "
+                "VALUES (:s, CAST(:a AS uuid), 'activo', CAST(:u AS uuid))"),
+                {"s": sid, "a": a, "u": DUENO_X.user_id})
+        for autor, texto, activo in mensajes:
+            await db.execute(text(
+                "INSERT INTO handoff_mensaje (session_id, autor, texto, activo_id, creado_en) "
+                "VALUES (:s, :autor, :t, CAST(:a AS uuid), now() - make_interval(days => :d))"),
+                {"s": sid, "autor": autor, "t": texto, "a": activo, "d": dias})
+        await db.commit()
+
+
+async def _get(sid, user=None, *, desde=0, activo=None, resume=None):
+    return await chat.estado_handoff(_peticion_con(resume), sid, desde, activo, user)
+
+
+def _textos(lista):
+    return [m["texto"] for m in lista]
+
+
+_HILO_LEGACY = [("lead", "hola, me interesa el departamento", X),
+                ("corredor", "con gusto, ¿cuándo puede visitarlo?", X)]
+
+
+@pg
+async def test_D_A_el_dueno_ve_su_historial_sin_handoff_activo_ni_permiso_de_escribir(base_c1):
+    """Caso A: cuenta dueña + historial exacto de un solo inmueble + sin marca."""
+    Sesion, avisos = base_c1
+    sid = "session-c1-dueno"
+    await _conversacion(Sesion, sid, dueno=COMPRADOR)
+    await _legado(Sesion, sid, _HILO_LEGACY)
+    r = await _get(sid, COMPRADOR)
+    assert [(m["autor"], m["texto"]) for m in r["historicos"]] == [(a, t) for a, t, _ in _HILO_LEGACY]
+    # No se fabrica un handoff activo: todo lo demás es el `vacio` de siempre.
+    assert {k: v for k, v in r.items() if k != "historicos"} == {k: v for k, v in _VACIO_C1.items()
+                                                                if k != "historicos"}
+    # Lo histórico no lleva inmueble, corredor ni estado: la asociación no está verificada.
+    assert all(set(m) == {"id", "autor", "texto", "creado_en"} for m in r["historicos"])
+    # Caso I (1.ª mitad): el historial no habilita escribir, ni nombrando su inmueble.
+    antes = await _conteos(Sesion)
+    for hilo in (None, X):
+        with pytest.raises(HTTPException) as e:
+            await chat.handoff_mensaje_lead(_peticion_con(), sid, chat.HandoffMsg(texto="sigo interesada"),
+                                            hilo, COMPRADOR)
+        assert e.value.status_code == 409
+    assert await _conteos(Sesion) == antes and avisos == []
+    # Ni el corredor recupera nada porque exista historial, ni se toca la autoridad.
+    with pytest.raises(HTTPException) as e:
+        await _lee(Sesion, sid, X, DUENO_X)
+    assert e.value.status_code == 403
+    assert (await _fila(Sesion, sid, X))[2] is None
+
+
+@pg
+async def test_D_B_otra_cuenta_recibe_el_404_de_siempre_sin_filtrar_que_hay_historial(base_c1):
+    """Caso B: la misma sesión, otra cuenta (o sin cuenta) → la denegación normal, idéntica a la de
+    una conversación que no existe."""
+    Sesion, _ = base_c1
+    sid = "session-c1-ajena"
+    await _conversacion(Sesion, sid, dueno=COMPRADOR)
+    await _legado(Sesion, sid, _HILO_LEGACY)
+    denegaciones = []
+    for objetivo, quien in ((sid, OTRA_CUENTA), (sid, None), ("session-c1-no-existe", OTRA_CUENTA)):
+        with pytest.raises(HTTPException) as e:
+            await _get(objetivo, quien)
+        denegaciones.append((e.value.status_code, e.value.detail))
+    assert denegaciones[0][0] == 404
+    assert len(set(denegaciones)) == 1, denegaciones
+
+
+@pg
+async def test_D_C_la_capacidad_anonima_no_recibe_historial_en_c1_v0(base_c1):
+    """Caso C: la capacidad es válida (entra), pero C1 v0 no le da historial: el censo no encontró
+    ninguna sesión anónima reanudable con historial. Control: reclamada por su cuenta, sí lo ve."""
+    from sqlalchemy import text
+    Sesion, _ = base_c1
+    sid = "session-c1-anonima"
+    await _conversacion(Sesion, sid, capacidad=CAPACIDAD)
+    await _legado(Sesion, sid, _HILO_LEGACY)
+    assert await _get(sid, None, resume=CAPACIDAD) == _VACIO_C1
+    assert await _get(sid, COMPRADOR, resume=CAPACIDAD) == _VACIO_C1     # una cuenta con la capacidad, tampoco
+    async with Sesion() as db:                                           # el reclamo (claim)
+        await db.execute(text("UPDATE chat_sessions SET user_id = CAST(:u AS uuid), resume_revoked_at = now() "
+                              "WHERE session_id = :s"), {"u": COMPRADOR.user_id, "s": sid})
+        await db.commit()
+    assert _textos((await _get(sid, COMPRADOR))["historicos"]) == [t for _, t, _ in _HILO_LEGACY]
+
+
+@pg
+async def test_D_D_varios_inmuebles_en_la_sesion_fallan_cerrado(base_c1):
+    """Caso D: con dos inmuebles en la historia de la sesión no se elige ninguno."""
+    Sesion, _ = base_c1
+    casos = {
+        "session-c1-dos-filas": dict(mensajes=_HILO_LEGACY, filas=(X, Y)),
+        "session-c1-dos-hilos": dict(mensajes=_HILO_LEGACY + [("lead", "y este otro?", Y)], filas=(X, Y)),
+    }
+    for sid, k in casos.items():
+        await _conversacion(Sesion, sid, dueno=COMPRADOR)
+        await _legado(Sesion, sid, k["mensajes"], k["filas"])
+        assert (await _get(sid, COMPRADOR))["historicos"] == [], sid
+
+
+@pg
+async def test_D_E_un_mensaje_legacy_sin_inmueble_falla_cerrado(base_c1):
+    """Caso E: un solo mensaje con activo_id NULL basta para no devolver nada."""
+    Sesion, _ = base_c1
+    sid = "session-c1-null"
+    await _conversacion(Sesion, sid, dueno=COMPRADOR)
+    await _legado(Sesion, sid, _HILO_LEGACY + [("lead", "legado sin inmueble", None)])
+    assert (await _get(sid, COMPRADOR))["historicos"] == []
+
+
+@pg
+async def test_D_F_un_mensaje_sin_su_fila_exacta_falla_cerrado(base_c1):
+    """Caso F: un mensaje cuyo inmueble no tiene fila en handoff_sesion (o una sesión sin filas)."""
+    Sesion, _ = base_c1
+    for sid, filas, extra in (("session-c1-huerfano", (X,), [("lead", "de otro inmueble", Y)]),
+                              ("session-c1-sin-filas", (), [])):
+        await _conversacion(Sesion, sid, dueno=COMPRADOR)
+        await _legado(Sesion, sid, _HILO_LEGACY + extra, filas)
+        assert (await _get(sid, COMPRADOR))["historicos"] == [], sid
+
+
+@pg
+async def test_D_E2_sin_creado_en_no_hay_frontera_y_esa_fila_no_sale_por_ningun_lado(base_c1):
+    """`creado_en` NULL: falla cerrado para ESA fila (las demás siguen), antes y después de la marca."""
+    from sqlalchemy import text
+    Sesion, _ = base_c1
+    sid = "session-c1-sin-fecha"
+    await _conversacion(Sesion, sid, dueno=COMPRADOR)
+    await _legado(Sesion, sid, _HILO_LEGACY)
+    async with Sesion() as db:
+        await db.execute(text("INSERT INTO handoff_mensaje (session_id, autor, texto, activo_id, creado_en) "
+                              "VALUES (:s, 'lead', 'sin fecha', CAST(:a AS uuid), NULL)"), {"s": sid, "a": X})
+        await db.commit()
+    assert _textos((await _get(sid, COMPRADOR))["historicos"]) == [t for _, t, _ in _HILO_LEGACY]
+    assert (await chat.registrar_handoff(sid, activo_id=X))["ok"]
+    r = await _get(sid, COMPRADOR)
+    assert "sin fecha" not in _textos(r["historicos"]) + _textos(r["mensajes"])
+    assert "sin fecha" not in _textos((await _lee(Sesion, sid, X, DUENO_X))["handoff"])
+
+
+async def _sembrar_g(Sesion, sid):
+    """t0: historial legacy exacto de X · t1: la persona pide X (acto nuevo) · t2: los dos escriben."""
+    await _conversacion(Sesion, sid, dueno=COMPRADOR)
+    await _legado(Sesion, sid, [("lead", "t0 del comprador", X), ("corredor", "t0 de la corredora", X)])
+    assert (await chat.registrar_handoff(sid, activo_id=X, lead_user_id=COMPRADOR.user_id))["ok"]
+    await chat.handoff_mensaje_lead(_peticion_con(), sid, chat.HandoffMsg(texto="t2 del comprador"), X, COMPRADOR)
+    assert (await _responde(Sesion, sid, X, DUENO_X, texto="t2 de la corredora"))["ok"]
+
+
+@pg
+async def test_D_G_tras_una_solicitud_nueva_lo_anterior_es_historial_y_el_corredor_no_lo_ve(base_c1, monkeypatch):
+    """Caso G (y J): t0 < t1 < t2. Comprador: historicos = t0, mensajes = t2. Corredor: solo t2, y el
+    transcript del agente sigue en []."""
+    Sesion, _ = base_c1
+    sid = "session-c1-nueva"
+    monkeypatch.setattr(chat, "agent_graph", _grafo({sid: _CONVERSACION_Y}))
+    await _sembrar_g(Sesion, sid)
+    orden = await _uno(Sesion, "SELECT (SELECT max(creado_en) FROM handoff_mensaje WHERE session_id = :s "
+                               "AND texto LIKE 't0%') < h.principal_requested_at AND h.principal_requested_at <= "
+                               "(SELECT min(creado_en) FROM handoff_mensaje WHERE session_id = :s AND texto LIKE 't2%') "
+                               "FROM handoff_sesion h WHERE h.session_id = :s", s=sid)
+    assert orden is True                                                 # t0 < t1 <= t2, en la base
+    r = await _get(sid, COMPRADOR)
+    assert _textos(r["historicos"]) == ["t0 del comprador", "t0 de la corredora"]
+    assert _textos(r["mensajes"]) == ["t2 del comprador", "t2 de la corredora"]
+    assert r["activo"] is True and r["activo_id"] == X and r["estado"] == "activo"
+    assert [h["mensajes"] for h in r["hilos"]] == [2]                    # el conteo es del hilo actual
+    # Sondeo (desde > 0): sin historial; el hilo actual sigue como siempre.
+    r2 = await _get(sid, COMPRADOR, desde=r["mensajes"][0]["id"])
+    assert r2["historicos"] == [] and _textos(r2["mensajes"]) == ["t2 de la corredora"]
+    for quien in (DUENO_X, COLEGA_X):                                    # el corredor y su agencia
+        conv = await _lee(Sesion, sid, X, quien)
+        assert _textos(conv["handoff"]) == ["t2 del comprador", "t2 de la corredora"]
+        assert conv["transcript"] == []                                  # caso J
+    # Caso I (2.ª mitad): tras el acto explícito, escribir funciona con normalidad (ya lo hizo _sembrar_g).
+    assert await _uno(Sesion, "SELECT count(*) FROM handoff_mensaje WHERE session_id = :s "
+                              "AND texto LIKE 't2%' AND activo_id = CAST(:a AS uuid)", s=sid, a=X) == 2
+
+
+_HOSTIL_T0 = ("cuanto cuesta, es negociable? quiero invertir, que rentabilidad deja? mi presupuesto es 300 mil, "
+              "quiero agendar una visita el sabado, mi telefono es 0991234567")
+
+
+@pg
+async def test_D_H_la_semantica_del_crm_es_invariante_al_contenido_anterior_a_la_solicitud(base_c1, monkeypatch):
+    """Caso H: un mensaje hostil de alta intención en t0, la solicitud en t1 y uno neutro en t2. Lo que ve
+    el corredor de X (score, razones, resumen, turnos, embudo) no cambia con t0. El comprador sí lo ve."""
+    import json
+    from sqlalchemy import text
+    Sesion, _ = base_c1
+    sid = "session-c1-crm"
+    monkeypatch.setattr(chat, "agent_graph", _grafo({sid: [HumanMessage(content="hola")]}))
+    await _conversacion(Sesion, sid, dueno=COMPRADOR)
+    assert (await chat.registrar_handoff(sid, activo_id=X))["ok"]
+    async with Sesion() as db:
+        await db.execute(text("INSERT INTO handoff_mensaje (session_id, autor, texto, activo_id) "
+                              "VALUES (:s, 'lead', 'hola, sigue disponible', CAST(:a AS uuid))"), {"s": sid, "a": X})
+        await db.commit()
+
+    async def _proyeccion():
+        a = await chat.intencion_de_sesion(sid, activo_id=X)
+        async with Sesion() as db:
+            leads = await A._leads_de_activo(db, X)
+            lift = await A.metricas_lift(_peticion(), DUENO_X, db)
+        return a, leads, lift
+
+    a0, l0, m0 = await _proyeccion()
+    async with Sesion() as db:                                           # t0: ANTES de la marca
+        await db.execute(text(
+            "INSERT INTO handoff_mensaje (session_id, autor, texto, activo_id, creado_en) "
+            "SELECT :s, 'lead', :t, CAST(:a AS uuid), principal_requested_at - interval '1 day' "
+            "FROM handoff_sesion WHERE session_id = :s AND activo_id = CAST(:a AS uuid)"),
+            {"s": sid, "t": _HOSTIL_T0, "a": X})
+        await db.commit()
+    a1, l1, m1 = await _proyeccion()
+    assert a0 == a1
+    assert l0 == l1 and len(l1) == 1 and l1[0]["pidio_corredor"] is True
+    assert m0["funnel"] == m1["funnel"]
+    plano = json.dumps([a1, l1], ensure_ascii=False)
+    for huella in ("300 mil", "0991234567", "Preguntó el precio", "Evalúa la inversión"):
+        assert huella not in plano, huella
+    # El comprador sí lo conserva, como historial.
+    assert _textos((await _get(sid, COMPRADOR))["historicos"]) == [_HOSTIL_T0]
+    # Control: el MISMO texto después de la marca sí mueve la semántica (el motor no se apagó).
+    async with Sesion() as db:
+        await db.execute(text("INSERT INTO handoff_mensaje (session_id, autor, texto, activo_id) "
+                              "VALUES (:s, 'lead', :t, CAST(:a AS uuid))"), {"s": sid, "t": _HOSTIL_T0, "a": X})
+        await db.commit()
+    a2 = await chat.intencion_de_sesion(sid, activo_id=X)
+    assert a2["turnos"] == a1["turnos"] + 1 and "Preguntó el precio" in a2["razones"]
+
+
+@pg
+async def test_D_K_el_caso_del_censo_conserva_el_historial(base_c1):
+    """Caso K, con la forma que midió C0B en producción: cuenta dueña, un solo inmueble exacto, sin NULL,
+    sin huérfanos, fila histórica 'activo' con corredor y sin marca, mensajes de los dos lados. Con prefijo
+    `qr-` a propósito: el prefijo no se usa para nada (ni para conceder ni para inferir)."""
+    from sqlalchemy import text
+    Sesion, _ = base_c1
+    sid = f"qr-{X}-c1censo01"
+    mensajes = [("lead", "buenas tardes", X), ("corredor", "buenas, ¿en qué le ayudo?", X),
+                ("lead", "quisiera saber si aceptan mascotas", X)]
+    await _conversacion(Sesion, sid, dueno=COMPRADOR)
+    await _legado(Sesion, sid, mensajes, dias=200)
+    async with Sesion() as db:
+        await db.execute(text("INSERT INTO checkpoints VALUES (:s)"), {"s": sid})
+        await db.commit()
+    r = await _get(sid, COMPRADOR)
+    assert [(m["autor"], m["texto"]) for m in r["historicos"]] == [(a, t) for a, t, _ in mensajes]
+    assert r["activo"] is False and r["mensajes"] == []
+    ids = [m["id"] for m in r["historicos"]]
+    assert ids == sorted(ids)
+    # El corredor: el lead del letrero sigue listado como ATRIBUCIÓN (derivados retenidos), sin hilo.
+    async with Sesion() as db:
+        leads = await A._leads_de_activo(db, X)
+    assert [l["session_id"] for l in leads] == [sid] and leads[0]["pidio_corredor"] is False
+    for clave in A._DERIVADOS_RETENIDOS:
+        assert leads[0][clave] is None, clave
+    with pytest.raises(HTTPException):
+        await _lee(Sesion, sid, X, DUENO_X)
+
+
+def test_D_S1_la_frontera_temporal_esta_en_cada_lector_del_hilo_actual():
+    for fn in (A.lead_conversacion, chat.estado_handoff, chat.intencion_de_sesion, chat._hilos_de_sesion):
+        assert "m.creado_en >= h.principal_requested_at" in _sql(fn), fn.__name__
+    sql = _sql(chat._historicos_del_dueno)
+    assert "m.creado_en is not null" in sql
+    assert "(h.principal_requested_at is null or m.creado_en < h.principal_requested_at)" in sql
+    for guarda in ("g.filas_sin_inmueble = 0", "g.mensajes_sin_inmueble = 0",
+                   "g.mensajes_sin_hilo_exacto = 0", "g.inmuebles = 1"):
+        assert guarda in sql, guarda
+    # Lo histórico no se lee en ningún camino del corredor.
+    for fn in (A.lead_conversacion, A._leads_de_activo, A.responder_lead, chat.intencion_de_sesion):
+        assert "_historicos_del_dueno" not in inspect.getsource(fn), fn.__name__
+
+
+def test_D_S2_historicos_solo_para_el_dueno_y_solo_en_la_lectura_inicial():
+    """El único llamador de `_historicos_del_dueno` es `estado_handoff`, y lo llama bajo
+    `desde == 0 and autoridad is Autoridad.OWNER` (la autoridad que devuelve `_exigir_autoridad`)."""
+    llamadores = set()
+    for py in (RAIZ / "app").rglob("*.py"):
+        for fn in ast.walk(ast.parse(py.read_text(encoding="utf-8"))):
+            if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) and fn.name != "_historicos_del_dueno":
+                if any(isinstance(n, ast.Name) and n.id == "_historicos_del_dueno" for n in ast.walk(fn)):
+                    llamadores.add(f"{py.relative_to(RAIZ).as_posix()}::{fn.name}")
+    assert llamadores == {"app/routers/chat.py::estado_handoff"}, llamadores
+    arbol = ast.parse(inspect.getsource(chat.estado_handoff).lstrip())
+    condiciones = [ast.unparse(n.test) for n in ast.walk(arbol) if isinstance(n, ast.If)
+                   and any(isinstance(x, ast.Name) and x.id == "_historicos_del_dueno" for x in ast.walk(n))]
+    assert condiciones == ["desde == 0 and autoridad is Autoridad.OWNER"], condiciones
+
+
+@pg
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason=(
+    "RESIDUAL X-1, que C1 no empeora: el Copiloto (tool_timeline_de_lead) lee con su propia consulta TODOS los "
+    "handoff_mensaje de la sesión, también los ANTERIORES a la solicitud. La ruta HTTP (lead_conversacion) y el "
+    "CRM ya respetan la frontera temporal (D_G, D_H). SEC-X1-R0 debe cerrarlo: este xfail estricto se pondrá rojo."))
+async def test_D_X1_residual_copiloto_tras_solicitud_nueva_no_deberia_ver_lo_anterior(base_c1, monkeypatch):
+    Sesion, _ = base_c1
+    await _sembrar_g(Sesion, "session-c1-copiloto")
+    tl = await _timeline(monkeypatch, "Lead #sess")
+    textos = _textos(tl["handoff"])
+    if "t2 del comprador" not in textos:     # precondición: RuntimeError ≠ AssertionError → rojo, no xfail
+        raise RuntimeError(f"el Copiloto ni siquiera trae el hilo actual: {textos}")
+    assert "t0 del comprador" not in textos and "t0 de la corredora" not in textos

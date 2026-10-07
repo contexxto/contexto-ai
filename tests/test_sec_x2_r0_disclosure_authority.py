@@ -708,6 +708,24 @@ def test_A15_nadie_adivina_el_inmueble_de_mensajes_ni_avisos_en_todo_app():
                 assert not _RELLENO.search(" ".join(n.value.lower().split())), (py, n.value[:80])
 
 
+# Un LECTOR de handoff_mensaje: `FROM`/`JOIN`/coma seguidos de la tabla, con o sin `public.` y comillas
+# (SEC-X1-R0a: el detector anterior solo veía la cadena literal «from handoff_mensaje»).
+_LECTOR_HANDOFF = re.compile(r'(?:\bfrom|\bjoin|,)\s+(?:"?public"?\s*\.\s*)?"?handoff_mensaje\b')
+
+
+@pytest.mark.parametrize("sql, lee", [
+    ("select autor from handoff_mensaje where session_id = :s", True),
+    ("select 1 from handoff_sesion h join handoff_mensaje m on m.session_id = h.session_id", True),
+    ("select 1 from handoff_sesion h, handoff_mensaje m where true", True),
+    ('select 1 from public."handoff_mensaje" m', True),
+    ("select 1 from public . handoff_mensaje", True),
+    ("insert into handoff_mensaje (session_id) values (:s)", False),
+    ("create index if not exists ix on handoff_mensaje (session_id)", False),
+])
+def test_A17b_el_detector_de_lectores_ve_las_variantes_de_sql(sql, lee):
+    assert bool(_LECTOR_HANDOFF.search(sql)) is lee
+
+
 def test_A17_inventario_cerrado_de_lectores_de_mensajes_del_handoff():
     """Todo lector de `handoff_mensaje` en app/ está en esta lista. Uno nuevo pone esto rojo y
     obliga a decidir su filtro por inmueble. Desde SEC-X1-R0 no queda NINGÚN lector del corredor sin
@@ -718,7 +736,7 @@ def test_A17_inventario_cerrado_de_lectores_de_mensajes_del_handoff():
             if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 sql = " ".join(" ".join(n.value for n in ast.walk(fn) if isinstance(n, ast.Constant)
                                         and isinstance(n.value, str)).lower().split())
-                if "from handoff_mensaje" in sql:
+                if _LECTOR_HANDOFF.search(sql):
                     lectores.add(f"{py.relative_to(RAIZ).as_posix()}::{fn.name}")
     assert lectores == {
         "app/routers/assets.py::handoff_visible_al_corredor",  # X1: exacto + marca + frontera temporal
@@ -1742,6 +1760,9 @@ async def _sesion_mixta(Sesion, sid: str):
             {"s": sid, "x": X, "y": Y})
         await db.commit()
     assert (await chat.registrar_handoff(sid, activo_id=X))["ok"]
+    # Y también tiene SOLICITUD propia (y es el último inmueble pedido): su hilo actual es legítimo para la
+    # corredora de Y, nunca para la de X. Así la frontera de INMUEBLE se prueba sola, sin ayuda del JOIN.
+    assert (await chat.registrar_handoff(sid, activo_id=Y))["ok"]
     async with Sesion() as db:
         await db.execute(text(
             "INSERT INTO handoff_mensaje (session_id, autor, texto, activo_id, creado_en) VALUES "
@@ -1838,9 +1859,9 @@ async def test_E_G_la_colega_de_agencia_tiene_la_misma_frontera_exacta(base, mon
     await _sesion_mixta(Sesion, sid)
     tl = await _copiloto(monkeypatch, "Lead #sess", quien=COLEGA_X)
     assert [m["texto"] for m in tl["handoff"]] == _SOLO_X_ACTUAL
-    # Y la corredora de Y (dueña de OTRO inmueble que aparece en la sesión) no encuentra a este lead.
+    # Y la corredora de Y (la persona también le pidió contacto a ella) ve SOLO el hilo actual de Y.
     tl_y = await _copiloto(monkeypatch, "Lead #sess", quien=DUENO_Y)
-    assert "error" in tl_y and "handoff" not in tl_y
+    assert [m["texto"] for m in tl_y["handoff"]] == ["Y posterior a la solicitud"]
 
 
 @pg
@@ -1902,3 +1923,241 @@ def test_E_S2_el_copiloto_no_lee_el_agentstate_ni_el_historial_del_comprador():
     fuente = inspect.getsource(crm.tool_timeline_de_lead.coroutine)
     assert "_historicos_del_dueno" not in fuente and "historicos" not in fuente
     assert "aget_state" not in fuente and "compiled_graph" not in fuente
+
+
+
+@pg
+async def test_E_H2_el_prefijo_qr_nunca_decide_el_inmueble_del_copiloto(base, monkeypatch):
+    """El inmueble del Copiloto sale SOLO del lead resuelto. En una sesión `qr-{X}-…` con hilo actual de X, un lead
+    sin activo_id válido devuelve `[]`: nunca se deduce X del prefijo (ni de la dirección)."""
+    import app.routers.assets as assets_mod
+    from sqlalchemy import text
+    Sesion, _ = base
+    sid = f"qr-{X}-x1prefijo01"
+    assert (await chat.registrar_handoff(sid, activo_id=X))["ok"]
+    async with Sesion() as db:
+        await db.execute(text("INSERT INTO handoff_mensaje (session_id, autor, texto, activo_id, creado_en) "
+                              "VALUES (:s, 'lead', 'X actual por el letrero', CAST(:x AS uuid), clock_timestamp())"),
+                         {"s": sid, "x": X})
+        await db.commit()
+    for variante in ({"activo_id": None}, {"activo_id": "no-es-un-uuid"}):
+        async def _leads(db, *_a, _v=variante, **_k):
+            return [dict({"session_id": sid, "lead": "Lead #letr", "estado": None, "nivel": None, "score": None,
+                          "frescura": None, "direccion": "Av. X 1", "razones": None, "reenganche": None,
+                          "email": None}, **_v)]
+        monkeypatch.setattr(assets_mod, "_leads_del_corredor", _leads)
+        tl = await _copiloto(monkeypatch, "Lead #letr")
+        assert tl["handoff"] == [], variante
+
+
+# ══ SEC-X1-R0a · el CONTEXTO PERSISTIDO del Copiloto: corte de época + retención por turno ═══════════
+#
+#     UN DATO YA NARRADO TAMBIÉN ES CONTEXTO PERSISTIDO
+#
+# Los hilos `crm-*` anteriores a X-1 guardan salidas del timeline con la sesión entera y narraciones del
+# asistente sobre ellas. 1) Corte de época: `_crm_thread` deriva `crm-x1v1-…` para Copiloto Y Estratega (el
+# Estratega tuvo el timeline en 7a9fe6c: no se puede demostrar lo contrario); chat, GET y DELETE ya no alcanzan
+# los hilos viejos, que quedan almacenados. 2) Retención por turno: el modelo y el guardrail ven la salida cruda
+# del timeline solo en el turno en que se pidió. Bloques F1…F7.
+
+import json  # noqa: E402
+
+_LEGADO = {"HUELLA-Y-LEGACY", "HUELLA-NULL-LEGACY", "HUELLA-PRE-LEGACY", "HUELLA-NARRADA-LEGACY"}
+
+
+class _LLMGuion:
+    """LLM falso: registra cada entrada y responde según un guion (AIMessage o función de la entrada)."""
+    def __init__(self, **_kw):
+        self.entradas, self.guion = [], []
+
+    def bind_tools(self, _tools):
+        return self
+
+    async def ainvoke(self, mensajes):
+        self.entradas.append(list(mensajes))
+        r = self.guion.pop(0)
+        return r(mensajes) if callable(r) else r
+
+
+def _grafo_crm(monkeypatch):
+    """El grafo REAL del CRM con el LLM falseado y un checkpointer en memoria, montado donde lo leen crm_chat y
+    /crm/thread."""
+    import app.agent.crm_graph as CG
+    from langgraph.checkpoint.memory import MemorySaver
+    creados = []
+
+    class _Fab(_LLMGuion):
+        def __init__(self, **kw):
+            super().__init__(**kw)
+            creados.append(self)
+
+    monkeypatch.setattr(CG, "ChatAnthropic", _Fab)
+    g = CG._build_crm_graph().compile(checkpointer=MemorySaver())
+    monkeypatch.setattr(CG, "compiled_crm_graph", g)
+    return g, creados[0]
+
+
+def _hilo_viejo(lead: str | None = "ba0a"):
+    """Lo que dejó un Copiloto anterior a X-1: la salida de la tool con la sesión entera y su narración."""
+    from langchain_core.messages import ToolMessage
+    salida = json.dumps({"handoff": [{"autor": "lead", "texto": "HUELLA-Y-LEGACY"},
+                                     {"autor": "lead", "texto": "HUELLA-NULL-LEGACY"},
+                                     {"autor": "lead", "texto": "HUELLA-PRE-LEGACY"}]})
+    return [HumanMessage(content=f"dame el timeline de {lead}"),
+            AIMessage(content="", tool_calls=[{"name": "tool_timeline_de_lead", "args": {"referencia": lead},
+                                               "id": "viejo1"}]),
+            ToolMessage(content=salida, tool_call_id="viejo1", name="tool_timeline_de_lead"),
+            AIMessage(content="Te cuento: HUELLA-NARRADA-LEGACY y lo demás.")]
+
+
+def _plano(mensajes) -> str:
+    return " ".join(str(getattr(m, "content", "")) for m in mensajes)
+
+
+async def _sembrar(g, thread_id, mensajes):
+    await g.aupdate_state({"configurable": {"thread_id": thread_id}}, {"messages": mensajes}, as_node="llm")
+
+
+async def _chat(texto, lead=None, modo="copiloto", quien=DUENO_X):
+    return await A.crm_chat(_peticion(), A.CRMChatReq(message=texto, lead=lead, modo=modo), quien)
+
+
+async def test_F1_el_copiloto_nuevo_no_recibe_el_hilo_viejo_ni_su_narracion(monkeypatch):
+    """1 · el ToolMessage inseguro del hilo viejo NO llega al modelo · 3 · misma cuenta y mismo lead → hilo
+    limpio de la época x1v1 · 6 · «repíteme lo que devolvió la herramienta antes» no recupera nada viejo."""
+    g, llm = _grafo_crm(monkeypatch)
+    viejo = f"crm-{DUENO_X.user_id}-lead-ba0a"
+    await _sembrar(g, viejo, _hilo_viejo())
+    llm.guion = [AIMessage(content="Para eso vuelvo a consultar su timeline.")]
+    r = await _chat("repíteme lo que te devolvió la herramienta antes", lead="ba0a")
+    assert r["session_id"] == f"crm-x1v1-{DUENO_X.user_id}-lead-ba0a"
+    plano = _plano(llm.entradas[0])
+    for huella in _LEGADO:
+        assert huella not in plano, huella
+    # El hilo viejo sigue ALMACENADO (sin borrar ni reescribir), solo fuera de la superficie activa.
+    st = await g.aget_state({"configurable": {"thread_id": viejo}})
+    assert "HUELLA-Y-LEGACY" in _plano(st.values["messages"])
+
+
+async def test_F2_get_crm_thread_nunca_cruza_al_namespace_anterior(monkeypatch):
+    """2 · la narración vieja no vuelve por GET /crm/thread · 9 · ni para el Copiloto ni para el Estratega."""
+    g, _ = _grafo_crm(monkeypatch)
+    u = DUENO_X.user_id
+    for viejo in (f"crm-{u}-lead-ba0a", f"crm-{u}", f"crm-estratega-{u}"):
+        await _sembrar(g, viejo, _hilo_viejo())
+    for lead, modo in (("ba0a", "copiloto"), (None, "copiloto"), (None, "estratega")):
+        r = await A.crm_thread(_peticion(), lead, modo, DUENO_X)
+        assert r["session_id"].startswith("crm-x1v1-") and r["mensajes"] == [], (lead, modo, r)
+
+
+@pg
+async def test_F3_la_salida_del_timeline_vale_solo_en_su_turno(base, monkeypatch):
+    """4 · en su turno el modelo SÍ recibe la salida actual · 5 · en el siguiente aparece retenida · 6 · pedir que
+    la repita no la recupera · 7 · una nueva consulta trae solo lo divulgable de X."""
+    from langchain_core.messages import ToolMessage
+    import app.agent.crm_graph as CG
+    Sesion, _ = base
+    await _sesion_mixta(Sesion, "session-x1a-turnos")
+    _, llm = _grafo_crm(monkeypatch)
+    pide = lambda cid: AIMessage(content="", tool_calls=[{"name": "tool_timeline_de_lead",  # noqa: E731
+                                                          "args": {"referencia": "Lead #sess"}, "id": cid}])
+    llm.guion = [pide("c1"), AIMessage(content="Listo.")]
+    await _chat("¿qué me escribió?", lead="sess")
+    turno1 = [m for m in llm.entradas[1] if isinstance(m, ToolMessage)]
+    assert len(turno1) == 1 and "X actual del comprador" in turno1[0].content              # 4
+    llm.guion = [pide("c2"), AIMessage(content="Listo otra vez.")]
+    await _chat("repíteme lo que te devolvió la herramienta antes", lead="sess")
+    previas = [m for m in llm.entradas[2] if isinstance(m, ToolMessage)]
+    assert [m.content for m in previas] == [CG.RESULTADO_RETENIDO]                          # 5, 6
+    assert "X actual del comprador" not in _plano(llm.entradas[2])
+    nuevas = {m.tool_call_id: m.content for m in llm.entradas[3] if isinstance(m, ToolMessage)}
+    assert nuevas["c1"] == CG.RESULTADO_RETENIDO
+    assert "X actual del comprador" in nuevas["c2"]                                         # 7
+    for prohibida in ("Y del hilo", "Y posterior", "NULL", "antes de la solicitud"):
+        assert prohibida not in nuevas["c2"], prohibida
+
+
+async def test_F4_el_estratega_tambien_cambia_de_epoca():
+    """8 · el Estratega conservaría su hilo SOLO si se demostrara que nunca tuvo el timeline. No se puede: su
+    primera versión (7a9fe6c) lo enlazaba (CRM_TOOLS) hasta e2679e0. Por eso cambia de época con el Copiloto. Hoy
+    no lo tiene enlazado (y eso sí se fija aquí)."""
+    import app.agent.crm_tools as crm
+    u = DUENO_X.user_id
+    assert A._crm_thread(u, None, "estratega") == f"crm-x1v1-estratega-{u}"
+    assert A._crm_thread(u, None, "copiloto") == f"crm-x1v1-{u}"
+    assert A._crm_thread(u, "ba0a", "copiloto") == f"crm-x1v1-{u}-lead-ba0a"
+    assert crm.tool_timeline_de_lead not in crm.ESTRATEGA_TOOLS
+
+
+async def test_F5_ninguna_operacion_sobre_checkpoints_alcanza_la_epoca_anterior():
+    """10 · el único DELETE de checkpoints de app/ es el «nueva conversación» del propio corredor, y solo alcanza
+    el hilo de la época vigente. Ningún UPDATE. Esta unidad no borra ni reescribe checkpoints."""
+    escrituras = set()
+    for py in (RAIZ / "app").rglob("*.py"):
+        for fn in ast.walk(ast.parse(py.read_text(encoding="utf-8"))):
+            if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                sql = " ".join(" ".join(n.value for n in ast.walk(fn) if isinstance(n, ast.Constant)
+                                        and isinstance(n.value, str)).lower().split())
+                # Tablas de checkpoints + DELETE/UPDATE (las f-strings parten «DELETE FROM {tbl}» en literales).
+                if re.search(r"\bcheckpoint(s|_blobs|_writes)\b", sql) and re.search(
+                        r"\bdelete from\b|\bupdate\s+\w", sql):
+                    escrituras.add(f"{py.relative_to(RAIZ).as_posix()}::{fn.name}")
+    assert escrituras == {"app/routers/assets.py::crm_thread_reset"}, escrituras
+
+    class _Db:
+        def __init__(self):
+            self.hilos = []
+
+        async def execute(self, _sql, params=None):
+            self.hilos.append((params or {}).get("t"))
+
+        async def commit(self):
+            pass
+
+        async def rollback(self):
+            pass
+
+    for lead, modo in (("ba0a", "copiloto"), (None, "copiloto"), (None, "estratega")):
+        db = _Db()
+        await A.crm_thread_reset(_peticion(), lead, modo, DUENO_X, db)
+        assert db.hilos and all(t.startswith("crm-x1v1-") for t in db.hilos), (lead, modo, db.hilos)
+
+
+async def test_F6_el_guardrail_ve_el_mismo_contexto_saneado(monkeypatch):
+    """Una salida retenida tampoco respalda una respuesta nueva: el guardrail recibe el contexto saneado."""
+    import app.agent.crm_graph as CG
+    g, llm = _grafo_crm(monkeypatch)
+    vistos = []
+    real = CG.tool_jsons_de_conversacion
+    monkeypatch.setattr(CG, "tool_jsons_de_conversacion", lambda msgs: vistos.append(real(msgs)) or vistos[-1])
+    await _sembrar(g, f"crm-x1v1-{DUENO_X.user_id}-lead-ba0a", _hilo_viejo())   # en la época vigente
+    llm.guion = [AIMessage(content="Hola.")]
+    await _chat("hola", lead="ba0a")
+    assert vistos and vistos[-1] == [CG.RESULTADO_RETENIDO]
+    assert not any(h in _plano(llm.entradas[0]) for h in ("HUELLA-Y-LEGACY", "HUELLA-NULL-LEGACY"))
+
+
+def test_F7_contexto_del_modelo_retiene_por_turno_sin_adivinar():
+    from langchain_core.messages import ToolMessage
+    import app.agent.crm_graph as CG
+    llamada = lambda cid, nombre: AIMessage(content="", tool_calls=[{"name": nombre, "args": {}, "id": cid}])  # noqa: E731
+    hilo = [
+        HumanMessage(content="t1"),
+        llamada("a", "tool_timeline_de_lead"), ToolMessage(content="CRUDO-A", tool_call_id="a", name="tool_timeline_de_lead"),
+        llamada("b", "tool_timeline_de_lead"), ToolMessage(content="CRUDO-B-SIN-NOMBRE", tool_call_id="b"),
+        ToolMessage(content="CRUDO-HUERFANO", tool_call_id="zzz"),
+        llamada("c", "tool_stats_embudo"), ToolMessage(content="STATS", tool_call_id="c", name="tool_stats_embudo"),
+        HumanMessage(content="t2"),
+        llamada("d", "tool_timeline_de_lead"), ToolMessage(content="ACTUAL-D", tool_call_id="d", name="tool_timeline_de_lead"),
+    ]
+    original = [m.content for m in hilo]
+    salida = CG.contexto_del_modelo(hilo)
+    por_id = {m.tool_call_id: m for m in salida if isinstance(m, ToolMessage)}
+    assert por_id["a"].content == CG.RESULTADO_RETENIDO               # turno anterior, con nombre
+    assert por_id["b"].content == CG.RESULTADO_RETENIDO               # sin nombre: se resuelve por la llamada
+    assert por_id["zzz"].content == CG.RESULTADO_RETENIDO             # herramienta indeterminable: falla cerrado
+    assert por_id["c"].content == "STATS"                              # otra herramienta: intacta
+    assert por_id["d"].content == "ACTUAL-D"                           # turno actual: intacta
+    assert (por_id["a"].tool_call_id, por_id["a"].name) == ("a", "tool_timeline_de_lead")   # metadatos intactos
+    assert [m.content for m in hilo] == original                       # no muta el estado de entrada
+    assert CG.contexto_del_modelo([]) == []

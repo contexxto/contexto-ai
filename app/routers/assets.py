@@ -1104,14 +1104,26 @@ class CRMChatReq(BaseModel):
     modo: Literal["copiloto", "estratega"] = "copiloto"            # copiloto (táctico) | estratega (cartera)
 
 
+# SEC-X1-R0a · ÉPOCA de los hilos persistidos del CRM. Los hilos anteriores a SEC-X1-R0 guardan salidas del
+# timeline del Copiloto con el handoff de la SESIÓN ENTERA (otros inmuebles, mensajes sin inmueble, historial
+# solo del comprador, lo anterior a la solicitud) y narraciones del asistente sobre ellas, y no hay procedencia
+# para separar lo seguro de lo que no. Cambiar la época los deja ALMACENADOS pero fuera de la superficie activa:
+# el chat, GET y DELETE de /crm/thread derivan el hilo SOLO aquí. No se borra ni se reescribe ningún
+# checkpoint (su eventual eliminación es una decisión de retención aparte). El Estratega también cambia de
+# época: su primera versión (7a9fe6c, 2026-07-06) enlazaba CRM_TOOLS —con tool_timeline_de_lead— hasta e2679e0,
+# así que NO se puede demostrar que su hilo nunca recibió esa salida.
+_EPOCA_HILO_CRM = "x1v1"
+
+
 def _crm_thread(user_id: str, lead_ref: str | None = None, modo: str = "copiloto") -> str:
     """Hilo DERIVADO DEL JWT (nunca del cliente) → un corredor no puede leer el hilo de otro. Dos agentes,
-    hilos distintos: ESTRATEGA = un hilo de cartera (crm-estratega-{user}); COPILOTO = por interesado
-    (crm-{user}-lead-{ref}) o de cartera (crm-{user}) si no hay lead. Coherente con 'Enfocado en X'."""
+    hilos distintos: ESTRATEGA = un hilo de cartera (crm-x1v1-estratega-{user}); COPILOTO = por interesado
+    (crm-x1v1-{user}-lead-{ref}) o de cartera (crm-x1v1-{user}) si no hay lead. Coherente con 'Enfocado en
+    X'. La época (`_EPOCA_HILO_CRM`) deja fuera de la superficie activa los hilos anteriores a SEC-X1-R0."""
     import re
     if modo == "estratega":
-        return f"crm-estratega-{user_id}"
-    base = f"crm-{user_id}"
+        return f"crm-{_EPOCA_HILO_CRM}-estratega-{user_id}"
+    base = f"crm-{_EPOCA_HILO_CRM}-{user_id}"
     if lead_ref:
         suf = re.sub(r"[^A-Za-z0-9_-]", "", str(lead_ref))[:100]
         if suf:
@@ -1174,8 +1186,8 @@ async def crm_chat(
 @router.get(
     "/crm/thread",
     summary="CRM Vivo — historial del hilo del corredor (para retomar al recargar)",
-    description="Devuelve los mensajes de la conversación persistida del corredor (hilo "
-                "estable crm-{user_id}). Solo corredores/inmobiliarias.",
+    description="Devuelve los mensajes de la conversación persistida del corredor (hilo de la época "
+                "vigente, derivado del JWT por _crm_thread). Solo corredores/inmobiliarias.",
 )
 @limiter.limit("30/minute")
 async def crm_thread(
@@ -1213,7 +1225,7 @@ async def crm_thread(
     "/crm/thread",
     summary="CRM Vivo — nueva conversación (limpia el hilo del corredor)",
     description="Borra el hilo persistido del corredor para empezar de cero. Solo el "
-                "propio corredor (hilo crm-{user_id}). Solo corredores/inmobiliarias.",
+                "propio corredor y solo el hilo de la época vigente (_crm_thread). Solo corredores/inmobiliarias.",
 )
 @limiter.limit("10/minute")
 async def crm_thread_reset(
@@ -1354,8 +1366,8 @@ async def _assert_sesion_del_activo(db: AsyncSession, session_id: str, activo_id
 async def handoff_visible_al_corredor(db: AsyncSession, session_id: str, activo_id) -> list[dict]:
     """SEC-X1-R0 · LO ÚNICO del handoff que un corredor puede recibir del hilo (session_id, X).
 
-    UNA sola definición para TODOS los caminos del corredor —la ruta HTTP (`lead_conversacion`) y el
-    Copiloto (`crm_tools.tool_timeline_de_lead`)—, para que no vuelvan a divergir:
+    UNA sola definición para los dos caminos que leen el handoff para el corredor —la ruta HTTP
+    (`lead_conversacion`) y el Copiloto (`crm_tools.tool_timeline_de_lead`)—, para que no vuelvan a divergir:
 
         CONTEXTO DEL CORREDOR PARA X = CONTENIDO DIVULGABLE AL CORREDOR PARA X
                                       ≠ TODO LO QUE HAY EN LA SESIÓN

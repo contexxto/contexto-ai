@@ -10,8 +10,9 @@ Barandas (docs/DISENO_CRM_Vivo.md): el LLM NARRA, nunca calcula; sin dato → "n
 dato"; jamás segmenta/perfila por clase protegida; solo los leads del propio corredor.
 
 Persistencia: comparte el AsyncPostgresSaver del agente del comprador (setup_crm_checkpointer,
-llamado en el lifespan). El hilo del corredor es estable (crm-{user_id}) → la conversación se
-retoma tras recargar. Arranca con MemorySaver hasta que el lifespan monte el checkpointer.
+llamado en el lifespan). El hilo del corredor es estable dentro de su ÉPOCA (crm-x1v1-{user_id}…, ver
+assets._crm_thread) → la conversación se retoma tras recargar. Arranca con MemorySaver hasta que el
+lifespan monte el checkpointer.
 """
 from __future__ import annotations
 
@@ -49,7 +50,9 @@ entender y trabajar SU cartera de interesados hablándole en español natural, c
 QUÉ PUEDES HACER (con tus herramientas):
 - tool_stats_embudo: el estado de su embudo (total, por etapa, calientes, dormidos, por reenganchar).
 - tool_timeline_de_lead: la historia de un interesado suyo (los mensajes del hilo de ESE inmueble desde que
-  pidió contacto + estado; vacío si aún no lo pidió, lo que NO significa que no haya escrito). Su conversación
+  pidió contacto + estado). Vacío si aún no pidió contacto para ese inmueble O si nadie escribió desde
+  entonces: NO concluyas que no lo pidió ni que no escribió. Las salidas de esta herramienta de turnos
+  ANTERIORES aparecen retenidas: si necesitas esa información, vuelve a llamarla. Su conversación
   con el agente es PRIVADA y no la tienes: `transcript` vacío no significa que no haya hablado.
 - REDACTAR un mensaje de reenganche/seguimiento para un interesado (eres su copiloto): si el corredor te
   lo pide, PRIMERO mira su timeline (tool_timeline_de_lead) y apóyate en su reenganche_sugerido y sus
@@ -195,6 +198,44 @@ def _reframe_fail_close(resultado: dict, *, es_estratega: bool, es_final: bool) 
     return None
 
 
+# SEC-X1-R0a · retención POR TURNO de la salida cruda del timeline del Copiloto.
+RESULTADO_RETENIDO = ("[resultado anterior de tool_timeline_de_lead retenido (SEC-X1-R0a): si necesitas esa "
+                      "información, vuelve a consultar la herramienta]")
+_TOOL_RETENIDA = "tool_timeline_de_lead"
+
+
+def contexto_del_modelo(messages: list) -> list:
+    """El contexto que ven el LLM y el guardrail: el hilo con la salida CRUDA de `tool_timeline_de_lead` de los
+    turnos ANTERIORES sustituida por `RESULTADO_RETENIDO`. La del turno actual (después del último
+    HumanMessage) pasa intacta: el modelo necesita leer lo que acaba de pedir. Si lo vuelve a necesitar en otro
+    turno, debe volver a llamar la herramienta, que hoy devuelve solo lo divulgable para ese inmueble.
+
+    La herramienta se identifica por `ToolMessage.name` Y por el `tool_call_id` de la llamada del AIMessage que
+    la pidió. No se adivina: una salida anterior cuya herramienta no se puede determinar también se retiene
+    (falla cerrado). Solo cambia `content`; `tool_call_id`, `name`, `id` y el resto se conservan (el par
+    tool_use/tool_result sigue íntegro). No escribe nada: el estado persistido no se toca."""
+    from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+    msgs = list(messages or [])
+    ultimo_humano = max((i for i, m in enumerate(msgs) if isinstance(m, HumanMessage)), default=-1)
+    herramienta_de: dict = {}
+    for m in msgs:
+        if isinstance(m, AIMessage):
+            for tc in (getattr(m, "tool_calls", None) or []):
+                tid = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
+                nom = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", None)
+                if tid:
+                    herramienta_de[tid] = nom
+    salida = []
+    for i, m in enumerate(msgs):
+        if isinstance(m, ToolMessage) and i < ultimo_humano:
+            por_llamada = herramienta_de.get(getattr(m, "tool_call_id", None))
+            propia = getattr(m, "name", None)
+            if (por_llamada is None and propia is None) or _TOOL_RETENIDA in (por_llamada, propia):
+                m = m.model_copy(update={"content": RESULTADO_RETENIDO})
+        salida.append(m)
+    return salida
+
+
 def _build_crm_graph() -> StateGraph:
     # Mismo patrón que graph.py: cliente Anthropic con SSL explícito inyectado antes de bind_tools.
     _client = anthropic.AsyncAnthropic(
@@ -224,7 +265,9 @@ def _build_crm_graph() -> StateGraph:
         if nombre:
             extra = [SystemMessage(content=f"El corredor se llama «{nombre}». Cuando redactes un mensaje "
                                            f"para un interesado, fírmalo con «{nombre}» — nunca con «[Tu nombre]».")]
-        response = await active_llm.ainvoke([prompt] + extra + state["messages"])
+        # SEC-X1-R0a · el modelo y el guardrail ven el MISMO contexto saneado (retención por turno del timeline).
+        contexto = contexto_del_modelo(state["messages"])
+        response = await active_llm.ainvoke([prompt] + extra + contexto)
         # Controles deterministas de honestidad (cifras + Fair Housing), primera clase.
         # La baranda de CIFRAS sigue en OBSERVAR (log + contadores; se calibra en Fase 2, más falsos
         # positivos). Pero el ESTRATEGA es PROACTIVO — su primer mensaje sale SIN humano en el loop y
@@ -237,7 +280,8 @@ def _build_crm_graph() -> StateGraph:
             # Respaldo de cifras con TODA la conversación (no solo el turno): el Estratega trae la cartera una
             # vez y la referencia en seguimientos sin re-llamar la tool → el alcance por-turno la marcaba como
             # inventada (falso positivo → loop del fail-close). Ahora una cifra ya traída queda respaldada.
-            tool_jsons = tool_jsons_de_conversacion(state["messages"])
+            # Con el contexto SANEADO: una salida retenida del timeline no puede respaldar una respuesta nueva.
+            tool_jsons = tool_jsons_de_conversacion(contexto)
             resultado = evaluar_salida_crm(texto, tool_jsons)
             registrar_guardrail(resultado, session=cfg.get("thread_id"))
             es_final = not getattr(response, "tool_calls", None)   # salida FINAL, no una llamada a tool
@@ -266,14 +310,14 @@ def _build_crm_graph() -> StateGraph:
 _crm_builder = _build_crm_graph()
 # Compilación por defecto: memoria volátil (para que la app arranque siempre).
 # setup_crm_checkpointer() la reemplaza por el AsyncPostgresSaver COMPARTIDO con el agente
-# del comprador durante el lifespan → el hilo del corredor (crm-{user_id}) persiste y se retoma.
+# del comprador durante el lifespan → el hilo del corredor (crm-x1v1-{user_id}…) persiste y se retoma.
 compiled_crm_graph = _crm_builder.compile(checkpointer=MemorySaver())
 
 
 def setup_crm_checkpointer(checkpointer) -> None:
     """Re-compila el grafo del CRM con el checkpointer Postgres compartido (mismo pool que el
     agente del comprador, ver graph.get_checkpointer()). Los thread_id no colisionan
-    (crm-{user} vs qr-{session}). Si es None (Postgres no disponible), conserva el MemorySaver."""
+    (crm-x1v1-{user}… vs qr-{session}). Si es None (Postgres no disponible), conserva el MemorySaver."""
     global compiled_crm_graph
     if checkpointer is not None:
         compiled_crm_graph = _crm_builder.compile(checkpointer=checkpointer)

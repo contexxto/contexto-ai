@@ -117,7 +117,8 @@ async def tool_stats_embudo(config: RunnableConfig) -> str:
 async def tool_timeline_de_lead(referencia: str, config: RunnableConfig) -> str:
     """Devuelve la historia de UN interesado del corredor: los mensajes del hilo del handoff de ESTE inmueble
     (el del interesado) desde que la persona pidió contacto, y su estado/score/razones actuales. Vacío si
-    aún no pidió contacto para ese inmueble (no significa que no haya escrito). `transcript` llega SIEMPRE
+    aún no pidió contacto para ese inmueble o si nadie escribió desde entonces (no significa que no lo haya
+    pedido ni que no haya escrito). `transcript` llega SIEMPRE
     vacío: la conversación de la persona con el agente es privada y no se divulga al corredor (no significa
     que no haya hablado).
     'referencia' es cómo el corredor nombra al lead: su email, su nombre, o su id corto (ej. '#ba0a'
@@ -160,7 +161,8 @@ async def tool_timeline_de_lead(referencia: str, config: RunnableConfig) -> str:
         "_transcript": "retenido por diseño: la conversación con el agente es privada (SEC-X2-R0c); "
                        "vacío NO significa que la persona no haya hablado",
         "_handoff": "solo el hilo de ESTE inmueble desde que la persona pidió contacto (SEC-X1-R0); "
-                    "vacío NO significa que no haya escrito antes ni en otro hilo",
+                    "vacío NO significa que no lo haya pedido ni que no haya escrito (antes, en otro hilo "
+                    "o sin respuesta todavía)",
         "_proveniencia": "score es heurístico (estimación); las etapas/eventos son del motor de intención.",
     }, ensure_ascii=False)
 

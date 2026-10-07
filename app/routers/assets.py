@@ -901,7 +901,9 @@ async def _leads_de_activo(db: AsyncSession, activo_id: str, direccion: str | No
         act = actividad_map.get(sid) or {}
         horas = _horas(act.get("ultima_actividad"))
         try:
-            a = await intencion_de_sesion(sid, horas_inactividad=horas)
+            # SEC-X2-R0b: las señales del handoff, solo del hilo de ESTE inmueble (el resultado
+            # llega a su corredor): ni mensajes sin inmueble ni los del hilo de otro corredor.
+            a = await intencion_de_sesion(sid, horas_inactividad=horas, activo_id=str(activo_id))
         except Exception:  # noqa: BLE001
             continue
         if not a.get("turnos"):
@@ -1372,10 +1374,11 @@ async def lead_conversacion(
         await ensure_handoff_tables(db)
         rows = (await db.execute(text(
             "SELECT autor, texto FROM handoff_mensaje WHERE session_id = :s "
-            # Solo ESTE hilo: el corredor de un inmueble no puede leer lo que el interesado
-            # habla con el corredor de otro. El OR IS NULL rescata los mensajes anteriores
-            # a que existiera la columna.
-            "  AND (activo_id = CAST(:a AS uuid) OR activo_id IS NULL) ORDER BY id ASC"),
+            # Solo ESTE hilo, por inmueble EXACTO: el corredor de un inmueble no puede leer lo
+            # que el interesado habla con el corredor de otro. SEC-X2-R0b: el `OR activo_id IS
+            # NULL` que rescataba mensajes sin inmueble se retiró; un mensaje de procedencia
+            # desconocida NO es contenido autorizado para X, aunque la persona pida X después.
+            "  AND activo_id = CAST(:a AS uuid) ORDER BY id ASC"),
             {"s": session_id, "a": str(activo_id)})).mappings().all()
         hmsgs = [{"autor": r["autor"], "texto": r["texto"]} for r in rows]
         estado = (await db.execute(text(

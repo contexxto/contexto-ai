@@ -1752,13 +1752,20 @@ _HANDOFF_DDL = [
     "CREATE TABLE IF NOT EXISTS handoff_mensaje (id bigserial PRIMARY KEY, "
     "session_id text, autor text, texto text, creado_en timestamptz DEFAULT now())",
     "CREATE INDEX IF NOT EXISTS ix_handoff_msg_sid ON handoff_mensaje (session_id, id)",
-    # A qué INMUEBLE pertenece cada mensaje. Hoy sobra —una conversación solo puede tener
-    # un corredor— pero es el cimiento para que pueda tener varios: sin esta columna, dos
-    # corredores en la misma conversación verían los mensajes del otro, que es peor que la
-    # limitación que se quiere quitar. Aditiva: nadie la lee todavía.
+    # A qué INMUEBLE (hilo) pertenece cada mensaje. Desde la Fase 2 una conversación puede tener
+    # varios corredores, y desde SEC-X2-R0b esta columna es la ÚNICA llave de divulgación del
+    # mensaje: lead_conversacion y estado_handoff piden el inmueble EXACTO.
     "ALTER TABLE handoff_mensaje ADD COLUMN IF NOT EXISTS activo_id uuid",
-    "UPDATE handoff_mensaje m SET activo_id = h.activo_id FROM handoff_sesion h "
-    "WHERE m.session_id = h.session_id AND m.activo_id IS NULL AND h.activo_id IS NOT NULL",
+    # SEC-X2-R0b · aquí había un relleno en cada arranque: `UPDATE handoff_mensaje … SET
+    # activo_id = h.activo_id FROM handoff_sesion h WHERE … activo_id IS NULL`. Con VARIAS filas
+    # por sesión (Fase 2), Postgres sella el mensaje con UNA cualquiera de ellas: un mensaje sin
+    # inmueble acababa «perteneciendo» a un inmueble que nadie eligió, y después de una solicitud
+    # nueva cruzaba la frontera de divulgación de ese inmueble. PROCEDENCIA DESCONOCIDA ≠
+    # AUTORIZADO PARA EL INMUEBLE ACTUAL: no se asigna, no se infiere, no se divulga. Los dos
+    # escritores sellan siempre un hilo pedido por la persona (`responder_lead` el de la ruta;
+    # `handoff_mensaje_lead` el nombrado o, si no nombra ninguno, su hilo autorizado más
+    # reciente); las filas históricas en NULL se quedan en NULL. OJO al desplegar: el código
+    # anterior vuelve a correr el relleno en cada arranque — un rollback lo reactiva.
     "CREATE INDEX IF NOT EXISTS ix_handoff_msg_hilo ON handoff_mensaje (session_id, activo_id, id)",
     # Suscripción push + email de usuarios autenticados (corredores) → notificarles
     # cuando un lead pide hablar o escribe. El email se captura del JWT al suscribirse.
@@ -1796,8 +1803,12 @@ _HANDOFF_DDL = [
     # bandeja. Agrupando solo por session_id se fundían en una fila y el interesado veía
     # el último mensaje de uno pisando al del otro.
     "ALTER TABLE notificacion ADD COLUMN IF NOT EXISTS activo_id uuid",
-    "UPDATE notificacion n SET activo_id = h.activo_id FROM handoff_sesion h "
-    "WHERE n.session_id = h.session_id AND n.activo_id IS NULL",
+    # SEC-X2-R0b · mismo defecto que el relleno de handoff_mensaje (sin siquiera exigir
+    # `h.activo_id IS NOT NULL`): un aviso histórico sin inmueble se etiquetaba con una fila
+    # cualquiera de la sesión. El destinatario del aviso no cambiaba, pero la bandeja lo
+    # agrupaba y lo abría en el hilo de un inmueble que no era el suyo. Retirado: los avisos
+    # nuevos llevan `activo_id` explícito (registrar_notificacion) y los históricos en NULL se
+    # quedan en NULL (la bandeja los agrupa aparte; ninguno se borra ni se reescribe).
     "CREATE INDEX IF NOT EXISTS ix_notif_hilo ON notificacion (session_id, activo_id)",
 ]
 _handoff_ready = False
@@ -2898,10 +2909,12 @@ async def estado_handoff(request: Request, session_id: str, desde: int = 0,
                 return vacio
             rows = (await db.execute(text(
                 "SELECT id, autor, texto FROM handoff_mensaje "
-                # Solo los de ESTE hilo. El OR IS NULL rescata mensajes anteriores a que
-                # existiera la columna: preferimos mostrarlos de más que perderlos.
+                # Solo los de ESTE hilo, por inmueble EXACTO. SEC-X2-R0b: aquí había un
+                # `OR activo_id IS NULL` que rescataba mensajes sin inmueble; con él, una
+                # solicitud nueva para X metía en el hilo de X contenido de procedencia
+                # desconocida. Una autoridad nueva no lava la falta de procedencia.
                 "WHERE session_id = :s AND id > :d "
-                "  AND (activo_id = CAST(:a AS uuid) OR activo_id IS NULL) ORDER BY id ASC"),
+                "  AND activo_id = CAST(:a AS uuid) ORDER BY id ASC"),
                 {"s": session_id, "d": desde, "a": hilo})).mappings().all()
             # Se resuelve en cada sondeo para que el botón de WhatsApp sobreviva a un
             # reload del interesado (el POST /handoff no se re-dispara al recargar).
@@ -2914,11 +2927,20 @@ async def estado_handoff(request: Request, session_id: str, desde: int = 0,
             "mensajes": [{"id": r["id"], "autor": r["autor"], "texto": r["texto"]} for r in rows]}
 
 
-async def intencion_de_sesion(session_id: str, horas_inactividad: float | None = None) -> dict:
+async def intencion_de_sesion(session_id: str, horas_inactividad: float | None = None,
+                              activo_id: str | None = None) -> dict:
     """Carga el estado de una sesión y corre el motor de intención. Reutilizable
     por el endpoint de sesión y por el panel de interesados del inmueble.
 
-    horas_inactividad: si se pasa, permite derivar el estado 'dormido' (reenganche)."""
+    horas_inactividad: si se pasa, permite derivar el estado 'dormido' (reenganche).
+
+    activo_id (SEC-X2-R0b): lo pasa SOLO la proyección del CRM de ESE inmueble, cuyo resultado
+    llega al corredor. Entonces las señales del handoff se toman únicamente del hilo de ese
+    inmueble: mensajes con `activo_id` exacto y «pidió corredor» = solicitud registrada para él.
+    Un mensaje sin inmueble (procedencia desconocida) o del hilo de OTRO corredor no puede
+    convertirse en razones, score o etapa que vea este corredor por una solicitud posterior.
+    Un activo_id inválido falla cerrado (sin señales del handoff).
+    Sin activo_id (cron de reenganche, endpoint del propio comprador) el cálculo no cambia."""
     from app.intencion import analizar_intencion
 
     config = _langgraph_config(session_id)
@@ -2952,17 +2974,37 @@ async def intencion_de_sesion(session_id: str, horas_inactividad: float | None =
     # mensajes que el lead escribió al corredor ("quiero reservar una visita") también
     # cuentan como señales (viven en handoff_mensaje, fuera del estado del agente).
     pidio_corredor = False
+    para = _uuid_valido(activo_id) if activo_id else None
+    # Si piden el hilo de un inmueble con un id que no sirve: falla cerrado (sin señales del
+    # handoff), nunca la sesión entera.
+    sesion_entera = not activo_id
     try:
         async with AsyncSessionLocal() as db:
-            est = (await db.execute(text(
-                "SELECT estado FROM handoff_sesion WHERE session_id = :s LIMIT 1"),
-                {"s": session_id})).scalar()
-            pidio_corredor = est is not None
-            if pidio_corredor:
+            if para:
+                est = (await db.execute(text(
+                    "SELECT estado FROM handoff_sesion WHERE session_id = :s "
+                    "AND activo_id = CAST(:a AS uuid) AND principal_requested_at IS NOT NULL"),
+                    {"s": session_id, "a": para})).scalar()
+                pidio_corredor = est is not None
+                # Los mensajes sellados EXACTAMENTE a este inmueble cuentan aunque la solicitud
+                # sea histórica (sin marca): la pertenencia del lead al CRM no depende de la
+                # autoridad, y los derivados de un lead sin solicitud ya los retiene la
+                # proyección (SEC-X2-R0). Lo NULL y lo de otro hilo no cuentan nunca.
                 hmsgs = (await db.execute(text(
-                    "SELECT texto FROM handoff_mensaje WHERE session_id = :s AND autor = 'lead' ORDER BY id"),
-                    {"s": session_id})).scalars().all()
+                    "SELECT texto FROM handoff_mensaje WHERE session_id = :s AND autor = 'lead' "
+                    "AND activo_id = CAST(:a AS uuid) ORDER BY id"),
+                    {"s": session_id, "a": para})).scalars().all()
                 mensajes_usuario.extend([t for t in hmsgs if t])
+            elif sesion_entera:
+                est = (await db.execute(text(
+                    "SELECT estado FROM handoff_sesion WHERE session_id = :s LIMIT 1"),
+                    {"s": session_id})).scalar()
+                pidio_corredor = est is not None
+                if pidio_corredor:
+                    hmsgs = (await db.execute(text(
+                        "SELECT texto FROM handoff_mensaje WHERE session_id = :s AND autor = 'lead' ORDER BY id"),
+                        {"s": session_id})).scalars().all()
+                    mensajes_usuario.extend([t for t in hmsgs if t])
     except Exception:  # noqa: BLE001 — tablas de handoff aún no existen
         pass
 

@@ -341,6 +341,7 @@ async def base(monkeypatch):
             "CREATE TABLE activos_inmutables (id uuid PRIMARY KEY, direccion_estandarizada text, "
             "walk_score_fuente text, owner_user_id uuid, owner_agency_id uuid)"))
         await cx.execute(text("CREATE TABLE agencies (id uuid PRIMARY KEY, owner_user uuid)"))
+        await cx.execute(text("CREATE TABLE profiles (user_id uuid PRIMARY KEY)"))
         await cx.execute(text("CREATE TABLE checkpoints (thread_id text)"))
         await cx.execute(text("INSERT INTO activos_inmutables VALUES (:a, 'Av. X 1', NULL, :u, :g)"),
                          {"a": X, "u": DUENO_X.user_id, "g": AGENCIA_X})
@@ -567,7 +568,7 @@ async def test_B_I_el_crm_y_el_copiloto_no_reciben_derivados_antes_de_la_solicit
     Sesion, _ = base
     sid = f"qr-{X}-dev1abcd"
 
-    async def _intencion(_sid, horas_inactividad=None):
+    async def _intencion(_sid, horas_inactividad=None, **_k):
         return dict(_ANALISIS, session_id=_sid)
 
     monkeypatch.setattr(chat, "intencion_de_sesion", _intencion)
@@ -619,7 +620,7 @@ async def _timeline(monkeypatch, referencia: str) -> dict:
     import json
     import app.agent.crm_tools as crm
 
-    async def _intencion(_sid, horas_inactividad=None):
+    async def _intencion(_sid, horas_inactividad=None, **_k):
         return dict(_ANALISIS, session_id=_sid)
 
     monkeypatch.setattr(chat, "intencion_de_sesion", _intencion)
@@ -641,7 +642,7 @@ async def test_B_K_copiloto_sobre_un_lead_historico_cerrado_en_transcript_y_deri
 
 
 @pg
-@pytest.mark.xfail(strict=True, reason=(
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason=(
     "RESIDUAL DECLARADO de SEC-X2-R0: el Copiloto (tool_timeline_de_lead) lee los handoff_mensaje "
     "HISTÓRICOS con su propia consulta sin compuerta ni filtro por inmueble (costura de X-1, fuera de "
     "alcance por mandato). Ningún camino nuevo escribe mensajes sin solicitud. Se cierra en SEC-X1-R0: "
@@ -651,3 +652,302 @@ async def test_B_J_residual_copiloto_no_deberia_ver_mensajes_historicos_sin_soli
     await _lead_qr_historico(Sesion, f"qr-{X}-lega0002")
     tl = await _timeline(monkeypatch, "lega")
     assert tl["handoff"] == []
+
+
+# ══ SEC-X2-R0b · el contenido SIN procedencia no cruza la frontera ═══════════════════════
+#
+#     PROCEDENCIA DESCONOCIDA ≠ AUTORIZADO PARA EL INMUEBLE ACTUAL
+#     UNA AUTORIDAD NUEVA NO LAVA LA FALTA DE PROCEDENCIA DEL CONTENIDO ANTIGUO
+#
+# Un mensaje con `activo_id` NULL (o del hilo de otro corredor) no se divulga al corredor por el
+# camino del handoff (lead_conversacion) ni por la proyección del CRM (intencion_de_sesion), no
+# entra en el hilo actual del comprador (estado_handoff) por una solicitud nueva y no recibe un
+# inmueble adivinado en el arranque. EXCEPCIÓN DECLARADA: el Copiloto (`tool_timeline_de_lead`,
+# costura de X-1) lee la sesión entera con su propia consulta → caracterizado en B_J y B_J2.
+
+# `activo_id =` dentro de la cláusula SET (antes del WHERE): eso es asignarle un inmueble.
+# Formas: `SET activo_id = …` y la de tupla `SET (texto, activo_id) = (…)`.
+_RELLENO = re.compile(r'update\s+(only\s+)?("?public"?\.)?"?(handoff_mensaje|notificacion)"?'
+                      r'(\s+(as\s+)?\w+)?\s+set\s+(?:(?!\bwhere\b).)*?'
+                      r'(?:"?\bactivo_id"?\s*=|\(\s*(?:"?\w+"?\s*,\s*)*"?activo_id"?\s*(?:,\s*"?\w+"?\s*)*\)\s*=)')
+
+
+def test_A15_nadie_adivina_el_inmueble_de_mensajes_ni_avisos_en_todo_app():
+    """Ni en el arranque ni en ningún otro sitio de app/ (bloques DO, CTE, `public.`): ningún
+    literal SQL asigna `activo_id` a mensajes o avisos ya escritos."""
+    for ddl in chat._HANDOFF_DDL:
+        assert not _RELLENO.search(" ".join(ddl.lower().split())), ddl
+    for py in (RAIZ / "app").rglob("*.py"):
+        for n in ast.walk(ast.parse(py.read_text(encoding="utf-8"))):
+            if isinstance(n, ast.Constant) and isinstance(n.value, str):
+                assert not _RELLENO.search(" ".join(n.value.lower().split())), (py, n.value[:80])
+
+
+def test_A17_inventario_cerrado_de_lectores_de_mensajes_del_handoff():
+    """Todo lector de `handoff_mensaje` en app/ está en esta lista. Uno nuevo pone esto rojo y
+    obliga a decidir su filtro por inmueble. El Copiloto es el residual declarado de X-1."""
+    lectores = set()
+    for py in (RAIZ / "app").rglob("*.py"):
+        for fn in ast.walk(ast.parse(py.read_text(encoding="utf-8"))):
+            if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                sql = " ".join(" ".join(n.value for n in ast.walk(fn) if isinstance(n, ast.Constant)
+                                        and isinstance(n.value, str)).lower().split())
+                if "from handoff_mensaje" in sql:
+                    lectores.add(f"{py.relative_to(RAIZ).as_posix()}::{fn.name}")
+    assert lectores == {
+        "app/routers/assets.py::lead_conversacion",          # inmueble exacto (R0b)
+        "app/routers/chat.py::estado_handoff",               # inmueble exacto (R0b)
+        "app/routers/chat.py::_hilos_de_sesion",             # conteo por m.activo_id = h.activo_id
+        "app/routers/chat.py::intencion_de_sesion",          # exacto cuando lo pide el CRM (R0b)
+        "app/agent/crm_tools.py::tool_timeline_de_lead",     # RESIDUAL X-1 (B_J, B_J2)
+    }, lectores
+    assert "m.activo_id = h.activo_id" in _sql(chat._hilos_de_sesion)
+    assert "activo_id = cast(:a as uuid)" in _sql(chat.intencion_de_sesion)
+
+
+def test_A16_los_caminos_de_divulgacion_piden_el_inmueble_exacto():
+    for fn in (A.lead_conversacion, chat.estado_handoff):
+        sql = _sql(fn)
+        assert "activo_id is null" not in sql, fn.__name__
+        assert "activo_id = cast(:a as uuid)" in sql, fn.__name__
+
+
+async def _sembrar_legado_y_pedir(Sesion, sid: str):
+    """Sesión normal con mensajes ANTIGUOS: uno sin inmueble (NULL) y uno de OTRO inmueble (Y).
+    Después, la persona pide contacto para X (acto nuevo) y escribe un mensaje en X."""
+    from sqlalchemy import text
+    async with Sesion() as db:
+        await chat.ensure_handoff_tables(db)
+        await db.execute(text(
+            "INSERT INTO handoff_mensaje (session_id, autor, texto, activo_id) VALUES "
+            "(:s, 'lead', 'legado sin inmueble', NULL), "
+            "(:s, 'lead', 'mensaje para Y', CAST(:y AS uuid))"), {"s": sid, "y": Y})
+        await db.commit()
+    assert (await chat.registrar_handoff(sid, activo_id=X))["ok"]           # acto NUEVO para X
+    async with Sesion() as db:
+        await db.execute(text(
+            "INSERT INTO handoff_mensaje (session_id, autor, texto, activo_id) "
+            "VALUES (:s, 'lead', 'mensaje para X', CAST(:x AS uuid))"), {"s": sid, "x": X})
+        await db.commit()
+
+
+@pg
+async def test_B_L_el_corredor_autorizado_para_X_solo_ve_mensajes_de_X(base):
+    Sesion, _ = base
+    sid = "session-r0b-corredor"
+    await _sembrar_legado_y_pedir(Sesion, sid)
+    conv = await _lee(Sesion, sid, X, DUENO_X)
+    textos = [m["texto"] for m in conv["handoff"]]
+    assert textos == ["mensaje para X"], textos      # ni el NULL ni el de Y
+
+
+@pg
+async def test_B_M_el_hilo_actual_del_comprador_solo_trae_mensajes_de_X(base, monkeypatch):
+    Sesion, _ = base
+    sid = "session-r0b-comprador"
+    await _sembrar_legado_y_pedir(Sesion, sid)
+
+    async def _autoridad_ok(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(chat, "_exigir_autoridad", _autoridad_ok)
+    r = await chat.estado_handoff(_peticion(), sid, 0, X, None)
+    assert r["activo"] is True and r["activo_id"] == X
+    assert [m["texto"] for m in r["mensajes"]] == ["mensaje para X"]
+    r = await chat.estado_handoff(_peticion(), sid, 0, None, None)          # sin nombrar hilo
+    assert [m["texto"] for m in r["mensajes"]] == ["mensaje para X"]
+
+
+@pg
+async def test_B_N_el_arranque_no_sella_mensajes_ni_avisos_sin_inmueble(base):
+    """Sesión con DOS hilos (X e Y): el relleno viejo sellaba el NULL con uno cualquiera."""
+    from sqlalchemy import text
+    Sesion, _ = base
+    sid = "session-r0b-multi"
+    async with Sesion() as db:
+        await chat.ensure_handoff_tables(db)
+        await db.execute(text(
+            "INSERT INTO handoff_sesion (session_id, activo_id, estado) VALUES "
+            "(:s, CAST(:x AS uuid), 'activo'), (:s, CAST(:y AS uuid), 'activo')"), {"s": sid, "x": X, "y": Y})
+        await db.execute(text(
+            "INSERT INTO handoff_mensaje (session_id, autor, texto, activo_id) "
+            "VALUES (:s, 'lead', 'legado', NULL)"), {"s": sid})
+        await db.execute(text(
+            "INSERT INTO notificacion (destinatario_session, titulo, session_id, activo_id) "
+            "VALUES (:s, 'aviso legado', :s, NULL)"), {"s": sid})
+        await db.commit()
+    chat._handoff_ready = False                     # el arranque de un proceso nuevo
+    async with Sesion() as db:
+        await chat.ensure_handoff_tables(db)
+    assert await _uno(Sesion, "SELECT count(*) FROM handoff_mensaje WHERE session_id = :s "
+                              "AND activo_id IS NULL", s=sid) == 1
+    assert await _uno(Sesion, "SELECT count(*) FROM notificacion WHERE session_id = :s "
+                              "AND activo_id IS NULL", s=sid) == 1
+
+
+@pg
+async def test_B_O_los_escritores_nuevos_siguen_sellando_el_inmueble_exacto(base, monkeypatch):
+    Sesion, _ = base
+    sid = "session-r0b-escritores"
+
+    async def _autoridad_ok(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(chat, "_exigir_autoridad", _autoridad_ok)
+    assert (await chat.registrar_handoff(sid, activo_id=X))["ok"]
+    await chat.handoff_mensaje_lead(_peticion(), sid, chat.HandoffMsg(texto="hola corredor"), X, None)
+    assert (await _responde(Sesion, sid, X, DUENO_X, texto="hola, soy la corredora"))["ok"]
+    assert await _uno(Sesion, "SELECT count(*) FROM handoff_mensaje WHERE session_id = :s", s=sid) == 2
+    assert await _uno(Sesion, "SELECT count(*) FROM handoff_mensaje WHERE session_id = :s "
+                              "AND activo_id = CAST(:a AS uuid)", s=sid, a=X) == 2
+    assert await _uno(Sesion, "SELECT count(*) FROM notificacion WHERE session_id = :s "
+                              "AND activo_id IS NULL", s=sid) == 0
+    # El aviso de responder_lead a la persona (síncrono) existe y nace con X.
+    assert await _uno(Sesion, "SELECT count(*) FROM notificacion WHERE destinatario_session = :s "
+                              "AND activo_id = CAST(:a AS uuid)", s=sid, a=X) == 1
+
+
+@pg
+async def test_B_N2_el_arranque_no_toca_sesiones_de_una_fila_ni_valores_ya_escritos(base):
+    """Ni el relleno «determinista» (una sola fila) ni una reescritura de lo ya sellado."""
+    from sqlalchemy import text
+    Sesion, _ = base
+    una, valor = "session-r0b-una", "session-r0b-valor"
+    async with Sesion() as db:
+        await chat.ensure_handoff_tables(db)
+        await db.execute(text(
+            "INSERT INTO handoff_sesion (session_id, activo_id, estado) VALUES "
+            "(:u, CAST(:x AS uuid), 'activo'), (:v, CAST(:x AS uuid), 'activo'), (:v, CAST(:y AS uuid), 'activo')"),
+            {"u": una, "v": valor, "x": X, "y": Y})
+        await db.execute(text(
+            "INSERT INTO handoff_mensaje (session_id, autor, texto, activo_id) VALUES "
+            "(:u, 'lead', 'legado de una fila', NULL), (:v, 'lead', 'ya sellado a Y', CAST(:y AS uuid))"),
+            {"u": una, "v": valor, "y": Y})
+        await db.execute(text(
+            "INSERT INTO notificacion (destinatario_session, titulo, session_id, activo_id) VALUES "
+            "(:u, 'aviso de una fila', :u, NULL), (:v, 'aviso ya sellado a Y', :v, CAST(:y AS uuid))"),
+            {"u": una, "v": valor, "y": Y})
+        await db.commit()
+    chat._handoff_ready = False
+    async with Sesion() as db:
+        await chat.ensure_handoff_tables(db)
+    assert await _uno(Sesion, "SELECT count(*) FROM handoff_mensaje WHERE session_id = :s "
+                              "AND activo_id IS NULL", s=una) == 1
+    assert await _uno(Sesion, "SELECT activo_id::text FROM handoff_mensaje WHERE session_id = :s", s=valor) == Y
+    assert await _uno(Sesion, "SELECT count(*) FROM notificacion WHERE session_id = :s "
+                              "AND activo_id IS NULL", s=una) == 1
+    assert await _uno(Sesion, "SELECT activo_id::text FROM notificacion WHERE session_id = :s", s=valor) == Y
+
+
+@pg
+async def test_B_O2_los_avisos_nuevos_nacen_con_el_inmueble_exacto(base):
+    Sesion, _ = base
+    sid = "session-r0b-aviso"
+    async with Sesion() as db:
+        await chat.ensure_handoff_tables(db)
+        await chat.registrar_notificacion(db, titulo="aviso", cuerpo="c", url="/", session_id=sid,
+                                          destinatario_session=sid, activo_id=X)
+        await db.commit()
+    assert await _uno(Sesion, "SELECT count(*) FROM notificacion WHERE session_id = :s "
+                              "AND activo_id = CAST(:a AS uuid)", s=sid, a=X) == 1
+
+
+async def _sembrar_senales_ajenas_y_pedir(Sesion, sid: str):
+    """El hilo de X solo tiene «hola». El mensaje sin inmueble pregunta el PRECIO y el del hilo
+    de Y habla de INVERSIÓN: ninguna de esas señales puede llegar al corredor de X."""
+    from sqlalchemy import text
+    async with Sesion() as db:
+        await chat.ensure_handoff_tables(db)
+        await db.execute(text(
+            "INSERT INTO handoff_mensaje (session_id, autor, texto, activo_id) VALUES "
+            "(:s, 'lead', 'cuanto cuesta, es negociable?', NULL), "
+            "(:s, 'lead', 'quiero invertir, que rentabilidad deja?', CAST(:y AS uuid))"), {"s": sid, "y": Y})
+        await db.commit()
+    assert (await chat.registrar_handoff(sid, activo_id=X))["ok"]
+    async with Sesion() as db:
+        await db.execute(text(
+            "INSERT INTO handoff_mensaje (session_id, autor, texto, activo_id) "
+            "VALUES (:s, 'lead', 'hola', CAST(:x AS uuid))"), {"s": sid, "x": X})
+        await db.commit()
+
+
+@pg
+async def test_B_P_la_proyeccion_del_crm_no_deriva_senales_de_contenido_sin_procedencia(base):
+    Sesion, _ = base
+    sid = "session-r0b-senales"
+    await _sembrar_senales_ajenas_y_pedir(Sesion, sid)
+    sesion_entera = await chat.intencion_de_sesion(sid)                 # interno (cron, comprador): igual que antes
+    para_x = await chat.intencion_de_sesion(sid, activo_id=X)            # lo que llega al corredor de X
+    assert "Preguntó el precio" in sesion_entera["razones"] and "Evalúa la inversión" in sesion_entera["razones"]
+    assert "Preguntó el precio" not in para_x["razones"]
+    assert "Evalúa la inversión" not in para_x["razones"]
+    async with Sesion() as db:
+        leads = await A._leads_de_activo(db, X)
+    assert len(leads) == 1 and leads[0]["pidio_corredor"] is True
+    assert "Preguntó el precio" not in leads[0]["razones"] and "Evalúa la inversión" not in leads[0]["razones"]
+    assert leads[0]["mensajes"] == para_x["turnos"] < sesion_entera["turnos"]
+    # Y en positivo: la consulta acotada CORRE y trae el hilo de X (un fallo tragado por el
+    # `except` dejaría las negativas en verde). Base = turnos del transcript, sin handoff.
+    invalido = await chat.intencion_de_sesion(sid, activo_id="no-es-un-uuid")   # falla cerrado
+    assert "Pidió hablar con el corredor" in para_x["razones"]
+    assert "Pidió hablar con el corredor" in leads[0]["razones"]
+    assert "Pidió hablar con el corredor" not in invalido["razones"]
+    assert para_x["turnos"] == invalido["turnos"] + 1                 # + «hola» (X)
+    assert sesion_entera["turnos"] == invalido["turnos"] + 3          # + NULL + Y + X
+
+
+@pg
+async def test_B_Q_el_lead_qr_historico_sigue_listado_como_atribucion(base, monkeypatch):
+    """El acotamiento de R0b NO cambia la pertenencia: un lead del letrero de X con fila histórica
+    (sin marca) y mensajes sellados a X sigue en el CRM de X como ATRIBUCIÓN (derivados retenidos).
+    Lo que no tiene procedencia no cuenta ni para eso: una sesión cuyo ÚNICO contenido es un
+    mensaje NULL no aparece (0 turnos en el alcance de X; residual declarado)."""
+    from sqlalchemy import text
+    Sesion, _ = base
+
+    class _SoloEscaneo:          # la persona solo escaneó el letrero y escribió en el handoff
+        values = {"messages": [HumanMessage(content="El usuario escaneó el QR del inmueble.")]}
+
+    class _GrafoSinTurnos:
+        class compiled_graph:
+            @staticmethod
+            async def aget_state(_config):
+                return _SoloEscaneo()
+
+    monkeypatch.setattr(chat, "agent_graph", _GrafoSinTurnos)
+    await _lead_qr_historico(Sesion, f"qr-{X}-lega0003")               # intencion_de_sesion REAL
+    solo_null = f"qr-{X}-lega0004"
+    async with Sesion() as db:
+        await db.execute(text("INSERT INTO checkpoints VALUES (:s)"), {"s": solo_null})
+        await db.execute(text(
+            "INSERT INTO handoff_sesion (session_id, activo_id, estado) VALUES (:s, CAST(:a AS uuid), 'activo')"),
+            {"s": solo_null, "a": X})
+        await db.execute(text(
+            "INSERT INTO handoff_mensaje (session_id, autor, texto, activo_id) "
+            "VALUES (:s, 'lead', 'legado sin inmueble', NULL)"), {"s": solo_null})
+        await db.commit()
+        leads = await A._leads_de_activo(db, X)
+    assert [l["session_id"] for l in leads] == [f"qr-{X}-lega0003"]
+    assert leads[0]["pidio_corredor"] is False
+    # Y la fila histórica SIN marca no es «pidió corredor» ni dentro del análisis.
+    analisis = await chat.intencion_de_sesion(f"qr-{X}-lega0003", activo_id=X)
+    assert analisis["turnos"] == 1 and "Pidió hablar con el corredor" not in analisis["razones"]
+    for clave in A._DERIVADOS_RETENIDOS:
+        assert leads[0][clave] is None, clave
+    assert A._funnel_y_orden(leads)["atribuidos"] == 1
+
+
+@pg
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason=(
+    "RESIDUAL DECLARADO de SEC-X2-R0b (X-1): tras una solicitud NUEVA para X, el Copiloto del corredor de X "
+    "lee con su propia consulta TODOS los handoff_mensaje de la sesión — los sin inmueble (NULL) y los del hilo "
+    "de OTRO corredor (Y), incluida su respuesta —, sin filtro por inmueble. HTTP y CRM ya están cerrados. "
+    "SEC-X1-R0 debe cerrar AMBAS dimensiones (compuerta y filtro exacto): este xfail estricto se pondrá rojo."))
+async def test_B_J2_residual_copiloto_tras_solicitud_nueva_solo_deberia_ver_X(base, monkeypatch):
+    Sesion, _ = base
+    await _sembrar_legado_y_pedir(Sesion, "session-r0b-copiloto")
+    tl = await _timeline(monkeypatch, "Lead #sess")
+    textos = [m["texto"] for m in tl["handoff"]]
+    if "mensaje para X" not in textos:     # precondición: RuntimeError ≠ AssertionError → rojo, no xfail
+        raise RuntimeError(f"el Copiloto ni siquiera trae el hilo de X: {textos}")
+    assert textos == ["mensaje para X"]

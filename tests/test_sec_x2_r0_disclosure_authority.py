@@ -2147,6 +2147,7 @@ def test_F7_contexto_del_modelo_retiene_por_turno_sin_adivinar():
         llamada("b", "tool_timeline_de_lead"), ToolMessage(content="CRUDO-B-SIN-NOMBRE", tool_call_id="b"),
         ToolMessage(content="CRUDO-HUERFANO", tool_call_id="zzz"),
         llamada("c", "tool_stats_embudo"), ToolMessage(content="STATS", tool_call_id="c", name="tool_stats_embudo"),
+        llamada("e", "tool_stats_embudo"), ToolMessage(content="STATS-SIN-NOMBRE", tool_call_id="e"),
         HumanMessage(content="t2"),
         llamada("d", "tool_timeline_de_lead"), ToolMessage(content="ACTUAL-D", tool_call_id="d", name="tool_timeline_de_lead"),
     ]
@@ -2157,6 +2158,7 @@ def test_F7_contexto_del_modelo_retiene_por_turno_sin_adivinar():
     assert por_id["b"].content == CG.RESULTADO_RETENIDO               # sin nombre: se resuelve por la llamada
     assert por_id["zzz"].content == CG.RESULTADO_RETENIDO             # herramienta indeterminable: falla cerrado
     assert por_id["c"].content == "STATS"                              # otra herramienta: intacta
+    assert por_id["e"].content == "STATS-SIN-NOMBRE"                   # sin nombre: la llamada dice stats → intacta
     assert por_id["d"].content == "ACTUAL-D"                           # turno actual: intacta
     assert (por_id["a"].tool_call_id, por_id["a"].name) == ("a", "tool_timeline_de_lead")   # metadatos intactos
     assert [m.content for m in hilo] == original                       # no muta el estado de entrada

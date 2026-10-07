@@ -263,8 +263,17 @@ def test_el_lector_viejo_no_cambio_ni_una_linea(foso):
 
 
 def test_ninguna_migracion_nueva_y_el_workflow_intacto():
-    """D-R3-4: sin 044. Y la frontera de cierre se resolvió sin tocar `refresco-pois.yml`."""
-    assert sorted(p.name for p in (RAIZ / "migrations").glob("[0-9][0-9][0-9]_*.sql"))[-1] == "043_poi_source_provenance.sql"
+    """D-R3-4: R3 no trajo migración. Y la frontera de cierre se resolvió sin tocar `refresco-pois.yml`.
+
+    Hasta SEC-PERIM-INTENCION-R0 esta guarda exigía que la última migración fuera la 043. La 044 (perímetro de
+    `intencion_sesion` / `intencion_evento`) es de otra unidad; lo que se conserva es la intención de D-R3-4:
+    ninguna migración posterior a la 043 toca la capa de POIs ni su procedencia."""
+    migraciones = sorted(p for p in (RAIZ / "migrations").glob("[0-9][0-9][0-9]_*.sql"))
+    assert "043_poi_source_provenance.sql" in [p.name for p in migraciones]
+    for p in (p for p in migraciones if p.name[:3] > "043"):
+        ejecutable = "\n".join(l.split("--", 1)[0] for l in p.read_text(encoding="utf-8").splitlines())
+        for capa in ("pois_propios", "poi_ingestion_run", "entorno_curacion", "pois_vivos"):
+            assert capa not in ejecutable, (p.name, capa)
     p = subprocess.run(["git", "diff", "--name-only", "543656178223378e5e0e0ca1e8bbe731a761f02e", "--",
                         "migrations", ".github", "app"], cwd=RAIZ, capture_output=True, text=True)
     if p.returncode != 0:

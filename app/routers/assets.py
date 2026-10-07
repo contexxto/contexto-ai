@@ -1351,6 +1351,46 @@ async def _assert_sesion_del_activo(db: AsyncSession, session_id: str, activo_id
                                    "pide contacto.")
 
 
+async def handoff_visible_al_corredor(db: AsyncSession, session_id: str, activo_id) -> list[dict]:
+    """SEC-X1-R0 · LO ÚNICO del handoff que un corredor puede recibir del hilo (session_id, X).
+
+    UNA sola definición para TODOS los caminos del corredor —la ruta HTTP (`lead_conversacion`) y el
+    Copiloto (`crm_tools.tool_timeline_de_lead`)—, para que no vuelvan a divergir:
+
+        CONTEXTO DEL CORREDOR PARA X = CONTENIDO DIVULGABLE AL CORREDOR PARA X
+                                      ≠ TODO LO QUE HAY EN LA SESIÓN
+
+    Devuelve mensajes solo si la fila `handoff_sesion` de (sesión, X) tiene la marca de la solicitud
+    (`principal_requested_at IS NOT NULL`) y, de `handoff_mensaje`, solo los del inmueble EXACTO X,
+    con `creado_en` no nulo y POSTERIOR o igual a la marca (SEC-X2-C1: lo anterior es historial del
+    comprador, que solo ve el dueño en `historicos`). Nunca mensajes sin inmueble, nunca otro hilo de
+    la misma sesión (aunque el corredor sea dueño de ambos inmuebles) y nunca un inmueble inferido.
+
+    El inmueble lo pone quien llama desde su fuente canónica (la ruta, o el lead resuelto por
+    `_leads_del_corredor`), jamás el LLM ni un argumento libre. Un inmueble ausente o inválido falla
+    cerrado: `[]`, sin caer a la sesión entera."""
+    from app.routers.chat import _uuid_valido
+    activo = _uuid_valido(str(activo_id)) if activo_id is not None else None
+    if not activo or not isinstance(session_id, str) or not session_id:
+        return []
+    rows = (await db.execute(text(
+        "SELECT m.autor, m.texto FROM handoff_mensaje m "
+        "  JOIN handoff_sesion h "
+        "    ON h.session_id = m.session_id AND h.activo_id = m.activo_id "
+        "WHERE m.session_id = :s "
+        # Solo ESTE hilo, por inmueble EXACTO (SEC-X2-R0b: sin el `OR activo_id IS NULL` que rescataba
+        # contenido de procedencia desconocida; SEC-X1-R0: tampoco el resto de la sesión).
+        "  AND m.activo_id = CAST(:a AS uuid) "
+        # Solo con solicitud registrada y solo desde ella (SEC-X2-C1: UNA AUTORIDAD NUEVA NO AUTORIZA
+        # CONTENIDO ANTIGUO). Sin `creado_en`, no hay frontera demostrable: fuera.
+        "  AND h.principal_requested_at IS NOT NULL "
+        "  AND m.creado_en IS NOT NULL "
+        "  AND m.creado_en >= h.principal_requested_at "
+        "ORDER BY m.id ASC"),
+        {"s": session_id, "a": activo})).mappings().all()
+    return [{"autor": r["autor"], "texto": r["texto"]} for r in rows]
+
+
 @router.get(
     "/{activo_id}/leads/{session_id}/conversacion",
     summary="Hilo del handoff de un interesado con ESTE inmueble (para el corredor)",
@@ -1369,26 +1409,10 @@ async def lead_conversacion(
     trans = await transcript_de_sesion(session_id, str(activo_id))
     try:
         await ensure_handoff_tables(db)
-        rows = (await db.execute(text(
-            "SELECT m.autor, m.texto FROM handoff_mensaje m "
-            "  JOIN handoff_sesion h "
-            "    ON h.session_id = m.session_id AND h.activo_id = m.activo_id "
-            "WHERE m.session_id = :s "
-            # Solo ESTE hilo, por inmueble EXACTO: el corredor de un inmueble no puede leer lo
-            # que el interesado habla con el corredor de otro. SEC-X2-R0b: el `OR activo_id IS
-            # NULL` que rescataba mensajes sin inmueble se retiró; un mensaje de procedencia
-            # desconocida NO es contenido autorizado para X, aunque la persona pida X después.
-            "  AND m.activo_id = CAST(:a AS uuid) "
-            # SEC-X2-C1 · UNA AUTORIDAD NUEVA NO AUTORIZA CONTENIDO ANTIGUO: solo lo escrito desde
-            # la solicitud. Lo anterior del mismo hilo es historial del comprador (solo el dueño lo ve, en
-            # `historicos`, si la guarda de inmueble único lo permite), y su solicitud nueva no se lo
-            # divulga por esta ruta. Sin `creado_en`, fuera.
-            # (El Copiloto lee el handoff por su cuenta: residual X-1, xfail D_X1.)
-            "  AND h.principal_requested_at IS NOT NULL "
-            "  AND m.creado_en >= h.principal_requested_at "
-            "ORDER BY m.id ASC"),
-            {"s": session_id, "a": str(activo_id)})).mappings().all()
-        hmsgs = [{"autor": r["autor"], "texto": r["texto"]} for r in rows]
+        # El hilo exacto de ESTE inmueble desde la solicitud: la MISMA definición que usa el Copiloto
+        # (SEC-X1-R0). Lo anterior del mismo hilo es historial del comprador (solo el dueño lo ve, en
+        # `historicos`, si la guarda de inmueble único lo permite).
+        hmsgs = await handoff_visible_al_corredor(db, session_id, activo_id)
         estado = (await db.execute(text(
             # SEC-X2-C1 · estado del hilo actual (ver chat.estado_handoff), no el de la fila legacy.
             "SELECT CASE WHEN h.estado = 'activo' AND NOT EXISTS ("

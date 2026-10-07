@@ -2507,10 +2507,9 @@ async def transcript_de_sesion(session_id: str, activo_id: str | None = None) ->
     Antes (SEC-X2-R0): con la solicitud para X devolvía TODO el transcript de la sesión. Ahora
     devuelve `[]` a sus dos llamadores —la ruta HTTP del corredor (`lead_conversacion`) y el
     Copiloto (`tool_timeline_de_lead`)— y conserva la firma para no romper el contrato de sus
-    respuestas. Lo que sí llega al corredor de X por la ruta HTTP es el hilo del handoff con
-    `activo_id = X` exacto. EXCEPCIÓN DECLARADA (X-1, fuera de esta unidad): el Copiloto lee con su
-    propia consulta los `handoff_mensaje` de TODA la sesión, sin filtro por inmueble; lo
-    caracterizan los xfail estrictos B_J y B_J2.
+    respuestas. Lo que sí llega al corredor de X —por la ruta HTTP y por el Copiloto— es el hilo del
+    handoff con `activo_id = X` exacto desde la solicitud: una sola definición,
+    `assets.handoff_visible_al_corredor` (SEC-X1-R0 cerró la consulta de sesión entera del Copiloto).
 
     El AgentState no se toca y la persona sigue viendo su propia conversación (/history no
     pasa por aquí). Compartir algo de la conversación con el corredor exigiría procedencia por
@@ -2581,8 +2580,8 @@ async def _historicos_del_dueno(db, session_id: str) -> list[dict]:
 
     UNA AUTORIDAD NUEVA NO AUTORIZA CONTENIDO ANTIGUO. Esto es una costura de compatibilidad de
     lectura para el comprador, no una migración de autoridad: no abre el hilo, no habilita
-    escribir, no se lo entrega al corredor (el Copiloto lee esas filas por su cuenta: residual X-1,
-    xfail D_X1) y no prueba a qué inmueble pertenecía la conversación. Quién
+    escribir, no se lo entrega al corredor (ni la ruta HTTP ni el Copiloto: los dos leen solo
+    `assets.handoff_visible_al_corredor`, SEC-X1-R0) y no prueba a qué inmueble pertenecía la conversación. Quién
     puede pedirla lo decide quien llama: `estado_handoff`, solo con `Autoridad.OWNER` y `desde == 0`.
 
     Frontera temporal: `handoff_sesion.principal_requested_at`. Un mensaje del hilo exacto es
@@ -2718,8 +2717,8 @@ async def registrar_handoff(
         (COALESCE): repetir la solicitud no reescribe cuándo se pidió. Es lo único que abre
         al corredor de ESE inmueble el hilo del handoff de ESE inmueble (mensajes con
         `activo_id` exacto). La conversación con el agente no se le divulga (SEC-X2-R0c,
-        `transcript_de_sesion`). El Copiloto aún lee los `handoff_mensaje` de toda la sesión:
-        residual X-1, declarado.
+        `transcript_de_sesion`). El Copiloto lee el mismo hilo exacto que la ruta HTTP
+        (`assets.handoff_visible_al_corredor`, SEC-X1-R0).
       - Qué inmueble eligió la persona lo fija su acto en la interfaz (UI-04): aquí no se
         infiere ninguno.
     Esta afirmación se refiere al efecto de handoff; no afirma que no haya existido audiencia
@@ -3072,8 +3071,8 @@ async def intencion_de_sesion(session_id: str, horas_inactividad: float | None =
                 # El CONTENIDO que alimenta la semántica para el corredor de X (etapa, nivel, score,
                 # razones, resumen, turnos, reenganche) es solo el posterior a la solicitud: lo
                 # anterior es historial del comprador, y una solicitud nueva no lo vuelve parte de esta
-                # proyección. Sin solicitud, nada del handoff la alimenta. (El Copiloto lee el handoff por
-                # su cuenta: residual X-1, xfail D_X1.)
+                # proyección. Sin solicitud, nada del handoff la alimenta. (El contenido que el corredor
+                # recibe por la ruta HTTP y el Copiloto sigue la misma frontera: handoff_visible_al_corredor.)
                 if pidio_corredor:
                     hmsgs = (await db.execute(text(
                         "SELECT m.texto FROM handoff_mensaje m "

@@ -115,14 +115,15 @@ async def tool_stats_embudo(config: RunnableConfig) -> str:
 
 @tool
 async def tool_timeline_de_lead(referencia: str, config: RunnableConfig) -> str:
-    """Devuelve la historia de UN interesado del corredor: los mensajes del handoff de la sesión (no
-    asumas que todos son con este corredor) y su estado/score/razones actuales. `transcript` llega SIEMPRE vacío: la conversación de la
-    persona con el agente es privada y no se divulga al corredor (no significa que no haya hablado).
+    """Devuelve la historia de UN interesado del corredor: los mensajes del hilo del handoff de ESTE inmueble
+    (el del interesado) desde que la persona pidió contacto, y su estado/score/razones actuales. Vacío si
+    aún no pidió contacto para ese inmueble (no significa que no haya escrito). `transcript` llega SIEMPRE
+    vacío: la conversación de la persona con el agente es privada y no se divulga al corredor (no significa
+    que no haya hablado).
     'referencia' es cómo el corredor nombra al lead: su email, su nombre, o su id corto (ej. '#ba0a'
     o 'ba0a'). Solo busca entre los interesados del corredor (o de su agencia)."""
-    from sqlalchemy import text as _text
     from app.database import AsyncSessionLocal
-    from app.routers.assets import _leads_del_corredor
+    from app.routers.assets import _leads_del_corredor, handoff_visible_al_corredor
     from app.routers.chat import transcript_de_sesion, ensure_handoff_tables
 
     owner_user_id, owner_agency_id = _owner(config)
@@ -135,16 +136,21 @@ async def tool_timeline_de_lead(referencia: str, config: RunnableConfig) -> str:
         if not match:
             return json.dumps({"error": f"No encontré un interesado que calce con '{referencia}' entre tus leads."})
         sid = match["session_id"]
+        # SEC-X1-R0 · el inmueble sale SOLO del lead resuelto: `_leads_del_corredor` ya lo acotó a los
+        # inmuebles de este corredor o de su agencia. Nunca del LLM, de un argumento, del texto, del
+        # prefijo `qr-` ni del último inmueble. Sin un inmueble válido, `[]` (falla cerrado).
+        activo = match.get("activo_id")
         transcript = await transcript_de_sesion(sid)
         handoff: list[dict] = []
         try:
             await ensure_handoff_tables(db)
-            rows = (await db.execute(_text(
-                "SELECT autor, texto FROM handoff_mensaje WHERE session_id = :s ORDER BY id ASC"),
-                {"s": sid})).mappings().all()
-            handoff = [{"autor": r["autor"], "texto": r["texto"]} for r in rows]
+            # La MISMA frontera que la ruta HTTP del corredor: hilo exacto de X, solo con solicitud y
+            # solo desde ella. Antes: TODOS los handoff_mensaje de la sesión (otros inmuebles, NULL,
+            # historial del comprador y lo anterior a la solicitud).
+            handoff = await handoff_visible_al_corredor(db, sid, activo)
         except Exception:  # noqa: BLE001
             await db.rollback()
+            handoff = []
 
     return json.dumps({
         "lead": match["lead"], "estado": match["estado"], "nivel": match["nivel"], "score": match["score"],
@@ -153,6 +159,8 @@ async def tool_timeline_de_lead(referencia: str, config: RunnableConfig) -> str:
         "transcript": transcript, "handoff": handoff,
         "_transcript": "retenido por diseño: la conversación con el agente es privada (SEC-X2-R0c); "
                        "vacío NO significa que la persona no haya hablado",
+        "_handoff": "solo el hilo de ESTE inmueble desde que la persona pidió contacto (SEC-X1-R0); "
+                    "vacío NO significa que no haya escrito antes ni en otro hilo",
         "_proveniencia": "score es heurístico (estimación); las etapas/eventos son del motor de intención.",
     }, ensure_ascii=False)
 

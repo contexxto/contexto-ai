@@ -670,12 +670,9 @@ async def test_B_K_copiloto_sobre_un_lead_historico_cerrado_en_transcript_y_deri
 
 
 @pg
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason=(
-    "RESIDUAL DECLARADO de SEC-X2-R0: el Copiloto (tool_timeline_de_lead) lee los handoff_mensaje "
-    "HISTÓRICOS con su propia consulta sin compuerta ni filtro por inmueble (costura de X-1, fuera de "
-    "alcance por mandato). Ningún camino nuevo escribe mensajes sin solicitud. Se cierra en SEC-X1-R0: "
-    "cuando eso ocurra este xfail ESTRICTO se pondrá rojo para obligar a retirarlo."))
 async def test_B_J_residual_copiloto_no_deberia_ver_mensajes_historicos_sin_solicitud(base, monkeypatch):
+    """Era el xfail ESTRICTO del residual X-1 (R0). SEC-X1-R0 lo cierra: sin solicitud registrada para X,
+    el Copiloto no recibe ningún mensaje del handoff (la misma compuerta que la ruta HTTP)."""
     Sesion, _ = base
     await _lead_qr_historico(Sesion, f"qr-{X}-lega0002")
     tl = await _timeline(monkeypatch, "lega")
@@ -690,8 +687,8 @@ async def test_B_J_residual_copiloto_no_deberia_ver_mensajes_historicos_sin_soli
 # Un mensaje con `activo_id` NULL (o del hilo de otro corredor) no se divulga al corredor por el
 # camino del handoff (lead_conversacion) ni por la proyección del CRM (intencion_de_sesion), no
 # entra en el hilo actual del comprador (estado_handoff) por una solicitud nueva y no recibe un
-# inmueble adivinado en el arranque. EXCEPCIÓN DECLARADA: el Copiloto (`tool_timeline_de_lead`,
-# costura de X-1) lee la sesión entera con su propia consulta → caracterizado en B_J y B_J2.
+# inmueble adivinado en el arranque. El Copiloto (`tool_timeline_de_lead`) quedó como residual X-1 en R0b
+# (B_J y B_J2, xfail estrictos) hasta SEC-X1-R0, que lo cierra con la misma frontera (sección E).
 
 # `activo_id =` dentro de la cláusula SET (antes del WHERE): eso es asignarle un inmueble.
 # Formas: `SET activo_id = …` y la de tupla `SET (texto, activo_id) = (…)`.
@@ -713,7 +710,8 @@ def test_A15_nadie_adivina_el_inmueble_de_mensajes_ni_avisos_en_todo_app():
 
 def test_A17_inventario_cerrado_de_lectores_de_mensajes_del_handoff():
     """Todo lector de `handoff_mensaje` en app/ está en esta lista. Uno nuevo pone esto rojo y
-    obliga a decidir su filtro por inmueble. El Copiloto es el residual declarado de X-1."""
+    obliga a decidir su filtro por inmueble. Desde SEC-X1-R0 no queda NINGÚN lector del corredor sin
+    acotar: la ruta HTTP y el Copiloto leen solo `handoff_visible_al_corredor` (E_S1)."""
     lectores = set()
     for py in (RAIZ / "app").rglob("*.py"):
         for fn in ast.walk(ast.parse(py.read_text(encoding="utf-8"))):
@@ -723,20 +721,20 @@ def test_A17_inventario_cerrado_de_lectores_de_mensajes_del_handoff():
                 if "from handoff_mensaje" in sql:
                     lectores.add(f"{py.relative_to(RAIZ).as_posix()}::{fn.name}")
     assert lectores == {
-        "app/routers/assets.py::lead_conversacion",          # inmueble exacto (R0b)
+        "app/routers/assets.py::handoff_visible_al_corredor",  # X1: exacto + marca + frontera temporal
+        "app/routers/assets.py::lead_conversacion",          # solo el estado derivado (C1), sin contenido
         "app/routers/assets.py::_leads_de_activo",           # C1: solo EXISTE respuesta desde la marca (estado)
         "app/routers/chat.py::estado_handoff",               # inmueble exacto (R0b)
         "app/routers/chat.py::_hilos_de_sesion",             # conteo por m.activo_id = h.activo_id
         "app/routers/chat.py::_historicos_del_dueno",        # C1: solo dueño, guarda de ambigüedad
         "app/routers/chat.py::intencion_de_sesion",          # exacto cuando lo pide el CRM (R0b)
-        "app/agent/crm_tools.py::tool_timeline_de_lead",     # RESIDUAL X-1 (B_J, B_J2)
     }, lectores
     assert "m.activo_id = h.activo_id" in _sql(chat._hilos_de_sesion)
     assert "activo_id = cast(:a as uuid)" in _sql(chat.intencion_de_sesion)
 
 
 def test_A16_los_caminos_de_divulgacion_piden_el_inmueble_exacto():
-    for fn in (A.lead_conversacion, chat.estado_handoff):
+    for fn in (A.handoff_visible_al_corredor, A.lead_conversacion, chat.estado_handoff):
         sql = _sql(fn)
         assert "activo_id is null" not in sql, fn.__name__
         assert "activo_id = cast(:a as uuid)" in sql, fn.__name__
@@ -972,19 +970,13 @@ async def test_B_Q_el_lead_qr_historico_sigue_listado_como_atribucion(base, monk
 
 
 @pg
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason=(
-    "RESIDUAL DECLARADO de SEC-X2-R0b (X-1): tras una solicitud NUEVA para X, el Copiloto del corredor de X "
-    "lee con su propia consulta TODOS los handoff_mensaje de la sesión — los sin inmueble (NULL) y los del hilo "
-    "de OTRO corredor (Y), incluida su respuesta —, sin filtro por inmueble. HTTP y CRM ya están cerrados. "
-    "SEC-X1-R0 debe cerrar AMBAS dimensiones (compuerta y filtro exacto): este xfail estricto se pondrá rojo."))
 async def test_B_J2_residual_copiloto_tras_solicitud_nueva_solo_deberia_ver_X(base, monkeypatch):
+    """Era el xfail ESTRICTO del residual X-1 (R0b). SEC-X1-R0 lo cierra: tras la solicitud nueva para X,
+    el Copiloto ve el hilo exacto de X y nada más (ni lo NULL ni el hilo de Y)."""
     Sesion, _ = base
     await _sembrar_legado_y_pedir(Sesion, "session-r0b-copiloto")
     tl = await _timeline(monkeypatch, "Lead #sess")
-    textos = [m["texto"] for m in tl["handoff"]]
-    if "mensaje para X" not in textos:     # precondición: RuntimeError ≠ AssertionError → rojo, no xfail
-        raise RuntimeError(f"el Copiloto ni siquiera trae el hilo de X: {textos}")
-    assert textos == ["mensaje para X"]
+    assert [m["texto"] for m in tl["handoff"]] == ["mensaje para X"]
 
 
 # ══ SEC-X2-R0c · el contexto de la SESIÓN no cruza la frontera del inmueble ════════════
@@ -1086,7 +1078,7 @@ async def test_C_A_el_corredor_de_X_no_recibe_la_conversacion_con_el_agente(base
 @pg
 async def test_C_B_el_copiloto_de_X_tampoco_recibe_la_conversacion_ni_sus_derivados(base, monkeypatch):
     """La misma frontera por la otra puerta: `tool_timeline_de_lead` (intención REAL, sin stub).
-    Su lectura de `handoff_mensaje` sin filtro es X-1 (B_J2); aquí solo se mira el AgentState."""
+    Aquí solo se mira el AgentState; su `handoff` lo cierra SEC-X1-R0 (B_J2, sección E)."""
     import json
     import app.agent.crm_tools as crm
     Sesion, _ = base
@@ -1224,8 +1216,8 @@ async def test_C_F_el_comprador_sigue_viendo_su_conversacion_y_el_computo_intern
 # historial del comprador: `historicos`, solo para el DUEÑO autenticado (chat_sessions.user_id por
 # `_decidir`), solo en la lectura inicial (`desde == 0`) y solo si la sesión apunta a UN único inmueble
 # sin nada sin explicar. Lo posterior es el hilo actual (`mensajes`): lo único que el corredor recibe por la
-# ruta HTTP y lo único que alimenta la semántica de su CRM. EXCEPCIÓN DECLARADA: el Copiloto lee el handoff
-# de la sesión por su cuenta (X-1, xfail estricto D_X1). Bloques: D_A…D_M; D_A…D_K = casos A…K del mandato.
+# ruta HTTP y lo único que alimenta la semántica de su CRM. El Copiloto, que leía el handoff de la sesión por
+# su cuenta (X-1, D_X1), sigue la misma frontera desde SEC-X1-R0. Bloques: D_A…D_M; D_A…D_K = casos A…K.
 
 COMPRADOR = CurrentUser(user_id="00000000-0000-4000-8000-0000000000c1", nombre="Compradora")
 OTRA_CUENTA = CurrentUser(user_id="00000000-0000-4000-8000-0000000000c2", nombre="Otra cuenta")
@@ -1547,7 +1539,8 @@ async def test_D_K_el_caso_del_censo_conserva_el_historial(base_c1):
 
 
 def test_D_S1_la_frontera_temporal_esta_en_cada_lector_del_hilo_actual():
-    for fn in (A.lead_conversacion, chat.estado_handoff, chat.intencion_de_sesion, chat._hilos_de_sesion):
+    for fn in (A.handoff_visible_al_corredor, chat.estado_handoff, chat.intencion_de_sesion,
+               chat._hilos_de_sesion):
         assert "m.creado_en >= h.principal_requested_at" in _sql(fn), fn.__name__
     sql = _sql(chat._historicos_del_dueno)
     assert "m.creado_en is not null" in sql
@@ -1555,9 +1548,11 @@ def test_D_S1_la_frontera_temporal_esta_en_cada_lector_del_hilo_actual():
     for guarda in ("g.filas_sin_inmueble = 0", "g.mensajes_sin_inmueble = 0",
                    "g.mensajes_sin_hilo_exacto = 0", "g.inmuebles = 1"):
         assert guarda in sql, guarda
-    # `_historicos_del_dueno` no se llama desde ningún camino del corredor (D_S2 fija su único llamador).
-    # Esto NO prueba que el corredor no lea lo legacy por otra consulta: el Copiloto lo hace (X-1, D_X1).
-    for fn in (A.lead_conversacion, A._leads_de_activo, A.responder_lead, chat.intencion_de_sesion):
+    # `_historicos_del_dueno` no se llama desde ningún camino del corredor (D_S2 fija su único llamador). Que
+    # el corredor tampoco lea lo legacy por otra consulta lo fijan A17 + E_S1 (SEC-X1-R0) y D_X1.
+    import app.agent.crm_tools as crm
+    for fn in (A.lead_conversacion, A._leads_de_activo, A.responder_lead, chat.intencion_de_sesion,
+               A.handoff_visible_al_corredor, crm.tool_timeline_de_lead.coroutine):
         assert "_historicos_del_dueno" not in inspect.getsource(fn), fn.__name__
 
 
@@ -1578,18 +1573,13 @@ def test_D_S2_historicos_solo_para_el_dueno_y_solo_en_la_lectura_inicial():
 
 
 @pg
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason=(
-    "RESIDUAL X-1, que C1 no empeora: el Copiloto (tool_timeline_de_lead) lee con su propia consulta TODOS los "
-    "handoff_mensaje de la sesión, también los ANTERIORES a la solicitud. La ruta HTTP (lead_conversacion) y el "
-    "CRM ya respetan la frontera temporal (D_G, D_H). SEC-X1-R0 debe cerrarlo: este xfail estricto se pondrá rojo."))
 async def test_D_X1_residual_copiloto_tras_solicitud_nueva_no_deberia_ver_lo_anterior(base_c1, monkeypatch):
+    """Era el xfail ESTRICTO del residual X-1 (C1). SEC-X1-R0 lo cierra: tras la solicitud nueva para X, el
+    Copiloto ve el hilo actual de X (t2) y no el historial del comprador anterior a la marca (t0)."""
     Sesion, _ = base_c1
     await _sembrar_g(Sesion, "session-c1-copiloto")
     tl = await _timeline(monkeypatch, "Lead #sess")
-    textos = _textos(tl["handoff"])
-    if "t2 del comprador" not in textos:     # precondición: RuntimeError ≠ AssertionError → rojo, no xfail
-        raise RuntimeError(f"el Copiloto ni siquiera trae el hilo actual: {textos}")
-    assert "t0 del comprador" not in textos and "t0 de la corredora" not in textos
+    assert _textos(tl["handoff"]) == ["t2 del comprador", "t2 de la corredora"]
 
 
 @pg
@@ -1718,3 +1708,197 @@ def test_A20_inventario_cerrado_de_escritores_del_handoff_y_su_sello():
     for nombre, sql in escritores.items():
         assert "(session_id, autor, texto, activo_id, creado_en)" in sql, nombre
         assert "clock_timestamp())" in sql, nombre
+
+
+# ══ SEC-X1-R0 · el Copiloto usa la MISMA frontera de inmueble exacto ═════════════════════
+#
+#     CONTEXTO DEL CORREDOR/COPILOTO PARA X = CONTENIDO DIVULGABLE AL CORREDOR PARA X
+#                                           ≠ TODO LO QUE HAY EN LA SESIÓN
+#     EL HISTORIAL SOLO DEL COMPRADOR SIGUE SIENDO SOLO DEL COMPRADOR, TAMBIÉN EN EL COPILOTO
+#
+# `tool_timeline_de_lead` leía `SELECT … FROM handoff_mensaje WHERE session_id = :s`: todos los hilos
+# de la sesión (otros inmuebles, NULL, historial del comprador, lo anterior a la solicitud). Ahora usa
+# `assets.handoff_visible_al_corredor(db, sid, match["activo_id"])`, la MISMA que `lead_conversacion`.
+# Bloques: E_A…E_J = casos A…J del mandato; E_S* = contratos estáticos.
+
+Z = "33333333-3333-4333-8333-333333333333"      # otro inmueble de la MISMA corredora que X
+
+
+async def _sesion_mixta(Sesion, sid: str):
+    """Una sesión con TODO lo que el Copiloto de X no puede ver: NULL legacy, hilo de Y, historial
+    exacto de X ANTERIOR a la solicitud. Después, la solicitud para X y mensajes actuales de X."""
+    from sqlalchemy import text
+    async with Sesion() as db:
+        await chat.ensure_handoff_tables(db)
+        await db.execute(text(
+            "INSERT INTO handoff_sesion (session_id, activo_id, estado, corredor_id) VALUES "
+            "(:s, CAST(:x AS uuid), 'activo', CAST(:u AS uuid))"), {"s": sid, "x": X, "u": DUENO_X.user_id})
+        await db.execute(text(
+            "INSERT INTO handoff_mensaje (session_id, autor, texto, activo_id, creado_en) VALUES "
+            "(:s, 'lead', 'NULL sin inmueble', NULL, now() - interval '3 days'), "
+            "(:s, 'lead', 'Y del hilo de otro corredor', CAST(:y AS uuid), now() - interval '3 days'), "
+            "(:s, 'lead', 'X antes de la solicitud', CAST(:x AS uuid), now() - interval '2 days'), "
+            "(:s, 'corredor', 'X respuesta antes de la solicitud', CAST(:x AS uuid), now() - interval '2 days')"),
+            {"s": sid, "x": X, "y": Y})
+        await db.commit()
+    assert (await chat.registrar_handoff(sid, activo_id=X))["ok"]
+    async with Sesion() as db:
+        await db.execute(text(
+            "INSERT INTO handoff_mensaje (session_id, autor, texto, activo_id, creado_en) VALUES "
+            "(:s, 'lead', 'X actual del comprador', CAST(:x AS uuid), clock_timestamp()), "
+            "(:s, 'corredor', 'X actual de la corredora', CAST(:x AS uuid), clock_timestamp()), "
+            # POSTERIORES a la marca pero fuera del hilo exacto de X: solo la frontera de INMUEBLE los
+            # deja fuera (la temporal no basta).
+            "(:s, 'lead', 'NULL posterior a la solicitud', NULL, clock_timestamp()), "
+            "(:s, 'lead', 'Y posterior a la solicitud', CAST(:y AS uuid), clock_timestamp())"),
+            {"s": sid, "x": X, "y": Y})
+        await db.commit()
+
+
+_SOLO_X_ACTUAL = ["X actual del comprador", "X actual de la corredora"]
+
+
+async def _copiloto(monkeypatch, referencia: str, quien=DUENO_X) -> dict:
+    import json
+    import app.agent.crm_tools as crm
+    config = {"configurable": {"owner_user_id": quien.user_id, "owner_agency_id": quien.agency_id}}
+    return json.loads(await crm.tool_timeline_de_lead.ainvoke({"referencia": referencia}, config=config))
+
+
+@pg
+async def test_E_ABCDI_el_copiloto_de_X_solo_ve_X_actual_y_nada_mas_de_la_sesion(base, monkeypatch):
+    """A · X actual → visible. B · X anterior a la solicitud → invisible. C · Y de la misma sesión → invisible.
+    D · NULL → invisible. I · transcript del agente → []. Con intención REAL (sin stub) y una conversación hostil
+    sobre Y en el AgentState."""
+    import json
+    Sesion, _ = base
+    sid = "session-x1-mixta"
+    monkeypatch.setattr(chat, "agent_graph", _grafo({sid: _CONVERSACION_Y}))
+    await _sesion_mixta(Sesion, sid)
+    tl = await _copiloto(monkeypatch, "Lead #sess")
+    assert [m["texto"] for m in tl["handoff"]] == _SOLO_X_ACTUAL
+    assert tl["transcript"] == []
+    plano = json.dumps(tl, ensure_ascii=False)
+    for huella in ("NULL sin inmueble", "Y del hilo", "antes de la solicitud", "posterior a la solicitud") + _HUELLAS_Y:
+        assert huella not in plano, huella
+    # La ruta HTTP del corredor ve EXACTAMENTE lo mismo: una sola definición, sin deriva.
+    assert (await _lee(Sesion, sid, X, DUENO_X))["handoff"] == tl["handoff"]
+
+
+@pg
+async def test_E_E_sin_solicitud_el_copiloto_no_recibe_handoff(base, monkeypatch):
+    """E · sin principal_requested_at: `[]` aunque haya mensajes exactos de X (lead del letrero listado como
+    atribución)."""
+    from sqlalchemy import text
+    Sesion, _ = base
+    sid = f"qr-{X}-x1sinmarca"
+    async with Sesion() as db:
+        await chat.ensure_handoff_tables(db)
+        await db.execute(text("INSERT INTO checkpoints VALUES (:s)"), {"s": sid})
+        await db.execute(text("INSERT INTO handoff_sesion (session_id, activo_id, estado) "
+                              "VALUES (:s, CAST(:x AS uuid), 'activo')"), {"s": sid, "x": X})
+        await db.execute(text("INSERT INTO handoff_mensaje (session_id, autor, texto, activo_id) "
+                              "VALUES (:s, 'lead', 'exacto de X sin solicitud', CAST(:x AS uuid))"), {"s": sid, "x": X})
+        await db.commit()
+    tl = await _copiloto(monkeypatch, "x1si")
+    assert tl.get("lead"), tl                                             # el lead SÍ se encontró…
+    assert tl["handoff"] == []                                            # …pero sin contenido del handoff
+    assert "vacío NO significa" in tl["_handoff"]
+
+
+@pg
+async def test_E_F_la_corredora_duena_de_X_y_Z_al_elegir_X_no_recibe_Z(base, monkeypatch):
+    """F · la misma corredora es dueña de X y de Z y la persona pidió los dos. El lead de X trae solo X; el de Z,
+    solo Z. El inmueble sale del lead resuelto, nunca del «último inmueble» de la sesión."""
+    from sqlalchemy import text
+    Sesion, _ = base
+    sid = "session-x1-dos-de-la-misma"
+    async with Sesion() as db:
+        await db.execute(text("INSERT INTO activos_inmutables VALUES (:a, 'Av. Z 3', NULL, :u, NULL)"),
+                         {"a": Z, "u": DUENO_X.user_id})
+        await db.commit()
+    for activo, correo, texto in ((X, "uno@ejemplo.test", "para X"), (Z, "dos@ejemplo.test", "para Z")):
+        assert (await chat.registrar_handoff(sid, activo_id=activo, lead_email=correo))["ok"]
+        async with Sesion() as db:
+            await db.execute(text("INSERT INTO handoff_mensaje (session_id, autor, texto, activo_id, creado_en) "
+                                  "VALUES (:s, 'lead', :t, CAST(:a AS uuid), clock_timestamp())"),
+                             {"s": sid, "t": texto, "a": activo})
+            await db.commit()
+    tl_x = await _copiloto(monkeypatch, "uno@ejemplo.test")
+    tl_z = await _copiloto(monkeypatch, "dos@ejemplo.test")
+    assert tl_x["direccion"] == "Av. X 1" and [m["texto"] for m in tl_x["handoff"]] == ["para X"]
+    assert tl_z["direccion"] == "Av. Z 3" and [m["texto"] for m in tl_z["handoff"]] == ["para Z"]
+
+
+@pg
+async def test_E_G_la_colega_de_agencia_tiene_la_misma_frontera_exacta(base, monkeypatch):
+    """G · la colega de la agencia dueña de X ve lo mismo que la dueña: el hilo exacto de X desde la solicitud."""
+    Sesion, _ = base
+    sid = "session-x1-agencia"
+    await _sesion_mixta(Sesion, sid)
+    tl = await _copiloto(monkeypatch, "Lead #sess", quien=COLEGA_X)
+    assert [m["texto"] for m in tl["handoff"]] == _SOLO_X_ACTUAL
+    # Y la corredora de Y (dueña de OTRO inmueble que aparece en la sesión) no encuentra a este lead.
+    tl_y = await _copiloto(monkeypatch, "Lead #sess", quien=DUENO_Y)
+    assert "error" in tl_y and "handoff" not in tl_y
+
+
+@pg
+async def test_E_H_un_lead_sin_inmueble_valido_falla_cerrado_sin_caer_a_la_sesion(base, monkeypatch):
+    """H · si el lead resuelto no trae un activo_id canónico válido (ausente, None, vacío, basura), el Copiloto
+    devuelve `[]` y no cae a la sesión entera, aunque la sesión tenga contenido actual de X."""
+    import app.routers.assets as assets_mod
+    Sesion, _ = base
+    sid = "session-x1-sin-inmueble"
+    await _sesion_mixta(Sesion, sid)
+    base_lead = {"session_id": sid, "lead": "Lead #malo", "estado": None, "nivel": None, "score": None,
+                 "frescura": None, "direccion": None, "razones": None, "reenganche": None, "email": None}
+    for variante in ({}, {"activo_id": None}, {"activo_id": ""}, {"activo_id": "no-es-un-uuid"},
+                     {"activo_id": "  "}):
+        async def _leads(db, *_a, _v=variante, **_k):
+            return [dict(base_lead, **_v)]
+        monkeypatch.setattr(assets_mod, "_leads_del_corredor", _leads)
+        tl = await _copiloto(monkeypatch, "Lead #malo")
+        assert tl["handoff"] == [], variante
+
+
+@pg
+async def test_E_J_el_historial_del_comprador_sigue_siendo_solo_suyo(base_c1, monkeypatch):
+    """J · el historial C1 del comprador sigue legible por su DUEÑO en `historicos` y ausente del Copiloto."""
+    Sesion, _ = base_c1
+    sid = "session-x1-historial"
+    await _sembrar_g(Sesion, sid)
+    r = await _get(sid, COMPRADOR)
+    assert _textos(r["historicos"]) == ["t0 del comprador", "t0 de la corredora"]
+    tl = await _copiloto(monkeypatch, "Lead #sess")
+    assert _textos(tl["handoff"]) == ["t2 del comprador", "t2 de la corredora"] == _textos(r["mensajes"])
+
+
+def test_E_S1_una_sola_definicion_de_lo_divulgable_al_corredor():
+    """El Copiloto y la ruta HTTP llaman a la MISMA función y ninguno de los dos lee `handoff_mensaje` por su
+    cuenta. El inmueble del Copiloto sale de `match`, y la tool no acepta un inmueble como argumento."""
+    import app.agent.crm_tools as crm
+    for fn in (A.lead_conversacion, crm.tool_timeline_de_lead.coroutine):
+        arbol = ast.parse(inspect.getsource(fn).lstrip())
+        llamadas = [n for n in ast.walk(arbol) if isinstance(n, ast.Call)
+                    and getattr(n.func, "id", None) == "handoff_visible_al_corredor"]
+        assert len(llamadas) == 1, fn.__name__
+        assert "from handoff_mensaje m" not in _sql(fn) or fn is A.lead_conversacion, fn.__name__
+    assert "from handoff_mensaje" not in _sql(crm.tool_timeline_de_lead.coroutine)
+    fuente = inspect.getsource(crm.tool_timeline_de_lead.coroutine)
+    assert 'activo = match.get("activo_id")' in fuente
+    assert "handoff_visible_al_corredor(db, sid, activo)" in fuente
+    assert list(inspect.signature(crm.tool_timeline_de_lead.coroutine).parameters) == ["referencia", "config"]
+    sql = _sql(A.handoff_visible_al_corredor)
+    for clausula in ("m.activo_id = cast(:a as uuid)", "h.principal_requested_at is not null",
+                     "m.creado_en is not null", "m.creado_en >= h.principal_requested_at",
+                     "on h.session_id = m.session_id and h.activo_id = m.activo_id"):
+        assert clausula in sql, clausula
+    assert "activo_id is null" not in sql
+
+
+def test_E_S2_el_copiloto_no_lee_el_agentstate_ni_el_historial_del_comprador():
+    import app.agent.crm_tools as crm
+    fuente = inspect.getsource(crm.tool_timeline_de_lead.coroutine)
+    assert "_historicos_del_dueno" not in fuente and "historicos" not in fuente
+    assert "aget_state" not in fuente and "compiled_graph" not in fuente

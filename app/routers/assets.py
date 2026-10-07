@@ -808,11 +808,18 @@ async def _leads_de_activo(db: AsyncSession, activo_id: str, direccion: str | No
         # pedir corredor). Sin lo segundo, un lead que pidió corredor desde el chat de la
         # home no aparecía en NINGÚN CRM — se perdía en el pico de intención.
         h_rows = (await db.execute(
-            text("SELECT session_id, estado, lead_email, "
-                 "       (principal_requested_at IS NOT NULL) AS autorizado "
-                 "FROM handoff_sesion "
-                 "WHERE activo_id = CAST(:a AS uuid) "
-                 "   OR (session_id LIKE :p AND activo_id IS NULL)"),
+            # SEC-X2-C1 · `estado` sale del hilo actual (respuesta del corredor desde la marca), no de
+            # una fila legacy heredada por una solicitud nueva. Solo existencia: ningún contenido.
+            text("SELECT h.session_id, "
+                 "       CASE WHEN h.estado = 'activo' AND NOT EXISTS ("
+                 "         SELECT 1 FROM handoff_mensaje c WHERE c.session_id = h.session_id "
+                 "            AND c.activo_id = h.activo_id AND c.autor = 'corredor' "
+                 "            AND c.creado_en >= h.principal_requested_at) "
+                 "       THEN 'solicitado' ELSE h.estado END AS estado, "
+                 "       h.lead_email, (h.principal_requested_at IS NOT NULL) AS autorizado "
+                 "FROM handoff_sesion h "
+                 "WHERE h.activo_id = CAST(:a AS uuid) "
+                 "   OR (h.session_id LIKE :p AND h.activo_id IS NULL)"),
             {"p": f"qr-{activo_id}-%", "a": str(activo_id)},
         )).mappings().all()
         # Los que no vienen del QR no están en thread_ids: añádelos para que se listen.
@@ -1374,15 +1381,22 @@ async def lead_conversacion(
             "  AND m.activo_id = CAST(:a AS uuid) "
             # SEC-X2-C1 · UNA AUTORIDAD NUEVA NO AUTORIZA CONTENIDO ANTIGUO: solo lo escrito desde
             # la solicitud. Lo anterior del mismo hilo es historial del comprador (lo ve él en
-            # `historicos`), y su solicitud nueva no se lo divulga al corredor. Sin `creado_en`, fuera.
+            # `historicos`), y su solicitud nueva no se lo divulga por esta ruta. Sin `creado_en`, fuera.
+            # (El Copiloto lee el handoff por su cuenta: residual X-1, xfail D_X1.)
             "  AND h.principal_requested_at IS NOT NULL "
             "  AND m.creado_en >= h.principal_requested_at "
             "ORDER BY m.id ASC"),
             {"s": session_id, "a": str(activo_id)})).mappings().all()
         hmsgs = [{"autor": r["autor"], "texto": r["texto"]} for r in rows]
         estado = (await db.execute(text(
-            "SELECT estado FROM handoff_sesion "
-            "WHERE session_id = :s AND activo_id = CAST(:a AS uuid)"),
+            # SEC-X2-C1 · estado del hilo actual (ver chat.estado_handoff), no el de la fila legacy.
+            "SELECT CASE WHEN h.estado = 'activo' AND NOT EXISTS ("
+            "         SELECT 1 FROM handoff_mensaje c WHERE c.session_id = h.session_id "
+            "            AND c.activo_id = h.activo_id AND c.autor = 'corredor' "
+            "            AND c.creado_en >= h.principal_requested_at) "
+            "       THEN 'solicitado' ELSE h.estado END "
+            "  FROM handoff_sesion h "
+            "WHERE h.session_id = :s AND h.activo_id = CAST(:a AS uuid)"),
             {"s": session_id, "a": str(activo_id)})).scalar()
     except Exception:  # noqa: BLE001
         hmsgs, estado = [], None
@@ -1418,8 +1432,11 @@ async def responder_lead(
                             detail="No hay una solicitud de contacto registrada para este "
                                    "inmueble: no se puede escribir a la persona hasta que la pida.")
     await db.execute(text(
-        "INSERT INTO handoff_mensaje (session_id, autor, texto, activo_id) "
-        "VALUES (:s, 'corredor', :t, CAST(:a AS uuid))"),
+        # SEC-X2-C1 · `creado_en` = hora de ESTA escritura (clock_timestamp). La transacción de get_db
+        # puede haber empezado ANTES de la solicitud (carga del perfil, _assert_owner): con now() una
+        # respuesta ACTUAL quedaba antes de la marca y se clasificaba como historial.
+        "INSERT INTO handoff_mensaje (session_id, autor, texto, activo_id, creado_en) "
+        "VALUES (:s, 'corredor', :t, CAST(:a AS uuid), clock_timestamp())"),
         {"s": session_id, "t": payload.texto.strip(), "a": str(activo_id)})
 
     # Datos del aviso: de ESTE hilo autorizado, no de cualquier fila de la sesión. Antes se

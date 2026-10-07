@@ -2557,7 +2557,13 @@ async def _hilos_de_sesion(db, session_id: str) -> list[dict]:
     SEC-X2-R0: solo los hilos que la persona pidió. SEC-X2-C1: `mensajes` cuenta el hilo ACTUAL
     (desde la solicitud); lo anterior es historial y no forma parte del hilo que se escribe."""
     rows = (await db.execute(text(
-        "SELECT h.activo_id::text AS activo_id, h.estado, "
+        # SEC-X2-C1 · el estado sale del hilo actual (ver `estado_handoff`), no de la fila heredada.
+        "SELECT h.activo_id::text AS activo_id, "
+        "       CASE WHEN h.estado = 'activo' AND NOT EXISTS ("
+        "         SELECT 1 FROM handoff_mensaje c WHERE c.session_id = h.session_id "
+        "            AND c.activo_id = h.activo_id AND c.autor = 'corredor' "
+        "            AND c.creado_en >= h.principal_requested_at) "
+        "       THEN 'solicitado' ELSE h.estado END AS estado, "
         "       a.direccion_estandarizada AS direccion, "
         "       (SELECT count(*) FROM handoff_mensaje m "
         "         WHERE m.session_id = h.session_id AND m.activo_id = h.activo_id "
@@ -2873,8 +2879,11 @@ async def handoff_mensaje_lead(
             {"s": session_id, "a": hilo,
              "u": user.user_id if user else None, "e": user.email if user else None})
         await db.execute(text(
-            "INSERT INTO handoff_mensaje (session_id, autor, texto, activo_id) "
-            "VALUES (:s, 'lead', :t, CAST(:a AS uuid))"),
+            # SEC-X2-C1 · `creado_en` = la hora de ESTA escritura (clock_timestamp), no la del inicio de
+            # la transacción (now()): la frontera compara creado_en con la marca, y un now() anterior
+            # a la marca clasificaría un mensaje ACTUAL como historial.
+            "INSERT INTO handoff_mensaje (session_id, autor, texto, activo_id, creado_en) "
+            "VALUES (:s, 'lead', :t, CAST(:a AS uuid), clock_timestamp())"),
             {"s": session_id, "t": payload.texto.strip(), "a": hilo})
         await db.commit()
 
@@ -2920,9 +2929,18 @@ async def estado_handoff(request: Request, session_id: str, desde: int = 0,
             est = None
             if hilo is not None:
                 est = (await db.execute(text(
-                    "SELECT estado FROM handoff_sesion "
-                    "WHERE session_id = :s AND activo_id = CAST(:a AS uuid) "
-                    "  AND principal_requested_at IS NOT NULL"),
+                    # SEC-X2-C1 · el ESTADO del hilo actual sale del hilo actual. Una fila legacy venía
+                    # 'activo' (lo escribía el responder_lead anterior a R0) y una solicitud nueva lo
+                    # heredaba aunque nadie hubiera respondido desde la marca. Se deriva al leer: la
+                    # fila no se reescribe (sin backfill).
+                    "SELECT CASE WHEN h.estado = 'activo' AND NOT EXISTS ("
+                    "         SELECT 1 FROM handoff_mensaje c WHERE c.session_id = h.session_id "
+                    "            AND c.activo_id = h.activo_id AND c.autor = 'corredor' "
+                    "            AND c.creado_en >= h.principal_requested_at) "
+                    "       THEN 'solicitado' ELSE h.estado END "
+                    "  FROM handoff_sesion h "
+                    "WHERE h.session_id = :s AND h.activo_id = CAST(:a AS uuid) "
+                    "  AND h.principal_requested_at IS NOT NULL"),
                     {"s": session_id, "a": hilo})).scalar()
             if est is not None:
                 rows = (await db.execute(text(
@@ -3043,15 +3061,18 @@ async def intencion_de_sesion(session_id: str, horas_inactividad: float | None =
                 # de X (en cualquier momento) es un metadato de EXISTENCIA, como `interactuo`: el
                 # lead sigue en la lista aunque su contenido se retenga (la lección de R0b). Lo NULL
                 # y lo de otro hilo no cuentan nunca.
-                escribio_en_x = (await db.execute(text(
-                    "SELECT EXISTS (SELECT 1 FROM handoff_mensaje WHERE session_id = :s "
-                    "AND autor = 'lead' AND activo_id = CAST(:a AS uuid))"),
-                    {"s": session_id, "a": para})).scalar()
-                interactuo = interactuo or bool(escribio_en_x)
+                # Paridad EXACTA con la regla anterior (`turnos` > 0): cuenta un texto que el motor
+                # contaría (str con algo tras strip), nunca uno vacío o NULL. Los textos no pasan al motor.
+                textos_x = (await db.execute(text(
+                    "SELECT texto FROM handoff_mensaje WHERE session_id = :s "
+                    "AND autor = 'lead' AND activo_id = CAST(:a AS uuid)"),
+                    {"s": session_id, "a": para})).scalars().all()
+                interactuo = interactuo or any(isinstance(t, str) and t.strip() for t in textos_x)
                 # El CONTENIDO que alimenta la semántica para el corredor de X (etapa, nivel, score,
                 # razones, resumen, turnos, reenganche) es solo el posterior a la solicitud: lo
-                # anterior es historial del comprador, y una solicitud nueva no lo vuelve visible
-                # para el corredor. Sin solicitud, nada del handoff alimenta esa semántica.
+                # anterior es historial del comprador, y una solicitud nueva no lo vuelve parte de esta
+                # proyección. Sin solicitud, nada del handoff la alimenta. (El Copiloto lee el handoff por
+                # su cuenta: residual X-1, xfail D_X1.)
                 if pidio_corredor:
                     hmsgs = (await db.execute(text(
                         "SELECT m.texto FROM handoff_mensaje m "

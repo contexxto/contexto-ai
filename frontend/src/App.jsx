@@ -707,6 +707,8 @@ export default function App() {
     // Si esperáramos el await de signOut() (que hace una llamada de red para
     // revocar el token) y la red está lenta o falla, la UI quedaría congelada.
     setSession(null); setAccessToken(null); setRol(null)
+    // SEC-X2-C1: el «Historial anterior» solo se entrega al dueño; no queda en pantalla al salir.
+    setHistoricosHandoff([])
     setView('chat'); setSidebarOpen(false)
     // scope:'local' borra la sesión de este dispositivo sin round-trip global.
     // Fire-and-forget: no bloquea la UI; si falla, el estado local ya se limpió.
@@ -845,6 +847,9 @@ export default function App() {
             content: m.autor === 'corredor' ? `Corredor: ${m.texto}` : m.texto, time: '', toolCalls: [] }))
           for (const m of (h.mensajes || [])) handoffSeenRef.current = Math.max(handoffSeenRef.current, m.id)
           setMessages([...base, ...hmsgs])
+          // SEC-X2-C1: lo anterior a la solicitud, aparte y de solo lectura (no entra en `messages`).
+          // Va DESPUÉS del await: el efecto de restauración de la conversación ya vació el anterior.
+          setHistoricosHandoff(historicosDe(h))
           setModoCorredor(true)
           return
         }

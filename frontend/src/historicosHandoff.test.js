@@ -97,8 +97,9 @@ describe('App.jsx: el historial va aparte y no abre nada', () => {
     // Una respuesta tardía de la conversación anterior no pinta su historial en la nueva.
     expect(app).toContain('if (vigente) setHistoricosHandoff(historicosDe(h))')
     expect(app).toContain('return () => { vigente = false }')
-    expect(llamadas(app, 'setHistoricosHandoff')).toEqual(['setHistoricosHandoff([])',
-      'setHistoricosHandoff(historicosDe(h))'])                         // el vaciado al cambiar y la carga
+    // logout y cambio de conversación lo vacían; la restauración y el carril del QR lo cargan.
+    expect(llamadas(app, 'setHistoricosHandoff').sort()).toEqual(['setHistoricosHandoff([])',
+      'setHistoricosHandoff([])', 'setHistoricosHandoff(historicosDe(h))', 'setHistoricosHandoff(historicosDe(h))'])
   })
 
   it('nunca se mezcla con messages ni con el hilo actual', () => {
@@ -154,5 +155,26 @@ describe('HistorialAnterior renderizado (react-dom/server, sin red ni jsdom)', (
     expect(html).toContain('hola, me interesa')
     expect(html).toContain('&lt;b&gt;con gusto&lt;/b&gt;')            // el texto se escapa, no se interpreta
     for (const control of ['<button', '<input', '<textarea', '<form', '<a ']) expect(html).not.toContain(control)
+  })
+})
+
+describe('App.jsx: el carril del QR y el cierre de sesión', () => {
+  const cuerpo = (inicio, fin) => {
+    const i = app.indexOf(inicio)
+    const f = app.indexOf(fin, i)
+    return i >= 0 && f > i ? app.slice(i, f) : ''
+  }
+
+  it('cerrar sesión vacía el historial (solo se entrega al dueño)', () => {
+    const logout = cuerpo('const logout = useCallback(', '}, [])')
+    expect(logout).toContain('setHistoricosHandoff([])')
+  })
+
+  it('al reanudar por el QR un hilo actual, el historial va aparte y DESPUÉS de cargar la conversación', () => {
+    const deeplink = cuerpo('const loadFromDeepLink = useCallback(', 'const abrirLetrero')
+    expect(deeplink).toContain('setHistoricosHandoff(historicosDe(h))')
+    expect(deeplink.indexOf('setHistoricosHandoff(historicosDe(h))'))
+      .toBeGreaterThan(deeplink.indexOf('setMessages([...base, ...hmsgs])'))
+    for (const c of llamadas(deeplink, 'setMessages')) expect(c).not.toMatch(/historic/i)
   })
 })

@@ -13,7 +13,7 @@
 Desde SEC-X2-R0c (#195) `metricas_lift` ya no lee `intencion_evento` (el pico se calculaba sobre la sesión
 entera): dejó de ser consumidor canónico. RETIRAR UN CONSUMIDOR ≠ ROMPER LA COMPATIBILIDAD DEL DUEÑO: las
 sondas leen la serie directamente con cada rol, y `test_044_el_lift_ya_no_es_consumidor_de_la_serie` fija
-que ningún camino del lift vuelva a leerla sin decidirlo.
+que los literales SQL de `metricas_lift` no vuelvan a leerla sin decidirlo.
 
 El banco completo (control positivo, compuertas, mutaciones, roles ausentes, MAINTAIN, recreación en runtime,
 dueño sin BYPASSRLS, PG15 y PG17.6) está en `tests/arnes_perimetro_044.py`, que necesita Docker.

@@ -7,7 +7,13 @@
       como un dueño NO superusuario con BYPASSRLS —el doble del `postgres` de producción— y nacen con la
       exposición medida. La 044 se aplica con el aplicador del producto. Los tres roles y PUBLIC quedan sin
       nada, y el backend sigue funcionando con su código REAL: `registrar_intencion` escribe,
-      `ensure_intencion_tables` corre y `metricas_lift` lee la serie. Las filas sobreviven intactas.
+      `ensure_intencion_tables` corre y el dueño conserva la lectura DIRECTA de la serie. Las filas
+      sobreviven intactas.
+
+Desde SEC-X2-R0c (#195) `metricas_lift` ya no lee `intencion_evento` (el pico se calculaba sobre la sesión
+entera): dejó de ser consumidor canónico. RETIRAR UN CONSUMIDOR ≠ ROMPER LA COMPATIBILIDAD DEL DUEÑO: las
+sondas leen la serie directamente con cada rol, y `test_044_el_lift_ya_no_es_consumidor_de_la_serie` fija
+que ningún camino del lift vuelva a leerla sin decidirlo.
 
 El banco completo (control positivo, compuertas, mutaciones, roles ausentes, MAINTAIN, recreación en runtime,
 dueño sin BYPASSRLS, PG15 y PG17.6) está en `tests/arnes_perimetro_044.py`, que necesita Docker.
@@ -489,22 +495,33 @@ async def _aplica_044(b, rol=None):
         await aplicar_migracion(str(M044), db=s)
 
 
-async def _lift_como(b, rol, monkeypatch):
-    """La lectura REAL del lift (`metricas_lift`), ejecutada con la sesión de `rol`. Un fallo de lectura de
-    `intencion_evento` lo traga el propio endpoint: se ve como 0 transiciones registradas."""
-    from sqlalchemy.ext.asyncio import async_sessionmaker
+# La lectura de la serie que hacía `metricas_lift` hasta SEC-X2-R0c (forma congelada de main d94c6f1). R0c la
+# retiró del lift; aquí se usa como lectura DIRECTA de un rol: la capacidad del dueño se conserva aunque el
+# consumidor ya no exista.
+_LECTURA_SERIE = "SELECT session_id, estado FROM public.intencion_evento WHERE session_id = ANY(:ids)"
 
-    async def leads(db, *_a, **_k):
-        return [{"session_id": SID, "estado": "anonimo", "handoff_estado": None}]
 
-    async def sin_lead_actividad(db):
-        raise RuntimeError("lead_actividad fuera de esta prueba")
+async def _sesiones_en_la_serie(motor, sids) -> int:
+    """Cuántas de `sids` tienen al menos una transición registrada, leído DIRECTAMENTE por el rol del motor
+    (lo que antes devolvía el lift como `_transiciones_registradas`). Sin permiso, lanza: no se traga."""
+    async with motor.connect() as cx:
+        filas = (await cx.execute(text(_LECTURA_SERIE), {"ids": list(sids)})).all()
+    return len({f[0] for f in filas})
 
-    monkeypatch.setattr(assets, "_leads_del_corredor", leads)
-    monkeypatch.setattr(chat, "ensure_lead_actividad", sin_lead_actividad)
-    usuario = SimpleNamespace(rol="corredor", user_id="u-044", agency_id=None)
-    async with async_sessionmaker(b.motor(rol), expire_on_commit=False)() as db:
-        return await assets.metricas_lift.__wrapped__(request=None, user=usuario, db=db)
+
+def _cadenas_sql(funcion) -> str:
+    import ast
+    import inspect
+    arbol = ast.parse(inspect.getsource(funcion).lstrip())
+    return " ".join(n.value for n in ast.walk(arbol) if isinstance(n, ast.Constant) and isinstance(n.value, str))
+
+
+def test_044_el_lift_ya_no_es_consumidor_de_la_serie():
+    """SEC-X2-R0c retiró la lectura de `intencion_evento` del lift (la sesión entera no tiene alcance por
+    inmueble). Si vuelve, este test se pone rojo y obliga a decidirlo, y a revisar la compatibilidad de la 044."""
+    sql = _cadenas_sql(assets.metricas_lift).lower()
+    assert "intencion_evento" not in sql
+    assert "_transiciones_registradas" not in sql
 
 
 @pg
@@ -530,7 +547,7 @@ async def test_044_cierra_tablas_y_secuencia_y_el_backend_real_sigue(banco, monk
                              f"VALUES ('sonda-2', '{NO_EXISTE}', 'anonimo', 'frio')")
     assert "ForeignKeyViolation" in r, r
     assert await _intenta(anon, f"SELECT setval('{SEQ}', (SELECT last_value FROM {SEQ}))") == "ok"
-    assert (await _lift_como(b, "anon", monkeypatch))["_transiciones_registradas"] == 1   # anon lee la serie
+    assert await _sesiones_en_la_serie(anon, ["falsa"]) == 1        # anon lee la serie (antes, vía el lift)
     async with b.dueno.begin() as cx:
         await cx.execute(text("DELETE FROM public.intencion_evento WHERE session_id = 'falsa'"))
         await cx.execute(text("DELETE FROM public.intencion_sesion WHERE session_id = 'sonda-1'"))
@@ -599,9 +616,11 @@ async def test_044_cierra_tablas_y_secuencia_y_el_backend_real_sigue(banco, monk
     assert await _uno(b.dueno, f"SELECT count(*) FROM public.intencion_evento WHERE session_id = '{SID}'") == 2
     assert await _uno(b.dueno, "SELECT estado || '|' || handoff_sugerido::text FROM public.intencion_sesion "
                                f"WHERE session_id = '{SID}'") == "intencion|true"
-    # El lift, por el endpoint REAL: el dueño lee la serie; anon ya no (0 transiciones).
-    assert (await _lift_como(b, DUENO, monkeypatch))["_transiciones_registradas"] == 1
-    assert (await _lift_como(b, "anon", monkeypatch))["_transiciones_registradas"] == 0
+    # La serie: el dueño conserva la lectura DIRECTA; anon ya no (denegado, no un «0» tragado).
+    assert await _sesiones_en_la_serie(b.dueno, [SID]) == 1
+    with pytest.raises(Exception) as denegado:
+        await _sesiones_en_la_serie(motor("anon"), [SID])
+    assert "permission denied" in str(denegado.value)
     # CRUD del dueño, secuencia incluida.
     for sql in ("INSERT INTO public.intencion_evento (session_id, estado, nivel) VALUES ('d', 'anonimo', 'frio')",
                 "UPDATE public.intencion_evento SET score = 1 WHERE session_id = 'd'",

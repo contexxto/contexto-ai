@@ -2143,13 +2143,16 @@ def test_F7_contexto_del_modelo_retiene_por_turno_sin_adivinar():
     llamada = lambda cid, nombre: AIMessage(content="", tool_calls=[{"name": nombre, "args": {}, "id": cid}])  # noqa: E731
     hilo = [
         HumanMessage(content="t1"),
-        llamada("a", "tool_timeline_de_lead"), ToolMessage(content="CRUDO-A", tool_call_id="a", name="tool_timeline_de_lead"),
+        llamada("a", "tool_timeline_de_lead"),
+        ToolMessage(content="CRUDO-A", tool_call_id="a", name="tool_timeline_de_lead", id="m-a"),
         llamada("b", "tool_timeline_de_lead"), ToolMessage(content="CRUDO-B-SIN-NOMBRE", tool_call_id="b"),
         ToolMessage(content="CRUDO-HUERFANO", tool_call_id="zzz"),
+        ToolMessage(content="CRUDO-NOMBRE-VACIO", tool_call_id="vacio", name=""),
         llamada("c", "tool_stats_embudo"), ToolMessage(content="STATS", tool_call_id="c", name="tool_stats_embudo"),
         llamada("e", "tool_stats_embudo"), ToolMessage(content="STATS-SIN-NOMBRE", tool_call_id="e"),
         HumanMessage(content="t2"),
         llamada("d", "tool_timeline_de_lead"), ToolMessage(content="ACTUAL-D", tool_call_id="d", name="tool_timeline_de_lead"),
+        llamada("d2", "tool_timeline_de_lead"), ToolMessage(content="ACTUAL-D2", tool_call_id="d2", name="tool_timeline_de_lead"),
     ]
     original = [m.content for m in hilo]
     salida = CG.contexto_del_modelo(hilo)
@@ -2157,9 +2160,12 @@ def test_F7_contexto_del_modelo_retiene_por_turno_sin_adivinar():
     assert por_id["a"].content == CG.RESULTADO_RETENIDO               # turno anterior, con nombre
     assert por_id["b"].content == CG.RESULTADO_RETENIDO               # sin nombre: se resuelve por la llamada
     assert por_id["zzz"].content == CG.RESULTADO_RETENIDO             # herramienta indeterminable: falla cerrado
+    assert por_id["vacio"].content == CG.RESULTADO_RETENIDO           # nombre vacío = indeterminable: falla cerrado
     assert por_id["c"].content == "STATS"                              # otra herramienta: intacta
     assert por_id["e"].content == "STATS-SIN-NOMBRE"                   # sin nombre: la llamada dice stats → intacta
-    assert por_id["d"].content == "ACTUAL-D"                           # turno actual: intacta
+    assert por_id["d"].content == "ACTUAL-D"                           # turno actual: intacta…
+    assert por_id["d2"].content == "ACTUAL-D2"                         # …aunque haya varias llamadas en el turno
+    assert por_id["a"].id == "m-a"                                     # el id del mensaje se conserva
     assert (por_id["a"].tool_call_id, por_id["a"].name) == ("a", "tool_timeline_de_lead")   # metadatos intactos
     assert [m.content for m in hilo] == original                       # no muta el estado de entrada
     assert CG.contexto_del_modelo([]) == []

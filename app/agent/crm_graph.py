@@ -230,7 +230,8 @@ def contexto_del_modelo(messages: list) -> list:
         if isinstance(m, ToolMessage) and i < ultimo_humano:
             por_llamada = herramienta_de.get(getattr(m, "tool_call_id", None))
             propia = getattr(m, "name", None)
-            if (por_llamada is None and propia is None) or _TOOL_RETENIDA in (por_llamada, propia):
+            # Indeterminable = ningún nombre útil (None o cadena vacía): falla cerrado, se retiene.
+            if not (por_llamada or propia) or _TOOL_RETENIDA in (por_llamada, propia):
                 m = m.model_copy(update={"content": RESULTADO_RETENIDO})
         salida.append(m)
     return salida

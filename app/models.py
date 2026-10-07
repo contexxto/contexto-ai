@@ -208,7 +208,7 @@ class IntencionSesion(Base):
     """Estado ACTUAL de intención por sesión (Migration 018 / Motor de Intención, Fase 0).
 
     Snapshot upserted cada turno con lo que calcula app/intencion.py (estado explicable +
-    score). La llave es session_id = thread_id del agente (qr-{session} / crm-{user}), el
+    score). La llave es session_id = thread_id del agente (qr-{session} / crm-x1v1-{user}…), el
     mismo de chat_sessions (006) y handoff_mensaje. SIN FK dura a chat_sessions para no
     rechazar sesiones ANÓNIMAS (estado 0, que sí queremos medir). Habilita el panel CRM Vivo
     y el handoff en el pico. Fair Housing: 'senales' guarda solo señales transaccionales

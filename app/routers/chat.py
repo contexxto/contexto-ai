@@ -2581,7 +2581,8 @@ async def _historicos_del_dueno(db, session_id: str) -> list[dict]:
 
     UNA AUTORIDAD NUEVA NO AUTORIZA CONTENIDO ANTIGUO. Esto es una costura de compatibilidad de
     lectura para el comprador, no una migración de autoridad: no abre el hilo, no habilita
-    escribir, no llega al corredor y no prueba a qué inmueble pertenecía la conversación. Quién
+    escribir, no se lo entrega al corredor (el Copiloto lee esas filas por su cuenta: residual X-1,
+    xfail D_X1) y no prueba a qué inmueble pertenecía la conversación. Quién
     puede pedirla lo decide quien llama: `estado_handoff`, solo con `Autoridad.OWNER` y `desde == 0`.
 
     Frontera temporal: `handoff_sesion.principal_requested_at`. Un mensaje del hilo exacto es

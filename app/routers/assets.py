@@ -1380,8 +1380,9 @@ async def lead_conversacion(
             # desconocida NO es contenido autorizado para X, aunque la persona pida X después.
             "  AND m.activo_id = CAST(:a AS uuid) "
             # SEC-X2-C1 · UNA AUTORIDAD NUEVA NO AUTORIZA CONTENIDO ANTIGUO: solo lo escrito desde
-            # la solicitud. Lo anterior del mismo hilo es historial del comprador (lo ve él en
-            # `historicos`), y su solicitud nueva no se lo divulga por esta ruta. Sin `creado_en`, fuera.
+            # la solicitud. Lo anterior del mismo hilo es historial del comprador (solo el dueño lo ve, en
+            # `historicos`, si la guarda de inmueble único lo permite), y su solicitud nueva no se lo
+            # divulga por esta ruta. Sin `creado_en`, fuera.
             # (El Copiloto lee el handoff por su cuenta: residual X-1, xfail D_X1.)
             "  AND h.principal_requested_at IS NOT NULL "
             "  AND m.creado_en >= h.principal_requested_at "

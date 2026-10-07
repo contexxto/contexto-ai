@@ -562,6 +562,11 @@ export default function App() {
   // SEC-X2-C1 · historial ANTERIOR del handoff (solo lectura, solo para el dueño). Va aparte a propósito:
   // nunca entra en `messages`, no activa el modo corredor ni habilita escribirle.
   const [historicosHandoff, setHistoricosHandoff] = useState([])
+  // Época de la IDENTIDAD: sube al cerrar sesión o al cambiar de cuenta (también desde otra pestaña).
+  // Una respuesta pedida en otra época no se pinta: el historial solo se entrega al dueño.
+  const historialEpocaRef = useRef(0)
+  const cuentaHistorialRef = useRef(undefined)
+  const sesionAbiertaRef = useRef(null)   // la conversación abierta ahora (la fija la restauración)
   // El interesado pidió volver a hablar con Contexto. Sin esta marca el sondeo lo devolvía
   // al corredor en el siguiente tick: había un candado: entrar un corredor era de una sola
   // dirección y la conversación con el agente quedaba muerta para siempre.
@@ -638,6 +643,14 @@ export default function App() {
       } catch { setRol(null) }
     }
     const onSession = async (s) => {
+      // SEC-X2-C1: si la sesión de la cuenta termina sin pasar por logout() (otra pestaña, token que no
+      // se pudo refrescar) o cambia de cuenta, el historial del dueño anterior no queda en pantalla.
+      const cuenta = s?.user?.id ?? null
+      if (cuentaHistorialRef.current !== undefined && cuentaHistorialRef.current !== cuenta) {
+        historialEpocaRef.current += 1
+        setHistoricosHandoff([])
+      }
+      cuentaHistorialRef.current = cuenta
       setSession(s)
       setAccessToken(s?.access_token)
       setAuthListo(true)   // ya se sabe si hay cuenta: la resolución de sesión puede correr
@@ -708,6 +721,7 @@ export default function App() {
     // revocar el token) y la red está lenta o falla, la UI quedaría congelada.
     setSession(null); setAccessToken(null); setRol(null)
     // SEC-X2-C1: el «Historial anterior» solo se entrega al dueño; no queda en pantalla al salir.
+    historialEpocaRef.current += 1
     setHistoricosHandoff([])
     setView('chat'); setSidebarOpen(false)
     // scope:'local' borra la sesión de este dispositivo sin round-trip global.
@@ -747,6 +761,7 @@ export default function App() {
     // Nueva sesión (o vacía) → resetea el handoff de cámara ANTES de cualquier early-return,
     // para que el 1er mapa haga ease-in y NO vuele desde el encuadre de la sesión anterior.
     mapBboxRef.current = null
+    sesionAbiertaRef.current = sessionId
     // El historial anterior es de ESTA conversación: al cambiar de conversación, se vacía.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setHistoricosHandoff([])
@@ -757,6 +772,7 @@ export default function App() {
     // Una respuesta que llega DESPUÉS de cambiar de conversación no puede pintar el historial anterior
     // de la otra (SEC-X2-C1): solo cuenta mientras esta conversación siga abierta.
     let vigente = true
+    const epoca = historialEpocaRef.current
     axios.get(`${API_BASE}/api/v1/chat/${sessionId}/history`, { headers: apiHeadersSesion(sessionId) })
       .then(({ data }) => {
         if (!data.messages?.length) return
@@ -782,7 +798,7 @@ export default function App() {
             if (h?.activo_id) setHiloActivo(h.activo_id)
             setHilosCorredor(h?.hilos || [])
             // SEC-X2-C1: lo histórico se guarda APARTE; el hilo actual sigue siendo solo `mensajes`.
-            if (vigente) setHistoricosHandoff(historicosDe(h))
+            if (vigente && epoca === historialEpocaRef.current) setHistoricosHandoff(historicosDe(h))
             const hm = h?.mensajes || []
             if (!hm.length) return
             for (const m of hm) handoffSeenRef.current = Math.max(handoffSeenRef.current, m.id)
@@ -828,6 +844,7 @@ export default function App() {
   // - Si no → apertura FRESCA en cápsula (sesión nueva, sin replay del muro viejo).
   const loadFromDeepLink = useCallback(async (id) => {
     const storeKey = 'ctx_qr_' + id
+    const epoca = historialEpocaRef.current   // SEC-X2-C1: vigencia del historial (ver más abajo)
 
     // ¿Conversación con corredor en curso para este inmueble en este dispositivo?
     const prev = localStorage.getItem(storeKey)
@@ -848,8 +865,11 @@ export default function App() {
           for (const m of (h.mensajes || [])) handoffSeenRef.current = Math.max(handoffSeenRef.current, m.id)
           setMessages([...base, ...hmsgs])
           // SEC-X2-C1: lo anterior a la solicitud, aparte y de solo lectura (no entra en `messages`).
-          // Va DESPUÉS del await: el efecto de restauración de la conversación ya vació el anterior.
-          setHistoricosHandoff(historicosDe(h))
+          // Va DESPUÉS del await: el efecto de restauración de la conversación ya vació el anterior. Y
+          // solo si sigue abierta ESTA conversación con la MISMA cuenta (nadie cambió ni salió entretanto).
+          if (sesionAbiertaRef.current === prev && epoca === historialEpocaRef.current) {
+            setHistoricosHandoff(historicosDe(h))
+          }
           setModoCorredor(true)
           return
         }

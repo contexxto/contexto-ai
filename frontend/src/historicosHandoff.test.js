@@ -95,11 +95,12 @@ describe('App.jsx: el historial va aparte y no abre nada', () => {
     expect(app).toContain('setHistoricosHandoff(historicosDe(h))')
     expect(app).toContain('<HistorialAnterior mensajes={historicosHandoff} />')
     // Una respuesta tardía de la conversación anterior no pinta su historial en la nueva.
-    expect(app).toContain('if (vigente) setHistoricosHandoff(historicosDe(h))')
+    expect(app).toContain('if (vigente && epoca === historialEpocaRef.current) setHistoricosHandoff(historicosDe(h))')
     expect(app).toContain('return () => { vigente = false }')
-    // logout y cambio de conversación lo vacían; la restauración y el carril del QR lo cargan.
+    // logout, cambio de cuenta y cambio de conversación lo vacían; la restauración y el carril del QR lo cargan.
     expect(llamadas(app, 'setHistoricosHandoff').sort()).toEqual(['setHistoricosHandoff([])',
-      'setHistoricosHandoff([])', 'setHistoricosHandoff(historicosDe(h))', 'setHistoricosHandoff(historicosDe(h))'])
+      'setHistoricosHandoff([])', 'setHistoricosHandoff([])', 'setHistoricosHandoff(historicosDe(h))',
+      'setHistoricosHandoff(historicosDe(h))'])
   })
 
   it('nunca se mezcla con messages ni con el hilo actual', () => {
@@ -168,13 +169,26 @@ describe('App.jsx: el carril del QR y el cierre de sesión', () => {
   it('cerrar sesión vacía el historial (solo se entrega al dueño)', () => {
     const logout = cuerpo('const logout = useCallback(', '}, [])')
     expect(logout).toContain('setHistoricosHandoff([])')
+    expect(logout).toContain('historialEpocaRef.current += 1')
   })
 
   it('al reanudar por el QR un hilo actual, el historial va aparte y DESPUÉS de cargar la conversación', () => {
     const deeplink = cuerpo('const loadFromDeepLink = useCallback(', 'const abrirLetrero')
     expect(deeplink).toContain('setHistoricosHandoff(historicosDe(h))')
+    expect(deeplink).toContain('if (sesionAbiertaRef.current === prev && epoca === historialEpocaRef.current) {')
     expect(deeplink.indexOf('setHistoricosHandoff(historicosDe(h))'))
       .toBeGreaterThan(deeplink.indexOf('setMessages([...base, ...hmsgs])'))
     for (const c of llamadas(deeplink, 'setMessages')) expect(c).not.toMatch(/historic/i)
+  })
+})
+
+describe('App.jsx: un cambio de cuenta (sin logout) también vacía el historial', () => {
+  it('onSession sube la época y vacía cuando la cuenta cambia o termina', () => {
+    const i = app.indexOf('const onSession = async (s) => {')
+    const cuerpo = app.slice(i, app.indexOf('setSession(s)', i))
+    expect(cuerpo).toContain('const cuenta = s?.user?.id ?? null')
+    expect(cuerpo).toContain('cuentaHistorialRef.current !== cuenta')
+    expect(cuerpo).toContain('historialEpocaRef.current += 1')
+    expect(cuerpo).toContain('setHistoricosHandoff([])')
   })
 })

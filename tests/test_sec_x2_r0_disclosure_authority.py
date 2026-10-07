@@ -1606,6 +1606,9 @@ async def test_D_G2_una_respuesta_cuya_transaccion_empezo_antes_de_la_marca_sigu
     async with Sesion() as db:
         await db.execute(text("SELECT 1"))                    # aquí empieza la transacción del corredor
         assert (await chat.registrar_handoff(sid, activo_id=X))["ok"]   # la persona pide X entretanto
+        assert (await db.execute(text(                        # precondición: now() de esta transacción
+            "SELECT transaction_timestamp() < principal_requested_at FROM handoff_sesion "   # es ANTERIOR
+            "WHERE session_id = :s AND activo_id = CAST(:a AS uuid)"), {"s": sid, "a": X})).scalar() is True
         await A.responder_lead(_peticion(), uuid.UUID(X), sid, A.CorredorMsg(texto="respuesta actual"),
                                DUENO_X, db)
         await db.commit()
@@ -1683,12 +1686,35 @@ async def test_D_G3_un_mensaje_del_comprador_cuya_transaccion_empezo_antes_de_la
         if not pedido:
             await db.execute(text("SELECT 1"))                            # la transacción empieza aquí…
             pedido.append(await chat.registrar_handoff(session_id, activo_id=X))   # …y la marca llega después
+            pedido.append((await db.execute(text(                         # precondición, afirmada abajo
+                "SELECT transaction_timestamp() < principal_requested_at FROM handoff_sesion "
+                "WHERE session_id = :s AND activo_id = CAST(:a AS uuid)"), {"s": session_id, "a": X})).scalar())
         return await original(db, session_id, activo_id, estricto=estricto)
 
     monkeypatch.setattr(chat, "_hilo_de_sesion", _compuerta_tardia)
     await chat.handoff_mensaje_lead(_peticion_con(), sid, chat.HandoffMsg(texto="mensaje actual"), X, COMPRADOR)
     monkeypatch.setattr(chat, "_hilo_de_sesion", original)
-    assert pedido and pedido[0]["ok"]
+    assert pedido[0]["ok"] and pedido[1] is True
     r = await _get(sid, COMPRADOR)
     assert _textos(r["mensajes"]) == ["mensaje actual"]
     assert "mensaje actual" not in _textos(r["historicos"])
+
+
+def test_A20_inventario_cerrado_de_escritores_del_handoff_y_su_sello():
+    """SEC-X2-C1 (2.ª ronda): la frontera temporal compara `creado_en` con la marca. Todo escritor de
+    `handoff_mensaje` en app/ está en esta lista y sella `creado_en` con `clock_timestamp()` (la hora de la
+    escritura), no con el DEFAULT now() (inicio de la transacción, que puede ser anterior a la marca: D_G2,
+    D_G3). Un escritor nuevo pone esto rojo y obliga a decidir su sello."""
+    escritores = {}
+    for py in (RAIZ / "app").rglob("*.py"):
+        for fn in ast.walk(ast.parse(py.read_text(encoding="utf-8"))):
+            if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                sql = " ".join(" ".join(n.value for n in ast.walk(fn) if isinstance(n, ast.Constant)
+                                        and isinstance(n.value, str)).lower().split())
+                if "into handoff_mensaje" in sql:
+                    escritores[f"{py.relative_to(RAIZ).as_posix()}::{fn.name}"] = sql
+    assert set(escritores) == {"app/routers/chat.py::handoff_mensaje_lead",
+                               "app/routers/assets.py::responder_lead"}, set(escritores)
+    for nombre, sql in escritores.items():
+        assert "(session_id, autor, texto, activo_id, creado_en)" in sql, nombre
+        assert "clock_timestamp())" in sql, nombre

@@ -343,7 +343,8 @@ async def test_A6b_reserva_y_marca_en_el_mismo_commit_y_antes_del_envio(monkeypa
     # SEC-X2-EGRESS-R0 (actualización esperada): la marca del comprador es SOLO la de envío.
     i_toc = next(i for i, s in enumerate(sql)
                  if s.lstrip().upper().startswith("UPDATE LEAD_ACTIVIDAD") and "reenganche_enviado_en = now()" in s)
-    assert "reenganche_grupo" not in sql[i_toc] and "reenganche_elegible_en" not in sql[i_toc]
+    asigna = sql[i_toc].split("WHERE")[0]                    # lo que ESCRIBE (la guarda lee grupo)
+    assert "reenganche_grupo" not in asigna and "reenganche_elegible_en" not in asigna
     assert i_res < i_toc
     assert not [c for c in commits_en if i_res < c <= i_toc], "commit entre reserva y marca"
     assert commits_en and commits_en[-1] > i_toc and envios_en and envios_en[0] >= commits_en[-1]

@@ -355,7 +355,7 @@ def test_A4i_el_holdout_no_se_toca():
     fuente = inspect.getsource(cron._escanear_reenganches)
     i_holdout = fuente.index("grupo_holdout(sid, pct)")
     for antes in ("baja_aviso.emitir(sid)", 'if not c["corredor_autorizado"]',
-                  'if not info["email"] and not info["sub"]', 'if not c["elegible_x"]',
+                  'if not c["entregable_corredor"]', 'if not c["elegible_x"]',
                   "intencion_de_sesion(sid, horas_inactividad=horas, activo_id=activo_id)"):
         assert fuente.index(antes) < i_holdout, antes
     assert 'os.getenv("REENGANCHE_HOLDOUT_PCT", "20")' in inspect.getsource(cron._holdout_pct)

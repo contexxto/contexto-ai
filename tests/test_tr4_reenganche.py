@@ -169,6 +169,10 @@ def entorno(monkeypatch):
     # firmado y, sin secreto, no sale (fail-closed). «El job legítimo» de test_7 y test_9b es
     # el de un despliegue CON secreto; la ausencia se prueba en tests/test_tr2_consentimiento.py.
     monkeypatch.setenv("REENGANCHE_BAJA_SECRET", "s" * 48)
+    # SEC-X2-EGRESS-R0 (§7): el barrido solo reserva o enrola con canales ENTREGABLES. El despliegue
+    # legítimo de estos tests tiene sus credenciales (los envíos están interceptados de todos modos).
+    monkeypatch.setattr(notif, "RESEND_API_KEY", "re_prueba")
+    monkeypatch.setattr(notif, "VAPID_PRIVATE_KEY", "vapid-prueba")
     return registro
 
 
@@ -339,7 +343,8 @@ async def test_7_bandera_encendida_el_barrido_hace_lo_de_siempre(monkeypatch, en
     marcas = {tuple(p["ids"]): s for s, p in db.updates_lead_actividad()}
     assert set(marcas) == {("qr-c-1",), ("qr-c-2",)}
     assert "reenganche_grupo = 'tocado'" in marcas[("qr-c-1",)]
-    assert "reenganche_grupo" not in marcas[("qr-c-2",)] and "reenganche_elegible_en" not in marcas[("qr-c-2",)]
+    asigna = marcas[("qr-c-2",)].split("WHERE")[0]          # lo que ESCRIBE (la guarda lee grupo)
+    assert "reenganche_grupo" not in asigna and "reenganche_elegible_en" not in asigna
     assert sorted(e["to"] for e in entorno["email"]) == ["comprador@prueba.test", "corredor@prueba.test"]
     assert len(entorno["push"]) == 2
     assert entorno["intencion_activo"] == [("qr-c-1", "11111111-1111-1111-1111-111111111111"), ("qr-c-2", None)]

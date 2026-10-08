@@ -192,6 +192,15 @@ async def test_D3_con_canal_y_no_grant_la_decision_del_comprador_no_sirve_al_cor
     """La población exacta del viejo DR-15: canal del comprador, grant revocado (NO_GRANT) y hecho X2
     para X. La decisión de sesión entera del comprador SÍ existe (califica por lo hablado de Y), pero
     no puede reutilizarse para el corredor: su elegibilidad es solo la acotada a X, que no califica."""
+    import app.autoridad_reenganche as AR
+    veredictos = []
+    real = AR.autorizar_efecto_reenganche
+
+    async def espia(db, **kw):
+        v = await real(db, **kw)
+        veredictos.append(v.estado)
+        return v
+    monkeypatch.setattr(AR, "autorizar_efecto_reenganche", espia)
     monkeypatch.setattr(chat, "intencion_de_sesion",
                         lambda sid, **k: _intencion_solo_de_sesion_entera(entorno, sid, **k))
     sid, cab = await _sesion(base)
@@ -200,6 +209,7 @@ async def test_D3_con_canal_y_no_grant_la_decision_del_comprador_no_sirve_al_cor
     await _post(sid, cab, consent=False)
     await _pide_corredor(base, sid)
     res = await _barrer(base)
+    assert veredictos == [EstadoAutorizacion.NO_GRANT], "debe ejercer la rama B tras un NO_GRANT real"
     assert sorted(entorno["intencion_activo"], key=str) == sorted([(sid, None), (sid, ACTIVO)], key=str)
     _silencio(res, entorno)
     assert await _marcas(base, sid) == SIN_MARCA
@@ -434,6 +444,72 @@ async def test_O_un_cierre_durante_el_barrido_no_marca_ni_cuenta_para_el_corredo
     assert (await _marcas(base, otro))[0] == "tocado"
 
 
+def _escribe_a_mitad(monkeypatch, base, sid, sentencia, *, acotada):
+    """Otra sesión escribe `sentencia` sobre la fila de `sid` MIENTRAS el barrido evalúa ese lead (en la
+    llamada a la intención acotada, o en la de sesión entera si `acotada` es False)."""
+    from sqlalchemy import text
+    doble = chat.intencion_de_sesion
+
+    async def a_mitad(s, horas_inactividad=None, activo_id=None):
+        if s == sid and (activo_id is not None) is acotada:
+            async with base() as db2:
+                await db2.execute(text(sentencia), {"s": sid})
+                await db2.commit()
+        return await doble(s, horas_inactividad=horas_inactividad, activo_id=activo_id)
+    monkeypatch.setattr(chat, "intencion_de_sesion", a_mitad)
+
+
+@pg
+async def test_O2_un_efecto_concurrente_sobre_la_fila_no_deja_un_segundo_efecto_al_corredor(
+        monkeypatch, base, entorno):
+    """Un barrido concurrente ya dio a este lead su dosis (enviado_en) después de que este lo leyó:
+    la marca tocado vuelve a comprobar la fila, así que el corredor ni lo marca ni lo cuenta."""
+    sid = "egr-o2"
+    await _dormida(base, sid)
+    await _pide_corredor(base, sid)
+    _escribe_a_mitad(monkeypatch, base, sid,
+                     "UPDATE lead_actividad SET reenganche_enviado_en = now() WHERE session_id = :s",
+                     acotada=True)
+    res = await _barrer(base)
+    assert res["corredores"] == 0 and res["disparados"] == 0
+    assert _al_corredor(entorno) == ([], [])
+    grupo, elegible, _ = await _marcas(base, sid)
+    assert grupo is None and elegible is None, "el experimento marcó una fila que ya tenía su efecto"
+
+
+@pg
+async def test_O3_un_cierre_durante_el_barrido_tampoco_deja_un_holdout(monkeypatch, base, entorno):
+    """La guarda vale también para el control: un holdout no se asigna a una fila cerrada a mitad."""
+    sid = "egr-o3"
+    _reparto(monkeypatch, entorno, {sid})
+    await _dormida(base, sid)
+    await _pide_corredor(base, sid)
+    _escribe_a_mitad(monkeypatch, base, sid,
+                     "UPDATE lead_actividad SET reenganche_cerrado_en = now() WHERE session_id = :s",
+                     acotada=True)
+    res = await _barrer(base)
+    assert res["holdout"] == 0 and entorno["email"] == [] and entorno["push"] == []
+    grupo, elegible, enviado = await _marcas(base, sid)
+    assert (grupo, elegible, enviado) == SIN_MARCA
+
+
+@pg
+async def test_P_si_la_fila_del_comprador_cambia_a_mitad_se_deshace_todo(monkeypatch, base, entorno):
+    """Otro barrido asignó la fila del comprador al experimento después de leerla. Su grant ya está
+    reservado en esta transacción: se deshace TODO (el grant vuelve), no sale nada y la fila queda
+    como la dejó el otro. Un efecto del comprador no se suma a una observación del experimento."""
+    sid, _ = await _lead_con_grant(base)
+    _escribe_a_mitad(monkeypatch, base, sid,
+                     "UPDATE lead_actividad SET reenganche_grupo = 'holdout', "
+                     "reenganche_elegible_en = now() WHERE session_id = :s", acotada=False)
+    res = await _barrer(base)
+    assert res["comprador"] == 0 and res["disparados"] == 0
+    assert entorno["email"] == [] and entorno["push"] == []
+    grupo, elegible, enviado = await _marcas(base, sid)
+    assert grupo == "holdout" and enviado is None
+    assert all(g["used_at"] is None for g in await _grants_completos(base, sid)), "el grant se consumió"
+
+
 # ── R · la semántica REAL ───────────────────────────────────────────────────────────────
 
 class _GrafoConIntencion:
@@ -592,6 +668,7 @@ async def test_S5_si_el_commit_falla_no_sale_ningun_aviso(entorno):
     res = await cron.escanear_reenganches(db)
     assert entorno["email"] == [] and entorno["push"] == []
     assert res["comprador"] == 0 and res["corredores"] == 0 and db.rollbacks >= 1
+    assert res["disparados"] == 0 and res["holdout"] == 0, "el resumen no informa disparos que no ocurrieron"
 
 
 async def test_S6_las_marcas_van_en_un_solo_commit(entorno):
@@ -691,6 +768,60 @@ async def test_S9_ningun_aviso_al_comprador_sin_su_grant_consumido_en_el_mismo_c
         if "?baja=" in p["url"]:
             sid = baja.verificar(p["url"].split("?baja=", 1)[1])
             assert (sid, "PUSH") in db.confirmado, f"push a {sid} sin su grant consumido"
+
+
+@pytest.mark.parametrize("acotada", ["lanza", "caliente"])
+async def test_S12_si_la_acotada_falla_o_no_califica_no_hay_respaldo_de_sesion_entera(
+        monkeypatch, entorno, acotada):
+    """§4: «If the scoped semantics do not produce an eligible reengagement: silence. Do not fall
+    back to session-wide intent». Ni cuando la llamada acotada lanza, ni cuando trae turnos pero
+    no califica (caliente); la de sesión entera, que sí calificaría, no se usa para el corredor."""
+    async def intencion(sid, horas_inactividad=None, activo_id=None):
+        entorno["intencion_activo"].append((sid, activo_id))
+        if activo_id is None:
+            return {"turnos": 6, "nivel": "tibio", "estado": "dormido", "senales": {"precio": True}}
+        if acotada == "lanza":
+            raise RuntimeError("checkpointer caído")
+        return {"turnos": 3, "nivel": "caliente", "estado": "intencion", "handoff_sugerido": True,
+                "senales": {"corredor": True, "precio": True}}
+    monkeypatch.setattr(chat, "intencion_de_sesion", intencion)
+    db = BaseEspia([_dormido("s12", pidio_corredor=True)])
+    res = await cron.escanear_reenganches(db)
+    assert entorno["intencion_activo"] == [("s12", "11111111-1111-1111-1111-111111111111")]
+    _silencio(res, entorno)
+    assert db.updates_lead_actividad() == []
+
+
+@pytest.mark.parametrize("falta", ["RESEND_API_KEY", "VAPID_PRIVATE_KEY"])
+async def test_S10_sin_credencial_de_un_canal_del_comprador_no_se_reserva_ni_se_marca(monkeypatch, entorno, falta):
+    """§7: «si faltan los prerrequisitos de entrega: sin marca, sin consumo del grant, sin efecto».
+    Al comprador (con grant en sus dos canales) le falta la credencial de UNO en el servidor: la
+    frontera se consulta sin reservar, el lead queda intacto y tampoco cae al corredor."""
+    import app.notifications as notif
+    monkeypatch.setattr(notif, falta, None)
+    db = BaseEspia([_dormido("s10", consentido=True, pidio_corredor=True)])
+    res = await cron.escanear_reenganches(db)
+    _silencio(res, entorno)
+    assert db.updates_lead_actividad() == []
+    assert not [s for s, _ in db.sentencias if "UPDATE consent_grant" in s], "se consumió un grant"
+
+
+async def test_S11_sin_credencial_del_canal_del_corredor_no_hay_experimento(monkeypatch, entorno):
+    """El corredor solo tiene correo y el servidor no tiene RESEND_API_KEY: no hay canal entregable,
+    así que no hay tratamiento posible ni control válido. Control: con la credencial, sí entra."""
+    import app.notifications as notif
+
+    async def solo_correo(db, activo_id):
+        return "corredor@prueba.test", []
+    monkeypatch.setattr(chat, "_corredor_de_activo", solo_correo)
+    monkeypatch.setattr(notif, "RESEND_API_KEY", None)
+    db = BaseEspia([_dormido("s11", pidio_corredor=True)])
+    res = await cron.escanear_reenganches(db)
+    _silencio(res, entorno)
+    assert entorno["intencion_activo"] == [] and db.updates_lead_actividad() == []
+    monkeypatch.setattr(notif, "RESEND_API_KEY", "re_prueba")
+    res = await cron.escanear_reenganches(BaseEspia([_dormido("s11", pidio_corredor=True)]))
+    assert res["corredores"] == 1 and entorno["holdout"] == ["s11"]
 
 
 async def test_S3_el_lead_sin_hecho_no_se_reparte_aunque_el_hash_diga_holdout(monkeypatch, entorno):

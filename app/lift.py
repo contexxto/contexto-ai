@@ -12,10 +12,16 @@ auto-reportándose = circular). Reglas de oro:
   - Los resultados solo cuentan leads MADUROS (≥N días o handoff alcanzado); los censurados ('en vuelo',
     aún no terminan su recorrido) se reportan aparte, nunca promediados.
   - El holdout (grupo_holdout) es el contrafactual: sin él, la reactivación es correlación con narrativa.
+  - SEC-X2-LIFT-SCOPE-R0 · la observación de actividad se identifica por el par EXACTO
+    (session_id, activo_id). PERSON/SESSION CONTINUITY ≠ ASSET-SCOPED METRIC MEMBERSHIP: una fila de
+    `lead_actividad` creada para el inmueble X nunca altera la métrica de Y, aunque la sesión sea la
+    misma. Sin inmueble exacto no hay observación (falla cerrado): nada se infiere del prefijo `qr-`
+    ni del «último inmueble» de la sesión.
 """
 from __future__ import annotations
 
 import hashlib
+import uuid
 from datetime import datetime, timedelta, timezone
 
 # Un lead se considera "maduro" (su desenlace ya es interpretable) a los N días de su primera
@@ -72,32 +78,64 @@ def tasa_o_estado(numerador: int, denominador: int, umbral: int = UMBRAL_N) -> d
     return {"n": numerador, "de": denominador, "tasa": round(numerador / denominador, 3), "status": "listo"}
 
 
-def resumen_lift(leads: list[dict], actividad_por_sid: dict[str, dict], ahora: datetime,
+def par_observacion(session_id, activo_id) -> tuple[str, str] | None:
+    """LA identidad de una observación de actividad de la métrica: el par EXACTO
+    (session_id, activo_id canónico). Sin sesión, o sin un inmueble UUID válido, devuelve None: esa
+    observación no entra a ninguna métrica acotada por inmueble (falla cerrado). No se infiere el
+    inmueble del prefijo `qr-` ni de otra fila de la sesión."""
+    if not isinstance(session_id, str) or not session_id or activo_id is None:
+        return None
+    try:
+        return session_id, str(uuid.UUID(str(activo_id)))
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
+def resumen_lift(leads: list[dict], actividad_por_par: dict[tuple[str, str], dict], ahora: datetime,
                  *, umbral: int = UMBRAL_N, dias: int = DIAS_MADUREZ) -> dict:
     """Métrica de lift, unidad = LEAD, anclada a evento. Puro.
 
-    leads: un dict por lead (unidad correcta), con al menos {session_id, estado, handoff:bool}.
-    actividad_por_sid: {session_id: {primera_actividad, ultima_actividad, reenganche_grupo,
-                        reenganche_elegible_en}} (de lead_actividad).
+    leads: un dict por lead (unidad correcta), con al menos {session_id, activo_id, estado,
+           handoff:bool}. El lead es (sesión, INMUEBLE): la misma sesión interesada en X y en Y son
+           dos leads, cada uno con su propia observación.
+    actividad_por_par: {(session_id, activo_id): {primera_actividad, ultima_actividad,
+                        reenganche_grupo, reenganche_elegible_en}} — la fila de lead_actividad del par
+                        EXACTO (SEC-X2-LIFT-SCOPE-R0). Indexar por session_id solo es un error de
+                        contrato (TypeError), no una métrica silenciosamente contaminada.
     ahora: datetime de referencia (inyectado para testeabilidad).
     """
+    if any(not (isinstance(k, tuple) and len(k) == 2) for k in actividad_por_par):
+        raise TypeError("actividad_por_par se indexa por (session_id, activo_id), nunca por session_id solo")
+    observaciones: dict[tuple[str, str], dict] = {}
+    for (sid, activo), fila in actividad_por_par.items():
+        par = par_observacion(sid, activo)
+        if par is not None:
+            observaciones[par] = fila
+
     total = len(leads)
     con_handoff = sum(1 for l in leads if l.get("handoff"))
 
     funnel: dict[str, int] = {}
     maduros = en_vuelo = 0
+    pares: dict[tuple[str, str], None] = {}     # pares únicos, en orden de aparición
     for l in leads:
         funnel[l["estado"]] = funnel.get(l["estado"], 0) + 1
-        act = actividad_por_sid.get(l.get("session_id"), {})
+        par = par_observacion(l.get("session_id"), l.get("activo_id"))
+        act = observaciones.get(par, {}) if par is not None else {}
         if es_maduro(act.get("primera_actividad"), bool(l.get("handoff")), ahora, dias):
             maduros += 1
         else:
             en_vuelo += 1
+        if par is not None:
+            pares.setdefault(par)
 
-    # Reenganche: reactivación tocado vs holdout, SOLO entre los que se volvieron elegibles.
+    # Reenganche: reactivación tocado vs holdout, SOLO entre los que se volvieron elegibles. Una vez por
+    # par (lead, inmueble) del corredor, con la observación de ESE par: ni filas de otro inmueble de la
+    # misma sesión, ni filas sin inmueble, ni filas que ningún lead de esta métrica identifica.
     grupos = {"tocado": {"n": 0, "reactivados": 0}, "holdout": {"n": 0, "reactivados": 0}}
-    for act in actividad_por_sid.values():
-        if not act.get("reenganche_elegible_en"):
+    for par in pares:
+        act = observaciones.get(par)
+        if not act or not act.get("reenganche_elegible_en"):
             continue
         g = act.get("reenganche_grupo") or "tocado"
         if g not in grupos:
@@ -124,6 +162,9 @@ def resumen_lift(leads: list[dict], actividad_por_sid: dict[str, dict], ahora: d
             "_ancla": "evento: actividad después de volverse elegible (volvió), no Δscore",
             "_lectura": "tocado vs holdout — sin diferencia sostenida al madurar, el touch automático "
                         "no está causando la reactivación (regresión a la media / vuelta espontánea)",
+            "_alcance": "observación por par exacto (sesión, inmueble): la fila de otro inmueble de la misma "
+                        "sesión no cuenta, ni la que no tiene inmueble. Las cifras previas a "
+                        "SEC-X2-LIFT-SCOPE-R0 pueden incluir filas de otro inmueble: no son comparables",
         },
         "funnel": funnel,
         "cohortes": {

@@ -1194,24 +1194,37 @@ async def metricas_lift(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                             detail="Las métricas del piloto son para corredores/inmobiliarias.")
     from datetime import datetime, timezone
-    from app.lift import resumen_lift
+    from app.lift import par_observacion, resumen_lift
     from app.routers.chat import ensure_lead_actividad
 
     leads = await _leads_del_corredor(db, user.user_id, user.agency_id)
-    # Unidad de la métrica = session_id. _leads_del_corredor deduplica por device (1 lead por dispositivo);
-    # asume 1 sid = 1 device (cierto hoy: el sid es determinista por (activo, device)). Si un device
-    # generara >1 sid, un lead marcado con grupo podría no entrar en 'sids'. Deuda latente documentada.
+    # Unidad de la métrica = LEAD = (session_id, activo_id): la misma sesión interesada en dos inmuebles
+    # son dos leads. _leads_del_corredor deduplica por device DENTRO de cada inmueble (1 lead por
+    # dispositivo); asume 1 sid = 1 device (cierto hoy: el sid es determinista por (activo, device)).
     sids = [l["session_id"] for l in leads if l.get("session_id")]
-    actividad_por_sid: dict[str, dict] = {}
-    if sids:
+    # SEC-X2-LIFT-SCOPE-R0 · la observación de actividad de cada lead es la fila de lead_actividad de SU
+    # par EXACTO. Antes se leía por session_id solo: la fila de la sesión creada para el inmueble X
+    # (grupo y elegibilidad de SU experimento) entraba al lift del corredor de Y cuando esa sesión era
+    # también lead de Y. Un lead sin inmueble exacto no tiene observación (falla cerrado), y una fila con
+    # activo_id NULL no coincide con ningún par: nada se infiere del prefijo `qr-` ni del último inmueble.
+    pares = sorted({p for p in (par_observacion(l.get("session_id"), l.get("activo_id")) for l in leads)
+                    if p is not None})
+    actividad_por_par: dict[tuple[str, str], dict] = {}
+    if pares:
         try:
             await ensure_lead_actividad(db)
             filas = (await db.execute(
-                text("SELECT session_id, primera_actividad, ultima_actividad, "
-                     "       reenganche_grupo, reenganche_elegible_en "
-                     "FROM lead_actividad WHERE session_id = ANY(:ids)"),
-                {"ids": sids})).mappings().all()
-            actividad_por_sid = {r["session_id"]: dict(r) for r in filas}
+                text("SELECT la.session_id, la.activo_id::text AS activo_id, la.primera_actividad, "
+                     "       la.ultima_actividad, la.reenganche_grupo, la.reenganche_elegible_en "
+                     "FROM lead_actividad la "
+                     "JOIN unnest(CAST(:sids AS text[]), CAST(CAST(:aids AS text[]) AS uuid[])) "
+                     "     AS par(session_id, activo_id) "
+                     "  ON la.session_id = par.session_id AND la.activo_id = par.activo_id"),
+                {"sids": [p[0] for p in pares], "aids": [p[1] for p in pares]})).mappings().all()
+            for r in filas:
+                par = par_observacion(r["session_id"], r["activo_id"])
+                if par is not None:
+                    actividad_por_par[par] = dict(r)
         except Exception:  # noqa: BLE001 — sin actividad aún no debe romper la métrica
             await db.rollback()
     # ── Funnel por RECORRIDO: el PICO de intención alcanzado (historial persistido en
@@ -1234,10 +1247,10 @@ async def metricas_lift(
         except Exception:  # noqa: BLE001 — sin historial aún → cae al estado vivo, no rompe la métrica
             await db.rollback()
     # Unidad = LEAD; estado = pico alcanzado (historial) o el vivo de respaldo; handoff es EVENTO.
-    leads_u = [{"session_id": l.get("session_id"),
+    leads_u = [{"session_id": l.get("session_id"), "activo_id": l.get("activo_id"),
                 "estado": pico_por_sid.get(l.get("session_id")) or l.get("estado"),
                 "handoff": bool(l.get("handoff_estado"))} for l in leads]
-    out = resumen_lift(leads_u, actividad_por_sid, datetime.now(timezone.utc))
+    out = resumen_lift(leads_u, actividad_por_par, datetime.now(timezone.utc))
     out["_funnel_fuente"] = ("recorrido: pico de intención alcanzado, del historial persistido "
                              "(intencion_evento, Fase 0); estado actual en vivo como respaldo")
     out["_transiciones_registradas"] = len(pico_por_sid)

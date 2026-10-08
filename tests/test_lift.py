@@ -78,22 +78,27 @@ def test_tasa_lista_con_n_suficiente():
 
 
 # ── resumen_lift: unidad = lead, handoff = evento, holdout como contrafactual ─
+# SEC-X2-LIFT-SCOPE-R0 (actualización esperada): el lead es (sesión, inmueble) y la observación de
+# actividad se indexa por el par EXACTO, nunca por la sesión sola (tests/test_sec_x2_lift_scope.py).
+A = "11111111-1111-1111-1111-111111111111"
+
+
 def test_resumen_lift_escenario():
     leads = [
-        {"session_id": "s1", "estado": "intencion", "handoff": True},    # pidió corredor
-        {"session_id": "s2", "estado": "enganchado", "handoff": False},  # en vuelo (reciente)
-        {"session_id": "s3", "estado": "dormido", "handoff": False},     # tocado, reactivó
-        {"session_id": "s4", "estado": "dormido", "handoff": False},     # holdout, no reactivó
+        {"session_id": "s1", "activo_id": A, "estado": "intencion", "handoff": True},    # pidió corredor
+        {"session_id": "s2", "activo_id": A, "estado": "enganchado", "handoff": False},  # en vuelo (reciente)
+        {"session_id": "s3", "activo_id": A, "estado": "dormido", "handoff": False},     # tocado, reactivó
+        {"session_id": "s4", "activo_id": A, "estado": "dormido", "handoff": False},     # holdout, no reactivó
     ]
     actividad = {
-        "s1": {"primera_actividad": _hace(dias=10), "ultima_actividad": _hace(dias=1),
-               "reenganche_grupo": None, "reenganche_elegible_en": None},
-        "s2": {"primera_actividad": _hace(dias=1), "ultima_actividad": _hace(dias=1),
-               "reenganche_grupo": None, "reenganche_elegible_en": None},
-        "s3": {"primera_actividad": _hace(dias=20), "ultima_actividad": _hace(dias=1),
-               "reenganche_grupo": "tocado", "reenganche_elegible_en": _hace(dias=5)},
-        "s4": {"primera_actividad": _hace(dias=20), "ultima_actividad": _hace(dias=6),
-               "reenganche_grupo": "holdout", "reenganche_elegible_en": _hace(dias=5)},
+        ("s1", A): {"primera_actividad": _hace(dias=10), "ultima_actividad": _hace(dias=1),
+                    "reenganche_grupo": None, "reenganche_elegible_en": None},
+        ("s2", A): {"primera_actividad": _hace(dias=1), "ultima_actividad": _hace(dias=1),
+                    "reenganche_grupo": None, "reenganche_elegible_en": None},
+        ("s3", A): {"primera_actividad": _hace(dias=20), "ultima_actividad": _hace(dias=1),
+                    "reenganche_grupo": "tocado", "reenganche_elegible_en": _hace(dias=5)},
+        ("s4", A): {"primera_actividad": _hace(dias=20), "ultima_actividad": _hace(dias=6),
+                    "reenganche_grupo": "holdout", "reenganche_elegible_en": _hace(dias=5)},
     }
     r = resumen_lift(leads, actividad, AHORA, umbral=5)
 

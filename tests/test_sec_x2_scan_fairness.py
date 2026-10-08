@@ -67,6 +67,8 @@ class _Espia:
     def __init__(self, db, antes_de_pagina=None):
         self._db, self._gancho = db, antes_de_pagina
         self.paginas: list[tuple[str, dict, list]] = []
+        self.cortes: list = []          # el `corte` que devolvió cada página (None si vino vacía)
+        self.orden: list[str] = []      # 'pagina' | 'reserva' | 'otra', en el orden en que se ejecutaron
         self.sentencias = 0
 
     async def execute(self, stmt, params=None):
@@ -77,7 +79,10 @@ class _Espia:
                 await self._gancho(len(self.paginas), self._db)
             filas = (await self._db.execute(stmt, params)).mappings().all()
             self.paginas.append((sql, dict(params or {}), [f["session_id"] for f in filas]))
+            self.cortes.append(filas[0]["corte"] if filas else None)
+            self.orden.append("pagina")
             return _Filas(filas)
+        self.orden.append("reserva" if "UPDATE consent_grant" in sql else "otra")
         return await self._db.execute(stmt, params)
 
     async def commit(self):
@@ -114,16 +119,27 @@ async def _viejas(Sesion, n, prefijo, *, dias=60, email=False, mismo_instante=Fa
 
 
 async def _huella(Sesion, excluir=()) -> tuple:
-    """Huella de TODO `lead_actividad` y `consent_grant` salvo las sesiones excluidas: cualquier escritura en una
-    fila descartada (marca, grupo, elegible, envío, cierre, «visto», grant consumido) la cambia."""
+    """Huella de `lead_actividad`, `consent_grant` y `handoff_sesion` salvo las sesiones excluidas. Lleva el
+    CONTENIDO y el `xmin` de cada fila: cualquier escritura en una fila descartada —también una que no cambie el
+    valor (`SET x = x`), o una marca de «visto» en el hecho X2— la cambia."""
     async with Sesion() as db:
         la = (await db.execute(text(
-            "SELECT md5(coalesce(string_agg(t::text, '|' ORDER BY session_id), '')) FROM lead_actividad t "
-            "WHERE NOT (session_id = ANY(:x))"), {"x": list(excluir)})).scalar()
+            "SELECT md5(coalesce(string_agg(t::text || t.xmin::text, '|' ORDER BY session_id), '')) "
+            "FROM lead_actividad t WHERE NOT (session_id = ANY(:x))"), {"x": list(excluir)})).scalar()
         cg = (await db.execute(text(
-            "SELECT md5(coalesce(string_agg(g::text, '|' ORDER BY grant_id), '')) FROM consent_grant g "
-            "WHERE NOT (session_id = ANY(:x))"), {"x": list(excluir)})).scalar()
-    return la, cg
+            "SELECT md5(coalesce(string_agg(g::text || g.xmin::text, '|' ORDER BY grant_id), '')) "
+            "FROM consent_grant g WHERE NOT (session_id = ANY(:x))"), {"x": list(excluir)})).scalar()
+        hs = None
+        if (await db.execute(text("SELECT to_regclass('handoff_sesion') IS NOT NULL"))).scalar():
+            hs = (await db.execute(text(
+                "SELECT md5(coalesce(string_agg(h::text || h.xmin::text, '|' ORDER BY session_id, activo_id), '')) "
+                "FROM handoff_sesion h WHERE NOT (session_id = ANY(:x))"), {"x": list(excluir)})).scalar()
+    return la, cg, hs or md5_vacio()
+
+
+def md5_vacio() -> str:
+    import hashlib
+    return hashlib.md5(b"").hexdigest()
 
 
 async def _marcas(Sesion, sid) -> tuple:
@@ -180,6 +196,9 @@ async def test_B_quinientas_descartadas_y_la_501_autorizada(base, entorno):
     assert not await _sin_uso(base, comprador), "el grant del comprador alcanzado no se consumió"
     assert await _huella(base, excluir=[comprador]) == antes, "las filas 1-500 cambiaron"
     assert [len(p[2]) for p in espia.paginas] == [200, 200, 101]
+    # TODAS las páginas se leen antes de la primera reserva TR-5: ningún grant queda bloqueado mientras se lee.
+    assert "reserva" in espia.orden
+    assert max(i for i, o in enumerate(espia.orden) if o == "pagina") < espia.orden.index("reserva")
 
 
 @pg
@@ -213,20 +232,31 @@ async def test_D_varias_paginas_de_no_grant_y_el_candidato_del_corredor_se_inspe
 
 @pg
 async def test_E_lo_descartado_no_recibe_ninguna_escritura(monkeypatch, base, entorno):
-    """Caso E. Sin canal, NO_GRANT, una fila con handoff SIN la marca de la persona (histórica): todo se lee, nada
-    se escribe. Ni lead_actividad ni consent_grant cambian."""
+    """Caso E. Sin canal, NO_GRANT, una fila con handoff SIN la marca de la persona (histórica) y una con el hecho
+    X2 y canal del corredor pero NO elegible (la población real de la rama del corredor hoy, EG.6): todo se lee,
+    nada se escribe. Ni lead_actividad, ni consent_grant, ni handoff_sesion cambian (contenido ni xmin)."""
     monkeypatch.setattr(cron, "_PAGINA", 2)
     await _viejas(base, 3, "e-sin-canal-")
     await _viejas(base, 3, "e-nogrant-", dias=50, email=True)
-    historica = "e-historica"
-    await _dormida(base, historica)
+    historica, no_elegible = "e-historica", "e-x2-no-elegible"
+    for sid in (historica, no_elegible):
+        await _dormida(base, sid)
     await _pide_corredor(base, historica, marca=False)
+    await _pide_corredor(base, no_elegible)
+    doble = chat.intencion_de_sesion
+
+    async def intencion(sid, horas_inactividad=None, activo_id=None):
+        r = await doble(sid, horas_inactividad=horas_inactividad, activo_id=activo_id)   # queda registrada
+        return {} if (sid == no_elegible and activo_id) else r   # la semántica acotada a X no califica
+    monkeypatch.setattr(chat, "intencion_de_sesion", intencion)
+    async with base() as db:
+        await chat.ensure_handoff_tables(db)
     antes = await _huella(base)
     res, espia = await _barrer(base)
-    assert res.get("disparados", 0) == 0 and res.get("holdout", 0) == 0 and res["escaneados"] == 7
+    assert res.get("disparados", 0) == 0 and res.get("holdout", 0) == 0 and res["escaneados"] == 8
     assert entorno["email"] == [] and entorno["push"] == [] and entorno["holdout"] == []
     assert await _huella(base) == antes, "una fila descartada recibió una escritura"
-    assert len(espia.paginas) == 4
+    assert [len(p[2]) for p in espia.paginas] == [2, 2, 2, 2, 0]
 
 
 @pg
@@ -239,6 +269,35 @@ async def test_F_presupuesto_tres_y_cien_filas_sin_efecto_delante(monkeypatch, b
     compradores = [(await _lead_con_grant(base))[0] for _ in range(3)]
     res, _ = await _barrer(base)
     assert res["comprador"] == 3
+    for sid in compradores:
+        assert (await _fila(base, sid))["reenganche_enviado_en"] is not None
+
+
+@pg
+async def test_F2_el_presupuesto_no_lo_gastan_no_grant_ni_corredores_no_elegibles(monkeypatch, base, entorno):
+    """Caso F con lo descartado que SÍ llega a las puertas: 100 NO_GRANT (correo sin grant: la frontera responde
+    NO_GRANT) y 5 con el hecho X2 y canal del corredor pero no elegibles (la rama del corredor hoy, EG.6). Con
+    presupuesto 3, los 3 compradores autorizados de después reciben. Si lo descartado gastara presupuesto, la
+    inanición volvería —ya no en la lectura, sino en los efectos—."""
+    monkeypatch.setenv("REENGANCHE_CRON_LIMITE", "3")
+    monkeypatch.setattr(cron, "_PAGINA", 20)
+    no_grant = await _viejas(base, 100, "f2-nogrant-", email=True)
+    no_elegibles = [f"f2-x2-{i}" for i in range(5)]
+    for i, sid in enumerate(no_elegibles):
+        await _dormida(base, sid)
+        await _pide_corredor(base, sid)
+        await _envejecer(base, sid, 40 - i)
+    compradores = [(await _lead_con_grant(base))[0] for _ in range(3)]
+    doble = chat.intencion_de_sesion
+
+    async def intencion(sid, horas_inactividad=None, activo_id=None):
+        r = await doble(sid, horas_inactividad=horas_inactividad, activo_id=activo_id)   # queda registrada
+        return {} if (sid in no_elegibles and activo_id) else r   # la semántica acotada a X no califica
+    monkeypatch.setattr(chat, "intencion_de_sesion", intencion)
+    res, _ = await _barrer(base)
+    assert set(no_grant) <= set(entorno["intencion"]), "las NO_GRANT no llegaron a la decisión"
+    assert all((sid, ACTIVO) in entorno["intencion_activo"] for sid in no_elegibles)
+    assert res["comprador"] == 3 and res.get("corredores", 0) == 0
     for sid in compradores:
         assert (await _fila(base, sid))["reenganche_enviado_en"] is not None
 
@@ -295,44 +354,54 @@ async def test_I_empates_de_ultima_actividad_en_el_borde_de_pagina(monkeypatch, 
 
 @pg
 async def test_J_el_cursor_avanza_por_la_ultima_fila_leida_aunque_se_descarte(monkeypatch, base, entorno):
-    """Caso J. La última fila de cada página es una DESCARTADA (NO_GRANT): la página siguiente empieza después de
-    ella, no vuelve a aparecer, y el comprador del final se alcanza."""
+    """Caso J. La última fila de la página 1 es una DESCARTADA SIN CANAL, precedida por dos con correo (NO_GRANT):
+    la página siguiente empieza después de ELLA —la última leída, no la última con canal ni la última elegible—,
+    no vuelve a aparecer, y el comprador del final se alcanza."""
     monkeypatch.setattr(cron, "_PAGINA", 3)
-    descartadas = await _viejas(base, 5, "j-nogrant-", email=True)
+    con_correo = await _viejas(base, 2, "j-a-nogrant-", dias=60, email=True)
+    sin_canal = await _viejas(base, 1, "j-b-sincanal-", dias=59)
+    despues = await _viejas(base, 2, "j-c-nogrant-", dias=58, email=True)
     comprador, _ = await _lead_con_grant(base)
     res, espia = await _barrer(base)
     p1, p2 = espia.paginas[0][2], espia.paginas[1][2]
-    assert p1[-1] == descartadas[2] and p1[-1] not in p2
-    assert p2[0] == descartadas[3]
-    assert sorted(s for s in entorno["intencion"] if s in descartadas) == descartadas   # una vez cada una
+    assert p1 == con_correo + sin_canal and sin_canal[0] not in p2
+    assert p2[0] == despues[0]
+    evaluadas = [s for s in entorno["intencion"] if s in con_correo + despues]
+    assert sorted(evaluadas) == sorted(con_correo + despues), "una fila se evaluó dos veces o ninguna"
     assert res["comprador"] == 1
 
 
 @pg
 async def test_K_un_solo_corte_temporal_para_todas_las_paginas(monkeypatch, base, entorno):
-    """Caso K. Entre la página 1 y la 2 pasa el tiempo y la transacción termina (otra conexión del pooler, un
+    """Caso K. Entre la página 2 y la 3 pasa el tiempo y la transacción termina (otra conexión del pooler, un
     rollback de una lectura): `now()` cambia. Una fila que NO estaba dormida al empezar (cruza las 48 h durante el
-    barrido) no entra: el universo es el del corte capturado una vez."""
+    barrido) no entra: el universo es el del corte capturado una vez, y TODAS las páginas siguientes usan ese
+    mismo corte —el que devolvió la primera—.
+
+    Margen: la fila tardía queda 20 s por encima del corte inicial y el gancho espera 25 s. Un falso rojo exigiría
+    más de 20 s entre su INSERT y la primera página; un falso verde es imposible (25 > 20)."""
     monkeypatch.setattr(cron, "_PAGINA", 2)
-    await _viejas(base, 3, "k-vieja-", email=True)
+    await _viejas(base, 5, "k-vieja-", email=True)
     tardia = "k-tardia"
     async with base() as db:
         await db.execute(text(
             "INSERT INTO lead_actividad (session_id, activo_id, ultima_actividad, lead_email) "
-            "VALUES (:s, CAST(:a AS uuid), now() - interval '48 hours' + interval '3 seconds', 'k@ejemplo.invalid')"),
+            "VALUES (:s, CAST(:a AS uuid), now() - interval '48 hours' + interval '20 seconds', 'k@ejemplo.invalid')"),
             {"s": tardia, "a": ACTIVO})
         await db.commit()
 
     async def entre_paginas(i, db):
-        if i == 1:
+        if i == 2:
             await db.commit()               # fin de la transacción: el próximo now() es otro
-            await asyncio.sleep(5)          # la fila tardía ya cruzó las 48 h
+            await asyncio.sleep(25)         # la fila tardía ya cruzó las 48 h
     res, espia = await _barrer(base, entre_paginas)
     leidas = [s for p in espia.paginas for s in p[2]]
+    assert len(espia.paginas) >= 3, "el universo no llegó a la 3.ª página: la prueba no mide nada"
     assert tardia not in leidas and tardia not in entorno["intencion"], "el universo avanzó durante el recorrido"
-    siguientes = [p for p in espia.paginas[1:]]
-    assert siguientes and all("now()" not in sql and ":corte" in sql for sql, _, _ in siguientes)
-    assert len({str(params["corte"]) for _, params, _ in siguientes}) == 1
+    siguientes = espia.paginas[1:]
+    assert all("now()" not in sql and ":corte" in sql for sql, _, _ in siguientes)
+    assert {str(params["corte"]) for _, params, _ in siguientes} == {str(espia.cortes[0])}, \
+        "una página siguiente no usó el corte que devolvió la primera"
 
 
 @pg
@@ -450,11 +519,19 @@ async def test_P_un_error_de_autoridad_no_bloquea_ni_gasta_presupuesto(monkeypat
 
 async def test_A1_el_cursor_que_no_avanza_aborta_y_no_cuelga(monkeypatch, entorno, caplog):
     """Guarda de AVANCE. Un doble que ignora el cursor devuelve la MISMA página llena una y otra vez: el barrido
-    aborta (sin reservas, marcas ni avisos) en lugar de girar para siempre o evaluar dos veces el mismo lead."""
+    aborta (sin reservas, marcas ni avisos) en lugar de girar para siempre o evaluar dos veces el mismo lead.
+
+    El doble CEDE el control en cada sentencia (`asyncio.sleep(0)`): sin eso, un bucle sin la guarda nunca
+    llegaría a un punto de cancelación y `wait_for` no podría cortarlo (la prueba colgaría en vez de fallar)."""
     monkeypatch.setattr(cron, "_PAGINA", 2)
     from datetime import datetime, timedelta, timezone
     corte = datetime.now(timezone.utc) - timedelta(hours=48)
-    db = BaseEspia([{**_dormido(s, consentido=True), "corte": corte} for s in ("a1-1", "a1-2")])
+
+    class _Cede(BaseEspia):
+        async def execute(self, stmt, params=None):
+            await asyncio.sleep(0)
+            return await super().execute(stmt, params)
+    db = _Cede([{**_dormido(s, consentido=True), "corte": corte} for s in ("a1-1", "a1-2")])
     with caplog.at_level(logging.ERROR):
         res = await asyncio.wait_for(cron.escanear_reenganches(db), 10)
     assert res == {"escaneados": 0, "disparados": 0, "corredores": 0}

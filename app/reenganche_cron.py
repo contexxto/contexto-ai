@@ -59,8 +59,13 @@ _PAGINA = 200
 def _limite() -> int:
     """Presupuesto de resultados con CONSECUENCIA por barrido (SEC-X2-SCAN-FAIRNESS-R0): cada aviso
     autorizado al comprador, cada asignación 'tocado' y cada 'holdout' del corredor consume una unidad.
-    Lo descartado (NO_GRANT, sin autoridad, sin canal, no elegible) no consume. No limita las filas
-    leídas: el trabajo de lectura puede crecer; los efectos, no."""
+    Lo descartado (NO_GRANT, sin autoridad, sin canal, no elegible, ERROR) no consume. No limita las
+    filas leídas: el trabajo de lectura puede crecer; los efectos, no.
+
+    Cuenta consecuencias PREVISTAS (antes de las marcas): si una marca se descarta al re-comprobar la fila
+    (cierre o barrido concurrente), su unidad se gasta sin efecto —nunca se excede el tope—. Es un tope
+    POR BARRIDO y por proceso, no global: con una sola instancia (lo que asume este módulo) coincide con
+    el tope por ciclo; con varias instancias barriendo a la vez, cada una tendría el suyo."""
     try:
         return max(1, int(os.getenv("REENGANCHE_CRON_LIMITE", "200")))
     except ValueError:
@@ -215,7 +220,9 @@ async def _escanear_reenganches(db) -> dict:
                 break
             # Guarda de AVANCE (solo igualdad, ningún orden en Python): una página que repite una fila ya
             # leída significa que el cursor no avanzó. Se aborta antes de reservar nada: ni bucle infinito
-            # ni un lead evaluado dos veces.
+            # ni un lead evaluado dos veces. No da falsos positivos porque el único escritor de
+            # `ultima_actividad` la lleva a `now()`, por encima del corte (routers/chat.py): una fila ya leída
+            # no puede reaparecer más adelante en el orden dentro del universo congelado.
             nuevas = [r["session_id"] for r in pagina]
             if len(set(nuevas)) != len(nuevas) or not vistas.isdisjoint(nuevas):
                 raise RuntimeError("el cursor del recorrido no avanzó")
@@ -234,8 +241,8 @@ async def _escanear_reenganches(db) -> dict:
         # marcas, así que el rollback no deshace ningún permiso; 0 efectos y el siguiente barrido reintenta.
         await db.rollback()
         if paginas:
-            log.error("Reenganche cron: recorrido abortado en la página %d (%s) — sin efectos.",
-                      paginas + 1, type(exc).__name__)
+            log.error("Reenganche cron: recorrido abortado tras %d página(s) leída(s) (%s) — sin efectos.",
+                      paginas, type(exc).__name__)
         return {"escaneados": 0, "disparados": 0, "corredores": 0}
 
     if not filas:
@@ -405,9 +412,10 @@ async def _escanear_reenganches(db) -> dict:
         consecuencias += 1
         destino[sid] = {"info": info, "activo_id": activo_id}
 
-    log.info("Reenganche cron · recorrido: %d páginas, %d filas leídas, %d sin consecuencia, %d con consecuencia "
-             "(presupuesto %d%s).", paginas, len(filas), len(filas) - consecuencias, consecuencias,
-             presupuesto, ", lleno: el resto queda para el próximo barrido" if consecuencias >= presupuesto else "")
+    log.info("Reenganche cron · recorrido: %d páginas, %d filas leídas, %d consecuencias previstas "
+             "(presupuesto %d%s).", paginas, len(filas), consecuencias, presupuesto,
+             ", lleno: los leads siguientes quedan intactos para el próximo barrido"
+             if consecuencias >= presupuesto else "")
     if not ids_comprador and not tocados and not holdouts:
         return {"escaneados": len(filas), "disparados": 0, "holdout": 0, "comprador": 0, "corredores": 0}
 

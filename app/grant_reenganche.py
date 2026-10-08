@@ -13,6 +13,13 @@ Valores fijados por el fundador el 28-sep-2026 (TR5-A..D):
     purpose  REENGAGEMENT · audience PRINCIPAL_SELF · action NOTIFY_VERIFIED_UPDATE
     mode     once (standing existe en el contrato, sin productor)
     expires  granted_at + 30 días · un grant POR CANAL (EMAIL | PUSH)
+
+SEC-X2-GRANT-REVOCATION-FRESHNESS-R0 · LAS DOS REVOCACIONES usan `revoked_at = statement_timestamp()`
+(la hora de ESA sentencia), no `now()` (el inicio de la transacción del llamador). La 038 exige
+`revoked_at >= granted_at`: con `now()`, una transacción que empezó ANTES de que se creara un grant
+(un «sí» concurrente) intentaba revocarlo con una hora anterior a su `granted_at`, el CHECK rechazaba el
+UPDATE, el llamador deshacía todo y el grant seguía VIVO —una baja válida que fallaba ABIERTA—. El CHECK
+no se toca: es el productor el que debe cumplir el invariante.
 """
 from __future__ import annotations
 
@@ -122,7 +129,7 @@ async def crear_grants_reenganche(
 
     valores = [c.value for c in canales]
     await db.execute(
-        text("UPDATE consent_grant SET revoked_at = now() "
+        text("UPDATE consent_grant SET revoked_at = statement_timestamp() "
              "WHERE session_id = :s AND purpose = 'REENGAGEMENT' AND channel = ANY(:canales) "
              "  AND revoked_at IS NULL AND used_at IS NULL"),
         {"s": prueba.session_id, "canales": valores},
@@ -155,7 +162,7 @@ async def revocar_grants_reenganche(db, session_id: str) -> None:
     if not await _tabla_existe(db):
         return
     await db.execute(
-        text("UPDATE consent_grant SET revoked_at = now() "
+        text("UPDATE consent_grant SET revoked_at = statement_timestamp() "
              "WHERE session_id = :s AND purpose = 'REENGAGEMENT' "
              "  AND revoked_at IS NULL AND used_at IS NULL"),
         {"s": session_id},

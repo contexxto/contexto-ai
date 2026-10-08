@@ -153,3 +153,10 @@ cohortes. Ese día el reenganche por valor deja de ser una demo y es un foso med
   (pico de `intencion_evento` y estado vivo) sigue por sesión (lo acota SEC-X2-R0c); el retorno
   (`ultima_actividad`) es de la sesión; con PK `session_id`, una sesión con varios inmuebles solo tiene
   observación para el inmueble de su primera escritura.
+- **2026-10-08 — v0.4 · composición con SEC-X2-R0c (rama del PR #195)** — al traer `main` (con
+  LIFT-SCOPE) a la rama de #195, `metricas_lift` compone las dos partes. La observación sigue siendo
+  la del par exacto (v0.3). El embudo deja de ser el pico de `intencion_evento`, que se calcula sobre
+  toda la sesión: es la etapa del CRM acotada al inmueble si la persona pidió corredor, y `atribuido`
+  si no; el handoff es la solicitud explícita. Así se cierra el residual «el embudo sigue por sesión»
+  de v0.3. **Discontinuidad del embudo:** no se compara con las cifras anteriores. Siguen abiertos el
+  retorno por sesión y la PK `session_id`.

@@ -368,15 +368,17 @@ async def test_L_bandera_apagada_ni_lecturas_ni_escrituras_ni_efectos(monkeypatc
 
 
 async def _lift_reenganche(Sesion) -> dict:
-    """La misma función pura que sirve `/metricas/lift`, sobre las filas reales."""
+    """La misma función pura que sirve `/metricas/lift`, sobre las filas reales y con su contrato: la
+    observación se indexa por el PAR exacto (session_id, activo_id) (SEC-X2-LIFT-SCOPE-R0)."""
     from sqlalchemy import text
-    from app.lift import resumen_lift
+    from app.lift import par_observacion, resumen_lift
     async with Sesion() as db:
         filas = (await db.execute(text(
-            "SELECT session_id, primera_actividad, ultima_actividad, reenganche_grupo, "
-            "reenganche_elegible_en FROM lead_actividad"))).mappings().all()
-    act = {f["session_id"]: dict(f) for f in filas}
-    leads = [{"session_id": s, "estado": "dormido", "handoff": False} for s in act]
+            "SELECT session_id, activo_id::text AS activo_id, primera_actividad, ultima_actividad, "
+            "reenganche_grupo, reenganche_elegible_en FROM lead_actividad"))).mappings().all()
+    act = {par: dict(f) for f in filas
+           if (par := par_observacion(f["session_id"], f["activo_id"])) is not None}
+    leads = [{"session_id": s, "activo_id": a, "estado": "dormido", "handoff": False} for s, a in act]
     r = resumen_lift(leads, act, datetime.now(timezone.utc))["reenganche"]
     return {g: r[g]["n"] for g in ("tocado", "holdout")}
 

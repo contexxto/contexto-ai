@@ -91,6 +91,16 @@ class _Espia:
         monkeypatch.setattr(CG, "compiled_crm_graph", envoltura)
 
 
+def _espiar_sql(db, registro: list):
+    """Anota cada sentencia que la sesión ejecuta (para afirmar que negar el acceso no emite un DELETE)."""
+    real = db.execute
+
+    async def execute(stmt, *a, **k):
+        registro.append(str(stmt))
+        return await real(stmt, *a, **k)
+    db.execute = execute
+
+
 async def _sacar_de_la_agencia_el_inmueble(Sesion):
     async with Sesion() as db:
         await db.execute(text("UPDATE activos_inmutables SET owner_user_id = CAST(:u AS uuid), owner_agency_id = NULL "
@@ -141,16 +151,18 @@ async def test_D_sale_de_la_agencia_POST_no_carga_el_hilo_en_el_modelo(base, mon
 
 @pg
 async def test_E_el_inmueble_cambia_de_dueno(base, monkeypatch):
-    """El inmueble deja la agencia: para la colega (y para la dueña anterior) el hilo por lead y el de cartera dejan
-    de ser alcanzables; ninguno revela la narración."""
+    """El inmueble deja la agencia (pasa a DUENO_Y): para la colega el hilo por lead deja de ser alcanzable (GET vacío,
+    POST 403); para la dueña anterior, el lead deja de estar en su CRM; para el nuevo dueño, el lead SÍ está, pero en
+    su propio hilo (fresco), nunca en el de la colega."""
     Sesion, g, llm, hilo = await _t0(base, monkeypatch)
     await _sacar_de_la_agencia_el_inmueble(Sesion)
     assert await _get(Sesion, COLEGA_X, SID) == {"session_id": None, "mensajes": []}
     with pytest.raises(HTTPException) as e:
         await _chat(Sesion, COLEGA_X, "¿y él?", lead=SID)
     assert e.value.status_code == 403
-    cartera = await _get(Sesion, COLEGA_X, None)
-    assert not any(NARRATIVA in m["texto"] for m in cartera["mensajes"])
+    assert await _hilo(Sesion, DUENO_X, SID) is None, "la dueña anterior conserva el lead"
+    nuevo = await _get(Sesion, DUENO_Y, SID)
+    assert nuevo["session_id"] not in (None, hilo) and not any(NARRATIVA in m["texto"] for m in nuevo["mensajes"])
 
 
 # ══ F–I · ni el checkpoint ni conocer el `lead` dan acceso ══════════════════════════════════
@@ -194,10 +206,31 @@ async def test_F3_solo_el_id_canonico(base, monkeypatch):
 
 
 @pg
+async def test_F3b_ni_siquiera_si_el_lead_no_canonico_esta_en_el_CRM(base, monkeypatch):
+    """La canonización es una barrera propia, no un efecto de la membresía: aunque `_leads_de_activo` devolviera una
+    referencia que el hilo tendría que limpiar o truncar, el modo por interesado la rechaza (caería en el hilo de
+    OTRA referencia). Control: la canónica equivalente sí entra."""
+    Sesion, g, llm, _ = await _t0(base, monkeypatch, quien=DUENO_X)
+    raros = ["lead raro", "lead/raro", "x" * 101, "léad"]
+
+    async def _leads(_db, _id, _dir=None):
+        return [{"session_id": s} for s in raros + ["lead-canonico"]]
+    monkeypatch.setattr(A, "_leads_de_activo", _leads)
+    assert await _hilo(Sesion, DUENO_X, "lead-canonico") is not None, "control: la canónica entra"
+    for raro in raros:
+        assert await _hilo(Sesion, DUENO_X, raro) is None, raro
+
+
+@pg
 async def test_G_H_la_tool_retenida_y_la_narracion_no_vuelven_tras_perder_el_alcance(base, monkeypatch):
     """G · la salida de la tool (ya retenida por X1a) y H · la narración derivada de ella: ninguna llega a nada
     —ni al GET, ni al modelo, ni por el hilo por lead ni por el de cartera— tras salir de la agencia."""
     Sesion, g, llm, _ = await _t0(base, monkeypatch)
+    # También el hilo de CARTERA lleva la tool retenida y la narración (control: con alcance, vuelven).
+    llm.guion = [_pide_timeline("t1"), AIMessage(content=NARRATIVA)]
+    await _chat(Sesion, COLEGA_X, "¿y en la cartera?", lead=None)
+    control = await _get(Sesion, COLEGA_X, None)
+    assert any(NARRATIVA in m["texto"] for m in control["mensajes"]), "control: la cartera tiene la narración"
     for lead in (SID, None):
         r = await _get(Sesion, FUERA, lead)
         assert not any(NARRATIVA in m["texto"] or "X actual del comprador" in m["texto"] for m in r["mensajes"])
@@ -209,7 +242,8 @@ async def test_G_H_la_tool_retenida_y_la_narracion_no_vuelven_tras_perder_el_alc
 
 @pg
 async def test_I_otro_corredor_no_fabrica_el_hilo_original(base, monkeypatch):
-    """El hilo sale del JWT: el corredor de Y (para quien la sesión TAMBIÉN es lead) tiene su propio hilo."""
+    """Regresión (propiedad previa, se conserva): el hilo sale del JWT; el corredor de Y (para quien la sesión
+    TAMBIÉN es lead) tiene su propio hilo."""
     Sesion, g, llm, hilo = await _t0(base, monkeypatch)
     r = await _get(Sesion, DUENO_Y, SID)
     assert r["session_id"] not in (None, hilo) and not any(NARRATIVA in m["texto"] for m in r["mensajes"])
@@ -250,12 +284,21 @@ async def test_K_el_hilo_sigue_almacenado_intacto_y_DELETE_fuera_de_alcance_no_b
     Sesion, g, llm, hilo = await _t0(base, monkeypatch)
     antes = (await g.aget_state({"configurable": {"thread_id": hilo}})).values["messages"]
     assert await _get(Sesion, FUERA, SID) == {"session_id": None, "mensajes": []}
+    sql: list[str] = []
     async with Sesion() as db:
+        _espiar_sql(db, sql)
         with pytest.raises(HTTPException) as e:
             await A.crm_thread_reset(_peticion(), SID, "copiloto", FUERA, db)
     assert e.value.status_code == 403
+    assert not any("DELETE" in s.upper() for s in sql), "negar el acceso emitió un DELETE"
     despues = (await g.aget_state({"configurable": {"thread_id": hilo}})).values["messages"]
     assert [m.content for m in despues] == [m.content for m in antes] and NARRATIVA in _plano(despues)
+    # Control del espía: con alcance, «nueva conversación» SÍ emite los DELETE del hilo vigente.
+    sql_ok: list[str] = []
+    async with Sesion() as db:
+        _espiar_sql(db, sql_ok)
+        r = await A.crm_thread_reset(_peticion(), SID, "copiloto", COLEGA_X, db)
+    assert r["session_id"] == hilo and any("DELETE FROM checkpoint" in s for s in sql_ok), sql_ok
 
 
 @pg
@@ -267,6 +310,68 @@ async def test_K2_recuperar_EXACTAMENTE_el_mismo_alcance_vuelve_a_abrir_el_hilo(
     assert await _get(Sesion, FUERA, SID) == {"session_id": None, "mensajes": []}
     r = await _get(Sesion, COLEGA_X, SID)
     assert r["session_id"] == hilo and any(NARRATIVA in m["texto"] for m in r["mensajes"])
+
+
+@pg
+async def test_K3_GANAR_un_inmueble_tambien_cambia_el_hilo(base, monkeypatch):
+    """La huella cubre el conjunto de inmuebles: si la agencia GANA uno (Y pasa a la agencia), el lead sigue en
+    alcance pero el hilo es otro (fresco). Residual declarado de UX: cualquier cambio de alcance reinicia los hilos."""
+    Sesion, g, llm, hilo = await _t0(base, monkeypatch)
+    async with Sesion() as db:
+        await db.execute(text("UPDATE activos_inmutables SET owner_agency_id = CAST(:a AS uuid) "
+                              "WHERE id = CAST(:y AS uuid)"), {"a": AGENCIA_X, "y": Y})
+        await db.commit()
+    r = await _get(Sesion, COLEGA_X, SID)
+    assert r["session_id"] not in (None, hilo) and not any(NARRATIVA in m["texto"] for m in r["mensajes"])
+
+
+@pg
+async def test_M_si_resolver_el_alcance_falla_todo_falla_cerrado_sin_tocar_el_hilo(base, monkeypatch):
+    """Sin alcance resuelto no hay contexto: GET vacío sin leer el checkpoint; POST y DELETE 503 sin invocar el
+    modelo ni emitir un DELETE."""
+    Sesion, g, llm, hilo = await _t0(base, monkeypatch)
+    espia = _Espia(g, monkeypatch)
+
+    async def _revienta(*_a, **_k):
+        raise RuntimeError("base caída")
+    monkeypatch.setattr(A, "_activos_del_corredor", _revienta)
+    assert await _get(Sesion, COLEGA_X, SID) == {"session_id": None, "mensajes": []}
+    with pytest.raises(HTTPException) as e:
+        await _chat(Sesion, COLEGA_X, "¿y él?", lead=SID)
+    assert e.value.status_code == 503
+    sql: list[str] = []
+    async with Sesion() as db:
+        _espiar_sql(db, sql)
+        with pytest.raises(HTTPException) as e:
+            await A.crm_thread_reset(_peticion(), SID, "copiloto", COLEGA_X, db)
+    assert e.value.status_code == 503 and not any("DELETE" in s.upper() for s in sql)
+    assert espia.lecturas == [] and espia.invocaciones == []
+
+
+@pg
+async def test_N_la_pertenencia_del_lead_es_la_misma_que_la_del_CRM(base, monkeypatch):
+    """Una sola frontera: para cada sesión, `_lead_en_activos` sobre los inmuebles del corredor dice lo mismo que
+    `_leads_del_corredor` (el CRM y las tools)."""
+    Sesion, g, llm, _ = await _t0(base, monkeypatch, quien=DUENO_X)
+    for quien in (DUENO_X, COLEGA_X, FUERA, DUENO_Y):
+        async with Sesion() as db:
+            activos = await A._activos_del_corredor(db, quien.user_id, quien.agency_id)
+            crm = {l.get("session_id") for l in await A._leads_del_corredor(db, quien.user_id, quien.agency_id)}
+            for s in (SID, "session-ajena"):
+                assert await A._lead_en_activos(db, activos, s) == (s in crm), (quien.nombre, s)
+
+
+@pg
+async def test_N2_la_pertenencia_recorre_TODOS_los_inmuebles_del_alcance(base, monkeypatch):
+    """El lead puede estar en cualquiera de los inmuebles del corredor, no solo en el primero que devuelva la base:
+    con otro inmueble (sin leads) delante de X, el lead de X sigue en alcance."""
+    Sesion, g, llm, _ = await _t0(base, monkeypatch, quien=DUENO_X)
+    real = A._activos_del_corredor
+
+    async def _con_otro_delante(db, u, a=None):
+        return [{"id": "00000000-0000-4000-8000-0000000000ff", "direccion": None}] + await real(db, u, a)
+    monkeypatch.setattr(A, "_activos_del_corredor", _con_otro_delante)
+    assert await _hilo(Sesion, DUENO_X, SID) is not None
 
 
 def test_L_el_alcance_lo_decide_el_servidor_antes_que_el_grafo():

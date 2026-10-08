@@ -1117,29 +1117,42 @@ def _lead_canonico(lead_ref: str | None) -> str | None:
     return lead_ref if re.fullmatch(r"[A-Za-z0-9_-]{1,100}", lead_ref) else None
 
 
-async def _alcance_crm(db: AsyncSession, user: CurrentUser) -> str:
-    """Huella del alcance VIGENTE del corredor: el conjunto de inmuebles que hoy le da su dueño o su agencia
-    (`_activos_del_corredor`, la misma fuente que `_leads_del_corredor`). Cambia si pierde o gana uno."""
+def _huella_alcance(activos: list[dict]) -> str:
+    """Huella del alcance: el conjunto de inmuebles (ids ordenados) que hoy le da al corredor su dueño o su
+    agencia. Cambia si pierde o gana uno."""
     import hashlib
-    ids = sorted(a["id"] for a in await _activos_del_corredor(db, user.user_id, user.agency_id))
+    ids = sorted(a["id"] for a in activos)
     return hashlib.sha256(("|".join(ids)).encode("utf-8")).hexdigest()[:16]
 
 
-async def _lead_en_alcance_actual(db: AsyncSession, user: CurrentUser, lead_ref: str | None) -> bool:
-    """¿El interesado `lead_ref` está HOY dentro del CRM del corredor? Misma frontera que el CRM y las tools."""
+async def _alcance_crm(db: AsyncSession, user: CurrentUser) -> str:
+    """Huella del alcance VIGENTE del corredor (`_activos_del_corredor`, la misma fuente que
+    `_leads_del_corredor`)."""
+    return _huella_alcance(await _activos_del_corredor(db, user.user_id, user.agency_id))
+
+
+async def _lead_en_activos(db: AsyncSession, activos: list[dict], lead_ref: str | None) -> bool:
+    """¿El interesado `lead_ref` (id canónico) es HOY un lead de alguno de `activos`? Misma frontera que
+    `_leads_del_corredor` (que es la concatenación de `_leads_de_activo` sobre esos mismos inmuebles) y que las
+    tools; se detiene en el primer inmueble que lo contiene."""
     lead = _lead_canonico(lead_ref)
     if lead is None:
         return False
-    return any(l.get("session_id") == lead for l in await _leads_del_corredor(db, user.user_id, user.agency_id))
+    for a in activos:
+        if any(l.get("session_id") == lead for l in await _leads_de_activo(db, a["id"], a["direccion"])):
+            return True
+    return False
 
 
 async def _hilo_crm_vigente(db: AsyncSession, user: CurrentUser, lead: str | None, modo: str) -> str | None:
     """El hilo que el corredor puede usar AHORA, o None si el interesado pedido no está en su alcance
-    vigente. Se llama ANTES de leer el checkpoint o de invocar el grafo."""
+    vigente. Se llama ANTES de leer el checkpoint o de invocar el grafo. UNA sola foto del alcance: la
+    pertenencia del lead y la huella del hilo salen de la misma lista de inmuebles."""
+    activos = await _activos_del_corredor(db, user.user_id, user.agency_id)
     if modo == "copiloto" and lead is not None:
-        if not await _lead_en_alcance_actual(db, user, lead):
+        if not await _lead_en_activos(db, activos, lead):
             return None
-    return _crm_thread(user.user_id, lead if modo == "copiloto" else None, modo, await _alcance_crm(db, user))
+    return _crm_thread(user.user_id, lead if modo == "copiloto" else None, modo, _huella_alcance(activos))
 
 
 _FUERA_DE_ALCANCE = "Ese interesado no está en tu CRM."
@@ -1163,7 +1176,7 @@ class CRMChatReq(BaseModel):
 _EPOCA_HILO_CRM = "x1v1"
 
 
-def _crm_thread(user_id: str, lead_ref: str | None = None, modo: str = "copiloto", alcance: str = "") -> str:
+def _crm_thread(user_id: str, lead_ref: str | None, modo: str, alcance: str) -> str:
     """Hilo DERIVADO DEL JWT (nunca del cliente) → un corredor no puede leer el hilo de otro. Dos agentes,
     hilos distintos: ESTRATEGA = un hilo de cartera (crm-x1v1-estratega-{user}-c{alcance}); COPILOTO = por
     interesado (crm-x1v1-{user}-c{alcance}-lead-{ref}) o de cartera (crm-x1v1-{user}-c{alcance}) si no hay
@@ -1173,6 +1186,8 @@ def _crm_thread(user_id: str, lead_ref: str | None = None, modo: str = "copiloto
     un hilo persistido solo se alcanza bajo el MISMO alcance con el que se produjo. Llamar SIEMPRE vía
     `_hilo_crm_vigente`, que la calcula y comprueba el lead antes de tocar el checkpointer."""
     import re
+    if not alcance:
+        raise ValueError("_crm_thread exige la huella del alcance vigente (usar _hilo_crm_vigente)")
     if modo == "estratega":
         return f"crm-{_EPOCA_HILO_CRM}-estratega-{user_id}-c{alcance}"
     base = f"crm-{_EPOCA_HILO_CRM}-{user_id}-c{alcance}"
@@ -1214,6 +1229,9 @@ async def crm_chat(
                             detail="El asistente del CRM no está disponible en este momento.")
     if sid is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_FUERA_DE_ALCANCE)
+    # La comprobación solo leyó: se cierra su transacción para no retener la conexión durante el modelo
+    # (las tools abren las suyas). commit y no rollback: conserva el DDL idempotente de los ensure_*.
+    await db.commit()
     # El owner sale del JWT y viaja en config → las tools scopean por él, nunca el LLM.
     # modo: elige el agente (copiloto táctico / estratega de cartera). corredor_nombre: para firmar.
     config = {"configurable": {"thread_id": sid, "modo": payload.modo,

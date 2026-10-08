@@ -2018,7 +2018,18 @@ async def _sembrar(g, thread_id, mensajes):
     await g.aupdate_state({"configurable": {"thread_id": thread_id}}, {"messages": mensajes}, as_node="llm")
 
 
+class _DbFalsa:
+    """Sesión mínima para las pruebas de ÉPOCA sin base: `crm_chat` cierra la transacción de la comprobación de
+    alcance antes de invocar el modelo (SEC-X1-CRM-AUTHORITY-LIVENESS-R0)."""
+    async def commit(self):
+        return None
+
+    async def rollback(self):
+        return None
+
+
 async def _chat(texto, lead=None, modo="copiloto", quien=DUENO_X, db=None):
+    db = _DbFalsa() if db is None else db
     return await A.crm_chat(_peticion(), A.CRMChatReq(message=texto, lead=lead, modo=modo), quien, db)
 
 
@@ -2026,13 +2037,14 @@ def _alcance_fijo(monkeypatch, en_alcance=True, huella="fijo"):
     """SEC-X1-CRM-AUTHORITY-LIVENESS-R0 (actualización esperada): las pruebas de ÉPOCA (F*) sin base fijan el
     alcance vigente —su huella y que el lead esté en él—; el alcance real lo prueban
     tests/test_sec_x1_crm_authority_liveness.py sobre Postgres."""
-    async def _huella(_db, _user):
-        return huella
+    async def _activos(_db, _u, _a=None):
+        return []
 
-    async def _en(_db, _user, _lead):
+    async def _en(_db, _activos, _lead):
         return en_alcance
-    monkeypatch.setattr(A, "_alcance_crm", _huella)
-    monkeypatch.setattr(A, "_lead_en_alcance_actual", _en)
+    monkeypatch.setattr(A, "_activos_del_corredor", _activos)
+    monkeypatch.setattr(A, "_huella_alcance", lambda _activos: huella)
+    monkeypatch.setattr(A, "_lead_en_activos", _en)
 
 
 async def test_F1_el_copiloto_nuevo_no_recibe_el_hilo_viejo_ni_su_narracion(monkeypatch):

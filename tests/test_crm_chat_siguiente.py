@@ -54,13 +54,21 @@ def _correr(monkeypatch, tool_json: str | None, *, rol="corredor", explota=False
     monkeypatch.setattr(limiter, "enabled", False)  # el rate-limit no es lo que se prueba
 
     # SEC-X1-CRM-AUTHORITY-LIVENESS-R0 (actualización esperada): el hilo se deriva también del alcance vigente
-    # del corredor; aquí se fija su huella (lo que se prueba es el cableado de la sugerencia, no el alcance).
-    async def _alcance(_db, _user):
-        return "fijo"
-    monkeypatch.setattr(assets, "_alcance_crm", _alcance)
+    # del corredor; aquí se fija (lo que se prueba es el cableado de la sugerencia, no el alcance) y la sesión es
+    # mínima: `crm_chat` solo cierra la transacción de la comprobación antes de invocar el modelo.
+    async def _activos(_db, _u, _a=None):
+        return []
+    monkeypatch.setattr(assets, "_activos_del_corredor", _activos)
+
+    class _Db:
+        async def commit(self):
+            return None
+
+        async def rollback(self):
+            return None
     payload = assets.CRMChatReq(message="¿cómo va mi cartera?", modo="estratega")
     user = CurrentUser(user_id="u1", rol=rol)
-    return asyncio.run(assets.crm_chat(None, payload, user, None))
+    return asyncio.run(assets.crm_chat(None, payload, user, _Db()))
 
 
 # ══ El cableado ═══════════════════════════════════════════════════════════════════════

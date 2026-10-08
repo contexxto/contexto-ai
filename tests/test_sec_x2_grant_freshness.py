@@ -6,9 +6,10 @@ transacción.
 `autorizar_efecto_reenganche` comprobaba `granted_at <= now() AND expires_at > now()` y reservaba con
 `used_at = now()`. En PostgreSQL `now()` es el INICIO de la transacción. El cron decide dentro de la transacción que
 abrió al leer la primera página del barrido (SEC-X2-SCAN-FAIRNESS-R0 recorre todo el universo, así que puede durar);
-con `now()`, un grant que venció durante ese recorrido seguía «vigente» y uno que entró en vigor no se veía (y su
-reserva habría violado `used_at >= granted_at`, CHECK de la 038). Ahora la vigencia y el consumo usan
-`statement_timestamp()`: la hora de ESA sentencia, estable dentro de ella.
+con `now()`, un grant que venció durante ese recorrido seguía «vigente» y uno que entró en vigor no se veía
+(NO_GRANT). Ahora la vigencia y el consumo usan `statement_timestamp()`: la hora de ESA sentencia, estable dentro de
+ella (la condición y `used_at` usan el mismo instante, así que `used_at >= granted_at`, CHECK de la 038, se cumple;
+una implementación MIXTA —condición fresca, `used_at = now()`— lo violaría, y lo atrapan test_2/test_3/test_8).
 
 El corte del universo dormido del barrido sigue en `now()` a propósito (una foto fija): no se toca.
 
@@ -141,13 +142,18 @@ async def test_6_dos_workers_no_consumen_el_mismo_grant(base):
 
     async def worker(espera, retiene):
         async with base() as db:
+            await db.execute(text("SELECT 1"))          # conectado ANTES de medir
             await asyncio.sleep(espera)
+            reloj = asyncio.get_running_loop().time
+            t = reloj()
             estado = await _decide(db, sid, reservar=True)
+            duro = reloj() - t
             await asyncio.sleep(retiene)
             await db.commit()
-            return estado
-    a, b = await asyncio.wait_for(asyncio.gather(worker(0, 1.5), worker(0.4, 0)), 30)
+            return estado, duro
+    (a, _), (b, espera_b) = await asyncio.wait_for(asyncio.gather(worker(0, 1.5), worker(0.4, 0)), 30)
     assert (a, b) == (AUTH, NO), (a, b)
+    assert espera_b >= 0.7, f"el segundo worker no esperó el bloqueo de fila ({espera_b:.2f} s): la prueba no midió la carrera"
     usados = await _usados(base, sid)
     assert all(u is not None for u in usados) and len(set(usados)) == 1, "un grant se consumió dos veces"
 
@@ -164,11 +170,50 @@ def _lenta(entorno, monkeypatch, segundos):
     monkeypatch.setattr(chat, "intencion_de_sesion", intencion)
 
 
+class _Filas:
+    def __init__(self, filas):
+        self._f = filas
+
+    def mappings(self):
+        return self
+
+    def all(self):
+        return list(self._f)
+
+
+class _ConInicio:
+    """Envuelve la sesión del barrido y captura el `corte` de su primera página: corte + 48 h = `now()` de la
+    transacción del barrido (t0). Con eso la prueba verifica su PROPIA precondición (t0 antes del borde del grant)."""
+
+    def __init__(self, db):
+        self._db, self.corte = db, None
+
+    async def execute(self, stmt, params=None):
+        sql = str(stmt)
+        if "FROM lead_actividad" in sql and "ORDER BY ultima_actividad" in sql:
+            filas = (await self._db.execute(stmt, params)).mappings().all()
+            if self.corte is None and filas:
+                self.corte = filas[0]["corte"]
+            return _Filas(filas)
+        return await self._db.execute(stmt, params)
+
+    async def commit(self):
+        await self._db.commit()
+
+    async def rollback(self):
+        await self._db.rollback()
+
+
 async def _barrer(Sesion):
+    """Devuelve (resumen, t0): t0 = el `now()` de la transacción en la que el barrido decide."""
+    from datetime import timedelta
     async with Sesion() as db:
         await chat.ensure_handoff_tables(db)
     async with Sesion() as db:
-        return await asyncio.wait_for(cron.escanear_reenganches(db), 120)
+        espia = _ConInicio(db)
+        res = await asyncio.wait_for(cron.escanear_reenganches(espia), 120)
+    assert espia.corte is not None, "el barrido no leyó ninguna página"
+    return res, espia.corte + timedelta(hours=48)
 
 
 @pg
@@ -178,7 +223,9 @@ async def test_7_el_barrido_no_reserva_un_grant_que_vencio_durante_el_recorrido(
     sid, _ = await _lead_con_grant(base)
     await _mover(base, sid, "expires_at = now() + interval '2 seconds'")
     _lenta(entorno, monkeypatch, 3)
-    res = await _barrer(base)
+    res, t0 = await _barrer(base)
+    vence = min(g["expires_at"] for g in await _grants_completos(base, sid))
+    assert t0 < vence, f"precondición: el barrido empezó DESPUÉS del vencimiento ({t0} ≥ {vence}); la prueba no mide nada"
     assert res.get("comprador", 0) == 0 and entorno["email"] == [] and entorno["push"] == []
     assert await _usados(base, sid) == [None, None]
     assert (await _fila(base, sid))["reenganche_enviado_en"] is None
@@ -187,11 +234,13 @@ async def test_7_el_barrido_no_reserva_un_grant_que_vencio_durante_el_recorrido(
 @pg
 async def test_8_el_barrido_ve_un_grant_que_entro_en_vigor_durante_el_recorrido(monkeypatch, base, entorno):
     """El inverso de punta a punta: el grant rige desde t1, dentro del recorrido; a t2 se reserva y el comprador
-    recibe (con now() habría sido NO_GRANT, y su reserva habría violado used_at ≥ granted_at)."""
+    recibe (con now() habría sido NO_GRANT: la vigencia se juzgaba con el inicio del barrido)."""
     sid, _ = await _lead_con_grant(base)
     await _mover(base, sid, "granted_at = now() + interval '2 seconds'")
     _lenta(entorno, monkeypatch, 3)
-    res = await _barrer(base)
+    res, t0 = await _barrer(base)
+    rige = min(g["granted_at"] for g in await _grants_completos(base, sid))
+    assert t0 < rige, f"precondición: el barrido empezó DESPUÉS de que el grant rigiera ({t0} ≥ {rige}); no mide nada"
     assert res.get("comprador", 0) == 1
     for g in await _grants_completos(base, sid):
         assert g["used_at"] is not None and g["used_at"] >= g["granted_at"]

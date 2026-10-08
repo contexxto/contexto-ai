@@ -15,8 +15,12 @@ SEC-X2-GRANT-FRESHNESS-R0 · «ahora» es `statement_timestamp()`: la hora de ES
 `now()` (el inicio de la TRANSACCIÓN del llamador). El cron decide dentro de una transacción que
 empezó al leer la primera página del barrido; con `now()`, un grant que venció durante ese recorrido
 seguía «vigente» —la vigencia se juzgaba con una foto del principio— y uno que entró en vigor
-durante él no se veía (y su reserva habría violado `used_at >= granted_at`). La autoridad se juzga
-en el momento de la decisión. Es estable durante la sentencia (a diferencia de `clock_timestamp()`).
+durante él no se veía (NO_GRANT). La autoridad se juzga en el momento de la decisión: el INICIO de
+esta sentencia. Es estable durante ella (a diferencia de `clock_timestamp()`), así que la condición y
+`used_at` usan el mismo instante (y `used_at >= granted_at`, CHECK de la 038, se cumple siempre).
+Residual declarado: si la reserva espera el bloqueo de fila de otra transacción y esa ABORTA, Postgres
+no re-evalúa la condición, y un grant que venció durante esa espera (milisegundos o segundos) se
+reserva con el instante del inicio. Si la otra CONFIRMA, la re-evaluación ve su `used_at`/`revoked_at`.
 El corte del universo dormido del barrido SÍ usa `now()` a propósito (reenganche_cron.py): allí lo
 útil es una foto fija.
 

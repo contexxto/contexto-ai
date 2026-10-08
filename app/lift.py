@@ -176,8 +176,8 @@ def resumen_lift(leads: list[dict], actividad_por_par: dict[tuple[str, str], dic
         "cohortes": {
             "maduros": maduros, "en_vuelo": en_vuelo, "en_vuelo_sin_observacion": sin_observacion,
             "_nota": (f"resultados solo sobre maduros (≥{dias} días o handoff); 'en vuelo' aún no terminan"
-                      + (f" · {sin_observacion} de ellos sin observación de su inmueble exacto: su madurez "
-                         "no se puede medir" if sin_observacion else "")),
+                      + (f" · {sin_observacion} de ellos sin observación de actividad para su par (sesión, "
+                         "inmueble): su madurez no se puede medir" if sin_observacion else "")),
         },
         "total_leads": total,
         "_proveniencia": (f"Números propios del piloto (motor de intención + eventos), no comparados con "

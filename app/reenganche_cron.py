@@ -17,7 +17,13 @@ Config por entorno (todas opcionales, con defaults sensatos):
   REENGANCHE_CRON_ENABLED   "1"/"0"     habilita el barrido (default "1"). Se consulta al arrancar
                                         el bucle Y en cada barrido: apagarla detiene todo efecto.
   REENGANCHE_CRON_INTERVAL  segundos entre barridos (default 21600 = 6 h, mínimo 300)
-  REENGANCHE_CRON_LIMITE    máx leads por barrido (default 200)
+  REENGANCHE_CRON_LIMITE    PRESUPUESTO de resultados con consecuencia por barrido (default 200):
+                            avisos autorizados al comprador + asignaciones tocado/holdout del
+                            corredor. Desde SEC-X2-SCAN-FAIRNESS-R0 NO limita las filas que se leen:
+                            el barrido recorre TODO el universo dormido por páginas (keyset). Antes
+                            era el LIMIT de una única página: las filas descartadas (sin autoridad,
+                            sin canal, no elegibles), que no reciben marca, ocupaban la cabeza del
+                            orden en cada barrido y podían dejar sin leer para siempre a las demás.
   REENGANCHE_BAJA_SECRET    secreto DEDICADO del enlace de baja (≥ 32 caracteres; ver
                             app/baja_aviso.py). Sin él no sale NINGÚN aviso al comprador
                             (Plan 1.1 · TR-2, fail-closed); el aviso al corredor no depende de él.
@@ -46,7 +52,15 @@ def _intervalo() -> int:
         return 21600
 
 
+# Filas por página del recorrido. Es un detalle de la base, NO el presupuesto de efectos (`_limite`).
+_PAGINA = 200
+
+
 def _limite() -> int:
+    """Presupuesto de resultados con CONSECUENCIA por barrido (SEC-X2-SCAN-FAIRNESS-R0): cada aviso
+    autorizado al comprador, cada asignación 'tocado' y cada 'holdout' del corredor consume una unidad.
+    Lo descartado (NO_GRANT, sin autoridad, sin canal, no elegible) no consume. No limita las filas
+    leídas: el trabajo de lectura puede crecer; los efectos, no."""
     try:
         return max(1, int(os.getenv("REENGANCHE_CRON_LIMITE", "200")))
     except ValueError:
@@ -148,28 +162,80 @@ async def _escanear_reenganches(db) -> dict:
         EstadoAutorizacion, autorizar_efecto_reenganche, corredor_autorizado)
 
     pct = _holdout_pct()
+    presupuesto = _limite()
     await ensure_lead_actividad(db)
+    # UNA dosis automática por lead de por vida: se escanea hasta que produce un efecto; luego queda
+    # con la marca de envío (comprador o corredor tocado) o en 'holdout' (control del corredor) y no
+    # vuelve a entrar. Alinea con "aportar valor sin presionar": el cron no pinguea en bucle.
+    #
+    # SEC-X2-SCAN-FAIRNESS-R0 · RECORRIDO JUSTO SIN MUTAR LO DESCARTADO. Una fila descartada (sin
+    # autoridad, sin canal, no elegible) NO recibe ninguna marca —la ausencia de permiso no se convierte
+    # en estado—, así que sigue en el universo dormido. Antes se leía UNA página (LIMIT): esas filas
+    # ocupaban la cabeza del orden en cada barrido y las posteriores no se leían jamás. Ahora se recorre
+    # TODO el universo por páginas keyset, con el orden y el comparador en SQL:
+    #   · orden total (ultima_actividad, session_id): session_id es la PK y rompe los empates;
+    #   · la página siguiente empieza estrictamente DESPUÉS de la ÚLTIMA FILA LEÍDA (nunca de la última
+    #     elegible, autorizada o con efecto): lo descartado no frena el avance; sin OFFSET;
+    #   · un corte temporal FIJO, tomado UNA vez de la hora de la base en la primera página: el universo
+    #     no avanza mientras se recorre (una fila que vuelve a tener actividad sale sola: `now()` > corte).
+    # Solo LECTURAS: todas las páginas y todas las lecturas por lead van antes de la primera reserva.
+    _CANDIDATAS = (
+        "SELECT session_id, activo_id::text AS activo_id, ultima_actividad, "
+        "       lead_email, lead_push, {corte} AS corte "
+        "FROM lead_actividad "
+        "WHERE ultima_actividad < {corte} "
+        "  AND reenganche_enviado_en IS NULL "   # nunca tocado
+        "  AND reenganche_grupo IS NULL "        # ni asignado a un grupo (tocado/holdout)
+        # Plan 1.1 · TR-2: un CIERRE explícito saca la fila del barrido COMPLETO, antes del
+        # holdout, del scoring, de la marca de grupo y de cualquier aviso (comprador o corredor).
+        "  AND reenganche_cerrado_en IS NULL "
+        "{despues_de}"
+        "ORDER BY ultima_actividad ASC, session_id ASC LIMIT :pagina"
+    )
+    primera = _CANDIDATAS.format(corte="(now() - make_interval(hours => :dorm))", despues_de="")
+    siguiente = _CANDIDATAS.format(
+        corte="CAST(:corte AS timestamptz)",
+        despues_de="  AND (ultima_actividad, session_id) > (CAST(:ua AS timestamptz), CAST(:sid AS text)) ")
+    filas: list = []
+    vistas: set = set()
+    corte = cursor = None
+    paginas = 0
     try:
-        # UNA dosis automática por lead de por vida: se escanea hasta que produce un efecto; luego queda
-        # con la marca de envío (comprador o corredor tocado) o en 'holdout' (control del corredor) y no
-        # vuelve a entrar. Alinea con "aportar valor sin presionar": el cron no pinguea en bucle.
-        filas = (await db.execute(
-            text(
-                "SELECT session_id, activo_id::text AS activo_id, ultima_actividad, "
-                "       lead_email, lead_push "
-                "FROM lead_actividad "
-                "WHERE ultima_actividad < now() - make_interval(hours => :dorm) "
-                "  AND reenganche_enviado_en IS NULL "   # nunca tocado
-                "  AND reenganche_grupo IS NULL "        # ni asignado a un grupo (tocado/holdout)
-                # Plan 1.1 · TR-2: un CIERRE explícito saca la fila del barrido COMPLETO, antes del
-                # holdout, del scoring, de la marca de grupo y de cualquier aviso (comprador o corredor).
-                "  AND reenganche_cerrado_en IS NULL "
-                "ORDER BY ultima_actividad ASC LIMIT :lim"
-            ),
-            {"dorm": HORAS_DORMIDO, "lim": _limite()},
-        )).mappings().all()
-    except Exception:  # noqa: BLE001 — tabla aún no creada / fallo transitorio
+        while True:
+            if cursor is None:
+                pagina = (await db.execute(
+                    text(primera), {"dorm": HORAS_DORMIDO, "pagina": _PAGINA})).mappings().all()
+            else:
+                pagina = (await db.execute(
+                    text(siguiente),
+                    {"corte": corte, "ua": cursor[0], "sid": cursor[1], "pagina": _PAGINA},
+                )).mappings().all()
+            paginas += 1
+            if not pagina:
+                break
+            # Guarda de AVANCE (solo igualdad, ningún orden en Python): una página que repite una fila ya
+            # leída significa que el cursor no avanzó. Se aborta antes de reservar nada: ni bucle infinito
+            # ni un lead evaluado dos veces.
+            nuevas = [r["session_id"] for r in pagina]
+            if len(set(nuevas)) != len(nuevas) or not vistas.isdisjoint(nuevas):
+                raise RuntimeError("el cursor del recorrido no avanzó")
+            vistas.update(nuevas)
+            filas.extend(pagina)
+            if len(pagina) < _PAGINA:
+                break  # universo agotado
+            if corte is None:
+                corte = pagina[0].get("corte")
+                if corte is None:
+                    raise RuntimeError("la primera página no trajo el corte temporal")
+            ultima = pagina[-1]   # la ÚLTIMA FILA LEÍDA, se evalúe como se evalúe
+            cursor = (ultima["ultima_actividad"], ultima["session_id"])
+    except Exception as exc:  # noqa: BLE001 — tabla aún no creada / fallo de la base / cursor
+        # Fallo de SISTEMA, no no-elegibilidad: se aborta el barrido completo. Aún no hay reservas ni
+        # marcas, así que el rollback no deshace ningún permiso; 0 efectos y el siguiente barrido reintenta.
         await db.rollback()
+        if paginas:
+            log.error("Reenganche cron: recorrido abortado en la página %d (%s) — sin efectos.",
+                      paginas + 1, type(exc).__name__)
         return {"escaneados": 0, "disparados": 0, "corredores": 0}
 
     if not filas:
@@ -269,7 +335,14 @@ async def _escanear_reenganches(db) -> dict:
     tocados: list[str] = []
     holdouts: list[str] = []
     destino: dict[str, dict] = {}   # sid tocado → su inmueble y la ficha (corredor y canales)
+    # SEC-X2-SCAN-FAIRNESS-R0 · PRESUPUESTO de resultados con consecuencia (`_limite()`): aviso autorizado
+    # al comprador, 'tocado' y 'holdout' del corredor consumen una unidad cada uno; lo descartado, no. Se
+    # recorre en el orden del cursor (de la más vieja a la más nueva). Lleno el presupuesto, NINGUNA
+    # reserva, grupo ni marca más: los leads siguientes quedan intactos para el próximo barrido.
+    consecuencias = 0
     for c in leads:
+        if consecuencias >= presupuesto:
+            break
         sid, f, info, activo_id = c["sid"], c["f"], c["info"], c["activo_id"]
         if c["sin_decision"]:
             log.error("Reenganche cron: no se pudo decidir el aviso al comprador — lead omitido.")
@@ -299,6 +372,7 @@ async def _escanear_reenganches(db) -> dict:
                               "aviso al comprador omitido.")
                     continue
                 ids_comprador.append(sid)
+                consecuencias += 1
                 a_comprador.append({
                     "email": f["lead_email"] if "EMAIL" in veredicto.canales else None,
                     "push": f["lead_push"] if "PUSH" in veredicto.canales else None,
@@ -325,10 +399,15 @@ async def _escanear_reenganches(db) -> dict:
         # humano igual puede retomarlos a mano desde el CRM. Ver docs/DISENO_Metrica_Lift_Intencion.md §3.
         if grupo_holdout(sid, pct) == "holdout":
             holdouts.append(sid)
+            consecuencias += 1
             continue
         tocados.append(sid)
+        consecuencias += 1
         destino[sid] = {"info": info, "activo_id": activo_id}
 
+    log.info("Reenganche cron · recorrido: %d páginas, %d filas leídas, %d sin consecuencia, %d con consecuencia "
+             "(presupuesto %d%s).", paginas, len(filas), len(filas) - consecuencias, consecuencias,
+             presupuesto, ", lleno: el resto queda para el próximo barrido" if consecuencias >= presupuesto else "")
     if not ids_comprador and not tocados and not holdouts:
         return {"escaneados": len(filas), "disparados": 0, "holdout": 0, "comprador": 0, "corredores": 0}
 

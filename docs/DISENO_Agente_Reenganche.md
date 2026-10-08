@@ -202,3 +202,15 @@ está empujando, no aportando).
   antes (DR-15); ERROR → nadie. Revocar/cerrar/baja revocan **todos** los grants vivos; un nuevo «sí» crea
   grants nuevos. El timestamp histórico ya no autoriza nada (sin backfill). La 038 se aplica a producción por
   hash **antes** del backend y con GO explícito.
+- **2026-10-08 — v0.8 — SEC-X2-SCAN-FAIRNESS-R0 (barrido justo sin mutar lo descartado)** — el barrido leía
+  UNA página (`ORDER BY ultima_actividad ASC LIMIT 200`). Una fila descartada (sin canal, NO_GRANT, sin el hecho
+  X2, no elegible) no recibe marca y conserva su `ultima_actividad`: volvía a la cabeza en cada barrido y, con 200
+  así, ninguna posterior se leía jamás (inanición estructural; el censo C0 de producción vio 7 filas así, todas
+  en la cabeza). Ahora el barrido recorre TODO el universo dormido por páginas **keyset** (orden y comparador en
+  SQL: `(ultima_actividad, session_id)`, desde la ÚLTIMA FILA LEÍDA, sin OFFSET), con un **corte temporal fijo**
+  tomado una vez, y todas las lecturas antes de la primera reserva TR-5. **`REENGANCHE_CRON_LIMITE` cambia de
+  semántica a propósito:** deja de ser un límite de trabajo (filas leídas) y pasa a ser un límite de
+  CONSECUENCIA (aviso autorizado al comprador + tocado + holdout del corredor por barrido); lo descartado no lo
+  consume. El trabajo de lectura puede crecer; los efectos, no (nunca superan el valor anterior). Lo descartado
+  no recibe ninguna escritura: la justicia sale del recorrido, no de la mutación. Sin índice ni migración
+  (reabrir por escala observada). Residual R-1 (la persona vuelve durante el barrido) declarado, fuera de alcance.

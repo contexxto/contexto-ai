@@ -2169,3 +2169,48 @@ def test_F7_contexto_del_modelo_retiene_por_turno_sin_adivinar():
     assert (por_id["a"].tool_call_id, por_id["a"].name) == ("a", "tool_timeline_de_lead")   # metadatos intactos
     assert [m.content for m in hilo] == original                       # no muta el estado de entrada
     assert CG.contexto_del_modelo([]) == []
+
+
+# ══ G · SEC-X2-EGRESS-R0 · la marca de envío del comprador vista desde el CRM ═══════════
+
+@pg
+async def test_G_EGRESS_la_marca_del_comprador_no_cambia_lo_que_ve_el_corredor(base):
+    """§10 de SEC-X2-EGRESS-R0. Un efecto directo al comprador deja `reenganche_enviado_en`; el CRM
+    puede leerla SOLO como anti-repetición de su sugerencia de reenganche. Nada más de lo que ve el
+    corredor (etapa, nivel, score, razones, resumen, mensajes, frescura…) puede depender de esa
+    marca: ni para el lead que pidió contacto ni para el que no."""
+    from sqlalchemy import text
+    Sesion, _ = base
+    con, sin = f"qr-{X}-egrcrm01", f"qr-{X}-egrcrm02"
+    assert (await chat.registrar_handoff(con, activo_id=X))["ok"]
+    async with Sesion() as db:
+        await chat.ensure_lead_actividad(db)
+        for sid in (con, sin):
+            await db.execute(text("INSERT INTO checkpoints VALUES (:s)"), {"s": sid})
+            await db.execute(text(
+                "INSERT INTO lead_actividad (session_id, activo_id) VALUES (:s, CAST(:a AS uuid)) "
+                "ON CONFLICT (session_id) DO NOTHING"), {"s": sid, "a": X})
+        await db.execute(text("UPDATE lead_actividad SET ultima_actividad = now() - interval '6 days'"))
+        await db.commit()
+
+    async def _vista():
+        async with Sesion() as db:
+            try:
+                return {lead["session_id"]: lead for lead in await A._leads_de_activo(db, X)}
+            finally:
+                await db.rollback()
+
+    antes = await _vista()
+    async with Sesion() as db:
+        await db.execute(text("UPDATE lead_actividad SET reenganche_enviado_en = now()"))
+        await db.commit()
+    despues = await _vista()
+    assert set(antes) == set(despues) == {con, sin}
+    assert antes[con]["pidio_corredor"] is True and antes[sin]["pidio_corredor"] is False
+    assert antes[con]["frescura"] in ("dormido", "frio_profundo"), "el lead debe estar enfriado"
+    for sid in (con, sin):
+        sin_sugerencia = lambda lead: {k: v for k, v in lead.items() if k != "reenganche"}  # noqa: E731
+        assert sin_sugerencia(antes[sid]) == sin_sugerencia(despues[sid]), sid
+    # Y hoy ni la sugerencia cambia: sin solicitud está retenida; con solicitud, la semántica
+    # acotada lleva «pidió corredor» (caliente) y el motor no sugiere reenganche.
+    assert all(v[s]["reenganche"] is None for v in (antes, despues) for s in (con, sin))

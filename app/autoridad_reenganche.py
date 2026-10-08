@@ -18,8 +18,14 @@ reservar el mismo grant: el segundo espera al bloqueo de fila, re-evalúa la con
 
 Resultados:
     AUTHORIZED(canales)  sólo esos canales pueden salir (un grant de EMAIL no autoriza PUSH)
-    NO_GRANT             el comprador no recibe nada; el corredor sigue su camino (DR-15)
+    NO_GRANT             el comprador no recibe nada. NO es autoridad para nadie más: el corredor
+                         solo recibe con SU propio hecho (`corredor_autorizado`, SEC-X2-EGRESS-R0;
+                         el antiguo «el corredor sigue su camino», DR-15, queda retirado)
     ERROR                no se pudo decidir (p. ej. 038 sin aplicar): nadie recibe nada
+
+SEC-X2-EGRESS-R0 · DOS AUDIENCIAS, DOS AUTORIDADES. Este módulo responde también la de la otra
+audiencia del reenganche —el corredor del inmueble exacto— con `corredor_autorizado`, que no lee
+grants ni amplía la frontera PRINCIPAL_SELF: NO_GRANT PARA LA AUDIENCIA A ≠ AUTORIDAD PARA LA B.
 """
 from __future__ import annotations
 
@@ -97,3 +103,33 @@ async def autorizar_efecto_reenganche(
         canales=frozenset(f["channel"] for f in filas),
         grant_ids=tuple(sorted(f["grant_id"] for f in filas)),
     )
+
+
+async def corredor_autorizado(db, *, session_id: str, activo_id) -> bool:
+    """SEC-X2-EGRESS-R0 · audiencia B: ¿puede el corredor del inmueble EXACTO X recibir un efecto
+    automático del reenganche sobre este lead (aviso o entrada al experimento tocado/holdout)?
+
+    Solo con el hecho X2 de divulgación: la persona PIDIÓ contacto para (session_id, X), es decir,
+    `handoff_sesion.principal_requested_at IS NOT NULL` en la fila de ese par. Es el mismo hecho que
+    abre el hilo al corredor (`assets._assert_sesion_del_activo`); aquí no se inventa otro.
+
+    NO lo dan: el prefijo `qr-` ni ninguna atribución (`lead_actividad.activo_id` dice de dónde
+    vino, no qué autorizó), ser dueño del inmueble, que el comprador no tenga grant, estar en el
+    CRM, el score, estar dormido ni el grupo del experimento. Tampoco lee `consent_grant`: un grant
+    del comprador no abre al corredor.
+
+    Un activo o una sesión vacíos, o cualquier fallo de lectura → False (falla cerrado). En ese
+    caso deshace la transacción del llamador: el cron lo consulta ANTES de reservar ningún grant,
+    así que el rollback no puede tirar un permiso ya consumido."""
+    if not session_id or not activo_id:
+        return False
+    try:
+        return bool((await db.execute(
+            text("SELECT 1 FROM handoff_sesion WHERE session_id = :s "
+                 "AND activo_id = CAST(:a AS uuid) AND principal_requested_at IS NOT NULL"),
+            {"s": session_id, "a": str(activo_id)})).scalar())
+    except Exception as exc:  # noqa: BLE001 — sin el hecho no hay efecto
+        log.error("Reenganche: no se pudo leer la autoridad del corredor (%s) — sin efecto.",
+                  type(exc).__name__)
+        await db.rollback()
+        return False

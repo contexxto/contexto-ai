@@ -1837,7 +1837,8 @@ _LEAD_ACTIVIDAD_DDL = [
     "ultima_actividad timestamptz DEFAULT now(), "
     "reenganche_enviado_en timestamptz)",
     # Fase 3: canal de contacto del COMPRADOR (con consentimiento) para reengancharlo
-    # directo por email/push cuando se enfríe. NULL = no dejó canal → se avisa al corredor.
+    # directo por email/push cuando se enfríe. NULL = no dejó canal → el comprador no recibe nada (y
+    # eso no autoriza al corredor: él solo recibe con su propio hecho, SEC-X2-EGRESS-R0).
     "ALTER TABLE lead_actividad ADD COLUMN IF NOT EXISTS lead_email text",
     "ALTER TABLE lead_actividad ADD COLUMN IF NOT EXISTS lead_telefono text",
     "ALTER TABLE lead_actividad ADD COLUMN IF NOT EXISTS lead_push jsonb",

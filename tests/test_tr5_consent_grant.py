@@ -233,11 +233,18 @@ def test_A4e_revoked_at_nunca_vuelve_a_null_ni_standing_tiene_productor():
 
 
 def test_A4f_el_corredor_queda_fuera_de_consent_grant():
-    """DR-15: el aviso al corredor no pasa por la frontera ni lee grants."""
+    """El aviso al corredor no pasa por la frontera del comprador ni lee grants: un grant del
+    comprador no lo autoriza. SEC-X2-EGRESS-R0 (actualización esperada): ya no es «DR-15: sigue su
+    camino» — su autoridad es SU hecho X2 (`corredor_autorizado`), que tampoco toca grants."""
     import inspect
+    from app.autoridad_reenganche import corredor_autorizado
     fuente = inspect.getsource(cron._escanear_reenganches)
-    rama = fuente[fuente.index("# NO_GRANT"):fuente.index("if not disparados")]
-    assert "autorizar_efecto_reenganche" not in rama and "consent_grant" not in rama
+    rama = fuente[fuente.index("# B · corredor del inmueble EXACTO"):fuente.index("disparados = len(")]
+    for prohibido in ("autorizar_efecto_reenganche", "consent_grant", "veredicto", "canales"):
+        assert prohibido not in rama, prohibido
+    funcion = ast.parse(inspect.getsource(corredor_autorizado).lstrip()).body[0]
+    codigo = "\n".join(ast.unparse(n) for n in funcion.body[1:])        # sin el docstring
+    assert "consent_grant" not in codigo and "principal_requested_at IS NOT NULL" in codigo
 
 
 def test_A4g_la_038_no_toca_lead_actividad_ni_hace_backfill():
@@ -331,15 +338,22 @@ async def test_A6b_reserva_y_marca_en_el_mismo_commit_y_antes_del_envio(monkeypa
     await cron.escanear_reenganches(db)
     sql = [s for s, _ in db.sentencias]
     i_res = next(i for i, s in enumerate(sql) if "UPDATE consent_grant" in s)
-    i_toc = next(i for i, s in enumerate(sql) if "reenganche_grupo = 'tocado'" in s)
+    # SEC-X2-EGRESS-R0 (actualización esperada): la marca del comprador es SOLO la de envío.
+    i_toc = next(i for i, s in enumerate(sql)
+                 if s.lstrip().upper().startswith("UPDATE LEAD_ACTIVIDAD") and "reenganche_enviado_en = now()" in s)
+    assert "reenganche_grupo" not in sql[i_toc] and "reenganche_elegible_en" not in sql[i_toc]
     assert i_res < i_toc
     assert not [c for c in commits_en if i_res < c <= i_toc], "commit entre reserva y marca"
     assert commits_en and commits_en[-1] > i_toc and envios_en and envios_en[0] >= commits_en[-1]
 
 
 async def test_A6c_error_de_autoridad_no_cae_al_corredor(monkeypatch, entorno):
+    """SEC-X2-EGRESS-R0 (actualización esperada): los dos leads tienen el hecho X2. El del ERROR
+    no produce nada, tampoco al corredor (ni cuenta en su N); el otro sí le llega."""
     monkeypatch.setenv("REENGANCHE_CRON_ENABLED", "1")
-    db = BaseEspia([_con_grants("qr-x-1", ["EMAIL", "PUSH"]), _dormido("qr-x-2")])
+    en_error = _con_grants("qr-x-1", ["EMAIL", "PUSH"])
+    en_error["_pidio_corredor"] = en_error["activo_id"]
+    db = BaseEspia([en_error, _dormido("qr-x-2", pidio_corredor=True)])
     orig = db.execute
 
     async def execute(stmt, params=None):
@@ -350,17 +364,23 @@ async def test_A6c_error_de_autoridad_no_cae_al_corredor(monkeypatch, entorno):
     db.execute = execute
     res = await cron.escanear_reenganches(db)
     assert res["comprador"] == 0
-    marcados = [p["ids"] for s, p in db.updates_lead_actividad() if "tocado" in s]
+    marcados = [p["ids"] for s, p in db.updates_lead_actividad()]
     assert all("qr-x-1" not in ids for ids in marcados), "un lead en ERROR quedó marcado"
-    # el lead sin contacto (qr-x-2) no pasa por la frontera: sigue al corredor como siempre
+    # el lead sin contacto (qr-x-2) no pasa por la frontera del comprador; con SU hecho X2, al corredor
     assert res["corredores"] == 1 and [e["to"] for e in entorno["email"]] == ["corredor@prueba.test"]
+    assert entorno["email"][0]["body"].startswith("Tienes 1 interesado dormido ")
+    assert "qr-x-1" not in entorno["holdout"]
 
 
-async def test_A6d_no_grant_sigue_al_corredor(monkeypatch, entorno):
+async def test_A6d_no_grant_no_es_autoridad_para_el_corredor(monkeypatch, entorno):
+    """SEC-X2-EGRESS-R0 (actualización esperada; antes `no_grant_sigue_al_corredor`, DR-15):
+    NO_GRANT PARA LA AUDIENCIA A ≠ AUTORIDAD PARA LA B. Sin el hecho X2: silencio y sin marca."""
     monkeypatch.setenv("REENGANCHE_CRON_ENABLED", "1")
     db = BaseEspia([_con_grants("qr-n-1", [])])
     res = await cron.escanear_reenganches(db)
-    assert res == {"escaneados": 1, "disparados": 1, "holdout": 0, "comprador": 0, "corredores": 1}
+    assert res == {"escaneados": 1, "disparados": 0, "holdout": 0, "comprador": 0, "corredores": 0}
+    assert entorno["email"] == [] and entorno["push"] == [] and entorno["holdout"] == []
+    assert db.updates_lead_actividad() == []
 
 
 async def test_A6e_sin_secreto_el_grant_no_se_consume(monkeypatch, entorno):
@@ -530,7 +550,9 @@ async def test_B5_historico_timestamp_sin_grant_cero_al_comprador(monkeypatch, b
     await _dormida(base, "qr-historico-1", email="h@ejemplo.invalid", push=PUSH, consent=True)
     async with base() as db:
         res = await cron.escanear_reenganches(db)
-    assert res["comprador"] == 0 and res["corredores"] == 1
+    # SEC-X2-EGRESS-R0 (actualización esperada): antes `corredores == 1` (DR-15). Sin grant ni hecho
+    # X2, nadie recibe nada.
+    assert res["comprador"] == 0 and res["corredores"] == 0
     assert "h@ejemplo.invalid" not in [e["to"] for e in entorno["email"]]
     assert all(p["subscription"] != PUSH for p in entorno["push"])
 
@@ -555,7 +577,10 @@ async def test_B6_grant_valido_autoriza_y_control_historico(monkeypatch, base, e
     assert all(g["used_at"] is not None for g in gs), "los dos canales se consumen en el mismo efecto"
     assert len({g["used_at"] for g in gs}) == 1, "…y en el mismo commit"
     f = await _fila(base, sid)
-    assert f["reenganche_grupo"] == "tocado" and f["reenganche_enviado_en"] is not None
+    # SEC-X2-EGRESS-R0 (actualización esperada): el efecto al comprador deja SOLO la marca de envío;
+    # no es una observación del experimento del corredor (antes: grupo 'tocado').
+    assert f["reenganche_enviado_en"] is not None
+    assert f["reenganche_grupo"] is None and f["reenganche_elegible_en"] is None
 
 
 @pg

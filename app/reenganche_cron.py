@@ -1,13 +1,15 @@
 """
 Cron de Reenganche (Fase 2) — vive DENTRO de la app (tarea de fondo), no en un
 servicio aparte ni en WhatsApp. Cada cierto tiempo barre los leads dormidos y,
-cuando el motor (app/reenganche) dispara por VALOR, avisa al CORREDOR por los
-canales que la app YA tiene (Web Push + email/Resend) para que retome la
-conversación — humano en el lazo.
+cuando el motor (app/reenganche) dispara por VALOR, avisa por los canales que la
+app YA tiene (Web Push + email/Resend) a UNA audiencia AUTORIZADA, o a ninguna:
 
-NO mensajea al comprador directo: los leads dormidos-no-calientes no dejaron un
-canal propio (no pidieron corredor → sin email ni push del comprador). Alcanzar
-al comprador directo exige capturar su contacto o WhatsApp — es un paso aparte.
+  · al COMPRADOR, si dejó canal y un grant vivo para ese canal (Fase 3, TR-5);
+  · al CORREDOR del inmueble exacto, solo si la persona le PIDIÓ contacto para ese
+    inmueble (SEC-X2-EGRESS-R0) — humano en el lazo.
+
+Sin ninguna de las dos autoridades, silencio: que el comprador no tenga grant no
+autoriza a avisar al corredor, y llegar por un QR tampoco.
 
 Config por entorno (todas opcionales, con defaults sensatos):
   REENGANCHE_CRON_ENABLED   "1"/"0"     habilita el barrido (default "1"). Se consulta al arrancar
@@ -50,7 +52,8 @@ def _limite() -> int:
 def _holdout_pct() -> int:
     """% de dormidos elegibles que se RETIENE como control (no se les manda el touch automático),
     el contrafactual de la métrica de lift. Default 20 (aprobado para el piloto). 0 = desactivado.
-    Ver docs/DISENO_Metrica_Lift_Intencion.md §3."""
+    Desde SEC-X2-EGRESS-R0 se aplica SOLO a la población que el corredor está autorizado a recibir
+    (el comprador no entra al experimento). Ver docs/DISENO_Metrica_Lift_Intencion.md §3."""
     try:
         return min(100, max(0, int(os.getenv("REENGANCHE_HOLDOUT_PCT", "20"))))
     except ValueError:
@@ -63,8 +66,8 @@ def habilitado() -> bool:
 
 def auto_lead() -> bool:
     """Fase 3: si True, cuando el comprador dejó canal + consentimiento el reenganche le
-    llega a ÉL directo (email/push); si no hay canal, siempre se avisa al corredor.
-    Default True."""
+    llega a ÉL directo (email/push). Si no, el comprador no recibe nada y el corredor solo
+    recibe con su propia autoridad (SEC-X2-EGRESS-R0). Default True."""
     return os.getenv("REENGANCHE_AUTO_LEAD", "1").strip().lower() not in ("0", "false", "no", "")
 
 
@@ -103,9 +106,25 @@ async def escanear_reenganches(db) -> dict:
 
 
 async def _escanear_reenganches(db) -> dict:
-    """Un barrido: detecta leads dormidos con disparo por valor y avisa al corredor.
-    Idempotente vía reenganche_enviado_en (anti-repetición). Devuelve un resumen
-    {escaneados, disparados, corredores}.
+    """Un barrido: detecta leads dormidos con disparo por valor y produce, como mucho, UN efecto
+    por lead y solo hacia una audiencia AUTORIZADA (SEC-X2-EGRESS-R0):
+
+      A · el COMPRADOR (PRINCIPAL_SELF), con su grant por canal (TR-5: autorizar_efecto_reenganche);
+      B · el CORREDOR del inmueble EXACTO del lead, con el hecho X2 (corredor_autorizado) y una
+          elegibilidad calculada SOLO con lo que tiene alcance a ese inmueble
+          (intencion_de_sesion(…, activo_id=X), la frontera R0c; sin respaldo de sesión entera).
+
+    Sin audiencia autorizada → SILENCIO: ni aviso, ni grupo, ni elegible_en, ni enviado_en. El
+    NO_GRANT del comprador ya no deriva al corredor (DR-15 retirado): no es autoridad para nadie.
+
+    El experimento tocado-vs-holdout (`reenganche_grupo`, `reenganche_elegible_en`) alimenta una
+    métrica y un comportamiento del CRM que ve el corredor, así que es SOLO de la rama B: un efecto
+    al comprador deja únicamente la marca de envío (dosis única), nunca grupo ni elegibilidad.
+    ASIGNAR AL EXPERIMENTO ES UN CAMBIO DE ESTADO CON CONSECUENCIAS: exige la misma población
+    autorizada que el aviso.
+
+    Idempotente vía la marca de envío y el grupo (anti-repetición). Devuelve un resumen
+    {escaneados, disparados, holdout, comprador, corredores}.
 
     NO llamar directo: no mira la bandera. La única entrada es escanear_reenganches
     (tests/test_tr4_reenganche.py lo impone sobre todo el código de producción)."""
@@ -114,15 +133,15 @@ async def _escanear_reenganches(db) -> dict:
     from app.notifications import send_notification
     from app.lift import grupo_holdout
     from app import baja_aviso
-    from app.autoridad_reenganche import EstadoAutorizacion, autorizar_efecto_reenganche
+    from app.autoridad_reenganche import (
+        EstadoAutorizacion, autorizar_efecto_reenganche, corredor_autorizado)
 
     pct = _holdout_pct()
     await ensure_lead_actividad(db)
     try:
-        # UNA dosis automática por lead de por vida: se escanea hasta que dispara una vez; luego queda
-        # 'tocado' (enviado) o 'holdout' (retenido) y no vuelve a entrar. Exposición SIMÉTRICA entre brazos
-        # → el contrafactual tocado-vs-holdout es válido (1 vs 0, no dosis-variable vs 0). Además alinea con
-        # "aportar valor sin presionar": el corredor humano retoma a mano; el cron no pinguea en bucle.
+        # UNA dosis automática por lead de por vida: se escanea hasta que produce un efecto; luego queda
+        # con la marca de envío (comprador o corredor tocado) o en 'holdout' (control del corredor) y no
+        # vuelve a entrar. Alinea con "aportar valor sin presionar": el cron no pinguea en bucle.
         filas = (await db.execute(
             text(
                 "SELECT session_id, activo_id::text AS activo_id, ultima_actividad, "
@@ -178,59 +197,44 @@ async def _escanear_reenganches(db) -> dict:
         cache[activo_id] = info
         return info
 
-    candidatos: list[dict] = []
-    holdouts: list[str] = []
+    # 1 · LECTURAS, todas ANTES de reservar ningún grant: un rollback aquí (ficha, corredor, hecho X2)
+    # no puede deshacer un permiso ya consumido.
+    leads: list[dict] = []
     for f in filas:
         sid = f["session_id"]
         activo_id = f["activo_id"]
         horas = _horas_inactividad(f["ultima_actividad"])
-        try:
-            intenc = await intencion_de_sesion(sid, horas_inactividad=horas)
-        except Exception:  # noqa: BLE001
-            continue
-        if not intenc.get("turnos"):
-            continue  # solo escaneó / sin mensajes → no es un lead real
         info = await _info_activo(activo_id)
-        decision = evaluar_reenganche(
-            intencion=intenc, horas_inactividad=horas,
-            direccion=info["direccion"], novedades=info["novedades"],
-        )
-        if not decision:
-            continue
-        # Holdout (contrafactual de la métrica de lift): a un % de los elegibles NO se les manda el
-        # touch automático — quedan marcados como control desde su momento de elegibilidad. El corredor
-        # humano igual puede retomarlos a mano desde el CRM. Ver docs/DISENO_Metrica_Lift_Intencion.md §3.
-        if grupo_holdout(sid, pct) == "holdout":
-            holdouts.append(sid)
-            continue
-        candidatos.append({"sid": sid, "activo_id": activo_id, "f": f, "info": info,
-                           "mensaje": decision["mensaje"]})
-
-    # Marcar el HOLDOUT (contrafactual): grupo + momento de elegibilidad, SIN envío. elegible_en se fija
-    # una sola vez (COALESCE) para anclar la primera elegibilidad. No re-entra al barrido (SELECT lo excluye).
-    if holdouts:
-        try:
-            await db.execute(
-                text("UPDATE lead_actividad SET reenganche_grupo = 'holdout', "
-                     "reenganche_elegible_en = COALESCE(reenganche_elegible_en, now()) "
-                     "WHERE session_id = ANY(:ids)"),
-                {"ids": holdouts},
-            )
-            await db.commit()
-        except Exception:  # noqa: BLE001
-            await db.rollback()
-
-    # Plan 1.1 · TR-5 — AUTORIDAD. El cron ya no decide su propio permiso: lo pregunta a LA frontera
-    # (app/autoridad_reenganche.py) y consume su respuesta sin reinterpretar grants. Con reserva, la
-    # frontera marca `used_at` en la MISMA transacción que la marca 'tocado' de abajo: un solo COMMIT
-    # para permiso consumido + lead tocado, y sólo después el envío.
-    disparados: list[str] = []
-    por_corredor: dict[str, dict] = {}
-    a_comprador: list[dict] = []
-    for c in candidatos:
-        sid, f, info, activo_id = c["sid"], c["f"], c["info"], c["activo_id"]
         canales = (["EMAIL"] if f["lead_email"] else []) + (["PUSH"] if f["lead_push"] else [])
+        # A · comprador: misma semántica que antes (sesión entera). Este barrido NO adjudica si la
+        # personalización al PROPIO comprador debe acotarse al inmueble: no es divulgación a terceros.
+        decision = None
         if auto_lead() and canales:
+            try:
+                intenc = await intencion_de_sesion(sid, horas_inactividad=horas)
+            except Exception:  # noqa: BLE001
+                intenc = {}
+            if intenc.get("turnos"):  # solo escaneó / sin mensajes → no es un lead real
+                decision = evaluar_reenganche(
+                    intencion=intenc, horas_inactividad=horas,
+                    direccion=info["direccion"], novedades=info["novedades"],
+                )
+        leads.append({"sid": sid, "activo_id": activo_id, "f": f, "info": info, "horas": horas,
+                      "canales": canales, "decision": decision,
+                      # B · el hecho X2 para el inmueble EXACTO del lead, nada más.
+                      "corredor_autorizado": await corredor_autorizado(db, session_id=sid, activo_id=activo_id)})
+
+    # 2 · DECISIÓN por lead: una audiencia autorizada o ninguna. Con reserva, la frontera TR-5 marca
+    # `used_at` en la MISMA transacción que la marca de envío de abajo: un solo COMMIT para permiso
+    # consumido + lead marcado, y sólo después el envío.
+    a_comprador: list[dict] = []
+    ids_comprador: list[str] = []
+    tocados: list[str] = []
+    holdouts: list[str] = []
+    por_corredor: dict[str, dict] = {}
+    for c in leads:
+        sid, f, info, activo_id = c["sid"], c["f"], c["info"], c["activo_id"]
+        if c["decision"]:
             # Plan 1.1 · TR-2: cada aviso al comprador lleva su enlace de baja. Sin
             # REENGANCHE_BAJA_SECRET no se puede emitir: entonces se consulta la frontera SIN
             # reservar (no se gasta el permiso) y, si lo había, el lead queda intacto — ni
@@ -240,49 +244,98 @@ async def _escanear_reenganches(db) -> dict:
             except baja_aviso.SinSecretoDeBaja:
                 baja = None
             veredicto = await autorizar_efecto_reenganche(
-                db, session_id=sid, canales_candidatos=canales, reservar=baja is not None)
+                db, session_id=sid, canales_candidatos=c["canales"], reservar=baja is not None)
             if veredicto.estado is EstadoAutorizacion.ERROR:
-                # Sin decisión no hay efecto: ni comprador, ni corredor, ni marca. Un fallo de
-                # autoridad no se esconde detrás del camino del corredor.
+                # Sin decisión no hay efecto ni marca, para NINGUNA audiencia: un fallo de autoridad
+                # no se esconde detrás del camino del corredor. Sin marca, vuelve al próximo barrido.
                 log.error("Reenganche cron: autoridad en ERROR — lead omitido.")
                 continue
             if veredicto.estado is EstadoAutorizacion.AUTHORIZED:
                 if baja is None:
                     log.error("Reenganche cron: sin secreto de baja — aviso al comprador omitido.")
                     continue
-                disparados.append(sid)
+                ids_comprador.append(sid)
                 a_comprador.append({
                     "email": f["lead_email"] if "EMAIL" in veredicto.canales else None,
                     "push": f["lead_push"] if "PUSH" in veredicto.canales else None,
-                    "mensaje": c["mensaje"], "activo_id": activo_id, "baja": baja,
+                    "mensaje": c["decision"]["mensaje"],
+                    "activo_id": activo_id, "baja": baja,
                 })
+                # UNA audiencia por lead: el comprador tiene prioridad. Su efecto no avisa al corredor
+                # (un grant del comprador no lo autoriza) ni entra a su experimento.
                 continue
-            # NO_GRANT → el comprador no recibe nada; el corredor sigue su camino (DR-15).
-        disparados.append(sid)
-        # Sin permiso del comprador → avisamos al corredor. Agrupa por corredor (id del
-        # dueño; email/activo solo como respaldo) para un único aviso.
+            # NO_GRANT → ningún efecto al comprador. Y NO es autoridad para el corredor: la rama B se
+            # evalúa abajo por su cuenta, exactamente igual que para un lead sin canal propio.
+
+        # B · corredor del inmueble EXACTO. Orden: autoridad → canal → elegibilidad acotada → grupo.
+        # Nada de lo que sigue (ni el holdout) ocurre para un lead sin el hecho X2.
+        if not c["corredor_autorizado"]:
+            continue  # ni el QR, ni la atribución, ni el NO_GRANT del comprador: silencio
+        if not info["email"] and not info["sub"]:
+            continue  # sin canal no hay tratamiento posible → tampoco un control válido
+        try:
+            intenc_x = await intencion_de_sesion(sid, horas_inactividad=c["horas"], activo_id=activo_id)
+        except Exception:  # noqa: BLE001
+            continue
+        if not intenc_x.get("turnos"):
+            continue
+        if not evaluar_reenganche(
+            intencion=intenc_x, horas_inactividad=c["horas"],
+            direccion=info["direccion"], novedades=info["novedades"],
+        ):
+            # Lo hablado de otro inmueble, o el AgentState sin procedencia, no vuelve elegible a X.
+            # Sin respaldo a la sesión entera: silencio.
+            continue
+        # Holdout (contrafactual de la métrica de lift): un % de la población AUTORIZADA y elegible del
+        # corredor no recibe el touch automático y queda como control desde su momento de elegibilidad.
+        # Control y tratamiento son la MISMA audiencia y la misma clase de tratamiento. El corredor
+        # humano igual puede retomarlos a mano desde el CRM. Ver docs/DISENO_Metrica_Lift_Intencion.md §3.
+        if grupo_holdout(sid, pct) == "holdout":
+            holdouts.append(sid)
+            continue
+        tocados.append(sid)
+        # Agrupa por corredor (id del dueño; email/activo solo como respaldo) para un único aviso. N
+        # cuenta SOLO leads que pasaron uno a uno la autoridad, la elegibilidad acotada y el grupo tocado.
         clave = info["corredor_id"] or info["email"] or f"activo:{activo_id}"
         grupo = por_corredor.setdefault(clave, {"email": info["email"], "sub": info["sub"], "n": 0})
         grupo["n"] += 1
 
-    if not disparados:
-        return {"escaneados": len(filas), "disparados": 0, "holdout": len(holdouts),
-                "comprador": 0, "corredores": 0}
+    disparados = len(ids_comprador) + len(tocados)
+    if not disparados and not holdouts:
+        return {"escaneados": len(filas), "disparados": 0, "holdout": 0, "comprador": 0, "corredores": 0}
 
-    # Marcar anti-repetición + grupo 'tocado' + elegibilidad ANTES de notificar: si un envío falla, no se
-    # reintenta en bucle (mejor perder un aviso que spammear al corredor). El COMMIT confirma a la vez los
-    # permisos consumidos (TR-5); si falla, se deshacen los dos y no sale nada.
+    # 3 · MARCAS, todas en UN commit y ANTES de notificar: si un envío falla, no se reintenta en bucle
+    # (mejor perder un aviso que spammear). El COMMIT confirma a la vez los permisos consumidos (TR-5);
+    # si falla, se deshace todo y no sale nada.
     try:
-        await db.execute(
-            text("UPDATE lead_actividad SET reenganche_enviado_en = now(), reenganche_grupo = 'tocado', "
-                 "reenganche_elegible_en = COALESCE(reenganche_elegible_en, now()) "
-                 "WHERE session_id = ANY(:ids)"),
-            {"ids": disparados},
-        )
+        if ids_comprador:
+            # Comprador: SOLO la marca de envío (anti-repetición). Sin grupo ni elegible_en: un efecto
+            # PRINCIPAL_SELF no es una observación del experimento del corredor.
+            await db.execute(
+                text("UPDATE lead_actividad SET reenganche_enviado_en = now() "
+                     "WHERE session_id = ANY(:ids)"),
+                {"ids": ids_comprador},
+            )
+        if holdouts:
+            # Control del corredor: grupo + momento de elegibilidad, SIN envío. elegible_en se fija una
+            # sola vez (COALESCE) para anclar la primera elegibilidad. No re-entra (el SELECT lo excluye).
+            await db.execute(
+                text("UPDATE lead_actividad SET reenganche_grupo = 'holdout', "
+                     "reenganche_elegible_en = COALESCE(reenganche_elegible_en, now()) "
+                     "WHERE session_id = ANY(:ids)"),
+                {"ids": holdouts},
+            )
+        if tocados:
+            await db.execute(
+                text("UPDATE lead_actividad SET reenganche_enviado_en = now(), reenganche_grupo = 'tocado', "
+                     "reenganche_elegible_en = COALESCE(reenganche_elegible_en, now()) "
+                     "WHERE session_id = ANY(:ids)"),
+                {"ids": tocados},
+            )
         await db.commit()
     except Exception:  # noqa: BLE001
         await db.rollback()
-        return {"escaneados": len(filas), "disparados": len(disparados), "holdout": len(holdouts),
+        return {"escaneados": len(filas), "disparados": disparados, "holdout": len(holdouts),
                 "comprador": 0, "corredores": 0}
 
     # Fase 3: al COMPRADOR directo, SÓLO por los canales que la frontera autorizó (un grant de
@@ -308,8 +361,6 @@ async def _escanear_reenganches(db) -> dict:
 
     notificados = 0
     for grupo in por_corredor.values():
-        if not grupo["email"] and not grupo["sub"]:
-            continue  # sin canal al corredor → no hay a quién avisar
         n = grupo["n"]
         plural = "s" if n != 1 else ""
         try:
@@ -326,8 +377,8 @@ async def _escanear_reenganches(db) -> dict:
             log.error("Reenganche cron: fallo notificando corredor: %s", exc)
 
     log.info("Reenganche cron: %d escaneados, %d disparados, %d holdout, %d a comprador, %d a corredor",
-             len(filas), len(disparados), len(holdouts), enviados_comprador, notificados)
-    return {"escaneados": len(filas), "disparados": len(disparados), "holdout": len(holdouts),
+             len(filas), disparados, len(holdouts), enviados_comprador, notificados)
+    return {"escaneados": len(filas), "disparados": disparados, "holdout": len(holdouts),
             "comprador": enviados_comprador, "corredores": notificados}
 
 

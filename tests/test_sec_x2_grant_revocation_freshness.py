@@ -63,6 +63,11 @@ async def _autoriza(Sesion, sid, canales):
             db, session_id=sid, canales_candidatos=canales, reservar=False)).estado
 
 
+async def _reloj(db):
+    """Hora REAL del servidor (no la de la transacción): acota la de la sentencia que revoca."""
+    return (await db.execute(text("SELECT clock_timestamp()"))).scalar()
+
+
 async def _sql(Sesion, sentencia, params):
     async with Sesion() as db:
         await db.execute(text(sentencia), params)
@@ -80,10 +85,13 @@ async def test_A_la_revocacion_explicita_de_una_transaccion_mas_vieja_que_el_gra
         await _si(sid, cab)                                    # T2
         gs = await _grants_completos(base, sid)
         assert gs and all(g["granted_at"] > t0 for g in gs), "precondición: el grant nace DESPUÉS de t0"
+        antes = await _reloj(t1)
         await revocar_grants_reenganche(t1, sid)
+        despues = await _reloj(t1)
         await t1.commit()
     gs = await _grants_completos(base, sid)
     assert gs and all(g["revoked_at"] is not None and g["revoked_at"] >= g["granted_at"] for g in gs)
+    assert all(antes <= g["revoked_at"] <= despues for g in gs), "revoked_at no es la hora de la revocación"
     assert await _autoriza(base, sid, ["EMAIL"]) is EstadoAutorizacion.NO_GRANT
 
 
@@ -98,12 +106,15 @@ async def test_B_un_nuevo_si_revoca_el_grant_vivo_que_aparecio_mientras_tanto(ba
         await _si(sid, cab)                                    # T2: el grant intermedio
         intermedio = (await _grants_completos(base, sid))[0]
         assert intermedio["granted_at"] > t0, "precondición: el grant intermedio nace DESPUÉS de t0"
+        antes = await _reloj(t1)
         await crear_grants_reenganche(t1, prueba=_prueba(sid), canales=[Channel.EMAIL], copy_version=COPY,
                                       activo_ref=None)
+        despues = await _reloj(t1)
         await t1.commit()
     gs = await _grants_completos(base, sid)
     viejo = next(g for g in gs if g["grant_id"] == intermedio["grant_id"])
     assert viejo["revoked_at"] is not None and viejo["revoked_at"] >= viejo["granted_at"]
+    assert antes <= viejo["revoked_at"] <= despues, "revoked_at no es la hora de la sustitución"
     assert len(gs) == 2 and len(_vivos(gs, "EMAIL")) == 1
     assert _vivos(gs, "EMAIL")[0]["grant_id"] != intermedio["grant_id"]
 
@@ -113,10 +124,13 @@ async def test_C_la_revocacion_ordinaria_sigue_igual(base):
     sid, cab = await _lead(base)
     await _si(sid, cab, push=True)
     async with base() as db:
+        antes = await _reloj(db)
         await revocar_grants_reenganche(db, sid)
+        despues = await _reloj(db)
         await db.commit()
     gs = await _grants_completos(base, sid)
     assert len(gs) == 2 and _vivos(gs) == [] and all(g["revoked_at"] >= g["granted_at"] for g in gs)
+    assert all(antes <= g["revoked_at"] <= despues for g in gs)
 
 
 @pg

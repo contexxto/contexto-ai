@@ -2,8 +2,9 @@
 
 UN productor: `POST /api/v1/chat/lead-contacto` con `consent=true`, que es la acción explícita
 de la persona (G7f: el agente nunca produce un grant; `app/agent/` no importa este módulo, y
-`tests/test_tr5_consent_grant.py` lo impone). UNA revocación: `_reducir_autoridad_reenganche`
-(control de la UI y enlace de baja firmado de TR-2).
+`tests/test_tr5_consent_grant.py` lo impone). DOS escrituras de revocación: la sustitución dentro de
+un nuevo «sí» (`crear_grants_reenganche`) y la revocación explícita (`revocar_grants_reenganche`, desde
+`_reducir_autoridad_reenganche`: control de la UI y enlace de baja firmado de TR-2).
 
 Quién DECIDE si un efecto está autorizado no vive aquí: vive en `app/autoridad_reenganche.py`,
 la frontera única. Este módulo sólo escribe evidencia de permiso y la retira.

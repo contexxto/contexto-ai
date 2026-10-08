@@ -1097,6 +1097,54 @@ async def mine_leads(
             "pendiente": componer_pendiente(leads)}
 
 
+# SEC-X1-CRM-AUTHORITY-LIVENESS-R0 · AUTORIDAD PASADA ≠ AUTORIDAD ACTUAL. Un hilo persistido del CRM (narraciones
+# del asistente, mensajes del corredor, salidas retenidas de tools) se produjo con el alcance que el corredor
+# tenía ENTONCES. Si después pierde un inmueble o sale de su agencia, ese hilo puede seguir ALMACENADO, pero no
+# legible ni como contexto del modelo: ALMACENAMIENTO ≠ AUTORIDAD DE DIVULGACIÓN. Dos piezas:
+#   · la huella del alcance (`_alcance_crm`) entra en el id del hilo: con otro alcance, el hilo es otro (fresco);
+#     el viejo queda inaccesible, sin borrar ni reescribir nada;
+#   · en el modo por interesado, el lead tiene que estar HOY en `_leads_del_corredor` (la misma frontera que el
+#     CRM y las tools): ni el rol, ni que exista el checkpoint, ni conocer el `lead` dan acceso.
+# El LLM no decide nada de esto: se resuelve ANTES de leer el checkpoint o de invocar el grafo.
+
+
+def _lead_canonico(lead_ref: str | None) -> str | None:
+    """El `lead` tal cual llega o None. Solo vale el id canónico (lo que el hilo puede codificar sin
+    transformación): una referencia que `_crm_thread` tendría que limpiar o truncar no se acepta."""
+    import re
+    if not isinstance(lead_ref, str) or not lead_ref:
+        return None
+    return lead_ref if re.fullmatch(r"[A-Za-z0-9_-]{1,100}", lead_ref) else None
+
+
+async def _alcance_crm(db: AsyncSession, user: CurrentUser) -> str:
+    """Huella del alcance VIGENTE del corredor: el conjunto de inmuebles que hoy le da su dueño o su agencia
+    (`_activos_del_corredor`, la misma fuente que `_leads_del_corredor`). Cambia si pierde o gana uno."""
+    import hashlib
+    ids = sorted(a["id"] for a in await _activos_del_corredor(db, user.user_id, user.agency_id))
+    return hashlib.sha256(("|".join(ids)).encode("utf-8")).hexdigest()[:16]
+
+
+async def _lead_en_alcance_actual(db: AsyncSession, user: CurrentUser, lead_ref: str | None) -> bool:
+    """¿El interesado `lead_ref` está HOY dentro del CRM del corredor? Misma frontera que el CRM y las tools."""
+    lead = _lead_canonico(lead_ref)
+    if lead is None:
+        return False
+    return any(l.get("session_id") == lead for l in await _leads_del_corredor(db, user.user_id, user.agency_id))
+
+
+async def _hilo_crm_vigente(db: AsyncSession, user: CurrentUser, lead: str | None, modo: str) -> str | None:
+    """El hilo que el corredor puede usar AHORA, o None si el interesado pedido no está en su alcance
+    vigente. Se llama ANTES de leer el checkpoint o de invocar el grafo."""
+    if modo == "copiloto" and lead is not None:
+        if not await _lead_en_alcance_actual(db, user, lead):
+            return None
+    return _crm_thread(user.user_id, lead if modo == "copiloto" else None, modo, await _alcance_crm(db, user))
+
+
+_FUERA_DE_ALCANCE = "Ese interesado no está en tu CRM."
+
+
 class CRMChatReq(BaseModel):
     message: str = Field(..., min_length=1, max_length=2000)
     session_id: str | None = Field(default=None, max_length=120)  # deprecado (el hilo se deriva del JWT)
@@ -1115,15 +1163,19 @@ class CRMChatReq(BaseModel):
 _EPOCA_HILO_CRM = "x1v1"
 
 
-def _crm_thread(user_id: str, lead_ref: str | None = None, modo: str = "copiloto") -> str:
+def _crm_thread(user_id: str, lead_ref: str | None = None, modo: str = "copiloto", alcance: str = "") -> str:
     """Hilo DERIVADO DEL JWT (nunca del cliente) → un corredor no puede leer el hilo de otro. Dos agentes,
-    hilos distintos: ESTRATEGA = un hilo de cartera (crm-x1v1-estratega-{user}); COPILOTO = por interesado
-    (crm-x1v1-{user}-lead-{ref}) o de cartera (crm-x1v1-{user}) si no hay lead. Coherente con 'Enfocado en
-    X'. La época (`_EPOCA_HILO_CRM`) deja fuera de la superficie activa los hilos anteriores a SEC-X1-R0."""
+    hilos distintos: ESTRATEGA = un hilo de cartera (crm-x1v1-estratega-{user}-c{alcance}); COPILOTO = por
+    interesado (crm-x1v1-{user}-c{alcance}-lead-{ref}) o de cartera (crm-x1v1-{user}-c{alcance}) si no hay
+    lead. La época (`_EPOCA_HILO_CRM`) deja fuera de la superficie activa los hilos anteriores a SEC-X1-R0.
+
+    SEC-X1-CRM-AUTHORITY-LIVENESS-R0 · `alcance` es la huella del alcance VIGENTE del corredor (`_alcance_crm`):
+    un hilo persistido solo se alcanza bajo el MISMO alcance con el que se produjo. Llamar SIEMPRE vía
+    `_hilo_crm_vigente`, que la calcula y comprueba el lead antes de tocar el checkpointer."""
     import re
     if modo == "estratega":
-        return f"crm-{_EPOCA_HILO_CRM}-estratega-{user_id}"
-    base = f"crm-{_EPOCA_HILO_CRM}-{user_id}"
+        return f"crm-{_EPOCA_HILO_CRM}-estratega-{user_id}-c{alcance}"
+    base = f"crm-{_EPOCA_HILO_CRM}-{user_id}-c{alcance}"
     if lead_ref:
         suf = re.sub(r"[^A-Za-z0-9_-]", "", str(lead_ref))[:100]
         if suf:
@@ -1142,6 +1194,7 @@ async def crm_chat(
     request: Request,
     payload: CRMChatReq,
     user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> dict:
     if user.rol not in ("corredor", "inmobiliaria"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
@@ -1151,7 +1204,16 @@ async def crm_chat(
     from app.agent.crm_guardrails import tool_jsons_del_turno
     from app.agent.panel_seed import derivar_panel_seed
     from app.agent.siguiente import derivar_siguiente
-    sid = _crm_thread(user.user_id, payload.lead, payload.modo)   # hilo por agente/lead, derivado del JWT
+    # SEC-X1-CRM-AUTHORITY-LIVENESS-R0 · hilo por agente/lead derivado del JWT Y del alcance VIGENTE, resuelto
+    # antes de invocar el grafo: un interesado fuera del CRM actual no carga ningún hilo persistido.
+    try:
+        sid = await _hilo_crm_vigente(db, user, payload.lead, payload.modo)
+    except Exception:  # noqa: BLE001 — sin poder resolver el alcance no hay contexto que cargar
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail="El asistente del CRM no está disponible en este momento.")
+    if sid is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_FUERA_DE_ALCANCE)
     # El owner sale del JWT y viaja en config → las tools scopean por él, nunca el LLM.
     # modo: elige el agente (copiloto táctico / estratega de cartera). corredor_nombre: para firmar.
     config = {"configurable": {"thread_id": sid, "modo": payload.modo,
@@ -1195,6 +1257,7 @@ async def crm_thread(
     lead: str | None = None,
     modo: Literal["copiloto", "estratega"] = "copiloto",
     user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> dict:
     if user.rol not in ("corredor", "inmobiliaria"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
@@ -1202,7 +1265,15 @@ async def crm_thread(
     from langchain_core.messages import AIMessage, HumanMessage
     from app.agent.crm_graph import compiled_crm_graph
     from app.agent.crm_guardrails import texto_de_content
-    sid = _crm_thread(user.user_id, lead, modo)
+    # SEC-X1-CRM-AUTHORITY-LIVENESS-R0 · el alcance vigente se resuelve ANTES de leer el checkpoint. Fuera de él
+    # la respuesta es la de un hilo vacío: no revela si hubo conversación.
+    try:
+        sid = await _hilo_crm_vigente(db, user, lead, modo)
+    except Exception:  # noqa: BLE001 — sin alcance resuelto no se lee nada
+        await db.rollback()
+        sid = None
+    if sid is None:
+        return {"session_id": None, "mensajes": []}
     try:
         state = await compiled_crm_graph.aget_state({"configurable": {"thread_id": sid}})
     except Exception:  # noqa: BLE001 — sin hilo aún / checkpointer no montado
@@ -1238,7 +1309,16 @@ async def crm_thread_reset(
     if user.rol not in ("corredor", "inmobiliaria"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                             detail="El CRM Vivo es para corredores/inmobiliarias.")
-    sid = _crm_thread(user.user_id, lead, modo)
+    # SEC-X1-CRM-AUTHORITY-LIVENESS-R0 · «nueva conversación» actúa solo sobre el hilo VIGENTE de un lead en
+    # alcance. Fuera de él, 403 y ninguna escritura: perder el alcance vuelve el hilo inaccesible, no lo borra.
+    try:
+        sid = await _hilo_crm_vigente(db, user, lead, modo)
+    except Exception:  # noqa: BLE001
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail="El asistente del CRM no está disponible en este momento.")
+    if sid is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_FUERA_DE_ALCANCE)
     try:
         for tbl in ("checkpoint_blobs", "checkpoint_writes", "checkpoints"):
             await db.execute(text(f"DELETE FROM {tbl} WHERE thread_id = :t"), {"t": sid})

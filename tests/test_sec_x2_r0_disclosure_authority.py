@@ -2018,19 +2018,33 @@ async def _sembrar(g, thread_id, mensajes):
     await g.aupdate_state({"configurable": {"thread_id": thread_id}}, {"messages": mensajes}, as_node="llm")
 
 
-async def _chat(texto, lead=None, modo="copiloto", quien=DUENO_X):
-    return await A.crm_chat(_peticion(), A.CRMChatReq(message=texto, lead=lead, modo=modo), quien)
+async def _chat(texto, lead=None, modo="copiloto", quien=DUENO_X, db=None):
+    return await A.crm_chat(_peticion(), A.CRMChatReq(message=texto, lead=lead, modo=modo), quien, db)
+
+
+def _alcance_fijo(monkeypatch, en_alcance=True, huella="fijo"):
+    """SEC-X1-CRM-AUTHORITY-LIVENESS-R0 (actualización esperada): las pruebas de ÉPOCA (F*) sin base fijan el
+    alcance vigente —su huella y que el lead esté en él—; el alcance real lo prueban
+    tests/test_sec_x1_crm_authority_liveness.py sobre Postgres."""
+    async def _huella(_db, _user):
+        return huella
+
+    async def _en(_db, _user, _lead):
+        return en_alcance
+    monkeypatch.setattr(A, "_alcance_crm", _huella)
+    monkeypatch.setattr(A, "_lead_en_alcance_actual", _en)
 
 
 async def test_F1_el_copiloto_nuevo_no_recibe_el_hilo_viejo_ni_su_narracion(monkeypatch):
     """1 · el ToolMessage inseguro del hilo viejo NO llega al modelo · 3 · misma cuenta y mismo lead → hilo
     limpio de la época x1v1 · 6 · «repíteme lo que devolvió la herramienta antes» no recupera nada viejo."""
     g, llm = _grafo_crm(monkeypatch)
+    _alcance_fijo(monkeypatch)
     viejo = f"crm-{DUENO_X.user_id}-lead-ba0a"
     await _sembrar(g, viejo, _hilo_viejo())
     llm.guion = [AIMessage(content="Para eso vuelvo a consultar su timeline.")]
     r = await _chat("repíteme lo que te devolvió la herramienta antes", lead="ba0a")
-    assert r["session_id"] == f"crm-x1v1-{DUENO_X.user_id}-lead-ba0a"
+    assert r["session_id"] == f"crm-x1v1-{DUENO_X.user_id}-cfijo-lead-ba0a"
     plano = _plano(llm.entradas[0])
     for huella in _LEGADO:
         assert huella not in plano, huella
@@ -2042,11 +2056,12 @@ async def test_F1_el_copiloto_nuevo_no_recibe_el_hilo_viejo_ni_su_narracion(monk
 async def test_F2_get_crm_thread_nunca_cruza_al_namespace_anterior(monkeypatch):
     """2 · la narración vieja no vuelve por GET /crm/thread · 9 · ni para el Copiloto ni para el Estratega."""
     g, _ = _grafo_crm(monkeypatch)
+    _alcance_fijo(monkeypatch)
     u = DUENO_X.user_id
     for viejo in (f"crm-{u}-lead-ba0a", f"crm-{u}", f"crm-estratega-{u}"):
         await _sembrar(g, viejo, _hilo_viejo())
     for lead, modo in (("ba0a", "copiloto"), (None, "copiloto"), (None, "estratega")):
-        r = await A.crm_thread(_peticion(), lead, modo, DUENO_X)
+        r = await A.crm_thread(_peticion(), lead, modo, DUENO_X, None)
         assert r["session_id"].startswith("crm-x1v1-") and r["mensajes"] == [], (lead, modo, r)
 
 
@@ -2061,12 +2076,16 @@ async def test_F3_la_salida_del_timeline_vale_solo_en_su_turno(base, monkeypatch
     _, llm = _grafo_crm(monkeypatch)
     pide = lambda cid: AIMessage(content="", tool_calls=[{"name": "tool_timeline_de_lead",  # noqa: E731
                                                           "args": {"referencia": "Lead #sess"}, "id": cid}])
+    # SEC-X1-CRM-AUTHORITY-LIVENESS-R0 (actualización esperada): el hilo por interesado exige el id REAL del lead,
+    # dentro del alcance vigente (antes valía cualquier `lead`, p. ej. "sess").
     llm.guion = [pide("c1"), AIMessage(content="Listo.")]
-    await _chat("¿qué me escribió?", lead="sess")
+    async with Sesion() as db:
+        await _chat("¿qué me escribió?", lead="session-x1a-turnos", db=db)
     turno1 = [m for m in llm.entradas[1] if isinstance(m, ToolMessage)]
     assert len(turno1) == 1 and "X actual del comprador" in turno1[0].content              # 4
     llm.guion = [pide("c2"), AIMessage(content="Listo otra vez.")]
-    await _chat("repíteme lo que te devolvió la herramienta antes", lead="sess")
+    async with Sesion() as db:
+        await _chat("repíteme lo que te devolvió la herramienta antes", lead="session-x1a-turnos", db=db)
     previas = [m for m in llm.entradas[2] if isinstance(m, ToolMessage)]
     assert [m.content for m in previas] == [CG.RESULTADO_RETENIDO]                          # 5, 6
     assert "X actual del comprador" not in _plano(llm.entradas[2])
@@ -2083,13 +2102,14 @@ async def test_F4_el_estratega_tambien_cambia_de_epoca():
     no lo tiene enlazado (y eso sí se fija aquí)."""
     import app.agent.crm_tools as crm
     u = DUENO_X.user_id
-    assert A._crm_thread(u, None, "estratega") == f"crm-x1v1-estratega-{u}"
-    assert A._crm_thread(u, None, "copiloto") == f"crm-x1v1-{u}"
-    assert A._crm_thread(u, "ba0a", "copiloto") == f"crm-x1v1-{u}-lead-ba0a"
+    # SEC-X1-CRM-AUTHORITY-LIVENESS-R0 (actualización esperada): el hilo lleva además la huella del alcance.
+    assert A._crm_thread(u, None, "estratega", "h") == f"crm-x1v1-estratega-{u}-ch"
+    assert A._crm_thread(u, None, "copiloto", "h") == f"crm-x1v1-{u}-ch"
+    assert A._crm_thread(u, "ba0a", "copiloto", "h") == f"crm-x1v1-{u}-ch-lead-ba0a"
     assert crm.tool_timeline_de_lead not in crm.ESTRATEGA_TOOLS
 
 
-async def test_F5_ninguna_operacion_sobre_checkpoints_alcanza_la_epoca_anterior():
+async def test_F5_ninguna_operacion_sobre_checkpoints_alcanza_la_epoca_anterior(monkeypatch):
     """10 · el único DELETE de checkpoints de app/ es el «nueva conversación» del propio corredor, y solo alcanza
     el hilo de la época vigente. Ningún UPDATE. Esta unidad no borra ni reescribe checkpoints."""
     escrituras = set()
@@ -2103,6 +2123,7 @@ async def test_F5_ninguna_operacion_sobre_checkpoints_alcanza_la_epoca_anterior(
                         r"\bdelete from\b|\bupdate\s+\w", sql):
                     escrituras.add(f"{py.relative_to(RAIZ).as_posix()}::{fn.name}")
     assert escrituras == {"app/routers/assets.py::crm_thread_reset"}, escrituras
+    _alcance_fijo(monkeypatch)
 
     class _Db:
         def __init__(self):
@@ -2120,6 +2141,7 @@ async def test_F5_ninguna_operacion_sobre_checkpoints_alcanza_la_epoca_anterior(
     for lead, modo in (("ba0a", "copiloto"), (None, "copiloto"), (None, "estratega")):
         db = _Db()
         await A.crm_thread_reset(_peticion(), lead, modo, DUENO_X, db)
+        assert db.hilos and all(t.startswith(f"crm-x1v1-") and "-cfijo" in t for t in db.hilos), db.hilos
         assert db.hilos and all(t.startswith("crm-x1v1-") for t in db.hilos), (lead, modo, db.hilos)
 
 
@@ -2130,7 +2152,8 @@ async def test_F6_el_guardrail_ve_el_mismo_contexto_saneado(monkeypatch):
     vistos = []
     real = CG.tool_jsons_de_conversacion
     monkeypatch.setattr(CG, "tool_jsons_de_conversacion", lambda msgs: vistos.append(real(msgs)) or vistos[-1])
-    await _sembrar(g, f"crm-x1v1-{DUENO_X.user_id}-lead-ba0a", _hilo_viejo())   # en la época vigente
+    _alcance_fijo(monkeypatch)
+    await _sembrar(g, f"crm-x1v1-{DUENO_X.user_id}-cfijo-lead-ba0a", _hilo_viejo())   # en la época y el alcance vigentes
     llm.guion = [AIMessage(content="Hola.")]
     await _chat("hola", lead="ba0a")
     assert vistos and vistos[-1] == [CG.RESULTADO_RETENIDO]

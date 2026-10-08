@@ -2991,8 +2991,9 @@ async def intencion_de_sesion(session_id: str, horas_inactividad: float | None =
 
     horas_inactividad: si se pasa, permite derivar el estado 'dormido' (reenganche).
 
-    activo_id: lo pasa SOLO la proyección del CRM de ESE inmueble, cuyo resultado llega al
-    corredor (audiencia = corredor de X). Entonces la semántica (etapa, nivel, score, razones,
+    activo_id: lo pasan los consumidores cuyo resultado llega al corredor de ESE inmueble
+    (audiencia = corredor de X): la proyección del CRM y, desde SEC-X2-EGRESS-R0, la elegibilidad de
+    la rama del corredor del cron de reenganche. Entonces la semántica (etapa, nivel, score, razones,
     resumen, turnos, reenganche) sale ÚNICAMENTE de fuentes con alcance demostrado a X:
       - SEC-X2-R0b: los mensajes del handoff con `activo_id` exacto (ni NULL ni otro hilo) y
         «pidió corredor» = solicitud registrada para X;
@@ -3003,8 +3004,9 @@ async def intencion_de_sesion(session_id: str, horas_inactividad: float | None =
         un metadato de EXISTENCIA para que el lead siga en la lista, nunca contenido.
     Atribución y tiempo (`es_qr`, `horas_inactividad`) siguen contando: no son contenido.
     Un activo_id inválido falla cerrado (sin señales del handoff ni del AgentState).
-    Sin activo_id (cron de reenganche, endpoint del propio comprador) el cálculo no cambia:
-    CÓMPUTO INTERNO ≠ DIVULGACIÓN AL CORREDOR (el egreso del reenganche es otra unidad)."""
+    Sin activo_id (la rama del COMPRADOR del cron de reenganche, el endpoint del propio comprador)
+    el cálculo no cambia: CÓMPUTO INTERNO ≠ DIVULGACIÓN AL CORREDOR. Ese resultado de sesión entera
+    nunca decide un efecto hacia el corredor (SEC-X2-EGRESS-R0)."""
     from app.intencion import analizar_intencion
 
     config = _langgraph_config(session_id)

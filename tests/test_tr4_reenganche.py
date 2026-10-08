@@ -96,6 +96,9 @@ class BaseEspia:
             r = _Resultado([])
             r._escalar = 1 if fila and fila.get("_pidio_corredor") == params.get("a") else None
             return r
+        # …y sus marcas vuelven a comprobar la fila con RETURNING: el doble devuelve las mismas ids.
+        if sql.lstrip().upper().startswith("UPDATE LEAD_ACTIVIDAD") and "RETURNING session_id" in sql:
+            return _Resultado([{"session_id": s} for s in params.get("ids", [])])
         if "FROM activos_inmutables" in sql:
             return _Resultado([{"dir": "Av. Prueba N1-23", "f": None, "corredor_id": "corr-1"}])
         return _Resultado([])
@@ -339,7 +342,7 @@ async def test_7_bandera_encendida_el_barrido_hace_lo_de_siempre(monkeypatch, en
     assert "reenganche_grupo" not in marcas[("qr-c-2",)] and "reenganche_elegible_en" not in marcas[("qr-c-2",)]
     assert sorted(e["to"] for e in entorno["email"]) == ["comprador@prueba.test", "corredor@prueba.test"]
     assert len(entorno["push"]) == 2
-    assert entorno["intencion_activo"] == [("qr-c-2", None), ("qr-c-1", "11111111-1111-1111-1111-111111111111")]
+    assert entorno["intencion_activo"] == [("qr-c-1", "11111111-1111-1111-1111-111111111111"), ("qr-c-2", None)]
 
 
 def test_8_iniciar_cron_con_bandera_apagada_no_crea_tarea(monkeypatch):

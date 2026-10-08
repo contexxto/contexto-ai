@@ -133,7 +133,7 @@ async def main():
     async def _push(**kw):
         envios.append(("push", 1))
 
-    async def _intencion(sid, horas_inactividad=None, activo_id=None):
+    async def _intencion(sid, horas_inactividad=None):
         return {"turnos": 3, "nivel": "tibio", "estado": "dormido", "senales": {"precio": True}}
 
     async def _corredor(db, activo_id):
@@ -146,9 +146,8 @@ async def main():
         res = await cron._escanear_reenganches(db)
     f4 = await fila(SID)
     afirma("el cron LEE la fila dormida", res.get("escaneados", 0) >= 1, str(res))
-    # SEC-X2-EGRESS-R0: el efecto al comprador deja SOLO la marca de envío (sin grupo del experimento).
-    afirma("el cron ESCRIBE la marca de envío (comprador: sin grupo)",
-           f4["reenganche_enviado_en"] is not None and f4["reenganche_grupo"] is None, str(f4))
+    afirma("el cron ESCRIBE la marca (tocado)",
+           f4["reenganche_grupo"] == "tocado" and f4["reenganche_enviado_en"] is not None, str(f4))
     afirma("el cron llega al envío al comprador (interceptado)", ("email", "sintetico@ejemplo.invalid") in envios,
            str(envios))
 

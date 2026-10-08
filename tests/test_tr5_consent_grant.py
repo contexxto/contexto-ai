@@ -239,9 +239,11 @@ def test_A4f_el_corredor_queda_fuera_de_consent_grant():
     import inspect
     from app.autoridad_reenganche import corredor_autorizado
     fuente = inspect.getsource(cron._escanear_reenganches)
-    rama = fuente[fuente.index("# B · corredor del inmueble EXACTO"):fuente.index("disparados = len(")]
-    for prohibido in ("autorizar_efecto_reenganche", "consent_grant", "veredicto", "canales"):
-        assert prohibido not in rama, prohibido
+    ramas = [fuente[fuente.index("# B · corredor del inmueble EXACTO. Orden"):fuente.index("leads.append(")],
+             fuente[fuente.index("# B · corredor del inmueble EXACTO:"):fuente.index("if not ids_comprador and not")]]
+    for rama in ramas:                       # fase 1 (lecturas) y fase 2 (decisión) de la rama del corredor
+        for prohibido in ("autorizar_efecto_reenganche", "consent_grant", "veredicto", "canales"):
+            assert prohibido not in rama, prohibido
     funcion = ast.parse(inspect.getsource(corredor_autorizado).lstrip()).body[0]
     codigo = "\n".join(ast.unparse(n) for n in funcion.body[1:])        # sin el docstring
     assert "consent_grant" not in codigo and "principal_requested_at IS NOT NULL" in codigo

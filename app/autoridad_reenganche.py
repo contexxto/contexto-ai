@@ -8,11 +8,20 @@ resultado y no vuelve a interpretar grants; `consent_reenganche_at` ya no autori
 
 Evalúa, en UNA sentencia: principal (el de la sesión del lead, o la cuenta dueña de esa sesión)
 · audience PRINCIPAL_SELF · purpose REENGAGEMENT · action NOTIFY_VERIFIED_UPDATE · canal
-exacto · vigencia (granted_at ≤ now < expires_at) · no revocado · no usado · mode once (standing
+exacto · vigencia (granted_at ≤ ahora < expires_at) · no revocado · no usado · mode once (standing
 no se autoriza en TR-5) · case_ref NULL · y que el lead no esté CERRADO.
 
-Con `reservar=True` además CONSUME (used_at = now()) cada grant que autoriza, en la transacción
-del llamador: `UPDATE … WHERE used_at IS NULL … RETURNING`. Dos workers concurrentes no pueden
+SEC-X2-GRANT-FRESHNESS-R0 · «ahora» es `statement_timestamp()`: la hora de ESTA sentencia, no
+`now()` (el inicio de la TRANSACCIÓN del llamador). El cron decide dentro de una transacción que
+empezó al leer la primera página del barrido; con `now()`, un grant que venció durante ese recorrido
+seguía «vigente» —la vigencia se juzgaba con una foto del principio— y uno que entró en vigor
+durante él no se veía (y su reserva habría violado `used_at >= granted_at`). La autoridad se juzga
+en el momento de la decisión. Es estable durante la sentencia (a diferencia de `clock_timestamp()`).
+El corte del universo dormido del barrido SÍ usa `now()` a propósito (reenganche_cron.py): allí lo
+útil es una foto fija.
+
+Con `reservar=True` además CONSUME (used_at = statement_timestamp()) cada grant que autoriza, en la
+transacción del llamador: `UPDATE … WHERE used_at IS NULL … RETURNING`. Dos workers concurrentes no pueden
 reservar el mismo grant: el segundo espera al bloqueo de fila, re-evalúa la condición y ya ve
 `used_at`. Consumo ANTES de enviar: mejor perder un aviso que duplicarlo.
 
@@ -59,7 +68,7 @@ _CONDICION = (
     "AND action = 'NOTIFY_VERIFIED_UPDATE' AND channel = ANY(:canales) "
     "AND mode = 'once' AND case_ref IS NULL "
     "AND revoked_at IS NULL AND used_at IS NULL "
-    "AND granted_at <= now() AND expires_at > now() "
+    "AND granted_at <= statement_timestamp() AND expires_at > statement_timestamp() "
     "AND ( (principal_kind = 'PSEUDONYMOUS_SESSION_PRINCIPAL' AND principal_session_id = :sid "
     "       AND proof_basis = 'RESUME_SECRET_POSSESSION') "
     "   OR (principal_kind = 'AUTHENTICATED_PRINCIPAL' AND principal_auth_user_id = "
@@ -88,7 +97,7 @@ async def autorizar_efecto_reenganche(
             log.error("Reenganche: consent_grant no existe (¿038 sin aplicar?) — ERROR de autoridad.")
             return DecisionReenganche(EstadoAutorizacion.ERROR)
         if reservar:
-            sql = (f"UPDATE consent_grant SET used_at = now() WHERE {_CONDICION} "
+            sql = (f"UPDATE consent_grant SET used_at = statement_timestamp() WHERE {_CONDICION} "
                    "RETURNING grant_id::text AS grant_id, channel")
         else:
             sql = f"SELECT grant_id::text AS grant_id, channel FROM consent_grant WHERE {_CONDICION}"

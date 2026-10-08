@@ -264,12 +264,16 @@ def test_A4g_la_038_no_toca_lead_actividad_ni_hace_backfill():
 def test_A4h_la_frontera_evalua_cada_eje():
     """Defensa en profundidad: la 038 ya impide GUARDAR otra audience/purpose/action/canal
     (B7b), así que su ausencia en la condición no se vería en un test de comportamiento. Aquí
-    se exige que la frontera los compruebe igualmente, además de vigencia, uso, modo y cierre."""
+    se exige que la frontera los compruebe igualmente, además de vigencia, uso, modo y cierre.
+
+    SEC-X2-GRANT-FRESHNESS-R0 (actualización esperada): la vigencia se mide con
+    `statement_timestamp()` (la hora de la decisión), ya no con `now()` (el inicio de la transacción)."""
     from app.autoridad_reenganche import _CONDICION as c
     for predicado in ("audience = 'PRINCIPAL_SELF'", "purpose = 'REENGAGEMENT'",
                       "action = 'NOTIFY_VERIFIED_UPDATE'", "channel = ANY(:canales)",
                       "mode = 'once'", "case_ref IS NULL", "revoked_at IS NULL", "used_at IS NULL",
-                      "granted_at <= now()", "expires_at > now()", "principal_session_id = :sid",
+                      "granted_at <= statement_timestamp()", "expires_at > statement_timestamp()",
+                      "principal_session_id = :sid",
                       "principal_auth_user_id =", "reenganche_cerrado_en IS NOT NULL"):
         assert predicado in c, predicado
 

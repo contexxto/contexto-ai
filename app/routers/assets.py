@@ -1198,9 +1198,13 @@ async def metricas_lift(
     from app.routers.chat import ensure_lead_actividad
 
     leads = await _leads_del_corredor(db, user.user_id, user.agency_id)
-    # Unidad de la métrica = LEAD = (session_id, activo_id): la misma sesión interesada en dos inmuebles
-    # son dos leads. _leads_del_corredor deduplica por device DENTRO de cada inmueble (1 lead por
-    # dispositivo); asume 1 sid = 1 device (cierto hoy: el sid es determinista por (activo, device)).
+    # Unidad del lead = (session_id, activo_id): la misma sesión interesada en dos inmuebles son dos leads.
+    # _leads_del_corredor deduplica por device DENTRO de cada inmueble (1 lead por dispositivo). Deuda
+    # latente documentada: un mismo device puede tener sesiones QR de dos inmuebles (qr-X-DEV, qr-Z-DEV)
+    # listadas bajo X; la deduplicación conserva una y, si conserva la de Z, la observación exacta de
+    # (qr-X-DEV, X) no entra (subconteo que falla cerrado, nunca contaminación).
+    # Ojo: el EMBUDO de abajo (pico de intencion_evento y estado vivo) sigue siendo de la SESIÓN; acotarlo
+    # al inmueble es SEC-X2-R0c (PR #195). Esta unidad acota la OBSERVACIÓN de actividad.
     sids = [l["session_id"] for l in leads if l.get("session_id")]
     # SEC-X2-LIFT-SCOPE-R0 · la observación de actividad de cada lead es la fila de lead_actividad de SU
     # par EXACTO. Antes se leía por session_id solo: la fila de la sesión creada para el inmueble X
@@ -1222,11 +1226,15 @@ async def metricas_lift(
                      "  ON la.session_id = par.session_id AND la.activo_id = par.activo_id"),
                 {"sids": [p[0] for p in pares], "aids": [p[1] for p in pares]})).mappings().all()
             for r in filas:
+                # Segunda defensa: la fila se indexa por SU propio par, nunca por el del lead que la pidió.
                 par = par_observacion(r["session_id"], r["activo_id"])
                 if par is not None:
                     actividad_por_par[par] = dict(r)
-        except Exception:  # noqa: BLE001 — sin actividad aún no debe romper la métrica
+        except Exception as exc:  # noqa: BLE001 — sin actividad aún no debe romper la métrica
             await db.rollback()
+            logging.getLogger(__name__).warning(
+                "metricas_lift: no se pudo leer lead_actividad por par (%s) — reenganche y cohortes sin "
+                "observaciones en esta respuesta.", type(exc).__name__)
     # ── Funnel por RECORRIDO: el PICO de intención alcanzado (historial persistido en
     # intencion_evento, Fase 0), no el snapshot del estado actual. Un lead que llegó a
     # 'intencion' y luego se enfrió cuenta como 'intencion' — lo honesto para el embudo

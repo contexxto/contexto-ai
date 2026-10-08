@@ -116,7 +116,7 @@ def resumen_lift(leads: list[dict], actividad_por_par: dict[tuple[str, str], dic
     con_handoff = sum(1 for l in leads if l.get("handoff"))
 
     funnel: dict[str, int] = {}
-    maduros = en_vuelo = 0
+    maduros = en_vuelo = sin_observacion = 0
     pares: dict[tuple[str, str], None] = {}     # pares únicos, en orden de aparición
     for l in leads:
         funnel[l["estado"]] = funnel.get(l["estado"], 0) + 1
@@ -126,6 +126,10 @@ def resumen_lift(leads: list[dict], actividad_por_par: dict[tuple[str, str], dic
             maduros += 1
         else:
             en_vuelo += 1
+            if not act:
+                # Sin observación de SU inmueble exacto (falla cerrado): su madurez no se puede medir. Se
+                # cuenta aparte para que «en vuelo» no afirme en silencio que aún no termina.
+                sin_observacion += 1
         if par is not None:
             pares.setdefault(par)
 
@@ -162,14 +166,18 @@ def resumen_lift(leads: list[dict], actividad_por_par: dict[tuple[str, str], dic
             "_ancla": "evento: actividad después de volverse elegible (volvió), no Δscore",
             "_lectura": "tocado vs holdout — sin diferencia sostenida al madurar, el touch automático "
                         "no está causando la reactivación (regresión a la media / vuelta espontánea)",
-            "_alcance": "observación por par exacto (sesión, inmueble): la fila de otro inmueble de la misma "
-                        "sesión no cuenta, ni la que no tiene inmueble. Las cifras previas a "
-                        "SEC-X2-LIFT-SCOPE-R0 pueden incluir filas de otro inmueble: no son comparables",
+            "_alcance": "observación por par exacto (sesión, inmueble), en el reenganche y en las cohortes: "
+                        "no cuenta la fila de otro inmueble de la misma sesión ni la fila sin inmueble. Las "
+                        "cifras previas a SEC-X2-LIFT-SCOPE-R0 pueden incluir esas filas: no son comparables "
+                        "con las posteriores. El retorno (actividad tras volverse elegible) sigue siendo de "
+                        "la sesión",
         },
         "funnel": funnel,
         "cohortes": {
-            "maduros": maduros, "en_vuelo": en_vuelo,
-            "_nota": f"resultados solo sobre maduros (≥{dias} días o handoff); 'en vuelo' aún no terminan",
+            "maduros": maduros, "en_vuelo": en_vuelo, "en_vuelo_sin_observacion": sin_observacion,
+            "_nota": (f"resultados solo sobre maduros (≥{dias} días o handoff); 'en vuelo' aún no terminan"
+                      + (f" · {sin_observacion} de ellos sin observación de su inmueble exacto: su madurez "
+                         "no se puede medir" if sin_observacion else "")),
         },
         "total_leads": total,
         "_proveniencia": (f"Números propios del piloto (motor de intención + eventos), no comparados con "

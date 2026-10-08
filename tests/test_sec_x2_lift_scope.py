@@ -21,12 +21,18 @@ Bloques:
       `_leads_del_corredor` (su `activo_id` lo fija `_leads_de_activo`, ver C1). Sin la variable, B se
       SALTA: un skip es «esta evidencia no se recogió».
   C · costuras (el lead del CRM trae su inmueble; el SQL une por las dos columnas).
+  D · de punta a punta SIN base: el productor REAL de los leads (`_leads_del_corredor` →
+      `_leads_de_activo`) y `metricas_lift` REAL sobre una base falsa en memoria que despacha por el texto
+      SQL. Fija el lado izquierdo del par (el inmueble del lead sale de recorrer los inmuebles del
+      corredor, nunca de la sesión) y la defensa en Python aunque el SQL devolviera filas de más.
 """
 from __future__ import annotations
 
 import ast
 import inspect
+import logging
 import os
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -44,6 +50,7 @@ AHORA = datetime(2026, 10, 8, 12, 0, tzinfo=UTC)
 X = "11111111-1111-1111-1111-111111111111"
 Y = "22222222-2222-2222-2222-222222222222"
 Z = "33333333-3333-3333-3333-333333333333"
+W = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"              # con letras: su forma canónica es la minúscula
 S = f"qr-{X}-aaaaaaaa-0000-0000-0000-000000000001"     # la sesión llegó por el QR de X
 
 
@@ -75,6 +82,9 @@ def test_A1_la_historia_de_X_no_altera_la_metrica_de_Y():
     assert r["reenganche"]["tocado"]["reactivados"] == 0
     assert r["cohortes"]["maduros"] == 0 and r["cohortes"]["en_vuelo"] == 1, \
         "la primera_actividad de X volvió «maduro» al lead de Y"
+    # Sin observación de SU inmueble, su madurez no se puede medir: se dice, no se afirma «aún no termina».
+    assert r["cohortes"]["en_vuelo_sin_observacion"] == 1
+    assert "1 de ellos sin observación de su inmueble exacto" in r["cohortes"]["_nota"]
 
 
 def test_A2_la_observacion_exacta_de_X_cuenta_para_X():
@@ -99,7 +109,9 @@ def test_A4_el_inmueble_equivocado_no_cuenta():
 
 
 def test_A5_la_misma_sesion_en_dos_inmuebles_son_dos_observaciones_explicitas():
-    """Dos leads (S, X) y (S, Y): cada uno con su observación; ninguna se funde ni se reasigna."""
+    """Dos leads (S, X) y (S, Y): cada uno con su observación; ninguna se funde ni se reasigna. (Con la PK
+    actual de lead_actividad —session_id— una sesión solo tiene fila para UN inmueble: la primera mitad,
+    con dos filas, fija el CONTRATO de resumen_lift; la segunda es el caso que el esquema produce hoy.)"""
     leads = [_lead(S, X), _lead(S, Y)]
     r = resumen_lift(leads, {(S, X): _obs("tocado"), (S, Y): _obs("holdout")}, AHORA, umbral=1)
     assert _reeng(r) == (1, 1) and r["total_leads"] == 2
@@ -135,10 +147,14 @@ def test_A9_el_contrato_por_sesion_sola_es_un_error_no_una_metrica_contaminada()
 
 
 def test_A10_el_par_es_el_uuid_canonico():
-    """El mismo inmueble escrito en mayúsculas es el mismo par (UUID canónico); otro UUID no."""
-    assert par_observacion(S, X.upper()) == (S, X)
-    r = resumen_lift([_lead(S, X.upper())], {(S, X): _obs("tocado")}, AHORA, umbral=1)
+    """El mismo inmueble escrito en mayúsculas es el mismo par (UUID canónico); otro UUID no. (W tiene
+    letras: con un UUID solo de dígitos la mayúscula no cambiaría nada y el test no probaría nada.)"""
+    assert W.upper() != W
+    assert par_observacion(S, W.upper()) == (S, W)
+    r = resumen_lift([_lead(S, W.upper())], {(S, W): _obs("tocado")}, AHORA, umbral=1)
     assert _reeng(r) == (1, 0)
+    r = resumen_lift([_lead(S, W)], {(S, W.upper()): _obs("holdout")}, AHORA, umbral=1)
+    assert _reeng(r) == (0, 1)
     assert par_observacion("", X) is None and par_observacion(None, X) is None
 
 
@@ -161,6 +177,9 @@ def test_A11_metrica_normal_de_un_inmueble_sin_cambios():
     assert r["reenganche"]["tocado"] == {"n": 1, "reactivados": 1, "tasa": None, "status": "acumulando"}
     assert r["reenganche"]["holdout"] == {"n": 1, "reactivados": 0, "tasa": None, "status": "acumulando"}
     assert "no son comparables" in r["reenganche"]["_alcance"], "la discontinuidad queda etiquetada"
+    assert r["cohortes"]["en_vuelo_sin_observacion"] == 0
+    assert r["cohortes"]["_nota"] == ("resultados solo sobre maduros (≥7 días o handoff); "
+                                      "'en vuelo' aún no terminan"), "la nota de un caso normal no cambia"
 
 
 # ══ B · el endpoint REAL sobre PostgreSQL ═══════════════════════════════════════════════
@@ -244,7 +263,8 @@ async def test_B2_la_fila_exacta_de_X_cuenta_para_X(base, monkeypatch):
 
 @pg
 async def test_B3_una_fila_con_activo_null_no_cuenta(base, monkeypatch):
-    """Un cierre de una sesión sin QR deja `activo_id` NULL (`_reducir_autoridad_reenganche`): esa fila
+    """Un cierre de una sesión sin QR que aún no tenía fila la crea con `activo_id` NULL
+    (`_reducir_autoridad_reenganche`; si la fila existía, el ON CONFLICT conserva su inmueble): esa fila
     no pertenece a ningún inmueble y no entra a ninguna métrica acotada."""
     sid = "sesion-sin-qr-1"
     await _fila(base, sid, None, "holdout")
@@ -315,3 +335,164 @@ def test_C2_el_sql_del_lift_une_por_las_dos_columnas():
     sql = next(t for t in textos if "FROM lead_actividad" in t)
     assert "la.session_id = par.session_id AND la.activo_id = par.activo_id" in sql
     assert "session_id = ANY(" not in sql
+
+
+# ══ D · de punta a punta SIN base: productor real + endpoint real sobre una base falsa ═════════════
+
+DEV1 = "aaaaaaaa-0000-0000-0000-000000000001"
+
+
+def _like(valor: str, patron: str) -> bool:
+    rx = "^" + re.escape(patron).replace("%", ".*").replace("_", ".") + "$"
+    return re.match(rx, valor) is not None
+
+
+class _Res:
+    def __init__(self, filas=None, escalar=None):
+        self._f, self._e = list(filas or []), escalar
+
+    def mappings(self):
+        return self
+
+    def scalars(self):
+        return _Res([list(f.values())[0] if isinstance(f, dict) else f for f in self._f])
+
+    def all(self):
+        return list(self._f)
+
+    def first(self):
+        return self._f[0] if self._f else None
+
+    def scalar(self):
+        return self._e
+
+
+class _BaseFalsa:
+    """Despacha por el texto SQL. `sql_de_mas=True` simula una regresión del SQL por par que devolviera
+    TODAS las filas de las sesiones pedidas (de cualquier inmueble, y NULL): la defensa en Python tiene que
+    seguir indexando cada fila por SU par. `falla_par=True` hace fallar esa lectura."""
+
+    def __init__(self, *, activos, checkpoints, handoff, actividad, sql_de_mas=False, falla_par=False):
+        self.activos, self.checkpoints, self.handoff = activos, checkpoints, handoff
+        self.actividad = actividad          # [(session_id, activo_id | None, fila)]
+        self.sql_de_mas, self.falla_par = sql_de_mas, falla_par
+        self.sql: list[str] = []
+        self.rollbacks = 0
+
+    async def rollback(self):
+        self.rollbacks += 1
+
+    async def commit(self):
+        pass
+
+    async def execute(self, clausula, params=None):
+        q, p = str(clausula), (params or {})
+        self.sql.append(q)
+        if "FROM checkpoints" in q:
+            return _Res([t for t in self.checkpoints if _like(t, p["p"])])
+        if "FROM handoff_sesion" in q:
+            return _Res([{"session_id": h["session_id"], "estado": h["estado"], "lead_email": None}
+                         for h in self.handoff
+                         if h["activo_id"] == p["a"] or (_like(h["session_id"], p["p"]) and h["activo_id"] is None)])
+        if "FROM lead_actividad WHERE session_id LIKE" in q:          # la lectura propia del CRM
+            return _Res([{"session_id": s, "primera_actividad": f["primera_actividad"],
+                          "ultima_actividad": f["ultima_actividad"], "reenganche_enviado_en": None}
+                         for s, _a, f in self.actividad if _like(s, p["p"])])
+        if "FROM lead_actividad" in q:                                # la lectura del lift
+            if self.falla_par:
+                raise RuntimeError("operator does not exist: uuid = text")
+            pedidos = set(zip(p["sids"], p["aids"]))
+            return _Res([{"session_id": s, "activo_id": a, **f} for s, a, f in self.actividad
+                         if (self.sql_de_mas and s in {x for x, _ in pedidos}) or (s, a) in pedidos])
+        if "FROM visita" in q or "FROM intencion_evento" in q:
+            return _Res([])
+        if "walk_score_fuente FROM activos_inmutables" in q:
+            return _Res([], escalar=None)
+        if "FROM activos_inmutables WHERE" in q:
+            return _Res([{"id": a["id"], "direccion": a["id"][:4]} for a in self.activos if a["owner"] == p.get("u")])
+        raise AssertionError("SQL no previsto por la base falsa: " + q[:120])
+
+
+@pytest.fixture
+def productor_real(monkeypatch):
+    """Lo que el productor REAL lee fuera de la base, con dobles neutros (la intención, las tablas)."""
+    async def nada(*_a, **_k):
+        return None
+
+    async def intencion(sid, horas_inactividad=None, **_k):
+        return {"turnos": 3, "estado": "dormido", "nivel": "tibio", "score": 40, "resumen": "r",
+                "razones": [], "handoff_sugerido": False, "accion_sugerida": "a"}
+    import app.reenganche as reenganche
+    import app.routers.visitas as visitas
+    monkeypatch.setattr(chat, "ensure_handoff_tables", nada)
+    monkeypatch.setattr(chat, "ensure_lead_actividad", nada)
+    monkeypatch.setattr(chat, "intencion_de_sesion", intencion)
+    monkeypatch.setattr(visitas, "ensure_visita", nada)
+    monkeypatch.setattr(reenganche, "evaluar_reenganche", lambda **_k: None)
+
+
+async def _lift_falso(db, dueno):
+    usuario = SimpleNamespace(rol="corredor", user_id=dueno, agency_id=None)
+    return await assets.metricas_lift.__wrapped__(request=None, user=usuario, db=db)
+
+
+def _qr_x_que_pide_y(**kw):
+    """La sesión llegó por el QR de X (su fila es de X: tocado, elegible, volvió) y pidió contacto para Y."""
+    s = f"qr-{X}-{DEV1}"
+    return s, _BaseFalsa(activos=[{"id": X, "owner": "BX"}, {"id": Y, "owner": "BY"},
+                                  {"id": X, "owner": "BXY"}, {"id": Y, "owner": "BXY"}],
+                         checkpoints=[s], handoff=[{"session_id": s, "activo_id": Y, "estado": "solicitado"}],
+                         actividad=[(s, X, _obs("tocado"))], **kw)
+
+
+async def test_D1_el_lead_listado_bajo_Y_lleva_Y_y_el_lift_de_Y_no_ve_a_X(productor_real):
+    """El inmueble del lead (lado izquierdo del par) sale de recorrer los inmuebles del corredor —nunca
+    de la sesión ni de su prefijo `qr-X`—: el lead de la sesión qr-X bajo Y es (S, Y)."""
+    s, db = _qr_x_que_pide_y()
+    leads = await assets._leads_del_corredor(db, "BY", None)
+    assert [(l["session_id"], l["activo_id"]) for l in leads] == [(s, Y)]
+    assert _reeng(await _lift_falso(db, "BY")) == (0, 0)
+    out = await _lift_falso(db, "BX")
+    assert _reeng(out) == (1, 0) and out["reenganche"]["tocado"]["reactivados"] == 1
+
+
+async def test_D2_el_corredor_de_X_y_de_Y_recibe_dos_leads_y_una_sola_observacion(productor_real):
+    """La misma sesión en dos inmuebles del mismo corredor: dos leads explícitos (S, X) y (S, Y); la
+    única fila (la de X) cuenta una vez, para X."""
+    s, db = _qr_x_que_pide_y()
+    leads = await assets._leads_del_corredor(db, "BXY", None)
+    assert sorted((l["session_id"], l["activo_id"]) for l in leads) == sorted([(s, X), (s, Y)])
+    out = await _lift_falso(db, "BXY")
+    assert out["total_leads"] == 2 and _reeng(out) == (1, 0)
+
+
+async def test_D3_aunque_el_sql_devolviera_filas_de_mas_cada_fila_va_a_su_par(productor_real):
+    """Defensa en Python, sin Postgres: si la lectura devolviera la fila de X (y una NULL) para la sesión,
+    el lift de Y sigue sin verlas y el de X y Y no la duplica."""
+    s, db = _qr_x_que_pide_y(sql_de_mas=True)
+    db.actividad.append((s, None, _obs("holdout")))
+    assert _reeng(await _lift_falso(db, "BY")) == (0, 0)
+    assert _reeng(await _lift_falso(db, "BXY")) == (1, 0)
+
+
+async def test_D4_si_la_lectura_por_par_falla_la_metrica_degrada_y_lo_dice(productor_real, caplog):
+    """La lectura por par falla (p. ej. un tipo inesperado): rollback, log de advertencia, la métrica
+    sigue (lee el embudo después) y no inventa observaciones."""
+    s, db = _qr_x_que_pide_y(falla_par=True)
+    with caplog.at_level(logging.WARNING):
+        out = await _lift_falso(db, "BX")
+    assert _reeng(out) == (0, 0) and db.rollbacks >= 1
+    assert "no se pudo leer lead_actividad por par" in caplog.text
+    i_par = next(i for i, q in enumerate(db.sql) if "FROM lead_actividad" in q and "LIKE" not in q)
+    assert any("FROM intencion_evento" in q for q in db.sql[i_par:]), "tras el fallo, la métrica siguió"
+
+
+async def test_D5_sesion_sin_qr_con_handoff_a_X_y_a_Y(productor_real):
+    """Sesión de la home (sin QR) que pidió contacto para X y para Y; su fila nació con X (holdout)."""
+    s = "home-sesion-1"
+    db = _BaseFalsa(activos=[{"id": X, "owner": "BX"}, {"id": Y, "owner": "BY"}], checkpoints=[],
+                    handoff=[{"session_id": s, "activo_id": X, "estado": "solicitado"},
+                             {"session_id": s, "activo_id": Y, "estado": "solicitado"}],
+                    actividad=[(s, X, _obs("holdout"))])
+    assert _reeng(await _lift_falso(db, "BX")) == (0, 1)
+    assert _reeng(await _lift_falso(db, "BY")) == (0, 0)

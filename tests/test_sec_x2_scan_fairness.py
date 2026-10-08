@@ -253,6 +253,7 @@ async def test_E_lo_descartado_no_recibe_ninguna_escritura(monkeypatch, base, en
         await chat.ensure_handoff_tables(db)
     antes = await _huella(base)
     res, espia = await _barrer(base)
+    assert (no_elegible, ACTIVO) in entorno["intencion_activo"], "la fila X2 no llegó a la elegibilidad acotada"
     assert res.get("disparados", 0) == 0 and res.get("holdout", 0) == 0 and res["escaneados"] == 8
     assert entorno["email"] == [] and entorno["push"] == [] and entorno["holdout"] == []
     assert await _huella(base) == antes, "una fila descartada recibió una escritura"
@@ -300,6 +301,88 @@ async def test_F2_el_presupuesto_no_lo_gastan_no_grant_ni_corredores_no_elegible
     assert res["comprador"] == 3 and res.get("corredores", 0) == 0
     for sid in compradores:
         assert (await _fila(base, sid))["reenganche_enviado_en"] is not None
+
+
+@pg
+async def test_F3a_no_gasta_presupuesto_un_comprador_autorizado_que_no_se_puede_entregar(monkeypatch, base, entorno):
+    """AUTHORIZED pero NO reservable (§7): el servidor no tiene la credencial de PUSH. Los compradores con EMAIL y
+    PUSH no se reservan ni se marcan y NO gastan presupuesto; los de solo EMAIL de después reciben. Si contara al
+    llegar AUTHORIZED, una credencial que falta dejaría sin aviso para siempre a los compradores de detrás."""
+    import app.notifications as notif
+    monkeypatch.setenv("REENGANCHE_CRON_LIMITE", "2")
+    monkeypatch.setattr(notif, "VAPID_PRIVATE_KEY", None)
+    bloqueados = [(await _lead_con_grant(base))[0] for _ in range(3)]          # EMAIL + PUSH
+    sanos = [(await _lead_con_grant(base, push=False))[0] for _ in range(2)]   # solo EMAIL
+    for i, sid in enumerate(bloqueados + sanos):
+        await _envejecer(base, sid, 20 - i)
+    res, _ = await _barrer(base)
+    assert res["comprador"] == 2
+    for sid in sanos:
+        assert (await _fila(base, sid))["reenganche_enviado_en"] is not None
+    for sid in bloqueados:
+        assert await _marcas(base, sid) == SIN_MARCA and await _sin_uso(base, sid)
+
+
+@pg
+async def test_F3b_no_gasta_presupuesto_un_lead_sin_decision(monkeypatch, base, entorno):
+    """La intención del comprador falla (checkpointer caído) para 3 leads de delante: «sin decisión» los omite sin
+    marca y NO gasta presupuesto; los 2 compradores autorizados de después reciben."""
+    monkeypatch.setenv("REENGANCHE_CRON_LIMITE", "2")
+    rotas = await _viejas(base, 3, "f3b-rota-", email=True)
+    compradores = [(await _lead_con_grant(base))[0] for _ in range(2)]
+    doble = chat.intencion_de_sesion
+
+    async def intencion(sid, horas_inactividad=None, activo_id=None):
+        if sid in rotas:
+            raise RuntimeError("checkpointer no disponible")
+        return await doble(sid, horas_inactividad=horas_inactividad, activo_id=activo_id)
+    monkeypatch.setattr(chat, "intencion_de_sesion", intencion)
+    res, _ = await _barrer(base)
+    assert res["comprador"] == 2
+    for sid in compradores:
+        assert (await _fila(base, sid))["reenganche_enviado_en"] is not None
+
+
+@pg
+async def test_F3c_no_gasta_presupuesto_un_corredor_sin_canal_entregable(monkeypatch, base, entorno):
+    """Leads con el hecho X2 cuyo corredor solo tiene correo y el servidor no tiene RESEND: sin canal entregable no
+    hay tratamiento ni control, y NO gastan presupuesto; los 2 compradores (solo PUSH) de después reciben."""
+    import app.notifications as notif
+    monkeypatch.setenv("REENGANCHE_CRON_LIMITE", "2")
+    monkeypatch.setattr(notif, "RESEND_API_KEY", None)
+
+    async def corredor(db, activo_id):
+        entorno["corredor"].append(activo_id)
+        return CORREDOR, None                            # solo correo
+    monkeypatch.setattr(chat, "_corredor_de_activo", corredor)
+    x2 = [f"f3c-x2-{i}" for i in range(3)]
+    for sid in x2:
+        await _dormida(base, sid)
+        await _pide_corredor(base, sid)
+    compradores = [(await _lead_con_grant(base, email=False))[0] for _ in range(2)]   # solo PUSH
+    for i, sid in enumerate(x2 + compradores):
+        await _envejecer(base, sid, 20 - i)
+    res, _ = await _barrer(base)
+    assert res["comprador"] == 2 and res.get("corredores", 0) == 0 and res.get("holdout", 0) == 0
+    for sid in x2:
+        assert await _marcas(base, sid) == SIN_MARCA
+
+
+@pg
+async def test_B2_ninguna_reserva_antes_de_leer_la_ultima_pagina(monkeypatch, base, entorno):
+    """Un comprador autorizado en la PRIMERA página y otro en la última: ninguna reserva TR-5 ocurre antes de leer
+    la última página (procesar página por página tendría grants bloqueados mientras se sigue leyendo)."""
+    monkeypatch.setattr(cron, "_PAGINA", 3)
+    primero, _ = await _lead_con_grant(base)
+    await _envejecer(base, primero, 90)
+    await _viejas(base, 5, "b2-vieja-")
+    ultimo, _ = await _lead_con_grant(base)
+    res, espia = await _barrer(base)
+    assert res["comprador"] == 2
+    assert espia.paginas[0][2][0] == primero and len(espia.paginas) >= 3
+    reservas = [i for i, o in enumerate(espia.orden) if o == "reserva"]
+    assert len(reservas) == 2
+    assert max(i for i, o in enumerate(espia.orden) if o == "pagina") < min(reservas)
 
 
 @pg

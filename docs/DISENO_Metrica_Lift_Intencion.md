@@ -35,7 +35,8 @@ contacto. Pero **solo cuenta como foso si se mide contra un holdout** (§3); sin
 
 ## 2. Las sub-métricas (todas ancladas a evento, unidad = LEAD, con N crudo)
 
-**Unidad de análisis = el LEAD (session_id), NUNCA el snapshot.** Los snapshots son materia prima; se
+**Unidad de análisis = el LEAD (session_id, activo_id), NUNCA el snapshot** (desde SEC-X2-LIFT-SCOPE-R0;
+antes decía «(session_id)», ver el changelog). Los snapshots son materia prima; se
 colapsan a un registro por lead (primero / último / máx) antes de agregar. Si no, los leads activos (que
 generan 10 filas) sobre-pesan a los fríos (1 fila) y todo promedio miente.
 
@@ -140,3 +141,15 @@ cohortes. Ese día el reenganche por valor deja de ser una demo y es un foso med
   /metricas/lift` owner-scoped, `tests/test_lift.py` (17 tests). Tras revisión adversarial se corrigió
   **SESGO-1**: exposición ahora simétrica (una dosis por lead de por vida) → contrafactual válido; y se
   documentó la deuda latente unidad-métrica(session_id)-vs-dedup(device). Suite 407 verde.
+- **2026-10-08 — v0.3 · SEC-X2-LIFT-SCOPE-R0 (corte de época)** — PERSON/SESSION CONTINUITY ≠
+  ASSET-SCOPED METRIC MEMBERSHIP. `/metricas/lift` leía `lead_actividad` por `session_id` solo: la fila
+  de una sesión creada para el inmueble X (grupo, elegibilidad y primera actividad) entraba al lift del
+  corredor de Y cuando la misma sesión era también lead de Y. Ahora el lead es (session_id, activo_id) y
+  la observación de actividad se lee por el **par exacto** (SQL por las dos columnas; `resumen_lift`
+  indexa por la tupla y rechaza el índice por sesión). Sin inmueble exacto no hay observación (falla
+  cerrado; nada se infiere del prefijo `qr-`); `cohortes.en_vuelo_sin_observacion` cuenta esos leads.
+  **Discontinuidad:** las cifras anteriores pueden incluir filas de otro inmueble o sin inmueble; no se
+  comparan con las posteriores (etiqueta `reenganche._alcance`). Sin backfill. Residuales: el embudo
+  (pico de `intencion_evento` y estado vivo) sigue por sesión (lo acota SEC-X2-R0c); el retorno
+  (`ultima_actividad`) es de la sesión; con PK `session_id`, una sesión con varios inmuebles solo tiene
+  observación para el inmueble de su primera escritura.

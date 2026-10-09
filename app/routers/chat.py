@@ -2725,7 +2725,14 @@ async def registrar_handoff(
         rechaza sin escribir nada) y nunca concede.
       - El inmueble tiene que existir.
       - Escribe `principal_requested_at`, el hecho de autoridad, y conserva el primero
-        (COALESCE): repetir la solicitud no reescribe cuándo se pidió. Es lo único que abre
+        (COALESCE): repetir la solicitud no reescribe cuándo se pidió.
+      - SEC-X2-B5 · NUEVA AUTORIDAD DE HANDOFF ≠ AUTORIDAD PARA REUTILIZAR CONTACTO LEGACY. Si
+        el acto PROMUEVE una fila histórica (marca NULL), su contacto es SOLO el del acto actual
+        (`lead_user_id`/`lead_email` del principal, NULL si es anónimo) y el push histórico se
+        descarta: nada escrito antes de la marca sobrevive como destino actual (la persona
+        vuelve a registrar el push por `/handoff/push`, que solo escribe hilos autorizados). La
+        fila no se borra. Si ya estaba autorizada, es una REPETICIÓN: un valor nuevo actualiza,
+        la ausencia no borra y el push vigente se conserva. Es lo único que abre
         al corredor de ESE inmueble el hilo del handoff de ESE inmueble (mensajes con
         `activo_id` exacto). La conversación con el agente no se le divulga (SEC-X2-R0c,
         `transcript_de_sesion`). El Copiloto lee el mismo hilo exacto que la ruta HTTP
@@ -2768,8 +2775,17 @@ async def registrar_handoff(
             # autorizada conserva la fecha de la primera solicitud.
             "    principal_requested_at = COALESCE(handoff_sesion.principal_requested_at, "
             "                                      EXCLUDED.principal_requested_at), "
-            "    lead_user_id = COALESCE(EXCLUDED.lead_user_id, handoff_sesion.lead_user_id), "
-            "    lead_email = COALESCE(EXCLUDED.lead_email, handoff_sesion.lead_email)"),
+            # SEC-X2-B5 · `handoff_sesion.*` es la fila ANTES de este acto. Marca NULL = PROMOCIÓN:
+            # solo el contacto del acto actual, push histórico fuera. Marca ya puesta = REPETICIÓN:
+            # lo nuevo actualiza y la ausencia no borra (push incluido).
+            "    lead_user_id = CASE WHEN handoff_sesion.principal_requested_at IS NULL "
+            "                        THEN EXCLUDED.lead_user_id "
+            "                        ELSE COALESCE(EXCLUDED.lead_user_id, handoff_sesion.lead_user_id) END, "
+            "    lead_email = CASE WHEN handoff_sesion.principal_requested_at IS NULL "
+            "                      THEN EXCLUDED.lead_email "
+            "                      ELSE COALESCE(EXCLUDED.lead_email, handoff_sesion.lead_email) END, "
+            "    push_subscription = CASE WHEN handoff_sesion.principal_requested_at IS NULL "
+            "                             THEN NULL ELSE handoff_sesion.push_subscription END"),
             {"s": session_id, "a": activo_id, "u": lead_user_id, "e": lead_email})
         await db.commit()
         await _congelar_asignacion(db, session_id, activo_id)

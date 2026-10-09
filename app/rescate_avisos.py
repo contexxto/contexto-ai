@@ -12,8 +12,14 @@ Sin esto, un interesado que no dio permiso de push y no vuelve a abrir la app nu
 entera de que el corredor le respondió: el lead se pierde en silencio, que es justo el
 fallo que hemos estado persiguiendo todo el día.
 
-Un solo correo por destinatario y barrido, aunque tenga cinco avisos pendientes: se
-rescata a la persona, no se le reenvía la conversación.
+Un solo correo por dirección y barrido, aunque tenga cinco avisos pendientes: se rescata
+a la persona, no se le reenvía la conversación.
+
+SEC-X2-B5 · el correo de un interesado sin cuenta es el de SU hilo exacto: el del handoff
+`(sesión, inmueble del aviso)` y solo si ese hilo está autorizado (`principal_requested_at`).
+Nunca «cualquier `lead_email` de la sesión»: otra fila puede ser histórica (contacto escrito
+antes de cualquier acto) o de otro inmueble. Sin correo autorizado exacto, no hay correo de
+rescate (falla cerrado; la campana sigue ahí).
 """
 from __future__ import annotations
 
@@ -59,7 +65,7 @@ async def escanear_rescates(db) -> dict:
     horas = _horas_espera()
     filas = (await db.execute(text(
         "SELECT n.id, n.destinatario_user_id::text AS uid, n.destinatario_session AS sid, "
-        "       n.titulo, n.cuerpo, n.url "
+        "       n.activo_id::text AS aid, n.titulo, n.cuerpo, n.url "
         "FROM notificacion n "
         "WHERE n.leida_en IS NULL AND n.rescate_en IS NULL "
         "  AND n.creada_en < now() - make_interval(hours => :h) "
@@ -76,47 +82,57 @@ async def escanear_rescates(db) -> dict:
 
     enviados = 0
     for clave, avisos in por_destinatario.items():
-        correo = await _correo_de(db, avisos[0]["uid"], avisos[0]["sid"])
         ids = [a["id"] for a in avisos]
         # Se marcan SIEMPRE, haya correo o no: sin dirección no hay nada que reintentar,
         # y dejarlos sin marcar los haría reaparecer en cada barrido para siempre.
         await db.execute(text(
             "UPDATE notificacion SET rescate_en = now() WHERE id = ANY(:ids)"), {"ids": ids})
-        if not correo:
-            continue
-        ultimo = avisos[-1]
-        cuantos = len(avisos)
-        titulo = (ultimo["titulo"] if cuantos == 1
-                  else f"Tienes {cuantos} mensajes sin leer en Contexto")
-        cuerpo = (ultimo["cuerpo"] or "Abre Contexto para continuar la conversación.")
-        try:
-            await send_notification(
-                email=correo, push_subscription=None,
-                title=titulo, body=cuerpo, url=ultimo["url"] or "/",
-                email_subject=titulo,
-            )
-            enviados += 1
-        except Exception as exc:  # noqa: BLE001 — un envío fallido no aborta el barrido
-            log.warning("Rescate: no se pudo avisar a %s: %s", clave, exc)
+        # SEC-X2-B5 · el destino se resuelve POR AVISO (su hilo exacto), no por sesión: dos
+        # avisos de la misma persona pueden ser de hilos distintos, cada uno con su correo
+        # autorizado o sin ninguno. Un correo por DIRECCIÓN.
+        por_correo: dict[str, list] = {}
+        for a in avisos:
+            correo = await _correo_de(db, a["uid"], a["sid"], a["aid"])
+            if correo:
+                por_correo.setdefault(correo, []).append(a)
+        for correo, grupo in por_correo.items():
+            ultimo = grupo[-1]
+            cuantos = len(grupo)
+            titulo = (ultimo["titulo"] if cuantos == 1
+                      else f"Tienes {cuantos} mensajes sin leer en Contexto")
+            cuerpo = (ultimo["cuerpo"] or "Abre Contexto para continuar la conversación.")
+            try:
+                await send_notification(
+                    email=correo, push_subscription=None,
+                    title=titulo, body=cuerpo, url=ultimo["url"] or "/",
+                    email_subject=titulo,
+                )
+                enviados += 1
+            except Exception as exc:  # noqa: BLE001 — un envío fallido no aborta el barrido
+                log.warning("Rescate: no se pudo avisar a %s: %s", clave, exc)
     await db.commit()
     log.info("Rescate: %d correos por %d avisos sin leer (>%sh)", enviados, len(filas), horas)
     return {"rescatados": enviados, "avisos": len(filas)}
 
 
-async def _correo_de(db, user_id: str | None, session_id: str | None) -> str | None:
+async def _correo_de(db, user_id: str | None, session_id: str | None,
+                     activo_id: str | None) -> str | None:
     """Dirección del destinatario: de su cuenta si la tiene, o del handoff si es un
-    interesado sin registrar."""
+    interesado sin registrar — SOLO el de su hilo exacto `(session_id, activo_id)` y solo si
+    ese hilo está autorizado (SEC-X2-B5). Un aviso sin inmueble (los históricos quedan en
+    NULL) no tiene hilo exacto: sin correo."""
     if user_id:
         correo = (await db.execute(text(
             "SELECT email FROM push_usuario WHERE user_id = CAST(:u AS uuid)"),
             {"u": user_id})).scalar()
         if correo:
             return correo
-    if session_id:
+    if session_id and activo_id:
         return (await db.execute(text(
             "SELECT lead_email FROM handoff_sesion "
-            "WHERE session_id = :s AND lead_email IS NOT NULL LIMIT 1"),
-            {"s": session_id})).scalar()
+            "WHERE session_id = :s AND activo_id = CAST(:a AS uuid) "
+            "  AND principal_requested_at IS NOT NULL AND lead_email IS NOT NULL"),
+            {"s": session_id, "a": activo_id})).scalar()
     return None
 
 

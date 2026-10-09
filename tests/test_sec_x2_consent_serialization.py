@@ -544,13 +544,29 @@ async def test_26_BUSY_deshace_el_savepoint_y_la_transaccion_sigue_sana(monkeypa
     pausa = _pausa_no(monkeypatch)
     t_no = asyncio.create_task(_no(ocupada, cab))
     await asyncio.wait_for(pausa.dentro.wait(), 10)
+    motor = base.kw["bind"].sync_engine
+    vistas: list[str] = []
+
+    def anota(conn, cursor, statement, *a):
+        if "reserva_reenganche" in statement or "pg_try_advisory_xact_lock" in statement \
+                or "UPDATE consent_grant SET used_at" in statement:
+            vistas.append(statement)
     async with base() as db:
         await db.execute(text("SET LOCAL lock_timeout = '2s'"))
-        d1 = await autorizar_efecto_reenganche(db, session_id=previa, canales_candidatos=["EMAIL", "PUSH"],
-                                               reservar=True)
-        d2 = await autorizar_efecto_reenganche(db, session_id=ocupada, canales_candidatos=["EMAIL", "PUSH"],
-                                               reservar=True)
+        event.listen(motor, "before_cursor_execute", anota)
+        try:
+            d1 = await autorizar_efecto_reenganche(db, session_id=previa, canales_candidatos=["EMAIL", "PUSH"],
+                                                   reservar=True)
+            d2 = await autorizar_efecto_reenganche(db, session_id=ocupada, canales_candidatos=["EMAIL", "PUSH"],
+                                                   reservar=True)
+        finally:
+            event.remove(motor, "before_cursor_execute", anota)
         assert (d1.estado, d2.estado) == (AUTH, ERR)
+        # La secuencia exacta: AUTHORIZED libera su savepoint; BUSY lo DESHACE y lo libera. Ninguno queda colgado.
+        etapas = ["try" if "pg_try_advisory" in q else "reserva" if "UPDATE consent_grant" in q
+                  else q.split(" reserva_reenganche")[0] for q in vistas]
+        assert etapas == ["SAVEPOINT", "try", "reserva", "RELEASE SAVEPOINT",
+                          "SAVEPOINT", "try", "ROLLBACK TO SAVEPOINT", "RELEASE SAVEPOINT"], etapas
         assert (await db.execute(text("SELECT 1"))).scalar() == 1, "la transacción quedó abortada"
         assert await _cerrojo_libre(base, previa) is False
         await db.commit()
@@ -608,7 +624,10 @@ async def test_28_vencido_durante_una_espera_de_FILA_la_defensa_deshace_la_reser
 
     Sincronización determinista por la base (no solo sleeps): A tiene el bloqueo; B espera un bloqueo de FILA (su pid
     en pg_locks/pg_stat_activity); la sentencia de B empezó ANTES de `expires_at`; el vencimiento ocurrió ANTES de
-    soltar A. `lock_timeout` local en B y limpieza explícita de A."""
+    soltar A. `lock_timeout` local en B y limpieza explícita de A.
+
+    R2 (actualización esperada): una fila que deja de estar vigente durante la reserva es AUTORIDAD INESTABLE → ERROR
+    (antes de R2: NO_GRANT). El resto no cambia: nada consumido y el advisory del savepoint libre."""
     sid, _ = await _lead(base)
     async with base() as db:
         await db.execute(text("UPDATE consent_grant SET expires_at = clock_timestamp() + interval '3 seconds' "
@@ -651,9 +670,85 @@ async def test_28_vencido_durante_una_espera_de_FILA_la_defensa_deshace_la_reser
     finally:
         await titular.rollback()
         await titular.close()
-    assert d.estado is NO, f"la reserva autorizó un grant VENCIDO durante la espera de fila: {d}"
+    assert d.estado is ERR, f"esperaba ERROR (autoridad inestable durante la reserva): {d}"
     assert all(g["used_at"] is None for g in await _grants_completos(base, sid)), "used_at persistió"
     assert libre_antes_del_commit, "el advisory tomado dentro del savepoint no se liberó"
+
+
+@pg
+async def test_29_autoridad_INESTABLE_no_es_NO_GRANT_ni_abre_la_rama_del_corredor(monkeypatch, base, suelta, entorno):
+    """R2 · AUTORIDAD INESTABLE DURANTE LA RESERVA ≠ AUSENCIA DE AUTORIDAD.
+
+    La sesión S tiene dos grants de actos y canales distintos —A (EMAIL) a punto de vencer, B (PUSH) vigente— y el
+    hecho X2 del corredor (con NO_GRANT, la rama del corredor actuaría). Presupuesto 1 y un lead LIBRE (EMAIL)
+    después de S en el cursor.
+
+    Barrido 1: un escritor que NO coopera retiene la fila de A; la reserva de S (A + B) empieza ANTES del vencimiento
+    y espera; A vence; el escritor aborta → `vigente_ahora` falso en A → ERROR para TODA la decisión: nada consumido
+    (A y B con used_at NULL), ni comprador ni corredor para S, sin marca y SIN presupuesto (el lead libre lo usa).
+    Barrido 2: foto fresca → A ya no aplica, B sigue → AUTHORIZED solo B: push al comprador, nada al corredor."""
+    from tests.test_tr2_consentimiento import _pide_corredor
+    monkeypatch.setenv("REENGANCHE_CRON_LIMITE", "1")
+    sid, cab = await _sesion(base)
+    await _dormida(base, sid)
+    assert (await _post(sid, cab, consent=True, email="inestable@ejemplo.invalid")).json()["resultado"] == "activado"
+    assert (await _post(sid, cab, consent=True, push_subscription=PUSH)).json()["resultado"] == "activado"
+    vivos = await _vivos(base, sid)
+    assert sorted(g["channel"] for g in vivos) == ["EMAIL", "PUSH"], "precondición: dos grants de actos distintos"
+    await _pide_corredor(base, sid)
+    libre, _ = await _lead(base, "libre@ejemplo.invalid", push=False)
+    async with base() as db:
+        await db.execute(text("UPDATE lead_actividad SET ultima_actividad = now() - interval '9 days' "
+                              "WHERE session_id = :s"), {"s": sid})
+        await db.execute(text("UPDATE consent_grant SET expires_at = clock_timestamp() + interval '4 seconds' "
+                              "WHERE session_id = :s AND channel = 'EMAIL' AND revoked_at IS NULL"), {"s": sid})
+        await db.commit()
+
+    async def una(q, p=None):
+        async with base() as d:
+            return (await d.execute(text(q), p or {})).first()
+
+    titular = base()
+    try:
+        await titular.execute(text("SELECT 1 FROM consent_grant WHERE session_id = :s AND channel = 'EMAIL' "
+                                   "AND revoked_at IS NULL FOR UPDATE"), {"s": sid})   # A retenida, sin advisory
+        b1 = asyncio.create_task(_barrer(base))
+
+        async def reserva_espera_la_fila():
+            return await una("SELECT 1 FROM pg_stat_activity WHERE datname = current_database() "
+                             "AND wait_event_type = 'Lock' AND wait_event IN ('transactionid', 'tuple') "
+                             "AND query LIKE '%UPDATE consent_grant SET used_at%'") is not None
+        assert await _espera_que(reserva_espera_la_fila, 10), "precondición: la reserva de S no esperó la fila de A"
+        empezo_antes, = await una(
+            "SELECT a.query_start < g.expires_at FROM pg_stat_activity a, consent_grant g "
+            "WHERE a.datname = current_database() AND a.wait_event_type = 'Lock' "
+            "AND a.query LIKE '%UPDATE consent_grant SET used_at%' "
+            "AND g.session_id = :s AND g.channel = 'EMAIL' AND g.revoked_at IS NULL", {"s": sid})
+        assert empezo_antes, "precondición: la reserva empezó DESPUÉS del vencimiento de A"
+
+        async def a_vencio():
+            fila = await una("SELECT expires_at < clock_timestamp() FROM consent_grant WHERE session_id = :s "
+                             "AND channel = 'EMAIL' AND revoked_at IS NULL", {"s": sid})
+            return bool(fila[0])
+        assert await _espera_que(a_vencio, 10), "precondición: A no venció durante la espera"
+        await titular.rollback()                                   # el escritor aborta: la reserva sigue
+        r1 = await asyncio.wait_for(b1, 30)
+    finally:
+        await titular.rollback()
+        await titular.close()
+    correos1 = [e["to"] for e in entorno["email"]]
+    assert r1["comprador"] == 1 and correos1 == ["libre@ejemplo.invalid"], (r1, correos1)   # presupuesto intacto
+    assert r1["corredores"] == 0 and r1["holdout"] == 0 and sid not in entorno["holdout"], r1
+    assert not entorno["push"], "barrido 1: nadie recibe push"
+    assert all(g["used_at"] is None for g in await _grants_completos(base, sid)), "barrido 1 consumió algo de S"
+    assert _sin_marca(await _fila(base, sid))
+
+    r2 = await _barrer(base)
+    assert r2["comprador"] == 1 and r2["corredores"] == 0 and r2["holdout"] == 0, r2
+    assert [e["to"] for e in entorno["email"]] == correos1, "barrido 2: no debía salir ningún correo"
+    assert len(entorno["push"]) == 1 and "push.prueba.test/x" in str(entorno["push"][0]), entorno["push"]
+    usados = {g["channel"]: g["used_at"] for g in await _grants_completos(base, sid) if g["revoked_at"] is None}
+    assert usados["PUSH"] is not None and usados["EMAIL"] is None, usados
 
 
 @pg
@@ -702,17 +797,38 @@ async def test_19_session_id_invalida_falla_antes_del_SQL(malo):
     assert db.sql == []
 
     class _DbReserva(_DbEspia):
+        """Acepta to_regclass y las sentencias de SAVEPOINT; el try-lock responde «ocupada»; cualquier otra cosa
+        (la reserva) es un error. Así la prueba alcanza de verdad la validación de la sesión."""
         async def execute(self, stmt, params=None):
-            self.sql.append(str(stmt))
-            if "to_regclass" in str(stmt):
-                class R:
-                    def scalar(self):
-                        return True
-                return R()
-            raise AssertionError("no debía llegar SQL de cerrojo ni de reserva")
+            q = str(stmt)
+            self.sql.append(q)
+
+            class R:
+                def __init__(self, v):
+                    self.v = v
+
+                def scalar(self):
+                    return self.v
+            if "to_regclass" in q:
+                return R(True)
+            if q.startswith(("SAVEPOINT", "ROLLBACK TO SAVEPOINT", "RELEASE SAVEPOINT")):
+                return R(None)
+            if "pg_try_advisory_xact_lock" in q:
+                return R(False)
+            raise AssertionError("no debía llegar SQL de reserva")
+
+    # Control: con una sesión VÁLIDA el doble sí recorre SAVEPOINT → try-lock → ROLLBACK TO → RELEASE (ocupada).
+    ok = _DbReserva()
+    d_ok = await autorizar_efecto_reenganche(ok, session_id="qr-control", canales_candidatos=["EMAIL"], reservar=True)
+    etapas = [q.split("(")[0].split(" reserva")[0] for q in ok.sql]
+    assert d_ok.estado is ERR and etapas == ["SELECT to_regclass", "SAVEPOINT", "SELECT pg_try_advisory_xact_lock",
+                                             "ROLLBACK TO SAVEPOINT", "RELEASE SAVEPOINT"], etapas
+    # Con la sesión inválida: ERROR y la validación ocurre ANTES del SAVEPOINT (R2): ni savepoint, ni cerrojo, ni
+    # reserva; solo la consulta previa de existencia de la tabla.
     dr = _DbReserva()
     d = await autorizar_efecto_reenganche(dr, session_id=malo, canales_candidatos=["EMAIL"], reservar=True)
-    assert d.estado is ERR and not [s for s in dr.sql if "advisory" in s or "consent_grant SET" in s]
+    assert d.estado is ERR, d
+    assert [q for q in dr.sql if "to_regclass" not in q] == [], dr.sql
 
 
 # ══ E · estructura de la frontera ═════════════════════════════════════════════════════════════════════════════════

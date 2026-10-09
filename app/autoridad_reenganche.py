@@ -36,20 +36,30 @@ intenta el cerrojo de consentimiento de la sesión (`app/serial_consentimiento.p
     sesión, así que la reserva —la sentencia SIGUIENTE, con su propio `statement_timestamp()`— no espera sus
     bloqueos de fila: no hay «espera → el titular aborta → condición sin re-evaluar», y un grant que venció
     mientras otro tenía el cerrojo se ve VENCIDO (GF-R1 cerrado frente a esos escritores).
-El cerrojo y la comprobación de frescura van SIEMPRE en sentencias distintas: un CTE heredaría la hora de antes.
-Todo ello dentro de un SAVEPOINT (`_reservar`): BUSY y NO_GRANT lo deshacen y SUELTAN el cerrojo; solo una reserva
-AUTHORIZED lo conserva hasta el COMMIT. Defensa adicional: `RETURNING expires_at > clock_timestamp()`; si un grant
-dejó de estar vigente durante la propia sentencia (una espera de relación, o un escritor que no coopera con el
-cerrojo), se deshace la reserva y es NO_GRANT. Nada en la base obliga a cooperar (no hay trigger ni privilegio), y
-durante un deploy solapado un proceso viejo sin cerrojo convive con el nuevo: la garantía es la de los caminos de
-la app desplegada, no la de cualquier SQL.
+El cerrojo y la comprobación de frescura van SIEMPRE en sentencias distintas: en una sola sentencia (un CTE), la
+foto (snapshot) se tomaría ANTES de obtener el cerrojo y no vería lo que confirmó quien acababa de soltarlo.
+Todo ello dentro de un SAVEPOINT (`_reservar`): BUSY, NO_GRANT y la autoridad inestable lo deshacen y SUELTAN el
+cerrojo; solo una reserva AUTHORIZED lo conserva hasta el COMMIT.
+
+Defensa adicional: `RETURNING expires_at > clock_timestamp() AS vigente_ahora`. Cubre la espera de FILA durante el
+Execute: si un escritor que NO coopera con el cerrojo retiene la fila de un grant y aborta, Postgres sigue con la
+tupla original sin re-evaluar el WHERE, cuyo `statement_timestamp()` es de ANTES de esa espera. Si una o más filas
+dejaron de estar vigentes durante la sentencia, se deshace la reserva ENTERA y es ERROR, no NO_GRANT:
+AUTORIDAD INESTABLE DURANTE LA RESERVA ≠ AUSENCIA DE AUTORIDAD (NO_GRANT dejaría pasar la rama del corredor aunque
+el comprador conserve autoridad viva en otro canal); el barrido siguiente decide con estado y hora frescos. Una espera
+de RELACIÓN no necesita esta defensa en el camino probado: con asyncpg (protocolo extendido) ocurre ANTES del Execute
+y la sentencia nace con hora posterior a la espera (observado en PG 15.19 y 17.6; no se afirma para otros drivers
+ni protocolos). Nada en la base obliga a cooperar con el cerrojo (no hay trigger ni privilegio), y durante un deploy
+solapado un proceso viejo sin cerrojo convive con el nuevo: la garantía es la de los caminos de la app desplegada,
+no la de cualquier SQL.
 
 Resultados:
     AUTHORIZED(canales)  sólo esos canales pueden salir (un grant de EMAIL no autoriza PUSH)
     NO_GRANT             el comprador no recibe nada. NO es autoridad para nadie más: el corredor
                          solo recibe con SU propio hecho (`corredor_autorizado`, SEC-X2-EGRESS-R0;
                          el antiguo «el corredor sigue su camino», DR-15, queda retirado)
-    ERROR                no se pudo decidir (p. ej. 038 sin aplicar): nadie recibe nada
+    ERROR                no se pudo decidir (038 sin aplicar, sesión ocupada, autoridad inestable durante la
+                         reserva, sesión inválida o un fallo de la base): nadie recibe nada, para NINGUNA audiencia
 
 SEC-X2-EGRESS-R0 · DOS AUDIENCIAS, DOS AUTORIDADES. Este módulo responde también la de la otra
 audiencia del reenganche —el corredor del inmueble exacto— con `corredor_autorizado`, que no lee
@@ -64,6 +74,7 @@ from enum import StrEnum
 from sqlalchemy import text
 
 from app.contracts.consent_grant_v0 import Channel
+from app.serial_consentimiento import _clave as clave_de_consentimiento
 from app.serial_consentimiento import intentar_serializar_consentimiento
 
 log = logging.getLogger(__name__)
@@ -146,33 +157,39 @@ async def _reservar(db, session_id: str, canales: list) -> DecisionReenganche:
     """La reserva (consumo) con la frontera de serialización, dentro de un SAVEPOINT. Una excepción sube al
     llamador (`autorizar_efecto_reenganche` → ERROR), como antes.
 
-        SAVEPOINT
+        validar session_id (la misma regla que el cerrojo)    inválida → excepción → ERROR, SIN abrir savepoint
+        → SAVEPOINT
         → SENTENCIA 1  try-lock de la sesión (sin esperar)    FALSE → deshacer savepoint → ERROR (ocupada)
         → SENTENCIA 2  revalidación + reserva … RETURNING expires_at > clock_timestamp() AS vigente_ahora
-              sin filas                          → deshacer savepoint → NO_GRANT (y el cerrojo se SUELTA)
-              alguna fila con vigente_ahora=FALSE → deshacer savepoint → NO_GRANT (used_at NO persiste)
-              todas vigentes                      → RELEASE SAVEPOINT  → AUTHORIZED (cerrojo hasta el COMMIT)
+              sin filas                              → deshacer savepoint → NO_GRANT (el cerrojo se SUELTA)
+              una o más filas con vigente_ahora=FALSE → deshacer savepoint → ERROR (nada consumido, ninguna audiencia)
+              todas vigentes                          → RELEASE SAVEPOINT  → AUTHORIZED (cerrojo hasta el COMMIT)
 
-    El savepoint hace que el barrido retenga cerrojo SOLO de las sesiones cuya autoridad de verdad reservó
-    (acotadas por su presupuesto), no de cada lead sin grant. `vigente_ahora` es una defensa ADICIONAL, no la
-    fuente de la autoridad: si la sentencia de reserva esperó un bloqueo de RELACIÓN (p. ej. el ACCESS EXCLUSIVE de
-    un DDL) o la retuvo un escritor que no coopera con el cerrojo, su `statement_timestamp()` es de antes de esa
-    espera; un grant que venció durante ella no se consume. No convierte ningún SQL manual en un camino autorizado.
-    Todo o nada: con varios canales, si UNO no sigue vigente no se reserva ninguno (NO_GRANT)."""
+    El savepoint hace que el barrido retenga cerrojo SOLO de las sesiones cuya autoridad de verdad reservó, no de
+    cada lead sin grant. `vigente_ahora` es una defensa ADICIONAL, no la fuente de la autoridad: cubre la espera de
+    FILA durante el Execute (un escritor que no coopera con el cerrojo retiene la fila y aborta; el WHERE no se
+    re-evalúa y su hora es de antes de la espera). AUTORIDAD INESTABLE ≠ AUSENCIA DE AUTORIDAD: si una sola fila dejó
+    de estar vigente durante la sentencia —aunque otra siga viva— la decisión entera es ERROR, nunca NO_GRANT (que
+    abriría la rama del corredor) ni una autorización parcial en esa misma foto; el barrido siguiente recalcula y
+    podrá autorizar solo el canal que siga vivo. No convierte ningún SQL manual en un camino autorizado."""
+    sid = clave_de_consentimiento(session_id)           # ANTES del SAVEPOINT: una sesión inválida no abre nada
     await db.execute(text(f"SAVEPOINT {_SAVEPOINT}"))
-    if not await intentar_serializar_consentimiento(db, session_id):
+    if not await intentar_serializar_consentimiento(db, sid):
         await _deshacer_reserva(db)
         log.warning("Reenganche: sesión ocupada (su autoridad está cambiando) — este barrido no decide.")
         return DecisionReenganche(EstadoAutorizacion.ERROR)
     filas = (await db.execute(text(
         f"UPDATE consent_grant SET used_at = statement_timestamp() WHERE {_CONDICION} "
         "RETURNING grant_id::text AS grant_id, channel, expires_at > clock_timestamp() AS vigente_ahora"),
-        {"sid": session_id, "canales": canales})).mappings().all()
-    if not filas or not all(f["vigente_ahora"] is True for f in filas):
+        {"sid": sid, "canales": canales})).mappings().all()
+    if not filas:
         await _deshacer_reserva(db)
-        if filas:
-            log.warning("Reenganche: el grant dejó de estar vigente durante la reserva — NO_GRANT, nada consumido.")
         return DecisionReenganche(EstadoAutorizacion.NO_GRANT)
+    if not all(f["vigente_ahora"] is True for f in filas):
+        await _deshacer_reserva(db)
+        log.warning("Reenganche: la autoridad cambió durante la reserva (un grant dejó de estar vigente) — ERROR, "
+                    "nada consumido; el barrido siguiente decide.")
+        return DecisionReenganche(EstadoAutorizacion.ERROR)
     await db.execute(text(f"RELEASE SAVEPOINT {_SAVEPOINT}"))
     return DecisionReenganche(
         EstadoAutorizacion.AUTHORIZED,

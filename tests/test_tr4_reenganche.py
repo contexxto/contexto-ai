@@ -95,6 +95,10 @@ class BaseEspia:
             # `vigente_ahora` (expires_at > clock_timestamp()); en el doble, los grants siguen vigentes.
             return _Resultado([{"grant_id": f"g-{params.get('sid')}-{c}", "channel": c, "vigente_ahora": True}
                                for c in vivos])
+        # SEC-X2-EGRESS-DESTINATION-FRESHNESS-R0 (actualización esperada): la reserva lee, bajo el cerrojo, el
+        # destino vigente de SU sesión; el doble devuelve la fila de esa sesión (no la página del barrido).
+        if sql.lstrip().startswith("SELECT lead_email, lead_push FROM lead_actividad"):
+            return _Resultado([d for d in self.dormidos if d["session_id"] == params.get("sid")])
         if "FROM lead_actividad" in sql and sql.lstrip().upper().startswith("SELECT"):
             return _Resultado(self.dormidos)
         # SEC-X2-EGRESS-R0 (actualización esperada): el corredor solo recibe con el hecho X2 —la

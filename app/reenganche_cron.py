@@ -380,9 +380,11 @@ async def _escanear_reenganches(db) -> dict:
                     continue
                 ids_comprador.append(sid)
                 consecuencias += 1
+                # SEC-X2-EGRESS-DESTINATION-FRESHNESS-R0 · el destino es el de la fotografía RESERVADA (leído por
+                # la frontera bajo el cerrojo), nunca `f[...]` de la fase 1 ni una relectura tras el COMMIT.
                 a_comprador.append({
-                    "email": f["lead_email"] if "EMAIL" in veredicto.canales else None,
-                    "push": f["lead_push"] if "PUSH" in veredicto.canales else None,
+                    "email": veredicto.email_destino,
+                    "push": veredicto.push_destino,
                     "mensaje": c["decision"]["mensaje"],
                     "activo_id": activo_id, "baja": baja,
                 })

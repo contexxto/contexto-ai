@@ -54,7 +54,9 @@ solapado un proceso viejo sin cerrojo convive con el nuevo: la garantía es la d
 no la de cualquier SQL.
 
 Resultados:
-    AUTHORIZED(canales)  sólo esos canales pueden salir (un grant de EMAIL no autoriza PUSH)
+    AUTHORIZED(canales)  sólo esos canales pueden salir (un grant de EMAIL no autoriza PUSH), y SOLO a los destinos
+                         que la decisión devuelve (`email_destino`/`push_destino`): los de la MISMA fotografía
+                         serializada que reservó los grants (SEC-X2-EGRESS-DESTINATION-FRESHNESS-R0)
     NO_GRANT             el comprador no recibe nada. NO es autoridad para nadie más: el corredor
                          solo recibe con SU propio hecho (`corredor_autorizado`, SEC-X2-EGRESS-R0;
                          el antiguo «el corredor sigue su camino», DR-15, queda retirado)
@@ -88,9 +90,16 @@ class EstadoAutorizacion(StrEnum):
 
 @dataclass(frozen=True)
 class DecisionReenganche:
+    """La decisión de la frontera. SEC-X2-EGRESS-DESTINATION-FRESHNESS-R0 · GRANT RESERVADO + DESTINO DEL EFECTO =
+    UNA MISMA FOTOGRAFÍA SERIALIZADA: `email_destino`/`push_destino` SOLO los llena una reserva AUTHORIZED, con el
+    destino vigente leído bajo el MISMO cerrojo que reservó los grants, y solo para los canales autorizados. En
+    cualquier otro caso (NO_GRANT, ERROR, o una consulta sin reserva) van a None: una lectura sin reserva no es una
+    fotografía autorizada de egreso."""
     estado: EstadoAutorizacion
     canales: frozenset = field(default_factory=frozenset)
     grant_ids: tuple = ()
+    email_destino: str | None = None            # destino EMAIL de la fotografía reservada (solo si EMAIL ∈ canales)
+    push_destino: object | None = None          # suscripción PUSH de la fotografía reservada (solo si PUSH ∈ canales)
 
 
 _CONDICION = (
@@ -163,7 +172,10 @@ async def _reservar(db, session_id: str, canales: list) -> DecisionReenganche:
         → SENTENCIA 2  revalidación + reserva … RETURNING expires_at > clock_timestamp() AS vigente_ahora
               sin filas                              → deshacer savepoint → NO_GRANT (el cerrojo se SUELTA)
               una o más filas con vigente_ahora=FALSE → deshacer savepoint → ERROR (nada consumido, ninguna audiencia)
-              todas vigentes                          → RELEASE SAVEPOINT  → AUTHORIZED (cerrojo hasta el COMMIT)
+              todas vigentes → SENTENCIA 3 destino vigente (lead_actividad), bajo el MISMO cerrojo:
+                  algún canal reservado sin su destino → deshacer savepoint → ERROR (D1: nada consumido)
+                  todos con destino                    → RELEASE SAVEPOINT  → AUTHORIZED + destinos
+                                                         (cerrojo hasta el COMMIT)
 
     El savepoint hace que el barrido retenga cerrojo SOLO de las sesiones cuya autoridad de verdad reservó, no de
     cada lead sin grant. `vigente_ahora` es una defensa ADICIONAL, no la fuente de la autoridad: cubre la espera de
@@ -171,7 +183,16 @@ async def _reservar(db, session_id: str, canales: list) -> DecisionReenganche:
     re-evalúa y su hora es de antes de la espera). AUTORIDAD INESTABLE ≠ AUSENCIA DE AUTORIDAD: si una sola fila dejó
     de estar vigente durante la sentencia —aunque otra siga viva— la decisión entera es ERROR, nunca NO_GRANT (que
     abriría la rama del corredor) ni una autorización parcial en esa misma foto; el barrido siguiente recalcula y
-    podrá autorizar solo el canal que siga vivo. No convierte ningún SQL manual en un camino autorizado."""
+    podrá autorizar solo el canal que siga vivo. No convierte ningún SQL manual en un camino autorizado.
+
+    SEC-X2-EGRESS-DESTINATION-FRESHNESS-R0 · AUTORIDAD FRESCA + DESTINO OBSOLETO ≠ EGRESO AUTORIZADO. El destino
+    (EMAIL → `lead_actividad.lead_email`, PUSH → `lead_actividad.lead_push`) se lee AQUÍ, con el cerrojo de la sesión
+    tomado y en la misma transacción que reservó los grants: su único escritor de la app (el «sí» de /lead-contacto)
+    toma ese mismo cerrojo antes de escribirlo, así que reserva y destino son una misma fotografía. El llamador envía
+    EXACTAMENTE a esos destinos (nunca a una copia anterior al cerrojo ni a una relectura posterior al COMMIT). D1: un
+    canal reservado sin su destino es una fotografía inconsistente → ERROR de la decisión entera, sin autorización
+    parcial. El conjunto de canales CANDIDATOS lo fija el llamador (la fase 1 del barrido): esta frontera garantiza
+    la FRESCURA del destino de los canales que autoriza, no la COMPLETITUD frente a un canal aparecido después."""
     sid = clave_de_consentimiento(session_id)           # ANTES del SAVEPOINT: una sesión inválida no abre nada
     await db.execute(text(f"SAVEPOINT {_SAVEPOINT}"))
     if not await intentar_serializar_consentimiento(db, sid):
@@ -190,11 +211,22 @@ async def _reservar(db, session_id: str, canales: list) -> DecisionReenganche:
         log.warning("Reenganche: la autoridad cambió durante la reserva (un grant dejó de estar vigente) — ERROR, "
                     "nada consumido; el barrido siguiente decide.")
         return DecisionReenganche(EstadoAutorizacion.ERROR)
+    autorizados = frozenset(f["channel"] for f in filas)
+    destino = (await db.execute(text(                  # SENTENCIA 3: el destino vigente, bajo el MISMO cerrojo
+        "SELECT lead_email, lead_push FROM lead_actividad WHERE session_id = :sid"), {"sid": sid})).mappings().first()
+    email = (destino or {}).get("lead_email") if "EMAIL" in autorizados else None
+    push = (destino or {}).get("lead_push") if "PUSH" in autorizados else None
+    if ("EMAIL" in autorizados and not email) or ("PUSH" in autorizados and not push):
+        await _deshacer_reserva(db)
+        log.warning("Reenganche: un canal autorizado no tiene destino vigente — ERROR, nada consumido (D1).")
+        return DecisionReenganche(EstadoAutorizacion.ERROR)
     await db.execute(text(f"RELEASE SAVEPOINT {_SAVEPOINT}"))
     return DecisionReenganche(
         EstadoAutorizacion.AUTHORIZED,
-        canales=frozenset(f["channel"] for f in filas),
+        canales=autorizados,
         grant_ids=tuple(sorted(f["grant_id"] for f in filas)),
+        email_destino=email,
+        push_destino=push,
     )
 
 

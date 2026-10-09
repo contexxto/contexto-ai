@@ -1625,11 +1625,13 @@ async def responder_lead(
     # (permiso denegado, remitente mal configurado, freno anti-spam). Es el único canal
     # que no depende de nada externo.
     from app.routers.chat import registrar_notificacion
-    lead_uid = hilo["lead_user_id"] or (await db.execute(text(
-        "SELECT lead_user_id::text FROM handoff_sesion "
-        "WHERE session_id = :s AND lead_user_id IS NOT NULL "
-        "  AND principal_requested_at IS NOT NULL LIMIT 1"),
-        {"s": session_id})).scalar()
+    # SEC-X2-PC1 · LA IDENTIDAD DE QUIEN PIDIÓ CONTACTO PARA Y NO AUTORIZA RECIBIR RESPUESTAS DEL
+    # CORREDOR DE X. El aviso va SOLO a la identidad del hilo exacto. Antes, sin usuario en X, se
+    # tomaba el de OTRO hilo autorizado de la sesión: tras un reclamo de la sesión por otra cuenta,
+    # la cuenta que pidió Y —ya sin autoridad sobre la sesión— recibía en su campana y en su correo
+    # de rescate lo que el corredor de X escribía. Sin identidad en el hilo exacto, el aviso queda
+    # ligado solo a la sesión, cuya lectura sigue exigiendo la autoridad vigente.
+    lead_uid = hilo["lead_user_id"]
     # Se guardan LAS DOS referencias, no una: por usuario (así ve sus avisos desde
     # cualquier conversación) y por sesión (así los ve aunque la petición no resuelva la
     # autenticación). Guardar solo el usuario dejaba la campana vacía en cuanto el

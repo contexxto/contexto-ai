@@ -303,9 +303,12 @@ async def test_10_un_canal_cambia_y_el_otro_permanece(monkeypatch, base, suelta,
 
 @pg
 async def test_11_D1_canal_autorizado_sin_destino_es_ERROR_sin_efecto_ni_marca(monkeypatch, base, suelta, entorno):
-    """La fase 1 vio el destino; antes de la reserva desaparece (escritura directa de prueba: no hay escritor de la
-    app que lo anule). La reserva EMAIL quedaría sin destino → ERROR: nada consumido, sin marca, sin corredor."""
+    """La fase 1 vio el destino; antes de la reserva queda a NULL (escritura directa de prueba; el caso alcanzable
+    desde la app —cadena vacía— es test_11b). La reserva EMAIL quedaría sin destino → ERROR: nada consumido, sin
+    marca y —con el hecho X2 del corredor presente— sin abrir la rama del corredor (ERROR ≠ NO_GRANT)."""
+    from tests.test_tr2_consentimiento import _pide_corredor
     sid, _ = await _lead(base, email="a@ejemplo.invalid")
+    await _pide_corredor(base, sid)
     dentro, sigue = _pausa_fase1(monkeypatch)
     b = asyncio.create_task(_barrer(base))
     await asyncio.wait_for(dentro.wait(), 10)
@@ -315,6 +318,30 @@ async def test_11_D1_canal_autorizado_sin_destino_es_ERROR_sin_efecto_ni_marca(m
     assert res["comprador"] == 0 and res["corredores"] == 0 and not entorno["email"] and not entorno["push"]
     assert all(g["used_at"] is None for g in await _grants_completos(base, sid))
     assert _sin_marca(await _fila(base, sid))
+
+
+@pg
+async def test_11b_D1_alcanzable_desde_la_app_email_vacio_es_ERROR_y_el_siguiente_solo_PUSH(
+        monkeypatch, base, suelta, entorno):
+    """Lente 1 · MINOR-1: un «sí» REAL con `email=""` + push nuevo entre la fase 1 y la reserva deja `lead_email = ''`
+    (COALESCE) y solo revoca PUSH, así que el grant EMAIL de a@ sigue vivo con destino VACÍO. La reserva no puede
+    tratar `''` como destino: D1 → ERROR, nada consumido, sin envío ni marca. El barrido siguiente (la fase 1 ya
+    excluye EMAIL) envía SOLO el push nuevo."""
+    sid, cab = await _lead(base, email="a@ejemplo.invalid")
+    dentro, sigue = _pausa_fase1(monkeypatch)
+    b = asyncio.create_task(_barrer(base))
+    await asyncio.wait_for(dentro.wait(), 10)
+    r = await asyncio.wait_for(_post(sid, cab, consent=True, email="", push_subscription=P2), 10)
+    assert r.json()["resultado"] == "activado", r.text
+    assert (await _fila(base, sid))["lead_email"] == "", "precondición: el destino EMAIL quedó vacío"
+    sigue.set()
+    r1 = await asyncio.wait_for(b, 30)
+    assert r1["comprador"] == 0 and not entorno["email"] and not entorno["push"], (r1, entorno["email"])
+    assert all(g["used_at"] is None for g in await _grants_completos(base, sid)), "se consumió un grant"
+    assert _sin_marca(await _fila(base, sid))
+    r2 = await _barrer(base)
+    assert r2["comprador"] == 1 and not entorno["email"] and len(entorno["push"]) == 1
+    assert "push.prueba.test/nuevo" in _pushes(entorno)[0]
 
 
 @pg

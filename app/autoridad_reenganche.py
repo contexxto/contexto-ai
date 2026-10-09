@@ -38,8 +38,8 @@ intenta el cerrojo de consentimiento de la sesión (`app/serial_consentimiento.p
     mientras otro tenía el cerrojo se ve VENCIDO (GF-R1 cerrado frente a esos escritores).
 El cerrojo y la comprobación de frescura van SIEMPRE en sentencias distintas: en una sola sentencia (un CTE), la
 foto (snapshot) se tomaría ANTES de obtener el cerrojo y no vería lo que confirmó quien acababa de soltarlo.
-Todo ello dentro de un SAVEPOINT (`_reservar`): BUSY, NO_GRANT y la autoridad inestable lo deshacen y SUELTAN el
-cerrojo; solo una reserva AUTHORIZED lo conserva hasta el COMMIT.
+Todo ello dentro de un SAVEPOINT (`_reservar`): BUSY, NO_GRANT, la autoridad inestable y un canal reservado sin
+destino (D1) lo deshacen y SUELTAN el cerrojo; solo una reserva AUTHORIZED lo conserva hasta el COMMIT.
 
 Defensa adicional: `RETURNING expires_at > clock_timestamp() AS vigente_ahora`. Cubre la espera de FILA durante el
 Execute: si un escritor que NO coopera con el cerrojo retiene la fila de un grant y aborta, Postgres sigue con la
@@ -61,7 +61,8 @@ Resultados:
                          solo recibe con SU propio hecho (`corredor_autorizado`, SEC-X2-EGRESS-R0;
                          el antiguo «el corredor sigue su camino», DR-15, queda retirado)
     ERROR                no se pudo decidir (038 sin aplicar, sesión ocupada, autoridad inestable durante la
-                         reserva, sesión inválida o un fallo de la base): nadie recibe nada, para NINGUNA audiencia
+                         reserva, un canal reservado sin destino vigente —D1—, sesión inválida o un fallo de la
+                         base): nadie recibe nada, para NINGUNA audiencia
 
 SEC-X2-EGRESS-R0 · DOS AUDIENCIAS, DOS AUTORIDADES. Este módulo responde también la de la otra
 audiencia del reenganche —el corredor del inmueble exacto— con `corredor_autorizado`, que no lee

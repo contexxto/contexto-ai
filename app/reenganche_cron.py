@@ -183,7 +183,8 @@ async def _escanear_reenganches(db) -> dict:
     #     elegible, autorizada o con efecto): lo descartado no frena el avance; sin OFFSET;
     #   · un corte temporal FIJO, tomado UNA vez de la hora de la base en la primera página: el universo
     #     no avanza mientras se recorre (una fila que vuelve a tener actividad sale sola: `now()` > corte).
-    # Solo LECTURAS: todas las páginas y todas las lecturas por lead van antes de la primera reserva.
+    # Solo LECTURAS: todas las páginas y todas las lecturas por lead van antes de la primera reserva (salvo el
+    # DESTINO del comprador, que lo lee la propia reserva bajo el cerrojo: SEC-X2-EGRESS-DESTINATION-FRESHNESS-R0).
     _CANDIDATAS = (
         "SELECT session_id, activo_id::text AS activo_id, ultima_actividad, "
         "       lead_email, lead_push, {corte} AS corte "

@@ -24,8 +24,9 @@ no se toca: es el productor el que debe cumplir el invariante.
 
 SEC-X2-CONSENT-SERIALIZATION-R0 · las DOS funciones de este módulo toman, como PRIMERA sentencia, el cerrojo de
 consentimiento de la sesión (`app/serial_consentimiento.py`; reentrante si el llamador ya lo tomó, como hace
-`/lead-contacto` ANTES de su DDL). Ningún llamador, presente o futuro, escribe `consent_grant` sin pasar por la
-frontera de serialización de la sesión.
+`/lead-contacto` ANTES de su DDL). Todos los escritores de `consent_grant` de `app/` inventariados hoy pasan por la
+frontera (tests/test_sec_x2_consent_serialization.py::test_20 lo fija); nada en la base lo impone (no hay trigger
+ni privilegio), así que un escritor nuevo debe usar estas funciones o el mismo cerrojo.
 """
 from __future__ import annotations
 

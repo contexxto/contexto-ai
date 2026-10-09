@@ -16,9 +16,15 @@ Por qué cierra los tres residuales del postcheck:
     detecte). Cada camino interactivo toma UN solo cerrojo y lo toma ANTES de tocar esas tablas (también antes
     del DDL de `_preparar_lead_actividad_en_transaccion`).
   · GF-R1 · el cron NUNCA espera (D-CRON = B): si la sesión está ocupada, la reserva no decide (ERROR → el lead
-    se omite en ese barrido, para las dos audiencias, sin marca ni presupuesto). Si el cerrojo es suyo, ningún
-    escritor retiene filas de grant de esa sesión, así que la reserva —una sentencia POSTERIOR, con su propio
-    `statement_timestamp()`— no espera bloqueos de fila y no puede consumir un grant que venció durante una espera.
+    se omite en ese barrido, para las dos audiencias, sin marca ni presupuesto) y el barrido siguiente decide con
+    estado y hora frescos. Si el cerrojo es suyo, ninguno de los escritores de `app/` inventariados retiene filas
+    de grant de esa sesión, así que la reserva —una sentencia POSTERIOR, con su propio `statement_timestamp()`— no
+    espera esos bloqueos de fila. La reserva va en un SAVEPOINT (`autoridad_reenganche._reservar`): BUSY y NO_GRANT
+    lo deshacen y sueltan el cerrojo; solo AUTHORIZED lo conserva hasta el COMMIT.
+
+La garantía es la de los caminos de la app desplegada que usan este módulo (inventario de `app/`, test_20): nada en
+la base obliga a cooperar con el cerrojo (no hay trigger ni privilegio), y durante un deploy solapado un proceso
+viejo sin cerrojo convive con el nuevo.
 
 Reglas de la clave (no negociables):
   · el espacio es ESTE (`ESPACIO_CONSENTIMIENTO`); la sesión es `consent_grant.session_id` (el lead), la MISMA

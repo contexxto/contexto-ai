@@ -131,18 +131,25 @@ async def _frontera(Sesion, sid):
                                                   reservar=False)).estado
 
 
+_ESTA_BASE = "database = (SELECT oid FROM pg_database WHERE datname = current_database())"
+
+
 async def _esperas(Sesion):
-    """Tipos de bloqueo que alguien ESPERA ahora mismo (en toda la base de pruebas)."""
+    """Tipos de bloqueo que alguien ESPERA ahora mismo en ESTA base de pruebas (no en todo el clúster: el arnés u
+    otra base no pueden dar un falso aprobado). Los bloqueos de transacción (`transactionid`) no llevan base:
+    se cuentan los de los backends conectados a esta base."""
     async with Sesion() as db:
         return sorted(r[0] for r in (await db.execute(text(
-            "SELECT locktype FROM pg_locks WHERE NOT granted"))).all())
+            "SELECT l.locktype FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid "
+            "WHERE NOT l.granted AND a.datname = current_database()"))).all())
 
 
 async def _esperas_advisory(Sesion):
+    """Esperas del cerrojo de CONSENTIMIENTO (su espacio, forma de dos claves) en ESTA base."""
     async with Sesion() as db:
         return (await db.execute(text(
-            "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND NOT granted AND classid = :ns"),
-            {"ns": SC.ESPACIO_CONSENTIMIENTO})).scalar()
+            "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND NOT granted AND classid = :ns "
+            f"AND objsubid = 2 AND {_ESTA_BASE}"), {"ns": SC.ESPACIO_CONSENTIMIENTO})).scalar()
 
 
 async def _barrer(Sesion):
@@ -412,10 +419,12 @@ async def test_16_no_hay_ciclo_si_no_en_ningun_orden(monkeypatch, base, suelta):
 
 
 @pg
-async def test_17_no_hay_ciclo_si_con_DDL_y_cron(monkeypatch, base, suelta, entorno):
+async def test_17_no_hay_ciclo_si_con_DDL_y_cron(monkeypatch, base, suelta, entorno, caplog):
     """La trampa D.2 del preflight: el cron retiene AccessShare sobre lead_actividad desde su fase 1; un «sí» con el
     DDL pendiente (`_lead_actividad_ready=False`) toma el cerrojo y queda esperando ACCESS EXCLUSIVE detrás del cron.
     Si el cron ESPERARA el cerrojo, ciclo duro. Con try-lock: el cron omite la sesión, confirma, y el «sí» termina."""
+    import logging
+    caplog.set_level(logging.WARNING, logger="app.autoridad_reenganche")
     sid, cab = await _lead(base)
     dentro, sigue = asyncio.Event(), asyncio.Event()
     _PAUSAS.append(type("P", (), {"_sigue": sigue, "soltar": lambda self, abortar=False: sigue.set()})())
@@ -436,15 +445,17 @@ async def test_17_no_hay_ciclo_si_con_DDL_y_cron(monkeypatch, base, suelta, ento
         async with base() as db:
             return bool((await db.execute(text(
                 "SELECT 1 FROM pg_locks WHERE NOT granted AND locktype = 'relation' "
-                "AND mode = 'AccessExclusiveLock'"))).first())
+                f"AND mode = 'AccessExclusiveLock' AND relation = to_regclass('lead_actividad') AND {_ESTA_BASE}"
+            ))).first())
     assert await _espera_que(si_espera_la_tabla), "precondición: el «sí» no llegó a esperar ACCESS EXCLUSIVE"
-    reloj = asyncio.get_running_loop().time
-    t0 = reloj()
     sigue.set()
     r = await asyncio.wait_for(b, 30)
-    # Con un cron que ESPERARA el cerrojo, el ciclo duro solo se rompe con la detección de interbloqueos
-    # (deadlock_timeout = 1 s) abortando a uno: el cron no puede tardar eso en terminar.
-    assert reloj() - t0 < 0.8, f"el cron tardó {reloj() - t0:.2f} s: esperó al titular del cerrojo"
+    # Sin inferencia temporal (no depende de `deadlock_timeout`): el cron llegó a la sesión y la encontró OCUPADA
+    # (el aviso de BUSY), sin que su frontera fallara. Un cron que ESPERARA el cerrojo formaría el ciclo duro: o
+    # Postgres lo aborta a él (la frontera «falló» por 40P01, sin aviso de BUSY) o aborta al «sí» (500).
+    mensajes = [x.getMessage() for x in caplog.records if x.name == "app.autoridad_reenganche"]
+    assert any("sesión ocupada" in m for m in mensajes), mensajes
+    assert not any("frontera de autoridad falló" in m for m in mensajes), mensajes
     r_si = await asyncio.wait_for(t_si, 30)
     assert r_si.status_code == 200 and r_si.json()["resultado"] == "activado", r_si.text
     assert r["comprador"] == 0 and not entorno["email"], "el cron decidió sobre una sesión ocupada"
@@ -460,20 +471,122 @@ async def test_18_no_hay_ciclo_no_con_cron(monkeypatch, base, suelta, entorno):
 @pg
 async def test_23_la_reserva_revalida_DESPUES_de_obtener_el_cerrojo(monkeypatch, base, suelta):
     """Lo que valía ANTES del cerrojo no autoriza: si un «no» completo se confirma justo antes de que la reserva
-    obtenga el cerrojo, la sentencia de reserva (posterior al cerrojo) ve el grant revocado → NO_GRANT, sin consumo."""
+    obtenga el cerrojo, la sentencia de reserva (posterior al cerrojo) ve el grant revocado → NO_GRANT, sin consumo.
+
+    El «no» interno corre en SU propia conexión con `lock_timeout` de PostgreSQL: con el código correcto termina en
+    el acto (la reserva todavía no retiene nada); si la reserva ya retuviera filas de grant ANTES del cerrojo (M8),
+    el «no» no puede completar, Postgres lo corta en 2 s (55P03), su transacción se revierte y la conexión se cierra:
+    la prueba falla rápido y sin dejar nada vivo (antes: un ciclo entre la prueba y la base, invisible para Postgres)."""
+    from sqlalchemy.exc import DBAPIError
     sid, cab = await _lead(base)
     original = AR.intentar_serializar_consentimiento
+    cortado: list = []
 
     async def con_un_no_justo_antes(db, s):
-        r = await _no(sid, cab)                              # otro acto, completo y confirmado
-        assert r.json()["resultado"] == "desactivado"
+        async with base() as otra:                          # otro acto, completo y confirmado, con límite en PG
+            try:
+                await otra.execute(text("SET LOCAL lock_timeout = '2s'"))
+                await chat._reducir_autoridad_reenganche(otra, sid, cerrar=False)
+                await otra.commit()
+            except DBAPIError as exc:
+                await otra.rollback()
+                cortado.append(type(getattr(exc, "orig", exc)).__name__)
+                raise AssertionError("el «no» no pudo completar: la reserva retenía filas ANTES del cerrojo")
         return await original(db, s)
     monkeypatch.setattr(AR, "intentar_serializar_consentimiento", con_un_no_justo_antes)
     async with base() as db:
         d = await autorizar_efecto_reenganche(db, session_id=sid, canales_candidatos=["EMAIL", "PUSH"],
                                               reservar=True)
         await db.commit()
+    assert not cortado, f"el «no» interno fue cortado por lock_timeout: {cortado}"
     assert d.estado is NO and all(g["used_at"] is None for g in await _grants_completos(base, sid))
+
+
+# ══ R1 · SAVEPOINT y frescura después de una espera ═══════════════════════════════════════════════════════════════
+
+async def _cerrojo_libre(Sesion, sid):
+    """¿Otra conexión (en autocommit de una sentencia) puede tomar AHORA el cerrojo de la sesión?"""
+    async with Sesion() as db:
+        libre = await SC.intentar_serializar_consentimiento(db, sid)
+        await db.rollback()
+    return libre
+
+
+@pg
+async def test_25_NO_GRANT_suelta_el_cerrojo_AUTHORIZED_lo_conserva(base, suelta):
+    """R1 · el barrido retiene cerrojo SOLO de las sesiones cuya autoridad reservó. Con la transacción del barrido
+    ABIERTA: tras un NO_GRANT el cerrojo de esa sesión ya está libre; tras un AUTHORIZED sigue tomado hasta el
+    COMMIT. Antes de R1, cada lead sin grant retenía su cerrojo hasta el COMMIT, sin cota."""
+    sin_grant, _ = await _lead(base, grant=False)
+    con_grant, _ = await _lead(base)
+    async with base() as db:
+        d1 = await autorizar_efecto_reenganche(db, session_id=sin_grant, canales_candidatos=["EMAIL"], reservar=True)
+        d2 = await autorizar_efecto_reenganche(db, session_id=con_grant, canales_candidatos=["EMAIL", "PUSH"],
+                                               reservar=True)
+        assert (d1.estado, d2.estado) == (NO, AUTH)
+        assert await _cerrojo_libre(base, sin_grant) is True, "NO_GRANT retuvo el cerrojo"
+        assert await _cerrojo_libre(base, con_grant) is False, "AUTHORIZED soltó el cerrojo antes del COMMIT"
+        await db.commit()
+    assert await _cerrojo_libre(base, con_grant) is True
+    assert all(g["used_at"] is not None for g in await _grants_completos(base, con_grant))
+
+
+@pg
+async def test_26_BUSY_deshace_el_savepoint_y_la_transaccion_sigue_sana(monkeypatch, base, suelta):
+    """BUSY → ERROR sin efectos: no queda savepoint colgado, la transacción del barrido sigue usable y lo que ya
+    había reservado (otra sesión, AUTHORIZED) se conserva con su cerrojo."""
+    previa, _ = await _lead(base)
+    ocupada, cab = await _lead(base)
+    pausa = _pausa_no(monkeypatch)
+    t_no = asyncio.create_task(_no(ocupada, cab))
+    await asyncio.wait_for(pausa.dentro.wait(), 10)
+    async with base() as db:
+        d1 = await autorizar_efecto_reenganche(db, session_id=previa, canales_candidatos=["EMAIL", "PUSH"],
+                                               reservar=True)
+        d2 = await autorizar_efecto_reenganche(db, session_id=ocupada, canales_candidatos=["EMAIL", "PUSH"],
+                                               reservar=True)
+        assert (d1.estado, d2.estado) == (AUTH, ERR)
+        assert (await db.execute(text("SELECT 1"))).scalar() == 1, "la transacción quedó abortada"
+        assert await _cerrojo_libre(base, previa) is False
+        await db.commit()
+    pausa.soltar(abortar=True)
+    await asyncio.wait_for(t_no, 30)
+    assert all(g["used_at"] is not None for g in await _grants_completos(base, previa))
+    assert all(g["used_at"] is None for g in await _grants_completos(base, ocupada))
+
+
+@pg
+async def test_27_vencido_durante_una_espera_de_RELACION_no_se_consume(base, suelta):
+    """MINOR-1 de la lente 1 · la sentencia de reserva fija su `statement_timestamp()` y después ESPERA un bloqueo
+    de relación (un escritor que no coopera: ACCESS EXCLUSIVE sobre `lead_actividad`). El grant vence durante esa
+    espera; su WHERE (con la hora de antes) lo vería vigente. La defensa `expires_at > clock_timestamp()` deshace la
+    reserva: NO_GRANT y `used_at` sigue NULL (no persiste nada)."""
+    sid, _ = await _lead(base)
+    async with base() as db:
+        await db.execute(text("UPDATE consent_grant SET expires_at = now() + interval '1500 milliseconds' "
+                              "WHERE session_id = :s"), {"s": sid})
+        await db.commit()
+    titular = base()
+    try:
+        await titular.execute(text("LOCK TABLE lead_actividad IN ACCESS EXCLUSIVE MODE"))
+        async with base() as db:
+            t = asyncio.create_task(autorizar_efecto_reenganche(
+                db, session_id=sid, canales_candidatos=["EMAIL", "PUSH"], reservar=True))
+
+            async def reserva_espera_la_tabla():
+                async with base() as d:
+                    return bool((await d.execute(text(
+                        "SELECT 1 FROM pg_locks WHERE NOT granted AND locktype = 'relation' "
+                        f"AND relation = to_regclass('lead_actividad') AND {_ESTA_BASE}"))).first())
+            assert await _espera_que(reserva_espera_la_tabla), "precondición: la reserva no esperó la relación"
+            await asyncio.sleep(2.0)                                     # el grant VENCE durante la espera
+            await titular.rollback()
+            d = await asyncio.wait_for(t, 15)
+            await db.commit()
+    finally:
+        await titular.close()
+    assert d.estado is NO, d
+    assert all(g["used_at"] is None for g in await _grants_completos(base, sid)), "se consumió un grant vencido"
 
 
 @pg
@@ -554,7 +667,7 @@ def test_20_los_unicos_escritores_de_consent_grant_pasan_por_la_frontera():
     assert escritores == {"grant_reenganche.py", "autoridad_reenganche.py"}, escritores
     for fn, cerrojo in ((GR.crear_grants_reenganche, "serializar_consentimiento("),
                         (GR.revocar_grants_reenganche, "serializar_consentimiento("),
-                        (AR.autorizar_efecto_reenganche, "intentar_serializar_consentimiento(")):
+                        (AR._reservar, "intentar_serializar_consentimiento(")):
         c = _cuerpo(fn)
         i_sql = min(m.start() for m in re.finditer(r"UPDATE consent_grant|INSERT INTO consent_grant", c))
         assert cerrojo in c and c.index(cerrojo) < i_sql, fn.__name__

@@ -91,7 +91,10 @@ class BaseEspia:
                      if c in params.get("canales", []) and (params.get("sid"), c) not in self.consumidos]
             if "RETURNING" in sql:
                 self.consumidos.update((params["sid"], c) for c in vivos)
-            return _Resultado([{"grant_id": f"g-{params.get('sid')}-{c}", "channel": c} for c in vivos])
+            # SEC-X2-CONSENT-SERIALIZATION-R0 R1 (actualización esperada): la reserva devuelve además
+            # `vigente_ahora` (expires_at > clock_timestamp()); en el doble, los grants siguen vigentes.
+            return _Resultado([{"grant_id": f"g-{params.get('sid')}-{c}", "channel": c, "vigente_ahora": True}
+                               for c in vivos])
         if "FROM lead_actividad" in sql and sql.lstrip().upper().startswith("SELECT"):
             return _Resultado(self.dormidos)
         # SEC-X2-EGRESS-R0 (actualización esperada): el corredor solo recibe con el hecho X2 —la

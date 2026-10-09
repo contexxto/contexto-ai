@@ -534,13 +534,18 @@ async def test_25_NO_GRANT_suelta_el_cerrojo_AUTHORIZED_lo_conserva(base, suelta
 @pg
 async def test_26_BUSY_deshace_el_savepoint_y_la_transaccion_sigue_sana(monkeypatch, base, suelta):
     """BUSY → ERROR sin efectos: no queda savepoint colgado, la transacción del barrido sigue usable y lo que ya
-    había reservado (otra sesión, AUTHORIZED) se conserva con su cerrojo."""
+    había reservado (otra sesión, AUTHORIZED) se conserva con su cerrojo.
+
+    La transacción del «barrido» lleva `lock_timeout` de PostgreSQL: con el código correcto no espera nada; si una
+    mutación dejara a la reserva esperar las filas del titular detenido, Postgres la corta en 2 s y la prueba falla
+    rápido (sin un ciclo entre la prueba y la base)."""
     previa, _ = await _lead(base)
     ocupada, cab = await _lead(base)
     pausa = _pausa_no(monkeypatch)
     t_no = asyncio.create_task(_no(ocupada, cab))
     await asyncio.wait_for(pausa.dentro.wait(), 10)
     async with base() as db:
+        await db.execute(text("SET LOCAL lock_timeout = '2s'"))
         d1 = await autorizar_efecto_reenganche(db, session_id=previa, canales_candidatos=["EMAIL", "PUSH"],
                                                reservar=True)
         d2 = await autorizar_efecto_reenganche(db, session_id=ocupada, canales_candidatos=["EMAIL", "PUSH"],

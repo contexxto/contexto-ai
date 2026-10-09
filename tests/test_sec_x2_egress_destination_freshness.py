@@ -240,7 +240,7 @@ async def test_04b_el_destino_se_lee_DESPUES_del_cerrojo(monkeypatch, base, suel
 @pg
 async def test_05_cron_PRIMERO_el_efecto_reservado_conserva_a(monkeypatch, base, suelta, entorno):
     """Orden A: el barrido reserva G_a con a@ y confirma; el cambio a b@ llega DESPUÉS: el efecto reservado salió a a@
-    y G_b queda vivo (para el futuro), sin consumir."""
+    y G_b queda vivo y sin consumir (este lead ya recibió su dosis única: ningún barrido lo usará)."""
     sid, cab = await _lead(base, email="a@ejemplo.invalid")
     res = await _barrer(base)
     await _si(sid, cab, email="b@ejemplo.invalid")
@@ -253,7 +253,7 @@ async def test_05_cron_PRIMERO_el_efecto_reservado_conserva_a(monkeypatch, base,
 async def test_06_el_escritor_espera_el_cerrojo_del_cron_y_el_efecto_usa_la_foto_reservada(
         monkeypatch, base, suelta, entorno):
     """Orden D: con la reserva hecha (cerrojo retenido), un «sí» con b@ ESPERA el advisory; el efecto sale a a@ (la
-    foto reservada); tras el COMMIT el «sí» aplica b@ y crea G_b vivo."""
+    foto reservada, con G_a consumido); tras el COMMIT el «sí» aplica b@ y crea G_b vivo y sin consumir."""
     sid, cab = await _lead(base, email="a@ejemplo.invalid")
     reservado, sigue = _pausa_tras_reserva(monkeypatch)
     b = asyncio.create_task(_barrer(base))
@@ -265,6 +265,9 @@ async def test_06_el_escritor_espera_el_cerrojo_del_cron_y_el_efecto_usa_la_foto
     assert (await asyncio.wait_for(t_si, 30)).json()["resultado"] == "activado"
     assert _correos(entorno) == ["a@ejemplo.invalid"]
     assert (await _fila(base, sid))["lead_email"] == "b@ejemplo.invalid"
+    gs = _por_canal(await _grants_completos(base, sid), "EMAIL")
+    assert len(gs) == 2 and gs[0]["used_at"] is not None, gs
+    assert gs[1]["used_at"] is None and gs[1]["revoked_at"] is None, gs
 
 
 # ══ C · multicanal y vínculo canal ↔ destino ═══════════════════════════════════════════════════════════════════════
@@ -293,6 +296,27 @@ async def test_09_EMAIL_y_PUSH_cada_uno_a_su_destino(monkeypatch, base, suelta, 
     assert d.estado is AUTH and d.email_destino == "ambos@ejemplo.invalid" and "viejo" in str(d.push_destino)
     res = await _barrer(base)
     assert res["comprador"] == 1 and _correos(entorno) == ["ambos@ejemplo.invalid"] and len(entorno["push"]) == 1
+
+
+@pg
+async def test_09b_dos_compradores_cada_uno_recibe_SU_destino(monkeypatch, base, suelta, entorno):
+    """Lente 1 · N2: la reserva lee el destino de SU sesión, no el de otra fila de `lead_actividad`. Dos compradores
+    AUTHORIZED en la MISMA transacción (y en el mismo barrido), con correo y push distintos: cada decisión trae lo
+    suyo y cada destino sale exactamente una vez. Sin el vínculo con la sesión, el aviso de uno saldría al otro."""
+    a, _ = await _lead(base, email="a@ejemplo.invalid", push=P1)
+    b, _ = await _lead(base, email="b@ejemplo.invalid", push=P2)
+    async with base() as db:
+        d_a = await autorizar_efecto_reenganche(db, session_id=a, canales_candidatos=["EMAIL", "PUSH"], reservar=True)
+        d_b = await autorizar_efecto_reenganche(db, session_id=b, canales_candidatos=["EMAIL", "PUSH"], reservar=True)
+        await db.rollback()
+    assert (d_a.estado, d_b.estado) == (AUTH, AUTH), (d_a, d_b)
+    assert d_a.email_destino == "a@ejemplo.invalid" and "viejo" in str(d_a.push_destino), d_a
+    assert d_b.email_destino == "b@ejemplo.invalid" and "nuevo" in str(d_b.push_destino), d_b
+    res = await _barrer(base)
+    pushes = _pushes(entorno)
+    assert res["comprador"] == 2, res
+    assert sorted(_correos(entorno)) == ["a@ejemplo.invalid", "b@ejemplo.invalid"], _correos(entorno)
+    assert len(pushes) == 2 and sum("viejo" in p for p in pushes) == 1 and sum("nuevo" in p for p in pushes) == 1
 
 
 @pg
@@ -402,6 +426,22 @@ async def test_13_un_destino_sin_grant_no_sale(monkeypatch, base, suelta, entorn
 
 
 @pg
+async def test_13b_un_correo_sin_grant_EMAIL_no_sale(monkeypatch, base, suelta, entorno):
+    """Lente 2 · N1, espejo EMAIL de test_13: grant solo de PUSH; la sesión TAMBIÉN tiene correo (sin grant EMAIL; en la
+    app: un «no» conserva el contacto y un «sí» posterior solo con push). La fase 1 ve EMAIL y PUSH como candidatos;
+    se autoriza solo PUSH: la decisión no trae correo y el barrido no lo envía (ni con la foto de la fase 1)."""
+    sid, _ = await _lead(base, push=P1)
+    await _sql(base, "UPDATE lead_actividad SET lead_email = 'sin-grant@ejemplo.invalid' WHERE session_id = :s",
+               {"s": sid})
+    async with base() as db:
+        d = await autorizar_efecto_reenganche(db, session_id=sid, canales_candidatos=["EMAIL", "PUSH"], reservar=True)
+        await db.rollback()
+    assert d.estado is AUTH and d.canales == frozenset({"PUSH"}) and d.email_destino is None, d
+    res = await _barrer(base)
+    assert res["comprador"] == 1 and not entorno["email"] and len(entorno["push"]) == 1, (res, _correos(entorno))
+
+
+@pg
 async def test_14_un_canal_NO_candidato_no_recibe_destino_aunque_tenga_grant(base, suelta):
     sid, _ = await _lead(base, email="a@ejemplo.invalid", push=P1)
     async with base() as db:
@@ -410,6 +450,26 @@ async def test_14_un_canal_NO_candidato_no_recibe_destino_aunque_tenga_grant(bas
     assert d.estado is AUTH and d.canales == frozenset({"EMAIL"}) and d.email_destino == "a@ejemplo.invalid"
     assert d.push_destino is None
     assert all(g["used_at"] is None for g in _por_canal(await _grants_completos(base, sid), "PUSH"))
+
+
+@pg
+async def test_15b_la_lectura_del_destino_no_espera_bloqueos_de_FILA(base, suelta):
+    """Lente 2 · N2 · D-CRON = B (el barrido nunca espera): `marcar_actividad_lead` escribe la fila de `lead_actividad`
+    SIN el cerrojo de consentimiento. Si la lectura del destino tomara un bloqueo de fila (FOR SHARE/UPDATE), la
+    reserva esperaría con el cerrojo de la sesión tomado. Con otra conexión reteniendo la fila FOR UPDATE, la reserva
+    es AUTHORIZED sin esperar (`lock_timeout` corta cualquier espera en 2 s: la prueba nunca se cuelga)."""
+    sid, _ = await _lead(base, email="a@ejemplo.invalid")
+    async with base() as titular:
+        await titular.execute(text("SELECT 1 FROM lead_actividad WHERE session_id = :s FOR UPDATE"), {"s": sid})
+        try:
+            async with base() as db:
+                await db.execute(text("SET LOCAL lock_timeout = '2s'"))
+                d = await autorizar_efecto_reenganche(db, session_id=sid, canales_candidatos=["EMAIL"],
+                                                      reservar=True)
+                await db.rollback()
+        finally:
+            await titular.rollback()
+    assert d.estado is AUTH and d.email_destino == "a@ejemplo.invalid", d
 
 
 # ══ F · BUSY / NO_GRANT / inestable / sin reserva: ningún destino ════════════════════════════════════════════════

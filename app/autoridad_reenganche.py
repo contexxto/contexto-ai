@@ -126,8 +126,11 @@ async def autorizar_efecto_reenganche(
     canales_candidatos,
     reservar: bool,
 ) -> DecisionReenganche:
-    """La decisión. `canales_candidatos` son los canales con destino en `lead_actividad`; la
-    salida dice cuáles de ellos (y sólo ellos) pueden usarse. La hora es la de Postgres."""
+    """La decisión. `canales_candidatos` son los canales que el llamador vio con destino en
+    `lead_actividad` (CANDIDATOS, no el destino: D2); la salida dice cuáles de ellos (y sólo ellos)
+    pueden usarse. Con `reservar=True` y AUTHORIZED, la decisión trae además el destino VIGENTE de
+    cada canal autorizado (`email_destino`/`push_destino`), leído bajo el cerrojo de la sesión: el
+    llamador envía SOLO ahí. La hora es la de Postgres."""
     canales = sorted({Channel(c).value for c in canales_candidatos})
     if not canales:
         return DecisionReenganche(EstadoAutorizacion.NO_GRANT)

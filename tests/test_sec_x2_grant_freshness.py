@@ -136,8 +136,11 @@ async def test_5_revocado_o_usado_sigue_fallando_cerrado(base):
 
 @pg
 async def test_6_dos_workers_no_consumen_el_mismo_grant(base):
-    """El primero reserva y retiene su transacción; el segundo espera el bloqueo de fila, re-evalúa la condición
-    y ya ve `used_at`: NO_GRANT. Cada grant se consume UNA vez."""
+    """El primero reserva y retiene su transacción. Cada grant se consume UNA vez.
+
+    SEC-X2-CONSENT-SERIALIZATION-R0 (actualización esperada, D-CRON = B): el segundo ya NO espera el bloqueo de
+    fila —la espera era justo la ventana de GF-R1—. Encuentra el cerrojo de consentimiento de la sesión ocupado y
+    no decide: ERROR inmediato (el cron lo omite), sin consumir nada. Antes: esperaba y daba NO_GRANT."""
     sid, _ = await _lead_con_grant(base)
 
     async def worker(espera, retiene):
@@ -152,8 +155,8 @@ async def test_6_dos_workers_no_consumen_el_mismo_grant(base):
             await db.commit()
             return estado, duro
     (a, _), (b, espera_b) = await asyncio.wait_for(asyncio.gather(worker(0, 1.5), worker(0.4, 0)), 30)
-    assert (a, b) == (AUTH, NO), (a, b)
-    assert espera_b >= 0.7, f"el segundo worker no esperó el bloqueo de fila ({espera_b:.2f} s): la prueba no midió la carrera"
+    assert (a, b) == (AUTH, EstadoAutorizacion.ERROR), (a, b)
+    assert espera_b < 0.5, f"el segundo worker ESPERÓ ({espera_b:.2f} s): la reserva no debe esperar (D-CRON = B)"
     usados = await _usados(base, sid)
     assert all(u is not None for u in usados) and len(set(usados)) == 1, "un grant se consumió dos veces"
 

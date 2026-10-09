@@ -79,6 +79,12 @@ class BaseEspia:
             r = _Resultado([])
             r._escalar = True
             return r
+        # SEC-X2-CONSENT-SERIALIZATION-R0 (actualización esperada): la reserva intenta antes, en su propia
+        # sentencia y sin esperar, el cerrojo de consentimiento de la sesión. En el doble nadie más lo tiene.
+        if "pg_try_advisory_xact_lock" in sql:
+            r = _Resultado([])
+            r._escalar = True
+            return r
         if "consent_grant" in sql and ("RETURNING" in sql or sql.lstrip().upper().startswith("SELECT")):
             fila = next((d for d in self.dormidos if d["session_id"] == params.get("sid")), None)
             vivos = [c for c in (fila or {}).get("_grants", [])

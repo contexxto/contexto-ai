@@ -651,20 +651,23 @@ async def test_B9_once_no_se_consume_dos_veces(base):
 @pg
 async def test_B10_dos_workers_una_sola_reserva(base):
     """Dos conexiones reales. La primera reserva y NO confirma todavía; la segunda intenta
-    reservar el mismo grant y queda esperando el bloqueo de fila. Al confirmar la primera, la
-    segunda re-evalúa la condición, ve `used_at` y no reserva nada."""
+    reservar el mismo grant.
+
+    SEC-X2-CONSENT-SERIALIZATION-R0 (actualización esperada, D-CRON = B): la segunda ya no espera el bloqueo de
+    fila; encuentra el cerrojo de consentimiento de la sesión ocupado y NO decide (ERROR inmediato, sin consumir).
+    Antes: esperaba, re-evaluaba y daba NO_GRANT. Tras confirmar la primera, una tercera reserva ve `used_at`."""
     from app.autoridad_reenganche import autorizar_efecto_reenganche
     sid, _ = await _lead_con_grant(base, email=False)
     async with base() as a, base() as b:
         ra = await autorizar_efecto_reenganche(a, session_id=sid, canales_candidatos=["PUSH"], reservar=True)
-        tarea_b = asyncio.ensure_future(
-            autorizar_efecto_reenganche(b, session_id=sid, canales_candidatos=["PUSH"], reservar=True))
-        await asyncio.sleep(0.4)
-        assert not tarea_b.done(), "la segunda reserva no esperó al bloqueo"
+        rb = await asyncio.wait_for(
+            autorizar_efecto_reenganche(b, session_id=sid, canales_candidatos=["PUSH"], reservar=True), 0.5)
         await a.commit()
-        rb = await tarea_b
         await b.commit()
-    assert ra.estado.value == "AUTHORIZED" and rb.estado.value == "NO_GRANT"
+    async with base() as c:
+        rc = await autorizar_efecto_reenganche(c, session_id=sid, canales_candidatos=["PUSH"], reservar=True)
+        await c.commit()
+    assert ra.estado.value == "AUTHORIZED" and rb.estado.value == "ERROR" and rc.estado.value == "NO_GRANT"
     assert sum(1 for g in await _grants_completos(base, sid) if g["used_at"] is not None) == 1
 
 

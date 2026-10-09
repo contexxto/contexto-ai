@@ -21,6 +21,11 @@ SEC-X2-GRANT-REVOCATION-FRESHNESS-R0 · LAS DOS REVOCACIONES usan `revoked_at = 
 (un «sí» concurrente) intentaba revocarlo con una hora anterior a su `granted_at`, el CHECK rechazaba el
 UPDATE, el llamador deshacía todo y el grant seguía VIVO —una baja válida que fallaba ABIERTA—. El CHECK
 no se toca: es el productor el que debe cumplir el invariante.
+
+SEC-X2-CONSENT-SERIALIZATION-R0 · las DOS funciones de este módulo toman, como PRIMERA sentencia, el cerrojo de
+consentimiento de la sesión (`app/serial_consentimiento.py`; reentrante si el llamador ya lo tomó, como hace
+`/lead-contacto` ANTES de su DDL). Ningún llamador, presente o futuro, escribe `consent_grant` sin pasar por la
+frontera de serialización de la sesión.
 """
 from __future__ import annotations
 
@@ -42,6 +47,7 @@ from app.contracts.consent_grant_v0 import (
     PseudonymousSessionPrincipal,
     Purpose,
 )
+from app.serial_consentimiento import serializar_consentimiento
 from app.sesion_autoridad import Autoridad, PruebaDeAutoridad
 
 VIGENCIA_DIAS = 30
@@ -129,6 +135,9 @@ async def crear_grants_reenganche(
         )
 
     valores = [c.value for c in canales]
+    # SEC-X2-CONSENT-SERIALIZATION-R0 · sustitución y creación bajo EL MISMO cerrojo de la sesión (una sesión =
+    # una frontera), antes de tocar `consent_grant`.
+    await serializar_consentimiento(db, prueba.session_id)
     await db.execute(
         text("UPDATE consent_grant SET revoked_at = statement_timestamp() "
              "WHERE session_id = :s AND purpose = 'REENGAGEMENT' AND channel = ANY(:canales) "
@@ -160,6 +169,9 @@ async def revocar_grants_reenganche(db, session_id: str) -> None:
     """Revoca TODOS los grants REENGAGEMENT vivos de la sesión (todos los canales), en la
     transacción del llamador. Sólo reduce: nunca crea, nunca reactiva (`revoked_at` jamás
     vuelve a NULL). Sin la tabla no hay grants que revocar, y la baja sigue funcionando."""
+    # SEC-X2-CONSENT-SERIALIZATION-R0 · primera sentencia: el cerrojo de la sesión (esperando a un «sí» o a
+    # otra revocación en curso; reentrante si el llamador ya lo tomó).
+    await serializar_consentimiento(db, session_id)
     if not await _tabla_existe(db):
         return
     await db.execute(

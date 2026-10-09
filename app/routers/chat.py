@@ -52,6 +52,7 @@ from app.texto_salida import texto_de_salida
 from app.verificacion_prosa import registrar as registrar_prosa
 from app.contracts.consent_grant_v0 import Channel
 from app.grant_reenganche import copy_de_consentimiento, crear_grants_reenganche, revocar_grants_reenganche
+from app.serial_consentimiento import serializar_consentimiento
 
 router = APIRouter(prefix="/api/v1/chat", tags=["Chat — Agente Conversacional"])
 
@@ -2044,7 +2045,11 @@ async def _reducir_autoridad_reenganche(db, session_id: str, *, cerrar: bool) ->
 
     Plan 1.1 · TR-5: en los dos casos se revocan TODOS los grants de reenganche vivos de la
     sesión, en la misma transacción. Nunca se reactiva uno: un nuevo «sí» crea grants nuevos.
+
+    SEC-X2-CONSENT-SERIALIZATION-R0 · primera sentencia: el cerrojo de consentimiento de la sesión, ANTES de
+    `consent_grant` y de `lead_actividad` (reentrante si `/lead-contacto` ya lo tomó).
     """
+    await serializar_consentimiento(db, session_id)
     await revocar_grants_reenganche(db, session_id)
     if cerrar:
         await db.execute(
@@ -2114,6 +2119,11 @@ async def lead_contacto(
                 raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                                     detail="Versión de consentimiento desconocida.")
 
+            # SEC-X2-CONSENT-SERIALIZATION-R0 · el cerrojo de consentimiento de la sesión, YA con la autoridad
+            # probada y ANTES de cualquier bloqueo de `lead_actividad` —incluido el DDL de abajo, que toma ACCESS
+            # EXCLUSIVE la primera vez en cada proceso— y de `consent_grant`. Un «sí» y un «no» concurrentes de la
+            # misma sesión quedan en UN orden: el segundo espera aquí y actúa sobre lo que el primero confirmó.
+            await serializar_consentimiento(db, payload.session_id)
             await _preparar_lead_actividad_en_transaccion(db)
             if payload.consent:
                 # Opt-in explícito: guarda el contacto y REABRE un cierre previo (el acto

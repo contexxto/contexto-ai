@@ -18,16 +18,24 @@ seguía «vigente» —la vigencia se juzgaba con una foto del principio— y un
 durante él no se veía (NO_GRANT). La autoridad se juzga en el momento de la decisión: el INICIO de
 esta sentencia. Es estable durante ella (a diferencia de `clock_timestamp()`), así que la condición y
 `used_at` usan el mismo instante (y `used_at >= granted_at`, CHECK de la 038, se cumple siempre).
-Residual declarado: si la reserva espera el bloqueo de fila de otra transacción y esa ABORTA, Postgres
-no re-evalúa la condición, y un grant que venció durante esa espera (milisegundos o segundos) se
-reserva con el instante del inicio. Si la otra CONFIRMA, la re-evaluación ve su `used_at`/`revoked_at`.
 El corte del universo dormido del barrido SÍ usa `now()` a propósito (reenganche_cron.py): allí lo
 útil es una foto fija.
 
 Con `reservar=True` además CONSUME (used_at = statement_timestamp()) cada grant que autoriza, en la
-transacción del llamador: `UPDATE … WHERE used_at IS NULL … RETURNING`. Dos workers concurrentes no pueden
-reservar el mismo grant: el segundo espera al bloqueo de fila, re-evalúa la condición y ya ve
-`used_at`. Consumo ANTES de enviar: mejor perder un aviso que duplicarlo.
+transacción del llamador: `UPDATE … WHERE used_at IS NULL … RETURNING`. Consumo ANTES de enviar: mejor perder
+un aviso que duplicarlo.
+
+SEC-X2-CONSENT-SERIALIZATION-R0 · LA RESERVA NO ESPERA (D-CRON = B). Antes de reservar, en una SENTENCIA PROPIA,
+intenta el cerrojo de consentimiento de la sesión (`app/serial_consentimiento.py`) SIN esperar:
+  · si otra transacción lo tiene (un «sí», un «no», una baja u otro barrido cambiando la autoridad de esa
+    sesión) → ERROR: «sesión ocupada, este barrido no decide sobre ella». El cron ya trata ERROR como lead
+    omitido para las DOS audiencias, sin marca, sin presupuesto y sin efecto; el barrido siguiente la reevalúa.
+    BUSY jamás es NO_GRANT (que dejaría pasar la rama del corredor) ni una reserva sin cerrojo;
+  · si el cerrojo es de esta transacción, ningún escritor de la autoridad de esa sesión retiene filas de grant
+    (todos toman el mismo cerrojo antes de escribir), así que la reserva —la sentencia SIGUIENTE, con su propio
+    `statement_timestamp()`— no espera bloqueos de fila: no hay «espera → el titular aborta → condición sin
+    re-evaluar», y un grant que venció mientras otro tenía el cerrojo se ve VENCIDO (GF-R1 cerrado).
+El cerrojo y la comprobación de frescura van SIEMPRE en sentencias distintas: un CTE heredaría la hora de antes.
 
 Resultados:
     AUTHORIZED(canales)  sólo esos canales pueden salir (un grant de EMAIL no autoriza PUSH)
@@ -49,6 +57,7 @@ from enum import StrEnum
 from sqlalchemy import text
 
 from app.contracts.consent_grant_v0 import Channel
+from app.serial_consentimiento import intentar_serializar_consentimiento
 
 log = logging.getLogger(__name__)
 
@@ -101,6 +110,11 @@ async def autorizar_efecto_reenganche(
             log.error("Reenganche: consent_grant no existe (¿038 sin aplicar?) — ERROR de autoridad.")
             return DecisionReenganche(EstadoAutorizacion.ERROR)
         if reservar:
+            # SEC-X2-CONSENT-SERIALIZATION-R0 · SENTENCIA 1: el cerrojo de la sesión, sin esperar. Ocupada → no
+            # se decide (ERROR), nunca una reserva sin cerrojo. SENTENCIA 2 (abajo): frescura + reserva.
+            if not await intentar_serializar_consentimiento(db, session_id):
+                log.warning("Reenganche: sesión ocupada (su autoridad está cambiando) — este barrido no decide.")
+                return DecisionReenganche(EstadoAutorizacion.ERROR)
             sql = (f"UPDATE consent_grant SET used_at = statement_timestamp() WHERE {_CONDICION} "
                    "RETURNING grant_id::text AS grant_id, channel")
         else:

@@ -561,11 +561,12 @@ async def test_26_BUSY_deshace_el_savepoint_y_la_transaccion_sigue_sana(monkeypa
 
 
 @pg
-async def test_27_vencido_durante_una_espera_de_RELACION_no_se_consume(base, suelta):
-    """MINOR-1 de la lente 1 · la sentencia de reserva fija su `statement_timestamp()` y después ESPERA un bloqueo
-    de relación (un escritor que no coopera: ACCESS EXCLUSIVE sobre `lead_actividad`). El grant vence durante esa
-    espera; su WHERE (con la hora de antes) lo vería vigente. La defensa `expires_at > clock_timestamp()` deshace la
-    reserva: NO_GRANT y `used_at` sigue NULL (no persiste nada)."""
+async def test_27_una_espera_de_RELACION_antes_del_Execute_nace_con_hora_fresca(base, suelta):
+    """Comportamiento OBSERVADO (no es la prueba de `vigente_ahora`; esa es test_28): con el protocolo de asyncpg
+    (extendido), una espera de bloqueo de RELACIÓN —aquí un ACCESS EXCLUSIVE sobre `lead_actividad` que no coopera—
+    ocurre ANTES del Execute, así que la sentencia de reserva recibe un `statement_timestamp()` POSTERIOR a la espera:
+    un grant que venció durante ella ya no cumple el WHERE → NO_GRANT, `used_at` NULL. Coincide en PG 15.19 y 17.6
+    (evidencia/…/sonda_reloj_relacion_pg15.txt y _pg17.txt); no se afirma para otros drivers ni protocolos."""
     sid, _ = await _lead(base)
     async with base() as db:
         await db.execute(text("UPDATE consent_grant SET expires_at = now() + interval '1500 milliseconds' "
@@ -592,6 +593,67 @@ async def test_27_vencido_durante_una_espera_de_RELACION_no_se_consume(base, sue
         await titular.close()
     assert d.estado is NO, d
     assert all(g["used_at"] is None for g in await _grants_completos(base, sid)), "se consumió un grant vencido"
+
+
+@pg
+async def test_28_vencido_durante_una_espera_de_FILA_la_defensa_deshace_la_reserva(base, suelta):
+    """La carrera que cubre `RETURNING expires_at > clock_timestamp() AS vigente_ahora` (y que discrimina M17).
+
+    A · un escritor que NO coopera con el cerrojo bloquea la fila del grant (`SELECT … FOR UPDATE`, sin advisory).
+    B · la reserva obtiene el advisory (nadie más lo tiene) e INICIA su sentencia ANTES del vencimiento: su WHERE se
+        evalúa con ese `statement_timestamp()` y queda ESPERANDO la fila (la espera de fila ocurre DURANTE el Execute).
+    El grant VENCE durante la espera. A hace ROLLBACK: Postgres sigue con la tupla original SIN re-evaluar el WHERE
+    (el mecanismo original de GF-R1). Con la defensa: `vigente_ahora = false` → ROLLBACK TO SAVEPOINT → NO_GRANT,
+    `used_at` NULL y el advisory de B (tomado dentro del savepoint) ya está libre. Sin ella (M17): AUTHORIZED.
+
+    Sincronización determinista por la base (no solo sleeps): A tiene el bloqueo; B espera un bloqueo de FILA (su pid
+    en pg_locks/pg_stat_activity); la sentencia de B empezó ANTES de `expires_at`; el vencimiento ocurrió ANTES de
+    soltar A. `lock_timeout` local en B y limpieza explícita de A."""
+    sid, _ = await _lead(base)
+    async with base() as db:
+        await db.execute(text("UPDATE consent_grant SET expires_at = clock_timestamp() + interval '3 seconds' "
+                              "WHERE session_id = :s"), {"s": sid})
+        await db.commit()
+
+    async def una(q, p=None):
+        async with base() as d:
+            return (await d.execute(text(q), p or {})).first()
+
+    titular = base()
+    try:
+        assert await titular.execute(text("SELECT 1 FROM consent_grant WHERE session_id = :s FOR UPDATE"),
+                                     {"s": sid}) is not None                         # A: fila bloqueada, sin advisory
+        async with base() as db:
+            await db.execute(text("SET LOCAL lock_timeout = '20s'"))
+            pid_b = (await db.execute(text("SELECT pg_backend_pid()"))).scalar()
+            t = asyncio.create_task(autorizar_efecto_reenganche(
+                db, session_id=sid, canales_candidatos=["EMAIL", "PUSH"], reservar=True))
+
+            async def b_espera_la_fila():
+                fila = await una("SELECT 1 FROM pg_stat_activity WHERE pid = :p AND wait_event_type = 'Lock' "
+                                 "AND wait_event IN ('transactionid', 'tuple')", {"p": pid_b})
+                return fila is not None
+            assert await _espera_que(b_espera_la_fila, 10), "precondición: la reserva no llegó a esperar la fila"
+            empezo_antes, = await una(
+                "SELECT a.query_start < g.expires_at FROM pg_stat_activity a, consent_grant g "
+                "WHERE a.pid = :p AND g.session_id = :s AND g.channel = 'EMAIL'", {"p": pid_b, "s": sid})
+            assert empezo_antes, "precondición: la sentencia de reserva empezó DESPUÉS del vencimiento"
+
+            async def ya_vencio():
+                fila = await una("SELECT bool_and(expires_at < clock_timestamp()) FROM consent_grant "
+                                 "WHERE session_id = :s", {"s": sid})
+                return bool(fila[0])
+            assert await _espera_que(ya_vencio, 10), "precondición: el grant no venció durante la espera"
+            await titular.rollback()                                        # A aborta: B sigue sin re-evaluar
+            d = await asyncio.wait_for(t, 15)
+            libre_antes_del_commit = await _cerrojo_libre(base, sid)
+            await db.commit()
+    finally:
+        await titular.rollback()
+        await titular.close()
+    assert d.estado is NO, f"la reserva autorizó un grant VENCIDO durante la espera de fila: {d}"
+    assert all(g["used_at"] is None for g in await _grants_completos(base, sid)), "used_at persistió"
+    assert libre_antes_del_commit, "el advisory tomado dentro del savepoint no se liberó"
 
 
 @pg

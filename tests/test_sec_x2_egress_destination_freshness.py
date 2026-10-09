@@ -108,6 +108,14 @@ def _pausa_tras_reserva(monkeypatch):
     return reservado, sigue
 
 
+async def _cerrojo_libre(Sesion, sid):
+    """¿Otra conexión puede tomar AHORA el cerrojo de la sesión? (try-lock en una transacción que se deshace)"""
+    async with Sesion() as db:
+        libre = await SC.intentar_serializar_consentimiento(db, sid)
+        await db.rollback()
+    return libre
+
+
 async def _alguien_espera_el_cerrojo(Sesion):
     for _ in range(200):
         async with Sesion() as db:
@@ -353,6 +361,31 @@ async def test_12_D1_con_dos_canales_ERROR_revierte_el_used_at_de_TODOS(base, su
         await db.commit()
     assert d.estado is ERR and d.email_destino is None and d.push_destino is None, d
     gs = await _grants_completos(base, sid)
+    assert sorted(g["channel"] for g in gs) == ["EMAIL", "PUSH"] and all(g["used_at"] is None for g in gs)
+
+
+@pg
+async def test_12b_D1_deshace_SOLO_su_savepoint_y_conserva_la_reserva_previa_del_barrido(base, suelta):
+    """Lente 2 · M-1: en el barrido, todas las reservas comparten UNA transacción. D1 de una sesión deshace SOLO su
+    savepoint (ROLLBACK TO): la reserva AUTHORIZED previa —que el barrido ya cuenta para enviar— conserva su used_at
+    y su cerrojo hasta el COMMIT. Un rollback de la transacción entera la desharía y ese aviso saldría sin el grant
+    consumido ni el cerrojo retenido."""
+    previa, _ = await _lead(base, email="previa@ejemplo.invalid")
+    sin_destino, _ = await _lead(base, email="a@ejemplo.invalid", push=P1)
+    await _sql(base, "UPDATE lead_actividad SET lead_push = NULL WHERE session_id = :s", {"s": sin_destino})
+    async with base() as db:
+        await db.execute(text("SET LOCAL lock_timeout = '2s'"))
+        d1 = await autorizar_efecto_reenganche(db, session_id=previa, canales_candidatos=["EMAIL"], reservar=True)
+        d2 = await autorizar_efecto_reenganche(db, session_id=sin_destino, canales_candidatos=["EMAIL", "PUSH"],
+                                               reservar=True)
+        assert (d1.estado, d2.estado) == (AUTH, ERR), (d1, d2)
+        assert d1.email_destino == "previa@ejemplo.invalid"
+        assert (await db.execute(text("SELECT 1"))).scalar() == 1, "la transacción quedó abortada"
+        assert await _cerrojo_libre(base, sin_destino) is True, "D1 retuvo el cerrojo de su sesión"
+        assert await _cerrojo_libre(base, previa) is False, "D1 soltó el cerrojo de la reserva previa"
+        await db.commit()
+    assert all(g["used_at"] is not None for g in await _grants_completos(base, previa)), "D1 deshizo la reserva previa"
+    gs = await _grants_completos(base, sin_destino)
     assert sorted(g["channel"] for g in gs) == ["EMAIL", "PUSH"] and all(g["used_at"] is None for g in gs)
 
 

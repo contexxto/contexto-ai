@@ -79,15 +79,39 @@ class BaseEspia:
             r = _Resultado([])
             r._escalar = True
             return r
+        # SEC-X2-CONSENT-SERIALIZATION-R0 (actualización esperada): la reserva intenta antes, en su propia
+        # sentencia y sin esperar, el cerrojo de consentimiento de la sesión. En el doble nadie más lo tiene.
+        if "pg_try_advisory_xact_lock" in sql:
+            r = _Resultado([])
+            r._escalar = True
+            return r
         if "consent_grant" in sql and ("RETURNING" in sql or sql.lstrip().upper().startswith("SELECT")):
             fila = next((d for d in self.dormidos if d["session_id"] == params.get("sid")), None)
             vivos = [c for c in (fila or {}).get("_grants", [])
                      if c in params.get("canales", []) and (params.get("sid"), c) not in self.consumidos]
             if "RETURNING" in sql:
                 self.consumidos.update((params["sid"], c) for c in vivos)
-            return _Resultado([{"grant_id": f"g-{params.get('sid')}-{c}", "channel": c} for c in vivos])
+            # SEC-X2-CONSENT-SERIALIZATION-R0 R1 (actualización esperada): la reserva devuelve además
+            # `vigente_ahora` (expires_at > clock_timestamp()); en el doble, los grants siguen vigentes.
+            return _Resultado([{"grant_id": f"g-{params.get('sid')}-{c}", "channel": c, "vigente_ahora": True}
+                               for c in vivos])
+        # SEC-X2-EGRESS-DESTINATION-FRESHNESS-R0 (actualización esperada): la reserva lee, bajo el cerrojo, el
+        # destino vigente de SU sesión; el doble devuelve la fila de esa sesión (no la página del barrido).
+        if sql.lstrip().startswith("SELECT lead_email, lead_push FROM lead_actividad"):
+            return _Resultado([d for d in self.dormidos if d["session_id"] == params.get("sid")])
         if "FROM lead_actividad" in sql and sql.lstrip().upper().startswith("SELECT"):
             return _Resultado(self.dormidos)
+        # SEC-X2-EGRESS-R0 (actualización esperada): el corredor solo recibe con el hecho X2 —la
+        # persona pidió contacto para ESE inmueble—. El doble lo lleva en `_pidio_corredor` (el
+        # activo para el que lo pidió); sin él, o para otro inmueble, la consulta no devuelve nada.
+        if "FROM handoff_sesion" in sql and "principal_requested_at IS NOT NULL" in sql:
+            fila = next((d for d in self.dormidos if d["session_id"] == params.get("s")), None)
+            r = _Resultado([])
+            r._escalar = 1 if fila and fila.get("_pidio_corredor") == params.get("a") else None
+            return r
+        # …y sus marcas vuelven a comprobar la fila con RETURNING: el doble devuelve las mismas ids.
+        if sql.lstrip().upper().startswith("UPDATE LEAD_ACTIVIDAD") and "RETURNING session_id" in sql:
+            return _Resultado([{"session_id": s} for s in params.get("ids", [])])
         if "FROM activos_inmutables" in sql:
             return _Resultado([{"dir": "Av. Prueba N1-23", "f": None, "corredor_id": "corr-1"}])
         return _Resultado([])
@@ -102,23 +126,27 @@ class BaseEspia:
         return [(s, p) for s, p in self.sentencias if s.lstrip().upper().startswith("UPDATE LEAD_ACTIVIDAD")]
 
 
-def _dormido(sid, *, consentido=False):
+def _dormido(sid, *, consentido=False, pidio_corredor=False):
     from datetime import datetime, timedelta, timezone
+    activo = "11111111-1111-1111-1111-111111111111"
     return {
-        "session_id": sid, "activo_id": "11111111-1111-1111-1111-111111111111",
+        "session_id": sid, "activo_id": activo,
         "ultima_actividad": datetime.now(timezone.utc) - timedelta(days=5),
         "lead_email": "comprador@prueba.test" if consentido else None,
         "lead_push": {"endpoint": "https://push.prueba.test/c"} if consentido else None,
         "consent_reenganche_at": datetime.now(timezone.utc) if consentido else None,
         # TR-5: «consentido» = grants vivos por canal (el timestamp ya no autoriza nada).
         "_grants": ["EMAIL", "PUSH"] if consentido else [],
+        # SEC-X2-EGRESS-R0: el hecho X2 para el inmueble del lead (la autoridad del corredor).
+        "_pidio_corredor": activo if pidio_corredor else None,
     }
 
 
 @pytest.fixture
 def entorno(monkeypatch):
     """Intercepta TODO lo que el barrido toca fuera de la base y cuenta cada llamada."""
-    registro = {"email": [], "push": [], "intencion": [], "corredor": [], "holdout": []}
+    registro = {"email": [], "push": [], "intencion": [], "intencion_activo": [], "corredor": [],
+                "holdout": []}
 
     async def email(**kw):
         registro["email"].append(kw)
@@ -126,8 +154,11 @@ def entorno(monkeypatch):
     async def push(**kw):
         registro["push"].append(kw)
 
-    async def intencion(sid, horas_inactividad=None):
+    async def intencion(sid, horas_inactividad=None, activo_id=None):
+        # SEC-X2-EGRESS-R0: la rama del corredor pide la semántica ACOTADA (activo_id=X); la del
+        # comprador, la de la sesión entera. Se registran las dos con su alcance.
         registro["intencion"].append(sid)
+        registro["intencion_activo"].append((sid, activo_id))
         return {"turnos": 4, "nivel": "tibio", "estado": "dormido", "senales": {"precio": True}}
 
     async def corredor(db, activo_id):
@@ -151,6 +182,10 @@ def entorno(monkeypatch):
     # firmado y, sin secreto, no sale (fail-closed). «El job legítimo» de test_7 y test_9b es
     # el de un despliegue CON secreto; la ausencia se prueba en tests/test_tr2_consentimiento.py.
     monkeypatch.setenv("REENGANCHE_BAJA_SECRET", "s" * 48)
+    # SEC-X2-EGRESS-R0 (§7): el barrido solo reserva o enrola con canales ENTREGABLES. El despliegue
+    # legítimo de estos tests tiene sus credenciales (los envíos están interceptados de todos modos).
+    monkeypatch.setattr(notif, "RESEND_API_KEY", "re_prueba")
+    monkeypatch.setattr(notif, "VAPID_PRIVATE_KEY", "vapid-prueba")
     return registro
 
 
@@ -276,7 +311,8 @@ async def test_4_bandera_apagada_llamada_directa_sin_ningun_efecto(monkeypatch, 
     correo y cero push. La base TIENE dormidos listos para disparar: si el gate faltara o
     estuviera después de la primera lectura, se vería aquí."""
     monkeypatch.setenv("REENGANCHE_CRON_ENABLED", valor)
-    db = BaseEspia([_dormido("qr-a-1"), _dormido("qr-a-2", consentido=True)])
+    db = BaseEspia([_dormido("qr-a-1", pidio_corredor=True),
+                    _dormido("qr-a-2", consentido=True, pidio_corredor=True)])
     res = await cron.escanear_reenganches(db)
     assert res.get("deshabilitado") is True
     assert res["escaneados"] == 0 and res["disparados"] == 0
@@ -305,20 +341,26 @@ async def test_4b_la_bandera_se_vuelve_a_mirar_tras_el_candado(monkeypatch, ento
 # ── 4 · Bandera encendida: el job legítimo no cambia ─────────────────────────────────────
 
 async def test_7_bandera_encendida_el_barrido_hace_lo_de_siempre(monkeypatch, entorno):
-    """Dos dormidos: uno sin canal propio (se avisa a su corredor) y uno con consentimiento y
-    canal (le llega a él). Mismo resumen, mismas marcas y mismos envíos que antes de TR-4."""
+    """Dos dormidos: uno sin canal propio que PIDIÓ contacto (se avisa a su corredor) y uno con
+    consentimiento y canal (le llega a él). Mismo resumen y mismos envíos que antes de TR-4.
+
+    SEC-X2-EGRESS-R0 (actualización esperada): el corredor ya solo recibe con el hecho X2
+    (`pidio_corredor`); el comprador deja SOLO la marca de envío (sin grupo del experimento),
+    así que las marcas son dos sentencias; y la intención del corredor es la acotada al inmueble."""
     monkeypatch.setenv("REENGANCHE_CRON_ENABLED", "1")
-    db = BaseEspia([_dormido("qr-c-1"), _dormido("qr-c-2", consentido=True)])
+    db = BaseEspia([_dormido("qr-c-1", pidio_corredor=True), _dormido("qr-c-2", consentido=True)])
     res = await cron.escanear_reenganches(db)
 
     assert res == {"escaneados": 2, "disparados": 2, "holdout": 0, "comprador": 1, "corredores": 1}
     assert any("FROM lead_actividad" in s for s, _ in db.sentencias)
-    marcas = db.updates_lead_actividad()
-    assert len(marcas) == 1 and "reenganche_grupo = 'tocado'" in marcas[0][0]
-    assert sorted(marcas[0][1]["ids"]) == ["qr-c-1", "qr-c-2"]
+    marcas = {tuple(p["ids"]): s for s, p in db.updates_lead_actividad()}
+    assert set(marcas) == {("qr-c-1",), ("qr-c-2",)}
+    assert "reenganche_grupo = 'tocado'" in marcas[("qr-c-1",)]
+    asigna = marcas[("qr-c-2",)].split("WHERE")[0]          # lo que ESCRIBE (la guarda lee grupo)
+    assert "reenganche_grupo" not in asigna and "reenganche_elegible_en" not in asigna
     assert sorted(e["to"] for e in entorno["email"]) == ["comprador@prueba.test", "corredor@prueba.test"]
     assert len(entorno["push"]) == 2
-    assert entorno["intencion"] == ["qr-c-1", "qr-c-2"]
+    assert entorno["intencion_activo"] == [("qr-c-1", "11111111-1111-1111-1111-111111111111"), ("qr-c-2", None)]
 
 
 def test_8_iniciar_cron_con_bandera_apagada_no_crea_tarea(monkeypatch):
@@ -388,7 +430,8 @@ def _correr_bucle(monkeypatch, db: BaseEspia, *, apagar_tras_arrancar: bool) -> 
 
 
 def test_9_bandera_apagada_despues_del_arranque_el_siguiente_barrido_no_hace_nada(monkeypatch, entorno):
-    db = BaseEspia([_dormido("qr-d-1"), _dormido("qr-d-2", consentido=True)])
+    db = BaseEspia([_dormido("qr-d-1", pidio_corredor=True),
+                    _dormido("qr-d-2", consentido=True, pidio_corredor=True)])
     _correr_bucle(monkeypatch, db, apagar_tras_arrancar=True)
     _sin_efectos(db, entorno)
 
@@ -396,7 +439,7 @@ def test_9_bandera_apagada_despues_del_arranque_el_siguiente_barrido_no_hace_nad
 def test_9b_control_el_mismo_bucle_con_la_bandera_encendida_si_barre(monkeypatch, entorno):
     """El control de test_9: sin apagar la bandera, el mismo arnés SÍ produce el barrido. Sin
     esto, test_9 pasaría también con un bucle que no barre nunca."""
-    db = BaseEspia([_dormido("qr-e-1")])
+    db = BaseEspia([_dormido("qr-e-1", pidio_corredor=True)])
     _correr_bucle(monkeypatch, db, apagar_tras_arrancar=False)
     assert db.updates_lead_actividad(), "el bucle legítimo dejó de barrer"
     assert entorno["email"] and entorno["push"]

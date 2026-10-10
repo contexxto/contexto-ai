@@ -18,7 +18,8 @@ Producción corre PostgreSQL 17.6 (MAINTAIN existe) y el CI corre 15: se corre e
     `registrar_intencion`, y después las migraciones REALES 034 y 036 —los privilegios por defecto del dueño
     quedan cerrados, como en producción—. El destino de la FK es un doble de forma (`id uuid PRIMARY KEY`).
   · El backend se imita con su SQL REAL, leído por AST sin importar nada: el upsert y el evento de
-    `registrar_intencion`, la lectura del lift de `metricas_lift` y el `_INTENCION_DDL` en runtime.
+    `registrar_intencion`, la lectura directa de la serie (la forma que tenía el lift hasta SEC-X2-R0c, que
+    se la retiró: RETIRAR UN CONSUMIDOR ≠ ROMPER LA COMPATIBILIDAD DEL DUEÑO) y el `_INTENCION_DDL` en runtime.
 
 ## LO QUE SE PRUEBA
 
@@ -241,9 +242,19 @@ def sql_de_registrar_intencion():
             next(x for x in t if x.startswith("INSERT INTO intencion_evento")))
 
 
+# La lectura de la serie que hacía `metricas_lift` hasta SEC-X2-R0c (congelada de main d94c6f1). R0c la retiró
+# del lift; el banco la usa como lectura DIRECTA del dueño. `lift_sin_lectura_de_la_serie` fija que el lift
+# siga sin leerla.
+_LECTURA_SERIE = "SELECT session_id, estado FROM intencion_evento WHERE session_id = ANY(:ids)"
+
+
 def sql_del_lift():
-    return next(x for x in _textos_en("metricas_lift", RAIZ / "app" / "routers" / "assets.py")
-                if "FROM intencion_evento" in x)
+    return _LECTURA_SERIE
+
+
+def lift_sin_lectura_de_la_serie():
+    return not any("intencion_evento" in x
+                   for x in _textos_en("metricas_lift", RAIZ / "app" / "routers" / "assets.py"))
 
 
 def intencion_ddl_del_repo():
@@ -345,7 +356,7 @@ def control_positivo():
              == 'Resumen sintético uno / {"zona": "sintética"}')
     s.afirma("anon FALSEA la serie del lift (inserta un evento)", puede(
         f"INSERT INTO {EVE} (session_id, estado, nivel) VALUES ('{SID1}', 'confirmado', 'caliente');", "anon"))
-    s.afirma("…y la lectura REAL del lift lo contaría como el pico de esa sesión", uno(
+    s.afirma("…y la lectura directa de la serie lo contaría como el pico de esa sesión", uno(
         "SELECT count(*) FROM (" + resolver_binds(sql_del_lift(), {"ids": f"ARRAY['{SID1}']"}) + ") x "
         "WHERE x.estado = 'confirmado';", DUENO) == "1")
     s.afirma("anon EDITA el estado de una sesión", puede(f"UPDATE {SES} SET score = 100 WHERE session_id = '{SID2}';", "anon"))
@@ -437,7 +448,8 @@ def suite_cerrada(huella_antes, estructura_antes, fk_antes):
         turno(SID1, ACTIVO, "intencion", "caliente", 100, True, 2, "Resumen sintético uno, segundo turno"), DUENO))
     s.afirma("…y quedó escrito", uno(f"SELECT estado || '|' || handoff_sugerido FROM {SES} WHERE session_id = '{SID1}';",
                                      DUENO) == "intencion|true")
-    s.afirma("la lectura REAL del lift (metricas_lift) funciona como el dueño", uno(
+    s.afirma("el lift ya no lee la serie (SEC-X2-R0c): consumidor retirado", lift_sin_lectura_de_la_serie())
+    s.afirma("el dueño conserva la lectura directa de la serie", uno(
         "SELECT count(*) FROM (" + resolver_binds(sql_del_lift(), {"ids": f"ARRAY['{SID1}', '{SID2}']"}) + ") x;",
         DUENO) == "3")
     rc, out = sql_texto(";\n".join(intencion_ddl_del_repo()) + ";", rol=DUENO)
@@ -476,7 +488,7 @@ def dueno_sin_bypass():
     s.afirma("el dueño sigue viendo sus filas", ve_filas(SES, DUENO) == 2, f"vio {ve_filas(SES, DUENO)}")
     s.afirma("registrar_intencion (SQL real) escribe", puede(
         turno(SID2, None, "intencion", "caliente", 90, True, 4, "Resumen sintético dos, otro turno"), DUENO))
-    s.afirma("la lectura real del lift funciona", uno(
+    s.afirma("la lectura directa de la serie funciona", uno(
         "SELECT count(*) FROM (" + resolver_binds(sql_del_lift(), {"ids": f"ARRAY['{SID2}']"}) + ") x;", DUENO) == "2")
     s.afirma("anon sigue cerrado", denegado(OPS["SELECT sesión"], "anon"))
     monta_banco()

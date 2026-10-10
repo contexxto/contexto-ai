@@ -438,8 +438,12 @@ def test_9i_el_docstring_de_registrar_handoff_no_sobreafirma():
                   "no se comparte nada", "no se compartió nada", "en pantalla",
                   "que ve la persona", "está viendo"):
         assert frase not in doc, frase
-    assert "no afirma que antes del clic no exista audiencia legacy sobre el transcript" in doc
-    assert "la exactitud de esa selección pertenece a ui-04 / sec-x2-r0" in doc
+    # SEC-X2-R0 (actualización esperada): el docstring ya no remite UI-04 a «otra unidad»;
+    # ahora dice qué hace el acto y sigue sin sobreafirmar la audiencia legacy.
+    assert "no afirma que no haya existido audiencia legacy antes de sec-x2-r0" in doc
+    assert "aquí no se infiere ninguno" in doc
+    assert "principal_requested_at" in doc
+    assert "solo restringe" in doc and "nunca concede" in doc
 
 
 # ── 10 · por el camino REAL: ToolNode inyecta el estado y no hay efecto ───────────────────

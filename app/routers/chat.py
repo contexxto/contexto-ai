@@ -9,7 +9,7 @@ import unicodedata
 import uuid
 from typing import AsyncIterator, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Security, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, Security, status
 from fastapi.responses import StreamingResponse
 from fastapi.security.api_key import APIKeyHeader
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
@@ -52,6 +52,7 @@ from app.texto_salida import texto_de_salida
 from app.verificacion_prosa import registrar as registrar_prosa
 from app.contracts.consent_grant_v0 import Channel
 from app.grant_reenganche import copy_de_consentimiento, crear_grants_reenganche, revocar_grants_reenganche
+from app.serial_consentimiento import serializar_consentimiento
 
 router = APIRouter(prefix="/api/v1/chat", tags=["Chat — Agente Conversacional"])
 
@@ -138,9 +139,13 @@ class ChatRequest(BaseModel):
 class BootstrapRequest(BaseModel):
     """Crear una conversación. El cliente NO elige el identificador."""
 
-    activo_id: str | None = Field(default=None, min_length=1)
+    activo_id: uuid.UUID | None = None
     """Cuando la conversación nace de un letrero. Preserva el prefijo `qr-{activo}-`, del que
-    dependen siete consultas de `assets.py` para reconstruir el lead."""
+    dependen siete consultas de `assets.py` para reconstruir el lead.
+
+    SEC-X2-R0: UUID canónico (un `'abc-123'` es 422) y el inmueble tiene que existir (404).
+    Es integridad de la ATRIBUCIÓN, no autoridad: el prefijo dice cómo llegó la persona, y
+    nunca autoriza a nadie a leer la conversación."""
 
 
 class BootstrapResponse(BaseModel):
@@ -174,8 +179,14 @@ async def bootstrap_session(
     de esa decisión ("si no trae token, emito uno") permitiría a cualquiera que conozca un id
     existente pedir una capacidad válida para él.
     """
+    activo = str(payload.activo_id) if payload.activo_id else None   # canónico: minúsculas
+    if activo and not await _activo_existe(activo):
+        # SEC-X2-R0 · integridad de atribución: un lead no puede quedar atribuido a un
+        # inmueble que no existe. Mismo contrato que `/anuncio` (404), que ya es un oráculo
+        # público de existencia: no se filtra nada nuevo.
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Inmueble no encontrado.")
     try:
-        creada = await crear_sesion(user, payload.activo_id)
+        creada = await crear_sesion(user, activo)
     except AccesoDenegado:
         # El id generado colisionó (prácticamente imposible con 12 bytes aleatorios). No se
         # reintenta en silencio: reintentar es la puerta por la que se cuela un id elegido.
@@ -1712,6 +1723,14 @@ _HANDOFF_DDL = [
     "ALTER TABLE handoff_sesion ADD COLUMN IF NOT EXISTS lead_user_id uuid",
     "ALTER TABLE handoff_sesion ADD COLUMN IF NOT EXISTS lead_email text",
     "ALTER TABLE handoff_sesion ADD COLUMN IF NOT EXISTS push_subscription jsonb",
+    # SEC-X2-R0 · el HECHO de autoridad: «la persona pidió explícitamente contacto para ESTE
+    # (session_id, activo_id)». Neutral a la interfaz: hoy lo produce el botón, mañana podría
+    # producirlo otra interfaz autorizada sin cambiar su significado. Sin DEFAULT y SIN
+    # backfill: las filas históricas quedan NULL, que significa «no hay evidencia de que la
+    # persona lo pidiera» → sin autoridad de divulgación (no que nunca lo pidiera). Solo la
+    # escribe `registrar_handoff`; el corredor no puede fijarla. La 033 cierra la tabla
+    # entera: la columna nace igual de cerrada (mismo patrón que `reenganche_cerrado_en`).
+    "ALTER TABLE handoff_sesion ADD COLUMN IF NOT EXISTS principal_requested_at timestamptz",
     # FASE 2 — un interesado, VARIOS corredores. La clave era solo session_id, asi que una
     # conversacion solo podia entregarse a un inmueble: si le interesaba un segundo, el
     # COALESCE conservaba el primero y el otro corredor nunca se enteraba. Ahora la clave
@@ -1734,13 +1753,20 @@ _HANDOFF_DDL = [
     "CREATE TABLE IF NOT EXISTS handoff_mensaje (id bigserial PRIMARY KEY, "
     "session_id text, autor text, texto text, creado_en timestamptz DEFAULT now())",
     "CREATE INDEX IF NOT EXISTS ix_handoff_msg_sid ON handoff_mensaje (session_id, id)",
-    # A qué INMUEBLE pertenece cada mensaje. Hoy sobra —una conversación solo puede tener
-    # un corredor— pero es el cimiento para que pueda tener varios: sin esta columna, dos
-    # corredores en la misma conversación verían los mensajes del otro, que es peor que la
-    # limitación que se quiere quitar. Aditiva: nadie la lee todavía.
+    # A qué INMUEBLE (hilo) pertenece cada mensaje. Desde la Fase 2 una conversación puede tener
+    # varios corredores, y desde SEC-X2-R0b esta columna es la ÚNICA llave de divulgación del
+    # mensaje: lead_conversacion y estado_handoff piden el inmueble EXACTO.
     "ALTER TABLE handoff_mensaje ADD COLUMN IF NOT EXISTS activo_id uuid",
-    "UPDATE handoff_mensaje m SET activo_id = h.activo_id FROM handoff_sesion h "
-    "WHERE m.session_id = h.session_id AND m.activo_id IS NULL AND h.activo_id IS NOT NULL",
+    # SEC-X2-R0b · aquí había un relleno en cada arranque: `UPDATE handoff_mensaje … SET
+    # activo_id = h.activo_id FROM handoff_sesion h WHERE … activo_id IS NULL`. Con VARIAS filas
+    # por sesión (Fase 2), Postgres sella el mensaje con UNA cualquiera de ellas: un mensaje sin
+    # inmueble acababa «perteneciendo» a un inmueble que nadie eligió, y después de una solicitud
+    # nueva cruzaba la frontera de divulgación de ese inmueble. PROCEDENCIA DESCONOCIDA ≠
+    # AUTORIZADO PARA EL INMUEBLE ACTUAL: no se asigna, no se infiere, no se divulga. Los dos
+    # escritores sellan siempre un hilo pedido por la persona (`responder_lead` el de la ruta;
+    # `handoff_mensaje_lead` el nombrado o, si no nombra ninguno, su hilo autorizado más
+    # reciente); las filas históricas en NULL se quedan en NULL. OJO al desplegar: el código
+    # anterior vuelve a correr el relleno en cada arranque — un rollback lo reactiva.
     "CREATE INDEX IF NOT EXISTS ix_handoff_msg_hilo ON handoff_mensaje (session_id, activo_id, id)",
     # Suscripción push + email de usuarios autenticados (corredores) → notificarles
     # cuando un lead pide hablar o escribe. El email se captura del JWT al suscribirse.
@@ -1778,8 +1804,12 @@ _HANDOFF_DDL = [
     # bandeja. Agrupando solo por session_id se fundían en una fila y el interesado veía
     # el último mensaje de uno pisando al del otro.
     "ALTER TABLE notificacion ADD COLUMN IF NOT EXISTS activo_id uuid",
-    "UPDATE notificacion n SET activo_id = h.activo_id FROM handoff_sesion h "
-    "WHERE n.session_id = h.session_id AND n.activo_id IS NULL",
+    # SEC-X2-R0b · mismo defecto que el relleno de handoff_mensaje (sin siquiera exigir
+    # `h.activo_id IS NOT NULL`): un aviso histórico sin inmueble se etiquetaba con una fila
+    # cualquiera de la sesión. El destinatario del aviso no cambiaba, pero la bandeja lo
+    # agrupaba y lo abría en el hilo de un inmueble que no era el suyo. Retirado: los avisos
+    # nuevos llevan `activo_id` explícito (registrar_notificacion) y los históricos en NULL se
+    # quedan en NULL (la bandeja los agrupa aparte; ninguno se borra ni se reescribe).
     "CREATE INDEX IF NOT EXISTS ix_notif_hilo ON notificacion (session_id, activo_id)",
 ]
 _handoff_ready = False
@@ -1808,7 +1838,8 @@ _LEAD_ACTIVIDAD_DDL = [
     "ultima_actividad timestamptz DEFAULT now(), "
     "reenganche_enviado_en timestamptz)",
     # Fase 3: canal de contacto del COMPRADOR (con consentimiento) para reengancharlo
-    # directo por email/push cuando se enfríe. NULL = no dejó canal → se avisa al corredor.
+    # directo por email/push cuando se enfríe. NULL = no dejó canal → el comprador no recibe nada (y
+    # eso no autoriza al corredor: él solo recibe con su propio hecho, SEC-X2-EGRESS-R0).
     "ALTER TABLE lead_actividad ADD COLUMN IF NOT EXISTS lead_email text",
     "ALTER TABLE lead_actividad ADD COLUMN IF NOT EXISTS lead_telefono text",
     "ALTER TABLE lead_actividad ADD COLUMN IF NOT EXISTS lead_push jsonb",
@@ -2014,7 +2045,11 @@ async def _reducir_autoridad_reenganche(db, session_id: str, *, cerrar: bool) ->
 
     Plan 1.1 · TR-5: en los dos casos se revocan TODOS los grants de reenganche vivos de la
     sesión, en la misma transacción. Nunca se reactiva uno: un nuevo «sí» crea grants nuevos.
+
+    SEC-X2-CONSENT-SERIALIZATION-R0 · primera sentencia: el cerrojo de consentimiento de la sesión, ANTES de
+    `consent_grant` y de `lead_actividad` (reentrante si `/lead-contacto` ya lo tomó).
     """
+    await serializar_consentimiento(db, session_id)
     await revocar_grants_reenganche(db, session_id)
     if cerrar:
         await db.execute(
@@ -2084,6 +2119,11 @@ async def lead_contacto(
                 raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                                     detail="Versión de consentimiento desconocida.")
 
+            # SEC-X2-CONSENT-SERIALIZATION-R0 · el cerrojo de consentimiento de la sesión, YA con la autoridad
+            # probada y ANTES de cualquier bloqueo de `lead_actividad` —incluido el DDL de abajo, que toma ACCESS
+            # EXCLUSIVE la primera vez en cada proceso— y de `consent_grant`. Un «sí» y un «no» concurrentes de la
+            # misma sesión quedan en UN orden: el segundo espera aquí y actúa sobre lo que el primero confirmó.
+            await serializar_consentimiento(db, payload.session_id)
             await _preparar_lead_actividad_en_transaccion(db)
             if payload.consent:
                 # Opt-in explícito: guarda el contacto y REABRE un cierre previo (el acto
@@ -2181,6 +2221,15 @@ def _uuid_valido(valor: str | None) -> str | None:
         return None
 
 
+async def _activo_existe(activo_id: str) -> bool:
+    """¿Existe el inmueble? Lectura pura. Un fallo de base NO se traduce en «existe»:
+    se propaga, y quien llama no escribe nada."""
+    async with AsyncSessionLocal() as db:
+        return bool((await db.execute(text(
+            "SELECT 1 FROM activos_inmutables WHERE id = CAST(:a AS uuid)"),
+            {"a": activo_id})).scalar())
+
+
 async def _corredor_de_activo(db, activo_id: str | None) -> tuple[str | None, list[dict]]:
     """Email + suscripciones push del corredor dueño de un inmueble (para notificarle).
     Resuelve dueño directo (owner_user_id) o dueño de la agencia (owner_agency_id).
@@ -2261,8 +2310,10 @@ def _notificar_corredor(activo_id: str | None, title: str, body: str,
             # en silencio. Medido en la prueba de Carlos: 3 mensajes del interesado, 0 avisos.
             aid = activo_id
             if not aid and session_id:
+                # SEC-X2-R0: el destinatario de un aviso sale de un hilo que la persona pidió.
                 aid = (await db.execute(text(
                     "SELECT activo_id::text FROM handoff_sesion WHERE session_id = :s "
+                    "  AND principal_requested_at IS NOT NULL "
                     "ORDER BY actualizado_en DESC NULLS LAST LIMIT 1"),
                     {"s": session_id})).scalar()
             if not aid:
@@ -2454,64 +2505,145 @@ def _texto(content) -> str:
     return texto_de_content(content)
 
 
-async def transcript_de_sesion(session_id: str) -> list[dict]:
-    """Transcripción usuario/asistente de la sesión (para que el corredor lea el hilo)."""
-    try:
-        state = await agent_graph.compiled_graph.aget_state(_langgraph_config(session_id))
-    except Exception:  # noqa: BLE001
-        return []
-    msgs = (state.values or {}).get("messages", []) if (state and state.values) else []
-    # str(m.content) dejaba el repr de Python cuando el content viene como lista de
-    # bloques — que es el caso normal del turno final tras usar tools. El corredor leía
-    # "[{'text': 'Departamento en...', 'type': 'text'}]" en vez de la respuesta. Mismo
-    # fallo que texto_de_content ya arreglaba en el guardrail; se reutiliza en vez de
-    # volver a escribirlo. Import diferido: crm_guardrails importa del grafo.
-    from app.agent.crm_guardrails import texto_de_content
-    out: list[dict] = []
-    for m in msgs:
-        if isinstance(m, HumanMessage):
-            c = _CTX_RE.sub("", texto_de_content(m.content)).strip()
-            if c and not c.startswith("El usuario escaneó el QR"):
-                out.append({"autor": "lead", "texto": c})
-        elif isinstance(m, AIMessage) and not getattr(m, "tool_calls", None):
-            c = texto_de_content(m.content).strip()
-            if c:
-                out.append({"autor": "agente", "texto": c})
-    return out
+async def transcript_de_sesion(session_id: str, activo_id: str | None = None) -> list[dict]:
+    """La parte de la conversación con el AGENTE que se divulga al corredor: hoy, ninguna.
+
+    SEC-X2-R0c · AUTORIDAD PARA EL INMUEBLE X ≠ AUTORIDAD SOBRE TODA LA SESIÓN.
+    Los mensajes del AgentState no llevan procedencia por inmueble: una misma conversación
+    puede hablar de Y y de Z antes de que la persona pida al corredor de X. Divulgarlos al
+    corredor de X porque la persona pidió X era lavar con una autoridad acotada un contenido
+    que no lo está. Y la procedencia NO se infiere (ni por el idioma, ni por la dirección
+    mencionada, ni por el orden de las tarjetas, ni por las tools, ni por el prefijo `qr-`).
+
+    Antes (SEC-X2-R0): con la solicitud para X devolvía TODO el transcript de la sesión. Ahora
+    devuelve `[]` a sus dos llamadores —la ruta HTTP del corredor (`lead_conversacion`) y el
+    Copiloto (`tool_timeline_de_lead`)— y conserva la firma para no romper el contrato de sus
+    respuestas. Lo que sí llega al corredor de X —por la ruta HTTP y por el Copiloto— es el hilo del
+    handoff con `activo_id = X` exacto desde la solicitud: una sola definición,
+    `assets.handoff_visible_al_corredor` (SEC-X1-R0 cerró la consulta de sesión entera del Copiloto).
+
+    El AgentState no se toca y la persona sigue viendo su propia conversación (/history no
+    pasa por aquí). Compartir algo de la conversación con el corredor exigiría procedencia por
+    mensaje o segmento, o un acto explícito aparte que autorice un alcance definido: ninguna de
+    las dos cosas es parte de SEC-X2-R0."""
+    return []
 
 
-async def _hilo_de_sesion(db, session_id: str, activo_id: str | None = None) -> str | None:
+async def _hilo_de_sesion(db, session_id: str, activo_id: str | None = None, *,
+                          estricto: bool = False) -> str | None:
     """El inmueble del hilo pedido, o el del hilo más reciente de esta conversación.
 
     Desde la Fase 2 una misma conversación puede tener un hilo con el corredor de cada
     inmueble. Quién sabe cuál está abierto es el cliente (la bandeja lo pasa en la URL);
     si no lo dice —o pide uno que no existe— se cae al más reciente, que es el que el
-    interesado acaba de estar mirando."""
+    interesado acaba de estar mirando.
+
+    SEC-X2-R0: solo hilos que la persona PIDIÓ (`principal_requested_at IS NOT NULL`). Una
+    fila histórica o fabricada por el corredor ya no es un hilo: no se puede escribir en ella
+    ni sondearla. Para recuperarla, la persona vuelve a pedir contacto (acto nuevo).
+
+    `estricto`: si el cliente nombró un hilo y ese hilo no está autorizado, NO se cae a otro.
+    Para ESCRIBIR es obligatorio: caer al más reciente entregaría el mensaje de la persona
+    al corredor de OTRO inmueble (divulgación al destinatario equivocado)."""
     pedido = _uuid_valido(activo_id)
+    if estricto and activo_id is not None and not pedido:
+        return None
     if pedido:
         row = (await db.execute(text(
             "SELECT activo_id::text FROM handoff_sesion "
-            "WHERE session_id = :s AND activo_id = CAST(:a AS uuid)"),
+            "WHERE session_id = :s AND activo_id = CAST(:a AS uuid) "
+            "  AND principal_requested_at IS NOT NULL"),
             {"s": session_id, "a": pedido})).scalar()
-        if row:
+        if row or estricto:
             return row
     return (await db.execute(text(
         "SELECT activo_id::text FROM handoff_sesion WHERE session_id = :s "
+        "  AND principal_requested_at IS NOT NULL "
         "ORDER BY actualizado_en DESC NULLS LAST LIMIT 1"), {"s": session_id})).scalar()
 
 
 async def _hilos_de_sesion(db, session_id: str) -> list[dict]:
-    """Todos los corredores con los que habla esta conversación (para elegir hilo)."""
+    """Todos los corredores con los que habla esta conversación (para elegir hilo).
+    SEC-X2-R0: solo los hilos que la persona pidió. SEC-X2-C1: `mensajes` cuenta el hilo ACTUAL
+    (desde la solicitud); lo anterior es historial y no forma parte del hilo que se escribe."""
     rows = (await db.execute(text(
-        "SELECT h.activo_id::text AS activo_id, h.estado, "
+        # SEC-X2-C1 · el estado sale del hilo actual (ver `estado_handoff`), no de la fila heredada.
+        "SELECT h.activo_id::text AS activo_id, "
+        "       CASE WHEN h.estado = 'activo' AND NOT EXISTS ("
+        "         SELECT 1 FROM handoff_mensaje c WHERE c.session_id = h.session_id "
+        "            AND c.activo_id = h.activo_id AND c.autor = 'corredor' "
+        "            AND c.creado_en >= h.principal_requested_at) "
+        "       THEN 'solicitado' ELSE h.estado END AS estado, "
         "       a.direccion_estandarizada AS direccion, "
         "       (SELECT count(*) FROM handoff_mensaje m "
-        "         WHERE m.session_id = h.session_id AND m.activo_id = h.activo_id) AS mensajes "
+        "         WHERE m.session_id = h.session_id AND m.activo_id = h.activo_id "
+        "           AND m.creado_en >= h.principal_requested_at) AS mensajes "
         "  FROM handoff_sesion h "
         "  LEFT JOIN activos_inmutables a ON a.id = h.activo_id "
-        " WHERE h.session_id = :s ORDER BY h.actualizado_en DESC NULLS LAST"),
+        " WHERE h.session_id = :s AND h.principal_requested_at IS NOT NULL "
+        " ORDER BY h.actualizado_en DESC NULLS LAST"),
         {"s": session_id})).mappings().all()
     return [dict(r) for r in rows]
+
+
+async def _historicos_del_dueno(db, session_id: str) -> list[dict]:
+    """SEC-X2-C1 · el historial LEGACY del handoff: de SOLO LECTURA y solo para el DUEÑO.
+
+    UNA AUTORIDAD NUEVA NO AUTORIZA CONTENIDO ANTIGUO. Esto es una costura de compatibilidad de
+    lectura para el comprador, no una migración de autoridad: no abre el hilo, no habilita
+    escribir, no se lo entrega al corredor (ni la ruta HTTP ni el Copiloto: los dos leen solo
+    `assets.handoff_visible_al_corredor`, SEC-X1-R0) y no prueba a qué inmueble pertenecía la conversación. Quién
+    puede pedirla lo decide quien llama: `estado_handoff`, solo con `Autoridad.OWNER` y `desde == 0`.
+
+    Frontera temporal: `handoff_sesion.principal_requested_at`. Un mensaje del hilo exacto es
+    HISTÓRICO si su fila no tiene la marca o si se escribió ANTES de ella; desde la marca en
+    adelante es del hilo actual (`mensajes`) y aquí no se repite. Sin `creado_en` no hay frontera
+    demostrable: esa fila no se devuelve.
+
+    Guarda de ambigüedad (falla cerrado → `[]`). Un `activo_id` histórico no nulo NO es procedencia
+    por sí solo: el relleno de arranque que retiró R0b lo asignaba con UNA fila cualquiera de la
+    sesión. Solo se devuelve algo si la sesión entera apunta a UN único inmueble y no queda nada sin
+    explicar:
+      - exactamente un `activo_id` distinto entre `handoff_sesion` y `handoff_mensaje`;
+      - ninguna fila de `handoff_sesion` sin inmueble (esquema anterior a la PK compuesta);
+      - ningún mensaje con `activo_id` NULL;
+      - ningún mensaje cuyo `activo_id` no tenga su fila exacta en `handoff_sesion`.
+    No se infiere nada del prefijo `qr-`, de direcciones en la prosa, de las tools, del último
+    inmueble, del orden de las tarjetas ni del estado del frontend. La guarda y la lectura van en
+    UNA sentencia: misma instantánea, sin carrera entre comprobar y leer.
+
+    Lo que sale no lleva `activo_id` ni dirección: la asociación histórica no es una prueba de
+    procedencia y la interfaz no debe presentarla como verificada."""
+    rows = (await db.execute(text(
+        "WITH guarda AS ("
+        "  SELECT"
+        "    (SELECT count(*) FROM handoff_sesion WHERE session_id = :s AND activo_id IS NULL)"
+        "      AS filas_sin_inmueble,"
+        "    (SELECT count(*) FROM handoff_mensaje WHERE session_id = :s AND activo_id IS NULL)"
+        "      AS mensajes_sin_inmueble,"
+        "    (SELECT count(*) FROM handoff_mensaje x WHERE x.session_id = :s AND NOT EXISTS ("
+        "        SELECT 1 FROM handoff_sesion y"
+        "         WHERE y.session_id = x.session_id AND y.activo_id = x.activo_id))"
+        "      AS mensajes_sin_hilo_exacto,"
+        "    (SELECT count(DISTINCT u.activo_id) FROM ("
+        "        SELECT activo_id FROM handoff_sesion WHERE session_id = :s"
+        "        UNION ALL"
+        "        SELECT activo_id FROM handoff_mensaje WHERE session_id = :s) u)"
+        "      AS inmuebles"
+        ") "
+        "SELECT m.id, m.autor, m.texto, m.creado_en "
+        "  FROM handoff_mensaje m "
+        "  JOIN handoff_sesion h ON h.session_id = m.session_id AND h.activo_id = m.activo_id "
+        "  CROSS JOIN guarda g "
+        " WHERE g.filas_sin_inmueble = 0 AND g.mensajes_sin_inmueble = 0 "
+        "   AND g.mensajes_sin_hilo_exacto = 0 AND g.inmuebles = 1 "
+        "   AND m.session_id = :s AND m.autor IN ('lead', 'corredor') "
+        "   AND m.creado_en IS NOT NULL "
+        "   AND (h.principal_requested_at IS NULL OR m.creado_en < h.principal_requested_at) "
+        " ORDER BY m.id ASC"),
+        {"s": session_id})).mappings().all()
+    return [{"id": r["id"], "autor": r["autor"], "texto": r["texto"],
+             "creado_en": r["creado_en"].isoformat()} for r in rows]
 
 
 _ASIGNACION_DDL = [
@@ -2581,36 +2713,79 @@ async def registrar_handoff(
     lead_email: str | None = None,
     quien: str = "Un interesado",
 ) -> dict:
-    """Registra el handoff de una sesión y notifica al corredor dueño del inmueble.
+    """Registra el handoff que la persona PIDIÓ para un inmueble concreto y avisa a su corredor.
 
     SEC-X3-R0 deja el endpoint HTTP del control explícito «Hablar con el corredor»
-    (`solicitar_handoff`) como ÚNICO llamador de esta función desde app/. Esta afirmación se
-    refiere al efecto de handoff; no afirma que antes del clic no exista audiencia legacy
-    sobre el transcript (por ejemplo, X-2, que corresponde a SEC-X2-R0). La tool del agente
-    (`tool_connect_with_broker`) ya NO llega aquí: una salida del LLM no es un acto del
-    comprador. Lo congela tests/test_sec_x3_r0_handoff_sin_efecto.py.
+    (`solicitar_handoff`) como ÚNICO llamador de esta función desde app/: una salida del LLM
+    no es un acto del comprador. Lo congela tests/test_sec_x3_r0_handoff_sin_efecto.py.
 
-    activo_id explícito: las conversaciones que NO vienen de un QR no llevan el inmueble
-    en el session_id, y sin él el handoff moría en silencio — nadie notificado y el lead
-    invisible en el CRM. El endpoint recibe el activo_id enviado por el frontend; la
-    exactitud de esa selección pertenece a UI-04 / SEC-X2-R0. El del session_id manda si
-    existe: viene del QR escaneado."""
-    activo_id = activo_de_session(session_id) or _uuid_valido(activo_id)
-    if not activo_id:
-        # Sin inmueble no hay corredor a quien entregar el lead. Antes se guardaba una fila
-        # sin inmueble que no llegaba a nadie; ahora se dice en voz alta y el endpoint
-        # le pregunta al usuario CUÁL le interesa.
-        return {"ok": False, "estado": None, "activo_id": None, "corredor_whatsapp": None}
+    SEC-X2-R0 · el acto es de la persona y es PARA UN INMUEBLE:
+      - `activo_id` es obligatorio y explícito: llega con el acto, no se deduce. El prefijo
+        `qr-` ya no lo elige: en una sesión `qr-{X}` solo RESTRINGE (otro inmueble se
+        rechaza sin escribir nada) y nunca concede.
+      - El inmueble tiene que existir.
+      - Escribe `principal_requested_at`, el hecho de autoridad, y conserva el primero
+        (COALESCE): repetir la solicitud no reescribe cuándo se pidió.
+      - SEC-X2-B5 · NUEVA AUTORIDAD DE HANDOFF ≠ AUTORIDAD PARA REUTILIZAR CONTACTO LEGACY. Si
+        el acto PROMUEVE una fila histórica (marca NULL), su contacto es SOLO el del acto actual
+        (`lead_user_id`/`lead_email` del principal, NULL si es anónimo) y el push histórico se
+        descarta: nada escrito antes de la marca sobrevive como destino actual (la persona
+        vuelve a registrar el push por `/handoff/push`, que solo escribe hilos autorizados). La
+        fila no se borra. Si ya estaba autorizada, es una REPETICIÓN: un valor nuevo actualiza,
+        la ausencia no borra y el push vigente se conserva. Es lo único que abre
+        al corredor de ESE inmueble el hilo del handoff de ESE inmueble (mensajes con
+        `activo_id` exacto). La conversación con el agente no se le divulga (SEC-X2-R0c,
+        `transcript_de_sesion`). El Copiloto lee el mismo hilo exacto que la ruta HTTP
+        (`assets.handoff_visible_al_corredor`, SEC-X1-R0).
+      - Qué inmueble eligió la persona lo fija su acto en la interfaz (UI-04): aquí no se
+        infiere ninguno.
+    Esta afirmación se refiere al efecto de handoff; no afirma que no haya existido audiencia
+    legacy antes de SEC-X2-R0 (por ejemplo, lo que un corredor ya leyó o lo que su Copiloto
+    guardó en sus propios hilos)."""
+    pedido = _uuid_valido(activo_id)
+    if not pedido:
+        # Sin inmueble no hay corredor a quien entregar el lead, ni objeto al que conceder
+        # nada. No se escribe una fila que no llegaría a nadie.
+        return {"ok": False, "motivo": "SIN_INMUEBLE", "estado": None, "activo_id": None,
+                "corredor_whatsapp": None}
+    letrero = activo_de_session(session_id)
+    if letrero and pedido != letrero:
+        # El prefijo RESTRINGE, nunca concede: una conversación nacida del letrero de X solo
+        # pide contacto con el corredor de X (la misma regla que la tool de SEC-X3-R0). Antes
+        # el prefijo pisaba EN SILENCIO lo que la persona había elegido.
+        return {"ok": False, "motivo": "INMUEBLE_DISTINTO_AL_DEL_LETRERO", "estado": None,
+                "activo_id": pedido, "corredor_whatsapp": None}
+    activo_id = pedido
     async with AsyncSessionLocal() as db:
+        existe = (await db.execute(text(
+            "SELECT 1 FROM activos_inmutables WHERE id = CAST(:a AS uuid)"),
+            {"a": activo_id})).scalar()
+        if not existe:
+            return {"ok": False, "motivo": "INMUEBLE_INEXISTENTE", "estado": None,
+                    "activo_id": activo_id, "corredor_whatsapp": None}
         await ensure_handoff_tables(db)
         await db.execute(text(
-            "INSERT INTO handoff_sesion (session_id, activo_id, estado, lead_user_id, lead_email) "
-            "VALUES (:s, CAST(:a AS uuid), 'solicitado', :u, :e) "
+            "INSERT INTO handoff_sesion "
+            "  (session_id, activo_id, estado, lead_user_id, lead_email, principal_requested_at) "
+            "VALUES (:s, CAST(:a AS uuid), 'solicitado', :u, :e, now()) "
             # Un hilo POR INMUEBLE: pedir un segundo corredor ya no pisa al primero.
             "ON CONFLICT (session_id, activo_id) DO UPDATE "
             "SET actualizado_en = now(), "
-            "    lead_user_id = COALESCE(EXCLUDED.lead_user_id, handoff_sesion.lead_user_id), "
-            "    lead_email = COALESCE(EXCLUDED.lead_email, handoff_sesion.lead_email)"),
+            # Una fila histórica (NULL) pasa a autorizada SOLO por este acto nuevo; una ya
+            # autorizada conserva la fecha de la primera solicitud.
+            "    principal_requested_at = COALESCE(handoff_sesion.principal_requested_at, "
+            "                                      EXCLUDED.principal_requested_at), "
+            # SEC-X2-B5 · `handoff_sesion.*` es la fila ANTES de este acto. Marca NULL = PROMOCIÓN:
+            # solo el contacto del acto actual, push histórico fuera. Marca ya puesta = REPETICIÓN:
+            # lo nuevo actualiza y la ausencia no borra (push incluido).
+            "    lead_user_id = CASE WHEN handoff_sesion.principal_requested_at IS NULL "
+            "                        THEN EXCLUDED.lead_user_id "
+            "                        ELSE COALESCE(EXCLUDED.lead_user_id, handoff_sesion.lead_user_id) END, "
+            "    lead_email = CASE WHEN handoff_sesion.principal_requested_at IS NULL "
+            "                      THEN EXCLUDED.lead_email "
+            "                      ELSE COALESCE(EXCLUDED.lead_email, handoff_sesion.lead_email) END, "
+            "    push_subscription = CASE WHEN handoff_sesion.principal_requested_at IS NULL "
+            "                             THEN NULL ELSE handoff_sesion.push_subscription END"),
             {"s": session_id, "a": activo_id, "u": lead_user_id, "e": lead_email})
         await db.commit()
         await _congelar_asignacion(db, session_id, activo_id)
@@ -2624,6 +2799,29 @@ async def registrar_handoff(
     return {"ok": True, "estado": "solicitado", "activo_id": activo_id, "corredor_whatsapp": wsp}
 
 
+class SolicitudHandoff(BaseModel):
+    """SEC-X2-R0 · el payload del acto: «quiero contacto con el corredor de ESTE inmueble».
+
+    Viaja en el CUERPO a propósito. El frontend anterior mandaba por la query la primera
+    tarjeta del último resultado, que no prueba que la persona eligiera ese inmueble (UI-04);
+    como ese frontend puede seguir abierto en un navegador, el backend no puede tratar la
+    query como acto. Opcional en el modelo para que la petición vieja (cuerpo `{}`) reciba un
+    409 legible y no un 422."""
+    model_config = ConfigDict(extra="ignore")
+
+    activo_id: str | None = Field(default=None, max_length=64)
+
+
+_MOTIVOS_HANDOFF = {
+    "SIN_INMUEBLE": ("Para pedir contacto con un corredor, elige primero el inmueble. "
+                     "Si no ves esa opción, actualiza la aplicación."),
+    "INMUEBLE_DISTINTO_AL_DEL_LETRERO": ("Esta conversación nació del letrero de otro "
+                                         "inmueble: aquí solo puedes pedir contacto con el "
+                                         "corredor de ese inmueble."),
+    "INMUEBLE_INEXISTENTE": "No encontramos ese inmueble.",
+}
+
+
 @router.post(
     "/{session_id}/handoff",
     summary="El interesado pide hablar con el corredor (handoff en vivo, sin salir de Contexto)",
@@ -2631,29 +2829,39 @@ async def registrar_handoff(
 @limiter.limit("20/minute")
 async def solicitar_handoff(
     request: Request, session_id: str,
-    # Conversación sin QR: el frontend manda el inmueble que el usuario tiene en pantalla.
-    # Opcional — sin él el comportamiento es el de antes.
+    # Query LEGADA: el frontend anterior mandaba aquí la primera tarjeta del último resultado.
+    # Ya no basta para el acto; si llega junto al cuerpo, tiene que coincidir con él.
     activo_id: str | None = None,
     user: CurrentUser | None = Depends(get_optional_user),
+    payload: SolicitudHandoff | None = Body(default=None),
 ) -> dict:
     # AUTH-READ-GATE.1 · endpoint 5/11. Crea el handoff Y NOTIFICA AL CORREDOR. Sin
     # autoridad, un tercero podía disparar contactos reales en nombre de otra persona:
     # ruido para el corredor y una conversación que el interesado nunca pidió.
     await _exigir_autoridad(request, session_id, user)
 
+    # SEC-X2-R0 · sin inmueble explícito en el cuerpo no hay acto: falla cerrado, sin
+    # escrituras ni avisos. (Llamada directa en tests: el default es el FieldInfo de Body.)
+    elegido = _uuid_valido(payload.activo_id) if isinstance(payload, SolicitudHandoff) else None
+    if not elegido:
+        raise HTTPException(409, _MOTIVOS_HANDOFF["SIN_INMUEBLE"])
+    if activo_id is not None and _uuid_valido(activo_id) != elegido:
+        raise HTTPException(409, "La solicitud no es coherente: el inmueble elegido no "
+                                 "coincide. Vuelve a intentarlo.")
+
     quien = (user.nombre or user.email) if user else "Un interesado"
     res = await registrar_handoff(
         session_id,
-        activo_id=activo_id,
+        activo_id=elegido,
         lead_user_id=user.user_id if user else None,
         lead_email=user.email if user else None,
         quien=quien,
     )
     if not res.get("ok"):
-        # Sin inmueble no se registró NADA. Devolver 200 aquí hacía que la app anunciara
-        # "te conecté con el corredor" sobre un handoff que no existía y que nadie recibió.
-        raise HTTPException(409, "Para conectarte con un corredor necesito saber qué "
-                                 "inmueble te interesa. Dímelo y te conecto.")
+        # No se registró NADA. Devolver 200 aquí hacía que la app anunciara "te conecté con
+        # el corredor" sobre un handoff que no existía y que nadie recibió.
+        raise HTTPException(409, _MOTIVOS_HANDOFF.get(res.get("motivo"),
+                                                      _MOTIVOS_HANDOFF["SIN_INMUEBLE"]))
     return {"ok": True, "estado": res["estado"], "identificado": bool(user),
             "activo_id": res.get("activo_id"),
             "corredor_whatsapp": res.get("corredor_whatsapp")}
@@ -2682,20 +2890,27 @@ async def handoff_mensaje_lead(
         # ¿A QUÉ corredor le escribe? Al de este inmueble si el cliente lo dice (la bandeja
         # lo sabe), si no al del hilo más reciente. Antes se escribía "a la sesión" y con
         # dos hilos abiertos el mensaje aterrizaba donde el corredor equivocado.
-        hilo = await _hilo_de_sesion(db, session_id, activo_id)
+        hilo = await _hilo_de_sesion(db, session_id, activo_id, estricto=True)
         if hilo is None:
+            # SEC-X2-R0: solo hay hilo si la persona lo PIDIÓ. Una fila histórica o creada por
+            # el corredor no lo es: 409 sin escrituras ni avisos. Y si el cliente nombró un
+            # hilo, es ESE o ninguno: nunca se desvía el mensaje al corredor de otro inmueble.
             raise HTTPException(409, "Todavía no hay un corredor asignado a esta conversación.")
+        # UPDATE, no UPSERT: escribir un mensaje nunca crea un hilo ni fija la autoridad.
         await db.execute(text(
-            "INSERT INTO handoff_sesion (session_id, activo_id, estado, lead_user_id, lead_email) "
-            "VALUES (:s, CAST(:a AS uuid), 'solicitado', :u, :e) "
-            "ON CONFLICT (session_id, activo_id) DO UPDATE SET "
-            "    lead_user_id = COALESCE(EXCLUDED.lead_user_id, handoff_sesion.lead_user_id), "
-            "    lead_email = COALESCE(EXCLUDED.lead_email, handoff_sesion.lead_email)"),
+            "UPDATE handoff_sesion SET "
+            "    lead_user_id = COALESCE(:u, lead_user_id), "
+            "    lead_email = COALESCE(:e, lead_email) "
+            "WHERE session_id = :s AND activo_id = CAST(:a AS uuid) "
+            "  AND principal_requested_at IS NOT NULL"),
             {"s": session_id, "a": hilo,
              "u": user.user_id if user else None, "e": user.email if user else None})
         await db.execute(text(
-            "INSERT INTO handoff_mensaje (session_id, autor, texto, activo_id) "
-            "VALUES (:s, 'lead', :t, CAST(:a AS uuid))"),
+            # SEC-X2-C1 · `creado_en` = la hora de ESTA escritura (clock_timestamp), no la del inicio de
+            # la transacción (now()): la frontera compara creado_en con la marca, y un now() anterior
+            # a la marca clasificaría un mensaje ACTUAL como historial.
+            "INSERT INTO handoff_mensaje (session_id, autor, texto, activo_id, creado_en) "
+            "VALUES (:s, 'lead', :t, CAST(:a AS uuid), clock_timestamp())"),
             {"s": session_id, "t": payload.texto.strip(), "a": hilo})
         await db.commit()
 
@@ -2726,44 +2941,98 @@ async def estado_handoff(request: Request, session_id: str, desde: int = 0,
     # OJO con el `vacio` de abajo: NO sirve como denegación. Devolver "no hay handoff" a
     # quien no tiene autoridad y "aquí están los mensajes" a quien sí, distingue la sesión
     # que existe de la que no. La denegación tiene que ser el 404 de siempre.
-    await _exigir_autoridad(request, session_id, user)
+    autoridad = await _exigir_autoridad(request, session_id, user)
 
+    # SEC-X2-C1 · `mensajes` es el hilo ACTUAL autorizado; `historicos`, el historial LEGACY de
+    # solo lectura del dueño. Son campos SEPARADOS a propósito: lo histórico no entra en
+    # `mensajes`, no fabrica un handoff activo (activo/estado/corredor_whatsapp/hilos siguen
+    # saliendo solo del hilo actual) y no habilita escribir (eso lo decide `_hilo_de_sesion`).
     vacio = {"activo": False, "estado": None, "mensajes": [],
-             "corredor_whatsapp": None, "activo_id": None, "hilos": []}
+             "corredor_whatsapp": None, "activo_id": None, "hilos": [], "historicos": []}
     async with AsyncSessionLocal() as db:
+        res = dict(vacio)
         try:
             hilo = await _hilo_de_sesion(db, session_id, activo_id)
-            if hilo is None:
-                return vacio
-            est = (await db.execute(text(
-                "SELECT estado FROM handoff_sesion "
-                "WHERE session_id = :s AND activo_id = CAST(:a AS uuid)"),
-                {"s": session_id, "a": hilo})).scalar()
-            if est is None:
-                return vacio
-            rows = (await db.execute(text(
-                "SELECT id, autor, texto FROM handoff_mensaje "
-                # Solo los de ESTE hilo. El OR IS NULL rescata mensajes anteriores a que
-                # existiera la columna: preferimos mostrarlos de más que perderlos.
-                "WHERE session_id = :s AND id > :d "
-                "  AND (activo_id = CAST(:a AS uuid) OR activo_id IS NULL) ORDER BY id ASC"),
-                {"s": session_id, "d": desde, "a": hilo})).mappings().all()
-            # Se resuelve en cada sondeo para que el botón de WhatsApp sobreviva a un
-            # reload del interesado (el POST /handoff no se re-dispara al recargar).
-            wsp = await _whatsapp_de_activo(db, hilo)
-            hilos = await _hilos_de_sesion(db, session_id)
+            est = None
+            if hilo is not None:
+                est = (await db.execute(text(
+                    # SEC-X2-C1 · el ESTADO del hilo actual sale del hilo actual. Una fila legacy venía
+                    # 'activo' (lo escribía el responder_lead anterior a R0) y una solicitud nueva lo
+                    # heredaba aunque nadie hubiera respondido desde la marca. Se deriva al leer: la
+                    # fila no se reescribe (sin backfill).
+                    "SELECT CASE WHEN h.estado = 'activo' AND NOT EXISTS ("
+                    "         SELECT 1 FROM handoff_mensaje c WHERE c.session_id = h.session_id "
+                    "            AND c.activo_id = h.activo_id AND c.autor = 'corredor' "
+                    "            AND c.creado_en >= h.principal_requested_at) "
+                    "       THEN 'solicitado' ELSE h.estado END "
+                    "  FROM handoff_sesion h "
+                    "WHERE h.session_id = :s AND h.activo_id = CAST(:a AS uuid) "
+                    "  AND h.principal_requested_at IS NOT NULL"),
+                    {"s": session_id, "a": hilo})).scalar()
+            if est is not None:
+                rows = (await db.execute(text(
+                    "SELECT m.id, m.autor, m.texto FROM handoff_mensaje m "
+                    "  JOIN handoff_sesion h "
+                    "    ON h.session_id = m.session_id AND h.activo_id = m.activo_id "
+                    # Solo los de ESTE hilo, por inmueble EXACTO. SEC-X2-R0b: aquí había un
+                    # `OR activo_id IS NULL` que rescataba mensajes sin inmueble; con él, una
+                    # solicitud nueva para X metía en el hilo de X contenido de procedencia
+                    # desconocida. Una autoridad nueva no lava la falta de procedencia.
+                    "WHERE m.session_id = :s AND m.id > :d "
+                    "  AND m.activo_id = CAST(:a AS uuid) "
+                    # SEC-X2-C1 · y solo desde la solicitud: lo anterior a la marca es historial
+                    # (`historicos`), no el hilo actual. Sin `creado_en` no hay frontera: fuera.
+                    "  AND h.principal_requested_at IS NOT NULL "
+                    "  AND m.creado_en >= h.principal_requested_at "
+                    "ORDER BY m.id ASC"),
+                    {"s": session_id, "d": desde, "a": hilo})).mappings().all()
+                # Se resuelve en cada sondeo para que el botón de WhatsApp sobreviva a un
+                # reload del interesado (el POST /handoff no se re-dispara al recargar).
+                wsp = await _whatsapp_de_activo(db, hilo)
+                hilos = await _hilos_de_sesion(db, session_id)
+                res = {"activo": True, "estado": est, "corredor_whatsapp": wsp, "activo_id": hilo,
+                       "hilos": hilos, "historicos": [],
+                       "mensajes": [{"id": r["id"], "autor": r["autor"], "texto": r["texto"]}
+                                    for r in rows]}
         except Exception:  # noqa: BLE001 — tablas aún no existen
-            return vacio
-    return {"activo": True, "estado": est, "corredor_whatsapp": wsp, "activo_id": hilo,
-            "hilos": hilos,
-            "mensajes": [{"id": r["id"], "autor": r["autor"], "texto": r["texto"]} for r in rows]}
+            await db.rollback()
+            res = dict(vacio)
+        # Solo el DUEÑO autenticado (fuente canónica: chat_sessions.user_id vía `_decidir`) y solo
+        # en la lectura inicial. La capacidad anónima no lo recibe en C1 v0: el censo de producción
+        # (C0B) no encontró ninguna sesión anónima reanudable con historial, y no se construye
+        # autoridad que nadie usa. Un fallo aquí no tumba el hilo actual: falla cerrado a [].
+        if desde == 0 and autoridad is Autoridad.OWNER:
+            try:
+                res["historicos"] = await _historicos_del_dueno(db, session_id)
+            except Exception:  # noqa: BLE001
+                await db.rollback()
+                res["historicos"] = []
+    return res
 
 
-async def intencion_de_sesion(session_id: str, horas_inactividad: float | None = None) -> dict:
+async def intencion_de_sesion(session_id: str, horas_inactividad: float | None = None,
+                              activo_id: str | None = None) -> dict:
     """Carga el estado de una sesión y corre el motor de intención. Reutilizable
     por el endpoint de sesión y por el panel de interesados del inmueble.
 
-    horas_inactividad: si se pasa, permite derivar el estado 'dormido' (reenganche)."""
+    horas_inactividad: si se pasa, permite derivar el estado 'dormido' (reenganche).
+
+    activo_id: lo pasan los consumidores cuyo resultado llega al corredor de ESE inmueble
+    (audiencia = corredor de X): la proyección del CRM y, desde SEC-X2-EGRESS-R0, la elegibilidad de
+    la rama del corredor del cron de reenganche. Entonces la semántica (etapa, nivel, score, razones,
+    resumen, turnos, reenganche) sale ÚNICAMENTE de fuentes con alcance demostrado a X:
+      - SEC-X2-R0b: los mensajes del handoff con `activo_id` exacto (ni NULL ni otro hilo) y
+        «pidió corredor» = solicitud registrada para X;
+      - SEC-X2-R0c: NADA del AgentState —ni el texto de la persona, ni las tools, ni el uso del
+        análisis de inversión, ni cuántos turnos hubo—, porque sus mensajes no tienen
+        procedencia por inmueble: lo que habló de Y no puede volverse una razón para el
+        corredor de X. Del AgentState queda solo `interactuo` (que la persona escribió algo):
+        un metadato de EXISTENCIA para que el lead siga en la lista, nunca contenido.
+    Atribución y tiempo (`es_qr`, `horas_inactividad`) siguen contando: no son contenido.
+    Un activo_id inválido falla cerrado (sin señales del handoff ni del AgentState).
+    Sin activo_id (la rama del COMPRADOR del cron de reenganche, el endpoint del propio comprador)
+    el cálculo no cambia: CÓMPUTO INTERNO ≠ DIVULGACIÓN AL CORREDOR. Ese resultado de sesión entera
+    nunca decide un efecto hacia el corredor (SEC-X2-EGRESS-R0)."""
     from app.intencion import analizar_intencion
 
     config = _langgraph_config(session_id)
@@ -2793,21 +3062,68 @@ async def intencion_de_sesion(session_id: str, horas_inactividad: float | None =
                 if "investment" in nombre.lower():
                     uso_inversion = True
 
+    # SEC-X2-R0c: para el corredor de X, el AgentState no alimenta la semántica. Se conserva solo
+    # la EXISTENCIA de interacción (pertenencia a la lista); el texto, las tools y los turnos se
+    # descartan antes del motor.
+    para_corredor = activo_id is not None
+    interactuo = bool(mensajes_usuario)
+    if para_corredor:
+        mensajes_usuario, herramientas, uso_inversion = [], 0, False
+
     # Señales del handoff in-platform: pedir corredor es el pico de intención, y los
     # mensajes que el lead escribió al corredor ("quiero reservar una visita") también
     # cuentan como señales (viven en handoff_mensaje, fuera del estado del agente).
     pidio_corredor = False
+    para = _uuid_valido(activo_id) if activo_id else None
+    # Si piden el hilo de un inmueble con un id que no sirve: falla cerrado (sin señales del
+    # handoff), nunca la sesión entera.
+    sesion_entera = not para_corredor
     try:
         async with AsyncSessionLocal() as db:
-            est = (await db.execute(text(
-                "SELECT estado FROM handoff_sesion WHERE session_id = :s LIMIT 1"),
-                {"s": session_id})).scalar()
-            pidio_corredor = est is not None
-            if pidio_corredor:
-                hmsgs = (await db.execute(text(
-                    "SELECT texto FROM handoff_mensaje WHERE session_id = :s AND autor = 'lead' ORDER BY id"),
-                    {"s": session_id})).scalars().all()
-                mensajes_usuario.extend([t for t in hmsgs if t])
+            if para:
+                marca = (await db.execute(text(
+                    "SELECT principal_requested_at FROM handoff_sesion WHERE session_id = :s "
+                    "AND activo_id = CAST(:a AS uuid) AND principal_requested_at IS NOT NULL"),
+                    {"s": session_id, "a": para})).scalar()
+                pidio_corredor = marca is not None
+                # SEC-X2-C1 · PERTENENCIA ≠ SEMÁNTICA. Que la persona escribiera en el hilo exacto
+                # de X (en cualquier momento) es un metadato de EXISTENCIA, como `interactuo`: el
+                # lead sigue en la lista aunque su contenido se retenga (la lección de R0b). Lo NULL
+                # y lo de otro hilo no cuentan nunca.
+                # Paridad EXACTA con la regla anterior (`turnos` > 0): cuenta un texto que el motor
+                # contaría (str con algo tras strip), nunca uno vacío o NULL. Los textos no pasan al motor.
+                textos_x = (await db.execute(text(
+                    "SELECT texto FROM handoff_mensaje WHERE session_id = :s "
+                    "AND autor = 'lead' AND activo_id = CAST(:a AS uuid)"),
+                    {"s": session_id, "a": para})).scalars().all()
+                interactuo = interactuo or any(isinstance(t, str) and t.strip() for t in textos_x)
+                # El CONTENIDO que alimenta la semántica para el corredor de X (etapa, nivel, score,
+                # razones, resumen, turnos, reenganche) es solo el posterior a la solicitud: lo
+                # anterior es historial del comprador, y una solicitud nueva no lo vuelve parte de esta
+                # proyección. Sin solicitud, nada del handoff la alimenta. (El contenido que el corredor
+                # recibe por la ruta HTTP y el Copiloto sigue la misma frontera: handoff_visible_al_corredor.)
+                if pidio_corredor:
+                    hmsgs = (await db.execute(text(
+                        "SELECT m.texto FROM handoff_mensaje m "
+                        "  JOIN handoff_sesion h "
+                        "    ON h.session_id = m.session_id AND h.activo_id = m.activo_id "
+                        "WHERE m.session_id = :s AND m.autor = 'lead' "
+                        "  AND m.activo_id = CAST(:a AS uuid) "
+                        "  AND h.principal_requested_at IS NOT NULL "
+                        "  AND m.creado_en >= h.principal_requested_at "
+                        "ORDER BY m.id"),
+                        {"s": session_id, "a": para})).scalars().all()
+                    mensajes_usuario.extend([t for t in hmsgs if t])
+            elif sesion_entera:
+                est = (await db.execute(text(
+                    "SELECT estado FROM handoff_sesion WHERE session_id = :s LIMIT 1"),
+                    {"s": session_id})).scalar()
+                pidio_corredor = est is not None
+                if pidio_corredor:
+                    hmsgs = (await db.execute(text(
+                        "SELECT texto FROM handoff_mensaje WHERE session_id = :s AND autor = 'lead' ORDER BY id"),
+                        {"s": session_id})).scalars().all()
+                    mensajes_usuario.extend([t for t in hmsgs if t])
     except Exception:  # noqa: BLE001 — tablas de handoff aún no existen
         pass
 
@@ -2820,6 +3136,8 @@ async def intencion_de_sesion(session_id: str, horas_inactividad: float | None =
         horas_inactividad=horas_inactividad,
     )
     analisis["session_id"] = session_id
+    if para_corredor:
+        analisis["interactuo"] = interactuo
     return analisis
 
 
@@ -2873,8 +3191,10 @@ async def registrar_push_subscription(
         await ensure_handoff_tables(db)
         await db.execute(
             text(
+                # SEC-X2-R0: el canal del comprador solo se engancha a hilos que ÉL pidió,
+                # nunca a una fila histórica o creada por un corredor.
                 "UPDATE handoff_sesion SET push_subscription = :sub, actualizado_en = now() "
-                "WHERE session_id = :s"
+                "WHERE session_id = :s AND principal_requested_at IS NOT NULL"
             ),
             {"s": session_id, "sub": json.dumps(payload)},
         )

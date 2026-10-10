@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
 import { API_BASE, apiHeaders } from './api'
-import { TrendingUp, RotateCcw, Layers, Info, ArrowLeft, Compass, AlertTriangle } from 'lucide-react'
+import { TrendingUp, RotateCcw, Layers, Info, ArrowLeft, Compass, AlertTriangle, Lock } from 'lucide-react'
+import { ETIQUETA_SIN_SOLICITUD } from './divulgacionLead'
 
 // Panel de ANÁLISIS / reportería de la cartera del corredor (Fase 2 del CRM Vivo, ver
 // docs/DISENO_CRM_Vivo.md §5). Consume /metricas/lift (funnel + handoff + lift + cohortes)
@@ -61,7 +62,11 @@ export default function AnalisisPanel({ onVolver, panelSeed, onPreguntar } = {})
 
   const funnel = data?.funnel || {}
   const filas = ORDEN.filter(e => (funnel[e] || 0) > 0)
-  const maxF = Math.max(1, ...filas.map(e => funnel[e]))
+  // SEC-X2-R0: leads sin solicitud registrada. El backend no da su etapa (es una inferencia
+  // sobre su conversación) y los cuenta en el cubo `atribuido`. Fila APARTE, fuera de ORDEN y
+  // de EN_CURSO: no es una etapa, no puede ser el «cuello» ni se pregunta por ella.
+  const atribuidos = Number.isFinite(funnel.atribuido) ? funnel.atribuido : 0
+  const maxF = Math.max(1, ...filas.map(e => funnel[e]), atribuidos)
   const reeng = data?.reenganche || {}
   const coh = data?.cohortes || {}
 
@@ -149,6 +154,19 @@ export default function AnalisisPanel({ onVolver, panelSeed, onPreguntar } = {})
               </div>
             )
           })}
+          {atribuidos > 0 && (
+            <div title="Llegaron a tus fichas, pero no hay una solicitud de contacto registrada: su conversación es privada."
+              style={{ display: 'flex', alignItems: 'center', gap: 10, borderRadius: 6, cursor: 'default' }}>
+              <div style={{ width: 96, flexShrink: 0, fontSize: '.72rem', color: C.muted, lineHeight: 1.2 }}>
+                <Lock size={10} style={{ verticalAlign: '-1px', marginRight: 4 }} />{ETIQUETA_SIN_SOLICITUD}
+              </div>
+              <div style={{ flex: 1, height: 22, borderRadius: 6, background: 'rgba(255,255,255,.04)', overflow: 'hidden' }}>
+                <div style={{ width: `${Math.max(6, (atribuidos / maxF) * 100)}%`, height: '100%', borderRadius: 6,
+                              background: 'rgba(138,138,147,.45)' }} />
+              </div>
+              <div style={{ width: 26, textAlign: 'right', fontWeight: 700, fontSize: '.82rem', color: C.muted }}>{atribuidos}</div>
+            </div>
+          )}
         </div>
         {onPreguntar && filas.length > 0 && (
           <div style={{ fontSize: '.66rem', color: C.muted, marginTop: 9 }}>Toca una etapa para preguntarle al Estratega.</div>

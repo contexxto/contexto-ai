@@ -250,8 +250,9 @@ async def test_A4_revocado_con_email_y_push_cero_envios_al_comprador(monkeypatch
     assert res["comprador"] == 0
     assert "comprador@prueba.test" not in [e["to"] for e in entorno["email"]]
     assert all(p["subscription"] != {"endpoint": "https://push.prueba.test/c"} for p in entorno["push"])
-    # …y el corredor se entera como antes (DR-15, opción B no adoptada).
-    assert [e["to"] for e in entorno["email"]] == ["corredor@prueba.test"]
+    # SEC-X2-EGRESS-R0 (actualización esperada): antes «…y el corredor se entera como antes» (DR-15).
+    # Ya no: el NO_GRANT del comprador no es autoridad para el corredor. Sin su hecho X2, silencio.
+    assert entorno["email"] == [] and entorno["push"] == [] and res["corredores"] == 0
 
 
 async def test_A4b_control_el_mismo_lead_consentido_si_recibe(monkeypatch, entorno):
@@ -302,7 +303,7 @@ async def test_A4d_el_correo_real_pinta_el_enlace_de_baja(monkeypatch):
 
 async def test_A4e_el_correo_al_corredor_no_cambia(monkeypatch, entorno):
     monkeypatch.setenv("REENGANCHE_CRON_ENABLED", "1")
-    db = BaseEspia([_dormido("qr-k-1")])
+    db = BaseEspia([_dormido("qr-k-1", pidio_corredor=True)])   # SEC-X2-EGRESS-R0: con su hecho X2
     await cron.escanear_reenganches(db)
     (e,) = entorno["email"]
     assert e["to"] == "corredor@prueba.test" and e["url"] == "/?crm=1"
@@ -325,10 +326,11 @@ async def test_A4f_sin_secreto_cero_avisos_al_comprador_y_ninguno_desviado(monke
 
 
 async def test_A4g_sin_secreto_el_corredor_de_otros_leads_sigue_igual(monkeypatch, entorno):
-    """El fail-closed es del canal al comprador; el lead sin consentimiento avisa al corredor."""
+    """El fail-closed es del canal al comprador; el lead sin consentimiento que PIDIÓ contacto
+    avisa a su corredor (SEC-X2-EGRESS-R0: con el hecho X2, no por falta de grant)."""
     monkeypatch.setenv("REENGANCHE_CRON_ENABLED", "1")
     monkeypatch.delenv("REENGANCHE_BAJA_SECRET")
-    db = BaseEspia([_dormido("qr-s-2", consentido=True), _dormido("qr-s-3")])
+    db = BaseEspia([_dormido("qr-s-2", consentido=True), _dormido("qr-s-3", pidio_corredor=True)])
     res = await cron.escanear_reenganches(db)
     assert res["corredores"] == 1 and res["comprador"] == 0
     assert [e["to"] for e in entorno["email"]] == ["corredor@prueba.test"]
@@ -343,10 +345,19 @@ def test_A4h_el_select_del_barrido_excluye_cerrados():
 
 
 def test_A4i_el_holdout_no_se_toca():
-    """D-5 = DEFER: ni el porcentaje, ni la función, ni el orden holdout → envío."""
+    """D-5 = DEFER: ni el porcentaje ni la función cambian.
+
+    SEC-X2-EGRESS-R0 (actualización esperada) sí cambia el ORDEN: antes el holdout se asignaba
+    antes de saber a quién se le podía avisar. Ahora va DESPUÉS de la autoridad del corredor, del
+    canal y de la elegibilidad acotada al inmueble, y después de la decisión del comprador: el
+    experimento es solo de la población que el corredor está autorizado a recibir."""
     import inspect
     fuente = inspect.getsource(cron._escanear_reenganches)
-    assert fuente.index("grupo_holdout(sid, pct)") < fuente.index("baja_aviso.emitir(sid)")
+    i_holdout = fuente.index("grupo_holdout(sid, pct)")
+    for antes in ("baja_aviso.emitir(sid)", 'if not c["corredor_autorizado"]',
+                  'if not c["entregable_corredor"]', 'if not c["elegible_x"]',
+                  "intencion_de_sesion(sid, horas_inactividad=horas, activo_id=activo_id)"):
+        assert fuente.index(antes) < i_holdout, antes
     assert 'os.getenv("REENGANCHE_HOLDOUT_PCT", "20")' in inspect.getsource(cron._holdout_pct)
 
 
@@ -445,6 +456,9 @@ async def base(monkeypatch):
     monkeypatch.setattr(chat, "AsyncSessionLocal", Sesion)
     monkeypatch.setattr(autoridad, "AsyncSessionLocal", Sesion)
     monkeypatch.setattr(chat, "_lead_actividad_ready", False)
+    # SEC-X2-EGRESS-R0: las tablas de handoff (el hecho X2) nacen en ESTE esquema cuando un test
+    # las pide; un proceso que ya las «preparó» en otro esquema no debe saltarse el DDL.
+    monkeypatch.setattr(chat, "_handoff_ready", False)
     try:
         yield Sesion
     finally:
@@ -468,7 +482,7 @@ async def _fila(Sesion, sid):
         try:
             r = (await db.execute(text(
                 "SELECT session_id, lead_email, lead_telefono, lead_push, consent_reenganche_at, "
-                "reenganche_cerrado_en, reenganche_grupo, reenganche_enviado_en "
+                "reenganche_cerrado_en, reenganche_grupo, reenganche_enviado_en, reenganche_elegible_en "
                 "FROM lead_actividad WHERE session_id = :s"), {"s": sid})).mappings().first()
         except Exception:  # noqa: BLE001 — la tabla aún no existe
             return None
@@ -709,12 +723,30 @@ async def _dormida(Sesion, sid, *, email=None, push=None, consent=False, cerrado
         await db.commit()
 
 
+async def _pide_corredor(Sesion, sid, activo=ACTIVO, *, marca=True):
+    """SEC-X2-EGRESS-R0 · el hecho X2: la persona pidió contacto para (sid, activo). Es la ÚNICA
+    autoridad del aviso automático al corredor. `marca=False` deja una fila sin
+    `principal_requested_at` (histórica o fabricada): no prueba que la persona lo pidiera."""
+    from sqlalchemy import text
+    async with Sesion() as db:
+        await chat.ensure_handoff_tables(db)
+        await db.execute(text(
+            "INSERT INTO handoff_sesion (session_id, activo_id, principal_requested_at) "
+            "VALUES (:s, CAST(:a AS uuid), CASE WHEN :m THEN now() END)"),
+            {"s": sid, "a": activo, "m": marca})
+        await db.commit()
+
+
 @pg
 async def test_B11_cerrado_fuera_del_barrido_completo(monkeypatch, base, entorno):
     monkeypatch.setenv("REENGANCHE_CRON_ENABLED", "1")
     await _dormida(base, "qr-cerrado-comprador", email="x@ejemplo.invalid", push=PUSH, consent=True, cerrado=True)
     await _dormida(base, "qr-cerrado-sin-canal", cerrado=True)
     await _dormida(base, "qr-normal", email=None)
+    # SEC-X2-EGRESS-R0 (actualización esperada): el control necesita el hecho X2 para que su corredor
+    # reciba; los cerrados también lo tienen, y aun así quedan fuera del barrido completo.
+    for sid in ("qr-normal", "qr-cerrado-sin-canal", "qr-cerrado-comprador"):
+        await _pide_corredor(base, sid)
     async with base() as db:
         res = await cron.escanear_reenganches(db)
     assert res["escaneados"] == 1, res
@@ -742,12 +774,23 @@ async def test_B11b_cerrado_y_reabierto_vuelve_al_barrido(monkeypatch, base, ent
 
 
 @pg
-async def test_B11c_revocado_por_endpoint_cero_al_comprador_y_corredor_como_hoy(monkeypatch, base, entorno):
+async def test_B11c_revocado_por_endpoint_cero_al_comprador_y_el_corredor_solo_con_su_hecho(
+        monkeypatch, base, entorno):
+    """SEC-X2-EGRESS-R0 (actualización esperada): antes «…y corredor como hoy» (DR-15). Revocar
+    deja al comprador sin aviso; eso NO autoriza al corredor. Solo su hecho X2 lo hace."""
     monkeypatch.setenv("REENGANCHE_CRON_ENABLED", "1")
     sid, cab = await _sesion(base)
     await _dormida(base, sid)
     await _post(sid, cab, consent=True, email="c@ejemplo.invalid", push_subscription=PUSH)
     await _post(sid, cab, consent=False)
+    async with base() as db:
+        res = await cron.escanear_reenganches(db)
+    assert res["comprador"] == 0 and res["corredores"] == 0
+    assert entorno["email"] == [] and entorno["push"] == []
+    f = await _fila(base, sid)
+    assert f["reenganche_grupo"] is None and f["reenganche_enviado_en"] is None, "silencio sin marca"
+    # La persona pide contacto para ese inmueble → ahora sí, su corredor (y solo él).
+    await _pide_corredor(base, sid)
     async with base() as db:
         res = await cron.escanear_reenganches(db)
     assert res["comprador"] == 0 and res["corredores"] == 1

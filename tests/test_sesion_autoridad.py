@@ -292,9 +292,31 @@ def test_el_bootstrap_conserva_el_prefijo_del_QR():
 
     from app.sesion_autoridad import crear_sesion
 
+    # SEC-X2-R0 (actualización esperada): antes se congelaba aquí que `'abc-123'` producía
+    # `qr-abc-123-…`. El prefijo es atribución y solo admite un UUID canónico: lo que llega
+    # en mayúsculas se escribe en minúsculas (la forma que buscan los `LIKE` de assets.py).
+    activo = "33333333-AAAA-4BBB-8CCC-DDDDDDDDDDDD"
     db = _DBFalsa(filas_devueltas=1)
-    creada = asyncio.run(crear_sesion(None, activo_id="abc-123", db=db))
-    assert creada.session_id.startswith("qr-abc-123-")
+    creada = asyncio.run(crear_sesion(None, activo_id=activo, db=db))
+    assert creada.session_id.startswith(f"qr-{activo.lower()}-")
+
+
+def test_el_bootstrap_rechaza_un_activo_que_no_es_UUID():
+    """SEC-X2-R0: `'abc-123'` ya no acuña `qr-abc-123-…` (ni en el modelo ni en el núcleo)."""
+    import asyncio
+
+    import pytest
+    from pydantic import ValidationError
+
+    from app.routers.chat import BootstrapRequest
+    from app.sesion_autoridad import crear_sesion
+
+    with pytest.raises(ValidationError):
+        BootstrapRequest(activo_id="abc-123")
+    db = _DBFalsa(filas_devueltas=1)
+    with pytest.raises(ValueError):
+        asyncio.run(crear_sesion(None, activo_id="abc-123", db=db))
+    assert db.sql == []   # nada se escribió
 
 
 def test_si_el_id_ya_existia_NO_se_emite_capacidad():

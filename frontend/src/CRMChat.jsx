@@ -56,7 +56,7 @@ function CRMChat({ onClose, lead, modo = 'copiloto', onPanelSeed } = {}, ref) {
   const titulo = esEstratega ? 'Estratega' : 'Copiloto'
   const Icono = esEstratega ? Compass : Sparkles
   const sugerencias = esEstratega ? SUG_ESTRATEGA : (nom ? [
-    `Resúmeme la conversación de ${nom}`,
+    `Resúmeme el hilo de ${nom}`,
     `¿Por qué ${nom} está en ${ESTADO_LBL[lead.estado] || lead.estado || 'esa etapa'}?`,
     `Prepárame un mensaje para retomar a ${nom}`,
   ] : SUGERENCIAS)

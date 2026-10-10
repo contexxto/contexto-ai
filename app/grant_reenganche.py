@@ -2,8 +2,9 @@
 
 UN productor: `POST /api/v1/chat/lead-contacto` con `consent=true`, que es la acción explícita
 de la persona (G7f: el agente nunca produce un grant; `app/agent/` no importa este módulo, y
-`tests/test_tr5_consent_grant.py` lo impone). UNA revocación: `_reducir_autoridad_reenganche`
-(control de la UI y enlace de baja firmado de TR-2).
+`tests/test_tr5_consent_grant.py` lo impone). DOS escrituras de revocación: la sustitución dentro de
+un nuevo «sí» (`crear_grants_reenganche`) y la revocación explícita (`revocar_grants_reenganche`, desde
+`_reducir_autoridad_reenganche`: control de la UI y enlace de baja firmado de TR-2).
 
 Quién DECIDE si un efecto está autorizado no vive aquí: vive en `app/autoridad_reenganche.py`,
 la frontera única. Este módulo sólo escribe evidencia de permiso y la retira.
@@ -13,6 +14,19 @@ Valores fijados por el fundador el 28-sep-2026 (TR5-A..D):
     purpose  REENGAGEMENT · audience PRINCIPAL_SELF · action NOTIFY_VERIFIED_UPDATE
     mode     once (standing existe en el contrato, sin productor)
     expires  granted_at + 30 días · un grant POR CANAL (EMAIL | PUSH)
+
+SEC-X2-GRANT-REVOCATION-FRESHNESS-R0 · LAS DOS REVOCACIONES usan `revoked_at = statement_timestamp()`
+(la hora de ESA sentencia), no `now()` (el inicio de la transacción del llamador). La 038 exige
+`revoked_at >= granted_at`: con `now()`, una transacción que empezó ANTES de que se creara un grant
+(un «sí» concurrente) intentaba revocarlo con una hora anterior a su `granted_at`, el CHECK rechazaba el
+UPDATE, el llamador deshacía todo y el grant seguía VIVO —una baja válida que fallaba ABIERTA—. El CHECK
+no se toca: es el productor el que debe cumplir el invariante.
+
+SEC-X2-CONSENT-SERIALIZATION-R0 · las DOS funciones de este módulo toman, como PRIMERA sentencia, el cerrojo de
+consentimiento de la sesión (`app/serial_consentimiento.py`; reentrante si el llamador ya lo tomó, como hace
+`/lead-contacto` ANTES de su DDL). Todos los escritores de `consent_grant` de `app/` inventariados hoy pasan por la
+frontera (tests/test_sec_x2_consent_serialization.py::test_20 lo fija); nada en la base lo impone (no hay trigger
+ni privilegio), así que un escritor nuevo debe usar estas funciones o el mismo cerrojo.
 """
 from __future__ import annotations
 
@@ -34,6 +48,7 @@ from app.contracts.consent_grant_v0 import (
     PseudonymousSessionPrincipal,
     Purpose,
 )
+from app.serial_consentimiento import serializar_consentimiento
 from app.sesion_autoridad import Autoridad, PruebaDeAutoridad
 
 VIGENCIA_DIAS = 30
@@ -121,8 +136,11 @@ async def crear_grants_reenganche(
         )
 
     valores = [c.value for c in canales]
+    # SEC-X2-CONSENT-SERIALIZATION-R0 · sustitución y creación bajo EL MISMO cerrojo de la sesión (una sesión =
+    # una frontera), antes de tocar `consent_grant`.
+    await serializar_consentimiento(db, prueba.session_id)
     await db.execute(
-        text("UPDATE consent_grant SET revoked_at = now() "
+        text("UPDATE consent_grant SET revoked_at = statement_timestamp() "
              "WHERE session_id = :s AND purpose = 'REENGAGEMENT' AND channel = ANY(:canales) "
              "  AND revoked_at IS NULL AND used_at IS NULL"),
         {"s": prueba.session_id, "canales": valores},
@@ -152,10 +170,13 @@ async def revocar_grants_reenganche(db, session_id: str) -> None:
     """Revoca TODOS los grants REENGAGEMENT vivos de la sesión (todos los canales), en la
     transacción del llamador. Sólo reduce: nunca crea, nunca reactiva (`revoked_at` jamás
     vuelve a NULL). Sin la tabla no hay grants que revocar, y la baja sigue funcionando."""
+    # SEC-X2-CONSENT-SERIALIZATION-R0 · primera sentencia: el cerrojo de la sesión (esperando a un «sí» o a
+    # otra revocación en curso; reentrante si el llamador ya lo tomó).
+    await serializar_consentimiento(db, session_id)
     if not await _tabla_existe(db):
         return
     await db.execute(
-        text("UPDATE consent_grant SET revoked_at = now() "
+        text("UPDATE consent_grant SET revoked_at = statement_timestamp() "
              "WHERE session_id = :s AND purpose = 'REENGAGEMENT' "
              "  AND revoked_at IS NULL AND used_at IS NULL"),
         {"s": session_id},

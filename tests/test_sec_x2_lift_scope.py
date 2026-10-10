@@ -25,6 +25,8 @@ Bloques:
       `_leads_de_activo`) y `metricas_lift` REAL sobre una base falsa en memoria que despacha por el texto
       SQL. Fija el lado izquierdo del par (el inmueble del lead sale de recorrer los inmuebles del
       corredor, nunca de la sesión) y la defensa en Python aunque el SQL devolviera filas de más.
+  E · la composición con SEC-X2-R0c (rama del PR #195): en la MISMA respuesta, la observación por
+      el par exacto y el embudo acotado al inmueble; el pico de `intencion_evento` no vuelve.
 """
 from __future__ import annotations
 
@@ -425,7 +427,11 @@ class _BaseFalsa:
         if "FROM checkpoints" in q:
             return _Res([t for t in self.checkpoints if _like(t, p["p"])])
         if "FROM handoff_sesion" in q:
-            return _Res([{"session_id": h["session_id"], "estado": h["estado"], "lead_email": None}
+            # SEC-X2-R0 · el productor lee el hecho de autoridad (`principal_requested_at IS NOT NULL`):
+            # los escenarios de D son solicitudes explícitas, así que `autorizado` vale True salvo que
+            # la fila diga otra cosa.
+            return _Res([{"session_id": h["session_id"], "estado": h["estado"], "lead_email": None,
+                          "autorizado": h.get("autorizado", True)}
                          for h in self.handoff
                          if h["activo_id"] == p["a"] or (_like(h["session_id"], p["p"]) and h["activo_id"] is None)])
         if "FROM lead_actividad WHERE session_id LIKE" in q:          # la lectura propia del CRM
@@ -521,7 +527,7 @@ async def test_D3_aunque_el_sql_devolviera_filas_de_mas_cada_fila_va_a_su_par(pr
 
 async def test_D4_si_la_lectura_por_par_falla_la_metrica_degrada_y_lo_dice(productor_real, caplog):
     """La lectura por par falla (p. ej. un tipo inesperado): rollback, log de advertencia, la métrica
-    sigue (lee el embudo después) y no inventa observaciones — ni cae a una lectura por sesión, que en
+    sigue (devuelve el embudo acotado de R0c) y no inventa observaciones — ni cae a una lectura por sesión, que en
     la base falsa sí devolvería la fila de X también para el lead de Y."""
     s, db = _qr_x_que_pide_y(falla_par=True)
     with caplog.at_level(logging.WARNING):
@@ -530,8 +536,10 @@ async def test_D4_si_la_lectura_por_par_falla_la_metrica_degrada_y_lo_dice(produ
     assert _reeng(out_y) == (0, 0), "en modo degradado, el lead de Y recibió la fila de X"
     assert _reeng(out) == (0, 0) and db.rollbacks >= 1
     assert _SIN_LECTURA_PAR in caplog.text
-    i_par = next(i for i, q in enumerate(db.sql) if "FROM lead_actividad" in q and "LIKE" not in q)
-    assert any("FROM intencion_evento" in q for q in db.sql[i_par:]), "tras el fallo, la métrica siguió"
+    # Tras el fallo, la métrica siguió: devuelve el embudo de su lead (R0c, acotado al inmueble). Antes la
+    # prueba era la lectura posterior del pico de `intencion_evento`, que R0c retiró de la salida.
+    assert out["total_leads"] == 1 and out["funnel"] and "SEC-X2-R0c" in out["_funnel_fuente"]
+    assert not any("FROM intencion_evento" in q for q in db.sql), "el pico de toda la sesión volvió"
 
 
 async def test_D5_sesion_sin_qr_con_handoff_a_X_y_a_Y(productor_real, caplog):
@@ -543,4 +551,28 @@ async def test_D5_sesion_sin_qr_con_handoff_a_X_y_a_Y(productor_real, caplog):
                     actividad=[(s, X, _obs("holdout"))])
     assert _reeng(await _lift_falso(db, "BX")) == (0, 1)
     assert _reeng(await _lift_falso(db, "BY")) == (0, 0)
+    assert _SIN_LECTURA_PAR not in caplog.text
+
+
+# ══ E · composición con SEC-X2-R0c (PR #195): observación por PAR + embudo acotado al inmueble ═════════
+
+async def test_E1_observacion_por_par_y_embudo_acotado_en_la_misma_respuesta(productor_real, caplog):
+    """La sesión llegó por el QR de X (su fila de actividad es de X) y pidió contacto SOLO para Y. Para el
+    corredor de X y de Y son dos leads, y cada parte de la métrica se acota por su lado:
+      · (S, X): la observación es la fila de X (tocado, volvió); no pidió para X → 'atribuido', sin handoff;
+      · (S, Y): sin observación propia; pidió para Y → la etapa del CRM de Y, con handoff.
+    Y el pico de `intencion_evento`, que se calcula sobre toda la sesión, no se lee."""
+    s, db = _qr_x_que_pide_y()
+    leads = {l["activo_id"]: l for l in await assets._leads_del_corredor(db, "BXY", None)}
+    assert leads[X]["pidio_corredor"] is False and leads[Y]["pidio_corredor"] is True
+    etapa_y = leads[Y]["estado"]
+    assert etapa_y and etapa_y != "atribuido"
+    db.sql.clear()
+    out = await _lift_falso(db, "BXY")
+    assert out["total_leads"] == 2 and _reeng(out) == (1, 0)
+    assert out["reenganche"]["tocado"]["reactivados"] == 1
+    assert out["handoff"]["n"] == 1 and out["handoff"]["de"] == 2
+    assert out["funnel"] == {"atribuido": 1, etapa_y: 1}
+    assert "SEC-X2-R0c" in out["_funnel_fuente"] and "_transiciones_registradas" not in out
+    assert not any("FROM intencion_evento" in q for q in db.sql), "el pico de toda la sesión volvió"
     assert _SIN_LECTURA_PAR not in caplog.text

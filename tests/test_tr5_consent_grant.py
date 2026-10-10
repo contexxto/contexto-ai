@@ -233,11 +233,20 @@ def test_A4e_revoked_at_nunca_vuelve_a_null_ni_standing_tiene_productor():
 
 
 def test_A4f_el_corredor_queda_fuera_de_consent_grant():
-    """DR-15: el aviso al corredor no pasa por la frontera ni lee grants."""
+    """El aviso al corredor no pasa por la frontera del comprador ni lee grants: un grant del
+    comprador no lo autoriza. SEC-X2-EGRESS-R0 (actualización esperada): ya no es «DR-15: sigue su
+    camino» — su autoridad es SU hecho X2 (`corredor_autorizado`), que tampoco toca grants."""
     import inspect
+    from app.autoridad_reenganche import corredor_autorizado
     fuente = inspect.getsource(cron._escanear_reenganches)
-    rama = fuente[fuente.index("# NO_GRANT"):fuente.index("if not disparados")]
-    assert "autorizar_efecto_reenganche" not in rama and "consent_grant" not in rama
+    ramas = [fuente[fuente.index("# B · corredor del inmueble EXACTO. Orden"):fuente.index("leads.append(")],
+             fuente[fuente.index("# B · corredor del inmueble EXACTO:"):fuente.index("if not ids_comprador and not")]]
+    for rama in ramas:                       # fase 1 (lecturas) y fase 2 (decisión) de la rama del corredor
+        for prohibido in ("autorizar_efecto_reenganche", "consent_grant", "veredicto", "canales"):
+            assert prohibido not in rama, prohibido
+    funcion = ast.parse(inspect.getsource(corredor_autorizado).lstrip()).body[0]
+    codigo = "\n".join(ast.unparse(n) for n in funcion.body[1:])        # sin el docstring
+    assert "consent_grant" not in codigo and "principal_requested_at IS NOT NULL" in codigo
 
 
 def test_A4g_la_038_no_toca_lead_actividad_ni_hace_backfill():
@@ -255,12 +264,16 @@ def test_A4g_la_038_no_toca_lead_actividad_ni_hace_backfill():
 def test_A4h_la_frontera_evalua_cada_eje():
     """Defensa en profundidad: la 038 ya impide GUARDAR otra audience/purpose/action/canal
     (B7b), así que su ausencia en la condición no se vería en un test de comportamiento. Aquí
-    se exige que la frontera los compruebe igualmente, además de vigencia, uso, modo y cierre."""
+    se exige que la frontera los compruebe igualmente, además de vigencia, uso, modo y cierre.
+
+    SEC-X2-GRANT-FRESHNESS-R0 (actualización esperada): la vigencia se mide con
+    `statement_timestamp()` (la hora de la decisión), ya no con `now()` (el inicio de la transacción)."""
     from app.autoridad_reenganche import _CONDICION as c
     for predicado in ("audience = 'PRINCIPAL_SELF'", "purpose = 'REENGAGEMENT'",
                       "action = 'NOTIFY_VERIFIED_UPDATE'", "channel = ANY(:canales)",
                       "mode = 'once'", "case_ref IS NULL", "revoked_at IS NULL", "used_at IS NULL",
-                      "granted_at <= now()", "expires_at > now()", "principal_session_id = :sid",
+                      "granted_at <= statement_timestamp()", "expires_at > statement_timestamp()",
+                      "principal_session_id = :sid",
                       "principal_auth_user_id =", "reenganche_cerrado_en IS NOT NULL"):
         assert predicado in c, predicado
 
@@ -331,15 +344,23 @@ async def test_A6b_reserva_y_marca_en_el_mismo_commit_y_antes_del_envio(monkeypa
     await cron.escanear_reenganches(db)
     sql = [s for s, _ in db.sentencias]
     i_res = next(i for i, s in enumerate(sql) if "UPDATE consent_grant" in s)
-    i_toc = next(i for i, s in enumerate(sql) if "reenganche_grupo = 'tocado'" in s)
+    # SEC-X2-EGRESS-R0 (actualización esperada): la marca del comprador es SOLO la de envío.
+    i_toc = next(i for i, s in enumerate(sql)
+                 if s.lstrip().upper().startswith("UPDATE LEAD_ACTIVIDAD") and "reenganche_enviado_en = now()" in s)
+    asigna = sql[i_toc].split("WHERE")[0]                    # lo que ESCRIBE (la guarda lee grupo)
+    assert "reenganche_grupo" not in asigna and "reenganche_elegible_en" not in asigna
     assert i_res < i_toc
     assert not [c for c in commits_en if i_res < c <= i_toc], "commit entre reserva y marca"
     assert commits_en and commits_en[-1] > i_toc and envios_en and envios_en[0] >= commits_en[-1]
 
 
 async def test_A6c_error_de_autoridad_no_cae_al_corredor(monkeypatch, entorno):
+    """SEC-X2-EGRESS-R0 (actualización esperada): los dos leads tienen el hecho X2. El del ERROR
+    no produce nada, tampoco al corredor (ni cuenta en su N); el otro sí le llega."""
     monkeypatch.setenv("REENGANCHE_CRON_ENABLED", "1")
-    db = BaseEspia([_con_grants("qr-x-1", ["EMAIL", "PUSH"]), _dormido("qr-x-2")])
+    en_error = _con_grants("qr-x-1", ["EMAIL", "PUSH"])
+    en_error["_pidio_corredor"] = en_error["activo_id"]
+    db = BaseEspia([en_error, _dormido("qr-x-2", pidio_corredor=True)])
     orig = db.execute
 
     async def execute(stmt, params=None):
@@ -350,17 +371,23 @@ async def test_A6c_error_de_autoridad_no_cae_al_corredor(monkeypatch, entorno):
     db.execute = execute
     res = await cron.escanear_reenganches(db)
     assert res["comprador"] == 0
-    marcados = [p["ids"] for s, p in db.updates_lead_actividad() if "tocado" in s]
+    marcados = [p["ids"] for s, p in db.updates_lead_actividad()]
     assert all("qr-x-1" not in ids for ids in marcados), "un lead en ERROR quedó marcado"
-    # el lead sin contacto (qr-x-2) no pasa por la frontera: sigue al corredor como siempre
+    # el lead sin contacto (qr-x-2) no pasa por la frontera del comprador; con SU hecho X2, al corredor
     assert res["corredores"] == 1 and [e["to"] for e in entorno["email"]] == ["corredor@prueba.test"]
+    assert entorno["email"][0]["body"].startswith("Tienes 1 interesado dormido ")
+    assert "qr-x-1" not in entorno["holdout"]
 
 
-async def test_A6d_no_grant_sigue_al_corredor(monkeypatch, entorno):
+async def test_A6d_no_grant_no_es_autoridad_para_el_corredor(monkeypatch, entorno):
+    """SEC-X2-EGRESS-R0 (actualización esperada; antes `no_grant_sigue_al_corredor`, DR-15):
+    NO_GRANT PARA LA AUDIENCIA A ≠ AUTORIDAD PARA LA B. Sin el hecho X2: silencio y sin marca."""
     monkeypatch.setenv("REENGANCHE_CRON_ENABLED", "1")
     db = BaseEspia([_con_grants("qr-n-1", [])])
     res = await cron.escanear_reenganches(db)
-    assert res == {"escaneados": 1, "disparados": 1, "holdout": 0, "comprador": 0, "corredores": 1}
+    assert res == {"escaneados": 1, "disparados": 0, "holdout": 0, "comprador": 0, "corredores": 0}
+    assert entorno["email"] == [] and entorno["push"] == [] and entorno["holdout"] == []
+    assert db.updates_lead_actividad() == []
 
 
 async def test_A6e_sin_secreto_el_grant_no_se_consume(monkeypatch, entorno):
@@ -530,7 +557,9 @@ async def test_B5_historico_timestamp_sin_grant_cero_al_comprador(monkeypatch, b
     await _dormida(base, "qr-historico-1", email="h@ejemplo.invalid", push=PUSH, consent=True)
     async with base() as db:
         res = await cron.escanear_reenganches(db)
-    assert res["comprador"] == 0 and res["corredores"] == 1
+    # SEC-X2-EGRESS-R0 (actualización esperada): antes `corredores == 1` (DR-15). Sin grant ni hecho
+    # X2, nadie recibe nada.
+    assert res["comprador"] == 0 and res["corredores"] == 0
     assert "h@ejemplo.invalid" not in [e["to"] for e in entorno["email"]]
     assert all(p["subscription"] != PUSH for p in entorno["push"])
 
@@ -555,7 +584,10 @@ async def test_B6_grant_valido_autoriza_y_control_historico(monkeypatch, base, e
     assert all(g["used_at"] is not None for g in gs), "los dos canales se consumen en el mismo efecto"
     assert len({g["used_at"] for g in gs}) == 1, "…y en el mismo commit"
     f = await _fila(base, sid)
-    assert f["reenganche_grupo"] == "tocado" and f["reenganche_enviado_en"] is not None
+    # SEC-X2-EGRESS-R0 (actualización esperada): el efecto al comprador deja SOLO la marca de envío;
+    # no es una observación del experimento del corredor (antes: grupo 'tocado').
+    assert f["reenganche_enviado_en"] is not None
+    assert f["reenganche_grupo"] is None and f["reenganche_elegible_en"] is None
 
 
 @pg
@@ -619,20 +651,23 @@ async def test_B9_once_no_se_consume_dos_veces(base):
 @pg
 async def test_B10_dos_workers_una_sola_reserva(base):
     """Dos conexiones reales. La primera reserva y NO confirma todavía; la segunda intenta
-    reservar el mismo grant y queda esperando el bloqueo de fila. Al confirmar la primera, la
-    segunda re-evalúa la condición, ve `used_at` y no reserva nada."""
+    reservar el mismo grant.
+
+    SEC-X2-CONSENT-SERIALIZATION-R0 (actualización esperada, D-CRON = B): la segunda ya no espera el bloqueo de
+    fila; encuentra el cerrojo de consentimiento de la sesión ocupado y NO decide (ERROR inmediato, sin consumir).
+    Antes: esperaba, re-evaluaba y daba NO_GRANT. Tras confirmar la primera, una tercera reserva ve `used_at`."""
     from app.autoridad_reenganche import autorizar_efecto_reenganche
     sid, _ = await _lead_con_grant(base, email=False)
     async with base() as a, base() as b:
         ra = await autorizar_efecto_reenganche(a, session_id=sid, canales_candidatos=["PUSH"], reservar=True)
-        tarea_b = asyncio.ensure_future(
-            autorizar_efecto_reenganche(b, session_id=sid, canales_candidatos=["PUSH"], reservar=True))
-        await asyncio.sleep(0.4)
-        assert not tarea_b.done(), "la segunda reserva no esperó al bloqueo"
+        rb = await asyncio.wait_for(
+            autorizar_efecto_reenganche(b, session_id=sid, canales_candidatos=["PUSH"], reservar=True), 0.5)
         await a.commit()
-        rb = await tarea_b
         await b.commit()
-    assert ra.estado.value == "AUTHORIZED" and rb.estado.value == "NO_GRANT"
+    async with base() as c:
+        rc = await autorizar_efecto_reenganche(c, session_id=sid, canales_candidatos=["PUSH"], reservar=True)
+        await c.commit()
+    assert ra.estado.value == "AUTHORIZED" and rb.estado.value == "ERROR" and rc.estado.value == "NO_GRANT"
     assert sum(1 for g in await _grants_completos(base, sid) if g["used_at"] is not None) == 1
 
 
